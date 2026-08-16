@@ -5,7 +5,9 @@
  * Lee todo de la tabla `usuarios`: saldo (balance), fichas (coins) y bonos
  * son columnas de esa misma tabla.
  *
- * Acceso directo (sin login).
+ * Fase 0.5: exige sesion de operador (ver crm_auth.php). Comparte cookie con
+ * crm.php (mismo origen, mismo path '/'): loguearse una vez en el CRM
+ * alcanza para los dos.
  *
  * GET  ?accion=listar   (default)
  *      q=texto            -> busca por username (LIKE)
@@ -22,9 +24,9 @@
 declare(strict_types=1);
 require __DIR__ . '/config.php';
 require __DIR__ . '/db.php';
+require __DIR__ . '/crm_auth.php';
 
-// Sin login: el panel es de acceso directo. Si algun dia querés cerrarlo,
-// aca iria un chequeo de clave (X-Admin-Pass vs cfg('ADMIN_PASS')).
+exigir_operador();
 
 // ----------------------------- Parametros ----------------------------------
 $accion  = (string)($_GET['accion'] ?? 'listar');
