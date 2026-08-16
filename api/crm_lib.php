@@ -69,8 +69,11 @@ if (!function_exists('crm_conversacion_id')) {
 
     /** Encola una accion de SALDO real (la ejecuta el worker Python en ganamos)
      *  y la deja en el historial. NO toca usuarios.balance (ese lo maneja ganamos
-     *  y lo pisa el sync). tipo: 'cargar' | 'retirar'. */
-    function crm_saldo(PDO $pdo, string $usuario, string $tipo, float $monto, string $motivo = ''): array
+     *  y lo pisa el sync). tipo: 'cargar' | 'retirar'.
+     *  $operador: username del operador que la disparo (Fase 0.5), o null si
+     *  vino de un flujo sin sesion (no debería pasar desde crm.php despues del
+     *  Paso 4, pero el parametro es opcional para no romper otros callers). */
+    function crm_saldo(PDO $pdo, string $usuario, string $tipo, float $monto, string $motivo = '', ?string $operador = null): array
     {
         if ($monto <= 0) { return ['ok' => false, 'error' => 'El monto debe ser mayor a 0']; }
         $st = $pdo->prepare("SELECT 1 FROM usuarios WHERE username = ? LIMIT 1");
@@ -82,8 +85,8 @@ if (!function_exists('crm_conversacion_id')) {
             $pdo->prepare("INSERT INTO acciones_saldo (usuario, tipo, monto, motivo) VALUES (?,?,?,?)")
                 ->execute([$usuario, $tipo, $monto, $motivo !== '' ? $motivo : null]);
             $signed = ($tipo === 'retirar') ? -$monto : $monto;
-            $pdo->prepare("INSERT INTO movimientos (usuario, tipo, monto, motivo, origen) VALUES (?,?,?,?,?)")
-                ->execute([$usuario, 'saldo', (int)round($signed), $motivo !== '' ? $motivo : null, 'crm']);
+            $pdo->prepare("INSERT INTO movimientos (usuario, tipo, monto, motivo, origen, operador) VALUES (?,?,?,?,?,?)")
+                ->execute([$usuario, 'saldo', (int)round($signed), $motivo !== '' ? $motivo : null, 'crm', $operador]);
             $pdo->commit();
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) { $pdo->rollBack(); }
@@ -123,9 +126,12 @@ if (!function_exists('crm_conversacion_id')) {
     }
 
     /** Suma fichas ('ficha') o bono ('bono') a un jugador y registra el movimiento.
-     *  Devuelve ['ok'=>bool, 'saldo'=>int] o ['ok'=>false,'error'=>...]. */
+     *  Devuelve ['ok'=>bool, 'saldo'=>int] o ['ok'=>false,'error'=>...].
+     *  $operador: username del operador que la disparo (Fase 0.5), o null —
+     *  la ruleta (ruleta.php) tambien llama esta funcion y ahi no hay operador,
+     *  es el jugador reclamando su propio premio. */
     function crm_cargar(PDO $pdo, string $usuario, string $tipo, int $monto,
-                        string $motivo = '', string $origen = 'crm'): array
+                        string $motivo = '', string $origen = 'crm', ?string $operador = null): array
     {
         $col = ($tipo === 'bono') ? 'bonus' : 'coins';   // fichas = coins
         $st = $pdo->prepare("SELECT $col AS saldo FROM usuarios WHERE username = ? LIMIT 1");
@@ -140,8 +146,8 @@ if (!function_exists('crm_conversacion_id')) {
             $pdo->prepare("UPDATE usuarios SET $col = $col + ? WHERE username = ?")
                 ->execute([$monto, $usuario]);
             $pdo->prepare(
-                "INSERT INTO movimientos (usuario, tipo, monto, motivo, origen) VALUES (?,?,?,?,?)"
-            )->execute([$usuario, $tipo, $monto, $motivo !== '' ? $motivo : null, $origen]);
+                "INSERT INTO movimientos (usuario, tipo, monto, motivo, origen, operador) VALUES (?,?,?,?,?,?)"
+            )->execute([$usuario, $tipo, $monto, $motivo !== '' ? $motivo : null, $origen, $operador]);
             $pdo->commit();
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) { $pdo->rollBack(); }
