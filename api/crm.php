@@ -2,7 +2,8 @@
 /**
  * crm.php — Backend del CRM de conversaciones.
  *
- * Acceso directo (sin login), igual que admin_usuarios.php.
+ * Fase 0.5: exige sesion de operador (ver crm_auth.php). Ya no es de acceso
+ * directo — hace falta loguearse antes por crm_login.php.
  *
  * GET  ?accion=conversaciones&q=&estado=todas|abierta|pendiente|cerrada
  *        -> { ok, items:[{id,usuario,session_id,estado,preview,no_leidos,actualizada_en}], resumen }
@@ -21,12 +22,18 @@ require __DIR__ . '/config.php';
 require __DIR__ . '/db.php';
 require __DIR__ . '/crm_lib.php';
 require __DIR__ . '/notificaciones_lib.php';
+require __DIR__ . '/crm_auth.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
+header('Access-Control-Allow-Headers: Content-Type, X-CSRF-Token');
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
+
+// Fase 0.5: corta con 401 (sin sesion) o 403 (CSRF invalido en un POST)
+// antes de tocar nada. $operador queda disponible para completar la
+// columna `operador` en los INSERT a movimientos mas abajo.
+$operador = exigir_operador();
 
 function salir($data, int $code = 200): void
 {
@@ -214,7 +221,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 salir(['ok' => false, 'error' => 'Falta usuario o monto (no puede ser 0)'], 400);
             }
 
-            $r = crm_cargar($pdo, $usuario, $tipo, $monto, $motivo, 'crm');
+            $r = crm_cargar($pdo, $usuario, $tipo, $monto, $motivo, 'crm', $operador);
             if (!$r['ok']) { salir($r, 400); }
 
             /* Avisarle al jugador. Solo cuando es un REGALO: un monto negativo
@@ -245,7 +252,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $monto   = (float)($body['monto'] ?? 0);
             $motivo  = mb_substr((string)($body['motivo'] ?? ''), 0, 200);
             $tipo    = $accion === 'retirar_saldo' ? 'retirar' : 'cargar';
-            $r = crm_saldo($pdo, $usuario, $tipo, $monto, $motivo);
+            $r = crm_saldo($pdo, $usuario, $tipo, $monto, $motivo, $operador);
             if (!$r['ok']) { salir($r, 400); }
 
             $convId = (int)($body['conversacion_id'] ?? 0);
