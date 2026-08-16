@@ -419,7 +419,12 @@ Ya contestadas en la ronda de Fase 2/3 (quedan acá como registro):
 2. Los 4 PHP rotos: no se bajan por mí — doy el procedimiento y los baja el
    usuario por FTP (ver `CRM_DESIGN.md`, Fase 0).
 3. `colector/panel.py`: ya no se usa — archivado en `colector/_legacy/`.
-4. Las 17 migraciones están todas corridas en producción — confirmado.
+4. Las 17 migraciones están todas corridas en producción — confirmado,
+   **con una excepción encontrada después**: la migración 10 (`accesos`)
+   nunca se aplicó — la tabla no existe. No afecta nada del CRM ni de esta
+   auditoría (es el login propio de los jugadores, `auth.php`), pero queda
+   pendiente para el futuro. Verificado durante el backup previo a la
+   migración 18 de Fase 0.5 (2026-08, ver `CRM_DESIGN.md`).
 5. `colector/config.json`: resuelto, agregado al `.gitignore` antes del
    primer commit del repo.
 6. `landing/crm.html`: se mantiene y se extiende — es la base del CRM de
