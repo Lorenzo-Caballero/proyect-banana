@@ -367,7 +367,6 @@ novedades respecto de v1.
   lo necesita en producción.
 - Agregar `colector/config.json` al `.gitignore` de la raíz.
 - Actualizar `CLAUDE.md` con las correcciones que ya detectó `AUDIT.md`.
-- Opcional: `DROP TABLE ruleta_jugadas`.
 - No se toca nada de `bot/`.
 
 ### Fase 0.5 — Autenticación (previa/bloqueante para Fase A)
@@ -487,11 +486,6 @@ ALTER TABLE movimientos
 
 ALTER TABLE acciones_saldo
   ADD INDEX IF NOT EXISTS ix_tipo_estado (tipo, estado);
-```
-
-```sql
--- Fase 0, opcional, ya lo tenías marcado:
-DROP TABLE IF EXISTS ruleta_jugadas;
 ```
 
 ---
