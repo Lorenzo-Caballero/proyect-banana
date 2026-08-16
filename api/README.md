@@ -99,3 +99,31 @@ van dando de alta solos a medida que vuelven, sin que toques nada.
 Si preferís no guardar nunca la clave en claro, la alternativa es que el bot
 genere una contraseña propia para el panel y se la muestres al jugador — pero
 entonces la clave del juego y la del casino dejan de ser la misma.
+
+## Operadores del CRM
+
+Identidad de los agentes que usan `crm.html`/`crm.php` (Fase 0.5 del CRM, ver
+`CRM_DESIGN.md` en la raíz del repo). Necesita la migración `sql/18_operadores.sql`
+corrida antes — sin la tabla `operadores`, estos comandos fallan con error de SQL.
+
+No hay UI para crear el primer operador: no puede haber sesión sin que exista
+al menos uno, así que el alta es por línea de comandos, desde donde tengas
+acceso a la misma base de producción.
+
+```bash
+# Crear un operador nuevo. Pide el password por stdin, dos veces (confirmación).
+php scripts/crear_operador.php nombre.usuario
+
+# Cambiarle el password a uno que ya existe.
+php scripts/crear_operador.php --reset-password nombre.usuario
+```
+
+Corre con el mismo `config.php`/`db.php` que el resto de la API — necesita
+`api/config.local.php` (o las variables de entorno equivalentes) ya
+configurado, igual que cualquier endpoint.
+
+El password se pide dos veces, mínimo 8 caracteres, y se guarda con
+`password_hash(..., PASSWORD_DEFAULT)` — mismo mecanismo que ya usa el login
+de jugadores en `auth.php`. En Windows no hay forma simple de ocultar el
+tipeo sin una extensión extra: el script avisa y lo deja visible en pantalla
+en ese caso, en vez de bloquearse.
