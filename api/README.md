@@ -127,3 +127,27 @@ El password se pide dos veces, mínimo 8 caracteres, y se guarda con
 de jugadores en `auth.php`. En Windows no hay forma simple de ocultar el
 tipeo sin una extensión extra: el script avisa y lo deja visible en pantalla
 en ese caso, en vez de bloquearse.
+
+### Sin SSH: bootstrap del primer operador por HTTP
+
+`scripts/crear_operador.php` necesita una terminal interactiva (stdin) para
+pedir el password sin mostrarlo en pantalla — eso requiere SSH (o Cron Jobs
+con acceso a shell) en el hosting. Si todavía no tenés SSH activado, existe
+`api/_bootstrap_operador.php`: un formulario web de un solo uso, para el
+**primer** operador nada más.
+
+1. Generá un token igual que `BOT_API_KEY`:
+   ```bash
+   python -c "import secrets; print(secrets.token_urlsafe(32))"
+   ```
+2. Agregalo a `config.local.php` como `'BOOTSTRAP_TOKEN' => '...'`.
+3. Subí `api/_bootstrap_operador.php` por FTP/File Manager.
+4. Abrí `https://tu-dominio.com/api/_bootstrap_operador.php?token=TU_TOKEN`
+   y completá el formulario.
+5. **Borrá el archivo del server y sacá `BOOTSTRAP_TOKEN` de
+   `config.local.php`.** El archivo se niega a crear un segundo operador
+   solo (si `operadores` ya tiene una fila, responde 404 pase lo que pase
+   con el token), pero no hay que dejarlo colgado "por las dudas".
+
+Para el segundo operador en adelante: `scripts/crear_operador.php` por SSH
+(cuando lo actives), o repetir este mismo mecanismo con un token nuevo.

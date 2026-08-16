@@ -24,6 +24,12 @@ return [
     // Key de Cohere para el chatbot (chatbot.php). De dashboard.cohere.com.
     'COHERE_API_KEY' => '....',
 
+    // SOLO mientras exista api/_bootstrap_operador.php (crea el primer
+    // operador del CRM por HTTP cuando no hay SSH para correr
+    // scripts/crear_operador.php). Generala igual que BOT_API_KEY y
+    // BORRALA de acá apenas crees el primer operador y borres ese archivo.
+    // 'BOOTSTRAP_TOKEN' => 'PEGA-ACA-OTRA-CLAVE-DE-32-CARACTERES',
+
     // Solo si usás el db.php de esta carpeta. Si tenés el tuyo propio, ignoralos.
     'DB_HOST' => 'localhost',
     'DB_NAME' => 'tu_base',
