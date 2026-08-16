@@ -1,0 +1,22 @@
+.env
+api/config.local.php
+estado_sesion.json
+estado_session_storage.json
+*.log
+capturas/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# bot/ es un repo git PROPIO Y SEPARADO (bot/.git), desplegado aparte al VPS.
+# Nunca se trackea desde este repo — ver CLAUDE.md.
+bot/
+
+# Credencial real (password de app de Gmail) en texto plano — ver AUDIT.md.
+colector/config.json
+
+# Restos del prototipo viejo del colector (SQLite local, ya no se llena
+# desde el camino de producción, ver AUDIT.md).
+colector/pagos.db
+colector/estrategia.txt
