@@ -1,0 +1,10 @@
+*.iml
+.gradle/
+build/
+local.properties
+.idea/
+.cxx/
+
+# La clave de firma y su password NUNCA van al repo
+goldpaw.jks
+keystore.properties

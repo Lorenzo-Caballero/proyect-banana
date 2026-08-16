@@ -1,0 +1,797 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>CRM · Conversaciones · ganamos</title>
+<link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png">
+<link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+<script>
+  (function(){
+    var t = localStorage.getItem('goldpaw_theme');
+    if(!t) t = (window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+  })();
+</script>
+<style>
+  :root{
+    --bg1:#0a0f1e; --bg2:#0c1225; --glow:rgba(124,108,240,.16);
+    --panel:#121a30; --panel2:#182241; --panel3:#1d284a;
+    --line:#243052; --line2:#2d3a63;
+    --txt:#e7ecf9; --muted:#8890b2; --muted2:#6b7398;
+    --violet:#7c6cf0; --violet2:#9a8cff; --violetSoft:rgba(124,108,240,.16);
+    --green:#2fd07a; --green2:#3ee08a; --greenSoft:rgba(47,208,122,.14);
+    --orange:#f5a623; --orange2:#ffb84d;
+    --red:#e5595d; --redSoft:rgba(229,89,93,.15);
+    --blue:#4aa3f0;
+    --shadow:0 18px 50px rgba(0,0,0,.5); --shadow-sm:0 6px 20px rgba(0,0,0,.35);
+  }
+  :root[data-theme="light"]{
+    --bg1:#eef1f8; --bg2:#e8edf7; --glow:rgba(124,108,240,.10);
+    --panel:#ffffff; --panel2:#f5f7fd; --panel3:#eef1fa;
+    --line:#e4e9f4; --line2:#d7deed;
+    --txt:#182036; --muted:#6b7490; --muted2:#939db8;
+    --violet:#6a5af0; --violet2:#7c6cf0; --violetSoft:rgba(106,90,240,.10);
+    --green:#12b063; --green2:#17c06e; --greenSoft:rgba(18,176,99,.12);
+    --orange:#e0900d; --orange2:#f5a623;
+    --red:#e5484d; --redSoft:rgba(229,72,77,.12);
+    --blue:#2f8fe6;
+    --shadow:0 16px 40px rgba(40,54,90,.14); --shadow-sm:0 6px 18px rgba(40,54,90,.10);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:radial-gradient(1000px 500px at 82% -8%, var(--glow), transparent 60%),
+      linear-gradient(180deg, var(--bg2), var(--bg1));
+    color:var(--txt); overflow:hidden;
+    font:14.5px/1.45 system-ui,Segoe UI,Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased;
+    transition:background .3s, color .3s;
+  }
+  button{font-family:inherit;cursor:pointer}
+  svg{stroke-linecap:round;stroke-linejoin:round}
+
+  .app{display:flex;height:100vh;padding:12px;gap:12px}
+  .card-col{background:var(--panel);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow-sm)}
+
+  /* ---- nav rail ---- */
+  .rail{width:64px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:14px 0}
+  .rail .grp{display:flex;flex-direction:column;align-items:center;gap:5px}
+  .logo{width:42px;height:42px;border-radius:13px;background:linear-gradient(160deg,var(--violet2),var(--violet));
+    color:#fff;display:grid;place-items:center;box-shadow:var(--shadow-sm);margin-bottom:10px}
+  .logo svg{width:22px;height:22px}
+  .rail-item{width:44px;height:44px;border-radius:13px;border:1px solid transparent;background:transparent;
+    color:var(--muted);display:grid;place-items:center;transition:.15s;position:relative}
+  .rail-item:hover{background:var(--panel2);color:var(--txt)}
+  .rail-item.active{background:var(--violetSoft);color:var(--violet2);border-color:var(--violet)}
+  .rail-item svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:2}
+  .rail-item::after{content:attr(data-tip);position:absolute;left:52px;top:50%;transform:translateY(-50%) scale(.96);
+    background:var(--panel3);color:var(--txt);border:1px solid var(--line);padding:6px 10px;border-radius:9px;
+    font-size:12px;white-space:nowrap;opacity:0;pointer-events:none;transition:.12s;z-index:40;box-shadow:var(--shadow-sm)}
+  .rail-item:hover::after{opacity:1;transform:translateY(-50%) scale(1)}
+
+  /* ---- columnas ---- */
+  .col-list{width:328px;min-width:290px;display:flex;flex-direction:column;overflow:hidden}
+  .col-chat{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden}
+  .col-user{width:344px;min-width:300px;overflow-y:auto}
+
+  /* ---- stats + lista ---- */
+  .lhead{padding:15px 16px;border-bottom:1px solid var(--line)}
+  .brand{display:flex;align-items:center;justify-content:space-between;margin-bottom:13px}
+  .brand b{font-size:16px;letter-spacing:.4px}
+  .brand b span{color:var(--violet2)}
+  .brand .cap{color:var(--muted);font-size:12px}
+  .saldo-int{background:linear-gradient(160deg, var(--greenSoft), transparent);
+    border:1px solid rgba(47,208,122,.32);border-radius:15px;padding:13px 15px}
+  .saldo-int .lbl{font-size:10.5px;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);
+    display:flex;align-items:center;gap:7px}
+  .saldo-int .lbl svg{width:14px;height:14px;fill:none;stroke:var(--green);stroke-width:2}
+  .saldo-int .val{font-size:25px;font-weight:800;color:var(--green2);margin-top:3px;letter-spacing:.3px}
+  .saldo-int .glow-line{height:4px;border-radius:3px;margin-top:9px;
+    background:linear-gradient(90deg,var(--green),var(--green2),transparent)}
+  .mini-stats{display:flex;gap:8px;margin-top:10px}
+  .mini-stat{flex:1;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:9px 6px;text-align:center}
+  .mini-stat .k{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+  .mini-stat .v{font-size:15px;font-weight:800;margin-top:2px}
+  .mini-stat.us .v{color:var(--blue)} .mini-stat.fi .v{color:var(--green2)} .mini-stat.bo .v{color:var(--violet2)}
+
+  .subhead{padding:12px 16px 0}
+  .search{position:relative}
+  .search input{width:100%;padding:10px 12px 10px 36px;background:var(--panel2);border:1px solid var(--line);border-radius:11px;color:var(--txt);outline:none;transition:.15s}
+  .search input:focus{border-color:var(--violet);box-shadow:0 0 0 3px var(--violetSoft)}
+  .search svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);opacity:.5;width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2}
+  .tabs{display:flex;gap:6px;margin-top:11px;flex-wrap:wrap}
+  .tab{background:transparent;border:1px solid var(--line);color:var(--muted);padding:6px 12px;border-radius:20px;font-size:12.5px;transition:.15s}
+  .tab.on{background:var(--violetSoft);border-color:var(--violet);color:var(--violet2);font-weight:600}
+  .list{flex:1;overflow-y:auto;padding:8px 8px 8px;margin-top:8px}
+  .conv{display:flex;gap:11px;padding:11px 12px;border-radius:14px;cursor:pointer;position:relative;transition:.12s;margin-bottom:2px}
+  .conv:hover{background:var(--panel2)}
+  .conv.sel{background:var(--violetSoft);box-shadow:inset 0 0 0 1px var(--violet)}
+  .av{width:40px;height:40px;border-radius:13px;flex:none;display:grid;place-items:center;font-weight:800;font-size:13px;color:#fff;box-shadow:var(--shadow-sm)}
+  .av.anon{background:var(--panel3)!important;color:var(--muted)}
+  .conv .mid{min-width:0;flex:1}
+  .conv .n{display:flex;justify-content:space-between;gap:8px;align-items:center}
+  .conv .n b{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center}
+  .conv .n .t{color:var(--muted2);font-size:11.5px;white-space:nowrap}
+  .conv .pv{color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px}
+  .badge{background:var(--violet);color:#fff;font-size:11px;font-weight:800;min-width:19px;height:19px;border-radius:10px;display:grid;place-items:center;padding:0 5px}
+  .est-dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:6px;flex:none}
+  .est-abierta{background:var(--green);box-shadow:0 0 6px var(--green)} .est-pendiente{background:var(--orange)} .est-cerrada{background:var(--muted2)}
+
+  /* ---- chat ---- */
+  .chead{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .chead .who{display:flex;align-items:center;gap:11px}
+  .chead .who .av{width:38px;height:38px}
+  .chead .who b{font-size:15.5px}
+  .chead .who .sub{color:var(--muted);font-size:12.5px}
+  .estbtns{display:flex;gap:6px}
+  .estbtns button{background:var(--panel2);border:1px solid var(--line);color:var(--muted);padding:7px 13px;border-radius:9px;font-size:12.5px;transition:.15s}
+  .estbtns button:hover{color:var(--txt)}
+  .estbtns button.on{border-color:var(--violet);color:var(--violet2);background:var(--violetSoft);font-weight:600}
+  .thread{flex:1;overflow-y:auto;padding:22px 20px;display:flex;flex-direction:column;gap:13px}
+  .row{display:flex;max-width:76%}
+  .row.user{align-self:flex-start} .row.bot{align-self:flex-end} .row.agente{align-self:center;max-width:92%}
+  .bub{padding:11px 14px;border-radius:16px;font-size:14px;white-space:pre-wrap;word-break:break-word;box-shadow:var(--shadow-sm)}
+  .row.user .bub{background:var(--panel2);border:1px solid var(--line);border-bottom-left-radius:5px}
+  .row.bot .bub{background:linear-gradient(180deg,var(--violet),#6a5be8);color:#fff;border-bottom-right-radius:5px}
+  .row.agente .bub{background:var(--greenSoft);border:1px solid var(--green);color:var(--green2);font-size:13px;text-align:center;font-weight:600;display:flex;align-items:center;gap:7px}
+  .row.agente .bub svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;flex:none}
+  .row .meta{font-size:10.5px;color:var(--muted2);margin-top:5px;padding:0 4px}
+  .row.bot .meta{text-align:right}
+  .empty{flex:1;display:grid;place-items:center;color:var(--muted);text-align:center;padding:30px}
+  .empty svg{width:52px;height:52px;fill:none;stroke:currentColor;stroke-width:1.5;opacity:.4;margin-bottom:12px}
+
+  /* ---- ficha usuario ---- */
+  .uhead{padding:22px 18px 18px;text-align:center;border-bottom:1px solid var(--line)}
+  .uhead .bigav{width:66px;height:66px;border-radius:20px;margin:0 auto 12px;display:grid;place-items:center;font-weight:800;font-size:24px;color:#fff;box-shadow:var(--shadow)}
+  .uhead h3{margin:0;font-size:18px}
+  .uhead .u{color:var(--violet2);font-size:13px;margin-top:3px;font-weight:600}
+  .flags{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:12px}
+  .flag{font-size:11px;padding:4px 9px;border-radius:8px;background:var(--panel2);color:var(--muted);border:1px solid var(--line);display:flex;align-items:center;gap:4px}
+  .flag svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2.5}
+  .flag.on{color:var(--green2);border-color:var(--green);background:var(--greenSoft)}
+  .flag.ban{color:var(--red);border-color:var(--red);background:var(--redSoft)}
+  .saldos{display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px;padding:16px 15px}
+  .sbox{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:13px 6px;text-align:center;position:relative;overflow:hidden}
+  .sbox .k{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
+  .sbox .v{font-size:19px;font-weight:800;margin-top:4px;letter-spacing:.2px}
+  .sbox.fichas .v{color:var(--green2)} .sbox.bono .v{color:var(--violet2)} .sbox.saldo .v{color:var(--txt)}
+  .sbox::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;opacity:.85}
+  .sbox.saldo::after{background:var(--blue)} .sbox.fichas::after{background:var(--green)} .sbox.bono::after{background:var(--violet)}
+  .sec{padding:4px 16px 18px}
+  .sec h4{margin:16px 0 9px;font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px}
+  .acts{display:flex;flex-direction:column;gap:9px}
+  .act{border:none;border-radius:13px;padding:13px;font-weight:700;font-size:14px;color:#fff;display:flex;align-items:center;justify-content:center;gap:9px;box-shadow:var(--shadow-sm);transition:.15s}
+  .act svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2}
+  .act:hover{filter:brightness(1.07)} .act:active{transform:translateY(1px)}
+  .act.fichas{background:linear-gradient(180deg,var(--green2),var(--green))}
+  .act.bono{background:linear-gradient(180deg,var(--orange2),var(--orange))}
+  textarea{width:100%;min-height:74px;resize:vertical;background:var(--panel2);border:1px solid var(--line);border-radius:12px;color:var(--txt);padding:11px;outline:none;font-family:inherit;transition:.15s}
+  textarea:focus{border-color:var(--violet);box-shadow:0 0 0 3px var(--violetSoft)}
+  .mini{background:var(--panel2);border:1px solid var(--line);color:var(--muted);padding:8px 14px;border-radius:10px;font-size:12.5px;margin-top:9px;transition:.15s;display:inline-flex;align-items:center;gap:6px}
+  .mini:hover{border-color:var(--violet);color:var(--txt)}
+  .mini svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2}
+  .movs{display:flex;flex-direction:column;gap:7px}
+  .mov{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;padding:9px 12px;background:var(--panel2);border:1px solid var(--line);border-radius:11px}
+  .mov .pos{color:var(--green2);font-weight:700} .mov .neg{color:var(--red);font-weight:700}
+  .mov .tp{color:var(--muted)}
+  .nouser{padding:34px 20px;text-align:center;color:var(--muted);font-size:13.5px}
+
+  /* ---- modal / toast ---- */
+  .back{position:fixed;inset:0;background:rgba(6,9,20,.66);backdrop-filter:blur(3px);display:none;place-items:center;z-index:50;padding:20px}
+  .back.on{display:grid}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:24px;width:100%;max-width:370px;box-shadow:var(--shadow)}
+  .modal h3{margin:0 0 4px;font-size:18px} .modal p{color:var(--muted);margin:0 0 16px;font-size:13px}
+  .modal label{display:block;font-size:12px;color:var(--muted);margin:12px 0 5px}
+  .modal input{width:100%;padding:12px;background:var(--panel2);border:1px solid var(--line);border-radius:11px;color:var(--txt);outline:none}
+  .modal input:focus{border-color:var(--violet);box-shadow:0 0 0 3px var(--violetSoft)}
+  .mbtns{display:flex;gap:9px;margin-top:20px}
+  .mbtns button{flex:1;padding:12px;border-radius:11px;border:none;font-weight:700;font-size:14px}
+  .mbtns .ok{background:linear-gradient(180deg,var(--violet2),var(--violet));color:#fff}
+  .mbtns .no{background:transparent;border:1px solid var(--line);color:var(--muted)}
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--panel);border:1px solid var(--violet);color:var(--txt);padding:12px 20px;border-radius:12px;z-index:60;opacity:0;transition:.25s;pointer-events:none;box-shadow:var(--shadow)}
+  .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+  .sp{display:inline-block;width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--violet);border-radius:50%;animation:sp .7s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  /* ---- composer (responder) ---- */
+  .composer{border-top:1px solid var(--line);padding:12px 14px;display:flex;align-items:flex-end;gap:9px}
+  .composer .att,.composer .send{width:42px;height:42px;flex:none;border-radius:12px;display:grid;place-items:center;transition:.15s}
+  .composer .att{border:1px solid var(--line);background:var(--panel2);color:var(--muted)}
+  .composer .att:hover{border-color:var(--violet);color:var(--txt)}
+  .composer .send{border:none;background:linear-gradient(180deg,var(--violet2),var(--violet));color:#fff}
+  .composer .send:hover{filter:brightness(1.07)}
+  .composer svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:2}
+  .composer textarea{flex:1;min-height:42px;max-height:130px;padding:11px 13px;border-radius:12px;border:1px solid var(--line);background:var(--panel2);color:var(--txt);resize:none;outline:none;font-family:inherit;line-height:1.35}
+  .composer textarea:focus{border-color:var(--violet);box-shadow:0 0 0 3px var(--violetSoft)}
+
+  /* ---- adjuntos en mensajes ---- */
+  .att-img{max-width:230px;max-height:230px;border-radius:11px;display:block;margin-top:5px;cursor:pointer;border:1px solid rgba(255,255,255,.12)}
+  .att-pdf{display:inline-flex;align-items:center;gap:8px;margin-top:5px;padding:9px 12px;border-radius:10px;background:rgba(0,0,0,.16);color:inherit;text-decoration:none;font-size:13px;border:1px solid rgba(255,255,255,.14)}
+  .row.user .att-pdf{background:var(--panel3);border-color:var(--line)}
+  .att-pdf svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;flex:none}
+
+  /* ---- anclar ---- */
+  .pinbtn{background:var(--panel2);border:1px solid var(--line);color:var(--muted);width:34px;height:34px;border-radius:9px;display:grid;place-items:center;transition:.15s}
+  .pinbtn:hover{color:var(--txt)} .pinbtn.on{color:var(--orange2);border-color:var(--orange);background:rgba(245,166,35,.12)}
+  .pinbtn svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2}
+  .pin-mini{color:var(--orange2);display:inline-flex;margin-right:5px;flex:none}
+  .pin-mini svg{width:12px;height:12px;fill:currentColor;stroke:none}
+
+  /* ---- 4 botones de saldo ---- */
+  .acts.grid2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .act.saldo{background:linear-gradient(180deg,var(--green2),var(--green))}
+  .act.retirar{background:linear-gradient(180deg,#f0716f,var(--red))}
+  .act.bono{background:linear-gradient(180deg,var(--orange2),var(--orange))}
+  .act.ver{background:transparent;border:1px solid var(--green);color:var(--green2)}
+  .act.ver:hover{background:var(--greenSoft)}
+
+  /* ---- notificacion push ---- */
+  .act.notif{background:linear-gradient(180deg,var(--violet2),var(--violet))}
+  .chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:4px}
+  .chip{padding:7px 11px;border-radius:9px;border:1px solid var(--line);background:var(--panel2);
+        color:var(--muted);font-size:12.5px;transition:.15s}
+  .chip:hover{color:var(--txt);border-color:var(--violet)}
+  .chip.on{color:#fff;border-color:var(--violet);background:var(--violet)}
+  .modal textarea{min-height:78px}
+  .todos{display:flex;align-items:center;gap:9px;margin-top:14px;padding:11px 12px;border-radius:11px;
+         background:var(--panel2);border:1px solid var(--line);cursor:pointer}
+  .todos input{width:auto;flex:none;accent-color:var(--violet)}
+  .todos span{font-size:12.5px;color:var(--muted);line-height:1.3}
+  .todos b{color:var(--txt);display:block;font-size:13px}
+
+  /* (mbar viejo: ya no se usa; el rail hace de barra en mobile) */
+  .mbar{display:none}
+  .btn-info{display:none!important}
+  .drawer-back{display:none}
+  .cerrar-drawer{position:absolute;top:12px;left:12px;z-index:2;width:34px;height:34px;border-radius:10px;
+    border:1px solid var(--line);background:var(--panel2);color:var(--muted);display:none;place-items:center;font-size:15px}
+  .cerrar-drawer:hover{color:var(--txt)}
+
+  /* ===== Tablet/mobile: la ficha del usuario pasa a cajón lateral ===== */
+  @media(max-width:1040px){
+    .col-list{width:46%;min-width:0}
+    .btn-info{display:grid!important}
+    .col-user{
+      position:fixed;top:0;right:0;bottom:0;width:min(360px,92vw);z-index:70;
+      border-radius:0;box-shadow:var(--shadow);overflow-y:auto;
+      transform:translateX(102%);transition:transform .28s cubic-bezier(.22,1,.36,1);
+    }
+    .app.info .col-user{transform:translateX(0)}
+    .app.info .drawer-back{display:block;position:fixed;inset:0;background:rgba(6,9,20,.5);z-index:69}
+    .col-user .cerrar-drawer{display:grid}
+  }
+
+  /* ===== Celular: una sola columna; el rail arriba en horizontal ===== */
+  @media(max-width:760px){
+    .app{flex-direction:column;padding:8px;gap:8px}
+    .rail{width:auto;flex-direction:row;align-items:center;justify-content:flex-start;
+      padding:7px 9px;gap:6px;overflow-x:auto}
+    .rail::-webkit-scrollbar{display:none}
+    .rail .grp{flex-direction:row;gap:6px}
+    .rail .logo{width:36px;height:36px;margin:0 6px 0 0}
+    .rail-item{width:40px;height:40px} .rail-item::after{display:none}
+    .col-list,.col-chat{width:100%;min-width:0;flex:1;min-height:0}
+    .app.viewing .col-list{display:none}
+    .app:not(.viewing) .col-chat{display:none}
+    .lhead{padding:12px 14px} .subhead{padding:10px 14px 0}
+    .thread{padding:16px 14px} .chead{padding:12px 14px}
+    .col-user{width:min(360px,94vw)}
+    .saldos{padding:14px 13px} .sec{padding:4px 14px 18px}
+  }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- ===== barra mobile ===== -->
+  <div class="mbar card-col">
+    <b>gana<span>mos</span></b>
+    <button class="icon" id="themeBtn2" title="Tema"></button>
+  </div>
+
+  <!-- ===== NAV RAIL ===== -->
+  <nav class="rail card-col">
+    <div class="grp">
+      <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+      <button class="rail-item active" data-nav="chats" data-tip="Conversaciones"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>
+      <button class="rail-item" data-nav="usuarios" data-tip="Usuarios"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></button>
+      <button class="rail-item" data-nav="cargas" data-tip="Cargas / Recargas"><svg viewBox="0 0 24 24"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></button>
+      <button class="rail-item" data-nav="transacciones" data-tip="Transacciones"><svg viewBox="0 0 24 24"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></button>
+      <button class="rail-item" data-nav="retiros" data-tip="Retiros pendientes"><svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg></button>
+      <button class="rail-item" data-nav="comprobantes" data-tip="Comprobantes"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg></button>
+      <button class="rail-item" data-nav="push" data-tip="Push & Notificaciones"><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></button>
+    </div>
+    <div class="grp">
+      <button class="rail-item" data-nav="config" data-tip="Configuración"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+      <button class="rail-item" id="themeBtn" data-tip="Tema"></button>
+    </div>
+  </nav>
+
+  <!-- ===== Lista + stats ===== -->
+  <aside class="col-list card-col">
+    <div class="lhead">
+      <div class="brand"><b>gana<span>mos</span></b><span class="cap" id="cap"></span></div>
+      <div class="saldo-int">
+        <div class="lbl"><svg viewBox="0 0 24 24"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> Saldo interno</div>
+        <div class="val" id="saldoInt">$0</div>
+        <div class="glow-line"></div>
+        <div class="mini-stats">
+          <div class="mini-stat us"><div class="k">Usuarios</div><div class="v" id="stUsuarios">0</div></div>
+          <div class="mini-stat fi"><div class="k">Fichas</div><div class="v" id="stFichas">0</div></div>
+          <div class="mini-stat bo"><div class="k">Bonos</div><div class="v" id="stBonos">0</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="subhead">
+      <label class="search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="q" placeholder="Buscar usuario o texto…" autocomplete="off">
+      </label>
+      <div class="tabs" id="tabs">
+        <button class="tab on" data-e="todas">Todas</button>
+        <button class="tab" data-e="abierta">Abiertas</button>
+        <button class="tab" data-e="pendiente">Pendientes</button>
+        <button class="tab" data-e="cerrada">Cerradas</button>
+      </div>
+    </div>
+    <div class="list" id="list"></div>
+  </aside>
+
+  <!-- ===== Hilo ===== -->
+  <main class="col-chat card-col">
+    <div id="chatEmpty" class="empty">
+      <div>
+        <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <div>Elegí una conversación de la izquierda</div>
+      </div>
+    </div>
+    <div id="chatView" style="display:none;flex:1;flex-direction:column;min-height:0">
+      <div class="chead">
+        <div class="who">
+          <button class="mini" id="volver" style="display:none;margin:0">←</button>
+          <div class="av" id="chatAv" style="display:none">?</div>
+          <div>
+            <b id="chatWho">—</b>
+            <div class="sub" id="chatSub"></div>
+          </div>
+        </div>
+        <div class="estbtns" id="estbtns">
+          <button class="pinbtn btn-info" id="btnInfo" title="Ver info del usuario"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></button>
+          <button class="pinbtn" id="btnFijar" title="Anclar"><svg viewBox="0 0 24 24"><path d="M12 17v5M9 3h6l-1 7 3 3v1H7v-1l3-3-1-7z"/></svg></button>
+          <button data-e="abierta">Abierta</button>
+          <button data-e="pendiente">Pendiente</button>
+          <button data-e="cerrada">Cerrada</button>
+        </div>
+      </div>
+      <div class="thread" id="thread"></div>
+      <div class="composer">
+        <input type="file" id="fileAg" accept="image/*,application/pdf" hidden>
+        <button class="att" id="btnAttach" title="Adjuntar"><svg viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3 3 0 0 1 4.24 4.24l-9.2 9.19a1 1 0 0 1-1.41-1.41l8.49-8.48"/></svg></button>
+        <textarea id="respText" rows="1" placeholder="Escribí una respuesta al cliente…"></textarea>
+        <button class="send" id="btnResp" title="Enviar"><svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+      </div>
+    </div>
+  </main>
+
+  <!-- ===== Ficha ===== -->
+  <aside class="col-user card-col" id="userPane">
+    <button class="cerrar-drawer" id="cerrarDrawer" aria-label="Cerrar">✕</button>
+    <div class="nouser" id="noUser">Sin conversación seleccionada.</div>
+    <div id="userCard" style="display:none">
+      <div class="uhead">
+        <div class="bigav" id="uAv">?</div>
+        <h3 id="uNombre">—</h3>
+        <div class="u" id="uUser"></div>
+        <div class="flags" id="uFlags"></div>
+      </div>
+      <div class="saldos">
+        <div class="sbox saldo"><div class="k">Saldo</div><div class="v" id="uSaldo">$0</div></div>
+        <div class="sbox fichas"><div class="k">Fichas</div><div class="v" id="uFichas">0</div></div>
+        <div class="sbox bono"><div class="k">Bonos</div><div class="v" id="uBonos">0</div></div>
+      </div>
+      <div class="sec">
+        <h4>Acciones</h4>
+        <div class="acts grid2">
+          <button class="act saldo" id="btnSaldo"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg> Cargar saldo</button>
+          <button class="act retirar" id="btnRetiro"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12h8"/></svg> Retirar</button>
+        </div>
+        <div class="acts" style="margin-top:9px">
+          <button class="act bono" id="btnBono"><svg viewBox="0 0 24 24"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg> Cargar bono</button>
+          <button class="act ver" id="btnVer"><svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg> Ver balance</button>
+        </div>
+        <div class="acts" style="margin-top:9px">
+          <button class="act notif" id="btnNotif"><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg> Notificar al celular</button>
+        </div>
+        <h4>Notas internas</h4>
+        <textarea id="notas" placeholder="Notas que solo ve el equipo…"></textarea>
+        <button class="mini" id="btnNota"><svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg> Guardar nota</button>
+        <h4>Historial</h4>
+        <div class="movs" id="movs"><div style="color:var(--muted);font-size:12.5px">Sin movimientos.</div></div>
+      </div>
+    </div>
+  </aside>
+
+  <div class="drawer-back" id="drawerBack"></div>
+</div>
+
+<div class="back" id="back">
+  <div class="modal">
+    <h3 id="mTitulo">Cargar fichas</h3>
+    <p id="mSub">Se acredita al instante en la cuenta del jugador.</p>
+    <label>Cantidad</label>
+    <input id="mMonto" type="number" inputmode="numeric" placeholder="Ej: 500">
+    <label>Motivo (opcional)</label>
+    <input id="mMotivo" type="text" placeholder="Ej: promo, ajuste, regalo…">
+    <div class="mbtns">
+      <button class="no" id="mCancel">Cancelar</button>
+      <button class="ok" id="mOk">Cargar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Notificación push. Va a la cola: el celular la levanta cuando sondea. -->
+<div class="back" id="backN">
+  <div class="modal">
+    <h3>Notificar al celular</h3>
+    <p id="nSub">Le llega como notificación de Android.</p>
+    <label>Plantilla</label>
+    <div class="chips" id="nChips"></div>
+    <label>Título</label>
+    <input id="nTitulo" type="text" maxlength="120" placeholder="🎁 ¡Te regalamos 500 fichas!">
+    <label>Mensaje</label>
+    <textarea id="nCuerpo" maxlength="400" placeholder="Entrá a la app y jugalas antes de que se venzan."></textarea>
+    <label class="todos" for="nTodos">
+      <input type="checkbox" id="nTodos">
+      <span><b>Mandársela a todos</b>Todos los jugadores con la app instalada.</span>
+    </label>
+    <div class="mbtns">
+      <button class="no" id="nCancel">Cancelar</button>
+      <button class="ok" id="nOk">Enviar</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+  const API = "/api/crm.php";
+  const $ = s => document.querySelector(s);
+  const nf = new Intl.NumberFormat("es-AR");
+  const money = n => "$" + nf.format(Math.round(n||0));
+  const esc = s => String(s==null?"":s).replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));
+
+  const SVG = {
+    moon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>',
+    sun:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></svg>',
+    check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg>',
+    gift:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>',
+    pdf:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>',
+    pin:'<svg viewBox="0 0 24 24"><path d="M9 3h6l-1 6 3 3v1.5h-4V21h-2v-7.5H7V12l3-3z"/></svg>'
+  };
+
+  const st = { q:"", estado:"todas", convId:0, usuario:"", modo:"ficha" };
+  let debounce, pollList, pollConv;
+
+  // ---------- tema ----------
+  function aplicarTema(t){
+    document.documentElement.setAttribute("data-theme", t);
+    localStorage.setItem("goldpaw_theme", t);
+    const ic = t==="dark" ? SVG.moon : SVG.sun;
+    $("#themeBtn").innerHTML = ic;
+    const b2 = $("#themeBtn2"); if(b2) b2.innerHTML = ic;
+  }
+  function toggleTema(){ aplicarTema(document.documentElement.getAttribute("data-theme")==="dark" ? "light" : "dark"); }
+  aplicarTema(document.documentElement.getAttribute("data-theme") || "dark");
+  $("#themeBtn").addEventListener("click", toggleTema);
+  const _b2 = $("#themeBtn2"); if(_b2) _b2.addEventListener("click", toggleTema);
+
+  // ---------- nav rail ----------
+  document.querySelectorAll(".rail-item[data-nav]").forEach(el=>{
+    el.addEventListener("click", ()=>{
+      const nav = el.getAttribute("data-nav");
+      if(nav==="chats") return;
+      if(nav==="usuarios"){ location.href = "admin.html"; return; }
+      // Desde el rail siempre es masiva: no hay una conversación de contexto.
+      if(nav==="push"){ abrirNotif(true); return; }
+      toast("Sección en preparación");
+    });
+  });
+
+  function colorDe(nombre){
+    let h=0; const s=String(nombre||"?");
+    for(let i=0;i<s.length;i++) h=(h*31 + s.charCodeAt(i))|0;
+    const hue=((h%360)+360)%360;
+    return `linear-gradient(160deg, hsl(${hue} 70% 62%), hsl(${(hue+35)%360} 68% 48%))`;
+  }
+  function hace(iso){
+    if(!iso) return "";
+    const d = new Date(iso.replace(" ","T")); const s = (Date.now()-d.getTime())/1000;
+    if(s<60) return "recién"; if(s<3600) return Math.floor(s/60)+"m";
+    if(s<86400) return Math.floor(s/3600)+"h"; return Math.floor(s/86400)+"d";
+  }
+  function inic(nombre){ const n=(nombre||"").trim(); return n? n.slice(0,2).toUpperCase() : "?"; }
+  function toast(t){ const el=$("#toast"); el.textContent=t; el.classList.add("on"); setTimeout(()=>el.classList.remove("on"),2300); }
+
+  async function jget(params){
+    const r = await fetch(API + "?" + new URLSearchParams(params));
+    if(!r.ok){ let d={}; try{d=await r.json()}catch(e){} const e=new Error(d.detalle||("HTTP "+r.status)); e.data=d; throw e; }
+    return r.json();
+  }
+  async function jpost(data){
+    const r = await fetch(API, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data) });
+    return r.json();
+  }
+
+  function pintarStats(r){
+    $("#cap").textContent = `${r.total||0} · ${r.abiertas||0} abiertas`;
+    $("#saldoInt").textContent = money(r.saldo_interno);
+    $("#stUsuarios").textContent = nf.format(r.usuarios||0);
+    $("#stFichas").textContent = nf.format(r.fichas_total||0);
+    $("#stBonos").textContent = nf.format(r.bonos_total||0);
+  }
+
+  // ---------- lista ----------
+  async function cargarLista(){
+    let d;
+    try{ d = await jget({accion:"conversaciones", q:st.q, estado:st.estado}); }
+    catch(e){ $("#list").innerHTML = `<div class="nouser">Error al cargar.<br><small>${esc(e.message)}</small></div>`; return; }
+    if(!d.ok){ $("#list").innerHTML = `<div class="nouser">${esc(d.detalle||d.error||"Error")}</div>`; return; }
+
+    if(d.resumen) pintarStats(d.resumen);
+
+    if(!d.items.length){ $("#list").innerHTML = `<div class="nouser">No hay conversaciones${st.q?" para esa búsqueda":""}.</div>`; return; }
+    $("#list").innerHTML = d.items.map(c=>{
+      const nombre = c.usuario || "Anónimo";
+      const anon = c.usuario ? "" : "anon";
+      const bg = c.usuario ? `style="background:${colorDe(c.usuario)}"` : "";
+      const nl = c.no_leidos>0 ? `<span class="badge">${c.no_leidos}</span>` : "";
+      const pin = c.fijada ? `<span class="pin-mini">${SVG.pin}</span>` : "";
+      return `<div class="conv ${c.id===st.convId?"sel":""}" data-id="${c.id}">
+        <div class="av ${anon}" ${bg}>${esc(inic(c.usuario||"?"))}</div>
+        <div class="mid">
+          <div class="n"><b>${pin}<span class="est-dot est-${esc(c.estado)}"></span>${esc(nombre)}</b><span class="t">${hace(c.actualizada_en)}</span></div>
+          <div class="pv">${esc(c.preview||"—")}</div>
+        </div>${nl}
+      </div>`;
+    }).join("");
+    $("#list").querySelectorAll(".conv").forEach(el=>{
+      el.addEventListener("click", ()=> abrir(+el.getAttribute("data-id")));
+    });
+  }
+
+  // ---------- abrir ----------
+  async function abrir(id){
+    st.convId = id;
+    $("#app").classList.add("viewing");
+    $("#chatEmpty").style.display="none";
+    $("#chatView").style.display="flex";
+    $("#volver").style.display = window.innerWidth<=760 ? "inline-flex" : "none";
+    $("#app").classList.remove("info");
+    document.querySelectorAll(".conv").forEach(c=>c.classList.toggle("sel", +c.getAttribute("data-id")===id));
+
+    let d;
+    try{ d = await jget({accion:"conversacion", id}); }
+    catch(e){ $("#thread").innerHTML=`<div class="nouser">Error: ${esc(e.message)}</div>`; return; }
+    if(!d.ok){ $("#thread").innerHTML=`<div class="nouser">${esc(d.detalle||d.error)}</div>`; return; }
+
+    const c = d.conversacion;
+    st.usuario = c.usuario || "";
+    const av = $("#chatAv");
+    if(c.usuario){ av.style.display="grid"; av.textContent=inic(c.usuario); av.style.background=colorDe(c.usuario); }
+    else av.style.display="none";
+    $("#chatWho").textContent = c.usuario || "Conversación anónima";
+    $("#chatSub").textContent = c.usuario ? ("@"+c.usuario) : ("sesión " + (c.session_id||"").slice(0,8));
+    $("#estbtns").querySelectorAll("button[data-e]").forEach(b=>b.classList.toggle("on", b.getAttribute("data-e")===c.estado));
+    $("#btnFijar").classList.toggle("on", !!c.fijada);
+
+    $("#thread").innerHTML = d.mensajes.map(m=>{
+      const cls = m.rol==="user" ? "user" : (m.rol==="agente" ? "agente" : "bot");
+      let inner;
+      if(m.adjunto && m.adjunto.url){
+        inner = m.adjunto.tipo==="imagen"
+          ? `<a href="${esc(m.adjunto.url)}" target="_blank"><img class="att-img" src="${esc(m.adjunto.url)}" alt=""></a>`
+          : `<a class="att-pdf" href="${esc(m.adjunto.url)}" target="_blank">${SVG.pdf}${esc(m.adjunto.nombre||"Comprobante.pdf")}</a>`;
+      } else {
+        const ic = (m.rol==="agente" && /^(Cargó|Carga|Retiro)/.test(m.texto||"")) ? SVG.gift : "";
+        inner = ic + esc(m.texto);
+      }
+      return `<div class="row ${cls}"><div><div class="bub">${inner}</div><div class="meta">${hace(m.creado_en)}</div></div></div>`;
+    }).join("") || `<div class="nouser">Conversación vacía.</div>`;
+    const th=$("#thread"); th.scrollTop = th.scrollHeight;
+
+    pintarUsuario(d.usuario, d.movimientos, c.notas);
+  }
+
+  // ---------- ficha ----------
+  function pintarUsuario(u, movs, notas){
+    if(!$("#userCard")) return;
+    if(!u){
+      $("#userCard").style.display="none";
+      $("#noUser").style.display="block";
+      $("#noUser").textContent = st.usuario ? `El usuario "${st.usuario}" no está en la base de usuarios.` : "Esta conversación todavía no tiene un usuario vinculado.";
+      return;
+    }
+    $("#noUser").style.display="none";
+    $("#userCard").style.display="block";
+    $("#uAv").textContent = inic(u.nombre_usuario);
+    $("#uAv").style.background = colorDe(u.nombre_usuario);
+    $("#uNombre").textContent = ((u.nombre||"")+" "+(u.apellido||"")).trim() || u.nombre_usuario;
+    $("#uUser").textContent = "@"+u.nombre_usuario;
+    $("#uSaldo").textContent = money(u.saldo);
+    $("#uFichas").textContent = nf.format(u.fichas||0);
+    $("#uBonos").textContent = nf.format(u.bonus||0);
+
+    const flags=[];
+    if(u.is_banned) flags.push(`<span class="flag ban">Baneado</span>`);
+    flags.push(`<span class="flag ${u.tiene_app?"on":""}">${u.tiene_app?SVG.check:""}App</span>`);
+    flags.push(`<span class="flag ${u.notificaciones?"on":""}">${u.notificaciones?SVG.check:""}Notif.</span>`);
+    if(u.ganamos_id) flags.push(`<span class="flag">ID ${esc(u.ganamos_id)}</span>`);
+    $("#uFlags").innerHTML = flags.join("");
+
+    $("#notas").value = notas || "";
+    if(!movs || !movs.length){
+      $("#movs").innerHTML = `<div style="color:var(--muted);font-size:12.5px">Sin movimientos.</div>`;
+    } else {
+      $("#movs").innerHTML = movs.map(m=>{
+        const signo = m.monto>0?"+":""; const cls=m.monto>0?"pos":"neg";
+        const et = m.tipo==="bono"?"bono":"fichas";
+        return `<div class="mov"><span class="tp">${hace(m.creado_en)} · ${esc(et)}${m.motivo?" · "+esc(m.motivo):""}</span><span class="${cls}">${signo}${nf.format(m.monto)}</span></div>`;
+      }).join("");
+    }
+  }
+
+  // ---------- eventos ----------
+  $("#q").addEventListener("input", e=>{ clearTimeout(debounce); debounce=setTimeout(()=>{ st.q=e.target.value.trim(); cargarLista(); },300); });
+  $("#tabs").addEventListener("click", e=>{ const b=e.target.closest(".tab"); if(!b)return;
+    document.querySelectorAll("#tabs .tab").forEach(x=>x.classList.remove("on")); b.classList.add("on");
+    st.estado=b.getAttribute("data-e"); cargarLista(); });
+  $("#estbtns").addEventListener("click", async e=>{
+    const b=e.target.closest("button"); if(!b||!st.convId)return;
+    await jpost({accion:"estado", id:st.convId, estado:b.getAttribute("data-e")});
+    $("#estbtns").querySelectorAll("button").forEach(x=>x.classList.toggle("on", x===b));
+    cargarLista();
+  });
+  $("#volver").addEventListener("click", ()=>{ $("#app").classList.remove("viewing"); });
+  $("#btnInfo").addEventListener("click", ()=> $("#app").classList.add("info"));
+  const cerrarInfo = ()=> $("#app").classList.remove("info");
+  $("#drawerBack").addEventListener("click", cerrarInfo);
+  $("#cerrarDrawer").addEventListener("click", cerrarInfo);
+  $("#btnNota").addEventListener("click", async ()=>{
+    if(!st.convId) return;
+    const d = await jpost({accion:"nota", id:st.convId, notas:$("#notas").value});
+    toast(d.ok ? "Nota guardada" : "No se pudo guardar");
+  });
+
+  // ---------- anclar ----------
+  $("#btnFijar").addEventListener("click", async ()=>{
+    if(!st.convId) return;
+    const nueva = !$("#btnFijar").classList.contains("on");
+    const d = await jpost({accion:"fijar", id:st.convId, fijar:nueva});
+    if(d.ok){ $("#btnFijar").classList.toggle("on", d.fijada); cargarLista(); }
+  });
+
+  // ---------- responder + adjuntar ----------
+  function autoGrow(t){ t.style.height="auto"; t.style.height=Math.min(t.scrollHeight,130)+"px"; }
+  const rt = $("#respText");
+  rt.addEventListener("input", ()=>autoGrow(rt));
+  async function enviarResp(){
+    const t = rt.value.trim(); if(!t || !st.convId) return;
+    rt.value=""; autoGrow(rt);
+    const d = await jpost({accion:"responder", id:st.convId, texto:t});
+    if(d.ok) abrir(st.convId); else toast("No se pudo enviar");
+  }
+  $("#btnResp").addEventListener("click", enviarResp);
+  rt.addEventListener("keydown", e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); enviarResp(); }});
+  $("#btnAttach").addEventListener("click", ()=> $("#fileAg").click());
+  $("#fileAg").addEventListener("change", async e=>{
+    const f = e.target.files[0]; e.target.value=""; if(!f || !st.convId) return;
+    if(f.size > 8*1024*1024){ toast("El archivo supera 8 MB"); return; }
+    const fd = new FormData(); fd.append("archivo", f); fd.append("conversacion_id", st.convId);
+    toast("Subiendo…");
+    try{ const r = await fetch("/api/subir.php",{method:"POST",body:fd}); const d = await r.json();
+      if(d.ok) abrir(st.convId); else toast(d.error||"No se pudo subir");
+    }catch(err){ toast("No se pudo subir"); }
+  });
+
+  // ---------- modal cargar/retirar/bono ----------
+  function abrirModal(accion, titulo, ganamos){
+    if(!st.usuario){ toast("Esta conversación no tiene usuario vinculado"); return; }
+    st.accion = accion;
+    $("#mTitulo").textContent = titulo;
+    $("#mSub").textContent = `Para @${st.usuario}. ` + (ganamos ? "Se encola para ejecutar en ganamos." : "Se acredita al instante.");
+    $("#mMonto").value=""; $("#mMotivo").value="";
+    $("#back").classList.add("on"); setTimeout(()=>$("#mMonto").focus(),50);
+  }
+  $("#btnSaldo").addEventListener("click", ()=>abrirModal("cargar_saldo","Cargar saldo",true));
+  $("#btnRetiro").addEventListener("click", ()=>abrirModal("retirar_saldo","Retirar saldo",true));
+  $("#btnBono").addEventListener("click", ()=>abrirModal("cargar_bono","Cargar bono",false));
+  $("#btnVer").addEventListener("click", ()=>{
+    if(!st.usuario){ toast("Sin usuario vinculado"); return; }
+    toast(`Saldo ${$("#uSaldo").textContent} · Fichas ${$("#uFichas").textContent} · Bonos ${$("#uBonos").textContent}`);
+    abrir(st.convId);
+  });
+  $("#mCancel").addEventListener("click", ()=>$("#back").classList.remove("on"));
+  $("#back").addEventListener("click", e=>{ if(e.target===$("#back")) $("#back").classList.remove("on"); });
+  $("#mOk").addEventListener("click", async ()=>{
+    const monto = parseInt($("#mMonto").value,10);
+    if(!monto || monto<=0){ toast("Poné una cantidad válida"); return; }
+    const btn=$("#mOk"); btn.disabled=true; btn.textContent="…";
+    const d = await jpost({accion:st.accion, usuario:st.usuario, monto, motivo:$("#mMotivo").value, conversacion_id:st.convId});
+    btn.disabled=false; btn.textContent="Cargar";
+    if(d.ok){
+      $("#back").classList.remove("on");
+      if(st.accion==="cargar_bono") toast(`Bono cargado (nuevo: ${nf.format(d.saldo)})`);
+      else toast(st.accion==="retirar_saldo" ? "Retiro encolado en ganamos" : "Carga de saldo encolada en ganamos");
+      abrir(st.convId);
+    } else { toast(d.error || "No se pudo"); }
+  });
+
+  /* ---------- notificación push ----------
+     No se manda nada al celular en el momento: se encola y cada dispositivo la
+     levanta cuando sondea (el widget a los ~25 s con la app abierta, el worker
+     del APK hasta 15 min después si está cerrada). Por eso el botón dice
+     "encolada" y muestra a cuántos celulares activos le va a llegar. */
+  const PLANTILLAS = [
+    { n:"🎁 Bono",   tipo:"bono",   t:"🎁 ¡Te regalamos un bono!",       c:"Ya lo tenés acreditado en tu cuenta. Entrá y usalo." },
+    { n:"🪙 Fichas", tipo:"fichas", t:"🪙 ¡Fichas de regalo!",           c:"Te cargamos fichas para que sigas jugando." },
+    { n:"🎯 Ruleta", tipo:"ruleta", t:"🎯 Te queda un giro gratis",      c:"Entrá a la app y girá la ruleta antes de que termine el día." },
+    { n:"🔥 Promo",  tipo:"promo",  t:"🔥 Promo por tiempo limitado",    c:"Recargá hoy y llevate un extra. Escribinos por el chat." }
+  ];
+  let nTipo = "promo";
+
+  $("#nChips").innerHTML = PLANTILLAS
+    .map((p,i)=>`<button type="button" class="chip" data-i="${i}">${esc(p.n)}</button>`).join("");
+  $("#nChips").addEventListener("click", e=>{
+    const b = e.target.closest(".chip"); if(!b) return;
+    const p = PLANTILLAS[+b.getAttribute("data-i")];
+    document.querySelectorAll("#nChips .chip").forEach(x=>x.classList.toggle("on", x===b));
+    nTipo = p.tipo; $("#nTitulo").value = p.t; $("#nCuerpo").value = p.c;
+  });
+
+  /** `forzar` = entró por el rail, o sea sin conversación: solo masiva. */
+  function abrirNotif(forzar){
+    const todos = !!forzar || !st.usuario;
+    $("#nTodos").checked = todos;
+    $("#nTodos").disabled = todos;
+    $("#nSub").textContent = todos
+      ? "Le va a llegar a todos los jugadores que tengan la app instalada."
+      : `Para @${st.usuario}. Le llega como notificación de Android.`;
+    $("#nTitulo").value=""; $("#nCuerpo").value=""; nTipo="promo";
+    document.querySelectorAll("#nChips .chip").forEach(x=>x.classList.remove("on"));
+    $("#backN").classList.add("on");
+    setTimeout(()=>$("#nTitulo").focus(),50);
+  }
+  $("#btnNotif").addEventListener("click", ()=>abrirNotif(false));
+  $("#nCancel").addEventListener("click", ()=>$("#backN").classList.remove("on"));
+  $("#backN").addEventListener("click", e=>{ if(e.target===$("#backN")) $("#backN").classList.remove("on"); });
+  $("#nOk").addEventListener("click", async ()=>{
+    const titulo = $("#nTitulo").value.trim(), cuerpo = $("#nCuerpo").value.trim();
+    if(!titulo || !cuerpo){ toast("Poné título y mensaje"); return; }
+    const todos = $("#nTodos").checked;
+    if(!todos && !st.usuario){ toast("Esta conversación no tiene usuario vinculado"); return; }
+    if(todos && !confirm("Se la va a mandar a TODOS los jugadores con la app. ¿Seguro?")) return;
+
+    const btn=$("#nOk"); btn.disabled=true; btn.textContent="…";
+    // La masiva no deja rastro en ningún hilo: no es de esa conversación.
+    const d = await jpost({ accion:"notificar", todos, usuario:todos?undefined:st.usuario,
+                            titulo, cuerpo, tipo:nTipo,
+                            conversacion_id:todos?undefined:st.convId });
+    btn.disabled=false; btn.textContent="Enviar";
+    if(d.ok){
+      $("#backN").classList.remove("on");
+      toast(d.alcance ? `Encolada para ${d.alcance} celular${d.alcance===1?"":"es"}`
+                      : "Encolada — le llega cuando abra la app");
+      if(st.convId) abrir(st.convId);
+    } else { toast(d.error || "No se pudo enviar"); }
+  });
+
+  // ---------- arranque ----------
+  cargarLista();
+  pollList = setInterval(cargarLista, 12000);
+  pollConv = setInterval(()=>{ if(st.convId && !$("#back").classList.contains("on")) abrir(st.convId); }, 9000);
+})();
+</script>
+</body>
+</html>

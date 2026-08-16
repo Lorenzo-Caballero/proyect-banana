@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- El nombre que se ve: launcher, pantalla de carga, ajustes de Android.
+         El id del paquete sigue siendo com.goldpaw.app y NO se toca: cambiarlo
+         haria que Android trate la app como otra distinta y los jugadores
+         tendrian que desinstalar (perdiendo la sesion) para actualizar. -->
+    <string name="app_name">ganamos</string>
+    <string name="sin_conexion">Sin conexión</string>
+    <string name="sin_conexion_detalle">No pudimos cargar la plataforma. Revisá tus datos o el wifi y volvé a intentar.</string>
+    <string name="reintentar">Reintentar</string>
+    <string name="salir_confirm">Tocá atrás otra vez para salir</string>
+    <string name="elegir_archivo">Elegir comprobante</string>
+    <string name="cargando">Cargando…</string>
+    <string name="notif_bloqueadas">Las notificaciones están bloqueadas. Podés activarlas desde Ajustes › Notificaciones.</string>
+</resources>

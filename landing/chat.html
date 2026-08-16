@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Asistente · ganamos</title>
+<link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png">
+<link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+<style>
+  :root{
+    --bg:#0e0a22; --panel:#151033; --panel2:#1b1540; --line:#2a2350;
+    --ink:#eef0fb; --muted:#9aa0c4; --violet:#7c6cf0; --violet2:#9a8cff; --blue:#4aa9f0;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--ink);font:14.5px/1.5 system-ui,Segoe UI,Roboto,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;display:flex;flex-direction:column;height:100dvh}
+
+  .chead{display:flex;align-items:center;gap:11px;padding:14px 16px;border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,var(--panel2),var(--panel))}
+  .chead .av{width:40px;height:40px;border-radius:13px;display:grid;place-items:center;flex:none;
+    background:linear-gradient(160deg,var(--violet2),var(--violet));box-shadow:0 8px 20px rgba(124,108,240,.35)}
+  .chead .av svg{width:21px;height:21px;fill:none;stroke:#fff;stroke-width:2}
+  .chead b{font-size:15.5px} .chead b span{color:var(--violet2)}
+  .chead .st{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12px}
+  .chead .dot{width:8px;height:8px;border-radius:50%;background:#37c17a;box-shadow:0 0 7px #37c17a}
+
+  .body{flex:1;overflow-y:auto;padding:18px 16px;display:flex;flex-direction:column;gap:11px}
+  .row{display:flex;max-width:86%}
+  .row.user{align-self:flex-end} .row.bot{align-self:flex-start}
+  .bub{padding:10px 13px;border-radius:15px;font-size:14px;white-space:pre-wrap;word-break:break-word}
+  .row.user .bub{background:linear-gradient(135deg,var(--violet),#6a5be8);color:#fff;border-bottom-right-radius:5px}
+  .row.bot .bub{background:var(--panel2);border:1px solid var(--line);border-bottom-left-radius:5px}
+  .bub img.att{max-width:190px;max-height:210px;border-radius:10px;display:block;cursor:pointer;margin-top:2px}
+  .bub a.att-pdf{display:inline-flex;align-items:center;gap:7px;color:inherit;text-decoration:underline}
+  .typing{display:flex;gap:4px} .typing span{width:7px;height:7px;border-radius:50%;background:var(--muted);animation:bl 1.2s infinite}
+  .typing span:nth-child(2){animation-delay:.2s} .typing span:nth-child(3){animation-delay:.4s}
+  @keyframes bl{0%,60%,100%{opacity:.3}30%{opacity:1}}
+
+  .composer{display:flex;gap:8px;align-items:flex-end;padding:12px;border-top:1px solid var(--line)}
+  .composer .att,.composer .send{width:42px;height:42px;flex:none;border-radius:12px;display:grid;place-items:center;transition:.15s}
+  .composer .att{border:1px solid var(--line);background:var(--panel2);color:var(--muted);cursor:pointer}
+  .composer .att:hover{color:var(--ink);border-color:var(--violet)}
+  .composer .send{border:none;background:linear-gradient(180deg,var(--violet2),var(--violet));color:#fff;cursor:pointer}
+  .composer .send:disabled{opacity:.5;cursor:default}
+  .composer svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:2}
+  .composer textarea{flex:1;min-height:42px;max-height:120px;padding:11px 13px;border-radius:12px;border:1px solid var(--line);
+    background:var(--panel2);color:var(--ink);resize:none;outline:none;font-family:inherit;line-height:1.35}
+  .composer textarea:focus{border-color:var(--violet);box-shadow:0 0 0 3px rgba(124,108,240,.2)}
+
+  .gate{flex:1;display:grid;place-items:center;text-align:center;padding:30px;color:var(--muted)}
+  .gate a{display:inline-block;margin-top:14px;padding:12px 22px;border-radius:12px;text-decoration:none;color:#fff;font-weight:700;
+    background:linear-gradient(180deg,var(--violet2),var(--violet))}
+</style>
+</head>
+<body>
+  <div class="chead">
+    <div class="av"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+    <div>
+      <b>Asistente <span>ganamos</span></b>
+      <div class="st"><span class="dot"></span> En línea</div>
+    </div>
+  </div>
+
+  <div class="body" id="body"></div>
+
+  <form class="composer" id="form" style="display:none">
+    <input type="file" id="file" accept="image/*,application/pdf" hidden>
+    <button class="att" id="attach" type="button" title="Adjuntar comprobante">
+      <svg viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3 3 0 0 1 4.24 4.24l-9.2 9.19a1 1 0 0 1-1.41-1.41l8.49-8.48"/></svg>
+    </button>
+    <textarea id="text" rows="1" placeholder="Escribí tu mensaje…"></textarea>
+    <button class="send" id="send" type="submit" disabled>
+      <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+    </button>
+  </form>
+
+<script>
+(function(){
+  "use strict";
+  const API_CHAT  = "https://orange-crab-483661.hostingersite.com/api/chatbot.php";
+  const API_SUBIR = "https://orange-crab-483661.hostingersite.com/api/subir.php";
+  const API_MIS   = "https://orange-crab-483661.hostingersite.com/api/mis_mensajes.php";
+  const $ = id => document.getElementById(id);
+  const body = $('body');
+
+  // token del login propio (mismo origen que app.html => localStorage compartido)
+  let AUTH = null; try { AUTH = localStorage.getItem('API_AUTH_ACCESS_TOKEN'); } catch(e){}
+  function jwtUser(tok){
+    try{
+      const p = tok.split('.'); if(p.length<2) return '';
+      let b = p[1].replace(/-/g,'+').replace(/_/g,'/'); while(b.length%4) b+='=';
+      const c = JSON.parse(decodeURIComponent(atob(b).split('').map(x=>'%'+('00'+x.charCodeAt(0).toString(16)).slice(-2)).join('')));
+      return String(c.username||c.user||c.preferred_username||c.nombre_usuario||c.name||c.sub||c.email||'').trim();
+    }catch(e){ return ''; }
+  }
+
+  if (!AUTH){
+    body.className = 'gate';
+    body.innerHTML = 'Iniciá sesión para usar el asistente.<br><a href="acceso.html" target="_top">Ingresar</a>';
+    return;
+  }
+  const USUARIO = jwtUser(AUTH);
+
+  // id de sesión (compartido con la ruleta/juego)
+  const SID_KEY = 'goldpaw_sid';
+  let sid = localStorage.getItem(SID_KEY);
+  if(!sid){ sid = (window.crypto&&crypto.randomUUID)?crypto.randomUUID():'s-'+Date.now()+'-'+Math.random().toString(36).slice(2); localStorage.setItem(SID_KEY, sid); }
+
+  const historial = [];
+  let enviando = false, lastAgentId = 0;
+  const text = $('text'), send = $('send'), fileI = $('file');
+
+  function pintar(quien, txt){
+    const r = document.createElement('div'); r.className = 'row '+(quien==='user'?'user':'bot');
+    const b = document.createElement('div'); b.className='bub'; b.textContent = txt;
+    r.appendChild(b); body.appendChild(r); body.scrollTop = body.scrollHeight;
+  }
+  function pintarAdj(quien, adj){
+    const r = document.createElement('div'); r.className='row '+(quien==='user'?'user':'bot');
+    const b = document.createElement('div'); b.className='bub';
+    if(adj.tipo==='imagen'){ const a=document.createElement('a'); a.href=adj.url; a.target='_blank';
+      const im=document.createElement('img'); im.className='att'; im.src=adj.url; a.appendChild(im); b.appendChild(a);
+    } else { const a=document.createElement('a'); a.className='att-pdf'; a.href=adj.url; a.target='_blank';
+      a.textContent='📄 '+(adj.nombre||'Comprobante.pdf'); b.appendChild(a); }
+    r.appendChild(b); body.appendChild(r); body.scrollTop = body.scrollHeight;
+  }
+  function typing(on){
+    let t=$('typing'); if(on){ if(t) return; t=document.createElement('div'); t.id='typing'; t.className='row bot';
+      t.innerHTML='<div class="bub typing"><span></span><span></span><span></span></div>'; body.appendChild(t); body.scrollTop=body.scrollHeight;
+    } else if(t){ t.remove(); }
+  }
+
+  $('form').style.display='flex';
+  pintar('bot', USUARIO ? `¡Hola ${USUARIO}! 👋 Soy el asistente de ganamos. ¿En qué te ayudo con tu cuenta o tus fichas?`
+                        : '¡Hola! 👋 Soy el asistente de ganamos. ¿Me decís tu nombre de usuario del juego?');
+
+  text.addEventListener('input', ()=>{ send.disabled = text.value.trim()===''; text.style.height='auto'; text.style.height=Math.min(text.scrollHeight,120)+'px'; });
+
+  $('form').addEventListener('submit', async e=>{
+    e.preventDefault();
+    const t = text.value.trim(); if(!t || enviando) return;
+    pintar('user', t); historial.push({role:'user',content:t});
+    text.value=''; text.style.height='auto'; send.disabled=true; enviando=true; typing(true);
+    try{
+      const r = await fetch(API_CHAT, { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ mensajes:historial, session_id:sid, usuario:USUARIO||undefined, token:AUTH }) });
+      const d = await r.json(); typing(false);
+      if(d.ok){ pintar('bot', d.respuesta); historial.push({role:'assistant',content:d.respuesta}); }
+      else pintar('bot', '⚠️ '+(d.error||'No pude responder ahora.'));
+    }catch(err){ typing(false); pintar('bot','⚠️ No pude conectar con el servidor.'); }
+    finally{ enviando=false; text.focus(); }
+  });
+
+  $('attach').addEventListener('click', ()=> fileI.click());
+  fileI.addEventListener('change', async ()=>{
+    const f = fileI.files[0]; fileI.value=''; if(!f) return;
+    if(f.size > 8*1024*1024){ pintar('bot','⚠️ El archivo supera 8 MB.'); return; }
+    const fd = new FormData(); fd.append('archivo', f); fd.append('session_id', sid); if(USUARIO) fd.append('usuario', USUARIO);
+    pintar('user','📎 Enviando comprobante…');
+    try{ const r = await fetch(API_SUBIR,{method:'POST',body:fd}); const d = await r.json();
+      if(d.ok && d.adjunto) pintarAdj('user', d.adjunto); else pintar('bot','⚠️ '+(d.error||'No pude subir.'));
+    }catch(e){ pintar('bot','⚠️ No pude subir el archivo.'); }
+  });
+
+  async function verAgente(){
+    try{
+      const r = await fetch(API_MIS+'?session_id='+encodeURIComponent(sid)+'&desde='+lastAgentId);
+      const d = await r.json();
+      if(d.ok && d.mensajes && d.mensajes.length){
+        d.mensajes.forEach(m=>{ if(m.adjunto&&m.adjunto.url) pintarAdj('bot',m.adjunto); else pintar('bot',m.texto); });
+      }
+      if(typeof d.ultimo_id==='number') lastAgentId = d.ultimo_id;
+    }catch(e){}
+  }
+  setInterval(verAgente, 6000);
+})();
+</script>
+</body>
+</html>

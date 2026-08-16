@@ -1,0 +1,12 @@
+# Sin esto, algunos navegadores abren el APK como texto en vez de descargarlo.
+AddType application/vnd.android.package-archive .apk
+
+# El instalador puede pesar unos MB: que no se cachee viejo cuando lo actualices.
+<FilesMatch "\.apk$">
+    Header set Cache-Control "public, max-age=3600"
+</FilesMatch>
+
+# widget.js se lee desde la app en cada arranque: nunca servir una version vieja.
+<FilesMatch "^widget\.js$">
+    Header set Cache-Control "no-cache, must-revalidate"
+</FilesMatch>

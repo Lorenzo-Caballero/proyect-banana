@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Creá tu cuenta gratis</title>
+<link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png">
+<link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --violet:#8b3ffe;
+    --violet-2:#a855f7;
+    --magenta:#e060d0;
+    --ink:#f4ecff;
+    --ink-dim:#b9a6d6;
+    --line:rgba(168,120,255,.28);
+    --danger:#ff6b8a;
+    --ok:#54e6b5;
+    --gold:#ffc844;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:'Poppins',system-ui,sans-serif;
+    color:var(--ink);
+    min-height:100dvh;
+    display:flex;align-items:center;justify-content:center;
+    padding:24px 18px;
+    /* fondo: brillo violeta al centro que se apaga hacia el negro */
+    background:
+      radial-gradient(120% 90% at 50% 38%, #3a1560 0%, #200a38 42%, #0b0416 78%, #060209 100%);
+    overflow-x:hidden;
+  }
+  /* halos suaves de fondo */
+  body::before,body::after{
+    content:"";position:fixed;border-radius:50%;filter:blur(90px);opacity:.5;z-index:0;pointer-events:none}
+  body::before{width:60vmax;height:60vmax;left:-10vmax;top:-18vmax;
+    background:radial-gradient(circle,rgba(139,63,254,.55),transparent 65%)}
+  body::after{width:55vmax;height:55vmax;right:-14vmax;bottom:-20vmax;
+    background:radial-gradient(circle,rgba(216,56,200,.4),transparent 65%)}
+
+  .card{
+    position:relative;z-index:1;width:100%;max-width:440px;
+    background:linear-gradient(180deg,rgba(40,16,66,.55),rgba(24,10,42,.6));
+    border:1px solid var(--line);border-radius:26px;
+    padding:38px 26px 30px;text-align:center;
+    box-shadow:0 0 70px rgba(139,63,254,.35),inset 0 1px 0 rgba(255,255,255,.05);
+    backdrop-filter:blur(10px);
+  }
+
+  /* ─── Mascota (icono estilo app) ───
+     Para tu imagen real: pone la ruta o un data URI en --mascota abajo,
+     o cambia el emoji del span por un <img>. */
+  .mascota{
+    width:112px;height:112px;margin:0 auto 22px;border-radius:30px;
+    display:grid;place-items:center;font-size:56px;line-height:1;
+    background:
+      var(--mascota, none),
+      linear-gradient(160deg,#7a2fd6,#b44ce0 60%,#5a1fb0);
+    background-size:cover;background-position:center;
+    box-shadow:0 12px 34px rgba(139,63,254,.5),inset 0 2px 4px rgba(255,255,255,.25);
+    border:1px solid rgba(255,255,255,.14);
+  }
+  .mascota span{filter:drop-shadow(0 3px 6px rgba(0,0,0,.4))}
+
+  h1{font-size:30px;font-weight:800;line-height:1.15;letter-spacing:-.3px}
+  h1 .g{background:linear-gradient(90deg,#b06bff,var(--magenta));
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{margin-top:8px;color:var(--ink-dim);font-size:16px;font-weight:400}
+
+  .bono{
+    margin:22px 0 20px;border:1px solid var(--line);border-radius:16px;
+    padding:14px 16px;background:rgba(139,63,254,.08);
+    box-shadow:inset 0 0 20px rgba(139,63,254,.12)}
+  .bono b{display:block;font-size:15px;font-weight:700;letter-spacing:.2px}
+  .bono small{display:block;margin-top:4px;font-size:13px;font-weight:600;color:#c98bff}
+
+  form{display:block}
+  .inp{
+    width:100%;background:rgba(8,3,18,.72);color:var(--ink);
+    border:1.5px solid var(--violet);border-radius:14px;
+    font-family:inherit;font-size:16px;padding:17px 18px;outline:0;
+    box-shadow:0 0 0 4px rgba(139,63,254,.16),0 0 22px rgba(139,63,254,.25);
+    transition:border-color .2s,box-shadow .2s}
+  .inp::placeholder{color:#7c6aa0}
+  .inp:focus{border-color:var(--violet-2);
+    box-shadow:0 0 0 4px rgba(168,85,247,.28),0 0 26px rgba(168,85,247,.35)}
+
+  .msg{min-height:18px;margin:9px 2px 0;font-size:13px;color:var(--danger);text-align:left;display:block}
+
+  .btn{
+    width:100%;margin-top:14px;border:0;cursor:pointer;overflow:hidden;position:relative;
+    font-family:inherit;font-weight:700;font-size:18px;letter-spacing:.5px;text-transform:uppercase;
+    color:#fff;padding:17px;border-radius:14px;
+    background:linear-gradient(135deg,#8b3ffe 0%,#a94ff0 50%,#d24fe0 100%);
+    box-shadow:0 14px 34px rgba(139,63,254,.55),inset 0 1px 0 rgba(255,255,255,.3);
+    transition:transform .12s,box-shadow .2s}
+  .btn:hover{transform:translateY(-2px);box-shadow:0 18px 44px rgba(216,56,200,.55)}
+  .btn:active{transform:translateY(0)}
+  .btn:disabled{opacity:.65;cursor:not-allowed}
+  .btn::after{content:"";position:absolute;top:0;left:-120%;width:55%;height:100%;
+    background:linear-gradient(100deg,transparent,rgba(255,255,255,.4),transparent);
+    transform:skewX(-20deg);animation:sheen 3.4s ease-in-out infinite}
+  @keyframes sheen{0%,58%{left:-120%}80%,100%{left:130%}}
+
+  .pie{margin-top:18px;font-size:13px;color:var(--ink-dim)}
+
+  /* ─── estado de exito: muestra las credenciales creadas ─── */
+  .exito{display:none;text-align:left;margin-top:6px}
+  .exito.show{display:block}
+  .exito h2{font-size:19px;font-weight:700;text-align:center;color:var(--ok);margin-bottom:4px}
+  .exito p{font-size:13.5px;color:var(--ink-dim);text-align:center;margin-bottom:16px}
+  .cred{background:rgba(8,3,18,.7);border:1px solid var(--line);border-radius:13px;
+    padding:14px 16px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:12px}
+  .cred .k{font-size:12px;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.5px}
+  .cred .v{font-size:16px;font-weight:600;word-break:break-all}
+  .aviso{font-size:12.5px;color:var(--gold);text-align:center;margin-top:6px}
+
+  /* ─── estado de espera: el alta la hace un bot, no es instantanea ─── */
+  .espera{display:none;text-align:center;margin-top:6px}
+  .espera.show{display:block}
+  .espera h2{font-size:20px;font-weight:700;margin-bottom:6px}
+  .espera p{font-size:14px;color:var(--ink-dim)}
+  .espera b{color:var(--ink)}
+  .barra{height:6px;margin:20px 0 12px;border-radius:99px;overflow:hidden;
+    background:rgba(139,63,254,.18)}
+  .barra i{display:block;height:100%;width:40%;border-radius:99px;
+    background:linear-gradient(90deg,var(--violet),var(--magenta));
+    animation:corre 1.4s ease-in-out infinite}
+  @keyframes corre{0%{margin-left:-40%}100%{margin-left:100%}}
+  .nota{margin-top:14px;font-size:12.5px;color:var(--ink-dim)}
+  .link{background:none;border:0;color:var(--ink-dim);font-family:inherit;
+    font-size:13px;text-decoration:underline;cursor:pointer;margin-top:14px}
+
+  @media (prefers-reduced-motion:reduce){
+    .btn::after{animation:none}
+    /* Sin animacion la barra quedaria congelada y pareceria colgada. */
+    .barra i{animation:none;width:100%;opacity:.5}
+  }
+  @media (max-width:420px){ h1{font-size:26px} .mascota{width:100px;height:100px;font-size:50px} }
+</style>
+</head>
+<body>
+
+  <main class="card">
+    <!-- Mascota: reemplaza el emoji por tu imagen (o define --mascota con un data URI) -->
+    <div class="mascota"><span>🐾</span></div>
+
+    <!-- Vista 1: formulario -->
+    <div id="vistaForm">
+      <h1>Creá tu <span class="g">cuenta gratis</span></h1>
+      <p class="sub">Estamos Online 24hs!</p>
+
+      <div class="bono">
+        <b>🎁 ¡GANASTE UN BONO DE BIENVENIDA!</b>
+        <small>Creá tu cuenta y activalo</small>
+      </div>
+
+      <form id="form" novalidate>
+        <input id="usuario" class="inp" type="text" inputmode="text"
+               autocomplete="username" placeholder="Ej: Martín" aria-label="Nombre de usuario">
+        <span class="msg" id="msg" role="alert"></span>
+        <button class="btn" id="btn" type="submit">Crear mi cuenta</button>
+      </form>
+
+      <p class="pie">🔒 registro seguro · sin tarjeta · gratis</p>
+    </div>
+
+    <!-- Vista 2: esperando al bot.
+         El alta no la hace este server: deja el pedido en la cola y lo cumple
+         bot_crear_jugador.py contra el panel de agentes. Puede tardar. -->
+    <div class="espera" id="vistaEspera">
+      <h2>Creando tu cuenta…</h2>
+      <p>Estamos dando de alta <b id="esperaUser"></b> en el sistema.</p>
+      <div class="barra"><i></i></div>
+      <p class="nota" id="esperaNota">Suele tardar menos de un minuto.</p>
+    </div>
+
+    <!-- Vista 3: cuenta creada -->
+    <div class="exito" id="vistaExito">
+      <h2>¡Cuenta creada! 🎉</h2>
+      <p>Guardá estos datos para ingresar al juego.</p>
+      <div class="cred"><span class="k">Usuario</span><span class="v" id="outUser"></span></div>
+      <div class="cred"><span class="k">Contraseña</span><span class="v" id="outPass"></span></div>
+      <p class="aviso">⚠️ Anotá la contraseña: no se vuelve a mostrar.</p>
+      <button class="btn" id="btnCopiar" type="button" style="margin-top:16px">Copiar datos</button>
+      <div style="text-align:center"><button class="link" id="btnListo" type="button">Ya guardé mis datos</button></div>
+    </div>
+  </main>
+
+<script>
+(function(){
+  // La cuenta NO se crea al apretar el boton. Este endpoint solo deja el
+  // pedido en la cola; el alta real la hace bot_crear_jugador.py contra el
+  // panel de agentes, desde el VPS. Por eso despues hay que preguntar.
+  const API = "https://orange-crab-483661.hostingersite.com/api/crear_cuenta.php";
+
+  const CLAVE_LOCAL = 'goldpaw_alta';
+  const POLL_MS     = 3000;
+  const AVISO_MS    = 90 * 1000;        // a los 90s cambiamos el texto
+  const LIMITE_MS   = 6 * 60 * 1000;    // a los 6 min lo mandamos al chat
+  const VENCE_MS    = 24 * 3600 * 1000; // pedido guardado que ya no interesa
+
+  const $ = id => document.getElementById(id);
+  const usuario = $('usuario'), msg = $('msg'), btn = $('btn'), form = $('form');
+  const dormir = ms => new Promise(r => setTimeout(r, ms));
+
+  usuario.addEventListener('input', ()=>{ msg.textContent=''; usuario.style.borderColor=''; });
+
+  function genPassword(n=10){
+    const abc = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    const a = new Uint32Array(n); crypto.getRandomValues(a);
+    return Array.from(a, x => abc[x % abc.length]).join("");
+  }
+
+  function error(t){
+    verForm();
+    msg.textContent = t; usuario.style.borderColor = 'var(--danger)'; usuario.focus();
+  }
+
+  // ── El pedido en curso vive en localStorage ────────────────────────────
+  // La password se genera ACA y el server la guarda para que el bot la tipee,
+  // pero no la devuelve nunca. Si el pedido solo viviera en memoria, cerrar la
+  // pestana mientras el bot trabaja dejaria la cuenta creada y al jugador sin
+  // forma de entrar. En modo incognito puede fallar: por eso todo va en try.
+  function guardar(p){ try{ localStorage.setItem(CLAVE_LOCAL, JSON.stringify(p)); }catch(e){} }
+  function leer(){ try{ return JSON.parse(localStorage.getItem(CLAVE_LOCAL) || 'null'); }catch(e){ return null; } }
+  function olvidar(){ try{ localStorage.removeItem(CLAVE_LOCAL); }catch(e){} }
+
+  // ── Vistas ─────────────────────────────────────────────────────────────
+  function verForm(){
+    $('vistaForm').style.display = '';
+    $('vistaEspera').classList.remove('show');
+    $('vistaExito').classList.remove('show');
+    btn.disabled = false; btn.textContent = 'Crear mi cuenta';
+  }
+
+  function verEspera(u){
+    msg.textContent = '';
+    $('esperaUser').textContent = u;
+    $('esperaNota').textContent = 'Suele tardar menos de un minuto.';
+    $('vistaForm').style.display = 'none';
+    $('vistaExito').classList.remove('show');
+    $('vistaEspera').classList.add('show');
+  }
+
+  function verExito(p){
+    $('outUser').textContent = p.usuario;
+    $('outPass').textContent = p.password;
+    $('vistaForm').style.display = 'none';
+    $('vistaEspera').classList.remove('show');
+    $('vistaExito').classList.add('show');
+
+    $('btnCopiar').onclick = ()=>{
+      navigator.clipboard?.writeText(`Usuario: ${p.usuario}\nContraseña: ${p.password}`);
+      $('btnCopiar').textContent = '¡Copiado!';
+      setTimeout(()=> $('btnCopiar').textContent = 'Copiar datos', 1500);
+    };
+    // Recien aca se borra: mientras siga guardado, recargar la pagina vuelve a
+    // mostrar la contrasena en vez de perderla.
+    $('btnListo').onclick = ()=>{ olvidar(); usuario.value=''; verForm(); };
+  }
+
+  // ── Esperar al bot ─────────────────────────────────────────────────────
+  async function sondear(p){
+    verEspera(p.usuario);
+
+    for(;;){
+      await dormir(POLL_MS);
+
+      let data = null;
+      try {
+        const url = API + '?id=' + encodeURIComponent(p.id) +
+                          '&usuario=' + encodeURIComponent(p.usuario);
+        const res = await fetch(url, { cache:'no-store' });
+
+        if (res.status === 404){       // el pedido no existe: no hay nada que esperar
+          olvidar();
+          return error('No encontramos tu pedido. Probá de nuevo.');
+        }
+        data = await res.json().catch(()=> null);
+      } catch (e) {
+        // Se cayo la conexion. NO se corta: el bot sigue trabajando del otro
+        // lado, y cortar aca perderia la password del jugador.
+        continue;
+      }
+      if (!data) continue;
+
+      if (data.listo){ p.listo = true; guardar(p); return verExito(p); }
+
+      if (data.fallo){
+        olvidar();
+        return error('No pudimos crear la cuenta. Probá con otro nombre de usuario.');
+      }
+
+      const esperando = Date.now() - (p.desde || Date.now());
+      if (esperando > LIMITE_MS){
+        $('esperaNota').textContent =
+          'Está tardando más de lo normal, pero el pedido no se pierde. ' +
+          'Podés escribirnos por chat con tu usuario.';
+      } else if (esperando > AVISO_MS){
+        $('esperaNota').textContent = 'Seguimos en eso, no cierres la página…';
+      }
+    }
+  }
+
+  // ── Alta ───────────────────────────────────────────────────────────────
+  form.addEventListener('submit', async e=>{
+    e.preventDefault();
+    const u = usuario.value.trim();
+    if (!u)               return error('Escribí un nombre de usuario.');
+    if (u.length < 3)     return error('Mínimo 3 caracteres.');
+    if (!/^[\w.\-]{3,50}$/.test(u))
+                          return error('Solo letras, números, punto, guion y guion bajo.');
+
+    const password = genPassword();
+    btn.disabled = true; btn.textContent = 'Creando…';
+
+    try {
+      const res = await fetch(API, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ usuario: u, password })
+      });
+      const data = await res.json().catch(()=> ({}));
+
+      if (res.ok && data.ok && data.id){
+        const pedido = { id:data.id, usuario:u, password, desde:Date.now() };
+        // Guardar ANTES de mostrar nada: entre el alta y el cartel de exito
+        // pasan segundos en los que la password solo existe en esta pestana.
+        guardar(pedido);
+        return sondear(pedido);
+      }
+
+      if (res.status === 429) return error(data.error || 'Esperá un rato antes de pedir otra cuenta.');
+      if (res.status === 409) return error('Ese usuario ya está en uso, probá con otro.');
+      return error(data.error || 'No se pudo crear la cuenta. Probá de nuevo.');
+
+    } catch (err) {
+      error('No se pudo conectar. Revisá tu conexión.');
+    }
+  });
+
+  // ── Al abrir la pagina: retomar un pedido que quedo a medias ───────────
+  (function retomar(){
+    const p = leer();
+    if (!p || !p.id || !p.usuario) return;
+    if (Date.now() - (p.desde || 0) > VENCE_MS) return olvidar();
+    if (p.listo) return verExito(p);
+    sondear(p);
+  })();
+})();
+</script>
+
+</body>
+</html>

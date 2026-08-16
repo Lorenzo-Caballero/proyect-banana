@@ -1,0 +1,35 @@
+# Replica lista para levantar con un comando. nginx hace de reverse proxy hacia
+# ganamos7.com e inyecta el chat; certbot saca y renueva el certificado TLS.
+#
+# Antes de arrancar:
+#   1. Apuntá tu dominio (registro A) a la IP de este VPS.
+#   2. Reemplazá REEMPLAZAME.tudominio.com en nginx-replica.conf y acá abajo.
+#   3. Emití el certificado la PRIMERA vez (ver el paso 3 del README).
+#   4. docker compose up -d
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: replica-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx-replica.conf:/etc/nginx/conf.d/replica.conf:ro
+      - ./widget.js:/var/www/replica/widget.js:ro
+      - ./certbot/conf:/etc/letsencrypt:ro          # certificados (los usa nginx)
+      - ./certbot/webroot:/var/www/certbot:ro       # desafio HTTP-01 de Let's Encrypt
+    # Recarga la config cada 6h para tomar el certificado renovado sin bajar nada.
+    command: >
+      sh -c "while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g 'daemon off;'"
+
+  # Renueva el certificado cada 12h (solo actúa cuando faltan <30 días).
+  certbot:
+    image: certbot/certbot
+    container_name: replica-certbot
+    restart: unless-stopped
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/webroot:/var/www/certbot
+    entrypoint: >
+      sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"

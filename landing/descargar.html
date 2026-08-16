@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Descargá la app · ganamos</title>
+<link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png">
+<link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+<meta name="description" content="Instalá la app de ganamos en tu Android y jugá con el asistente siempre a mano.">
+<style>
+  :root{
+    --void:#0B0718; --bg:#120D2B; --card:#171236; --line:#2A2350;
+    --ink:#EEF0FB; --muted:#9AA0C4; --violet:#7C6CF0; --violet2:#9A8CFF;
+    --gold:#E3B14A; --green:#37C17A;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--void);color:var(--ink);
+    font:16px/1.6 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    background-image:radial-gradient(120% 90% at 50% 0%,rgba(124,108,240,.22),transparent 60%);
+    min-height:100vh;
+  }
+  .wrap{max-width:560px;margin:0 auto;padding:44px 20px 72px}
+
+  header{text-align:center}
+  .logo{
+    width:88px;height:88px;margin:0 auto;border-radius:24px;
+    background:linear-gradient(150deg,#241A5E,#120D2B);
+    border:1px solid var(--line);display:grid;place-items:center;
+    box-shadow:0 18px 44px rgba(0,0,0,.5);
+  }
+  .logo svg{width:52px;height:52px}
+  /* El logo de verdad. Si img/logo.png todavía no está subido, el onerror borra
+     la imagen y este selector deja de aplicar, así que vuelve a verse la huella. */
+  .logo img{width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block}
+  .logo img + svg{display:none}
+  h1{font-size:28px;letter-spacing:-.02em;margin-top:20px;line-height:1.2}
+  h1 b{color:var(--gold)}
+  .sub{color:var(--muted);font-size:15px;margin-top:10px}
+
+  .cta{
+    display:flex;align-items:center;justify-content:center;gap:10px;
+    margin-top:28px;padding:17px 24px;border-radius:15px;text-decoration:none;
+    background:linear-gradient(145deg,var(--violet2),var(--violet));
+    color:#fff;font-weight:700;font-size:17px;
+    box-shadow:0 14px 34px rgba(124,108,240,.45);
+    transition:filter .15s,transform .12s;
+  }
+  .cta:active{transform:translateY(1px)}
+  .cta svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:2}
+  .meta{text-align:center;color:var(--muted);font-size:12.5px;margin-top:11px}
+
+  .pasos{margin-top:38px;display:flex;flex-direction:column;gap:1px;
+    background:var(--line);border:1px solid var(--line);border-radius:15px;overflow:hidden}
+  .paso{background:var(--card);padding:16px 18px;display:flex;gap:14px;align-items:flex-start}
+  .n{
+    flex:none;width:27px;height:27px;border-radius:50%;display:grid;place-items:center;
+    background:rgba(124,108,240,.16);color:var(--violet2);
+    font-weight:700;font-size:13.5px;
+  }
+  .paso h3{font-size:15px;font-weight:650;letter-spacing:-.01em}
+  .paso p{color:var(--muted);font-size:13.5px;margin-top:3px}
+
+  .aviso{
+    margin-top:26px;background:rgba(55,193,122,.08);border:1px solid rgba(55,193,122,.28);
+    border-radius:13px;padding:15px 17px;
+  }
+  .aviso h3{font-size:14px;color:var(--green);font-weight:650}
+  .aviso p{font-size:13.5px;color:var(--muted);margin-top:6px}
+
+  .faq{margin-top:34px}
+  .faq h2{font-size:13px;text-transform:uppercase;letter-spacing:.13em;color:var(--muted);font-weight:650}
+  details{border-bottom:1px solid var(--line);padding:14px 0}
+  summary{cursor:pointer;font-size:14.5px;font-weight:600;list-style:none;display:flex;justify-content:space-between;gap:12px}
+  summary::-webkit-details-marker{display:none}
+  summary::after{content:"+";color:var(--violet2);font-size:19px;line-height:1;flex:none}
+  details[open] summary::after{content:"−"}
+  details p{color:var(--muted);font-size:13.5px;margin-top:9px}
+
+  .pie{text-align:center;margin-top:40px;color:var(--muted);font-size:12.5px;line-height:1.7}
+  .pie a{color:var(--violet2)}
+
+  @media (max-width:420px){ h1{font-size:24px} .wrap{padding:34px 16px 56px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="logo">
+      <img src="img/logo.png" alt="ganamos" onerror="this.remove()">
+      <svg viewBox="0 0 108 108" aria-hidden="true">
+        <circle cx="35" cy="46" r="8.5" fill="#E3B14A"/>
+        <circle cx="47" cy="37" r="9" fill="#F0C567"/>
+        <circle cx="61" cy="37" r="9" fill="#F0C567"/>
+        <circle cx="73" cy="46" r="8.5" fill="#E3B14A"/>
+        <path fill="#F5D48A" d="M54 54c-11 0-19.5 7-19.5 15.5 0 7.5 6 12.5 14 12.5 3 0 4.5-1.5 5.5-1.5s2.5 1.5 5.5 1.5c8 0 14-5 14-12.5C73.5 61 65 54 54 54z"/>
+      </svg>
+    </div>
+    <h1>La app de <b>ganamos</b></h1>
+    <p class="sub">Jugá desde el celular con el asistente siempre a mano:
+    cargá fichas, mandá el comprobante y consultá tu cuenta sin salir de la app.</p>
+
+    <a class="cta" href="goldpaw.apk" download>
+      <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+      Descargar para Android
+    </a>
+    <p class="meta">Android 8 o superior · <span id="peso">~3 MB</span> · Versión 1.2</p>
+  </header>
+
+  <div class="pasos">
+    <div class="paso">
+      <div class="n">1</div>
+      <div><h3>Tocá «Descargar»</h3>
+      <p>El archivo queda en tus Descargas. Si el navegador pregunta si querés conservarlo, decile que sí.</p></div>
+    </div>
+    <div class="paso">
+      <div class="n">2</div>
+      <div><h3>Abrí el archivo descargado</h3>
+      <p>Tocá la notificación de descarga, o buscá <b>goldpaw.apk</b> en la carpeta Descargas.</p></div>
+    </div>
+    <div class="paso">
+      <div class="n">3</div>
+      <div><h3>Permití la instalación</h3>
+      <p>Android te va a avisar que no viene de Play Store. Tocá <b>Ajustes</b> y activá
+      «Permitir de esta fuente» para tu navegador. Es un permiso por app, se pide una sola vez.</p></div>
+    </div>
+    <div class="paso">
+      <div class="n">4</div>
+      <div><h3>Instalá y entrá</h3>
+      <p>Tocá <b>Instalar</b> y después <b>Abrir</b>. Iniciás sesión con el mismo usuario y
+      contraseña de siempre.</p></div>
+    </div>
+  </div>
+
+  <div class="aviso">
+    <h3>¿Por qué no está en Play Store?</h3>
+    <p>Google pide una licencia especial para publicar apps de juegos con dinero real,
+    y el trámite es del operador. Por eso la app se descarga directo de acá. Es la
+    misma plataforma de siempre, con el asistente adentro.</p>
+  </div>
+
+  <div class="faq">
+    <h2>Dudas frecuentes</h2>
+
+    <details>
+      <summary>Me aparece «Play Protect no reconoce al desarrollador»</summary>
+      <p>Es el aviso normal de Android para cualquier app que no venga de Play Store.
+      Tocá <b>Instalar de todos modos</b> y listo.</p>
+    </details>
+
+    <details>
+      <summary>No me deja instalar</summary>
+      <p>Fijate que tengas espacio libre y que sea Android 8 o más nuevo.
+      Si ya tenías una versión vieja instalada, desinstalala primero y volvé a probar.</p>
+    </details>
+
+    <details>
+      <summary>¿Tengo que crearme una cuenta nueva?</summary>
+      <p>No. Entrás con el mismo usuario y la misma contraseña que usás en la web.
+      Tu saldo y tus fichas son los mismos.</p>
+    </details>
+
+    <details>
+      <summary>¿Cómo mando el comprobante de la transferencia?</summary>
+      <p>Desde el asistente: tocá el clip y elegí la foto, o sacale una foto en el momento.
+      Se sube solo y el sistema acredita tus fichas.</p>
+    </details>
+
+    <details>
+      <summary>¿Y si tengo iPhone?</summary>
+      <p>Por ahora la app es solo para Android. Desde iPhone seguí entrando por la web
+      como siempre.</p>
+    </details>
+  </div>
+
+  <p class="pie">
+    ¿Algo no funciona? Escribinos por el asistente de la web.<br>
+    <a href="index.html">← Volver a ganamos</a>
+  </p>
+
+</div>
+
+<script>
+// Muestra el peso real del archivo, si el server lo informa.
+(function(){
+  fetch('goldpaw.apk', { method:'HEAD' })
+    .then(function(r){
+      var b = r.headers.get('content-length');
+      if (b) document.getElementById('peso').textContent =
+        (b/1048576).toFixed(1).replace('.', ',') + ' MB';
+    })
+    .catch(function(){});
+})();
+</script>
+</body>
+</html>

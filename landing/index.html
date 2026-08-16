@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ganamos</title>
+<link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png">
+<link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --void:#080312;
+    --violet:#8b3ffe;
+    --blue:#4a7bff;
+    --blue-deep:#1f6dd6;
+    --gold:#ffc844;
+    --lilac:#c6a8ff;
+    --ink:#f4ecff;
+    --ink-dim:#a996c9;
+    --line:rgba(184,140,255,.18);
+    --ok:#54e6b5;
+    --r:20px;
+  }
+
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:'Inter',system-ui,sans-serif;
+    color:var(--ink);
+    background:var(--void);
+    overflow:hidden;               /* el iframe es fijo, no hay scroll de pagina */
+  }
+
+  /* ============ PLATAFORMA A PANTALLA COMPLETA ============ */
+  /* El jugador se loguea acá adentro. La plataforma avisa al padre con
+     postMessage y recién ahí aparece el asistente (ver el script). */
+  #backgroundPage{
+    position:fixed;inset:0;width:100%;height:100%;border:0;z-index:0;
+  }
+
+  /* escape hatch: navegadores que bloquean el storage de iframes de terceros
+     (Safari, Firefox, incógnito) no dejan loguear acá adentro. */
+  #playFab{
+    position:fixed;top:14px;right:20px;z-index:45;display:flex;align-items:center;gap:7px;
+    padding:8px 13px;border-radius:30px;border:none;cursor:pointer;text-decoration:none;
+    font:600 12.5px system-ui,Segoe UI,sans-serif;color:#e8e6ff;
+    background:rgba(18,13,43,.72);backdrop-filter:blur(6px);
+    box-shadow:0 6px 18px rgba(0,0,0,.4);opacity:.75;transition:opacity .15s,transform .12s}
+  #playFab:hover{opacity:1} #playFab:active{transform:translateY(1px)}
+  #playFab svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2}
+  @media (max-width:520px){ #playFab{top:10px;right:10px;padding:7px 11px;font-size:12px} }
+  .scrim{
+    position:fixed;inset:0;z-index:1;pointer-events:none;
+    background:radial-gradient(120% 120% at 90% 90%,rgba(8,3,18,.5),transparent 46%);
+  }
+
+  /* ============ BOTON FLOTANTE (arrastrable) ============ */
+  .fab{
+    position:fixed;z-index:40;
+    width:64px;height:64px;border:0;border-radius:50%;cursor:grab;
+    font-size:27px;display:grid;place-items:center;color:#fff;line-height:1;
+    touch-action:none;                 /* para arrastrar en tactil sin scrollear */
+    box-shadow:0 12px 30px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.28);
+    transition:transform .16s,box-shadow .2s,opacity .2s;
+    -webkit-user-select:none;user-select:none;
+  }
+  .fab:hover{transform:translateY(-3px) scale(1.05)}
+  .fab:active{cursor:grabbing;transform:scale(.98)}
+  .fab:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
+  .fab.dragging{transition:none;transform:scale(1.08);cursor:grabbing}
+  .fab.hidden{opacity:0;pointer-events:none;transform:scale(.5)}
+
+  #chatButton{
+    right:24px;bottom:24px;
+    background:linear-gradient(145deg,var(--blue-deep),var(--blue) 45%,#7a5cff);
+  }
+  /* anillo tipo radar en el boton de soporte, para invitar a usarlo */
+  #chatButton::after{
+    content:"";position:absolute;inset:-4px;border-radius:50%;
+    border:2px solid rgba(74,123,255,.6);animation:ping 2.6s ease-out infinite;
+  }
+  @keyframes ping{0%{transform:scale(.92);opacity:.85}100%{transform:scale(1.55);opacity:0}}
+
+  /* globito de "sin leer" sobre el boton de chat */
+  .badge{
+    position:absolute;top:-3px;right:-3px;min-width:20px;height:20px;padding:0 5px;
+    border-radius:11px;background:var(--gold);color:#4a2c00;
+    font:700 12px 'Rajdhani',sans-serif;display:grid;place-items:center;
+    box-shadow:0 2px 8px rgba(0,0,0,.4)}
+  .badge.hidden{display:none}
+
+  /* boton "Ingresar" cuando no hay sesión (en vez del chatbot) */
+  #loginFab{
+    position:fixed;right:24px;bottom:24px;z-index:60;display:flex;align-items:center;gap:8px;
+    padding:13px 18px;border-radius:30px;border:none;cursor:pointer;text-decoration:none;
+    font:700 14px system-ui,Segoe UI,sans-serif;color:#fff;
+    background:linear-gradient(145deg,var(--blue-deep),var(--blue) 45%,#7a5cff);
+    box-shadow:0 10px 28px rgba(74,123,255,.5);transition:filter .15s,transform .12s}
+  #loginFab:hover{filter:brightness(1.08)} #loginFab:active{transform:translateY(1px)}
+  #loginFab svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2}
+  @media (max-width:520px){ #loginFab{right:16px;bottom:16px} }
+
+  /* ============ PANEL DE SOPORTE (abajo-derecha) ============ */
+  #chatPanel{
+    position:fixed;z-index:50;right:24px;bottom:24px;
+    width:min(384px,calc(100vw - 32px));
+    border-radius:var(--r);
+    background:linear-gradient(160deg,rgba(36,18,63,.96),rgba(16,8,32,.97));
+    border:1px solid var(--line);
+    box-shadow:0 30px 80px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.06);
+    backdrop-filter:blur(16px);
+    display:flex;flex-direction:column;max-height:min(560px,calc(100dvh - 40px));
+    transform-origin:bottom right;transform:translateY(18px) scale(.95);
+    opacity:0;visibility:hidden;
+    transition:transform .3s cubic-bezier(.22,1,.36,1),opacity .22s ease,visibility .3s;
+  }
+  #chatPanel::before{
+    content:"";position:absolute;inset:0;border-radius:var(--r);padding:1px;pointer-events:none;
+    background:linear-gradient(160deg,rgba(74,123,255,.55),transparent 42%,transparent 60%,rgba(122,92,255,.55));
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor;mask-composite:exclude;opacity:.75}
+  #chatPanel.open{transform:none;opacity:1;visibility:visible}
+
+  .close{
+    width:32px;height:32px;border-radius:9px;
+    border:1px solid var(--line);background:transparent;color:var(--ink-dim);cursor:pointer;
+    font-size:15px;display:grid;place-items:center;transition:.2s}
+  .close:hover{color:var(--ink);border-color:var(--violet);background:rgba(139,63,254,.14)}
+
+  /* ---------- Chat ---------- */
+  .chat-head{position:relative;display:flex;align-items:center;gap:12px;
+    padding:18px 20px;border-bottom:1px solid var(--line)}
+  .chat-avatar{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;font-size:20px;
+    background:linear-gradient(145deg,var(--blue-deep),#7a5cff);box-shadow:0 6px 18px rgba(74,123,255,.5)}
+  .chat-head h2{font-family:'Rajdhani';font-weight:700;font-size:20px;letter-spacing:.5px;line-height:1}
+  .chat-status{font-size:11.5px;color:var(--ok);margin-top:3px;display:flex;align-items:center;gap:6px}
+  .chat-status::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok)}
+  .chat-head .close{margin-left:auto}
+
+  .chat-body{flex:1;overflow-y:auto;padding:18px 18px 6px;min-height:220px}
+  .chat-body::-webkit-scrollbar{width:8px}
+  .chat-body::-webkit-scrollbar-thumb{background:rgba(74,123,255,.4);border-radius:8px}
+
+  .msg-row{display:flex;margin-bottom:11px}
+  .msg-row.user{justify-content:flex-end}
+  .bubble{max-width:82%;padding:10px 13px;border-radius:15px;font-size:13.5px;line-height:1.45;
+    white-space:pre-wrap;word-wrap:break-word;overflow-wrap:anywhere}
+  .msg-row.user .bubble{background:linear-gradient(135deg,var(--violet),#d838c8);color:#fff;border-bottom-right-radius:5px}
+  .msg-row.bot .bubble{background:rgba(255,255,255,.06);border:1px solid var(--line);color:var(--ink);border-bottom-left-radius:5px}
+
+  .typing{display:flex;gap:4px;padding:12px 14px}
+  .typing span{width:7px;height:7px;border-radius:50%;background:var(--lilac);opacity:.6;animation:blink 1.2s infinite}
+  .typing span:nth-child(2){animation-delay:.2s}
+  .typing span:nth-child(3){animation-delay:.4s}
+  @keyframes blink{0%,60%,100%{opacity:.25;transform:translateY(0)}30%{opacity:1;transform:translateY(-3px)}}
+
+  .chat-input{display:flex;gap:8px;padding:14px;border-top:1px solid var(--line)}
+  .chat-input input{
+    flex:1;background:rgba(10,4,24,.7);border:1px solid var(--line);border-radius:12px;
+    color:var(--ink);font-family:inherit;font-size:14px;padding:12px 14px;outline:0;transition:.2s}
+  .chat-input input:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(74,123,255,.25)}
+  .chat-send{
+    width:46px;flex:none;border:0;border-radius:12px;cursor:pointer;color:#fff;display:grid;place-items:center;
+    background:linear-gradient(145deg,var(--blue-deep),#7a5cff);
+    box-shadow:0 8px 20px rgba(74,123,255,.45);transition:transform .12s,opacity .2s}
+  .chat-send:hover{transform:translateY(-2px)}
+  .chat-send:disabled{opacity:.5;cursor:not-allowed;transform:none}
+  .chat-attach{width:44px;flex:none;border:1px solid var(--line);border-radius:12px;cursor:pointer;
+    background:rgba(255,255,255,.05);color:var(--ink-dim);display:grid;place-items:center;transition:.15s}
+  .chat-attach:hover{color:var(--ink);border-color:var(--blue)}
+  .bubble img.att{max-width:180px;max-height:200px;border-radius:10px;display:block;cursor:pointer}
+  .bubble a.att-pdf{display:inline-flex;align-items:center;gap:7px;color:inherit;text-decoration:underline;font-size:13px}
+
+  @media (prefers-reduced-motion:reduce){ #chatButton::after{animation:none!important} }
+
+  /* ---------- Movil: el panel pasa a ocupar el ancho ---------- */
+  @media (max-width:520px){
+    #chatPanel{left:12px;right:12px;bottom:12px;width:auto;max-height:calc(100dvh - 24px)}
+    #chatButton{right:16px;bottom:16px}
+  }
+
+  /* ============ RULETA DE COINS (arranca en pantalla) ============ */
+  .rlt-overlay{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;
+    padding:18px;background:rgba(6,3,16,.85);backdrop-filter:blur(6px);
+    opacity:0;visibility:hidden;transition:opacity .3s ease,visibility .3s}
+  .rlt-overlay.show{opacity:1;visibility:visible}
+  .rlt-card{position:relative;width:100%;max-width:420px;text-align:center;
+    background:linear-gradient(170deg,rgba(40,16,66,.97),rgba(15,8,30,.98));
+    border:1px solid var(--line);border-radius:24px;padding:26px 22px 22px;
+    box-shadow:0 30px 80px rgba(0,0,0,.6),0 0 60px rgba(139,63,254,.32)}
+  .rlt-card h2{font-family:'Rajdhani';font-weight:700;font-size:27px;letter-spacing:.5px}
+  .rlt-card h2 b{color:var(--gold)}
+  .rlt-sub{color:var(--ink-dim);font-size:13.5px;margin:5px 0 16px}
+  .rlt-close{position:absolute;top:16px;right:16px;width:32px;height:32px;border-radius:9px;
+    border:1px solid var(--line);background:transparent;color:var(--ink-dim);cursor:pointer;font-size:15px;
+    display:grid;place-items:center;transition:.2s;z-index:3}
+  .rlt-close:hover{color:var(--ink);border-color:var(--violet);background:rgba(139,63,254,.14)}
+
+  .rlt-wheel-wrap{position:relative;width:min(300px,74vw);aspect-ratio:1;margin:0 auto 18px}
+  .rlt-wheel{width:100%;height:100%;border-radius:50%;display:block;
+    box-shadow:0 0 0 6px rgba(255,255,255,.06),0 0 44px rgba(139,63,254,.4);
+    transition:transform 4.2s cubic-bezier(.12,.72,.15,1)}
+  .rlt-pointer{position:absolute;top:-7px;left:50%;transform:translateX(-50%);z-index:2;
+    width:0;height:0;border-left:13px solid transparent;border-right:13px solid transparent;
+    border-top:22px solid var(--gold);filter:drop-shadow(0 2px 5px rgba(0,0,0,.6))}
+  .rlt-hub{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:2;
+    width:48px;height:48px;border-radius:50%;display:grid;place-items:center;font-size:22px;
+    background:linear-gradient(145deg,var(--violet),var(--magenta));
+    box-shadow:0 4px 14px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.35)}
+
+  .rlt-input{width:100%;background:rgba(8,3,18,.72);color:var(--ink);border:1.5px solid var(--violet);
+    border-radius:13px;font-family:inherit;font-size:15px;padding:14px 16px;outline:0;text-align:center;
+    box-shadow:0 0 0 3px rgba(139,63,254,.16);transition:border-color .2s,box-shadow .2s}
+  .rlt-input:focus{border-color:#a855f7;box-shadow:0 0 0 3px rgba(168,85,247,.28)}
+  .rlt-msg{min-height:16px;font-size:12.5px;color:var(--danger);margin:8px 2px 0}
+
+  .rlt-btn{width:100%;margin-top:12px;border:0;cursor:pointer;position:relative;overflow:hidden;
+    font-family:'Rajdhani';font-weight:700;font-size:19px;letter-spacing:1.5px;text-transform:uppercase;
+    color:#fff;padding:15px;border-radius:13px;
+    background:linear-gradient(135deg,#8b3ffe,#a94ff0 50%,#d24fe0);
+    box-shadow:0 12px 30px rgba(139,63,254,.5),inset 0 1px 0 rgba(255,255,255,.28);
+    transition:transform .12s,opacity .2s}
+  .rlt-btn:hover{transform:translateY(-2px)}
+  .rlt-btn:disabled{opacity:.55;cursor:not-allowed;transform:none}
+
+  .rlt-result{margin-top:14px;font-size:14.5px;color:var(--ink);display:none}
+  .rlt-result.show{display:block}
+  .rlt-result .big{font-family:'Rajdhani';font-weight:700;font-size:26px;color:var(--gold);display:block;margin-bottom:2px}
+  .rlt-result.nada .big{color:var(--ink-dim)}
+  .rlt-skip{margin-top:12px;background:transparent;border:1px solid var(--line);color:var(--ink-dim);
+    border-radius:11px;padding:10px;width:100%;cursor:pointer;font-size:13px;transition:.2s}
+  .rlt-skip:hover{color:var(--ink);border-color:var(--violet)}
+</style>
+</head>
+<body>
+
+  <!-- ============ PLATAFORMA A PANTALLA COMPLETA ============ -->
+  <iframe id="backgroundPage" src="https://ganamos7.com/home"
+          title="Plataforma" loading="eager"></iframe>
+
+  <div class="scrim"></div>
+
+  <!-- Salida para los navegadores que bloquean el storage de iframes de
+       terceros (Safari, Firefox, incógnito): ahí adentro el login no cierra.
+       En la app Android esto no hace falta: no hay iframe. -->
+  <a id="playFab" href="https://ganamos7.com/" target="_blank" rel="noopener">
+    <svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>
+    Abrir aparte
+  </a>
+
+  <!-- ============ RULETA DE COINS ============ -->
+  <div class="rlt-overlay" id="rltOverlay" role="dialog" aria-modal="true" aria-label="Ruleta de coins">
+    <div class="rlt-card">
+      <button class="rlt-close" id="rltClose" type="button" aria-label="Cerrar">✕</button>
+      <h2>🎁 Giro <b>gratis</b></h2>
+      <p class="rlt-sub">Girá gratis y reclamá tu premio en <b>bonos</b></p>
+
+      <div class="rlt-wheel-wrap">
+        <div class="rlt-pointer"></div>
+        <svg class="rlt-wheel" id="rltWheel" viewBox="0 0 200 200" aria-hidden="true"></svg>
+        <div class="rlt-hub">🎯</div>
+      </div>
+
+      <input id="rltUser" class="rlt-input" type="text" placeholder="Tu usuario del juego para reclamar"
+             autocomplete="username" style="display:none">
+      <p class="rlt-msg" id="rltMsg"></p>
+      <button class="rlt-btn" id="rltSpin" type="button">Girar</button>
+
+      <div class="rlt-result" id="rltResult"></div>
+      <button class="rlt-skip" id="rltSkip" type="button">Ahora no, ir al juego</button>
+    </div>
+  </div>
+
+  <!-- ============ BOTON DE SOPORTE ============ -->
+  <button id="chatButton" class="fab" type="button"
+          aria-label="Abrir soporte" aria-expanded="false" aria-controls="chatPanel">
+    🎧<span class="badge" id="chatBadge">1</span>
+  </button>
+
+  <!-- ============ PANEL DE SOPORTE / CHATBOT ============ -->
+  <div id="chatPanel" role="dialog" aria-modal="false" aria-label="Soporte ganamos">
+    <div class="chat-head">
+      <span class="chat-avatar">🎧</span>
+      <div>
+        <h2>Soporte</h2>
+        <span class="chat-status">En línea</span>
+      </div>
+      <button class="close" type="button" aria-label="Cerrar">✕</button>
+    </div>
+
+    <div class="chat-body" id="chatBody"></div>
+
+    <form class="chat-input" id="chatForm">
+      <input id="chatFile" type="file" accept="image/*,application/pdf" hidden>
+      <button class="chat-attach" id="chatAttach" type="button" aria-label="Adjuntar comprobante" title="Adjuntar comprobante">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3 3 0 0 1 4.24 4.24l-9.2 9.19a1 1 0 0 1-1.41-1.41l8.49-8.48"/></svg>
+      </button>
+      <input id="chatText" type="text" placeholder="Escribí tu mensaje…" autocomplete="off" maxlength="1500">
+      <button class="chat-send" id="chatSend" type="submit" aria-label="Enviar" disabled>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></svg>
+      </button>
+    </form>
+  </div>
+
+<script>
+(function(){
+  // Ruta del chatbot (mismo dominio de tu API).
+  const API_CHAT = "https://orange-crab-483661.hostingersite.com/api/chatbot.php";
+
+  const $ = id => document.getElementById(id);
+  const chatButton = $('chatButton');
+  const chatPanel  = $('chatPanel');
+  const chatBadge  = $('chatBadge');
+
+  /* ===== Gate: el chatbot solo existe si el usuario inició sesión en la
+     plataforma (token en localStorage). Sin token: solo la ruleta. ===== */
+  let AUTH = null;
+  try { AUTH = localStorage.getItem('API_AUTH_ACCESS_TOKEN'); } catch(e) { AUTH = null; }
+  if (!AUTH){
+    chatButton.style.display = 'none';
+    chatPanel.style.display  = 'none';
+    if (chatBadge) chatBadge.style.display = 'none';
+    // Ofrecemos un botón para iniciar sesión (login real en tu dominio).
+    if (!document.getElementById('loginFab')){
+      const lf = document.createElement('a');
+      lf.id = 'loginFab'; lf.href = 'acceso.html';
+      lf.innerHTML = '<svg viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/></svg> Ingresar';
+      document.body.appendChild(lf);
+    }
+    return;   // no se arma el chatbot
+  }
+
+  // Datos del usuario logueado: si el token es un JWT, sacamos el usuario.
+  function _jwt(tok){
+    try{
+      const p = tok.split('.'); if (p.length < 2) return null;
+      let b = p[1].replace(/-/g,'+').replace(/_/g,'/'); while (b.length % 4) b += '=';
+      return JSON.parse(decodeURIComponent(atob(b).split('')
+        .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')));
+    }catch(e){ return null; }
+  }
+  const _cl = _jwt(AUTH) || {};
+  const USUARIO = String(_cl.username || _cl.user || _cl.preferred_username
+    || _cl.nombre_usuario || _cl.name || _cl.sub || _cl.email || '').trim();
+
+  /* ===== Abrir / cerrar el panel de soporte ===== */
+  function abrirChat(){
+    chatPanel.classList.add('open');
+    chatButton.classList.add('hidden');
+    chatButton.setAttribute('aria-expanded','true');
+    ocultarBadge();
+    setTimeout(()=> chatText.focus(), 260);
+    if (!saludado){
+      saludado = true;
+      pintar('bot', USUARIO
+        ? `¡Hola ${USUARIO}! 👋 Soy el asistente de ganamos. ¿En qué te ayudo con tu cuenta o tus fichas?`
+        : '¡Hola! 👋 Soy el asistente de ganamos. Para ayudarte con tu cuenta y tus fichas, ¿me decís tu nombre de usuario del juego?');
+    }
+  }
+  function cerrarChat(foco=true){
+    chatPanel.classList.remove('open');
+    chatButton.classList.remove('hidden');
+    chatButton.setAttribute('aria-expanded','false');
+    if (foco) chatButton.focus();
+  }
+  chatPanel.querySelector('.close').addEventListener('click', ()=> cerrarChat());
+  document.addEventListener('keydown', e=>{
+    if (e.key === 'Escape' && chatPanel.classList.contains('open')) cerrarChat();
+  });
+
+  /* ===== Boton arrastrable (arrastrar mueve, click abre) ===== */
+  function hacerArrastrable(el, key, onClick){
+    const UMBRAL = 6, M = 10;
+    let x0, y0, offX, offY, movido = false, activo = false, suprimirClick = false;
+
+    restaurar();
+    window.addEventListener('resize', ()=>{ if (el.style.left) { const r=el.getBoundingClientRect(); ubicar(r.left, r.top); } });
+
+    // No usamos setPointerCapture: en algunos motores corta la entrega de
+    // pointermove. Escuchar en window durante el arrastre es lo mas fiable.
+    el.addEventListener('pointerdown', e=>{
+      if (e.button && e.button !== 0) return;
+      activo = true; movido = false;
+      x0 = e.clientX; y0 = e.clientY;
+      const r = el.getBoundingClientRect();
+      offX = e.clientX - r.left; offY = e.clientY - r.top;
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp, { once:true });
+    });
+    function onMove(e){
+      if (!activo) return;
+      if (!movido && Math.hypot(e.clientX - x0, e.clientY - y0) < UMBRAL) return;
+      if (!movido){ movido = true; el.classList.add('dragging'); }
+      ubicar(e.clientX - offX, e.clientY - offY);
+    }
+    function onUp(){
+      window.removeEventListener('pointermove', onMove);
+      if (!activo) return;
+      activo = false;
+      el.classList.remove('dragging');
+      if (movido){ guardar(); suprimirClick = true; }
+    }
+    el.addEventListener('click', ()=>{
+      if (suprimirClick){ suprimirClick = false; return; }
+      onClick();
+    });
+    function ubicar(x, y){
+      const w = el.offsetWidth, h = el.offsetHeight;
+      x = Math.max(M, Math.min(x, window.innerWidth  - w - M));
+      y = Math.max(M, Math.min(y, window.innerHeight - h - M));
+      el.style.left = x+'px'; el.style.top = y+'px';
+      el.style.right = 'auto'; el.style.bottom = 'auto';
+    }
+    function guardar(){ const r = el.getBoundingClientRect(); localStorage.setItem(key, JSON.stringify({x:r.left,y:r.top})); }
+    function restaurar(){
+      const s = localStorage.getItem(key);
+      if (!s) return;
+      try { const p = JSON.parse(s); requestAnimationFrame(()=>ubicar(p.x, p.y)); } catch(_){}
+    }
+  }
+  hacerArrastrable(chatButton, 'pos_chat', abrirChat);
+
+  /* ===== Chatbot (pega a chatbot.php) ===== */
+  const chatBody = $('chatBody');
+  const chatForm = $('chatForm');
+  const chatText = $('chatText');
+  const chatSend = $('chatSend');
+  const historial = [];         // { role:'user'|'assistant', content }
+  let saludado = false, enviando = false;
+
+  // id de sesion estable (para el CRM: cada navegador = una conversacion)
+  const SID_KEY = 'goldpaw_sid';
+  let sid = localStorage.getItem(SID_KEY);
+  if (!sid){
+    sid = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+        : 's-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+    localStorage.setItem(SID_KEY, sid);
+  }
+
+  function ocultarBadge(){ chatBadge.classList.add('hidden'); }
+
+  function pintar(quien, texto){
+    const row = document.createElement('div');
+    row.className = 'msg-row ' + (quien === 'user' ? 'user' : 'bot');
+    const b = document.createElement('div');
+    b.className = 'bubble';
+    b.textContent = texto;               // textContent => seguro, no interpreta HTML
+    row.appendChild(b);
+    chatBody.appendChild(row);
+    chatBody.scrollTop = chatBody.scrollHeight;
+  }
+
+  function escribiendo(on){
+    let t = $('typing-row');
+    if (on){
+      if (t) return;
+      t = document.createElement('div');
+      t.id = 'typing-row'; t.className = 'msg-row bot';
+      t.innerHTML = '<div class="bubble typing"><span></span><span></span><span></span></div>';
+      chatBody.appendChild(t);
+      chatBody.scrollTop = chatBody.scrollHeight;
+    } else if (t){ t.remove(); }
+  }
+
+  chatText.addEventListener('input', ()=>{ chatSend.disabled = chatText.value.trim() === ''; });
+
+  chatForm.addEventListener('submit', async e=>{
+    e.preventDefault();
+    const texto = chatText.value.trim();
+    if (!texto || enviando) return;
+
+    pintar('user', texto);
+    historial.push({ role:'user', content: texto });
+    chatText.value = ''; chatSend.disabled = true;
+    enviando = true; escribiendo(true);
+
+    try {
+      const res = await fetch(API_CHAT, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ mensajes: historial, session_id: sid, usuario: USUARIO || undefined, token: AUTH })
+      });
+      const data = await res.json();
+      escribiendo(false);
+      if (data.ok){
+        pintar('bot', data.respuesta);
+        historial.push({ role:'assistant', content: data.respuesta });
+      } else {
+        pintar('bot', '⚠️ ' + (data.error || 'No pude responder ahora.'));
+      }
+    } catch (err) {
+      escribiendo(false);
+      pintar('bot', '⚠️ No pude conectar con el servidor.');
+    } finally {
+      enviando = false;
+      chatText.focus();
+    }
+  });
+
+  /* ===== Adjuntar comprobantes + recibir respuestas del agente ===== */
+  const API_SUBIR = "https://orange-crab-483661.hostingersite.com/api/subir.php";
+  const API_MIS   = "https://orange-crab-483661.hostingersite.com/api/mis_mensajes.php";
+  let lastAgentId = 0;
+
+  function pintarAdjunto(quien, adj){
+    const row = document.createElement('div');
+    row.className = 'msg-row ' + (quien === 'user' ? 'user' : 'bot');
+    const b = document.createElement('div'); b.className = 'bubble';
+    if (adj.tipo === 'imagen'){
+      const a = document.createElement('a'); a.href = adj.url; a.target = '_blank';
+      const img = document.createElement('img'); img.className = 'att'; img.src = adj.url; img.alt = 'comprobante';
+      a.appendChild(img); b.appendChild(a);
+    } else {
+      const a = document.createElement('a'); a.className = 'att-pdf'; a.href = adj.url; a.target = '_blank';
+      a.textContent = '📄 ' + (adj.nombre || 'Comprobante.pdf'); b.appendChild(a);
+    }
+    row.appendChild(b); chatBody.appendChild(row); chatBody.scrollTop = chatBody.scrollHeight;
+  }
+
+  const chatAttach = $('chatAttach'), chatFile = $('chatFile');
+  chatAttach.addEventListener('click', ()=> chatFile.click());
+  chatFile.addEventListener('change', async ()=>{
+    const f = chatFile.files[0]; chatFile.value = ''; if (!f) return;
+    if (f.size > 8*1024*1024){ pintar('bot','⚠️ El archivo supera 8 MB.'); return; }
+    const fd = new FormData(); fd.append('archivo', f); fd.append('session_id', sid);
+    if (USUARIO) fd.append('usuario', USUARIO);
+    pintar('user', '📎 Enviando comprobante…');
+    try {
+      const r = await fetch(API_SUBIR, { method:'POST', body: fd });
+      const d = await r.json();
+      if (d.ok && d.adjunto) pintarAdjunto('user', d.adjunto);
+      else pintar('bot', '⚠️ ' + (d.error || 'No pude subir el archivo.'));
+    } catch(e){ pintar('bot', '⚠️ No pude subir el archivo.'); }
+  });
+
+  // Cada tanto revisamos si un agente humano respondió, y lo mostramos.
+  async function verAgente(){
+    try {
+      const r = await fetch(API_MIS + '?session_id=' + encodeURIComponent(sid) + '&desde=' + lastAgentId);
+      const d = await r.json();
+      if (d.ok && d.mensajes && d.mensajes.length){
+        d.mensajes.forEach(m=>{
+          if (m.adjunto && m.adjunto.url) pintarAdjunto('bot', m.adjunto);
+          else pintar('bot', m.texto);
+        });
+        chatBadge && chatBadge.classList.remove('hidden');
+      }
+      if (typeof d.ultimo_id === 'number') lastAgentId = d.ultimo_id;
+    } catch(e){}
+  }
+  setInterval(verAgente, 6000);
+})();
+</script>
+
+<script>
+/* ===================== RULETA DE COINS ===================== */
+(function(){
+  const API_RULETA = "https://orange-crab-483661.hostingersite.com/api/ruleta.php";
+
+  const $ = id => document.getElementById(id);
+  const overlay = $('rltOverlay'), wheel = $('rltWheel'), user = $('rltUser');
+  const msg = $('rltMsg'), spin = $('rltSpin'), result = $('rltResult'), skip = $('rltSkip'), cerrar = $('rltClose');
+
+  // Colores por sector (par de tonos para el degradé)
+  const COLORES = [
+    ['#00e5ff','#5b6cff'], ['#ff5fd0','#8a4bff'], ['#8a94a6','#5a6272'],
+    ['#7dff9e','#18b46a'], ['#ffd34e','#ff5f6d']
+  ];
+
+  let premios = [], rot = 0, jugando = false;
+
+  function ang(i, n){ return (360 / n) * i; }
+  function pol(cx, cy, r, a){ const rad = Math.PI*a/180; return [cx + r*Math.cos(rad), cy + r*Math.sin(rad)]; }
+
+  function dibujar(){
+    const n = premios.length, g = 360/n;
+    let defs = '<defs>';
+    COLORES.forEach((c,i)=> defs += `<linearGradient id="rg${i}" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="${c[0]}"/><stop offset="100%" stop-color="${c[1]}"/></linearGradient>`);
+    defs += '</defs>';
+    let paths = '';
+    premios.forEach((p,i)=>{
+      const a0 = ang(i,n), a1 = ang(i+1,n);
+      const [x1,y1] = pol(100,100,100,a0), [x2,y2] = pol(100,100,100,a1);
+      const large = (a1-a0) > 180 ? 1 : 0;
+      const [tx,ty] = pol(100,100,62,(a0+a1)/2);
+      paths += `<path d="M100,100 L${x1.toFixed(2)},${y1.toFixed(2)} A100,100 0 ${large},1 ${x2.toFixed(2)},${y2.toFixed(2)} Z" fill="url(#rg${i%COLORES.length})" stroke="rgba(0,0,0,.25)" stroke-width="0.5"/>`;
+      paths += `<text x="${tx.toFixed(2)}" y="${ty.toFixed(2)}" fill="#fff" font-size="8.5" font-weight="700" font-family="Rajdhani,sans-serif" text-anchor="middle" dominant-baseline="middle" style="paint-order:stroke;stroke:rgba(0,0,0,.35);stroke-width:.6px">${p.label}</text>`;
+    });
+    wheel.innerHTML = defs + paths;
+  }
+
+  function setMsg(t){ msg.textContent = t || ''; }
+
+  // id de sesion (compartido con el chat): una vuelta por sesion por dia
+  const SID_KEY = 'goldpaw_sid';
+  let sid = localStorage.getItem(SID_KEY);
+  if (!sid){
+    sid = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
+        : 's-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+    localStorage.setItem(SID_KEY, sid);
+  }
+
+  let fase = 'girar';     // 'girar' | 'reclamar'
+  let giro = null;        // { indice, token, bonus, label }
+
+  const FALLBACK = [{label:'400 🎁'},{label:'1.000 🎁'},{label:'Nada 😢'},{label:'500 🎁'},{label:'2.000 🎁'}];
+
+  async function cargar(){
+    try {
+      const r = await fetch(API_RULETA);
+      const d = await r.json();
+      premios = (d.premios && d.premios.length) ? d.premios : FALLBACK;
+    } catch(e){ premios = FALLBACK; }
+    dibujar();
+    overlay.classList.add('show');
+  }
+
+  function girarHasta(indice){
+    const n = premios.length, g = 360/n;
+    // centro del sector bajo el puntero (arriba = 270° en coords SVG y-abajo)
+    const anguloFinal = 270 - (g*indice + g/2);
+    rot += 360*20 + ((anguloFinal - (rot % 360)) + 360) % 360;
+    wheel.style.transform = `rotate(${rot}deg)`;
+  }
+
+  // Paso 1: GIRAR (sin usuario). El server elige el premio.
+  async function doGirar(){
+    jugando = true; spin.disabled = true; spin.textContent = 'Girando…';
+    try {
+      const r = await fetch(API_RULETA, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ accion:'girar', session_id: sid })
+      });
+      const d = await r.json();
+      if (!d.ok || typeof d.indice !== 'number'){
+        setMsg(d.error || 'No se pudo girar.'); spin.textContent = 'Girar'; jugando = false; spin.disabled = false;
+        return;
+      }
+      giro = d;
+      girarHasta(d.indice);
+      wheel.addEventListener('transitionend', function fin(){
+        wheel.removeEventListener('transitionend', fin);
+        jugando = false;
+        if (d.reclamado){                     // ya lo reclamó otro día/sesión
+          result.className = 'rlt-result show nada';
+          result.innerHTML = `<span class="big">${d.label}</span>${d.mensaje || 'Ya reclamaste hoy.'}`;
+          spin.style.display = 'none';
+          return;
+        }
+        if (d.bonus > 0){                     // hay premio -> pedir usuario y reclamar
+          result.className = 'rlt-result show';
+          result.innerHTML = `<span class="big">🎉 ¡Salió ${d.label}!</span>Ingresá tu usuario y reclamalo en bonos.`;
+          user.style.display = 'block'; user.focus();
+          spin.textContent = 'Reclamar premio'; spin.disabled = false; fase = 'reclamar';
+        } else {                              // "Nada"
+          result.className = 'rlt-result show nada';
+          result.innerHTML = `<span class="big">${d.label}</span>¡Suerte la próxima! Volvé mañana.`;
+          spin.style.display = 'none';
+        }
+      }, { once:true });
+    } catch(e){
+      setMsg('No se pudo conectar. Probá de nuevo.');
+      spin.textContent = 'Girar'; jugando = false; spin.disabled = false;
+    }
+  }
+
+  // Paso 2: RECLAMAR con usuario. Acredita en bonos.
+  async function doReclamar(){
+    const u = user.value.trim();
+    if (!u){ setMsg('Escribí tu usuario del juego para reclamar.'); user.focus(); return; }
+    setMsg(''); jugando = true; spin.disabled = true; spin.textContent = 'Reclamando…';
+    try {
+      const r = await fetch(API_RULETA, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ accion:'reclamar', token: giro.token, usuario: u })
+      });
+      const d = await r.json();
+      if (d.ok){
+        result.className = 'rlt-result show';
+        result.innerHTML = `<span class="big">🎉 ¡${new Intl.NumberFormat('es-AR').format(d.bonus)} bonos!</span>Se acreditaron a <b>@${u}</b>.`;
+        user.style.display = 'none'; spin.style.display = 'none';
+      } else {
+        setMsg(d.error || 'No se pudo reclamar.');
+        spin.textContent = 'Reclamar premio'; jugando = false; spin.disabled = false;
+      }
+    } catch(e){
+      setMsg('No se pudo conectar. Probá de nuevo.');
+      spin.textContent = 'Reclamar premio'; jugando = false; spin.disabled = false;
+    }
+  }
+
+  spin.addEventListener('click', ()=>{
+    if (jugando) return;
+    if (fase === 'girar') doGirar(); else doReclamar();
+  });
+
+  user.addEventListener('input', ()=> setMsg(''));
+  function ocultar(){ overlay.classList.remove('show'); }
+  skip.addEventListener('click', ocultar);
+  cerrar.addEventListener('click', ocultar);
+
+  cargar();
+})();
+</script>
+
+</body>
+</html>

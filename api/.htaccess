@@ -1,0 +1,27 @@
+# Cierra todo lo que no sea un endpoint.
+#
+# Sin esto quedan publicos en tu dominio:
+#   /api/README.md              -> documenta los endpoints y como llamarlos
+#   /api/sql/01_migracion.sql   -> el esquema completo de tu base
+#   /api/config.local.php       -> la clave, si PHP alguna vez deja de ejecutar
+#
+# Subilo junto con el resto de la carpeta api/.
+
+# --- Archivos que no son endpoints -----------------------------------------
+<FilesMatch "\.(md|sql|example|log|ini|bak|old)$">
+    Require all denied
+</FilesMatch>
+
+# --- La config local, por si PHP se cae y sirve el fuente en texto ----------
+<FilesMatch "^config\.local\.php$">
+    Require all denied
+</FilesMatch>
+
+# --- Nada de listar directorios --------------------------------------------
+Options -Indexes
+
+# --- CORS solo para el CRUD y el login; la cola la llama el bot -------------
+# Si tu landing corre en otro dominio, cambia el * por ese dominio.
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+</IfModule>

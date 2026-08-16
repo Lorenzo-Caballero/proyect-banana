@@ -1,0 +1,32 @@
+<?php
+/**
+ * Copiá este archivo a  config.local.php  y completá los valores.
+ *
+ * config.local.php NO se sube al repo (está en .gitignore).
+ * En Hostinger es la forma más simple: subilo por el administrador de archivos
+ * a la misma carpeta que config.php.
+ *
+ * Generá la clave con:
+ *   python -c "import secrets; print(secrets.token_urlsafe(32))"
+ */
+
+return [
+    'BOT_API_KEY' => 'PEGA-ACA-LA-CLAVE-DE-32-CARACTERES',
+
+    // Clave para entrar al panel de administracion (admin.html / admin_usuarios.php).
+    // Elegi una que te acuerdes; minimo 6 caracteres. Es lo que escribis al entrar.
+    'ADMIN_PASS' => 'poné-una-clave-fuerte',
+
+    // Secreto para firmar los JWT del login del sitio (auth.php). Min 16 chars,
+    // random. Generalo con: php -r "echo bin2hex(random_bytes(32));"
+    'JWT_SECRET' => 'PEGA-ACA-UN-SECRETO-LARGO-Y-RANDOM',
+
+    // Key de Cohere para el chatbot (chatbot.php). De dashboard.cohere.com.
+    'COHERE_API_KEY' => '....',
+
+    // Solo si usás el db.php de esta carpeta. Si tenés el tuyo propio, ignoralos.
+    'DB_HOST' => 'localhost',
+    'DB_NAME' => 'tu_base',
+    'DB_USER' => 'tu_usuario',
+    'DB_PASS' => 'tu_password',
+];

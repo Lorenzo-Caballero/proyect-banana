@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Mismos colores que la landing de GOLDPAW -->
+    <color name="fondo">#0B0718</color>
+    <color name="fondo_barra">#120D2B</color>
+    <color name="violeta">#7C6CF0</color>
+    <color name="violeta_claro">#9A8CFF</color>
+    <color name="oro">#E3B14A</color>
+    <color name="texto">#EEF0FB</color>
+    <color name="texto_suave">#9AA0C4</color>
+</resources>
