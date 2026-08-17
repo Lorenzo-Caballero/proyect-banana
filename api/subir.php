@@ -11,6 +11,17 @@
  * Devuelve: { ok, adjunto:{tipo,url,nombre} }
  *
  * Guarda en api/uploads/ (con .htaccess que impide ejecutar PHP ahi).
+ *
+ * Fase 0.5: NO se agrego exigir_operador() aca.
+ * - La rama del agente (conversacion_id > 0) ya va cubierta porque solo la
+ *   llama crm.html, que requiere sesion desde Paso 6.
+ * - La rama del jugador (session_id, sin conversacion_id) es un flujo
+ *   anonimo por diseño: no puede exigir sesion. Queda abierta a subidas
+ *   sin autenticacion.
+ *
+ * Gap conocido, prioridad ALTA para Fase A: sumar validacion de
+ * session_id existente en `conversaciones` + rate limit por IP (reusar
+ * patron de _limite() en api/auth.php).
  */
 
 declare(strict_types=1);
