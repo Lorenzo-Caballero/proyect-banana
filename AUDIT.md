@@ -77,7 +77,14 @@ colector. **Pendiente confirmar:** si ese archivo `.db` existe hoy en el
 servidor/VPS y con qué datos — por el código, ya no se le escribe nada nuevo
 desde el camino de producción (ver sección 1.2).
 
-### Tablas — estado actual (después de aplicar las 17 migraciones)
+### Tablas — estado actual (16 de las 17 migraciones originales aplicadas)
+
+> **Actualización:** de las migraciones 01→17, **la 10 (`accesos`) nunca se
+> aplicó en producción** — la tabla no existe en la base real, a pesar de
+> estar en `api/sql/10_accesos.sql`. Se descubrió durante el backup previo a
+> la migración 18 (Fase 0.5 del CRM). No afecta nada de lo que describe este
+> audit ni al CRM: `accesos` es sólo para el login propio de los *jugadores*
+> (`auth.php`), que hoy nadie está usando. Corregido acá y en `CLAUDE.md`.
 
 | Tabla | Migración | Operativa / Infra | Notas |
 |---|---|---|---|
@@ -91,17 +98,19 @@ desde el camino de producción (ver sección 1.2).
 | `movimientos` | 05, alterada 09 | Operativa | Historial de fichas/bonos/saldo |
 | `ruleta_giros` | 06 | Operativa | Reemplaza a `ruleta_jugadas` |
 | `acciones_saldo` | 09, alterada 15 y 16 | Operativa | Cola para el worker de saldo |
-| `accesos` | 10 | Operativa | Login propio del sitio |
+| `accesos` | 10 | **NO aplicada** | Login propio del sitio — tabla no existe en producción, ver nota arriba |
 | `dispositivos` | 11 | Operativa (push) | |
 | `notificaciones` | 11, alterada 12 | Operativa (push) | |
 | `notificaciones_entregas` | 11 | Infra (dedup de entrega) | PK compuesta |
 | `altas` | 13, alterada 14 | Operativa | Reemplaza a la cola vieja sobre `jugadores` |
 
-No hay tabla de control de migraciones (tipo `schema_migrations`): las 17
-migraciones son archivos `.sql` numerados que se corren a mano, una vez, sin
-registro de cuáles ya se aplicaron. **Pendiente confirmar:** si las 17 están
-aplicadas en producción — el código de `usuarios_sync.php` usa columnas de la
-17 (`balance_web`), así que si esa migración no corrió, ese endpoint rompe.
+No hay tabla de control de migraciones (tipo `schema_migrations`): las
+migraciones son archivos `.sql` numerados que se corren a mano, una por una,
+sin registro de cuáles ya se aplicaron — así fue como la 10 pasó
+desapercibida hasta el backup de Fase 0.5. De las 01→17, **16 están
+aplicadas; la 10 es la única pendiente** (confirmado por inspección directa
+del dump de producción, no por el código). El código de `usuarios_sync.php`
+usa columnas de la 17 (`balance_web`), y esa sí está confirmada aplicada.
 
 ### `usuarios` — columnas (la tabla central)
 

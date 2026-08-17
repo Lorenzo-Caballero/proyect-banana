@@ -229,6 +229,14 @@ guardado como `API_AUTH_ACCESS_TOKEN` en localStorage). Solo deja registrarse a
 usuarios que **ya existen en `usuarios`**, así queda atado a cuentas reales.
 No guarda la contraseña de ganamos: es una clave aparte para este sitio.
 
+> **La migración 10 (`accesos`) NO está aplicada en producción**, a pesar de
+> figurar en `api/sql/`: la tabla no existe en la base real. Se encontró
+> haciendo el backup previo a la migración 18 (Fase 0.5 del CRM, agosto 2026).
+> Como esta tabla es sólo para el login propio de los *jugadores* (no del
+> CRM), hoy no rompe nada — `auth.php` simplemente falla si alguien llega a
+> usarlo, y por lo que se ve nadie lo está usando. Si algún día se activa este
+> login, **correr `api/sql/10_accesos.sql` antes**.
+
 Existe porque **no se puede leer la sesión de ganamos desde el iframe**:
 
 - El SPA guarda su sesión en `localStorage.ig_token` (`before_token` es el
