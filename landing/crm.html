@@ -314,6 +314,47 @@
     display:flex;align-items:center;justify-content:center;gap:8px;transition:.15s}
   .login-btn:hover{filter:brightness(1.07)}
   .login-btn:disabled{opacity:.7;cursor:default}
+
+  /* ---- badge de cantidad en el rail (Fase A) ---- */
+  .rail-badge{position:absolute;top:2px;right:2px;background:var(--red);color:#fff;
+    font-size:9.5px;font-weight:800;min-width:15px;height:15px;border-radius:8px;
+    display:none;place-items:center;padding:0 3px;box-shadow:0 0 0 2px var(--panel)}
+  .rail-badge.on{display:grid}
+
+  /* ---- Comprobantes sin resolver (Fase A, Módulo 1) ---- */
+  .view-row{flex:1;display:flex;gap:12px;min-width:0}
+  .comp-list-col{width:360px;min-width:300px;display:flex;flex-direction:column;overflow:hidden}
+  .comp-head{padding:15px 16px;border-bottom:1px solid var(--line);display:flex;
+    justify-content:space-between;align-items:center}
+  .comp-head b{font-size:15px}
+  .comp-head .cap{color:var(--muted);font-size:12px}
+  .comp-row{padding:12px 14px;border-radius:14px;cursor:pointer;transition:.12s;margin:3px 8px}
+  .comp-row:hover{background:var(--panel2)}
+  .comp-row.sel{background:var(--violetSoft);box-shadow:inset 0 0 0 1px var(--violet)}
+  .comp-row .cr-top{display:flex;justify-content:space-between;gap:8px;font-weight:700;font-size:14px}
+  .comp-row .cr-sub{color:var(--muted);font-size:12.5px;margin-top:3px}
+  .comp-detail-col{flex:1;min-width:0;overflow-y:auto;padding:22px}
+  .comp-info{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:22px}
+  .comp-info .ci{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:11px 13px}
+  .comp-info .ci .k{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+  .comp-info .ci .v{font-size:14px;font-weight:700;margin-top:3px;word-break:break-word}
+  .comp-cands{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+  .cand{display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--panel2);
+    border:1px solid var(--line);border-radius:13px}
+  .cand .cd-mid{flex:1;min-width:0}
+  .cand .cd-user{font-weight:700}
+  .cand .cd-sub{color:var(--muted);font-size:12px;margin-top:2px}
+  .cand .cd-monto{font-weight:800;color:var(--green2);white-space:nowrap}
+  .warn-chip{background:rgba(245,166,35,.16);color:var(--orange2);border:1px solid var(--orange);
+    font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:7px;margin-left:6px;white-space:nowrap}
+  .btn-asignar{background:linear-gradient(180deg,var(--violet2),var(--violet));color:#fff;border:none;
+    border-radius:9px;padding:8px 13px;font-size:12.5px;font-weight:700;transition:.15s;flex:none}
+  .btn-asignar:hover{filter:brightness(1.07)}
+  .btn-asignar:disabled{opacity:.6;cursor:default}
+  @media(max-width:1040px){
+    .view-row{flex-direction:column}
+    .comp-list-col{width:100%;max-height:38vh}
+  }
 </style>
 </head>
 <body>
@@ -337,7 +378,7 @@
       <button class="rail-item" data-nav="cargas" data-tip="Cargas / Recargas"><svg viewBox="0 0 24 24"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></button>
       <button class="rail-item" data-nav="transacciones" data-tip="Transacciones"><svg viewBox="0 0 24 24"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></button>
       <button class="rail-item" data-nav="retiros" data-tip="Retiros pendientes"><svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg></button>
-      <button class="rail-item" data-nav="comprobantes" data-tip="Comprobantes"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg></button>
+      <button class="rail-item" data-nav="comprobantes" data-tip="Comprobantes"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg><span class="rail-badge" id="badgeComprobantes"></span></button>
       <button class="rail-item" data-nav="push" data-tip="Push & Notificaciones"><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></button>
     </div>
     <div class="grp">
@@ -457,6 +498,34 @@
   </aside>
 
   <div class="drawer-back" id="drawerBack"></div>
+
+  <!-- ===== Comprobantes sin resolver (Fase A, Módulo 1) ===== -->
+  <div class="view-row" id="viewComprobantes" style="display:none">
+    <aside class="card-col comp-list-col">
+      <div class="comp-head">
+        <b>Comprobantes sin resolver</b>
+        <span class="cap" id="compCap"></span>
+      </div>
+      <div class="list" id="compList"></div>
+    </aside>
+    <main class="card-col comp-detail-col">
+      <div class="empty" id="compEmpty">
+        <div>
+          <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+          <div>Elegí un comprobante de la izquierda</div>
+        </div>
+      </div>
+      <div id="compDetail" style="display:none">
+        <div class="comp-info" id="compInfo"></div>
+        <h4 style="margin:0 0 9px;font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px">Asignar a una recarga pendiente</h4>
+        <label class="search">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          <input id="compQ" placeholder="Buscar por usuario, referencia o id…" autocomplete="off">
+        </label>
+        <div class="comp-cands" id="compCands"></div>
+      </div>
+    </main>
+  </div>
 </div>
 
 <!-- Fase 0.5: se ve mientras arrancar() todavia no sabe si hay sesion. -->
@@ -548,7 +617,7 @@
   };
 
   const st = { q:"", estado:"todas", convId:0, usuario:"", modo:"ficha" };
-  let debounce, pollList, pollConv;
+  let debounce, pollList, pollConv, pollBadgeComp;
 
   // ---------- sesion de operador: shell vs. login (Fase 0.5) ----------
   function ocultarBoot(){ const b=$("#bootLoading"); if(b) b.style.display="none"; }
@@ -584,11 +653,17 @@
     detenerPolling();
     pollList = setInterval(cargarLista, 12000);
     pollConv = setInterval(()=>{ if(st.convId && !$("#back").classList.contains("on")) abrir(st.convId); }, 9000);
+    // El badge de comprobantes corre siempre, sin importar que modulo este
+    // abierto -- asi el numero del rail se actualiza aunque el operador este
+    // mirando otra cosa.
+    pollBadgeComp = setInterval(actualizarBadgeComp, 25000);
+    actualizarBadgeComp();
   }
   function detenerPolling(){
     if(pollList) clearInterval(pollList);
     if(pollConv) clearInterval(pollConv);
-    pollList = pollConv = null;
+    if(pollBadgeComp) clearInterval(pollBadgeComp);
+    pollList = pollConv = pollBadgeComp = null;
   }
 
   // ---------- tema ----------
@@ -604,14 +679,36 @@
   $("#themeBtn").addEventListener("click", toggleTema);
   const _b2 = $("#themeBtn2"); if(_b2) _b2.addEventListener("click", toggleTema);
 
-  // ---------- nav rail ----------
+  // ---------- vistas del rail (Fase A) ----------
+  // Dispatcher generico: "chats" es la vista de siempre (3 columnas); los
+  // modulos nuevos ocultan esas 3 columnas y muestran su propio contenedor.
+  // Se va a ir sumando un nombre a VISTAS por cada modulo que se conecte.
+  const VISTAS = ["chats", "comprobantes"];
+
+  function mostrarVista(nombre){
+    if(!VISTAS.includes(nombre)) return;
+    document.querySelectorAll(".rail-item[data-nav]").forEach(el=>{
+      el.classList.toggle("active", el.getAttribute("data-nav")===nombre);
+    });
+    const chats = nombre==="chats";
+    // "" (no "flex") para no pisar el valor que ya define la clase CSS —
+    // asi los media queries de mobile (que tambien tocan estos mismos
+    // elementos) siguen mandando cuando la vista es "chats".
+    $(".col-list").style.display = chats ? "" : "none";
+    $(".col-chat").style.display = chats ? "" : "none";
+    $("#userPane").style.display = chats ? "" : "none";
+    $("#viewComprobantes").style.display = nombre==="comprobantes" ? "flex" : "none";
+    if(nombre==="comprobantes") cargarComprobantes();
+  }
+
   document.querySelectorAll(".rail-item[data-nav]").forEach(el=>{
     el.addEventListener("click", ()=>{
       const nav = el.getAttribute("data-nav");
-      if(nav==="chats") return;
+      if(nav==="chats"){ mostrarVista("chats"); return; }
       if(nav==="usuarios"){ location.href = "admin.html"; return; }
       // Desde el rail siempre es masiva: no hay una conversación de contexto.
       if(nav==="push"){ abrirNotif(true); return; }
+      if(nav==="comprobantes"){ mostrarVista("comprobantes"); return; }
       toast("Sección en preparación");
     });
   });
@@ -663,16 +760,21 @@
    *  invalido (ya mostró el login solo; nadie más tiene que reaccionar). */
   function esSesionRequerida(e){ return e && e.message==="sesion_requerida"; }
 
-  async function jget(params){
+  /** `url` es opcional (default API=crm.php) para que otros módulos del CRM
+   *  (crm_comprobantes.php, y los que vengan) reusen el mismo wrapper en vez
+   *  de reimplementar el manejo de sesión/CSRF cada uno. */
+  async function jget(params, url){
+    url = url || API;
     let r;
-    try{ r = await apiFetch(API + "?" + new URLSearchParams(params)); }
+    try{ r = await apiFetch(url + "?" + new URLSearchParams(params)); }
     catch(e){ if(esSesionRequerida(e)) return {ok:false, items:[]}; throw e; }
     if(!r.ok){ let d={}; try{d=await r.json()}catch(e){} const e2=new Error(d.detalle||("HTTP "+r.status)); e2.data=d; throw e2; }
     return r.json();
   }
-  async function jpost(data){
+  async function jpost(data, url){
+    url = url || API;
     let r;
-    try{ r = await apiFetch(API, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data) }); }
+    try{ r = await apiFetch(url, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data) }); }
     catch(e){ if(esSesionRequerida(e)) return {ok:false}; throw e; }
     return r.json();
   }
@@ -846,6 +948,117 @@
     try{ const r = await apiFetch("/api/subir.php",{method:"POST",body:fd}); const d = await r.json();
       if(d.ok) abrir(st.convId); else toast(d.error||"No se pudo subir");
     }catch(err){ if(err.message!=="sesion_requerida") toast("No se pudo subir"); }
+  });
+
+  // ---------- Comprobantes sin resolver (Fase A, Módulo 1) ----------
+  const API_COMP = "/api/crm_comprobantes.php";
+  let compPagoActual = null;
+
+  /** Advertencia visual, no bloqueo: compara tokens del remitente del pago
+   *  contra el username de la recarga candidata, normalizando acentos y
+   *  mayusculas. Sin match de ningun token => probablemente no es la misma
+   *  persona. Simple a proposito (no hay LEVENSHTEIN disponible en el
+   *  MySQL de Hostinger ni conviene sumarlo por esto). */
+  function normalizarNombre(s){
+    // normalize("NFD") separa cada letra acentuada en base + marca de acento
+    // (ej: "é" -> "e" + acento como caracter aparte); el filtro de abajo ya
+    // se encarga de sacar esa marca junto con cualquier otro simbolo, sin
+    // necesidad de un regex de rango Unicode aparte.
+    return String(s||"").toLowerCase().normalize("NFD")
+      .replace(/[^a-z0-9\s]/g," ").replace(/\s+/g," ").trim();
+  }
+  function pareceMismaPersona(remitente, usuario){
+    const r = normalizarNombre(remitente), u = normalizarNombre(usuario);
+    if(!r || !u) return true; // sin dato de un lado, no es una señal real
+    const tr = r.split(" ").filter(t=>t.length>=3);
+    const tu = u.split(" ").filter(t=>t.length>=3);
+    if(!tr.length || !tu.length) return true;
+    return tr.some(a=>tu.some(b=>a.includes(b)||b.includes(a))) || tr.some(a=>u.includes(a)) || tu.some(b=>r.includes(b));
+  }
+
+  async function actualizarBadgeComp(){
+    try{
+      const d = await jget({accion:"badge"}, API_COMP);
+      const b = $("#badgeComprobantes");
+      if(d.ok && d.cantidad>0){ b.textContent = d.cantidad>99?"99+":d.cantidad; b.classList.add("on"); }
+      else { b.classList.remove("on"); }
+    }catch(e){ /* silencioso: es solo un contador */ }
+  }
+
+  async function cargarComprobantes(){
+    $("#compEmpty").style.display="flex"; $("#compDetail").style.display="none";
+    compPagoActual = null;
+    let d;
+    try{ d = await jget({accion:"listar"}, API_COMP); }
+    catch(e){ $("#compList").innerHTML = `<div class="nouser">Error al cargar.</div>`; return; }
+    if(!d.ok){ $("#compList").innerHTML = `<div class="nouser">${esc(d.error||"Error")}</div>`; return; }
+    $("#compCap").textContent = d.items.length + (d.items.length===1 ? " pendiente" : " pendientes");
+    if(!d.items.length){ $("#compList").innerHTML = `<div class="nouser">No hay comprobantes sin resolver. 🎉</div>`; return; }
+    $("#compList").innerHTML = d.items.map(p=>`
+      <div class="comp-row" data-id="${esc(p.id_unico)}">
+        <div class="cr-top"><span>${esc(p.remitente||"Sin remitente")}</span><span>${money(p.monto)}</span></div>
+        <div class="cr-sub">${esc(p.entidad||"—")} · ${hace(p.capturado_en)}</div>
+      </div>`).join("");
+    $("#compList").querySelectorAll(".comp-row").forEach(el=>{
+      el.addEventListener("click", ()=> abrirComprobante(el.getAttribute("data-id")));
+    });
+  }
+
+  async function abrirComprobante(idUnico, q){
+    $("#compList").querySelectorAll(".comp-row").forEach(el=>
+      el.classList.toggle("sel", el.getAttribute("data-id")===idUnico));
+
+    let d;
+    try{ d = await jget({accion:"detalle", pago_id:idUnico, q:q||""}, API_COMP); }
+    catch(e){ toast("Error al cargar el comprobante"); return; }
+    if(!d.ok){ toast(d.error||"Ese comprobante ya no está disponible"); cargarComprobantes(); return; }
+
+    compPagoActual = d.pago;
+    $("#compEmpty").style.display="none"; $("#compDetail").style.display="block";
+    $("#compInfo").innerHTML = [
+      ["Monto", money(d.pago.monto)], ["Remitente", d.pago.remitente||"—"],
+      ["CUIT/CUIL", d.pago.cuit||"—"], ["CBU/CVU origen", d.pago.cbu_origen||"—"],
+      ["Entidad", d.pago.entidad||"—"], ["Nro. transacción", d.pago.nro_transaccion||"—"],
+      ["Mail de origen", d.pago.mail_de||"—"], ["Capturado", hace(d.pago.capturado_en)],
+    ].map(([k,v])=>`<div class="ci"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join("");
+
+    $("#compCands").innerHTML = !d.candidatas.length
+      ? `<div class="nouser">No hay recargas pendientes${q?" para esa búsqueda":""}.</div>`
+      : d.candidatas.map(c=>{
+          const warn = pareceMismaPersona(d.pago.remitente, c.usuario) ? "" : `<span class="warn-chip">⚠ nombre no coincide</span>`;
+          return `<div class="cand">
+            <div class="cd-mid">
+              <div class="cd-user">@${esc(c.usuario)}${warn}</div>
+              <div class="cd-sub">Ref ${esc(c.referencia)} · ${nf.format(c.coins)} fichas</div>
+            </div>
+            <div class="cd-monto">${money(c.monto_pedido)}</div>
+            <button class="btn-asignar" data-id="${c.id}" type="button">Asignar</button>
+          </div>`;
+        }).join("");
+    $("#compCands").querySelectorAll(".btn-asignar").forEach(btn=>{
+      btn.addEventListener("click", ()=> asignarComprobante(+btn.getAttribute("data-id"), btn));
+    });
+  }
+
+  async function asignarComprobante(recargaId, btn){
+    if(!compPagoActual) return;
+    if(!confirm(`¿Asignar este comprobante (${money(compPagoActual.monto)}) a esta recarga?`)) return;
+    btn.disabled = true; btn.textContent = "…";
+    const d = await jpost({accion:"asignar", pago_id:compPagoActual.id_unico, recarga_id:recargaId}, API_COMP);
+    if(d.ok){
+      toast(`Acreditado a @${d.usuario} — ${nf.format(d.coins)} fichas`);
+      actualizarBadgeComp();
+      cargarComprobantes();
+    } else {
+      btn.disabled = false; btn.textContent = "Asignar";
+      toast(d.error || "No se pudo asignar");
+    }
+  }
+
+  $("#compQ").addEventListener("input", e=>{
+    clearTimeout(debounce);
+    const val = e.target.value.trim();
+    debounce = setTimeout(()=>{ if(compPagoActual) abrirComprobante(compPagoActual.id_unico, val); }, 300);
   });
 
   // ---------- modal cargar/retirar/bono ----------
