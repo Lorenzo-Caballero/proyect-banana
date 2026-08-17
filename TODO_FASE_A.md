@@ -18,6 +18,25 @@ alcance de cada paso. Cuando se retomen, sacarlos de acá.
   `pagos` estaba en 0 filas. Sumar paginación real cuando el volumen de
   pagos en `estado='revision'` supere ~50 simultáneos.
 
+## Módulo 2 — Retiros pendientes
+
+- **"Cancelar retiro" bloqueado por schema.** `acciones_saldo.estado` es
+  `ENUM('pendiente','procesando','hecha','error','revisar')` — no incluye
+  `'cancelada'`. Implementarlo como se diseñó (nota interna obligatoria +
+  `notif_crear` al jugador + `crm_bitacora`) requiere primero:
+  ```sql
+  ALTER TABLE acciones_saldo
+    MODIFY estado ENUM('pendiente','procesando','hecha','error','revisar','cancelada')
+           NOT NULL DEFAULT 'pendiente';
+  ```
+  Confirmado seguro para el bot (filtra `WHERE estado = 'pendiente'` exacto,
+  no `!= 'hecha'` — un estado nuevo nunca se toma por accidente), pero sigue
+  siendo un cambio de schema en una tabla que el bot escribe en `LIVE`:
+  necesita la ceremonia completa de backup + confirmación antes de aplicarse.
+  Pendiente de decisión: aplicar la migración, o usar el workaround sin
+  schema (`estado='error'` + prefijo `"CANCELADO POR OPERADOR: ..."` en
+  `mensaje`, mezcla dos conceptos distintos, no es lo ideal).
+
 ## Endpoints públicos (fuera de Fase A hasta ahora)
 
 - **`api/subir.php` sin autenticación en la rama del jugador.** Documentado
