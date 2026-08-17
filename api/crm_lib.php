@@ -156,4 +156,14 @@ if (!function_exists('crm_conversacion_id')) {
         }
         return ['ok' => true, 'saldo' => (int)$saldo + $monto];
     }
+
+    /** Bitácora de acciones administrativas del CRM sin fila propia donde
+     *  anotar quién/cuándo (ej: liberar retiros trabados, que es masivo, sin
+     *  id puntual — ver CRM_DESIGN.md Fase 0.5). Requiere sql/22_crm_bitacora.sql. */
+    function crm_bitacora(PDO $pdo, string $operador, string $accion, string $detalle = ''): void
+    {
+        $pdo->prepare(
+            "INSERT INTO crm_bitacora (operador, accion, detalle) VALUES (?, ?, ?)"
+        )->execute([$operador, mb_substr($accion, 0, 60), mb_substr($detalle, 0, 300)]);
+    }
 }
