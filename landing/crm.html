@@ -370,6 +370,10 @@
   .ret-tag.hecha{background:var(--greenSoft);color:var(--green2);border:1px solid var(--green)}
   .ret-tag.error{background:var(--redSoft);color:var(--red);border:1px solid var(--red)}
   .ret-tag.revisar{background:rgba(245,166,35,.16);color:var(--orange2);border:1px solid var(--orange)}
+  .ret-tag.cancelada{background:var(--panel3);color:var(--muted2);border:1px solid var(--line2)}
+  .btn-mini-accion.peligro{border-color:var(--red);color:var(--red)}
+  .btn-mini-accion.peligro:hover{background:var(--redSoft)}
+  .mbtns .peligro{background:linear-gradient(180deg,#f0716f,var(--red));color:#fff}
   .btn-mini-accion{background:var(--panel2);border:1px solid var(--line);color:var(--muted);
     padding:7px 12px;border-radius:9px;font-size:12px;font-weight:700;transition:.15s;flex:none}
   .btn-mini-accion:hover{border-color:var(--violet);color:var(--txt)}
@@ -564,6 +568,7 @@
         <button class="tab" data-e="revisar">Revisar</button>
         <button class="tab" data-e="hecha">Hecha</button>
         <button class="tab" data-e="error">Error</button>
+        <button class="tab" data-e="cancelada">Canceladas</button>
       </div>
     </div>
     <div class="ret-toolbar">
@@ -629,6 +634,21 @@
     <div class="mbtns">
       <button class="no" id="nCancel">Cancelar</button>
       <button class="ok" id="nOk">Enviar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Cancelar retiro (Fase A, Módulo 2). Solo pendiente/error -- 'procesando'
+     no tiene este botón porque el bot podría estar ejecutándolo ahora mismo. -->
+<div class="back" id="backCancelRet">
+  <div class="modal">
+    <h3 id="crTitulo">Cancelar retiro</h3>
+    <p id="crSub"></p>
+    <label>Motivo (mínimo 8 caracteres, obligatorio)</label>
+    <textarea id="crNota" maxlength="300" placeholder="Por qué se cancela este retiro…"></textarea>
+    <div class="mbtns">
+      <button class="no" id="crVolver" type="button">Volver</button>
+      <button class="ok peligro" id="crOk" type="button">Cancelar retiro</button>
     </div>
   </div>
 </div>
@@ -1128,7 +1148,8 @@
   // ---------- Retiros pendientes (Fase A, Módulo 2) ----------
   const API_RET = "/api/crm_retiros.php";
   let retEstado = "", retQ = "";
-  const RET_TAG_TXT = {pendiente:"Pendiente", procesando:"Procesando", hecha:"Hecha", error:"Error", revisar:"Revisar"};
+  const RET_TAG_TXT = {pendiente:"Pendiente", procesando:"Procesando", hecha:"Hecha", error:"Error", revisar:"Revisar", cancelada:"Cancelada"};
+  let cancelarRetiroId = null;
 
   async function actualizarBadgeRetiros(){
     try{
@@ -1148,11 +1169,18 @@
     if(!d.items.length){ $("#retList").innerHTML = `<div class="nouser">No hay retiros${retEstado?" en ese estado":""}${retQ?" para esa búsqueda":""}.</div>`; return; }
 
     $("#retList").innerHTML = d.items.map(r=>{
-      const accionBtn = r.estado==="error"
-        ? `<button class="btn-mini-accion" data-id="${r.id}" type="button">Reintentar</button>`
-        : "";
-      const nota = (r.estado==="error" || r.estado==="revisar") && r.mensaje
-        ? `<div class="rr-sub" style="color:var(--red)">${esc(r.mensaje)}</div>` : "";
+      const btns = [];
+      if(r.estado==="error"){
+        btns.push(`<button class="btn-mini-accion" data-accion="reintentar" data-id="${r.id}" type="button">Reintentar</button>`);
+      }
+      // Cancelar: solo desde pendiente o error -- nunca desde 'procesando'
+      // (el bot podria estar ejecutandolo en este instante).
+      if(r.estado==="pendiente" || r.estado==="error"){
+        btns.push(`<button class="btn-mini-accion peligro" data-accion="cancelar" data-id="${r.id}" type="button">Cancelar</button>`);
+      }
+      const notaColor = r.estado==="cancelada" ? "var(--muted)" : "var(--red)";
+      const nota = (r.estado==="error" || r.estado==="revisar" || r.estado==="cancelada") && r.mensaje
+        ? `<div class="rr-sub" style="color:${notaColor}">${esc(r.mensaje)}</div>` : "";
       return `<div class="ret-row">
         <div class="rr-mid">
           <div class="rr-user">@${esc(r.usuario)}<span class="ret-tag ${esc(r.estado)}">${esc(RET_TAG_TXT[r.estado]||r.estado)}</span></div>
@@ -1160,11 +1188,17 @@
           ${nota}
         </div>
         <div class="rr-monto">${money(r.monto)}</div>
-        ${accionBtn}
+        <div style="display:flex;gap:6px">${btns.join("")}</div>
       </div>`;
     }).join("");
-    $("#retList").querySelectorAll(".btn-mini-accion").forEach(btn=>{
+    $("#retList").querySelectorAll("[data-accion='reintentar']").forEach(btn=>{
       btn.addEventListener("click", ()=> reintentarRetiro(+btn.getAttribute("data-id"), btn));
+    });
+    $("#retList").querySelectorAll("[data-accion='cancelar']").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const fila = d.items.find(x=>x.id===+btn.getAttribute("data-id"));
+        if(fila) abrirCancelarRetiro(fila);
+      });
     });
   }
 
@@ -1175,6 +1209,30 @@
     if(d.ok){ toast("Reintento encolado"); cargarRetiros(); actualizarBadgeRetiros(); }
     else { btn.disabled = false; btn.textContent = "Reintentar"; toast(d.error || "No se pudo reintentar"); }
   }
+
+  function abrirCancelarRetiro(r){
+    cancelarRetiroId = r.id;
+    $("#crTitulo").textContent = `Cancelar retiro de @${r.usuario}`;
+    $("#crSub").textContent = `Por ${money(r.monto)}. El jugador recibe un aviso, sin detalle del monto.`;
+    $("#crNota").value = "";
+    $("#backCancelRet").classList.add("on");
+    setTimeout(()=>$("#crNota").focus(), 50);
+  }
+  $("#crVolver").addEventListener("click", ()=> $("#backCancelRet").classList.remove("on"));
+  $("#backCancelRet").addEventListener("click", e=>{ if(e.target===$("#backCancelRet")) $("#backCancelRet").classList.remove("on"); });
+  $("#crOk").addEventListener("click", async ()=>{
+    const nota = $("#crNota").value.trim();
+    if(nota.length < 8){ toast("La nota tiene que tener al menos 8 caracteres"); return; }
+    const btn = $("#crOk");
+    btn.disabled = true; btn.textContent = "…";
+    const d = await jpost({accion:"cancelar", id:cancelarRetiroId, nota}, API_RET);
+    btn.disabled = false; btn.textContent = "Cancelar retiro";
+    if(d.ok){
+      $("#backCancelRet").classList.remove("on");
+      toast("Retiro cancelado");
+      cargarRetiros(); actualizarBadgeRetiros();
+    } else { toast(d.error || "No se pudo cancelar"); }
+  });
 
   $("#retTabs").addEventListener("click", e=>{
     const b = e.target.closest(".tab"); if(!b) return;
