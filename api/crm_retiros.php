@@ -184,9 +184,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $id   = (int)($body['id'] ?? 0);
             $nota = trim((string)($body['nota'] ?? ''));
 
+            // MENSAJE_MAX tiene que coincidir con acciones_saldo.mensaje
+            // (VARCHAR(300) desde 09_crm_pro.sql, nunca alterado). NOTA_MAX
+            // deja margen real para el prefijo "cancelada por <operador>: "
+            // (hasta 76 caracteres en el peor caso, operador de 60) mas el
+            // mensaje viejo si lo hay.
+            $NOTA_MAX = 200;
+            $MENSAJE_MAX = 300;
+
             if (!$id) { salir(['ok' => false, 'error' => 'Falta id'], 400); }
             if (mb_strlen($nota) < 8) {
                 salir(['ok' => false, 'error' => 'La nota es obligatoria (mínimo 8 caracteres)'], 400);
+            }
+            if (mb_strlen($nota) > $NOTA_MAX) {
+                salir(['ok' => false, 'error' => "La nota es muy larga (máximo $NOTA_MAX caracteres)"], 400);
             }
             if (!crm_cancelar_limite($operador, 10, 3600)) {
                 salir(['ok' => false, 'error' => 'Demasiadas cancelaciones en poco tiempo. Esperá un rato.'], 429);
@@ -195,7 +206,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->beginTransaction();
             try {
                 $st = $pdo->prepare(
-                    "SELECT id, usuario, monto, estado FROM acciones_saldo
+                    "SELECT id, usuario, monto, estado, mensaje FROM acciones_saldo
                       WHERE id = ? AND tipo = 'retirar' FOR UPDATE"
                 );
                 $st->execute([$id]);
@@ -210,10 +221,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     salir(['ok' => false, 'error' => 'No se puede cancelar un retiro en estado: ' . $fila['estado']], 409);
                 }
 
-                $mensaje = mb_substr("cancelada por $operador: $nota", 0, 300);
+                // Se arma en PHP, no con CONCAT_WS en SQL: el mensaje viejo
+                // puede venir ya cerca del tope de 300 por si solo (un error
+                // real del bot), y ahi ningun limite a la nota nueva alcanza
+                // para garantizar que entre. Si no entra todo, se recorta el
+                // mensaje VIEJO (contexto historico) y se preserva completa
+                // la nota de cancelacion (lo mas reciente y accionable) --
+                // en vez de dejar el truncamiento en manos del sql_mode del
+                // servidor, que no puedo verificar sin acceso a la base.
+                $colaNueva = "cancelada por $operador: $nota";
+                $mensajeViejo = trim((string)($fila['mensaje'] ?? ''));
+                if ($mensajeViejo === '') {
+                    $mensajeFinal = $colaNueva;
+                } else {
+                    $espacio = $MENSAJE_MAX - mb_strlen($colaNueva) - 3; // 3 = " | "
+                    $mensajeFinal = $espacio > 0
+                        ? mb_substr($mensajeViejo, 0, $espacio) . ' | ' . $colaNueva
+                        : $colaNueva; // no queda lugar ni para un fragmento del viejo
+                }
+
                 $pdo->prepare(
                     "UPDATE acciones_saldo SET estado = 'cancelada', mensaje = ?, tomada_en = NOW() WHERE id = ?"
-                )->execute([$mensaje, $id]);
+                )->execute([$mensajeFinal, $id]);
 
                 $pdo->commit();
             } catch (Throwable $e) {
