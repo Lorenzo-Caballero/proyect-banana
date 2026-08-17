@@ -253,6 +253,57 @@ function rl_registrar_pago(PDO $pdo, array $p): array
 }
 
 
+/**
+ * Cierra la recarga + suma coins + marca el pago usado. NO abre ni cierra
+ * transaccion (el caller ya tiene una abierta) y NO notifica (el caller lo
+ * hace despues del commit, por la misma razon que ya explicaba
+ * rl_matchear_y_acreditar: si notificara antes y el commit fallara, quedaria
+ * avisada una recarga que nunca se acredito).
+ *
+ * $operador: username de quien la disparo a mano (Fase A, asignacion manual
+ * de comprobantes), o null si la caso el matcher automatico solo. Se guarda
+ * en pagos.asignado_por/asignado_en (Fase 0.5) — con null quedan en NULL,
+ * que es su valor por default, asi que el camino automatico no cambia nada
+ * observable.
+ */
+function rl_acreditar(PDO $pdo, array $recarga, string $idUnico, string $conf, ?string $operador = null): void
+{
+    $pdo->prepare(
+        "UPDATE recargas SET estado='acreditada', pago_id=?, acreditada_en=NOW(), mensaje=?
+          WHERE id=?"
+    )->execute([$idUnico, $conf, $recarga['id']]);
+
+    $pdo->prepare(
+        "UPDATE usuarios SET coins = coins + ? WHERE username = ?"
+    )->execute([(int)$recarga['coins'], $recarga['usuario']]);
+
+    $pdo->prepare(
+        "UPDATE pagos
+            SET estado='usado', recarga_id=?, asignado_por=?,
+                asignado_en=IF(? IS NOT NULL, NOW(), NULL)
+          WHERE id_unico=?"
+    )->execute([$recarga['id'], $operador, $operador, $idUnico]);
+}
+
+/** Aviso de recarga acreditada. Mismo texto para el camino automatico y el
+ *  manual: para el jugador es el mismo evento, no hay por que distinguirlo. */
+function rl_notificar_acreditada(PDO $pdo, array $recarga): void
+{
+    if (!function_exists('notif_crear')) {
+        return;
+    }
+    notif_crear(
+        $pdo,
+        (string)$recarga['usuario'],
+        '✅ Recarga acreditada',
+        'Ya tenés tus ' . number_format((int)$recarga['coins'], 0, ',', '.')
+            . ' fichas disponibles. ¡A jugar!',
+        'recarga',
+        null,
+        'recargas'
+    );
+}
+
 /** Casa el pago con una recarga pendiente y acredita, todo atomico. */
 function rl_matchear_y_acreditar(PDO $pdo, string $idUnico, float $monto): array
 {
@@ -299,37 +350,13 @@ function rl_matchear_y_acreditar(PDO $pdo, string $idUnico, float $monto): array
             return ['resultado' => 'revision', 'mensaje' => 'sin recarga unica que coincida'];
         }
 
-        // Acreditar: cerrar recarga + sumar coins + marcar pago usado.
-        $pdo->prepare(
-            "UPDATE recargas SET estado='acreditada', pago_id=?, acreditada_en=NOW(), mensaje=?
-              WHERE id=?"
-        )->execute([$idUnico, $conf, $recarga['id']]);
-
-        $pdo->prepare(
-            "UPDATE usuarios SET coins = coins + ? WHERE username = ?"
-        )->execute([(int)$recarga['coins'], $recarga['usuario']]);
-
-        $pdo->prepare(
-            "UPDATE pagos SET estado='usado', recarga_id=? WHERE id_unico=?"
-        )->execute([$recarga['id'], $idUnico]);
-
+        rl_acreditar($pdo, $recarga, $idUnico, $conf);
         $pdo->commit();
 
         // Recien despues del commit: si el aviso saliera adentro de la
         // transaccion y esta hiciera rollback, quedaria anunciada una recarga
         // que nunca se acredito.
-        if (function_exists('notif_crear')) {
-            notif_crear(
-                $pdo,
-                (string)$recarga['usuario'],
-                '✅ Recarga acreditada',
-                'Ya tenés tus ' . number_format((int)$recarga['coins'], 0, ',', '.')
-                    . ' fichas disponibles. ¡A jugar!',
-                'recarga',
-                null,
-                'recargas'
-            );
-        }
+        rl_notificar_acreditada($pdo, $recarga);
 
         return [
             'resultado'  => 'acreditada',
@@ -344,5 +371,51 @@ function rl_matchear_y_acreditar(PDO $pdo, string $idUnico, float $monto): array
         }
         error_log('rl_matchear_y_acreditar: ' . $e->getMessage());
         return ['resultado' => 'error', 'error' => 'fallo al acreditar'];
+    }
+}
+
+/**
+ * Asignacion MANUAL de un pago en revision a una recarga pendiente puntual
+ * (Fase A, modulo Comprobantes sin resolver). Revalida los dos con
+ * FOR UPDATE dentro de la transaccion: si el matcher automatico o otro
+ * operador se adelantaron un instante antes, no hace nada y avisa.
+ */
+function rl_asignar_manual(PDO $pdo, string $idUnico, int $recargaId, string $operador): array
+{
+    $pdo->beginTransaction();
+    try {
+        $pg = $pdo->prepare("SELECT * FROM pagos WHERE id_unico = ? AND estado = 'revision' FOR UPDATE");
+        $pg->execute([$idUnico]);
+        if (!$pg->fetch()) {
+            $pdo->rollBack();
+            return ['resultado' => 'error', 'error' => 'Ese pago ya no está en revisión (puede que ya se haya asignado).'];
+        }
+
+        $rc = $pdo->prepare("SELECT * FROM recargas WHERE id = ? AND estado = 'pendiente' FOR UPDATE");
+        $rc->execute([$recargaId]);
+        $recarga = $rc->fetch();
+        if (!$recarga) {
+            $pdo->rollBack();
+            return ['resultado' => 'error', 'error' => 'Esa recarga ya no está pendiente.'];
+        }
+
+        rl_acreditar($pdo, $recarga, $idUnico, 'manual: ' . $operador, $operador);
+        $pdo->commit();
+
+        rl_notificar_acreditada($pdo, $recarga);
+
+        return [
+            'resultado'  => 'acreditada',
+            'usuario'    => $recarga['usuario'],
+            'coins'      => (int)$recarga['coins'],
+            'referencia' => $recarga['referencia'],
+            'recarga_id' => (int)$recarga['id'],
+        ];
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        error_log('rl_asignar_manual: ' . $e->getMessage());
+        return ['resultado' => 'error', 'error' => 'No se pudo asignar.'];
     }
 }
