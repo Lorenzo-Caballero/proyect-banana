@@ -279,10 +279,48 @@
     .col-user{width:min(360px,94vw)}
     .saldos{padding:14px 13px} .sec{padding:4px 14px 18px}
   }
+
+  /* ---- operador logueado (Fase 0.5) ---- */
+  .operador-bar{display:flex;align-items:center;justify-content:space-between;
+    margin:-4px 0 11px;padding:6px 2px;font-size:12px;color:var(--muted)}
+  .operador-bar .operador-nombre{display:flex;align-items:center;gap:6px}
+  .operador-bar .operador-nombre::before{content:"";width:7px;height:7px;border-radius:50%;
+    background:var(--green);box-shadow:0 0 6px var(--green);flex:none}
+  .operador-logout{background:transparent;border:none;color:var(--muted);padding:5px;
+    border-radius:8px;display:grid;place-items:center;transition:.15s}
+  .operador-logout:hover{background:var(--panel2);color:var(--red)}
+  .operador-logout svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2}
+
+  /* ---- carga inicial + login (Fase 0.5) ---- */
+  .boot-loading{position:fixed;inset:0;z-index:110;display:grid;place-items:center;
+    background:linear-gradient(180deg, var(--bg2), var(--bg1))}
+  .login-screen{position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:20px;
+    background:radial-gradient(1000px 500px at 82% -8%, var(--glow), transparent 60%),
+      linear-gradient(180deg, var(--bg2), var(--bg1))}
+  .login-card{background:var(--panel);border:1px solid var(--line);border-radius:18px;
+    padding:30px 26px;width:100%;max-width:360px;box-shadow:var(--shadow)}
+  .login-logo{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+  .login-logo .logo{width:38px;height:38px;margin:0}
+  .login-logo b{font-size:17px;letter-spacing:.4px}
+  .login-logo b span{color:var(--violet2)}
+  .login-sub{color:var(--muted);font-size:13px;margin:2px 0 22px}
+  .login-card label{display:block;font-size:12px;color:var(--muted);margin:0 0 14px}
+  .login-card input{width:100%;margin-top:5px;padding:12px;background:var(--panel2);
+    border:1px solid var(--line);border-radius:11px;color:var(--txt);outline:none;font:inherit;transition:.15s}
+  .login-card input:focus{border-color:var(--violet);box-shadow:0 0 0 3px var(--violetSoft)}
+  .login-error{color:var(--red);font-size:12.5px;min-height:16px;margin:-4px 0 14px;line-height:1.4}
+  .login-btn{width:100%;padding:13px;border:none;border-radius:11px;font-weight:700;font-size:14.5px;
+    color:#fff;background:linear-gradient(180deg,var(--violet2),var(--violet));
+    display:flex;align-items:center;justify-content:center;gap:8px;transition:.15s}
+  .login-btn:hover{filter:brightness(1.07)}
+  .login-btn:disabled{opacity:.7;cursor:default}
 </style>
 </head>
 <body>
-<div class="app" id="app">
+<!-- Oculto por defecto a proposito (Fase 0.5): nunca se muestra el shell
+     hasta confirmar la sesion en arrancar(). Sin esto habria un flash del
+     CRM vacio/roto antes de saber si hay que pedir login. -->
+<div class="app" id="app" style="display:none">
 
   <!-- ===== barra mobile ===== -->
   <div class="mbar card-col">
@@ -312,6 +350,12 @@
   <aside class="col-list card-col">
     <div class="lhead">
       <div class="brand"><b>gana<span>mos</span></b><span class="cap" id="cap"></span></div>
+      <div class="operador-bar">
+        <span class="operador-nombre" id="operadorNombre">—</span>
+        <button class="operador-logout" id="btnLogout" title="Cerrar sesión" type="button">
+          <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        </button>
+      </div>
       <div class="saldo-int">
         <div class="lbl"><svg viewBox="0 0 24 24"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> Saldo interno</div>
         <div class="val" id="saldoInt">$0</div>
@@ -415,6 +459,29 @@
   <div class="drawer-back" id="drawerBack"></div>
 </div>
 
+<!-- Fase 0.5: se ve mientras arrancar() todavia no sabe si hay sesion. -->
+<div class="boot-loading" id="bootLoading"><span class="sp"></span></div>
+
+<!-- Fase 0.5: login de operador. Cubre TODO por encima del shell (z-index
+     100) — nunca conviven visibles los dos al mismo tiempo. -->
+<div class="login-screen" id="loginScreen" style="display:none">
+  <form class="login-card" id="loginForm" autocomplete="off">
+    <div class="login-logo">
+      <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+      <b>gana<span>mos</span></b>
+    </div>
+    <p class="login-sub">Panel de operadores</p>
+    <label>Usuario<br>
+      <input id="loginUser" name="usuario" autocomplete="username" required autofocus>
+    </label>
+    <label>Contraseña<br>
+      <input id="loginPass" name="password" type="password" autocomplete="current-password" required>
+    </label>
+    <div class="login-error" id="loginError"></div>
+    <button type="submit" class="login-btn" id="loginBtn">Ingresar</button>
+  </form>
+</div>
+
 <div class="back" id="back">
   <div class="modal">
     <h3 id="mTitulo">Cargar fichas</h3>
@@ -457,7 +524,16 @@
 (function(){
   "use strict";
   const API = "/api/crm.php";
+  const API_LOGIN = "/api/crm_login.php";
   const $ = s => document.querySelector(s);
+
+  // ---------- sesion de operador (Fase 0.5) ----------
+  // A PROPOSITO en variables de modulo, nunca en localStorage/sessionStorage:
+  // un XSS que lea el storage no debe poder llevarse el CSRF. El costo es que
+  // un F5 los borra -- ver apiFetch() mas abajo, que lo maneja como sesion
+  // vencida (403) y vuelve a pedir login, sin tocar nada del backend.
+  let CSRF = null;
+  let OPERADOR = null;
   const nf = new Intl.NumberFormat("es-AR");
   const money = n => "$" + nf.format(Math.round(n||0));
   const esc = s => String(s==null?"":s).replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));
@@ -473,6 +549,47 @@
 
   const st = { q:"", estado:"todas", convId:0, usuario:"", modo:"ficha" };
   let debounce, pollList, pollConv;
+
+  // ---------- sesion de operador: shell vs. login (Fase 0.5) ----------
+  function ocultarBoot(){ const b=$("#bootLoading"); if(b) b.style.display="none"; }
+
+  function mostrarShell(){
+    ocultarBoot();
+    $("#loginScreen").style.display = "none";
+    $("#app").style.display = "flex";
+    pintarOperador();
+  }
+
+  function mostrarLogin(msg){
+    ocultarBoot();
+    detenerPolling();
+    // Si habia un modal de accion abierto cuando vencio la sesion, no lo
+    // dejamos colgado: aunque no se vea (el login lo tapa entero), mejor que
+    // la proxima vez que se abra arranque limpio.
+    $("#back").classList.remove("on");
+    $("#backN").classList.remove("on");
+    $("#app").style.display = "none";
+    $("#loginScreen").style.display = "grid";
+    $("#loginError").textContent = msg || "";
+    $("#loginPass").value = "";
+    setTimeout(()=>{ const u=$("#loginUser"); if(u) u.focus(); }, 50);
+  }
+
+  function pintarOperador(){
+    const el = $("#operadorNombre");
+    if(el) el.textContent = OPERADOR ? "@"+OPERADOR : "Operador";
+  }
+
+  function iniciarPolling(){
+    detenerPolling();
+    pollList = setInterval(cargarLista, 12000);
+    pollConv = setInterval(()=>{ if(st.convId && !$("#back").classList.contains("on")) abrir(st.convId); }, 9000);
+  }
+  function detenerPolling(){
+    if(pollList) clearInterval(pollList);
+    if(pollConv) clearInterval(pollConv);
+    pollList = pollConv = null;
+  }
 
   // ---------- tema ----------
   function aplicarTema(t){
@@ -514,13 +631,49 @@
   function inic(nombre){ const n=(nombre||"").trim(); return n? n.slice(0,2).toUpperCase() : "?"; }
   function toast(t){ const el=$("#toast"); el.textContent=t; el.classList.add("on"); setTimeout(()=>el.classList.remove("on"),2300); }
 
+  /**
+   * Wrapper unico para TODOS los fetch autenticados (jget, jpost, y la subida
+   * de adjuntos mas abajo). Dos cosas:
+   *   - En POST/PUT/PATCH/DELETE agrega X-CSRF-Token solo si hay uno en
+   *     memoria (login.php mismo no pasa por aca, ver su propio fetch).
+   *   - Si el server contesta 401 (sin sesion) o 403 (CSRF invalido o
+   *     ausente -- el caso tipico despues de un F5), vuelve a mostrar el
+   *     login SIN recargar la pagina, y corta la llamada de quien lo pidio.
+   */
+  async function apiFetch(url, options){
+    const opts = Object.assign({}, options || {});
+    opts.credentials = opts.credentials || "same-origin";
+    const metodo = (opts.method || "GET").toUpperCase();
+    if(["POST","PUT","PATCH","DELETE"].includes(metodo)){
+      const h = new Headers(opts.headers || {});
+      if(CSRF) h.set("X-CSRF-Token", CSRF);
+      opts.headers = h;
+    }
+    const r = await fetch(url, opts);
+    if(r.status===401 || r.status===403){
+      mostrarLogin(r.status===403
+        ? "Tu sesión necesita confirmarse de nuevo. Ingresá tu contraseña otra vez."
+        : "Tu sesión expiró. Ingresá de nuevo.");
+      throw new Error("sesion_requerida");
+    }
+    return r;
+  }
+
+  /** true si el error es el que tira apiFetch por sesion vencida/CSRF
+   *  invalido (ya mostró el login solo; nadie más tiene que reaccionar). */
+  function esSesionRequerida(e){ return e && e.message==="sesion_requerida"; }
+
   async function jget(params){
-    const r = await fetch(API + "?" + new URLSearchParams(params));
-    if(!r.ok){ let d={}; try{d=await r.json()}catch(e){} const e=new Error(d.detalle||("HTTP "+r.status)); e.data=d; throw e; }
+    let r;
+    try{ r = await apiFetch(API + "?" + new URLSearchParams(params)); }
+    catch(e){ if(esSesionRequerida(e)) return {ok:false, items:[]}; throw e; }
+    if(!r.ok){ let d={}; try{d=await r.json()}catch(e){} const e2=new Error(d.detalle||("HTTP "+r.status)); e2.data=d; throw e2; }
     return r.json();
   }
   async function jpost(data){
-    const r = await fetch(API, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data) });
+    let r;
+    try{ r = await apiFetch(API, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data) }); }
+    catch(e){ if(esSesionRequerida(e)) return {ok:false}; throw e; }
     return r.json();
   }
 
@@ -690,9 +843,9 @@
     if(f.size > 8*1024*1024){ toast("El archivo supera 8 MB"); return; }
     const fd = new FormData(); fd.append("archivo", f); fd.append("conversacion_id", st.convId);
     toast("Subiendo…");
-    try{ const r = await fetch("/api/subir.php",{method:"POST",body:fd}); const d = await r.json();
+    try{ const r = await apiFetch("/api/subir.php",{method:"POST",body:fd}); const d = await r.json();
       if(d.ok) abrir(st.convId); else toast(d.error||"No se pudo subir");
-    }catch(err){ toast("No se pudo subir"); }
+    }catch(err){ if(err.message!=="sesion_requerida") toast("No se pudo subir"); }
   });
 
   // ---------- modal cargar/retirar/bono ----------
@@ -787,10 +940,102 @@
     } else { toast(d.error || "No se pudo enviar"); }
   });
 
+  // ---------- login ----------
+  // Fetch propio, deliberadamente SIN pasar por apiFetch: login.php no exige
+  // sesion (es el que la crea), un 401 acá es "usuario o contraseña
+  // incorrectos" -- no "sesión vencida" -- y lo maneja este mismo formulario,
+  // no el manejador global.
+  $("#loginForm").addEventListener("submit", async e=>{
+    e.preventDefault();
+    const usuario = $("#loginUser").value.trim();
+    const password = $("#loginPass").value;
+    if(!usuario || !password){ $("#loginError").textContent = "Completá usuario y contraseña"; return; }
+
+    const btn = $("#loginBtn");
+    btn.disabled = true; btn.innerHTML = '<span class="sp"></span>';
+    $("#loginError").textContent = "";
+
+    let r, d;
+    try{
+      r = await fetch(API_LOGIN, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accion:"login", usuario, password })
+      });
+      d = await r.json().catch(()=>({}));
+    }catch(err){
+      btn.disabled = false; btn.textContent = "Ingresar";
+      $("#loginError").textContent = "No se pudo conectar con el servidor. Probá de nuevo.";
+      return;
+    }
+    btn.disabled = false; btn.textContent = "Ingresar";
+
+    if(r.status === 429){
+      $("#loginError").textContent = d.error || "Demasiados intentos. Esperá 15 minutos.";
+      return;
+    }
+    // Nunca se muestra detalle del server acá -- solo el mensaje que ya
+    // viene curado en `d.error` (nunca un stack trace ni el body crudo).
+    if(!r.ok || !d.ok){
+      $("#loginError").textContent = d.error || "Usuario o contraseña incorrectos";
+      return;
+    }
+
+    CSRF = d.csrf || null;
+    OPERADOR = d.operador || usuario;
+    try{ localStorage.setItem("goldpaw_crm_operador", OPERADOR); }catch(err){}
+    $("#loginPass").value = "";
+    mostrarShell();
+    cargarLista();
+    iniciarPolling();
+  });
+
+  // ---------- logout ----------
+  $("#btnLogout").addEventListener("click", async ()=>{
+    if(!confirm("¿Cerrar sesión?")) return;
+    try{
+      await fetch(API_LOGIN, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: Object.assign({ "Content-Type":"application/json" }, CSRF ? {"X-CSRF-Token":CSRF} : {}),
+        body: JSON.stringify({ accion:"logout" })
+      });
+    }catch(err){ /* sin red o lo que sea: igual cerramos localmente */ }
+    CSRF = null; OPERADOR = null; st.convId = 0;
+    try{ localStorage.removeItem("goldpaw_crm_operador"); }catch(err){}
+    mostrarLogin();
+  });
+
   // ---------- arranque ----------
-  cargarLista();
-  pollList = setInterval(cargarLista, 12000);
-  pollConv = setInterval(()=>{ if(st.convId && !$("#back").classList.contains("on")) abrir(st.convId); }, 9000);
+  // Un solo fetch de prueba decide todo: 401 -> login, cualquier otra cosa
+  // -> shell (y cargarLista() ya sabe mostrar su propio error si lo hay,
+  // como hacía antes de este paso). #app y #loginScreen arrancan los dos
+  // ocultos en el HTML a propósito, así nunca hay un flash del shell vacío
+  // ni del login de más mientras esto resuelve.
+  async function arrancar(){
+    // Nombre "recordado" de una sesión anterior, solo para no mostrar "—" un
+    // instante -- NUNCA el CSRF, ese vive solo en memoria y se pierde en
+    // cada carga de página a propósito (ver la nota junto a `let CSRF`).
+    try{
+      const previo = localStorage.getItem("goldpaw_crm_operador");
+      if(previo) OPERADOR = previo;
+    }catch(err){}
+
+    let r;
+    try{
+      r = await fetch(API + "?" + new URLSearchParams({accion:"conversaciones"}), { credentials:"same-origin" });
+    }catch(err){
+      mostrarLogin("No se pudo conectar con el servidor. Recargá la página para reintentar.");
+      return;
+    }
+    if(r.status === 401){ mostrarLogin(); return; }
+
+    mostrarShell();
+    cargarLista();
+    iniciarPolling();
+  }
+  arrancar();
 })();
 </script>
 </body>
