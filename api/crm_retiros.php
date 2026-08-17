@@ -15,22 +15,32 @@
  * acciones_cola.php?accion=liberar): mismo servidor, mismo $pdo, y así queda
  * acotado a tipo='retirar' sin tocar el archivo que el bot sondea en vivo.
  *
+ * "cancelar" requiere migracion sql/23_acciones_saldo_cancelada.sql (Fase A):
+ * agrega 'cancelada' al ENUM de estado. Solo se puede cancelar desde
+ * 'pendiente' o 'error' -- nunca desde 'procesando', porque el bot podria
+ * estar ejecutandolo en ese instante.
+ *
  * Fase A, Módulo 2 (ver CRM_DESIGN.md).
  *
- * GET  ?accion=badge               -> { ok, cantidad } — SOLO 'procesando'
- *                                      trabado hace mas de 30 min (la unica
- *                                      señal realmente urgente; un pendiente
- *                                      normal no alerta)
- * GET  ?accion=listar&estado=&q=   -> { ok, items:[...] }
- * POST { accion:"liberar" }        -> 'procesando' -> 'pendiente' (masivo,
- *                                      solo tipo='retirar')
- * POST { accion:"reintentar", id } -> 'error' -> 'pendiente' (puntual)
+ * GET  ?accion=badge                    -> { ok, cantidad } — SOLO
+ *                                           'procesando' trabado hace mas de
+ *                                           30 min (la unica señal realmente
+ *                                           urgente; un pendiente normal no
+ *                                           alerta)
+ * GET  ?accion=listar&estado=&q=        -> { ok, items:[...] }. Sin estado
+ *                                           explicito, excluye 'cancelada'
+ *                                           (no genera ruido en "Todos").
+ * POST { accion:"liberar" }             -> 'procesando' -> 'pendiente'
+ *                                           (masivo, solo tipo='retirar')
+ * POST { accion:"reintentar", id }      -> 'error' -> 'pendiente' (puntual)
+ * POST { accion:"cancelar", id, nota }  -> 'pendiente'|'error' -> 'cancelada'
  */
 
 declare(strict_types=1);
 require __DIR__ . '/config.php';
 require __DIR__ . '/db.php';
 require __DIR__ . '/crm_lib.php';
+require __DIR__ . '/notificaciones_lib.php';
 require __DIR__ . '/crm_auth.php';
 
 header('Content-Type: application/json; charset=utf-8');
@@ -41,6 +51,34 @@ function salir($data, int $code = 200): void
     http_response_code($code);
     echo json_encode($data, JSON_UNESCAPED_UNICODE);
     exit;
+}
+
+/**
+ * Rate limit de "cancelar" por OPERADOR (no por IP: acá ya sabemos quién es,
+ * exigir_operador() ya lo validó). Mismo mecanismo de archivo temporal que
+ * crm_login.php::crm_login_limite() y api/auth.php::_limite() — deliberadamente
+ * NO extraído a un helper compartido ni tocando esos dos archivos: son un
+ * login de jugadores en producción y un login de operador ya probado, no
+ * vale la pena rozarlos por una función de diez líneas.
+ */
+function crm_cancelar_limite(string $operador, int $max, int $ventanaSeg): bool
+{
+    $f = sys_get_temp_dir() . '/crm_cancelar_rl_' . md5($operador);
+    $ahora = time();
+    $hits = [];
+    if (is_file($f)) {
+        foreach (explode(',', (string)@file_get_contents($f)) as $t) {
+            if ($t !== '' && (int)$t > $ahora - $ventanaSeg) {
+                $hits[] = (int)$t;
+            }
+        }
+    }
+    if (count($hits) >= $max) {
+        return false;
+    }
+    $hits[] = $ahora;
+    @file_put_contents($f, implode(',', $hits), LOCK_EX);
+    return true;
 }
 
 // ============================== GET =========================================
@@ -63,9 +101,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
             $where  = ["tipo = 'retirar'"];
             $params = [];
-            if (in_array($estado, ['pendiente', 'procesando', 'hecha', 'error', 'revisar'], true)) {
+            if (in_array($estado, ['pendiente', 'procesando', 'hecha', 'error', 'revisar', 'cancelada'], true)) {
                 $where[]  = 'estado = ?';
                 $params[] = $estado;
+            } else {
+                // "Todos" (sin filtro explicito): no mostrar canceladas para
+                // no generar ruido -- hay un tab aparte para consultarlas.
+                $where[] = "estado <> 'cancelada'";
             }
             if ($q !== '') {
                 $where[]  = '(usuario LIKE ? OR id = ?)';
@@ -135,6 +177,75 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             crm_bitacora($pdo, $operador, 'reintentar_retiro', "id $id");
             salir(['ok' => true]);
+        }
+
+        // ---- cancelar (puntual, solo desde pendiente o error) ----
+        if ($accion === 'cancelar') {
+            $id   = (int)($body['id'] ?? 0);
+            $nota = trim((string)($body['nota'] ?? ''));
+
+            if (!$id) { salir(['ok' => false, 'error' => 'Falta id'], 400); }
+            if (mb_strlen($nota) < 8) {
+                salir(['ok' => false, 'error' => 'La nota es obligatoria (mínimo 8 caracteres)'], 400);
+            }
+            if (!crm_cancelar_limite($operador, 10, 3600)) {
+                salir(['ok' => false, 'error' => 'Demasiadas cancelaciones en poco tiempo. Esperá un rato.'], 429);
+            }
+
+            $pdo->beginTransaction();
+            try {
+                $st = $pdo->prepare(
+                    "SELECT id, usuario, monto, estado FROM acciones_saldo
+                      WHERE id = ? AND tipo = 'retirar' FOR UPDATE"
+                );
+                $st->execute([$id]);
+                $fila = $st->fetch(PDO::FETCH_ASSOC);
+
+                if (!$fila) {
+                    $pdo->rollBack();
+                    salir(['ok' => false, 'error' => 'Ese retiro no existe'], 404);
+                }
+                if (!in_array($fila['estado'], ['pendiente', 'error'], true)) {
+                    $pdo->rollBack();
+                    salir(['ok' => false, 'error' => 'No se puede cancelar un retiro en estado: ' . $fila['estado']], 409);
+                }
+
+                $mensaje = mb_substr("cancelada por $operador: $nota", 0, 300);
+                $pdo->prepare(
+                    "UPDATE acciones_saldo SET estado = 'cancelada', mensaje = ?, tomada_en = NOW() WHERE id = ?"
+                )->execute([$mensaje, $id]);
+
+                $pdo->commit();
+            } catch (Throwable $e) {
+                if ($pdo->inTransaction()) { $pdo->rollBack(); }
+                error_log('crm_retiros cancelar: ' . $e->getMessage());
+                salir(['ok' => false, 'error' => 'No se pudo cancelar'], 500);
+            }
+
+            // Recien despues del commit, mismo criterio que el resto del CRM:
+            // si el aviso fallara adentro de la transaccion, quedaria
+            // avisado un jugador de algo que en realidad no se aplico.
+            // Sin monto a proposito: no exponer detalle interno al jugador.
+            if (function_exists('notif_crear')) {
+                notif_crear(
+                    $pdo,
+                    (string)$fila['usuario'],
+                    '🔴 Retiro cancelado',
+                    'Tu retiro fue cancelado por el equipo. Consultá por chat si necesitás más info.',
+                    'aviso',
+                    null,
+                    'crm'
+                );
+            }
+
+            crm_bitacora($pdo, $operador, 'cancelar_retiro', json_encode([
+                'id'      => $id,
+                'usuario' => $fila['usuario'],
+                'monto'   => (float)$fila['monto'],
+                'nota'    => $nota,
+            ], JSON_UNESCAPED_UNICODE));
+
+            salir(['ok' => true, 'id' => $id, 'estado' => 'cancelada']);
         }
 
         salir(['ok' => false, 'error' => 'Acción desconocida'], 400);
