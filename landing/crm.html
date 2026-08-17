@@ -355,6 +355,25 @@
     .view-row{flex-direction:column}
     .comp-list-col{width:100%;max-height:38vh}
   }
+
+  /* ---- Retiros pendientes (Fase A, Módulo 2) ---- */
+  .view-panel{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+  .ret-toolbar{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:flex-end}
+  .ret-row{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
+  .ret-row .rr-mid{flex:1;min-width:0}
+  .ret-row .rr-user{font-weight:700;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .ret-row .rr-sub{color:var(--muted);font-size:12px;margin-top:3px}
+  .ret-row .rr-monto{font-weight:800;white-space:nowrap}
+  .ret-tag{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap}
+  .ret-tag.pendiente{background:var(--panel2);color:var(--muted);border:1px solid var(--line)}
+  .ret-tag.procesando{background:rgba(74,131,176,.16);color:var(--blue);border:1px solid var(--blue)}
+  .ret-tag.hecha{background:var(--greenSoft);color:var(--green2);border:1px solid var(--green)}
+  .ret-tag.error{background:var(--redSoft);color:var(--red);border:1px solid var(--red)}
+  .ret-tag.revisar{background:rgba(245,166,35,.16);color:var(--orange2);border:1px solid var(--orange)}
+  .btn-mini-accion{background:var(--panel2);border:1px solid var(--line);color:var(--muted);
+    padding:7px 12px;border-radius:9px;font-size:12px;font-weight:700;transition:.15s;flex:none}
+  .btn-mini-accion:hover{border-color:var(--violet);color:var(--txt)}
+  .btn-mini-accion:disabled{opacity:.6;cursor:default}
 </style>
 </head>
 <body>
@@ -377,7 +396,7 @@
       <button class="rail-item" data-nav="usuarios" data-tip="Usuarios"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></button>
       <button class="rail-item" data-nav="cargas" data-tip="Cargas / Recargas"><svg viewBox="0 0 24 24"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></button>
       <button class="rail-item" data-nav="transacciones" data-tip="Transacciones"><svg viewBox="0 0 24 24"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></button>
-      <button class="rail-item" data-nav="retiros" data-tip="Retiros pendientes"><svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg></button>
+      <button class="rail-item" data-nav="retiros" data-tip="Retiros pendientes"><svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg><span class="rail-badge" id="badgeRetiros"></span></button>
       <button class="rail-item" data-nav="comprobantes" data-tip="Comprobantes"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg><span class="rail-badge" id="badgeComprobantes"></span></button>
       <button class="rail-item" data-nav="push" data-tip="Push & Notificaciones"><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></button>
     </div>
@@ -526,6 +545,32 @@
       </div>
     </main>
   </div>
+
+  <!-- ===== Retiros pendientes (Fase A, Módulo 2) ===== -->
+  <div class="card-col view-panel" id="viewRetiros" style="display:none">
+    <div class="comp-head">
+      <b>Retiros pendientes</b>
+      <span class="cap" id="retCap"></span>
+    </div>
+    <div class="subhead">
+      <label class="search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="retQ" placeholder="Buscar por usuario o id…" autocomplete="off">
+      </label>
+      <div class="tabs" id="retTabs">
+        <button class="tab on" data-e="">Todos</button>
+        <button class="tab" data-e="pendiente">Pendiente</button>
+        <button class="tab" data-e="procesando">Procesando</button>
+        <button class="tab" data-e="revisar">Revisar</button>
+        <button class="tab" data-e="hecha">Hecha</button>
+        <button class="tab" data-e="error">Error</button>
+      </div>
+    </div>
+    <div class="ret-toolbar">
+      <button class="btn-asignar" id="btnLiberarRetiros" type="button">Liberar retiros trabados</button>
+    </div>
+    <div class="list" id="retList" style="margin-top:0"></div>
+  </div>
 </div>
 
 <!-- Fase 0.5: se ve mientras arrancar() todavia no sabe si hay sesion. -->
@@ -617,7 +662,7 @@
   };
 
   const st = { q:"", estado:"todas", convId:0, usuario:"", modo:"ficha" };
-  let debounce, pollList, pollConv, pollBadgeComp;
+  let debounce, pollList, pollConv, pollBadgeComp, pollBadgeRet, pollRetirosVista;
 
   // ---------- sesion de operador: shell vs. login (Fase 0.5) ----------
   function ocultarBoot(){ const b=$("#bootLoading"); if(b) b.style.display="none"; }
@@ -653,17 +698,18 @@
     detenerPolling();
     pollList = setInterval(cargarLista, 12000);
     pollConv = setInterval(()=>{ if(st.convId && !$("#back").classList.contains("on")) abrir(st.convId); }, 9000);
-    // El badge de comprobantes corre siempre, sin importar que modulo este
-    // abierto -- asi el numero del rail se actualiza aunque el operador este
-    // mirando otra cosa.
+    // Los badges corren siempre, sin importar que modulo este abierto -- asi
+    // el numero del rail se actualiza aunque el operador este mirando otra
+    // cosa. El de retiros solo se prende si hay algo REALMENTE trabado
+    // (>30min en 'procesando'), no por cada retiro pendiente normal.
     pollBadgeComp = setInterval(actualizarBadgeComp, 25000);
+    pollBadgeRet = setInterval(actualizarBadgeRetiros, 25000);
     actualizarBadgeComp();
+    actualizarBadgeRetiros();
   }
   function detenerPolling(){
-    if(pollList) clearInterval(pollList);
-    if(pollConv) clearInterval(pollConv);
-    if(pollBadgeComp) clearInterval(pollBadgeComp);
-    pollList = pollConv = pollBadgeComp = null;
+    [pollList, pollConv, pollBadgeComp, pollBadgeRet, pollRetirosVista].forEach(p=>{ if(p) clearInterval(p); });
+    pollList = pollConv = pollBadgeComp = pollBadgeRet = pollRetirosVista = null;
   }
 
   // ---------- tema ----------
@@ -682,8 +728,13 @@
   // ---------- vistas del rail (Fase A) ----------
   // Dispatcher generico: "chats" es la vista de siempre (3 columnas); los
   // modulos nuevos ocultan esas 3 columnas y muestran su propio contenedor.
-  // Se va a ir sumando un nombre a VISTAS por cada modulo que se conecte.
-  const VISTAS = ["chats", "comprobantes"];
+  // Se va sumando un nombre a VISTAS + su contenedor a VISTA_CONTENEDOR por
+  // cada modulo que se conecte, sin tocar el resto de la funcion.
+  const VISTAS = ["chats", "comprobantes", "retiros"];
+  const VISTA_CONTENEDOR = {
+    comprobantes: "#viewComprobantes",
+    retiros: "#viewRetiros",
+  };
 
   function mostrarVista(nombre){
     if(!VISTAS.includes(nombre)) return;
@@ -697,8 +748,20 @@
     $(".col-list").style.display = chats ? "" : "none";
     $(".col-chat").style.display = chats ? "" : "none";
     $("#userPane").style.display = chats ? "" : "none";
-    $("#viewComprobantes").style.display = nombre==="comprobantes" ? "flex" : "none";
+    Object.entries(VISTA_CONTENEDOR).forEach(([nom, sel])=>{
+      $(sel).style.display = nombre===nom ? "flex" : "none";
+    });
+
+    // El auto-refresh del listado de retiros corre SOLO mientras esa vista
+    // esta abierta (a diferencia del badge, que corre siempre en segundo
+    // plano via iniciarPolling()) -- se para apenas se navega a otro lado.
+    if(pollRetirosVista){ clearInterval(pollRetirosVista); pollRetirosVista = null; }
+
     if(nombre==="comprobantes") cargarComprobantes();
+    if(nombre==="retiros"){
+      cargarRetiros();
+      pollRetirosVista = setInterval(cargarRetiros, 25000);
+    }
   }
 
   document.querySelectorAll(".rail-item[data-nav]").forEach(el=>{
@@ -709,6 +772,7 @@
       // Desde el rail siempre es masiva: no hay una conversación de contexto.
       if(nav==="push"){ abrirNotif(true); return; }
       if(nav==="comprobantes"){ mostrarVista("comprobantes"); return; }
+      if(nav==="retiros"){ mostrarVista("retiros"); return; }
       toast("Sección en preparación");
     });
   });
@@ -1059,6 +1123,81 @@
     clearTimeout(debounce);
     const val = e.target.value.trim();
     debounce = setTimeout(()=>{ if(compPagoActual) abrirComprobante(compPagoActual.id_unico, val); }, 300);
+  });
+
+  // ---------- Retiros pendientes (Fase A, Módulo 2) ----------
+  const API_RET = "/api/crm_retiros.php";
+  let retEstado = "", retQ = "";
+  const RET_TAG_TXT = {pendiente:"Pendiente", procesando:"Procesando", hecha:"Hecha", error:"Error", revisar:"Revisar"};
+
+  async function actualizarBadgeRetiros(){
+    try{
+      const d = await jget({accion:"badge"}, API_RET);
+      const b = $("#badgeRetiros");
+      if(d.ok && d.cantidad>0){ b.textContent = d.cantidad>99?"99+":d.cantidad; b.classList.add("on"); }
+      else { b.classList.remove("on"); }
+    }catch(e){ /* silencioso: es solo un contador */ }
+  }
+
+  async function cargarRetiros(){
+    let d;
+    try{ d = await jget({accion:"listar", estado:retEstado, q:retQ}, API_RET); }
+    catch(e){ $("#retList").innerHTML = `<div class="nouser">Error al cargar.</div>`; return; }
+    if(!d.ok){ $("#retList").innerHTML = `<div class="nouser">${esc(d.error||"Error")}</div>`; return; }
+    $("#retCap").textContent = d.items.length + (d.items.length===1 ? " retiro" : " retiros");
+    if(!d.items.length){ $("#retList").innerHTML = `<div class="nouser">No hay retiros${retEstado?" en ese estado":""}${retQ?" para esa búsqueda":""}.</div>`; return; }
+
+    $("#retList").innerHTML = d.items.map(r=>{
+      const accionBtn = r.estado==="error"
+        ? `<button class="btn-mini-accion" data-id="${r.id}" type="button">Reintentar</button>`
+        : "";
+      const nota = (r.estado==="error" || r.estado==="revisar") && r.mensaje
+        ? `<div class="rr-sub" style="color:var(--red)">${esc(r.mensaje)}</div>` : "";
+      return `<div class="ret-row">
+        <div class="rr-mid">
+          <div class="rr-user">@${esc(r.usuario)}<span class="ret-tag ${esc(r.estado)}">${esc(RET_TAG_TXT[r.estado]||r.estado)}</span></div>
+          <div class="rr-sub">#${r.id} · ${hace(r.creada_en)}${r.motivo?" · "+esc(r.motivo):""}</div>
+          ${nota}
+        </div>
+        <div class="rr-monto">${money(r.monto)}</div>
+        ${accionBtn}
+      </div>`;
+    }).join("");
+    $("#retList").querySelectorAll(".btn-mini-accion").forEach(btn=>{
+      btn.addEventListener("click", ()=> reintentarRetiro(+btn.getAttribute("data-id"), btn));
+    });
+  }
+
+  async function reintentarRetiro(id, btn){
+    if(!confirm(`¿Reintentar el retiro #${id}? Vuelve a la cola y el bot lo va a tomar de nuevo.`)) return;
+    btn.disabled = true; btn.textContent = "…";
+    const d = await jpost({accion:"reintentar", id}, API_RET);
+    if(d.ok){ toast("Reintento encolado"); cargarRetiros(); actualizarBadgeRetiros(); }
+    else { btn.disabled = false; btn.textContent = "Reintentar"; toast(d.error || "No se pudo reintentar"); }
+  }
+
+  $("#retTabs").addEventListener("click", e=>{
+    const b = e.target.closest(".tab"); if(!b) return;
+    document.querySelectorAll("#retTabs .tab").forEach(x=>x.classList.remove("on"));
+    b.classList.add("on");
+    retEstado = b.getAttribute("data-e");
+    cargarRetiros();
+  });
+  $("#retQ").addEventListener("input", e=>{
+    clearTimeout(debounce);
+    debounce = setTimeout(()=>{ retQ = e.target.value.trim(); cargarRetiros(); }, 300);
+  });
+  $("#btnLiberarRetiros").addEventListener("click", async ()=>{
+    if(!confirm('¿Liberar los retiros trabados en "procesando"? Solo hacé esto si estás seguro de que el bot no los está ejecutando ahora mismo — si lo estaba, podría reintentar en paralelo.')) return;
+    const btn = $("#btnLiberarRetiros");
+    const txtOriginal = btn.textContent;
+    btn.disabled = true; btn.textContent = "…";
+    const d = await jpost({accion:"liberar"}, API_RET);
+    btn.disabled = false; btn.textContent = txtOriginal;
+    if(d.ok){
+      toast(d.liberadas>0 ? `${d.liberadas} retiro(s) liberado(s)` : "No había ninguno trabado");
+      cargarRetiros(); actualizarBadgeRetiros();
+    } else { toast(d.error || "No se pudo liberar"); }
   });
 
   // ---------- modal cargar/retirar/bono ----------
