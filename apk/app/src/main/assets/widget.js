@@ -1575,7 +1575,9 @@
   "width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;border-top:17px solid #E3B14A;"+
   "filter:drop-shadow(0 2px 3px rgba(0,0,0,.5))}"+
   ".gpr-hub{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:2;width:44px;height:44px;"+
-  "border-radius:50%;background:linear-gradient(160deg,#241a5e,#120d2b);border:2px solid #3a2f7a;display:grid;place-items:center;font-size:19px}"+
+  "border-radius:50%;background:linear-gradient(160deg,#241a5e,#120d2b);border:2px solid #3a2f7a;display:grid;place-items:center;"+
+  "color:#E3B14A}"+
+  ".gpr-hub svg{width:22px;height:22px}"+
   ".gpr-in{width:100%;padding:11px 13px;border-radius:11px;border:1px solid #2a2350;background:#1b1540;color:#eef0fb;"+
   "font-size:15px;outline:none;margin-bottom:10px;display:none;font-family:inherit}"+
   ".gpr-btn{width:100%;padding:13px;border:0;border-radius:12px;cursor:pointer;font:700 15px inherit;color:#fff;"+
@@ -1587,23 +1589,51 @@
   ".gpr-res{display:none;font-size:13.5px;color:#eef0fb;margin-bottom:12px}"+
   ".gpr-res.show{display:block}.gpr-res b{display:block;font-size:23px;color:#E3B14A;margin-bottom:2px}"+
   ".gpr-res.nada b{color:#9aa0c4}"+
-  "#gpr-fab{position:fixed;right:16px;bottom:196px;width:48px;height:48px;border:0;border-radius:50%;cursor:pointer;"+
-  "z-index:2147483000;background:linear-gradient(145deg,#F0C567,#E3B14A);color:#4a2c00;font-size:22px;display:none;"+
+  /* contenedor: letrero "Girá y ganá!" arriba + globo dorado abajo, mismo
+     patron visual que #gp-fab-wrap (chat) para que se lean como hermanos */
+  "#gpr-fab-wrap{position:fixed;right:16px;bottom:196px;z-index:2147483000;display:none;"+
+  "flex-direction:column;align-items:flex-end;gap:8px}"+
+  "#gpr-fab-wrap.on{display:flex}"+
+  "#gpr-fab-tag{position:relative;background:#fff;color:#8a5a00;font:700 12px/1 system-ui,Segoe UI,Roboto,Arial,sans-serif;"+
+  "padding:7px 11px;border-radius:12px;box-shadow:0 6px 16px rgba(0,0,0,.22);white-space:nowrap;letter-spacing:.2px;"+
+  "display:flex;align-items:center;gap:5px}"+
+  "#gpr-fab-tag:after{content:'';position:absolute;bottom:-4px;right:20px;width:8px;height:8px;background:#fff;transform:rotate(45deg)}"+
+  "#gpr-fab-tag.oculto{display:none}"+
+  "#gpr-fab-tag svg{width:10px;height:10px;flex:none;fill:none;stroke:#E3B14A;stroke-width:2.8;stroke-linecap:round;stroke-linejoin:round;"+
+  "animation:gpr-flecha-baja 1.4s ease-in-out infinite}"+
+  "@keyframes gpr-flecha-baja{0%,100%{transform:translateY(-2px);opacity:.55}50%{transform:translateY(2px);opacity:1}}"+
+  /* el globo late SOLO cuando queda un giro disponible hoy (.listo);
+     ya reclamado hoy = quieto, para no insistir de gusto */
+  "#gpr-fab{position:relative;width:48px;height:48px;border:0;border-radius:50%;cursor:pointer;"+
+  "background:linear-gradient(145deg,#F0C567,#E3B14A);color:#4a2c00;display:grid;"+
   "place-items:center;box-shadow:0 8px 22px rgba(227,177,74,.45);padding:0}"+
-  "#gpr-fab.on{display:grid}#gpr-fab:active{transform:scale(.94)}";
+  "#gpr-fab svg{width:26px;height:26px}"+
+  "#gpr-fab.listo{animation:gpr-latido 1.6s ease-in-out infinite}"+
+  "@keyframes gpr-latido{"+
+  "0%{transform:scale(1);box-shadow:0 8px 20px rgba(227,177,74,.45),0 0 0 0 rgba(227,177,74,.55)}"+
+  "50%{transform:scale(1.12);box-shadow:0 10px 24px rgba(227,177,74,.5),0 0 0 14px rgba(227,177,74,0)}"+
+  "100%{transform:scale(1);box-shadow:0 8px 20px rgba(227,177,74,.45),0 0 0 0 rgba(227,177,74,0)}}"+
+  "#gpr-fab:active{transform:scale(.94)}";
   var stR = document.createElement("style"); stR.textContent = cssR;
   document.head.appendChild(stR);
+
+  // Ruleta con premios, no un sorteo abstracto: el ícono lo dice sin texto.
+  // Declarado ANTES de armar el modal: se usa en el hub del centro.
+  var SVG_RULETA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+
+    '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/>'+
+    '<path d="M12 2v7.6M12 22v-7.6M2 12h7.6M22 12h-7.6M4.9 4.9l5.4 5.4M19.1 19.1l-5.4-5.4M19.1 4.9l-5.4 5.4M4.9 19.1l5.4-5.4"/>'+
+    '</svg>';
 
   var ov = document.createElement("div");
   ov.id = "gpr-ov";
   ov.innerHTML =
     '<div class="gpr-card">'+
     '<button class="gpr-x" id="gpr-x" aria-label="Cerrar">&times;</button>'+
-    '<h2>🎁 Giro <span style="color:#E3B14A">gratis</span></h2>'+
+    '<h2>Giro <span style="color:#E3B14A">gratis</span></h2>'+
     '<div class="sub">Girá y reclamá tu premio en bonos</div>'+
     '<div class="gpr-wrap"><div class="gpr-pin"></div>'+
     '<svg class="gpr-wheel" id="gpr-wheel" viewBox="0 0 200 200"></svg>'+
-    '<div class="gpr-hub">🎯</div></div>'+
+    '<div class="gpr-hub">'+SVG_RULETA+'</div></div>'+
     '<div class="gpr-res" id="gpr-res"></div>'+
     '<input class="gpr-in" id="gpr-user" type="text" placeholder="Tu usuario del juego" autocomplete="username">'+
     '<div class="gpr-msg" id="gpr-msg"></div>'+
@@ -1614,9 +1644,18 @@
 
   var fabR = document.createElement("button");
   fabR.id = "gpr-fab";
-  fabR.setAttribute("aria-label", "Ruleta de bonos");
-  fabR.textContent = "🎁";
-  document.body.appendChild(fabR);
+  fabR.setAttribute("aria-label", "Ruleta de bonos — girá y ganá");
+  fabR.innerHTML = SVG_RULETA;
+
+  var tagR = document.createElement("div");
+  tagR.id = "gpr-fab-tag";
+  tagR.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg><span>¡Girá y ganá!</span>';
+
+  var fabRWrap = document.createElement("div");
+  fabRWrap.id = "gpr-fab-wrap";
+  fabRWrap.appendChild(tagR);
+  fabRWrap.appendChild(fabR);
+  document.body.appendChild(fabRWrap);
 
   var wheel = $("gpr-wheel"), inUser = $("gpr-user"), msgR = $("gpr-msg");
   var btnR = $("gpr-spin"), resR = $("gpr-res");
@@ -1662,6 +1701,9 @@
   function abrirRuleta(){
     ov.classList.add("show");
     lss(RULETA_DIA, new Date().toISOString().slice(0, 10));
+    // Ya la va a jugar ahora: el palpito y el letrero dejaron de tener sentido.
+    fabR.classList.remove("listo");
+    tagR.classList.add("oculto");
   }
   function cerrarRuleta(){ ov.classList.remove("show"); }
 
@@ -1758,9 +1800,15 @@
       .catch(function (){ premios = FALLBACK; })
       .then(function (){
         dibujar();
-        fabR.classList.add("on");
+        fabRWrap.classList.add("on");
+        // Palpita y muestra el letrero SOLO si todavia no jugo hoy. Si ya
+        // jugo, el globo queda quieto y sin cartel: no hay nada que reclamar
+        // hasta mañana, e insistir igual seria molesto sin motivo.
+        var yaJugoHoy = ls(RULETA_DIA) === new Date().toISOString().slice(0, 10);
+        fabR.classList.toggle("listo", !yaJugoHoy);
+        tagR.classList.toggle("oculto", yaJugoHoy);
         // Se abre sola una vez por dia, para no ser pesada en cada apertura.
-        if (ls(RULETA_DIA) !== new Date().toISOString().slice(0, 10)){
+        if (!yaJugoHoy){
           setTimeout(abrirRuleta, 900);
         }
       });
