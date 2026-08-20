@@ -68,6 +68,44 @@ function rl_vencer(PDO $pdo): int
     );
 }
 
+/**
+ * Estado "efectivo" de una recarga para MOSTRAR: 'vencida' si sigue en
+ * 'pendiente' pero ya paso su vence_en (rl_vencer() es perezoso, solo corre
+ * en los puntos de entrada de arriba -- una fila puede estar objetivamente
+ * vencida sin que la columna `estado` todavia lo diga). En cualquier otro
+ * caso, el estado real de la fila.
+ *
+ * $venceEn sin tipar a proposito: PDO_MYSQL siempre devuelve las columnas
+ * DATETIME como string con el fetch mode que usa este proyecto, pero la
+ * funcion no confia en eso -- acepta tambien un DateTime (por si algun
+ * caller cambia de fetch mode el dia de mañana) y, si el valor no es
+ * parseable (string vacio/formato raro), NO asume vencida: devuelve el
+ * estado real tal cual. strtotime() devuelve false ante algo invalido, y
+ * false < time() da true en PHP -- sin este chequeo explicito, un dato
+ * inesperado marcaria la fila como vencida en silencio.
+ *
+ * OJO: crm_recargas.php necesita la MISMA condicion en SQL (para poder
+ * filtrar/contar por tab usando el indice ix_estado_vence sin traer todo a
+ * PHP) -- esta funcion es la version canonica en PHP, usada para el
+ * ?accion=detalle de una fila puntual. Si esta logica cambia, cambiar
+ * tambien la condicion equivalente en crm_recargas.php (documentada ahi).
+ */
+function rl_estado_efectivo(string $estado, $venceEn): string
+{
+    if ($estado !== 'pendiente') {
+        return $estado;
+    }
+    if ($venceEn instanceof DateTime) {
+        $ts = $venceEn->getTimestamp();
+    } else {
+        $ts = strtotime((string)$venceEn);
+        if ($ts === false) {
+            return $estado;
+        }
+    }
+    return $ts < time() ? 'vencida' : $estado;
+}
+
 
 /**
  * Crea una recarga pendiente y devuelve el monto exacto a transferir.

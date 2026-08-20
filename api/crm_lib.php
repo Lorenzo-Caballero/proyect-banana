@@ -166,4 +166,39 @@ if (!function_exists('crm_conversacion_id')) {
             "INSERT INTO crm_bitacora (operador, accion, detalle) VALUES (?, ?, ?)"
         )->execute([$operador, mb_substr($accion, 0, 60), mb_substr($detalle, 0, 300)]);
     }
+
+    /**
+     * Rate limit generico por CLAVE (archivo temporal, timestamps separados
+     * por coma). Nacio en crm_retiros.php como crm_cancelar_limite(), atado
+     * solo a "cancelar retiro"; al necesitar lo mismo para "cancelar
+     * recarga" (Fase A, Módulo 3) se generaliza aca adentro en vez de
+     * triplicar el mismo bloque de diez lineas por tercera vez.
+     *
+     * Deliberadamente separado de crm_login.php::crm_login_limite() y de
+     * api/auth.php::_limite() (login de operador y login de jugadores en
+     * produccion, ya probados) -- esos dos no se tocan.
+     *
+     * $clave: identifica el bucket, ej. "cancelar_retiro_<operador>" o
+     * "cancelar_carga_<operador>" -- quien llama arma la clave para que dos
+     * acciones distintas del mismo operador no compartan cupo.
+     */
+    function crm_rate_limite(string $clave, int $max, int $ventanaSeg): bool
+    {
+        $f = sys_get_temp_dir() . '/crm_rl_' . md5($clave);
+        $ahora = time();
+        $hits = [];
+        if (is_file($f)) {
+            foreach (explode(',', (string)@file_get_contents($f)) as $t) {
+                if ($t !== '' && (int)$t > $ahora - $ventanaSeg) {
+                    $hits[] = (int)$t;
+                }
+            }
+        }
+        if (count($hits) >= $max) {
+            return false;
+        }
+        $hits[] = $ahora;
+        @file_put_contents($f, implode(',', $hits), LOCK_EX);
+        return true;
+    }
 }

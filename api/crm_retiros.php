@@ -53,34 +53,6 @@ function salir($data, int $code = 200): void
     exit;
 }
 
-/**
- * Rate limit de "cancelar" por OPERADOR (no por IP: acá ya sabemos quién es,
- * exigir_operador() ya lo validó). Mismo mecanismo de archivo temporal que
- * crm_login.php::crm_login_limite() y api/auth.php::_limite() — deliberadamente
- * NO extraído a un helper compartido ni tocando esos dos archivos: son un
- * login de jugadores en producción y un login de operador ya probado, no
- * vale la pena rozarlos por una función de diez líneas.
- */
-function crm_cancelar_limite(string $operador, int $max, int $ventanaSeg): bool
-{
-    $f = sys_get_temp_dir() . '/crm_cancelar_rl_' . md5($operador);
-    $ahora = time();
-    $hits = [];
-    if (is_file($f)) {
-        foreach (explode(',', (string)@file_get_contents($f)) as $t) {
-            if ($t !== '' && (int)$t > $ahora - $ventanaSeg) {
-                $hits[] = (int)$t;
-            }
-        }
-    }
-    if (count($hits) >= $max) {
-        return false;
-    }
-    $hits[] = $ahora;
-    @file_put_contents($f, implode(',', $hits), LOCK_EX);
-    return true;
-}
-
 // ============================== GET =========================================
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     $accion = (string)($_GET['accion'] ?? 'listar');
@@ -199,7 +171,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (mb_strlen($nota) > $NOTA_MAX) {
                 salir(['ok' => false, 'error' => "La nota es muy larga (máximo $NOTA_MAX caracteres)"], 400);
             }
-            if (!crm_cancelar_limite($operador, 10, 3600)) {
+            if (!crm_rate_limite("cancelar_retiro_$operador", 10, 3600)) {
                 salir(['ok' => false, 'error' => 'Demasiadas cancelaciones en poco tiempo. Esperá un rato.'], 429);
             }
 

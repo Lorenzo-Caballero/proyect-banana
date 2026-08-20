@@ -1,0 +1,22 @@
+-- ---------------------------------------------------------------------------
+-- Migracion 24: indice compuesto para el modulo Cargas (Fase A, Modulo 3,
+-- ver CRM_DESIGN.md).
+--
+-- Cubre las dos condiciones del tab "Vencidas" (vista computada, no un
+-- estado que se transicione solo -- rl_vencer() es perezoso, solo corre
+-- cuando hay actividad, ver recargas_lib.php):
+--
+--   estado = 'vencida'
+--   OR (estado = 'pendiente' AND vence_en < NOW())
+--
+-- Los indices existentes (ix_estado_monto, ix_usuario) no cubren un filtro
+-- por vence_en. Este si, con estado como columna lider.
+--
+-- Verificado antes de aplicar: 12 filas totales en recargas (2 pendiente,
+-- 10 vencida). ADD INDEX puro, no toca ninguna fila.
+--
+-- Correr una sola vez: mysql -u USUARIO -p BASE < 24_recargas_ix_estado_vence.sql
+-- (o pegar en phpMyAdmin -> pestaña SQL)
+-- ---------------------------------------------------------------------------
+
+ALTER TABLE recargas ADD INDEX ix_estado_vence (estado, vence_en);

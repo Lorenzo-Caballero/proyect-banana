@@ -64,12 +64,12 @@ if (!function_exists('operador_login')) {
         }
 
         $st = $pdo->prepare(
-            "SELECT password_hash FROM operadores WHERE username = ? AND activo = 1 LIMIT 1"
+            "SELECT username, password_hash FROM operadores WHERE username = ? AND activo = 1 LIMIT 1"
         );
         $st->execute([$usuario]);
-        $hash = $st->fetchColumn();
+        $fila = $st->fetch(PDO::FETCH_ASSOC);
 
-        if (!$hash || !password_verify($password, (string)$hash)) {
+        if (!$fila || !password_verify($password, (string)$fila['password_hash'])) {
             return false;
         }
 
@@ -78,11 +78,17 @@ if (!function_exists('operador_login')) {
         // (ej. por un link con ?PHPSESSID=... en otro sitio), regenerarlo
         // corta esa sesión vieja y arranca una limpia.
         session_regenerate_id(true);
-        $_SESSION['operador'] = $usuario;
+        // Casing canonico de la fila, NO lo que se tipeo: WHERE username=?
+        // matchea sin importar mayusculas/minusculas (collation
+        // utf8mb4_unicode_ci de `operadores`), asi que sin esto la misma
+        // persona podia quedar auditada con distinto casing segun como
+        // haya tipeado su usuario al loguearse (bug real, ver
+        // TODO_FASE_A.md -- Modulo 4).
+        $_SESSION['operador'] = (string)$fila['username'];
         $_SESSION['csrf']     = bin2hex(random_bytes(32));
 
         $pdo->prepare("UPDATE operadores SET ultimo_login = NOW() WHERE username = ?")
-            ->execute([$usuario]);
+            ->execute([(string)$fila['username']]);
 
         return true;
     }

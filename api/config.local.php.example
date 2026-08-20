@@ -35,4 +35,19 @@ return [
     'DB_NAME' => 'tu_base',
     'DB_USER' => 'tu_usuario',
     'DB_PASS' => 'tu_password',
+
+    // Módulo Finanzas (Fase A, Módulo 6). Todas tienen default defensivo en
+    // crm_finanzas.php (los mismos valores de acá) -- si no las definís, el
+    // módulo igual funciona con estos números. Ajustalos cuando cambie el
+    // negocio, sin tocar código.
+    'FINANZAS_COSTO_POR_FICHA'          => '0.20',    // costo al proveedor, por ficha
+    'FINANZAS_UMBRAL_RETIRO_GRANDE'     => '50000',   // alerta amarilla: revisar como rutina
+    'FINANZAS_UMBRAL_RETIRO_MUY_GRANDE' => '200000',  // alerta roja: revisión especial
+
+    // Piso de diferencia (retiros - recargas) del período para que un
+    // jugador aparezca en la alerta de "ganador acumulado". Sin esto,
+    // cualquier diferencia de $1 dispararía la alerta. Distinta de
+    // FINANZAS_UMBRAL_RETIRO_GRANDE (esa es de la alerta de retiros
+    // pendientes, no tiene nada que ver con esta).
+    'FINANZAS_UMBRAL_ALERTA_JUGADOR_GANADOR' => '10000',
 ];
