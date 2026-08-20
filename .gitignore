@@ -1,5 +1,6 @@
 .env
 api/config.local.php
+panel/panel_config.php
 estado_sesion.json
 estado_session_storage.json
 bot.log
@@ -8,3 +9,6 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+api/uploads/
+colector/config.json
+

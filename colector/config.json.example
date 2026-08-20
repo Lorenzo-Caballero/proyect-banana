@@ -7,8 +7,8 @@
       "activa": true,
       "host": "imap.gmail.com",
       "port": 993,
-      "usuario": "nahuelherrera1997@gmail.com",
-      "clave": "afvt pwnc zixi mcpu",
+      "usuario": "PONER-EL-MAIL",
+      "clave": "PONER-EL-APP-PASSWORD-DE-GMAIL",
       "carpeta": "pagos",
       "remitentes_ok": [
         "info@mail.tarjetacencosud.com.ar"
