@@ -1617,11 +1617,16 @@
   var stR = document.createElement("style"); stR.textContent = cssR;
   document.head.appendChild(stR);
 
-  // Ruleta con premios, no un sorteo abstracto: el ícono lo dice sin texto.
+  // Ruleta de casino minimalista: aro exterior con la bolita, gajos marcados
+  // por los radios internos y el eje central. Se lee como ruleta sin texto.
   // Declarado ANTES de armar el modal: se usa en el hub del centro.
-  var SVG_RULETA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+
-    '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/>'+
-    '<path d="M12 2v7.6M12 22v-7.6M2 12h7.6M22 12h-7.6M4.9 4.9l5.4 5.4M19.1 19.1l-5.4-5.4M19.1 4.9l-5.4 5.4M4.9 19.1l5.4-5.4"/>'+
+  var SVG_RULETA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+
+    '<circle cx="12" cy="12" r="9.2"/>'+
+    '<circle cx="12" cy="12" r="5"/>'+
+    '<circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/>'+
+    '<path d="M12 6.8V2.8M12 21.2v-4M6.8 12H2.8M21.2 12h-4"/>'+
+    '<path d="M8.46 8.46 5.63 5.63M18.37 18.37l-2.83-2.83M15.54 8.46l2.83-2.83M5.63 18.37l2.83-2.83"/>'+
+    '<circle cx="12" cy="3.4" r="1.05" fill="currentColor" stroke="none"/>'+
     '</svg>';
 
   var ov = document.createElement("div");
