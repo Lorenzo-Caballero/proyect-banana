@@ -159,15 +159,17 @@ switch ($accion) {
         $c ? salida(['ok' => true, 'cliente' => $c]) : salida(['ok' => false, 'error' => 'no existe'], 404);
 
     case 'crear':
-        $nombre     = trim($in['nombre'] ?? '');
-        $dominio    = strtolower(trim($in['dominio'] ?? ''));
-        $pathTenant = !empty($in['path_tenant']) ? 1 : 0;
-        if ($nombre === '' || $dominio === '') {
-            salida(['ok' => false, 'error' => 'nombre y dominio son obligatorios'], 422);
+        $nombre = trim($in['nombre'] ?? '');
+        if ($nombre === '') {
+            salida(['ok' => false, 'error' => 'el nombre es obligatorio'], 422);
         }
-        $slug   = slugify($in['slug'] ?? '') ?: slugify($nombre);
-        if ($pathTenant && $slug === '') {
-            salida(['ok' => false, 'error' => 'un cliente sin dominio propio necesita slug'], 422);
+        // Todo cliente nuevo entra por path bajo el dominio propio del
+        // operador -- nunca dominio a elección de quien llama a la API.
+        $dominio    = $cfg['CF_ZONE_NAME'] ?? 'ganamoscrm.online';
+        $pathTenant = 1;
+        $slug       = slugify($in['slug'] ?? '') ?: slugify($nombre);
+        if ($slug === '') {
+            salida(['ok' => false, 'error' => 'no se pudo generar un slug válido del nombre'], 422);
         }
         $botKey = trim($in['bot_api_key'] ?? '') ?: bin2hex(random_bytes(24));
         // Nombre de la base del cliente: solo [a-z0-9_], porque va sin escapar
