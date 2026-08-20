@@ -1794,19 +1794,20 @@
   });
 
   function cargarRuleta(){
+    // El FAB tiene que aparecer SIEMPRE, pase lo que pase con la API o con
+    // el dibujo de la rueda -- eso se decide acá, no adentro del .then() de
+    // la red, para que un fetch caído o un error de dibujo no lo tumben.
+    fabRWrap.classList.add("on");
+    var yaJugoHoy = ls(RULETA_DIA) === new Date().toISOString().slice(0, 10);
+    fabR.classList.toggle("listo", !yaJugoHoy);
+    tagR.classList.toggle("oculto", yaJugoHoy);
+
     fetch(API_RULETA)
       .then(function (r){ return r.json(); })
       .then(function (d){ premios = (d.premios && d.premios.length) ? d.premios : FALLBACK; })
       .catch(function (){ premios = FALLBACK; })
       .then(function (){
-        dibujar();
-        fabRWrap.classList.add("on");
-        // Palpita y muestra el letrero SOLO si todavia no jugo hoy. Si ya
-        // jugo, el globo queda quieto y sin cartel: no hay nada que reclamar
-        // hasta mañana, e insistir igual seria molesto sin motivo.
-        var yaJugoHoy = ls(RULETA_DIA) === new Date().toISOString().slice(0, 10);
-        fabR.classList.toggle("listo", !yaJugoHoy);
-        tagR.classList.toggle("oculto", yaJugoHoy);
+        try { dibujar(); } catch (e) { log("ruleta: error al dibujar", String(e && e.message || e)); }
         // Se abre sola una vez por dia, para no ser pesada en cada apertura.
         if (!yaJugoHoy){
           setTimeout(abrirRuleta, 900);
