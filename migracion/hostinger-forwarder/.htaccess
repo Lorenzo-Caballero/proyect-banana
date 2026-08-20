@@ -1,0 +1,14 @@
+# Fase 0 — reenviar TODO /api/* al VPS a través de _forward.php.
+#
+# Esto REEMPLAZA al .htaccess actual de la carpeta api/ de Hostinger, EL DÍA DEL
+# CORTE. A partir de acá, Hostinger deja de ejecutar chatbot.php, recargas, etc.
+# localmente: manda cada request a _forward.php, que lo reenvía al VPS.
+#
+# Antes de subir esto, hacé una copia del .htaccess viejo (por si hay rollback):
+#   en Hostinger, renombrá .htaccess -> .htaccess.pre-corte
+
+RewriteEngine On
+
+# _forward.php se ejecuta directo; todo lo demás pasa por él.
+RewriteCond %{REQUEST_FILENAME} !_forward\.php$
+RewriteRule ^.*$ _forward.php [QSA,L]

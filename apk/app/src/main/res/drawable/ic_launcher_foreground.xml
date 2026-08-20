@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Huella GOLDPAW. Lienzo adaptativo de 108x108; la zona segura es el centro. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- dedos -->
+    <path
+        android:fillColor="#E3B14A"
+        android:pathData="M35,46 m-8.5,0 a8.5,8.5 0 1,0 17,0 a8.5,8.5 0 1,0 -17,0 Z" />
+    <path
+        android:fillColor="#F0C567"
+        android:pathData="M47,37 m-9,0 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0 Z" />
+    <path
+        android:fillColor="#F0C567"
+        android:pathData="M61,37 m-9,0 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0 Z" />
+    <path
+        android:fillColor="#E3B14A"
+        android:pathData="M73,46 m-8.5,0 a8.5,8.5 0 1,0 17,0 a8.5,8.5 0 1,0 -17,0 Z" />
+
+    <!-- almohadilla -->
+    <path
+        android:fillColor="#F5D48A"
+        android:pathData="M54,54 c-11,0 -19.5,7 -19.5,15.5 c0,7.5 6,12.5 14,12.5 c3,0 4.5,-1.5 5.5,-1.5 c1,0 2.5,1.5 5.5,1.5 c8,0 14,-5 14,-12.5 C73.5,61 65,54 54,54 Z" />
+</vector>

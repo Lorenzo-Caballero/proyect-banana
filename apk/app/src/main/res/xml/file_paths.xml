@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Donde se guarda la foto del comprobante antes de subirla -->
+    <cache-path name="capturas" path="capturas/" />
+</paths>

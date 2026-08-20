@@ -1,0 +1,21 @@
+{
+  "webhook_url": "",
+  "webhook_token": "",
+  "cuentas": [
+    {
+      "nombre": "personal",
+      "activa": true,
+      "host": "imap.gmail.com",
+      "port": 993,
+      "usuario": "nahuelherrera1997@gmail.com",
+      "clave": "afvt pwnc zixi mcpu",
+      "carpeta": "pagos",
+      "remitentes_ok": [
+        "info@mail.tarjetacencosud.com.ar"
+      ],
+      "asunto_contiene": "",
+      "exigir_dkim": true,
+      "desde_dias": 0
+    }
+  ]
+}

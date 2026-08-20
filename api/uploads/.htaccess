@@ -1,0 +1,9 @@
+# Los archivos subidos (comprobantes) NO se ejecutan: se sirven como estáticos.
+php_flag engine off
+<FilesMatch "\.(php|phtml|php3|php4|php5|php7|phps|pht|cgi|pl|py|sh)$">
+  Require all denied
+</FilesMatch>
+# Solo imagenes y pdf salen servidos
+<FilesMatch "\.(jpg|jpeg|png|webp|gif|pdf)$">
+  Require all granted
+</FilesMatch>

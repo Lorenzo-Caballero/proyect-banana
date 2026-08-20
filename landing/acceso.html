@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ingresar · ganamos</title>
+<link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png">
+<link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+<style>
+  :root{
+    --bg1:#0a0718; --bg2:#0e0a22; --glow:rgba(124,108,240,.20);
+    --card:#151033; --card2:#1b1540; --line:#2a2350;
+    --ink:#eef0fb; --muted:#9aa0c4;
+    --violet:#7c6cf0; --violet2:#9a8cff; --blue:#4aa9f0;
+    --ok:#37c17a; --err:#f0716f;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    min-height:100dvh;display:grid;place-items:center;padding:22px;
+    background:radial-gradient(1000px 560px at 78% -10%, var(--glow), transparent 60%),
+      linear-gradient(180deg,var(--bg2),var(--bg1));
+    color:var(--ink);font:15px/1.5 system-ui,Segoe UI,Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased;
+  }
+  .card{width:100%;max-width:390px;background:var(--card);border:1px solid var(--line);
+    border-radius:20px;padding:30px 26px;box-shadow:0 30px 70px rgba(0,0,0,.55)}
+  .brand{display:flex;align-items:center;gap:10px;justify-content:center;margin-bottom:6px}
+  .brand .m{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;
+    background:linear-gradient(160deg,var(--violet2),var(--violet));box-shadow:0 8px 22px var(--glow)}
+  .brand .m svg{width:22px;height:22px;fill:none;stroke:#fff;stroke-width:2}
+  .brand b{font-size:20px;letter-spacing:.5px}
+  .brand b span{color:var(--violet2)}
+  .sub{text-align:center;color:var(--muted);font-size:13.5px;margin:2px 0 20px}
+
+  .tabs{display:flex;background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:4px;margin-bottom:18px}
+  .tab{flex:1;border:none;background:transparent;color:var(--muted);padding:9px;border-radius:9px;font-weight:600;font-size:13.5px;cursor:pointer;transition:.15s}
+  .tab.on{background:linear-gradient(180deg,var(--violet2),var(--violet));color:#fff}
+
+  label{display:block;font-size:12px;color:var(--muted);margin:0 0 5px}
+  .field{margin-bottom:14px;position:relative}
+  input{width:100%;padding:13px 14px;background:var(--card2);border:1px solid var(--line);border-radius:11px;
+    color:var(--ink);font-size:15px;outline:none;transition:.15s}
+  input:focus{border-color:var(--violet);box-shadow:0 0 0 3px var(--glow)}
+  .btn{width:100%;padding:13px;border:none;border-radius:12px;font-weight:700;font-size:15px;cursor:pointer;
+    background:linear-gradient(180deg,var(--violet2),var(--violet));color:#fff;box-shadow:0 10px 26px var(--glow);transition:.15s}
+  .btn:hover{filter:brightness(1.06)} .btn:active{transform:translateY(1px)} .btn:disabled{opacity:.6;cursor:default}
+  .msg{min-height:20px;margin-top:12px;font-size:13.5px;text-align:center}
+  .msg.err{color:var(--err)} .msg.ok{color:var(--ok)}
+  .hint{margin-top:16px;text-align:center;color:var(--muted);font-size:12.5px}
+  .spin{display:inline-block;width:15px;height:15px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px;margin-right:7px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+  <form class="card" id="form" autocomplete="on">
+    <div class="brand">
+      <span class="m"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+      <b>gana<span>mos</span></b>
+    </div>
+    <p class="sub" id="sub">Ingresá para jugar y usar el asistente</p>
+
+    <div class="tabs" id="tabs">
+      <button type="button" class="tab on" data-a="login">Ingresar</button>
+      <button type="button" class="tab" data-a="registro">Crear acceso</button>
+    </div>
+
+    <div class="field">
+      <label for="usuario">Usuario del juego</label>
+      <input id="usuario" name="username" type="text" autocomplete="username" placeholder="Tu usuario de ganamos" required>
+    </div>
+    <div class="field">
+      <label for="password">Contraseña</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" placeholder="••••••••" required>
+    </div>
+
+    <button class="btn" id="btn" type="submit">Ingresar</button>
+    <div class="msg" id="msg"></div>
+    <div class="hint" id="hint">¿Primera vez? Tocá <b>Crear acceso</b> y elegí una contraseña para tu usuario.</div>
+  </form>
+
+<script>
+(function(){
+  "use strict";
+  const API = "/api/auth.php";
+  const DESTINO = "app.html";         // a dónde va después de entrar (el split juego + chatbot)
+  const $ = s => document.querySelector(s);
+  let accion = "login";
+
+  function setTab(a){
+    accion = a;
+    document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("on", t.getAttribute("data-a")===a));
+    $("#btn").textContent = a==="login" ? "Ingresar" : "Crear acceso y entrar";
+    $("#sub").textContent = a==="login" ? "Ingresá para jugar y usar el asistente"
+                                        : "Elegí una contraseña para tu usuario del juego";
+    $("#password").setAttribute("autocomplete", a==="login" ? "current-password" : "new-password");
+    $("#hint").style.display = a==="login" ? "block" : "none";
+    msg("");
+  }
+  function msg(t, tipo){ const e=$("#msg"); e.className="msg"+(tipo?" "+tipo:""); e.textContent=t||""; }
+
+  $("#tabs").addEventListener("click", e=>{ const b=e.target.closest(".tab"); if(b) setTab(b.getAttribute("data-a")); });
+
+  $("#form").addEventListener("submit", async e=>{
+    e.preventDefault();
+    const usuario = $("#usuario").value.trim();
+    const password = $("#password").value;
+    if(!usuario || !password){ msg("Completá usuario y contraseña", "err"); return; }
+    const btn=$("#btn"); const txt=btn.textContent; btn.disabled=true; btn.innerHTML='<span class="spin"></span>'+txt;
+    msg("");
+    try{
+      const r = await fetch(API, { method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ accion, usuario, password }) });
+      const d = await r.json();
+      if(d.ok && d.token){
+        try{ localStorage.setItem("API_AUTH_ACCESS_TOKEN", d.token); }catch(_){}
+        msg("¡Listo! Entrando…", "ok");
+        location.href = DESTINO;
+        return;
+      }
+      if(d.codigo==="ya_existe"){ setTab("login"); msg("Ya tenés acceso, iniciá sesión.", "err"); }
+      else msg(d.error || "No se pudo. Probá de nuevo.", "err");
+    }catch(err){ msg("No pude conectar con el servidor.", "err"); }
+    btn.disabled=false; btn.textContent=txt;
+  });
+
+  // Si ya está logueado, saltar directo al juego.
+  try{ if(localStorage.getItem("API_AUTH_ACCESS_TOKEN")) location.replace("app.html"); }catch(_){}
+})();
+</script>
+</body>
+</html>

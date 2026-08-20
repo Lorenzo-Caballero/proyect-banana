@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Panel de usuarios · ganamos</title>
+<link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png">
+<link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+<style>
+  :root{
+    --bg:#0c0e13; --panel:#141821; --panel2:#1b2130; --line:#262d3d;
+    --txt:#e8ecf4; --muted:#8b93a7; --gold:#e8b73a; --gold2:#f6cf5e;
+    --green:#37c17a; --red:#e35b5b; --blue:#5aa9f0;
+    --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:radial-gradient(1200px 600px at 80% -10%, #1a2030 0%, var(--bg) 60%);
+    color:var(--txt); font:15px/1.45 system-ui,Segoe UI,Roboto,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--gold)}
+  button{font-family:inherit;cursor:pointer}
+  .oculto{display:none!important}
+
+  /* ---------- Login ---------- */
+  #login{position:fixed;inset:0;display:grid;place-items:center;padding:24px;z-index:20}
+  .card-login{
+    width:100%;max-width:380px;background:var(--panel);border:1px solid var(--line);
+    border-radius:var(--radius);padding:32px 28px;box-shadow:0 24px 60px rgba(0,0,0,.5)
+  }
+  .brand{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+  .brand .paw{font-size:26px}
+  .brand b{font-size:19px;letter-spacing:.5px}
+  .brand b span{color:var(--gold)}
+  .card-login p{color:var(--muted);margin:2px 0 22px}
+  .field{position:relative;margin-bottom:14px}
+  .field input{
+    width:100%;padding:13px 14px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:10px;color:var(--txt);font-size:15px;outline:none;transition:border .15s
+  }
+  .field input:focus{border-color:var(--gold)}
+  .btn{
+    width:100%;padding:13px;border:none;border-radius:10px;font-weight:700;font-size:15px;
+    background:linear-gradient(180deg,var(--gold2),var(--gold));color:#191500
+  }
+  .btn:active{transform:translateY(1px)}
+  .msg{color:var(--red);font-size:13.5px;min-height:18px;margin-top:8px}
+
+  /* ---------- Layout ---------- */
+  .wrap{max-width:1240px;margin:0 auto;padding:22px 18px 60px}
+  header.top{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px}
+  .top .sync{color:var(--muted);font-size:13px}
+  .top .sync b{color:var(--txt)}
+  .ghost{
+    background:transparent;border:1px solid var(--line);color:var(--muted);
+    padding:8px 14px;border-radius:9px;font-size:13.5px
+  }
+  .ghost:hover{border-color:var(--gold);color:var(--txt)}
+
+  /* ---------- Stat cards ---------- */
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;position:relative;overflow:hidden}
+  .stat .k{color:var(--muted);font-size:12.5px;text-transform:uppercase;letter-spacing:.6px}
+  .stat .v{font-size:26px;font-weight:800;margin-top:6px;letter-spacing:.3px}
+  .stat.gold .v{color:var(--gold)} .stat.green .v{color:var(--green)}
+  .stat.blue .v{color:var(--blue)} .stat.red .v{color:var(--red)}
+  .stat::after{content:"";position:absolute;right:-20px;top:-20px;width:70px;height:70px;border-radius:50%;background:currentColor;opacity:.05}
+
+  /* ---------- Toolbar ---------- */
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+  .search{position:relative;flex:1;min-width:220px}
+  .search input{
+    width:100%;padding:11px 14px 11px 38px;background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;color:var(--txt);outline:none
+  }
+  .search input:focus{border-color:var(--gold)}
+  .search svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);opacity:.5}
+  .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .chip{
+    background:var(--panel);border:1px solid var(--line);color:var(--muted);
+    padding:9px 13px;border-radius:9px;font-size:13.5px;white-space:nowrap
+  }
+  .chip.on{background:rgba(232,183,58,.14);border-color:var(--gold);color:var(--gold2)}
+  select.pp{background:var(--panel);border:1px solid var(--line);color:var(--txt);padding:10px;border-radius:9px}
+
+  /* ---------- Tabla ---------- */
+  .tablewrap{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+  .scroll{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;min-width:820px}
+  th,td{padding:12px 14px;text-align:left;white-space:nowrap}
+  thead th{
+    background:var(--panel2);color:var(--muted);font-size:12.5px;text-transform:uppercase;
+    letter-spacing:.5px;font-weight:600;position:sticky;top:0;cursor:pointer;user-select:none
+  }
+  thead th.no-sort{cursor:default}
+  thead th .arr{opacity:.35;margin-left:4px;font-size:11px}
+  thead th.act{color:var(--gold)}
+  thead th.act .arr{opacity:1}
+  tbody tr{border-top:1px solid var(--line)}
+  tbody tr:hover{background:rgba(255,255,255,.02)}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+  .user b{color:var(--txt)}
+  .tag{font-size:11px;padding:2px 7px;border-radius:6px;font-weight:700;letter-spacing:.3px}
+  .tag.reg{background:rgba(90,169,240,.16);color:var(--blue);margin-left:8px}
+  .tag.ban{background:rgba(227,91,91,.16);color:var(--red)}
+  .tag.ok{background:rgba(55,193,122,.16);color:var(--green)}
+  .money{color:var(--green);font-weight:700}
+  .coins{color:var(--gold);font-weight:700}
+  .zero{color:var(--muted)}
+  .rol{color:var(--muted);font-size:13px}
+  .fecha{color:var(--muted);font-size:13px}
+
+  .estado-vacio,.estado-carga{padding:44px;text-align:center;color:var(--muted)}
+
+  /* ---------- Footer paginacion ---------- */
+  .pager{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:14px 16px;border-top:1px solid var(--line)}
+  .pager .info{color:var(--muted);font-size:13.5px}
+  .pgbtns{display:flex;gap:6px;align-items:center}
+  .pgbtns button{
+    background:var(--panel2);border:1px solid var(--line);color:var(--txt);
+    min-width:36px;height:36px;padding:0 10px;border-radius:8px;font-size:14px
+  }
+  .pgbtns button:hover:not(:disabled){border-color:var(--gold)}
+  .pgbtns button:disabled{opacity:.35;cursor:default}
+  .pgbtns .cur{background:var(--gold);color:#191500;border-color:var(--gold);font-weight:700}
+  .spin{display:inline-block;width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--gold);border-radius:50%;animation:sp .7s linear infinite;vertical-align:-3px;margin-right:8px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<!-- ============ PANEL ============ -->
+<div class="wrap" id="panel">
+  <header class="top">
+    <div class="brand"><span class="paw">🐾</span><b>gana<span>mos</span> · Usuarios</b></div>
+    <div style="display:flex;align-items:center;gap:14px">
+      <span class="sync" id="syncInfo"></span>
+      <button class="ghost" id="btnRefrescar">↻ Actualizar</button>
+    </div>
+  </header>
+
+  <section class="cards" id="cards"></section>
+
+  <div class="toolbar">
+    <label class="search">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input id="buscar" placeholder="Buscar por nombre de usuario…" autocomplete="off">
+    </label>
+    <div class="chips" id="filtros">
+      <button class="chip on" data-f="todos">Todos</button>
+      <button class="chip" data-f="con_saldo">Con saldo</button>
+      <button class="chip" data-f="con_coins">Con fichas</button>
+      <button class="chip" data-f="con_bonos">Con bonos</button>
+      <button class="chip" data-f="baneados">Baneados</button>
+      <button class="chip" data-f="sin_saldo">Sin saldo</button>
+    </div>
+    <select class="pp" id="porPagina">
+      <option value="25">25</option><option value="50">50</option>
+      <option value="100">100</option><option value="200">200</option>
+    </select>
+    <button class="ghost" id="btnCsv">⬇ CSV</button>
+  </div>
+
+  <div class="tablewrap">
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr id="cabeceras">
+            <th data-o="username">Usuario <span class="arr"></span></th>
+            <th data-o="balance"  class="num-h">Saldo <span class="arr"></span></th>
+            <th data-o="coins"    class="num-h">Fichas <span class="arr"></span></th>
+            <th data-o="bonus"    class="num-h">Bonos <span class="arr"></span></th>
+            <th data-o="total_deposits" class="num-h">Depósitos <span class="arr"></span></th>
+            <th class="no-sort">Rol</th>
+            <th class="no-sort">Estado</th>
+            <th data-o="creation_date">Alta <span class="arr"></span></th>
+          </tr>
+        </thead>
+        <tbody id="filas"></tbody>
+      </table>
+    </div>
+    <div class="pager">
+      <div class="info" id="infoPag"></div>
+      <div class="pgbtns" id="pgbtns"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  // Cliente sin dominio propio: /<slug>/admin.html en vez de /admin.html.
+  // Ver el mismo bloque en crm.html.
+  const TENANT_PREFIJO = (function(){
+    const m = location.pathname.match(/^\/([a-z0-9-]+)\/(?:crm|admin|chat)\.html$/i);
+    return m ? "/" + m[1] : "";
+  })();
+
+  // En una réplica de cliente (*.faunotattoo.com) nuestra API es /gp-api; /api
+  // es de la plataforma. En Hostinger (directo) es /api. Igual que crm.html:
+  // la base la muestra el dominio, db.php resuelve el cliente por ese dominio
+  // (+ el slug de TENANT_PREFIJO si es cliente por-path).
+  const API_BASE = TENANT_PREFIJO +
+    (/(^|\.)(faunotattoo\.com|ganamoscrm\.online)$/i.test(location.hostname) ? "/gp-api" : "/api");
+  const API = API_BASE + "/admin_usuarios.php";
+
+  const $ = s => document.querySelector(s);
+  const nf = new Intl.NumberFormat("es-AR");
+  const money = n => "$" + nf.format(Math.round(n));
+  const fmtCoins = n => nf.format(n);
+
+  // Estado de la vista
+  const st = { q:"", filtro:"todos", orden:"balance", dir:"desc", pagina:1, porPagina:25 };
+  let debounce;
+
+  // ---------- fetch ----------
+  async function pedir(extra){
+    const p = new URLSearchParams(Object.assign({
+      accion:"listar", q:st.q, filtro:st.filtro, orden:st.orden,
+      dir:st.dir, pagina:st.pagina, por_pagina:st.porPagina
+    }, extra||{}));
+    const r = await fetch(API + "?" + p.toString());
+    if(!r.ok){ const e = new Error("HTTP "+r.status); e.code = r.status; throw e; }
+    return r.json();
+  }
+
+  // ---------- render ----------
+  function pintarCards(r){
+    const c = [
+      { k:"Usuarios",      v:nf.format(r.total_usuarios), cls:"" },
+      { k:"Con saldo",     v:nf.format(r.con_saldo),      cls:"green" },
+      { k:"Saldo total",   v:money(r.saldo_total),        cls:"green" },
+      { k:"Fichas totales",v:fmtCoins(r.coins_total),     cls:"gold" },
+      { k:"Bonos totales", v:fmtCoins(r.bonos_total),     cls:"blue" },
+      { k:"Baneados",      v:nf.format(r.baneados),       cls:"red" },
+    ];
+    $("#cards").innerHTML = c.map(x =>
+      `<div class="stat ${x.cls}"><div class="k">${x.k}</div><div class="v">${x.v}</div></div>`).join("");
+    if(r.ultima_sync)
+      $("#syncInfo").innerHTML = "Última sync: <b>" + r.ultima_sync.replace("T"," ").slice(0,16) + "</b>";
+  }
+
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g, m => (
+    {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m])); }
+
+  function pintarFilas(items){
+    if(!items.length){
+      $("#filas").innerHTML = `<tr><td colspan="8"><div class="estado-vacio">Sin resultados para este filtro. 🔍</div></td></tr>`;
+      return;
+    }
+    $("#filas").innerHTML = items.map(u => {
+      const estado = u.is_banned ? `<span class="tag ban">Baneado</span>` : `<span class="tag ok">Activo</span>`;
+      const saldo = u.balance>0 ? `<span class="money">${money(u.balance)}</span>` : `<span class="zero">$0</span>`;
+      const coins = u.coins>0 ? `<span class="coins">${fmtCoins(u.coins)}</span>` : `<span class="zero">0</span>`;
+      const bonos = u.bonus>0 ? `<span class="coins">${fmtCoins(u.bonus)}</span>` : `<span class="zero">0</span>`;
+      const alta  = u.creation_date ? esc(u.creation_date).replace("T"," ").slice(0,10) : "—";
+      return `<tr>
+        <td class="user"><b>${esc(u.username)}</b></td>
+        <td class="num">${saldo}</td>
+        <td class="num">${coins}</td>
+        <td class="num">${bonos}</td>
+        <td class="num">${u.total_deposits>0?money(u.total_deposits):'<span class="zero">$0</span>'}</td>
+        <td><span class="rol">${esc(u.role||"—")}</span></td>
+        <td>${estado}</td>
+        <td class="fecha">${alta}</td>
+      </tr>`;
+    }).join("");
+  }
+
+  function pintarCabeceras(){
+    document.querySelectorAll("#cabeceras th[data-o]").forEach(th => {
+      const o = th.getAttribute("data-o");
+      const arr = th.querySelector(".arr");
+      if(o === st.orden){ th.classList.add("act"); arr.textContent = st.dir==="asc"?"▲":"▼"; }
+      else { th.classList.remove("act"); arr.textContent = ""; }
+    });
+  }
+
+  function pintarPager(r){
+    const desde = r.total ? (r.pagina-1)*r.por_pagina + 1 : 0;
+    const hasta = Math.min(r.pagina*r.por_pagina, r.total);
+    $("#infoPag").textContent = `Mostrando ${nf.format(desde)}–${nf.format(hasta)} de ${nf.format(r.total)}`;
+
+    const tp = r.paginas || 1, cur = r.pagina;
+    const nums = [];
+    const push = p => nums.push(p);
+    push(1);
+    for(let p=cur-2; p<=cur+2; p++) if(p>1 && p<tp) push(p);
+    if(tp>1) push(tp);
+    const uniq = [...new Set(nums)].sort((a,b)=>a-b);
+
+    let html = `<button ${cur<=1?"disabled":""} data-p="${cur-1}">‹</button>`;
+    let prev = 0;
+    uniq.forEach(p => {
+      if(prev && p - prev > 1) html += `<button disabled>…</button>`;
+      html += `<button class="${p===cur?"cur":""}" data-p="${p}">${p}</button>`;
+      prev = p;
+    });
+    html += `<button ${cur>=tp?"disabled":""} data-p="${cur+1}">›</button>`;
+    $("#pgbtns").innerHTML = html;
+    $("#pgbtns").querySelectorAll("button[data-p]").forEach(b => {
+      b.addEventListener("click", () => { st.pagina = +b.getAttribute("data-p"); cargar(); });
+    });
+  }
+
+  // ---------- cargar ----------
+  async function cargar(){
+    $("#filas").innerHTML = `<tr><td colspan="8"><div class="estado-carga"><span class="spin"></span>Cargando…</div></td></tr>`;
+    try{
+      const r = await pedir();
+      pintarCards(r.resumen);
+      pintarFilas(r.items);
+      pintarCabeceras();
+      pintarPager(r);
+    }catch(e){
+      $("#filas").innerHTML = `<tr><td colspan="8"><div class="estado-vacio">Error al cargar. Probá “Actualizar”.</div></td></tr>`;
+    }
+  }
+
+  // ---------- eventos ----------
+  $("#buscar").addEventListener("input", e => {
+    clearTimeout(debounce);
+    debounce = setTimeout(() => { st.q = e.target.value.trim(); st.pagina = 1; cargar(); }, 350);
+  });
+  $("#filtros").addEventListener("click", e => {
+    const b = e.target.closest(".chip"); if(!b) return;
+    document.querySelectorAll("#filtros .chip").forEach(x => x.classList.remove("on"));
+    b.classList.add("on"); st.filtro = b.getAttribute("data-f"); st.pagina = 1; cargar();
+  });
+  $("#cabeceras").addEventListener("click", e => {
+    const th = e.target.closest("th[data-o]"); if(!th) return;
+    const o = th.getAttribute("data-o");
+    if(st.orden === o){ st.dir = st.dir==="asc" ? "desc" : "asc"; }
+    else { st.orden = o; st.dir = (o==="username") ? "asc" : "desc"; }
+    st.pagina = 1; cargar();
+  });
+  $("#porPagina").addEventListener("change", e => { st.porPagina = +e.target.value; st.pagina = 1; cargar(); });
+  $("#btnRefrescar").addEventListener("click", cargar);
+
+  // ---------- export CSV (fetch con header + descarga) ----------
+  $("#btnCsv").addEventListener("click", async () => {
+    const btn = $("#btnCsv"); const txt = btn.textContent; btn.textContent = "…"; btn.disabled = true;
+    try{
+      const p = new URLSearchParams({ accion:"exportar", q:st.q, filtro:st.filtro, orden:st.orden, dir:st.dir });
+      const r = await fetch(API + "?" + p.toString());
+      const blob = await r.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "usuarios_" + new Date().toISOString().slice(0,10) + ".csv";
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(a.href);
+    }catch(e){ alert("No pude generar el CSV."); }
+    btn.textContent = txt; btn.disabled = false;
+  });
+
+  // ---------- arranque ----------
+  cargar();
+})();
+</script>
+</body>
+</html>

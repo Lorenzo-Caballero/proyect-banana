@@ -1,0 +1,10 @@
+.env
+api/config.local.php
+estado_sesion.json
+estado_session_storage.json
+bot.log
+capturas/
+__pycache__/
+*.pyc
+.venv/
+venv/

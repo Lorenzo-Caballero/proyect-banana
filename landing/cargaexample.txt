@@ -1,0 +1,12 @@
+# a) encolá una carga (ya con el PHP revertido)
+curl -s -X POST https://ganamos.faunotattoo.com/gp-api/chatbot.php \
+  -H "Content-Type: application/json" -H "User-Agent: Mozilla/5.0" \
+  -d '{"mensajes":[{"role":"user","content":"cargame 500 fichas"}],"usuario":"fauno0800","session_id":"test"}'; echo
+
+# b) confirmá que quedó en la cola
+mariadb u722310012_fauno888 -e "SELECT id,usuario,tipo,monto,estado FROM acciones_saldo WHERE tipo='cargar' ORDER BY id DESC LIMIT 3;"
+
+# c) corré UNA pasada del bot que deposita (paro sync para que no se peleen el login)
+cd ~/Bot-python
+docker compose stop sync
+docker compose run --rm creador python /app/bot_cargar_fichas.py --once --headless

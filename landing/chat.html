@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Asistente · ganamos</title>
+<link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png">
+<link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+<style>
+  /* Chat en vivo clásico, estilo mensajería.
+     A propósito NO usa la paleta violeta del resto del sitio: el jugador
+     reconoce este patrón de cualquier otra app y no tiene que aprender nada
+     para saber que ahí adentro le contesta alguien. */
+  :root{
+    --verde:#12b76a; --verde-osc:#0e9a58; --teal:#0f5f54;
+    --fondo:#e9e2dc; --burbuja:#ffffff; --mia:#d9fdd3;
+    --ink:#111b21; --muted:#667781; --linea:#c3ccd0;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--fondo);color:var(--ink);
+    font:15px/1.45 system-ui,Segoe UI,Roboto,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;display:flex;flex-direction:column;height:100dvh;
+  }
+
+  /* ---- cabecera ---- */
+  .chead{display:flex;align-items:center;gap:11px;padding:11px 14px;background:var(--teal);color:#fff;flex:none}
+  .chead .av{position:relative;width:42px;height:42px;border-radius:50%;flex:none;overflow:hidden;
+    display:grid;place-items:center;background:linear-gradient(160deg,#1d7d6e,var(--teal))}
+  .chead .av svg{width:22px;height:22px;fill:#fff;stroke:none}
+  /* La foto va encima del ícono; si no carga, onerror la saca y queda el globo. */
+  .chead .av img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  .chead b{font-size:16px;font-weight:600;display:block;line-height:1.25}
+  .chead .st{display:flex;align-items:center;gap:6px;color:#b9ded7;font-size:12.5px}
+  .chead .dot{width:8px;height:8px;border-radius:50%;background:#5ee9a4}
+
+  /* ---- conversación ---- */
+  .body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px 12px;
+    display:flex;flex-direction:column;gap:7px}
+  .row{display:flex;max-width:82%}
+  .row.user{align-self:flex-end} .row.bot{align-self:flex-start}
+  .bub{padding:7px 10px 6px;border-radius:9px;font-size:14.5px;white-space:pre-wrap;word-break:break-word;
+    box-shadow:0 1px 1px rgba(11,20,26,.13);position:relative}
+  .row.user .bub{background:var(--mia);border-top-right-radius:2px}
+  .row.bot .bub{background:var(--burbuja);border-top-left-radius:2px}
+  /* La hora flota abajo a la derecha y el texto la envuelve, como en WhatsApp. */
+  .bub .hora{float:right;margin:7px -2px -2px 9px;font-size:11px;color:var(--muted);line-height:1}
+  .bub img.att{max-width:200px;max-height:220px;border-radius:7px;display:block;cursor:pointer;margin-top:2px}
+  .bub a.att-pdf{display:inline-flex;align-items:center;gap:7px;color:#0a7cff;text-decoration:none}
+
+  /* Aviso del sistema: centrado y sin remitente. */
+  .sys{align-self:center;background:#d3edf7;color:#37697f;font-size:12.5px;padding:6px 13px;
+    border-radius:9px;max-width:90%;text-align:center;box-shadow:0 1px 1px rgba(11,20,26,.1)}
+
+  .typing{display:flex;gap:4px;padding:3px 2px}
+  .typing span{width:7px;height:7px;border-radius:50%;background:#93a0a6;animation:bl 1.2s infinite}
+  .typing span:nth-child(2){animation-delay:.2s} .typing span:nth-child(3){animation-delay:.4s}
+  @keyframes bl{0%,60%,100%{opacity:.3}30%{opacity:1}}
+
+  /* ---- atajos ---- */
+  .quick{display:flex;gap:8px;padding:10px 12px 4px;flex:none}
+  .quick button{flex:1;padding:10px 4px;border-radius:7px;cursor:pointer;font:700 13px/1 inherit;letter-spacing:.4px;
+    border:1px solid var(--linea);background:#fff;color:#3f5661;transition:.12s}
+  .quick button:hover{border-color:var(--verde);color:var(--verde-osc)}
+  .quick button.ok{background:var(--verde);border-color:var(--verde);color:#fff}
+  .quick button.ok:hover{background:var(--verde-osc);color:#fff}
+  .quick button:disabled{opacity:.5;cursor:default}
+
+  /* ---- barra de escritura ---- */
+  .composer{display:flex;gap:8px;align-items:flex-end;padding:10px 12px 12px;flex:none}
+  .composer .att{width:42px;height:42px;flex:none;border:0;background:0;color:#5c7079;
+    display:grid;place-items:center;cursor:pointer;padding:0}
+  .composer .att:hover{color:var(--teal)}
+  .composer .att svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2}
+  .composer .send{width:46px;height:46px;flex:none;border:0;border-radius:50%;display:grid;place-items:center;
+    cursor:pointer;padding:0;background:var(--verde);color:#fff;box-shadow:0 2px 6px rgba(18,183,106,.4)}
+  .composer .send:disabled{background:#a8b6bc;box-shadow:none;cursor:default}
+  .composer .send svg{width:20px;height:20px;fill:#fff;stroke:none}
+  .composer textarea{flex:1;min-height:46px;max-height:120px;padding:13px 16px;border-radius:23px;border:0;
+    background:#fff;color:var(--ink);resize:none;outline:none;font-family:inherit;font-size:15px;line-height:1.3;
+    box-shadow:0 1px 1px rgba(11,20,26,.13)}
+  .composer textarea::placeholder{color:#8696a0}
+
+  /* ---- sin sesión ---- */
+  .gate{flex:1;display:grid;place-items:center;text-align:center;padding:30px;color:var(--muted)}
+  .gate a{display:inline-block;margin-top:14px;padding:13px 24px;border-radius:24px;text-decoration:none;
+    color:#fff;font-weight:700;background:var(--verde);box-shadow:0 4px 12px rgba(18,183,106,.35)}
+</style>
+</head>
+<body>
+  <div class="chead">
+    <div class="av">
+      <svg viewBox="0 0 24 24"><path d="M12 3C6.9 3 3 6.6 3 11c0 2.2 1 4.2 2.7 5.6L5 21l4.6-2.1c.8.2 1.6.3 2.4.3 5.1 0 9-3.6 9-8s-3.9-8-9-8z"/></svg>
+      <img src="img/logo-192.png" alt="" onerror="this.remove()">
+    </div>
+    <div>
+      <b id="agente">Camila</b>
+      <div class="st"><span class="dot"></span> en línea</div>
+    </div>
+  </div>
+
+  <div class="body" id="body"></div>
+
+  <div class="quick" id="quick" style="display:none"></div>
+
+  <form class="composer" id="form" style="display:none">
+    <input type="file" id="file" accept="image/*,application/pdf" hidden>
+    <button class="att" id="attach" type="button" title="Adjuntar comprobante">
+      <svg viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3 3 0 0 1 4.24 4.24l-9.2 9.19a1 1 0 0 1-1.41-1.41l8.49-8.48"/></svg>
+    </button>
+    <textarea id="text" rows="1" placeholder="Escribí un mensaje…"></textarea>
+    <button class="send" id="send" type="submit" disabled>
+      <svg viewBox="0 0 24 24"><path d="M2.3 21.5 23 12 2.3 2.5 2.3 10l14.9 2-14.9 2z"/></svg>
+    </button>
+  </form>
+
+<script>
+(function(){
+  "use strict";
+  // Cliente sin dominio propio: /<slug>/chat.html en vez de /chat.html.
+  // Ver el mismo bloque en crm.html.
+  const TENANT_PREFIJO = (function(){
+    const m = location.pathname.match(/^\/([a-z0-9-]+)\/(?:crm|admin|chat)\.html$/i);
+    return m ? "/" + m[1] : "";
+  })();
+
+  // En una réplica de cliente (*.faunotattoo.com) la API es /gp-api al mismo
+  // origen y db.php resuelve la base por el dominio (+ el slug de
+  // TENANT_PREFIJO si es cliente por-path). Hostinger ya no tiene backend
+  // propio, así que fuera de una réplica esto no tiene a dónde ir.
+  const BASE_API = TENANT_PREFIJO + "/gp-api";
+  const API_CHAT  = BASE_API + "/chatbot.php";
+  const API_SUBIR = BASE_API + "/subir.php";
+  const API_MIS   = BASE_API + "/mis_mensajes.php";
+
+  /* =====================  EDITA ESTO  ===================================
+   * Los atajos mandan un mensaje común y corriente al bot: no hay una segunda
+   * vía en el server. El texto tiene que decir lo que el CONTEXTO de
+   * chatbot.php espera para disparar su herramienta.
+   * ==================================================================== */
+  const ATAJOS = [
+    { rot:"CARGAR",  txt:"Quiero cargar fichas",        clase:"ok" },
+    { rot:"RETIRAR", txt:"Quiero retirar",              clase:"" },
+    { rot:"SOPORTE", txt:"Necesito hablar con alguien", clase:"" }
+  ];
+
+  const $ = id => document.getElementById(id);
+  const body = $('body');
+
+  // token del login propio (mismo origen que app.html => localStorage compartido)
+  let AUTH = null; try { AUTH = localStorage.getItem('API_AUTH_ACCESS_TOKEN'); } catch(e){}
+  function jwtUser(tok){
+    try{
+      const p = tok.split('.'); if(p.length<2) return '';
+      let b = p[1].replace(/-/g,'+').replace(/_/g,'/'); while(b.length%4) b+='=';
+      const c = JSON.parse(decodeURIComponent(atob(b).split('').map(x=>'%'+('00'+x.charCodeAt(0).toString(16)).slice(-2)).join('')));
+      return String(c.username||c.user||c.preferred_username||c.nombre_usuario||c.name||c.sub||c.email||'').trim();
+    }catch(e){ return ''; }
+  }
+
+  if (!AUTH){
+    body.className = 'gate';
+    body.innerHTML = 'Iniciá sesión para usar el asistente.<br><a href="acceso.html" target="_top">Ingresar</a>';
+    return;
+  }
+  const USUARIO = jwtUser(AUTH);
+
+  // id de sesión (compartido con la ruleta/juego)
+  const SID_KEY = 'goldpaw_sid';
+  let sid = localStorage.getItem(SID_KEY);
+  if(!sid){ sid = (window.crypto&&crypto.randomUUID)?crypto.randomUUID():'s-'+Date.now()+'-'+Math.random().toString(36).slice(2); localStorage.setItem(SID_KEY, sid); }
+
+  const historial = [];
+  let enviando = false, lastAgentId = 0;
+  const text = $('text'), send = $('send'), fileI = $('file');
+
+  // 24 h a propósito: "01:22 a. m." ocupa el doble y no es lo que se usa acá.
+  const hora = () => new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',hour12:false});
+
+  /* La hora va DENTRO de la burbuja y flotada: así el texto la envuelve en vez
+     de empujarla a una línea propia, que es lo que la hace ver como WhatsApp. */
+  function burbuja(quien){
+    const r = document.createElement('div'); r.className = 'row '+(quien==='user'?'user':'bot');
+    const b = document.createElement('div'); b.className = 'bub';
+    const h = document.createElement('span'); h.className = 'hora'; h.textContent = hora();
+    b.appendChild(h); r.appendChild(b); body.appendChild(r);
+    body.scrollTop = body.scrollHeight;
+    return b;
+  }
+
+  function pintar(quien, txt){
+    const b = burbuja(quien);
+    b.appendChild(document.createTextNode(txt));
+    body.scrollTop = body.scrollHeight;
+  }
+
+  function pintarAdj(quien, adj){
+    const b = burbuja(quien);
+    const a = document.createElement('a'); a.href = adj.url; a.target = '_blank'; a.rel = 'noopener';
+    if(adj.tipo==='imagen'){
+      const im = document.createElement('img'); im.className='att'; im.src = adj.url; im.alt='Comprobante';
+      a.appendChild(im);
+    } else {
+      a.className = 'att-pdf'; a.textContent = '📄 '+(adj.nombre||'Comprobante.pdf');
+    }
+    b.appendChild(a);
+    body.scrollTop = body.scrollHeight;
+  }
+
+  /* Aviso centrado, sin remitente: es estado de la conexión, no conversación. */
+  function pintarSistema(txt){
+    const d = document.createElement('div'); d.className='sys'; d.textContent = txt;
+    body.appendChild(d); body.scrollTop = body.scrollHeight;
+  }
+
+  function typing(on){
+    let t = $('typing');
+    if(on){
+      if(t) return;
+      t = document.createElement('div'); t.id='typing'; t.className='row bot';
+      t.innerHTML = '<div class="bub typing"><span></span><span></span><span></span></div>';
+      body.appendChild(t); body.scrollTop = body.scrollHeight;
+    } else if(t){ t.remove(); }
+  }
+
+  // ---------- atajos ----------
+  const quickBox = $('quick');
+  quickBox.innerHTML = ATAJOS.map((a,i)=>
+    `<button type="button" class="${a.clase}" data-i="${i}">${a.rot}</button>`).join('');
+  const quick = [...quickBox.querySelectorAll('button')];
+  quickBox.style.display = 'flex';
+
+  quickBox.addEventListener('click', e=>{
+    const b = e.target.closest('button'); if(!b) return;
+    const a = ATAJOS[+b.getAttribute('data-i')]; if(!a) return;
+    enviarMensaje(a.txt);
+  });
+
+  // ---------- arranque ----------
+  $('form').style.display='flex';
+  pintarSistema('Conectado. Escribinos y te respondemos.');
+  pintar('bot', USUARIO ? `¡Hola ${USUARIO}! 👋 ¿En qué te ayudo con tu cuenta o tus fichas?`
+                        : '¡Hola! 👋 Te ayudo con tu cuenta, tus fichas y las recargas. ¿Me decís tu nombre de usuario del juego?');
+
+  text.addEventListener('input', ()=>{
+    send.disabled = text.value.trim()==='';
+    text.style.height='auto';
+    text.style.height=Math.min(text.scrollHeight,120)+'px';
+  });
+
+  /* Un solo camino para el formulario y para los atajos: si cada uno armara su
+     propio fetch, el día que cambie el contrato de la API se arregla uno y se
+     olvida el otro. */
+  async function enviarMensaje(t){
+    t = String(t||'').trim();
+    if(!t || enviando) return;
+    pintar('user', t); historial.push({role:'user',content:t});
+    text.value=''; text.style.height='auto'; send.disabled=true; enviando=true;
+    quick.forEach(b=>b.disabled=true);
+    typing(true);
+    try{
+      const r = await fetch(API_CHAT, { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ mensajes:historial, session_id:sid, usuario:USUARIO||undefined, token:AUTH }) });
+      const d = await r.json(); typing(false);
+      if(d.ok){ pintar('bot', d.respuesta); historial.push({role:'assistant',content:d.respuesta}); }
+      else pintar('bot', '⚠️ '+(d.error||'No pude responder ahora.'));
+    }catch(err){ typing(false); pintar('bot','⚠️ No pude conectar con el servidor.'); }
+    finally{
+      enviando=false;
+      quick.forEach(b=>b.disabled=false);
+      text.focus();
+    }
+  }
+
+  $('form').addEventListener('submit', e=>{ e.preventDefault(); enviarMensaje(text.value); });
+
+  $('attach').addEventListener('click', ()=> fileI.click());
+  fileI.addEventListener('change', async ()=>{
+    const f = fileI.files[0]; fileI.value=''; if(!f) return;
+    if(f.size > 8*1024*1024){ pintar('bot','⚠️ El archivo supera 8 MB.'); return; }
+    const fd = new FormData(); fd.append('archivo', f); fd.append('session_id', sid); if(USUARIO) fd.append('usuario', USUARIO);
+    pintar('user','📎 Enviando comprobante…');
+    try{ const r = await fetch(API_SUBIR,{method:'POST',body:fd}); const d = await r.json();
+      if(d.ok && d.adjunto) pintarAdj('user', d.adjunto); else pintar('bot','⚠️ '+(d.error||'No pude subir.'));
+    }catch(e){ pintar('bot','⚠️ No pude subir el archivo.'); }
+  });
+
+  async function verAgente(){
+    try{
+      const r = await fetch(API_MIS+'?session_id='+encodeURIComponent(sid)+'&desde='+lastAgentId);
+      const d = await r.json();
+      if(d.ok && d.mensajes && d.mensajes.length){
+        d.mensajes.forEach(m=>{ if(m.adjunto&&m.adjunto.url) pintarAdj('bot',m.adjunto); else pintar('bot',m.texto); });
+      }
+      if(typeof d.ultimo_id==='number') lastAgentId = d.ultimo_id;
+    }catch(e){}
+  }
+  setInterval(verAgente, 6000);
+})();
+</script>
+</body>
+</html>

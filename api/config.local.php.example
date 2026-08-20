@@ -1,0 +1,39 @@
+<?php
+/**
+ * Copiá este archivo a  config.local.php  y completá los valores.
+ *
+ * config.local.php NO se sube al repo (está en .gitignore).
+ * En Hostinger es la forma más simple: subilo por el administrador de archivos
+ * a la misma carpeta que config.php.
+ *
+ * Generá la clave con:
+ *   python -c "import secrets; print(secrets.token_urlsafe(32))"
+ */
+
+return [
+    'BOT_API_KEY' => 'PEGA-ACA-LA-CLAVE-DE-32-CARACTERES',
+
+    // Clave para entrar al panel de administracion (admin.html / admin_usuarios.php).
+    // Elegi una que te acuerdes; minimo 6 caracteres. Es lo que escribis al entrar.
+    'ADMIN_PASS' => 'poné-una-clave-fuerte',
+
+    // Secreto para firmar los JWT del login del sitio (auth.php). Min 16 chars,
+    // random. Generalo con: php -r "echo bin2hex(random_bytes(32));"
+    'JWT_SECRET' => 'PEGA-ACA-UN-SECRETO-LARGO-Y-RANDOM',
+
+    // Key de Cohere para el chatbot (chatbot.php). De dashboard.cohere.com.
+    'COHERE_API_KEY' => '....',
+
+    // ---- Módulo Finanzas (crm_finanzas.php) ----
+    // Todos OPCIONALES: si no están, el módulo usa estos mismos defaults.
+    'FINANZAS_COSTO_POR_FICHA'               => '0.20',   // lo que te cuesta cada ficha al proveedor
+    'FINANZAS_UMBRAL_RETIRO_GRANDE'          => '50000',  // retiros por encima: alerta amarilla
+    'FINANZAS_UMBRAL_RETIRO_MUY_GRANDE'      => '200000', // retiros por encima: alerta roja
+    'FINANZAS_UMBRAL_ALERTA_JUGADOR_GANADOR' => '10000',  // diferencia retiros-recargas para marcar "ganador"
+
+    // Solo si usás el db.php de esta carpeta. Si tenés el tuyo propio, ignoralos.
+    'DB_HOST' => 'localhost',
+    'DB_NAME' => 'tu_base',
+    'DB_USER' => 'tu_usuario',
+    'DB_PASS' => 'tu_password',
+];

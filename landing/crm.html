@@ -1,0 +1,2660 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>CRM · Conversaciones · ganamos</title>
+<link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png">
+<link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+<script>
+  (function(){
+    var t = localStorage.getItem('goldpaw_theme');
+    if(!t) t = (window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+  })();
+</script>
+<style>
+  :root{
+    --bg1:#0a0f1e; --bg2:#0c1225; --glow:rgba(124,108,240,.16);
+    --panel:#121a30; --panel2:#182241; --panel3:#1d284a;
+    --line:#243052; --line2:#2d3a63;
+    --txt:#e7ecf9; --muted:#8890b2; --muted2:#6b7398;
+    --violet:#7c6cf0; --violet2:#9a8cff; --violetSoft:rgba(124,108,240,.16);
+    --green:#2fd07a; --green2:#3ee08a; --greenSoft:rgba(47,208,122,.14);
+    --orange:#f5a623; --orange2:#ffb84d;
+    --red:#e5595d; --redSoft:rgba(229,89,93,.15);
+    --blue:#4aa3f0;
+    --shadow:0 18px 50px rgba(0,0,0,.5); --shadow-sm:0 6px 20px rgba(0,0,0,.35);
+  }
+  :root[data-theme="light"]{
+    --bg1:#eef1f8; --bg2:#e8edf7; --glow:rgba(124,108,240,.10);
+    --panel:#ffffff; --panel2:#f5f7fd; --panel3:#eef1fa;
+    --line:#e4e9f4; --line2:#d7deed;
+    --txt:#182036; --muted:#6b7490; --muted2:#939db8;
+    --violet:#6a5af0; --violet2:#7c6cf0; --violetSoft:rgba(106,90,240,.10);
+    --green:#12b063; --green2:#17c06e; --greenSoft:rgba(18,176,99,.12);
+    --orange:#e0900d; --orange2:#f5a623;
+    --red:#e5484d; --redSoft:rgba(229,72,77,.12);
+    --blue:#2f8fe6;
+    --shadow:0 16px 40px rgba(40,54,90,.14); --shadow-sm:0 6px 18px rgba(40,54,90,.10);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:radial-gradient(1000px 500px at 82% -8%, var(--glow), transparent 60%),
+      linear-gradient(180deg, var(--bg2), var(--bg1));
+    color:var(--txt); overflow:hidden;
+    font:14.5px/1.45 system-ui,Segoe UI,Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased;
+    transition:background .3s, color .3s;
+  }
+  button{font-family:inherit;cursor:pointer}
+  svg{stroke-linecap:round;stroke-linejoin:round}
+
+  .app{display:flex;height:100vh;padding:12px;gap:12px}
+  .card-col{background:var(--panel);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow-sm)}
+
+  /* ---- nav rail ---- */
+  .rail{width:64px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:14px 0}
+  .rail .grp{display:flex;flex-direction:column;align-items:center;gap:5px}
+  .logo{width:42px;height:42px;border-radius:13px;background:linear-gradient(160deg,var(--violet2),var(--violet));
+    color:#fff;display:grid;place-items:center;box-shadow:var(--shadow-sm);margin-bottom:10px}
+  .logo svg{width:22px;height:22px}
+  .rail-item{width:44px;height:44px;border-radius:13px;border:1px solid transparent;background:transparent;
+    color:var(--muted);display:grid;place-items:center;transition:.15s;position:relative}
+  .rail-item:hover{background:var(--panel2);color:var(--txt)}
+  .rail-item.active{background:var(--violetSoft);color:var(--violet2);border-color:var(--violet)}
+  .rail-item svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:2}
+  .rail-item::after{content:attr(data-tip);position:absolute;left:52px;top:50%;transform:translateY(-50%) scale(.96);
+    background:var(--panel3);color:var(--txt);border:1px solid var(--line);padding:6px 10px;border-radius:9px;
+    font-size:12px;white-space:nowrap;opacity:0;pointer-events:none;transition:.12s;z-index:40;box-shadow:var(--shadow-sm)}
+  .rail-item:hover::after{opacity:1;transform:translateY(-50%) scale(1)}
+
+  /* ---- columnas ---- */
+  .col-list{width:328px;min-width:290px;display:flex;flex-direction:column;overflow:hidden}
+  .col-chat{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden}
+  .col-user{width:344px;min-width:300px;overflow-y:auto}
+
+  /* ---- stats + lista ---- */
+  .lhead{padding:15px 16px;border-bottom:1px solid var(--line)}
+  .brand{display:flex;align-items:center;justify-content:space-between;margin-bottom:13px}
+  .brand b{font-size:16px;letter-spacing:.4px}
+  .brand b span{color:var(--violet2)}
+  .brand .cap{color:var(--muted);font-size:12px}
+  .saldo-int{background:linear-gradient(160deg, var(--greenSoft), transparent);
+    border:1px solid rgba(47,208,122,.32);border-radius:15px;padding:13px 15px}
+  .saldo-int .lbl{font-size:10.5px;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);
+    display:flex;align-items:center;gap:7px}
+  .saldo-int .lbl svg{width:14px;height:14px;fill:none;stroke:var(--green);stroke-width:2}
+  .saldo-int .val{font-size:25px;font-weight:800;color:var(--green2);margin-top:3px;letter-spacing:.3px}
+  .saldo-int .glow-line{height:4px;border-radius:3px;margin-top:9px;
+    background:linear-gradient(90deg,var(--green),var(--green2),transparent)}
+  .mini-stats{display:flex;gap:8px;margin-top:10px}
+  .mini-stat{flex:1;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:9px 6px;text-align:center}
+  .mini-stat .k{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+  .mini-stat .v{font-size:15px;font-weight:800;margin-top:2px}
+  .mini-stat.us .v{color:var(--blue)} .mini-stat.fi .v{color:var(--green2)} .mini-stat.bo .v{color:var(--violet2)}
+
+  .subhead{padding:12px 16px 0}
+  .search{position:relative}
+  .search input{width:100%;padding:10px 12px 10px 36px;background:var(--panel2);border:1px solid var(--line);border-radius:11px;color:var(--txt);outline:none;transition:.15s}
+  .search input:focus{border-color:var(--violet);box-shadow:0 0 0 3px var(--violetSoft)}
+  .search svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);opacity:.5;width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2}
+  .tabs{display:flex;gap:6px;margin-top:11px;flex-wrap:wrap}
+  .tab{background:transparent;border:1px solid var(--line);color:var(--muted);padding:6px 12px;border-radius:20px;font-size:12.5px;transition:.15s}
+  .tab.on{background:var(--violetSoft);border-color:var(--violet);color:var(--violet2);font-weight:600}
+  .list{flex:1;overflow-y:auto;padding:8px 8px 8px;margin-top:8px}
+  .conv{display:flex;gap:11px;padding:11px 12px;border-radius:14px;cursor:pointer;position:relative;transition:.12s;margin-bottom:2px}
+  .conv:hover{background:var(--panel2)}
+  .conv.sel{background:var(--violetSoft);box-shadow:inset 0 0 0 1px var(--violet)}
+  .av{width:40px;height:40px;border-radius:13px;flex:none;display:grid;place-items:center;font-weight:800;font-size:13px;color:#fff;box-shadow:var(--shadow-sm)}
+  .av.anon{background:var(--panel3)!important;color:var(--muted)}
+  .conv .mid{min-width:0;flex:1}
+  .conv .n{display:flex;justify-content:space-between;gap:8px;align-items:center}
+  .conv .n b{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center}
+  .conv .n .t{color:var(--muted2);font-size:11.5px;white-space:nowrap}
+  .conv .pv{color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px}
+  .badge{background:var(--violet);color:#fff;font-size:11px;font-weight:800;min-width:19px;height:19px;border-radius:10px;display:grid;place-items:center;padding:0 5px}
+  .est-dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:6px;flex:none}
+  .est-abierta{background:var(--green);box-shadow:0 0 6px var(--green)} .est-pendiente{background:var(--orange)} .est-cerrada{background:var(--muted2)}
+
+  /* ---- chat ---- */
+  .chead{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .chead .who{display:flex;align-items:center;gap:11px}
+  .chead .who .av{width:38px;height:38px}
+  .chead .who b{font-size:15.5px}
+  .chead .who .sub{color:var(--muted);font-size:12.5px}
+  .estbtns{display:flex;gap:6px}
+  .estbtns button{background:var(--panel2);border:1px solid var(--line);color:var(--muted);padding:7px 13px;border-radius:9px;font-size:12.5px;transition:.15s}
+  .estbtns button:hover{color:var(--txt)}
+  .estbtns button.on{border-color:var(--violet);color:var(--violet2);background:var(--violetSoft);font-weight:600}
+  .thread{flex:1;overflow-y:auto;padding:22px 20px;display:flex;flex-direction:column;gap:13px}
+  .row{display:flex;max-width:76%}
+  .row.user{align-self:flex-start} .row.bot{align-self:flex-end} .row.agente{align-self:center;max-width:92%}
+  .bub{padding:11px 14px;border-radius:16px;font-size:14px;white-space:pre-wrap;word-break:break-word;box-shadow:var(--shadow-sm)}
+  .row.user .bub{background:var(--panel2);border:1px solid var(--line);border-bottom-left-radius:5px}
+  .row.bot .bub{background:linear-gradient(180deg,var(--violet),#6a5be8);color:#fff;border-bottom-right-radius:5px}
+  .row.agente .bub{background:var(--greenSoft);border:1px solid var(--green);color:var(--green2);font-size:13px;text-align:center;font-weight:600;display:flex;align-items:center;gap:7px}
+  .row.agente .bub svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;flex:none}
+  .row .meta{font-size:10.5px;color:var(--muted2);margin-top:5px;padding:0 4px}
+  .row.bot .meta{text-align:right}
+  .empty{flex:1;display:grid;place-items:center;color:var(--muted);text-align:center;padding:30px}
+  .empty svg{width:52px;height:52px;fill:none;stroke:currentColor;stroke-width:1.5;opacity:.4;margin-bottom:12px}
+
+  /* ---- ficha usuario ---- */
+  .uhead{padding:22px 18px 18px;text-align:center;border-bottom:1px solid var(--line)}
+  .uhead .bigav{width:66px;height:66px;border-radius:20px;margin:0 auto 12px;display:grid;place-items:center;font-weight:800;font-size:24px;color:#fff;box-shadow:var(--shadow)}
+  .uhead h3{margin:0;font-size:18px}
+  .uhead .u{color:var(--violet2);font-size:13px;margin-top:3px;font-weight:600}
+  .flags{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-top:12px}
+  .flag{font-size:11px;padding:4px 9px;border-radius:8px;background:var(--panel2);color:var(--muted);border:1px solid var(--line);display:flex;align-items:center;gap:4px}
+  .flag svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:2.5}
+  .flag.on{color:var(--green2);border-color:var(--green);background:var(--greenSoft)}
+  .flag.ban{color:var(--red);border-color:var(--red);background:var(--redSoft)}
+  .saldos{display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px;padding:16px 15px}
+  .sbox{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:13px 6px;text-align:center;position:relative;overflow:hidden}
+  .sbox .k{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
+  .sbox .v{font-size:19px;font-weight:800;margin-top:4px;letter-spacing:.2px}
+  .sbox.fichas .v{color:var(--green2)} .sbox.bono .v{color:var(--violet2)} .sbox.saldo .v{color:var(--txt)}
+  .sbox::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;opacity:.85}
+  .sbox.saldo::after{background:var(--blue)} .sbox.fichas::after{background:var(--green)} .sbox.bono::after{background:var(--violet)}
+  .sec{padding:4px 16px 18px}
+  .sec h4{margin:16px 0 9px;font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px}
+  .acts{display:flex;flex-direction:column;gap:9px}
+  .act{border:none;border-radius:13px;padding:13px;font-weight:700;font-size:14px;color:#fff;display:flex;align-items:center;justify-content:center;gap:9px;box-shadow:var(--shadow-sm);transition:.15s}
+  .act svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2}
+  .act:hover{filter:brightness(1.07)} .act:active{transform:translateY(1px)}
+  .act.fichas{background:linear-gradient(180deg,var(--green2),var(--green))}
+  .act.bono{background:linear-gradient(180deg,var(--orange2),var(--orange))}
+  textarea{width:100%;min-height:74px;resize:vertical;background:var(--panel2);border:1px solid var(--line);border-radius:12px;color:var(--txt);padding:11px;outline:none;font-family:inherit;transition:.15s}
+  textarea:focus{border-color:var(--violet);box-shadow:0 0 0 3px var(--violetSoft)}
+  .mini{background:var(--panel2);border:1px solid var(--line);color:var(--muted);padding:8px 14px;border-radius:10px;font-size:12.5px;margin-top:9px;transition:.15s;display:inline-flex;align-items:center;gap:6px}
+  .mini:hover{border-color:var(--violet);color:var(--txt)}
+  .mini svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2}
+  .movs{display:flex;flex-direction:column;gap:7px}
+  .mov{display:flex;justify-content:space-between;gap:8px;font-size:12.5px;padding:9px 12px;background:var(--panel2);border:1px solid var(--line);border-radius:11px}
+  .mov .pos{color:var(--green2);font-weight:700} .mov .neg{color:var(--red);font-weight:700}
+  .mov .tp{color:var(--muted)}
+  .nouser{padding:34px 20px;text-align:center;color:var(--muted);font-size:13.5px}
+
+  /* ---- modal / toast ---- */
+  .back{position:fixed;inset:0;background:rgba(6,9,20,.66);backdrop-filter:blur(3px);display:none;place-items:center;z-index:50;padding:20px}
+  .back.on{display:grid}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:24px;width:100%;max-width:370px;box-shadow:var(--shadow)}
+  .modal h3{margin:0 0 4px;font-size:18px} .modal p{color:var(--muted);margin:0 0 16px;font-size:13px}
+  .modal label{display:block;font-size:12px;color:var(--muted);margin:12px 0 5px}
+  .modal input{width:100%;padding:12px;background:var(--panel2);border:1px solid var(--line);border-radius:11px;color:var(--txt);outline:none}
+  .modal input:focus{border-color:var(--violet);box-shadow:0 0 0 3px var(--violetSoft)}
+  .mbtns{display:flex;gap:9px;margin-top:20px}
+  .mbtns button{flex:1;padding:12px;border-radius:11px;border:none;font-weight:700;font-size:14px}
+  .mbtns .ok{background:linear-gradient(180deg,var(--violet2),var(--violet));color:#fff}
+  .mbtns .no{background:transparent;border:1px solid var(--line);color:var(--muted)}
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--panel);border:1px solid var(--violet);color:var(--txt);padding:12px 20px;border-radius:12px;z-index:60;opacity:0;transition:.25s;pointer-events:none;box-shadow:var(--shadow)}
+  .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+  .sp{display:inline-block;width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--violet);border-radius:50%;animation:sp .7s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  /* ---- composer (responder) ---- */
+  .composer{border-top:1px solid var(--line);padding:12px 14px;display:flex;align-items:flex-end;gap:9px}
+  .composer .att,.composer .send{width:42px;height:42px;flex:none;border-radius:12px;display:grid;place-items:center;transition:.15s}
+  .composer .att{border:1px solid var(--line);background:var(--panel2);color:var(--muted)}
+  .composer .att:hover{border-color:var(--violet);color:var(--txt)}
+  .composer .send{border:none;background:linear-gradient(180deg,var(--violet2),var(--violet));color:#fff}
+  .composer .send:hover{filter:brightness(1.07)}
+  .composer svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:2}
+  .composer textarea{flex:1;min-height:42px;max-height:130px;padding:11px 13px;border-radius:12px;border:1px solid var(--line);background:var(--panel2);color:var(--txt);resize:none;outline:none;font-family:inherit;line-height:1.35}
+  .composer textarea:focus{border-color:var(--violet);box-shadow:0 0 0 3px var(--violetSoft)}
+
+  /* ---- adjuntos en mensajes ---- */
+  .att-img{max-width:230px;max-height:230px;border-radius:11px;display:block;margin-top:5px;cursor:pointer;border:1px solid rgba(255,255,255,.12)}
+  .att-pdf{display:inline-flex;align-items:center;gap:8px;margin-top:5px;padding:9px 12px;border-radius:10px;background:rgba(0,0,0,.16);color:inherit;text-decoration:none;font-size:13px;border:1px solid rgba(255,255,255,.14)}
+  .row.user .att-pdf{background:var(--panel3);border-color:var(--line)}
+  .att-pdf svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;flex:none}
+
+  /* ---- anclar ---- */
+  .pinbtn{background:var(--panel2);border:1px solid var(--line);color:var(--muted);width:34px;height:34px;border-radius:9px;display:grid;place-items:center;transition:.15s}
+  .pinbtn:hover{color:var(--txt)} .pinbtn.on{color:var(--orange2);border-color:var(--orange);background:rgba(245,166,35,.12)}
+  .pinbtn svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2}
+  .pin-mini{color:var(--orange2);display:inline-flex;margin-right:5px;flex:none}
+  .pin-mini svg{width:12px;height:12px;fill:currentColor;stroke:none}
+
+  /* ---- 4 botones de saldo ---- */
+  .acts.grid2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .act.saldo{background:linear-gradient(180deg,var(--green2),var(--green))}
+  .act.retirar{background:linear-gradient(180deg,#f0716f,var(--red))}
+  .act.bono{background:linear-gradient(180deg,var(--orange2),var(--orange))}
+  .act.ver{background:transparent;border:1px solid var(--green);color:var(--green2)}
+  .act.ver:hover{background:var(--greenSoft)}
+
+  /* ---- notificacion push ---- */
+  .act.notif{background:linear-gradient(180deg,var(--violet2),var(--violet))}
+  .chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:4px}
+  .chip{padding:7px 11px;border-radius:9px;border:1px solid var(--line);background:var(--panel2);
+        color:var(--muted);font-size:12.5px;transition:.15s}
+  .chip:hover{color:var(--txt);border-color:var(--violet)}
+  .chip.on{color:#fff;border-color:var(--violet);background:var(--violet)}
+  .modal textarea{min-height:78px}
+  .todos{display:flex;align-items:center;gap:9px;margin-top:14px;padding:11px 12px;border-radius:11px;
+         background:var(--panel2);border:1px solid var(--line);cursor:pointer}
+  .todos input{width:auto;flex:none;accent-color:var(--violet)}
+  .todos span{font-size:12.5px;color:var(--muted);line-height:1.3}
+  .todos b{color:var(--txt);display:block;font-size:13px}
+
+  /* (mbar viejo: ya no se usa; el rail hace de barra en mobile) */
+  .mbar{display:none}
+  .btn-info{display:none!important}
+  .drawer-back{display:none}
+  .cerrar-drawer{position:absolute;top:12px;left:12px;z-index:2;width:34px;height:34px;border-radius:10px;
+    border:1px solid var(--line);background:var(--panel2);color:var(--muted);display:none;place-items:center;font-size:15px}
+  .cerrar-drawer:hover{color:var(--txt)}
+
+  /* ===== Tablet/mobile: la ficha del usuario pasa a cajón lateral ===== */
+  @media(max-width:1040px){
+    .col-list{width:46%;min-width:0}
+    .btn-info{display:grid!important}
+    .col-user{
+      position:fixed;top:0;right:0;bottom:0;width:min(360px,92vw);z-index:70;
+      border-radius:0;box-shadow:var(--shadow);overflow-y:auto;
+      transform:translateX(102%);transition:transform .28s cubic-bezier(.22,1,.36,1);
+    }
+    .app.info .col-user{transform:translateX(0)}
+    .app.info .drawer-back{display:block;position:fixed;inset:0;background:rgba(6,9,20,.5);z-index:69}
+    .col-user .cerrar-drawer{display:grid}
+  }
+
+  /* ===== Celular: una sola columna; el rail arriba en horizontal ===== */
+  @media(max-width:760px){
+    .app{flex-direction:column;padding:8px;gap:8px}
+    .rail{width:auto;flex-direction:row;align-items:center;justify-content:flex-start;
+      padding:7px 9px;gap:6px;overflow-x:auto}
+    .rail::-webkit-scrollbar{display:none}
+    .rail .grp{flex-direction:row;gap:6px}
+    .rail .logo{width:36px;height:36px;margin:0 6px 0 0}
+    .rail-item{width:40px;height:40px} .rail-item::after{display:none}
+    .col-list,.col-chat{width:100%;min-width:0;flex:1;min-height:0}
+    .app.viewing .col-list{display:none}
+    .app:not(.viewing) .col-chat{display:none}
+    .lhead{padding:12px 14px} .subhead{padding:10px 14px 0}
+    .thread{padding:16px 14px} .chead{padding:12px 14px}
+    .col-user{width:min(360px,94vw)}
+    .saldos{padding:14px 13px} .sec{padding:4px 14px 18px}
+  }
+
+  /* ---- operador logueado (Fase 0.5) ---- */
+  .operador-bar{display:flex;align-items:center;justify-content:space-between;
+    margin:-4px 0 11px;padding:6px 2px;font-size:12px;color:var(--muted)}
+  .operador-bar .operador-nombre{display:flex;align-items:center;gap:6px}
+  .operador-bar .operador-nombre::before{content:"";width:7px;height:7px;border-radius:50%;
+    background:var(--green);box-shadow:0 0 6px var(--green);flex:none}
+  .operador-logout{background:transparent;border:none;color:var(--muted);padding:5px;
+    border-radius:8px;display:grid;place-items:center;transition:.15s}
+  .operador-logout:hover{background:var(--panel2);color:var(--red)}
+  .operador-logout svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2}
+
+  /* ---- carga inicial + login (Fase 0.5) ---- */
+  .boot-loading{position:fixed;inset:0;z-index:110;display:grid;place-items:center;
+    background:linear-gradient(180deg, var(--bg2), var(--bg1))}
+  .login-screen{position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:20px;
+    background:radial-gradient(1000px 500px at 82% -8%, var(--glow), transparent 60%),
+      linear-gradient(180deg, var(--bg2), var(--bg1))}
+  .login-card{background:var(--panel);border:1px solid var(--line);border-radius:18px;
+    padding:30px 26px;width:100%;max-width:360px;box-shadow:var(--shadow)}
+  .login-logo{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+  .login-logo .logo{width:38px;height:38px;margin:0}
+  .login-logo b{font-size:17px;letter-spacing:.4px}
+  .login-logo b span{color:var(--violet2)}
+  .login-sub{color:var(--muted);font-size:13px;margin:2px 0 22px}
+  .login-card label{display:block;font-size:12px;color:var(--muted);margin:0 0 14px}
+  .login-card input{width:100%;margin-top:5px;padding:12px;background:var(--panel2);
+    border:1px solid var(--line);border-radius:11px;color:var(--txt);outline:none;font:inherit;transition:.15s}
+  .login-card input:focus{border-color:var(--violet);box-shadow:0 0 0 3px var(--violetSoft)}
+  .login-error{color:var(--red);font-size:12.5px;min-height:16px;margin:-4px 0 14px;line-height:1.4}
+  .login-btn{width:100%;padding:13px;border:none;border-radius:11px;font-weight:700;font-size:14.5px;
+    color:#fff;background:linear-gradient(180deg,var(--violet2),var(--violet));
+    display:flex;align-items:center;justify-content:center;gap:8px;transition:.15s}
+  .login-btn:hover{filter:brightness(1.07)}
+  .login-btn:disabled{opacity:.7;cursor:default}
+
+  /* ---- badge de cantidad en el rail (Fase A) ---- */
+  .rail-badge{position:absolute;top:2px;right:2px;background:var(--red);color:#fff;
+    font-size:9.5px;font-weight:800;min-width:15px;height:15px;border-radius:8px;
+    display:none;place-items:center;padding:0 3px;box-shadow:0 0 0 2px var(--panel)}
+  .rail-badge.on{display:grid}
+
+  /* ---- Comprobantes sin resolver (Fase A, Módulo 1) ---- */
+  .view-row{flex:1;display:flex;gap:12px;min-width:0}
+  .comp-list-col{width:360px;min-width:300px;display:flex;flex-direction:column;overflow:hidden}
+  .comp-head{padding:15px 16px;border-bottom:1px solid var(--line);display:flex;
+    justify-content:space-between;align-items:center}
+  .comp-head b{font-size:15px}
+  .comp-head .cap{color:var(--muted);font-size:12px}
+  .comp-row{padding:12px 14px;border-radius:14px;cursor:pointer;transition:.12s;margin:3px 8px}
+  .comp-row:hover{background:var(--panel2)}
+  .comp-row.sel{background:var(--violetSoft);box-shadow:inset 0 0 0 1px var(--violet)}
+  .comp-row .cr-top{display:flex;justify-content:space-between;gap:8px;font-weight:700;font-size:14px}
+  .comp-row .cr-sub{color:var(--muted);font-size:12.5px;margin-top:3px}
+  .comp-detail-col{flex:1;min-width:0;overflow-y:auto;padding:22px}
+  .comp-info{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:22px}
+  .comp-info .ci{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:11px 13px}
+  .comp-info .ci .k{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+  .comp-info .ci .v{font-size:14px;font-weight:700;margin-top:3px;word-break:break-word}
+  .comp-cands{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+  .cand{display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--panel2);
+    border:1px solid var(--line);border-radius:13px}
+  .cand .cd-mid{flex:1;min-width:0}
+  .cand .cd-user{font-weight:700}
+  .cand .cd-sub{color:var(--muted);font-size:12px;margin-top:2px}
+  .cand .cd-monto{font-weight:800;color:var(--green2);white-space:nowrap}
+  .warn-chip{background:rgba(245,166,35,.16);color:var(--orange2);border:1px solid var(--orange);
+    font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:7px;margin-left:6px;white-space:nowrap}
+  .btn-asignar{background:linear-gradient(180deg,var(--violet2),var(--violet));color:#fff;border:none;
+    border-radius:9px;padding:8px 13px;font-size:12.5px;font-weight:700;transition:.15s;flex:none}
+  .btn-asignar:hover{filter:brightness(1.07)}
+  .btn-asignar:disabled{opacity:.6;cursor:default}
+  @media(max-width:1040px){
+    .view-row{flex-direction:column}
+    .comp-list-col{width:100%;max-height:38vh}
+  }
+
+  /* ---- Retiros pendientes (Fase A, Módulo 2) ---- */
+  .view-panel{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+  .ret-toolbar{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:flex-end}
+  .ret-row{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
+  .ret-row .rr-mid{flex:1;min-width:0}
+  .ret-row .rr-user{font-weight:700;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .ret-row .rr-sub{color:var(--muted);font-size:12px;margin-top:3px}
+  .ret-row .rr-monto{font-weight:800;white-space:nowrap}
+  .ret-tag{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap}
+  .ret-tag.pendiente{background:var(--panel2);color:var(--muted);border:1px solid var(--line)}
+  .ret-tag.procesando{background:rgba(74,131,176,.16);color:var(--blue);border:1px solid var(--blue)}
+  .ret-tag.hecha{background:var(--greenSoft);color:var(--green2);border:1px solid var(--green)}
+  .ret-tag.error{background:var(--redSoft);color:var(--red);border:1px solid var(--red)}
+  .ret-tag.revisar{background:rgba(245,166,35,.16);color:var(--orange2);border:1px solid var(--orange)}
+  .ret-tag.cancelada{background:var(--panel3);color:var(--muted2);border:1px solid var(--line2)}
+  .btn-mini-accion.peligro{border-color:var(--red);color:var(--red)}
+  .btn-mini-accion.peligro:hover{background:var(--redSoft)}
+  .mbtns .peligro{background:linear-gradient(180deg,#f0716f,var(--red));color:#fff}
+  .btn-mini-accion{background:var(--panel2);border:1px solid var(--line);color:var(--muted);
+    padding:7px 12px;border-radius:9px;font-size:12px;font-weight:700;transition:.15s;flex:none}
+  .btn-mini-accion:hover{border-color:var(--violet);color:var(--txt)}
+  .btn-mini-accion:disabled{opacity:.6;cursor:default}
+
+  /* ---- Cargas / Recargas (Fase A, Módulo 3) ---- */
+  .carga-row{display:flex;flex-direction:column;gap:8px;padding:12px 16px;border-bottom:1px solid var(--line);cursor:pointer}
+  .carga-row:hover{background:var(--panel2)}
+  .carga-row .cg-top{display:flex;align-items:center;gap:12px}
+  .carga-row .cg-mid{flex:1;min-width:0}
+  .carga-row .cg-user{font-weight:700;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .carga-row .cg-sub{color:var(--muted);font-size:12px;margin-top:3px}
+  .carga-row .cg-monto{font-weight:800;white-space:nowrap}
+  .carga-tag{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap}
+  .carga-tag.pendiente{background:var(--panel2);color:var(--muted);border:1px solid var(--line)}
+  .carga-tag.acreditada{background:var(--greenSoft);color:var(--green2);border:1px solid var(--green)}
+  .carga-tag.vencida{background:var(--redSoft);color:var(--red);border:1px solid var(--red)}
+  .carga-tag.cancelada{background:var(--panel3);color:var(--muted2);border:1px solid var(--line2)}
+  .urg-chip{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:7px;white-space:nowrap}
+  .urg-chip.warn{background:rgba(245,166,35,.16);color:var(--orange2);border:1px solid var(--orange)}
+  .urg-chip.crit{background:var(--redSoft);color:var(--red);border:1px solid var(--red)}
+  .carga-row .cg-detalle{display:none;background:var(--panel2);border:1px solid var(--line);
+    border-radius:11px;padding:10px 12px;font-size:12.5px;color:var(--muted)}
+  .carga-row.open .cg-detalle{display:block}
+  .carga-row .cg-detalle .dt-warn{color:var(--orange2);font-weight:700;margin-bottom:6px}
+  .carga-row .cg-detalle .dt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px 14px}
+  .char-count{font-size:11px;color:var(--muted);text-align:right;margin-top:-6px}
+
+  /* ---- Transacciones globales (Fase A, Módulo 4) ---- */
+  .mv-filtros{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line)}
+  .mv-filtros .search{flex:1;min-width:180px}
+  .mv-filtros select,.mv-filtros input[type=date]{background:var(--panel2);border:1px solid var(--line);
+    border-radius:11px;color:var(--txt);padding:9px 10px;outline:none;font-size:12.5px;transition:.15s}
+  .mv-filtros select:focus,.mv-filtros input[type=date]:focus{border-color:var(--violet);box-shadow:0 0 0 3px var(--violetSoft)}
+  .mv-tabla-wrap{flex:1;overflow:auto}
+  .mv-tabla{width:100%;border-collapse:collapse;font-size:13px}
+  .mv-tabla thead th{position:sticky;top:0;background:var(--panel);text-align:left;padding:10px 14px;
+    color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.03em;border-bottom:1px solid var(--line)}
+  .mv-tabla tbody td{padding:10px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+  .mv-tabla tbody tr:hover{background:var(--panel2)}
+  .mv-tag{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap}
+  .mv-tag.ficha{background:var(--panel2);color:var(--muted);border:1px solid var(--line)}
+  .mv-tag.bono{background:rgba(245,166,35,.16);color:var(--orange2);border:1px solid var(--orange)}
+  .mv-tag.saldo{background:rgba(74,131,176,.16);color:var(--blue);border:1px solid var(--blue)}
+  .mv-monto{font-weight:800}
+  .mv-monto.pos{color:var(--green2)}
+  .mv-monto.neg{color:var(--red)}
+  .mv-paginador{display:flex;align-items:center;justify-content:center;gap:14px;padding:12px 16px;border-top:1px solid var(--line)}
+  .mv-paginador span{color:var(--muted);font-size:12.5px}
+
+  /* ---- Usuarios integrado (Fase A, Módulo 5) ---- */
+  .us-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;padding:14px 16px 0}
+  .us-stat{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+  .us-stat .k{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+  .us-stat .v{font-size:19px;font-weight:800;margin-top:4px}
+  .us-stat.green .v{color:var(--green2)}
+  .us-stat.gold .v{color:var(--orange2)}
+  .us-stat.red .v{color:var(--red)}
+  .us-filtros{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line)}
+  .us-filtros .search{flex:1;min-width:180px}
+  .us-filtros select{background:var(--panel2);border:1px solid var(--line);border-radius:11px;color:var(--txt);
+    padding:9px 10px;outline:none;font-size:12.5px}
+  .us-tabla-wrap{flex:1;overflow:auto}
+  .us-tabla{width:100%;border-collapse:collapse;font-size:13px;min-width:760px}
+  .us-tabla thead th{position:sticky;top:0;background:var(--panel);text-align:left;padding:10px 14px;
+    color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.03em;border-bottom:1px solid var(--line);
+    cursor:pointer;user-select:none;white-space:nowrap}
+  .us-tabla thead th.no-sort{cursor:default}
+  .us-tabla thead th.num-h{text-align:right}
+  .us-tabla thead th .arr{opacity:.35;margin-left:4px;font-size:10px}
+  .us-tabla thead th.act{color:var(--violet2)}
+  .us-tabla thead th.act .arr{opacity:1}
+  .us-tabla tbody td{padding:10px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+  .us-tabla tbody tr:hover{background:var(--panel2)}
+  .us-tabla td.num{text-align:right;font-variant-numeric:tabular-nums}
+  .us-money{color:var(--green2);font-weight:700}
+  .us-coins{color:var(--orange2);font-weight:700}
+  .us-zero{color:var(--muted)}
+  .us-tag{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap}
+  .us-tag.ban{background:var(--redSoft);color:var(--red);border:1px solid var(--red)}
+  .us-tag.ok{background:var(--greenSoft);color:var(--green2);border:1px solid var(--green)}
+  .us-paginador{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 16px;border-top:1px solid var(--line)}
+  .us-paginador .info{color:var(--muted);font-size:12.5px}
+  .us-pgbtns{display:flex;gap:6px;align-items:center}
+  .us-pgbtns button{background:var(--panel2);border:1px solid var(--line);color:var(--txt);
+    min-width:32px;height:32px;padding:0 8px;border-radius:8px;font-size:13px}
+  .us-pgbtns button:hover:not(:disabled){border-color:var(--violet)}
+  .us-pgbtns button:disabled{opacity:.35;cursor:default}
+  .us-pgbtns button.cur{background:linear-gradient(180deg,var(--violet2),var(--violet));color:#fff;border-color:var(--violet);font-weight:700}
+
+  /* ---- Finanzas (Fase A, Módulo 6.A) ---- */
+  .fn-gate{display:flex;align-items:center;justify-content:center;min-height:320px;padding:20px}
+  .fn-gate-card{width:100%;max-width:340px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:16px;padding:26px 24px;text-align:center}
+  .fn-gate-card b{font-size:17px}
+  .fn-gate-card p{color:var(--muted);font-size:13px;margin:8px 0 18px}
+  .fn-gate-card input{width:100%;padding:12px 14px;background:var(--panel);border:1px solid var(--line);
+    border-radius:11px;color:var(--txt);outline:none;font-size:14px;margin-bottom:10px}
+  .fn-gate-card input:focus{border-color:var(--violet);box-shadow:0 0 0 3px var(--violetSoft)}
+  .fn-gate-error{color:var(--red);font-size:12.5px;min-height:16px;margin-bottom:10px}
+  .fn-bloque{padding:18px 20px;border-bottom:1px solid var(--line)}
+  .fn-bloque:last-child{border-bottom:none}
+  .fn-bloque h3{margin:0 0 12px;font-size:14px}
+  .fn-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+  .fn-card{background:var(--panel2);border:1px solid var(--line);border-radius:13px;padding:14px 16px}
+  .fn-card .k{color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;
+    display:flex;align-items:center;gap:5px}
+  .fn-card .v{font-size:21px;font-weight:800;margin-top:6px}
+  .fn-card .sub{color:var(--muted);font-size:11.5px;margin-top:3px}
+  .fn-card.pos .v{color:var(--green2)}
+  .fn-card.neg .v{color:var(--red)}
+  .fn-card.warn .v{color:var(--orange2)}
+  .fn-card.blue .v{color:var(--blue)}
+  .fn-info{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;
+    border-radius:50%;background:var(--panel3);color:var(--muted);font-size:10.5px;cursor:pointer;
+    flex:none;position:relative;font-style:italic;font-weight:700}
+  .fn-info:hover{color:var(--violet2)}
+  .fn-popover{display:none;position:absolute;bottom:calc(100% + 8px);left:0;z-index:5;width:220px;
+    background:var(--panel3);border:1px solid var(--line);border-radius:11px;padding:10px 12px;
+    font-size:12px;color:var(--txt);box-shadow:var(--shadow-sm);font-weight:400;font-style:normal;line-height:1.4}
+  .fn-info:hover .fn-popover, .fn-info.open .fn-popover{display:block}
+  .fn-explicacion{margin-top:14px;font-size:12.5px;color:var(--muted)}
+  .fn-explicacion summary{cursor:pointer;color:var(--violet2);font-weight:600;user-select:none;list-style:none}
+  .fn-explicacion summary::-webkit-details-marker{display:none}
+  .fn-explicacion summary::before{content:"▸ "}
+  .fn-explicacion[open] summary::before{content:"▾ "}
+  .fn-explicacion .fn-formula{margin-top:8px;padding:10px 12px;background:var(--panel2);
+    border:1px solid var(--line);border-radius:10px;line-height:1.5}
+  .fn-rango-filtros{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+  .fn-rango-filtros input[type=date]{background:var(--panel2);border:1px solid var(--line);
+    border-radius:11px;color:var(--txt);padding:9px 10px;outline:none;font-size:12.5px}
+  .fn-alertas-lista{display:flex;flex-direction:column;gap:8px}
+  .fn-alerta{display:flex;justify-content:space-between;gap:12px;align-items:center;
+    padding:11px 14px;border-radius:11px;border:1px solid var(--line);background:var(--panel2);font-size:13px}
+  .fn-alerta.amarillo{border-color:var(--orange);background:rgba(245,166,35,.10)}
+  .fn-alerta.rojo{border-color:var(--red);background:var(--redSoft)}
+  .fn-alerta-tag{font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;white-space:nowrap}
+  .fn-alerta.amarillo .fn-alerta-tag{background:rgba(245,166,35,.2);color:var(--orange2)}
+  .fn-alerta.rojo .fn-alerta-tag{background:rgba(227,91,91,.2);color:var(--red)}
+  .fn-alerta.info .fn-alerta-tag{background:var(--panel3);color:var(--muted)}
+  .fn-export-btns{display:flex;gap:10px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<!-- Oculto por defecto a proposito (Fase 0.5): nunca se muestra el shell
+     hasta confirmar la sesion en arrancar(). Sin esto habria un flash del
+     CRM vacio/roto antes de saber si hay que pedir login. -->
+<div class="app" id="app" style="display:none">
+
+  <!-- ===== barra mobile ===== -->
+  <div class="mbar card-col">
+    <b>gana<span>mos</span></b>
+    <button class="icon" id="themeBtn2" title="Tema"></button>
+  </div>
+
+  <!-- ===== NAV RAIL ===== -->
+  <nav class="rail card-col">
+    <div class="grp">
+      <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+      <button class="rail-item active" data-nav="chats" data-tip="Conversaciones"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>
+      <button class="rail-item" data-nav="usuarios" data-tip="Usuarios"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></button>
+      <button class="rail-item" data-nav="cargas" data-tip="Cargas / Recargas"><svg viewBox="0 0 24 24"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></button>
+      <button class="rail-item" data-nav="transacciones" data-tip="Transacciones"><svg viewBox="0 0 24 24"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></button>
+      <button class="rail-item" data-nav="finanzas" data-tip="Finanzas"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></button>
+      <button class="rail-item" data-nav="retiros" data-tip="Retiros pendientes"><svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg><span class="rail-badge" id="badgeRetiros"></span></button>
+      <button class="rail-item" data-nav="comprobantes" data-tip="Comprobantes"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg><span class="rail-badge" id="badgeComprobantes"></span></button>
+      <button class="rail-item" data-nav="push" data-tip="Push & Notificaciones"><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></button>
+    </div>
+    <div class="grp">
+      <button class="rail-item" data-nav="config" data-tip="Configuración"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+      <button class="rail-item" id="themeBtn" data-tip="Tema"></button>
+    </div>
+  </nav>
+
+  <!-- ===== Lista + stats ===== -->
+  <aside class="col-list card-col">
+    <div class="lhead">
+      <div class="brand"><b>gana<span>mos</span></b><span class="cap" id="cap"></span></div>
+      <div class="operador-bar">
+        <span class="operador-nombre" id="operadorNombre">—</span>
+        <button class="operador-logout" id="btnLogout" title="Cerrar sesión" type="button">
+          <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        </button>
+      </div>
+      <div class="saldo-int">
+        <div class="lbl"><svg viewBox="0 0 24 24"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> Saldo interno</div>
+        <div class="val" id="saldoInt">$0</div>
+        <div class="glow-line"></div>
+        <div class="mini-stats">
+          <div class="mini-stat us"><div class="k">Usuarios</div><div class="v" id="stUsuarios">0</div></div>
+          <div class="mini-stat fi"><div class="k">Fichas</div><div class="v" id="stFichas">0</div></div>
+          <div class="mini-stat bo"><div class="k">Bonos</div><div class="v" id="stBonos">0</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="subhead">
+      <label class="search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="q" placeholder="Buscar usuario o texto…" autocomplete="off">
+      </label>
+      <div class="tabs" id="tabs">
+        <button class="tab on" data-e="todas">Todas</button>
+        <button class="tab" data-e="abierta">Abiertas</button>
+        <button class="tab" data-e="pendiente">Pendientes</button>
+        <button class="tab" data-e="cerrada">Cerradas</button>
+      </div>
+    </div>
+    <div class="list" id="list"></div>
+  </aside>
+
+  <!-- ===== Hilo ===== -->
+  <main class="col-chat card-col">
+    <div id="chatEmpty" class="empty">
+      <div>
+        <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <div>Elegí una conversación de la izquierda</div>
+      </div>
+    </div>
+    <div id="chatView" style="display:none;flex:1;flex-direction:column;min-height:0">
+      <div class="chead">
+        <div class="who">
+          <button class="mini" id="volver" style="display:none;margin:0">←</button>
+          <div class="av" id="chatAv" style="display:none">?</div>
+          <div>
+            <b id="chatWho">—</b>
+            <div class="sub" id="chatSub"></div>
+          </div>
+        </div>
+        <div class="estbtns" id="estbtns">
+          <button class="pinbtn btn-info" id="btnInfo" title="Ver info del usuario"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></button>
+          <button class="pinbtn" id="btnFijar" title="Anclar"><svg viewBox="0 0 24 24"><path d="M12 17v5M9 3h6l-1 7 3 3v1H7v-1l3-3-1-7z"/></svg></button>
+          <button data-e="abierta">Abierta</button>
+          <button data-e="pendiente">Pendiente</button>
+          <button data-e="cerrada">Cerrada</button>
+        </div>
+      </div>
+      <div class="thread" id="thread"></div>
+      <div class="composer">
+        <input type="file" id="fileAg" accept="image/*,application/pdf" hidden>
+        <button class="att" id="btnAttach" title="Adjuntar"><svg viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3 3 0 0 1 4.24 4.24l-9.2 9.19a1 1 0 0 1-1.41-1.41l8.49-8.48"/></svg></button>
+        <textarea id="respText" rows="1" placeholder="Escribí una respuesta al cliente…"></textarea>
+        <button class="send" id="btnResp" title="Enviar"><svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+      </div>
+    </div>
+  </main>
+
+  <!-- ===== Ficha ===== -->
+  <aside class="col-user card-col" id="userPane">
+    <button class="cerrar-drawer" id="cerrarDrawer" aria-label="Cerrar">✕</button>
+    <div class="nouser" id="noUser">Sin conversación seleccionada.</div>
+    <div id="userCard" style="display:none">
+      <div class="uhead">
+        <div class="bigav" id="uAv">?</div>
+        <h3 id="uNombre">—</h3>
+        <div class="u" id="uUser"></div>
+        <div class="flags" id="uFlags"></div>
+      </div>
+      <div class="saldos">
+        <div class="sbox saldo"><div class="k">Saldo</div><div class="v" id="uSaldo">$0</div></div>
+        <div class="sbox fichas"><div class="k">Fichas</div><div class="v" id="uFichas">0</div></div>
+        <div class="sbox bono"><div class="k">Bonos</div><div class="v" id="uBonos">0</div></div>
+      </div>
+      <div class="sec">
+        <h4>Acciones</h4>
+        <div class="acts grid2">
+          <button class="act saldo" id="btnSaldo"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg> Cargar saldo</button>
+          <button class="act retirar" id="btnRetiro"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12h8"/></svg> Retirar</button>
+        </div>
+        <div class="acts" style="margin-top:9px">
+          <button class="act bono" id="btnBono"><svg viewBox="0 0 24 24"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg> Cargar bono</button>
+          <button class="act ver" id="btnVer"><svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg> Ver balance</button>
+        </div>
+        <div class="acts" style="margin-top:9px">
+          <button class="act notif" id="btnNotif"><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg> Notificar al celular</button>
+        </div>
+        <h4>Notas internas</h4>
+        <textarea id="notas" placeholder="Notas que solo ve el equipo…"></textarea>
+        <button class="mini" id="btnNota"><svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg> Guardar nota</button>
+        <h4>Historial</h4>
+        <div class="movs" id="movs"><div style="color:var(--muted);font-size:12.5px">Sin movimientos.</div></div>
+      </div>
+    </div>
+  </aside>
+
+  <div class="drawer-back" id="drawerBack"></div>
+
+  <!-- ===== Comprobantes sin resolver (Fase A, Módulo 1) ===== -->
+  <div class="view-row" id="viewComprobantes" style="display:none">
+    <aside class="card-col comp-list-col">
+      <div class="comp-head">
+        <b>Comprobantes sin resolver</b>
+        <span class="cap" id="compCap"></span>
+      </div>
+      <div class="list" id="compList"></div>
+    </aside>
+    <main class="card-col comp-detail-col">
+      <div class="empty" id="compEmpty">
+        <div>
+          <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+          <div>Elegí un comprobante de la izquierda</div>
+        </div>
+      </div>
+      <div id="compDetail" style="display:none">
+        <div class="comp-info" id="compInfo"></div>
+        <h4 style="margin:0 0 9px;font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px">Asignar a una recarga pendiente</h4>
+        <label class="search">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          <input id="compQ" placeholder="Buscar por usuario, referencia o id…" autocomplete="off">
+        </label>
+        <div class="comp-cands" id="compCands"></div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ===== Retiros pendientes (Fase A, Módulo 2) ===== -->
+  <div class="card-col view-panel" id="viewRetiros" style="display:none">
+    <div class="comp-head">
+      <b>Retiros pendientes</b>
+      <span class="cap" id="retCap"></span>
+    </div>
+    <div class="subhead">
+      <label class="search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="retQ" placeholder="Buscar por usuario o id…" autocomplete="off">
+      </label>
+      <div class="tabs" id="retTabs">
+        <button class="tab on" data-e="">Todos</button>
+        <button class="tab" data-e="pendiente">Pendiente</button>
+        <button class="tab" data-e="procesando">Procesando</button>
+        <button class="tab" data-e="revisar">Revisar</button>
+        <button class="tab" data-e="hecha">Hecha</button>
+        <button class="tab" data-e="error">Error</button>
+        <button class="tab" data-e="cancelada">Canceladas</button>
+      </div>
+    </div>
+    <div class="ret-toolbar">
+      <button class="btn-asignar" id="btnLiberarRetiros" type="button">Liberar retiros trabados</button>
+    </div>
+    <div class="list" id="retList" style="margin-top:0"></div>
+  </div>
+
+  <div class="card-col view-panel" id="viewCargas" style="display:none">
+    <div class="comp-head">
+      <b>Cargas</b>
+      <span class="cap" id="cgCap"></span>
+    </div>
+    <div class="subhead">
+      <label class="search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="cgQ" placeholder="Buscar por usuario, referencia o id…" autocomplete="off">
+      </label>
+      <div class="tabs" id="cgTabs">
+        <button class="tab on" data-e="">Todos</button>
+        <button class="tab" data-e="pendiente">Pendiente</button>
+        <button class="tab" data-e="acreditada">Acreditada</button>
+        <button class="tab" data-e="vencida">Vencida</button>
+        <button class="tab" data-e="cancelada">Cancelada</button>
+      </div>
+    </div>
+    <div class="list" id="cgList" style="margin-top:0"></div>
+  </div>
+
+  <div class="card-col view-panel" id="viewTransacciones" style="display:none">
+    <div class="comp-head">
+      <b>Transacciones</b>
+      <span class="cap" id="mvCap"></span>
+    </div>
+    <div class="mv-filtros">
+      <label class="search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="mvQ" placeholder="Buscar por usuario…" autocomplete="off">
+      </label>
+      <select id="mvTipo">
+        <option value="">Todos los tipos</option>
+        <option value="ficha">Ficha</option>
+        <option value="bono">Bono</option>
+        <option value="saldo">Saldo</option>
+      </select>
+      <select id="mvOrigen">
+        <option value="">Todos los orígenes</option>
+        <option value="crm">CRM</option>
+        <option value="ruleta">Ruleta</option>
+        <option value="chatbot">Chatbot</option>
+        <option value="sistema">Sistema</option>
+      </select>
+      <select id="mvOperador">
+        <option value="">Todos los operadores</option>
+      </select>
+      <input type="date" id="mvDesde" title="Desde">
+      <input type="date" id="mvHasta" title="Hasta">
+      <button class="btn-mini-accion" id="mvLimpiar" type="button">Limpiar filtros</button>
+    </div>
+    <div class="mv-tabla-wrap">
+      <table class="mv-tabla">
+        <thead>
+          <tr>
+            <th>Fecha</th><th>Usuario</th><th>Tipo</th><th>Monto</th><th>Quién</th><th>Motivo</th><th>Origen</th>
+          </tr>
+        </thead>
+        <tbody id="mvBody"></tbody>
+      </table>
+    </div>
+    <div class="mv-paginador">
+      <button class="btn-mini-accion" id="mvPrev" type="button">‹ Anterior</button>
+      <span id="mvPagInfo"></span>
+      <button class="btn-mini-accion" id="mvNext" type="button">Siguiente ›</button>
+    </div>
+  </div>
+
+  <div class="card-col view-panel" id="viewUsuarios" style="display:none">
+    <div class="comp-head">
+      <b>Usuarios</b>
+      <span class="cap" id="usCap"></span>
+    </div>
+    <div class="us-cards" id="usCards"></div>
+    <div class="us-filtros">
+      <label class="search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="usQ" placeholder="Buscar por usuario…" autocomplete="off">
+      </label>
+      <div class="tabs" id="usFiltros">
+        <button class="tab on" data-f="todos">Todos</button>
+        <button class="tab" data-f="con_saldo">Con saldo</button>
+        <button class="tab" data-f="con_coins">Con fichas</button>
+        <button class="tab" data-f="con_bonos">Con bonos</button>
+        <button class="tab" data-f="baneados">Baneados</button>
+        <button class="tab" data-f="sin_saldo">Sin saldo</button>
+      </div>
+      <select id="usPorPagina">
+        <option value="25">25</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+        <option value="200">200</option>
+      </select>
+      <button class="btn-mini-accion" id="usBtnCsv" type="button">⬇ CSV</button>
+    </div>
+    <div class="us-tabla-wrap">
+      <table class="us-tabla">
+        <thead>
+          <tr id="usCabeceras">
+            <th data-o="username">Usuario <span class="arr"></span></th>
+            <th data-o="balance" class="num-h">Saldo <span class="arr"></span></th>
+            <th data-o="coins" class="num-h">Fichas <span class="arr"></span></th>
+            <th data-o="bonus" class="num-h">Bonos <span class="arr"></span></th>
+            <th data-o="total_deposits" class="num-h">Depósitos <span class="arr"></span></th>
+            <th class="no-sort">Rol</th>
+            <th class="no-sort">Estado</th>
+            <th data-o="creation_date">Alta <span class="arr"></span></th>
+          </tr>
+        </thead>
+        <tbody id="usFilas"></tbody>
+      </table>
+    </div>
+    <div class="us-paginador">
+      <div class="info" id="usInfoPag"></div>
+      <div class="us-pgbtns" id="usPgbtns"></div>
+    </div>
+  </div>
+
+  <div class="card-col view-panel" id="viewFinanzas" style="display:none">
+
+    <!-- Gate de reverificación -->
+    <div id="fnGate" class="fn-gate">
+      <div class="fn-gate-card">
+        <b>Finanzas</b>
+        <p>Reingresá tu contraseña de operador para ver esta sección.</p>
+        <input type="password" id="fnPass" placeholder="Contraseña" autocomplete="current-password">
+        <div class="fn-gate-error" id="fnPassError"></div>
+        <button class="btn-asignar" id="fnPassBtn" type="button" style="width:100%">Ingresar</button>
+      </div>
+    </div>
+
+    <!-- Contenido real, oculto hasta finanzas_ok -->
+    <div id="fnContenido" style="display:none">
+      <div class="comp-head"><b>Finanzas</b></div>
+
+      <!-- 1. Foto del momento -->
+      <section class="fn-bloque">
+        <h3>Foto del momento</h3>
+        <div class="fn-cards">
+          <div class="fn-card">
+            <div class="k">Efectivo neto histórico
+              <span class="fn-info" data-tip="Toda la plata que entró por recargas menos toda la que salió por retiros confirmados, desde que arrancó el sistema.">i<span class="fn-popover"></span></span>
+            </div>
+            <div class="v" id="fnFotoEfectivo">—</div>
+          </div>
+          <div class="fn-card">
+            <div class="k">Stock de fichas
+              <span class="fn-info" data-tip="Fichas que tenés en tu panel de ganamos para vender.">i<span class="fn-popover"></span></span>
+            </div>
+            <div class="v" id="fnFotoStock">—</div>
+            <div class="sub" id="fnFotoStockSub"></div>
+          </div>
+          <div class="fn-card">
+            <div class="k">Valor del stock
+              <span class="fn-info" data-tip="Cuánto vale ese stock de fichas a tu costo por ficha.">i<span class="fn-popover"></span></span>
+            </div>
+            <div class="v" id="fnFotoValorStock">—</div>
+            <div class="sub" id="fnFotoValorStockSub"></div>
+          </div>
+          <div class="fn-card">
+            <div class="k">Fichas en poder de jugadores
+              <span class="fn-info" data-tip="Lo que le debés a tus jugadores hoy: la suma de todos los saldos reales en la plataforma. Si todos retiraran a la vez, esto es lo que pagarías.">i<span class="fn-popover"></span></span>
+            </div>
+            <div class="v" id="fnFotoPasivo">—</div>
+          </div>
+          <div class="fn-card">
+            <div class="k">Patrimonio neto estimado
+              <span class="fn-info" data-tip="Cuánto vale tu negocio hoy. Suma lo que tenés (efectivo + fichas en stock) y le resta lo que debés (saldo de los jugadores). Si es positivo, ganás; si es negativo, tenés más deuda que activos.">i<span class="fn-popover"></span></span>
+            </div>
+            <div class="v" id="fnFotoPatrimonio">—</div>
+          </div>
+        </div>
+        <details class="fn-explicacion">
+          <summary>¿Cómo se calcula?</summary>
+          <div class="fn-formula" id="fnFotoFormula"></div>
+        </details>
+      </section>
+
+      <!-- 2. Operación del día -->
+      <section class="fn-bloque">
+        <h3>Operación del día</h3>
+        <div class="fn-cards">
+          <div class="fn-card">
+            <div class="k">Recargas hoy
+              <span class="fn-info" data-tip="Transferencias de jugadores ya acreditadas hoy.">i<span class="fn-popover"></span></span>
+            </div>
+            <div class="v" id="fnHoyRecargasMonto">—</div>
+            <div class="sub" id="fnHoyRecargasCant"></div>
+          </div>
+          <div class="fn-card">
+            <div class="k">Retiros hoy
+              <span class="fn-info" data-tip="Retiros ya confirmados hoy (plata que efectivamente salió).">i<span class="fn-popover"></span></span>
+            </div>
+            <div class="v" id="fnHoyRetirosMonto">—</div>
+            <div class="sub" id="fnHoyRetirosCant"></div>
+          </div>
+          <div class="fn-card">
+            <div class="k">Bonos regalados hoy
+              <span class="fn-info" data-tip="Fichas de regalo cargadas hoy (ruleta o a mano desde el CRM).">i<span class="fn-popover"></span></span>
+            </div>
+            <div class="v" id="fnHoyBonosMonto">—</div>
+            <div class="sub" id="fnHoyBonosCant"></div>
+          </div>
+          <div class="fn-card">
+            <div class="k">Ganancia estimada hoy
+              <span class="fn-info" data-tip="Lo que entró, menos lo que salió, menos lo que te costaron las fichas que entregaste hoy.">i<span class="fn-popover"></span></span>
+            </div>
+            <div class="v" id="fnHoyGanancia">—</div>
+          </div>
+        </div>
+        <details class="fn-explicacion">
+          <summary>¿Cómo se calcula?</summary>
+          <div class="fn-formula" id="fnHoyFormula"></div>
+        </details>
+      </section>
+
+      <!-- 3. Rango configurable -->
+      <section class="fn-bloque">
+        <h3>Período</h3>
+        <div class="fn-rango-filtros">
+          <input type="date" id="fnDesde"> <input type="date" id="fnHasta">
+          <button class="btn-mini-accion" id="fnAplicarRango" type="button">Aplicar</button>
+        </div>
+        <div class="fn-cards">
+          <div class="fn-card">
+            <div class="k">Ingresos totales<span class="fn-info" data-tip="Suma de recargas acreditadas en el período.">i<span class="fn-popover"></span></span></div>
+            <div class="v" id="fnRangoIngresos">—</div>
+          </div>
+          <div class="fn-card">
+            <div class="k">Retiros totales<span class="fn-info" data-tip="Suma de retiros confirmados en el período.">i<span class="fn-popover"></span></span></div>
+            <div class="v" id="fnRangoRetiros">—</div>
+          </div>
+          <div class="fn-card">
+            <div class="k">Bonos regalados<span class="fn-info" data-tip="Suma de fichas de regalo entregadas en el período.">i<span class="fn-popover"></span></span></div>
+            <div class="v" id="fnRangoBonos">—</div>
+          </div>
+          <div class="fn-card">
+            <div class="k">Costo de fichas del período<span class="fn-info" data-tip="Lo que te costaron al proveedor las fichas que entregaste (recargas + bonos).">i<span class="fn-popover"></span></span></div>
+            <div class="v" id="fnRangoCostoFichas">—</div>
+          </div>
+          <div class="fn-card">
+            <div class="k">Ganancia bruta del período<span class="fn-info" data-tip="Ingresos menos retiros menos el costo de las fichas entregadas.">i<span class="fn-popover"></span></span></div>
+            <div class="v" id="fnRangoGanancia">—</div>
+          </div>
+          <div class="fn-card">
+            <div class="k">Recarga promedio<span class="fn-info" data-tip="Monto promedio por recarga acreditada en el período.">i<span class="fn-popover"></span></span></div>
+            <div class="v" id="fnRangoRecargaProm">—</div>
+          </div>
+          <div class="fn-card">
+            <div class="k">Retiro promedio<span class="fn-info" data-tip="Monto promedio por retiro confirmado en el período.">i<span class="fn-popover"></span></span></div>
+            <div class="v" id="fnRangoRetiroProm">—</div>
+          </div>
+          <div class="fn-card">
+            <div class="k">Jugadores activos únicos<span class="fn-info" data-tip="Jugadores distintos que recargaron al menos una vez en el período.">i<span class="fn-popover"></span></span></div>
+            <div class="v" id="fnRangoActivos">—</div>
+          </div>
+          <div class="fn-card">
+            <div class="k">Jugadores nuevos<span class="fn-info" data-tip="Altas nuevas en ganamos durante el período.">i<span class="fn-popover"></span></span></div>
+            <div class="v" id="fnRangoNuevos">—</div>
+          </div>
+          <div class="fn-card">
+            <div class="k">Retención<span class="fn-info" data-tip="De los jugadores activos en el período anterior de igual duración, qué porcentaje volvió a recargar en este período.">i<span class="fn-popover"></span></span></div>
+            <div class="v" id="fnRangoRetencion">—</div>
+          </div>
+        </div>
+        <details class="fn-explicacion">
+          <summary>¿Cómo se calcula?</summary>
+          <div class="fn-formula" id="fnRangoFormula"></div>
+        </details>
+      </section>
+
+      <!-- 4. Alertas -->
+      <section class="fn-bloque">
+        <h3>Alertas</h3>
+        <div class="fn-alertas-lista" id="fnAlertas"></div>
+      </section>
+
+      <!-- 5. Export -->
+      <section class="fn-bloque">
+        <div class="fn-export-btns">
+          <button class="btn-mini-accion" id="fnBtnCsv" type="button">⬇ Exportar CSV</button>
+          <button class="btn-mini-accion" id="fnBtnJson" type="button">⬇ Exportar JSON</button>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<!-- Fase 0.5: se ve mientras arrancar() todavia no sabe si hay sesion. -->
+<div class="boot-loading" id="bootLoading"><span class="sp"></span></div>
+
+<!-- Fase 0.5: login de operador. Cubre TODO por encima del shell (z-index
+     100) — nunca conviven visibles los dos al mismo tiempo. -->
+<div class="login-screen" id="loginScreen" style="display:none">
+  <form class="login-card" id="loginForm" autocomplete="off">
+    <div class="login-logo">
+      <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+      <b>gana<span>mos</span></b>
+    </div>
+    <p class="login-sub">Panel de operadores</p>
+    <label>Usuario<br>
+      <input id="loginUser" name="usuario" autocomplete="username" required autofocus>
+    </label>
+    <label>Contraseña<br>
+      <input id="loginPass" name="password" type="password" autocomplete="current-password" required>
+    </label>
+    <div class="login-error" id="loginError"></div>
+    <button type="submit" class="login-btn" id="loginBtn">Ingresar</button>
+  </form>
+</div>
+
+<div class="back" id="back">
+  <div class="modal">
+    <h3 id="mTitulo">Cargar fichas</h3>
+    <p id="mSub">Se acredita al instante en la cuenta del jugador.</p>
+    <label>Cantidad</label>
+    <input id="mMonto" type="number" inputmode="numeric" placeholder="Ej: 500">
+    <label>Motivo (opcional)</label>
+    <input id="mMotivo" type="text" placeholder="Ej: promo, ajuste, regalo…">
+    <div class="mbtns">
+      <button class="no" id="mCancel">Cancelar</button>
+      <button class="ok" id="mOk">Cargar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Notificación push. Va a la cola: el celular la levanta cuando sondea. -->
+<div class="back" id="backN">
+  <div class="modal">
+    <h3>Notificar al celular</h3>
+    <p id="nSub">Le llega como notificación de Android.</p>
+    <label>Plantilla</label>
+    <div class="chips" id="nChips"></div>
+    <label>Título</label>
+    <input id="nTitulo" type="text" maxlength="120" placeholder="🎁 ¡Te regalamos 500 fichas!">
+    <label>Mensaje</label>
+    <textarea id="nCuerpo" maxlength="400" placeholder="Entrá a la app y jugalas antes de que se venzan."></textarea>
+    <label class="todos" for="nTodos">
+      <input type="checkbox" id="nTodos">
+      <span><b>Mandársela a todos</b>Todos los jugadores con la app instalada.</span>
+    </label>
+    <div class="mbtns">
+      <button class="no" id="nCancel">Cancelar</button>
+      <button class="ok" id="nOk">Enviar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Cancelar retiro (Fase A, Módulo 2). Solo pendiente/error -- 'procesando'
+     no tiene este botón porque el bot podría estar ejecutándolo ahora mismo. -->
+<div class="back" id="backCancelRet">
+  <div class="modal">
+    <h3 id="crTitulo">Cancelar retiro</h3>
+    <p id="crSub"></p>
+    <label>Motivo (entre 8 y 200 caracteres, obligatorio)</label>
+    <textarea id="crNota" maxlength="200" placeholder="Por qué se cancela este retiro…"></textarea>
+    <div class="mbtns">
+      <button class="no" id="crVolver" type="button">Volver</button>
+      <button class="ok peligro" id="crOk" type="button">Cancelar retiro</button>
+    </div>
+  </div>
+</div>
+
+<!-- Cancelar recarga (Fase A, Módulo 3). Solo 'pendiente' sin pago_id -- si
+     tiene pago vinculado, el botón de la fila ya viene deshabilitado. -->
+<div class="back" id="backCancelCarga">
+  <div class="modal">
+    <h3 id="ccTitulo">Cancelar recarga</h3>
+    <p id="ccSub"></p>
+    <label>Motivo (entre 8 y 200 caracteres, obligatorio)</label>
+    <textarea id="ccNota" maxlength="200" placeholder="Por qué se cancela esta recarga…"></textarea>
+    <div class="char-count" id="ccContador">0/200</div>
+    <div class="mbtns">
+      <button class="no" id="ccVolver" type="button">Volver</button>
+      <button class="ok peligro" id="ccOk" type="button">Cancelar recarga</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+  // Cliente SIN dominio propio: esta página se sirve como /<slug>/crm.html en
+  // vez de /crm.html (ver replica/nginx-replica.conf, locations con `slug`).
+  // TENANT_PREFIJO va antes de CUALQUIER ruta absoluta que arme este archivo
+  // (API, avatar, lo que sea): "/<slug>" si vino por path, "" si no (el caso
+  // de siempre: dominio propio, o Hostinger).
+  const TENANT_PREFIJO = (function(){
+    const m = location.pathname.match(/^\/([a-z0-9-]+)\/(?:crm|admin|chat)\.html$/i);
+    return m ? "/" + m[1] : "";
+  })();
+
+  // De qué base sale nuestra API. En una réplica de cliente (cualquier
+  // subdominio de faunotattoo.com) vive en /gp-api: /api es de la PLATAFORMA
+  // (login/saldo) y nginx la manda a otro lado. En Hostinger (acceso directo)
+  // es /api al mismo origen. db.php resuelve la base del cliente por el dominio
+  // (+ el slug de TENANT_PREFIJO si es cliente por-path).
+  const API_BASE = TENANT_PREFIJO +
+    (/(^|\.)(faunotattoo\.com|ganamoscrm\.online)$/i.test(location.hostname) ? "/gp-api" : "/api");
+  const API = API_BASE + "/crm.php";
+  const API_LOGIN = API_BASE + "/crm_login.php";
+  const $ = s => document.querySelector(s);
+
+  // ---------- sesion de operador (Fase 0.5) ----------
+  // A PROPOSITO en variables de modulo, nunca en localStorage/sessionStorage:
+  // un XSS que lea el storage no debe poder llevarse el CSRF. El costo es que
+  // un F5 los borra -- ver apiFetch() mas abajo, que lo maneja como sesion
+  // vencida (403) y vuelve a pedir login, sin tocar nada del backend.
+  let CSRF = null;
+  let OPERADOR = null;
+  const nf = new Intl.NumberFormat("es-AR");
+  const money = n => "$" + nf.format(Math.round(n||0));
+  const esc = s => String(s==null?"":s).replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]));
+
+  const SVG = {
+    moon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>',
+    sun:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></svg>',
+    check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg>',
+    gift:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg>',
+    pdf:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>',
+    pin:'<svg viewBox="0 0 24 24"><path d="M9 3h6l-1 6 3 3v1.5h-4V21h-2v-7.5H7V12l3-3z"/></svg>'
+  };
+
+  const st = { q:"", estado:"todas", convId:0, usuario:"", modo:"ficha" };
+  let mvOperadoresCargados = false;
+  let debounce, pollList, pollConv, pollBadgeComp, pollBadgeRet, pollRetirosVista, pollCargasVista;
+
+  // ---------- sesion de operador: shell vs. login (Fase 0.5) ----------
+  function ocultarBoot(){ const b=$("#bootLoading"); if(b) b.style.display="none"; }
+
+  function mostrarShell(){
+    ocultarBoot();
+    $("#loginScreen").style.display = "none";
+    $("#app").style.display = "flex";
+    pintarOperador();
+  }
+
+  function mostrarLogin(msg){
+    ocultarBoot();
+    detenerPolling();
+    // Si otro operador entra en la misma pestaña sin recargar, Finanzas no
+    // puede quedar "ya verificado": se resetea el gate propio acá.
+    if (typeof fnVerificado !== "undefined") { fnVerificado = false; }
+    // Si habia un modal de accion abierto cuando vencio la sesion, no lo
+    // dejamos colgado: aunque no se vea (el login lo tapa entero), mejor que
+    // la proxima vez que se abra arranque limpio.
+    $("#back").classList.remove("on");
+    $("#backN").classList.remove("on");
+    $("#app").style.display = "none";
+    $("#loginScreen").style.display = "grid";
+    $("#loginError").textContent = msg || "";
+    $("#loginPass").value = "";
+    setTimeout(()=>{ const u=$("#loginUser"); if(u) u.focus(); }, 50);
+  }
+
+  function pintarOperador(){
+    const el = $("#operadorNombre");
+    if(el) el.textContent = OPERADOR ? "@"+OPERADOR : "Operador";
+  }
+
+  function iniciarPolling(){
+    detenerPolling();
+    pollList = setInterval(cargarLista, 12000);
+    pollConv = setInterval(()=>{ if(st.convId && !$("#back").classList.contains("on")) abrir(st.convId); }, 9000);
+    // Los badges corren siempre, sin importar que modulo este abierto -- asi
+    // el numero del rail se actualiza aunque el operador este mirando otra
+    // cosa. El de retiros solo se prende si hay algo REALMENTE trabado
+    // (>30min en 'procesando'), no por cada retiro pendiente normal.
+    pollBadgeComp = setInterval(actualizarBadgeComp, 25000);
+    pollBadgeRet = setInterval(actualizarBadgeRetiros, 25000);
+    actualizarBadgeComp();
+    actualizarBadgeRetiros();
+  }
+  function detenerPolling(){
+    [pollList, pollConv, pollBadgeComp, pollBadgeRet, pollRetirosVista, pollCargasVista].forEach(p=>{ if(p) clearInterval(p); });
+    pollList = pollConv = pollBadgeComp = pollBadgeRet = pollRetirosVista = pollCargasVista = null;
+  }
+
+  // ---------- tema ----------
+  function aplicarTema(t){
+    document.documentElement.setAttribute("data-theme", t);
+    localStorage.setItem("goldpaw_theme", t);
+    const ic = t==="dark" ? SVG.moon : SVG.sun;
+    $("#themeBtn").innerHTML = ic;
+    const b2 = $("#themeBtn2"); if(b2) b2.innerHTML = ic;
+  }
+  function toggleTema(){ aplicarTema(document.documentElement.getAttribute("data-theme")==="dark" ? "light" : "dark"); }
+  aplicarTema(document.documentElement.getAttribute("data-theme") || "dark");
+  $("#themeBtn").addEventListener("click", toggleTema);
+  const _b2 = $("#themeBtn2"); if(_b2) _b2.addEventListener("click", toggleTema);
+
+  // ---------- vistas del rail (Fase A) ----------
+  // Dispatcher generico: "chats" es la vista de siempre (3 columnas); los
+  // modulos nuevos ocultan esas 3 columnas y muestran su propio contenedor.
+  // Se va sumando un nombre a VISTAS + su contenedor a VISTA_CONTENEDOR por
+  // cada modulo que se conecte, sin tocar el resto de la funcion.
+  const VISTAS = ["chats", "comprobantes", "retiros", "cargas", "transacciones", "usuarios", "finanzas"];
+  const VISTA_CONTENEDOR = {
+    comprobantes: "#viewComprobantes",
+    retiros: "#viewRetiros",
+    cargas: "#viewCargas",
+    transacciones: "#viewTransacciones",
+    usuarios: "#viewUsuarios",
+    finanzas: "#viewFinanzas",
+  };
+
+  function mostrarVista(nombre){
+    if(!VISTAS.includes(nombre)) return;
+    document.querySelectorAll(".rail-item[data-nav]").forEach(el=>{
+      el.classList.toggle("active", el.getAttribute("data-nav")===nombre);
+    });
+    const chats = nombre==="chats";
+    // "" (no "flex") para no pisar el valor que ya define la clase CSS —
+    // asi los media queries de mobile (que tambien tocan estos mismos
+    // elementos) siguen mandando cuando la vista es "chats".
+    $(".col-list").style.display = chats ? "" : "none";
+    $(".col-chat").style.display = chats ? "" : "none";
+    $("#userPane").style.display = chats ? "" : "none";
+    Object.entries(VISTA_CONTENEDOR).forEach(([nom, sel])=>{
+      $(sel).style.display = nombre===nom ? "flex" : "none";
+    });
+
+    // El auto-refresh del listado de retiros/cargas corre SOLO mientras esa
+    // vista esta abierta (a diferencia del badge, que corre siempre en
+    // segundo plano via iniciarPolling()) -- se para apenas se navega a
+    // otro lado. Cargas no tiene badge en el rail (a diferencia de
+    // Comprobantes/Retiros): no hay una señal de urgencia unica y clara
+    // para resumir en un numero -- se decidio dejarlo afuera del rail.
+    if(pollRetirosVista){ clearInterval(pollRetirosVista); pollRetirosVista = null; }
+    if(pollCargasVista){ clearInterval(pollCargasVista); pollCargasVista = null; }
+
+    if(nombre==="comprobantes") cargarComprobantes();
+    if(nombre==="retiros"){
+      cargarRetiros();
+      pollRetirosVista = setInterval(cargarRetiros, 25000);
+    }
+    if(nombre==="cargas"){
+      cargarCargas();
+      actualizarContadoresCargas();
+      pollCargasVista = setInterval(()=>{ cargarCargas(); actualizarContadoresCargas(); }, 25000);
+    }
+    // Transacciones: sin auto-refresh a proposito -- es una vista de
+    // auditoria/historico, no una cola operativa con urgencia (a diferencia
+    // de Retiros/Cargas). Se recarga con cada cambio de filtro o pagina.
+    if(nombre==="transacciones"){
+      if(!mvOperadoresCargados){ cargarOperadoresMv(); mvOperadoresCargados = true; }
+      cargarMovimientos();
+    }
+    // Usuarios: mismo criterio que Transacciones -- vista de
+    // consulta/dashboard, sin auto-refresh. Se recarga con cada cambio de
+    // filtro/orden/pagina, igual que admin.html hacia antes.
+    if(nombre==="usuarios"){
+      cargarUsuarios();
+    }
+    // Finanzas: gate propio (fnVerificado), no el login general -- ver
+    // fnAbrir() más abajo.
+    if(nombre==="finanzas"){
+      fnAbrir();
+    }
+  }
+
+  document.querySelectorAll(".rail-item[data-nav]").forEach(el=>{
+    el.addEventListener("click", ()=>{
+      const nav = el.getAttribute("data-nav");
+      if(nav==="chats"){ mostrarVista("chats"); return; }
+      if(nav==="usuarios"){ mostrarVista("usuarios"); return; }
+      if(nav==="finanzas"){ mostrarVista("finanzas"); return; }
+      // Desde el rail siempre es masiva: no hay una conversación de contexto.
+      if(nav==="push"){ abrirNotif(true); return; }
+      if(nav==="comprobantes"){ mostrarVista("comprobantes"); return; }
+      if(nav==="retiros"){ mostrarVista("retiros"); return; }
+      if(nav==="cargas"){ mostrarVista("cargas"); return; }
+      if(nav==="transacciones"){ mostrarVista("transacciones"); return; }
+      toast("Sección en preparación");
+    });
+  });
+
+  function colorDe(nombre){
+    let h=0; const s=String(nombre||"?");
+    for(let i=0;i<s.length;i++) h=(h*31 + s.charCodeAt(i))|0;
+    const hue=((h%360)+360)%360;
+    return `linear-gradient(160deg, hsl(${hue} 70% 62%), hsl(${(hue+35)%360} 68% 48%))`;
+  }
+  function hace(iso){
+    if(!iso) return "";
+    const d = new Date(iso.replace(" ","T")); const s = (Date.now()-d.getTime())/1000;
+    if(s<60) return "recién"; if(s<3600) return Math.floor(s/60)+"m";
+    if(s<86400) return Math.floor(s/3600)+"h"; return Math.floor(s/86400)+"d";
+  }
+  /** Cuenta regresiva hasta una fecha FUTURA (vence_en) -- hace() es al revés
+   *  (tiempo transcurrido desde una fecha pasada), no sirve para esto. */
+  function faltan(iso){
+    if(!iso) return "";
+    const d = new Date(iso.replace(" ","T")); const s = (d.getTime()-Date.now())/1000;
+    if(s<=0) return "ya venció";
+    if(s<3600) return Math.ceil(s/60)+"m";
+    if(s<86400) return Math.floor(s/3600)+"h "+Math.floor((s%3600)/60)+"m";
+    return Math.floor(s/86400)+"d";
+  }
+  function inic(nombre){ const n=(nombre||"").trim(); return n? n.slice(0,2).toUpperCase() : "?"; }
+  function toast(t){ const el=$("#toast"); el.textContent=t; el.classList.add("on"); setTimeout(()=>el.classList.remove("on"),2300); }
+
+  /**
+   * Wrapper unico para TODOS los fetch autenticados (jget, jpost, y la subida
+   * de adjuntos mas abajo). Dos cosas:
+   *   - En POST/PUT/PATCH/DELETE agrega X-CSRF-Token solo si hay uno en
+   *     memoria (login.php mismo no pasa por aca, ver su propio fetch).
+   *   - Si el server contesta 401 (sin sesion) o 403 (CSRF invalido o
+   *     ausente -- el caso tipico despues de un F5), vuelve a mostrar el
+   *     login SIN recargar la pagina, y corta la llamada de quien lo pidio.
+   */
+  async function apiFetch(url, options){
+    const opts = Object.assign({}, options || {});
+    opts.credentials = opts.credentials || "same-origin";
+    const metodo = (opts.method || "GET").toUpperCase();
+    if(["POST","PUT","PATCH","DELETE"].includes(metodo)){
+      const h = new Headers(opts.headers || {});
+      if(CSRF) h.set("X-CSRF-Token", CSRF);
+      opts.headers = h;
+    }
+    const r = await fetch(url, opts);
+    if(r.status===401 || r.status===403){
+      mostrarLogin(r.status===403
+        ? "Tu sesión necesita confirmarse de nuevo. Ingresá tu contraseña otra vez."
+        : "Tu sesión expiró. Ingresá de nuevo.");
+      throw new Error("sesion_requerida");
+    }
+    return r;
+  }
+
+  /** true si el error es el que tira apiFetch por sesion vencida/CSRF
+   *  invalido (ya mostró el login solo; nadie más tiene que reaccionar). */
+  function esSesionRequerida(e){ return e && e.message==="sesion_requerida"; }
+
+  /** `url` es opcional (default API=crm.php) para que otros módulos del CRM
+   *  (crm_comprobantes.php, y los que vengan) reusen el mismo wrapper en vez
+   *  de reimplementar el manejo de sesión/CSRF cada uno. */
+  async function jget(params, url){
+    url = url || API;
+    let r;
+    try{ r = await apiFetch(url + "?" + new URLSearchParams(params)); }
+    catch(e){ if(esSesionRequerida(e)) return {ok:false, items:[]}; throw e; }
+    if(!r.ok){ let d={}; try{d=await r.json()}catch(e){} const e2=new Error(d.detalle||("HTTP "+r.status)); e2.data=d; throw e2; }
+    return r.json();
+  }
+  async function jpost(data, url){
+    url = url || API;
+    let r;
+    try{ r = await apiFetch(url, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(data) }); }
+    catch(e){ if(esSesionRequerida(e)) return {ok:false}; throw e; }
+    return r.json();
+  }
+
+  function pintarStats(r){
+    $("#cap").textContent = `${r.total||0} · ${r.abiertas||0} abiertas`;
+    $("#saldoInt").textContent = money(r.saldo_interno);
+    $("#stUsuarios").textContent = nf.format(r.usuarios||0);
+    $("#stFichas").textContent = nf.format(r.fichas_total||0);
+    $("#stBonos").textContent = nf.format(r.bonos_total||0);
+  }
+
+  // ---------- lista ----------
+  async function cargarLista(){
+    let d;
+    try{ d = await jget({accion:"conversaciones", q:st.q, estado:st.estado}); }
+    catch(e){ $("#list").innerHTML = `<div class="nouser">Error al cargar.<br><small>${esc(e.message)}</small></div>`; return; }
+    if(!d.ok){ $("#list").innerHTML = `<div class="nouser">${esc(d.detalle||d.error||"Error")}</div>`; return; }
+
+    if(d.resumen) pintarStats(d.resumen);
+
+    if(!d.items.length){ $("#list").innerHTML = `<div class="nouser">No hay conversaciones${st.q?" para esa búsqueda":""}.</div>`; return; }
+    $("#list").innerHTML = d.items.map(c=>{
+      const nombre = c.usuario || "Anónimo";
+      const anon = c.usuario ? "" : "anon";
+      const bg = c.usuario ? `style="background:${colorDe(c.usuario)}"` : "";
+      const nl = c.no_leidos>0 ? `<span class="badge">${c.no_leidos}</span>` : "";
+      const pin = c.fijada ? `<span class="pin-mini">${SVG.pin}</span>` : "";
+      return `<div class="conv ${c.id===st.convId?"sel":""}" data-id="${c.id}">
+        <div class="av ${anon}" ${bg}>${esc(inic(c.usuario||"?"))}</div>
+        <div class="mid">
+          <div class="n"><b>${pin}<span class="est-dot est-${esc(c.estado)}"></span>${esc(nombre)}</b><span class="t">${hace(c.actualizada_en)}</span></div>
+          <div class="pv">${esc(c.preview||"—")}</div>
+        </div>${nl}
+      </div>`;
+    }).join("");
+    $("#list").querySelectorAll(".conv").forEach(el=>{
+      el.addEventListener("click", ()=> abrir(+el.getAttribute("data-id")));
+    });
+  }
+
+  // ---------- abrir ----------
+  async function abrir(id){
+    st.convId = id;
+    $("#app").classList.add("viewing");
+    $("#chatEmpty").style.display="none";
+    $("#chatView").style.display="flex";
+    $("#volver").style.display = window.innerWidth<=760 ? "inline-flex" : "none";
+    $("#app").classList.remove("info");
+    document.querySelectorAll(".conv").forEach(c=>c.classList.toggle("sel", +c.getAttribute("data-id")===id));
+
+    let d;
+    try{ d = await jget({accion:"conversacion", id}); }
+    catch(e){ $("#thread").innerHTML=`<div class="nouser">Error: ${esc(e.message)}</div>`; return; }
+    if(!d.ok){ $("#thread").innerHTML=`<div class="nouser">${esc(d.detalle||d.error)}</div>`; return; }
+
+    const c = d.conversacion;
+    st.usuario = c.usuario || "";
+    const av = $("#chatAv");
+    if(c.usuario){ av.style.display="grid"; av.textContent=inic(c.usuario); av.style.background=colorDe(c.usuario); }
+    else av.style.display="none";
+    $("#chatWho").textContent = c.usuario || "Conversación anónima";
+    $("#chatSub").textContent = c.usuario ? ("@"+c.usuario) : ("sesión " + (c.session_id||"").slice(0,8));
+    $("#estbtns").querySelectorAll("button[data-e]").forEach(b=>b.classList.toggle("on", b.getAttribute("data-e")===c.estado));
+    $("#btnFijar").classList.toggle("on", !!c.fijada);
+
+    $("#thread").innerHTML = d.mensajes.map(m=>{
+      const cls = m.rol==="user" ? "user" : (m.rol==="agente" ? "agente" : "bot");
+      let inner;
+      if(m.adjunto && m.adjunto.url){
+        inner = m.adjunto.tipo==="imagen"
+          ? `<a href="${esc(m.adjunto.url)}" target="_blank"><img class="att-img" src="${esc(m.adjunto.url)}" alt=""></a>`
+          : `<a class="att-pdf" href="${esc(m.adjunto.url)}" target="_blank">${SVG.pdf}${esc(m.adjunto.nombre||"Comprobante.pdf")}</a>`;
+      } else {
+        const ic = (m.rol==="agente" && /^(Cargó|Carga|Retiro)/.test(m.texto||"")) ? SVG.gift : "";
+        inner = ic + esc(m.texto);
+      }
+      return `<div class="row ${cls}"><div><div class="bub">${inner}</div><div class="meta">${hace(m.creado_en)}</div></div></div>`;
+    }).join("") || `<div class="nouser">Conversación vacía.</div>`;
+    const th=$("#thread"); th.scrollTop = th.scrollHeight;
+
+    pintarUsuario(d.usuario, d.movimientos, c.notas);
+  }
+
+  // ---------- ficha ----------
+  function pintarUsuario(u, movs, notas){
+    if(!$("#userCard")) return;
+    if(!u){
+      $("#userCard").style.display="none";
+      $("#noUser").style.display="block";
+      $("#noUser").textContent = st.usuario ? `El usuario "${st.usuario}" no está en la base de usuarios.` : "Esta conversación todavía no tiene un usuario vinculado.";
+      return;
+    }
+    $("#noUser").style.display="none";
+    $("#userCard").style.display="block";
+    $("#uAv").textContent = inic(u.nombre_usuario);
+    $("#uAv").style.background = colorDe(u.nombre_usuario);
+    $("#uNombre").textContent = ((u.nombre||"")+" "+(u.apellido||"")).trim() || u.nombre_usuario;
+    $("#uUser").textContent = "@"+u.nombre_usuario;
+    $("#uSaldo").textContent = money(u.saldo);
+    $("#uFichas").textContent = nf.format(u.fichas||0);
+    $("#uBonos").textContent = nf.format(u.bonus||0);
+
+    const flags=[];
+    if(u.is_banned) flags.push(`<span class="flag ban">Baneado</span>`);
+    flags.push(`<span class="flag ${u.tiene_app?"on":""}">${u.tiene_app?SVG.check:""}App</span>`);
+    flags.push(`<span class="flag ${u.notificaciones?"on":""}">${u.notificaciones?SVG.check:""}Notif.</span>`);
+    if(u.ganamos_id) flags.push(`<span class="flag">ID ${esc(u.ganamos_id)}</span>`);
+    $("#uFlags").innerHTML = flags.join("");
+
+    $("#notas").value = notas || "";
+    if(!movs || !movs.length){
+      $("#movs").innerHTML = `<div style="color:var(--muted);font-size:12.5px">Sin movimientos.</div>`;
+    } else {
+      $("#movs").innerHTML = movs.map(m=>{
+        const signo = m.monto>0?"+":""; const cls=m.monto>0?"pos":"neg";
+        const et = m.tipo==="bono"?"bono":"fichas";
+        return `<div class="mov"><span class="tp">${hace(m.creado_en)} · ${esc(et)}${m.motivo?" · "+esc(m.motivo):""}</span><span class="${cls}">${signo}${nf.format(m.monto)}</span></div>`;
+      }).join("");
+    }
+  }
+
+  // ---------- eventos ----------
+  $("#q").addEventListener("input", e=>{ clearTimeout(debounce); debounce=setTimeout(()=>{ st.q=e.target.value.trim(); cargarLista(); },300); });
+  $("#tabs").addEventListener("click", e=>{ const b=e.target.closest(".tab"); if(!b)return;
+    document.querySelectorAll("#tabs .tab").forEach(x=>x.classList.remove("on")); b.classList.add("on");
+    st.estado=b.getAttribute("data-e"); cargarLista(); });
+  $("#estbtns").addEventListener("click", async e=>{
+    const b=e.target.closest("button"); if(!b||!st.convId)return;
+    await jpost({accion:"estado", id:st.convId, estado:b.getAttribute("data-e")});
+    $("#estbtns").querySelectorAll("button").forEach(x=>x.classList.toggle("on", x===b));
+    cargarLista();
+  });
+  $("#volver").addEventListener("click", ()=>{ $("#app").classList.remove("viewing"); });
+  $("#btnInfo").addEventListener("click", ()=> $("#app").classList.add("info"));
+  const cerrarInfo = ()=> $("#app").classList.remove("info");
+  $("#drawerBack").addEventListener("click", cerrarInfo);
+  $("#cerrarDrawer").addEventListener("click", cerrarInfo);
+  $("#btnNota").addEventListener("click", async ()=>{
+    if(!st.convId) return;
+    const d = await jpost({accion:"nota", id:st.convId, notas:$("#notas").value});
+    toast(d.ok ? "Nota guardada" : "No se pudo guardar");
+  });
+
+  // ---------- anclar ----------
+  $("#btnFijar").addEventListener("click", async ()=>{
+    if(!st.convId) return;
+    const nueva = !$("#btnFijar").classList.contains("on");
+    const d = await jpost({accion:"fijar", id:st.convId, fijar:nueva});
+    if(d.ok){ $("#btnFijar").classList.toggle("on", d.fijada); cargarLista(); }
+  });
+
+  // ---------- responder + adjuntar ----------
+  function autoGrow(t){ t.style.height="auto"; t.style.height=Math.min(t.scrollHeight,130)+"px"; }
+  const rt = $("#respText");
+  rt.addEventListener("input", ()=>autoGrow(rt));
+  async function enviarResp(){
+    const t = rt.value.trim(); if(!t || !st.convId) return;
+    rt.value=""; autoGrow(rt);
+    const d = await jpost({accion:"responder", id:st.convId, texto:t});
+    if(d.ok) abrir(st.convId); else toast("No se pudo enviar");
+  }
+  $("#btnResp").addEventListener("click", enviarResp);
+  rt.addEventListener("keydown", e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); enviarResp(); }});
+  $("#btnAttach").addEventListener("click", ()=> $("#fileAg").click());
+  $("#fileAg").addEventListener("change", async e=>{
+    const f = e.target.files[0]; e.target.value=""; if(!f || !st.convId) return;
+    if(f.size > 8*1024*1024){ toast("El archivo supera 8 MB"); return; }
+    const fd = new FormData(); fd.append("archivo", f); fd.append("conversacion_id", st.convId);
+    toast("Subiendo…");
+    try{ const r = await apiFetch(API_BASE + "/subir.php",{method:"POST",body:fd}); const d = await r.json();
+      if(d.ok) abrir(st.convId); else toast(d.error||"No se pudo subir");
+    }catch(err){ if(err.message!=="sesion_requerida") toast("No se pudo subir"); }
+  });
+
+  // ---------- Comprobantes sin resolver (Fase A, Módulo 1) ----------
+  const API_COMP = API_BASE + "/crm_comprobantes.php";
+  let compPagoActual = null;
+
+  /** Advertencia visual, no bloqueo: compara tokens del remitente del pago
+   *  contra el username de la recarga candidata, normalizando acentos y
+   *  mayusculas. Sin match de ningun token => probablemente no es la misma
+   *  persona. Simple a proposito (no hay LEVENSHTEIN disponible en el
+   *  MySQL de Hostinger ni conviene sumarlo por esto). */
+  function normalizarNombre(s){
+    // normalize("NFD") separa cada letra acentuada en base + marca de acento
+    // (ej: "é" -> "e" + acento como caracter aparte); el filtro de abajo ya
+    // se encarga de sacar esa marca junto con cualquier otro simbolo, sin
+    // necesidad de un regex de rango Unicode aparte.
+    return String(s||"").toLowerCase().normalize("NFD")
+      .replace(/[^a-z0-9\s]/g," ").replace(/\s+/g," ").trim();
+  }
+  function pareceMismaPersona(remitente, usuario){
+    const r = normalizarNombre(remitente), u = normalizarNombre(usuario);
+    if(!r || !u) return true; // sin dato de un lado, no es una señal real
+    const tr = r.split(" ").filter(t=>t.length>=3);
+    const tu = u.split(" ").filter(t=>t.length>=3);
+    if(!tr.length || !tu.length) return true;
+    return tr.some(a=>tu.some(b=>a.includes(b)||b.includes(a))) || tr.some(a=>u.includes(a)) || tu.some(b=>r.includes(b));
+  }
+
+  async function actualizarBadgeComp(){
+    try{
+      const d = await jget({accion:"badge"}, API_COMP);
+      const b = $("#badgeComprobantes");
+      if(d.ok && d.cantidad>0){ b.textContent = d.cantidad>99?"99+":d.cantidad; b.classList.add("on"); }
+      else { b.classList.remove("on"); }
+    }catch(e){ /* silencioso: es solo un contador */ }
+  }
+
+  async function cargarComprobantes(){
+    $("#compEmpty").style.display="flex"; $("#compDetail").style.display="none";
+    compPagoActual = null;
+    let d;
+    try{ d = await jget({accion:"listar"}, API_COMP); }
+    catch(e){ $("#compList").innerHTML = `<div class="nouser">Error al cargar.</div>`; return; }
+    if(!d.ok){ $("#compList").innerHTML = `<div class="nouser">${esc(d.error||"Error")}</div>`; return; }
+    $("#compCap").textContent = d.items.length + (d.items.length===1 ? " pendiente" : " pendientes");
+    if(!d.items.length){ $("#compList").innerHTML = `<div class="nouser">No hay comprobantes sin resolver. 🎉</div>`; return; }
+    $("#compList").innerHTML = d.items.map(p=>`
+      <div class="comp-row" data-id="${esc(p.id_unico)}">
+        <div class="cr-top"><span>${esc(p.remitente||"Sin remitente")}</span><span>${money(p.monto)}</span></div>
+        <div class="cr-sub">${esc(p.entidad||"—")} · ${hace(p.capturado_en)}</div>
+      </div>`).join("");
+    $("#compList").querySelectorAll(".comp-row").forEach(el=>{
+      el.addEventListener("click", ()=> abrirComprobante(el.getAttribute("data-id")));
+    });
+  }
+
+  async function abrirComprobante(idUnico, q){
+    $("#compList").querySelectorAll(".comp-row").forEach(el=>
+      el.classList.toggle("sel", el.getAttribute("data-id")===idUnico));
+
+    let d;
+    try{ d = await jget({accion:"detalle", pago_id:idUnico, q:q||""}, API_COMP); }
+    catch(e){ toast("Error al cargar el comprobante"); return; }
+    if(!d.ok){ toast(d.error||"Ese comprobante ya no está disponible"); cargarComprobantes(); return; }
+
+    compPagoActual = d.pago;
+    $("#compEmpty").style.display="none"; $("#compDetail").style.display="block";
+    $("#compInfo").innerHTML = [
+      ["Monto", money(d.pago.monto)], ["Remitente", d.pago.remitente||"—"],
+      ["CUIT/CUIL", d.pago.cuit||"—"], ["CBU/CVU origen", d.pago.cbu_origen||"—"],
+      ["Entidad", d.pago.entidad||"—"], ["Nro. transacción", d.pago.nro_transaccion||"—"],
+      ["Mail de origen", d.pago.mail_de||"—"], ["Capturado", hace(d.pago.capturado_en)],
+    ].map(([k,v])=>`<div class="ci"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join("");
+
+    $("#compCands").innerHTML = !d.candidatas.length
+      ? `<div class="nouser">No hay recargas pendientes${q?" para esa búsqueda":""}.</div>`
+      : d.candidatas.map(c=>{
+          const warn = pareceMismaPersona(d.pago.remitente, c.usuario) ? "" : `<span class="warn-chip">⚠ nombre no coincide</span>`;
+          return `<div class="cand">
+            <div class="cd-mid">
+              <div class="cd-user">@${esc(c.usuario)}${warn}</div>
+              <div class="cd-sub">Ref ${esc(c.referencia)} · ${nf.format(c.coins)} fichas</div>
+            </div>
+            <div class="cd-monto">${money(c.monto_pedido)}</div>
+            <button class="btn-asignar" data-id="${c.id}" type="button">Asignar</button>
+          </div>`;
+        }).join("");
+    $("#compCands").querySelectorAll(".btn-asignar").forEach(btn=>{
+      btn.addEventListener("click", ()=> asignarComprobante(+btn.getAttribute("data-id"), btn));
+    });
+  }
+
+  async function asignarComprobante(recargaId, btn){
+    if(!compPagoActual) return;
+    if(!confirm(`¿Asignar este comprobante (${money(compPagoActual.monto)}) a esta recarga?`)) return;
+    btn.disabled = true; btn.textContent = "…";
+    const d = await jpost({accion:"asignar", pago_id:compPagoActual.id_unico, recarga_id:recargaId}, API_COMP);
+    if(d.ok){
+      toast(`Acreditado a @${d.usuario} — ${nf.format(d.coins)} fichas`);
+      actualizarBadgeComp();
+      cargarComprobantes();
+    } else {
+      btn.disabled = false; btn.textContent = "Asignar";
+      toast(d.error || "No se pudo asignar");
+    }
+  }
+
+  $("#compQ").addEventListener("input", e=>{
+    clearTimeout(debounce);
+    const val = e.target.value.trim();
+    debounce = setTimeout(()=>{ if(compPagoActual) abrirComprobante(compPagoActual.id_unico, val); }, 300);
+  });
+
+  // ---------- Retiros pendientes (Fase A, Módulo 2) ----------
+  const API_RET = API_BASE + "/crm_retiros.php";
+  let retEstado = "", retQ = "";
+  const RET_TAG_TXT = {pendiente:"Pendiente", procesando:"Procesando", hecha:"Hecha", error:"Error", revisar:"Revisar", cancelada:"Cancelada"};
+  let cancelarRetiroId = null;
+
+  async function actualizarBadgeRetiros(){
+    try{
+      const d = await jget({accion:"badge"}, API_RET);
+      const b = $("#badgeRetiros");
+      if(d.ok && d.cantidad>0){ b.textContent = d.cantidad>99?"99+":d.cantidad; b.classList.add("on"); }
+      else { b.classList.remove("on"); }
+    }catch(e){ /* silencioso: es solo un contador */ }
+  }
+
+  async function cargarRetiros(){
+    let d;
+    try{ d = await jget({accion:"listar", estado:retEstado, q:retQ}, API_RET); }
+    catch(e){ $("#retList").innerHTML = `<div class="nouser">Error al cargar.</div>`; return; }
+    if(!d.ok){ $("#retList").innerHTML = `<div class="nouser">${esc(d.error||"Error")}</div>`; return; }
+    $("#retCap").textContent = d.items.length + (d.items.length===1 ? " retiro" : " retiros");
+    if(!d.items.length){ $("#retList").innerHTML = `<div class="nouser">No hay retiros${retEstado?" en ese estado":""}${retQ?" para esa búsqueda":""}.</div>`; return; }
+
+    $("#retList").innerHTML = d.items.map(r=>{
+      const btns = [];
+      const esperaAprob = r.estado==="pendiente" && !r.aprobado;
+      // Aprobar: un retiro pedido por el jugador NO se ejecuta hasta que un
+      // agente lo aprueba. Recién ahí el bot lo toma de la cola.
+      if(esperaAprob){
+        btns.push(`<button class="btn-mini-accion" data-accion="aprobar" data-id="${r.id}" type="button" style="background:#1e9e5a;border-color:#1e9e5a;color:#fff">Aprobar</button>`);
+      }
+      if(r.estado==="error"){
+        btns.push(`<button class="btn-mini-accion" data-accion="reintentar" data-id="${r.id}" type="button">Reintentar</button>`);
+      }
+      // Cancelar: solo desde pendiente o error -- nunca desde 'procesando'
+      // (el bot podria estar ejecutandolo en este instante).
+      if(r.estado==="pendiente" || r.estado==="error"){
+        btns.push(`<button class="btn-mini-accion peligro" data-accion="cancelar" data-id="${r.id}" type="button">Cancelar</button>`);
+      }
+      const notaColor = r.estado==="cancelada" ? "var(--muted)" : "var(--red)";
+      const nota = (r.estado==="error" || r.estado==="revisar" || r.estado==="cancelada") && r.mensaje
+        ? `<div class="rr-sub" style="color:${notaColor}">${esc(r.mensaje)}</div>` : "";
+      const tagTxt = esperaAprob ? "A APROBAR" : (RET_TAG_TXT[r.estado]||r.estado);
+      return `<div class="ret-row">
+        <div class="rr-mid">
+          <div class="rr-user">@${esc(r.usuario)}<span class="ret-tag ${esc(r.estado)}">${esc(tagTxt)}</span></div>
+          <div class="rr-sub">#${r.id} · ${hace(r.creada_en)}${r.motivo?" · "+esc(r.motivo):""}</div>
+          ${nota}
+        </div>
+        <div class="rr-monto">${money(r.monto)}</div>
+        <div style="display:flex;gap:6px">${btns.join("")}</div>
+      </div>`;
+    }).join("");
+    $("#retList").querySelectorAll("[data-accion='aprobar']").forEach(btn=>{
+      btn.addEventListener("click", ()=> aprobarRetiro(+btn.getAttribute("data-id"), btn));
+    });
+    $("#retList").querySelectorAll("[data-accion='reintentar']").forEach(btn=>{
+      btn.addEventListener("click", ()=> reintentarRetiro(+btn.getAttribute("data-id"), btn));
+    });
+    $("#retList").querySelectorAll("[data-accion='cancelar']").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const fila = d.items.find(x=>x.id===+btn.getAttribute("data-id"));
+        if(fila) abrirCancelarRetiro(fila);
+      });
+    });
+  }
+
+  async function aprobarRetiro(id, btn){
+    if(!confirm(`¿Aprobar el retiro #${id}? El bot lo va a ejecutar en el panel de ganamos.`)) return;
+    btn.disabled = true; btn.textContent = "…";
+    const d = await jpost({accion:"aprobar", id}, API_RET);
+    if(d.ok){ toast("Retiro aprobado, va a la cola"); cargarRetiros(); actualizarBadgeRetiros(); }
+    else { btn.disabled = false; btn.textContent = "Aprobar"; toast(d.error || "No se pudo aprobar"); }
+  }
+
+  async function reintentarRetiro(id, btn){
+    if(!confirm(`¿Reintentar el retiro #${id}? Vuelve a la cola y el bot lo va a tomar de nuevo.`)) return;
+    btn.disabled = true; btn.textContent = "…";
+    const d = await jpost({accion:"reintentar", id}, API_RET);
+    if(d.ok){ toast("Reintento encolado"); cargarRetiros(); actualizarBadgeRetiros(); }
+    else { btn.disabled = false; btn.textContent = "Reintentar"; toast(d.error || "No se pudo reintentar"); }
+  }
+
+  function abrirCancelarRetiro(r){
+    cancelarRetiroId = r.id;
+    $("#crTitulo").textContent = `Cancelar retiro de @${r.usuario}`;
+    $("#crSub").textContent = `Por ${money(r.monto)}. El jugador recibe un aviso, sin detalle del monto.`;
+    $("#crNota").value = "";
+    $("#backCancelRet").classList.add("on");
+    setTimeout(()=>$("#crNota").focus(), 50);
+  }
+  $("#crVolver").addEventListener("click", ()=> $("#backCancelRet").classList.remove("on"));
+  $("#backCancelRet").addEventListener("click", e=>{ if(e.target===$("#backCancelRet")) $("#backCancelRet").classList.remove("on"); });
+  $("#crOk").addEventListener("click", async ()=>{
+    const nota = $("#crNota").value.trim();
+    if(nota.length < 8){ toast("La nota tiene que tener al menos 8 caracteres"); return; }
+    const btn = $("#crOk");
+    btn.disabled = true; btn.textContent = "…";
+    const d = await jpost({accion:"cancelar", id:cancelarRetiroId, nota}, API_RET);
+    btn.disabled = false; btn.textContent = "Cancelar retiro";
+    if(d.ok){
+      $("#backCancelRet").classList.remove("on");
+      toast("Retiro cancelado");
+      cargarRetiros(); actualizarBadgeRetiros();
+    } else { toast(d.error || "No se pudo cancelar"); }
+  });
+
+  $("#retTabs").addEventListener("click", e=>{
+    const b = e.target.closest(".tab"); if(!b) return;
+    document.querySelectorAll("#retTabs .tab").forEach(x=>x.classList.remove("on"));
+    b.classList.add("on");
+    retEstado = b.getAttribute("data-e");
+    cargarRetiros();
+  });
+  $("#retQ").addEventListener("input", e=>{
+    clearTimeout(debounce);
+    debounce = setTimeout(()=>{ retQ = e.target.value.trim(); cargarRetiros(); }, 300);
+  });
+  $("#btnLiberarRetiros").addEventListener("click", async ()=>{
+    if(!confirm('¿Liberar los retiros trabados en "procesando"? Solo hacé esto si estás seguro de que el bot no los está ejecutando ahora mismo — si lo estaba, podría reintentar en paralelo.')) return;
+    const btn = $("#btnLiberarRetiros");
+    const txtOriginal = btn.textContent;
+    btn.disabled = true; btn.textContent = "…";
+    const d = await jpost({accion:"liberar"}, API_RET);
+    btn.disabled = false; btn.textContent = txtOriginal;
+    if(d.ok){
+      toast(d.liberadas>0 ? `${d.liberadas} retiro(s) liberado(s)` : "No había ninguno trabado");
+      cargarRetiros(); actualizarBadgeRetiros();
+    } else { toast(d.error || "No se pudo liberar"); }
+  });
+
+  // ---------- Cargas / Recargas (Fase A, Módulo 3) ----------
+  const API_CG = API_BASE + "/crm_recargas.php";
+  let cgEstado = "", cgQ = "", cgItems = [];
+  let cancelarCargaId = null;
+  const CARGA_TAG_TXT = {pendiente:"Pendiente", acreditada:"Acreditada", vencida:"Vencida", cancelada:"Cancelada"};
+  const CG_TAB_LABEL = {"":"Todos", pendiente:"Pendiente", acreditada:"Acreditada", vencida:"Vencida", cancelada:"Cancelada"};
+
+  async function actualizarContadoresCargas(){
+    try{
+      const d = await jget({accion:"contar"}, API_CG);
+      if(!d.ok) return;
+      Object.entries(d.contadores).forEach(([k, n])=>{
+        const e = k==="todos" ? "" : k;
+        const b = $(`#cgTabs .tab[data-e="${e}"]`);
+        if(b) b.textContent = `${CG_TAB_LABEL[e]} (${n})`;
+      });
+    }catch(e){ /* silencioso: son solo contadores de tabs */ }
+  }
+
+  // Chip de urgencia: solo para pendientes que faltan menos de 1h -- el
+  // resto del tiempo el "vence en" del subtitulo alcanza, no hace falta
+  // alarmar. No cambia el orden del listado (sigue por creada_en DESC).
+  function chipUrgencia(r){
+    if(r.estado_efectivo !== "pendiente" || r.segundos_para_vencer==null || r.segundos_para_vencer<=0) return "";
+    const min = Math.ceil(r.segundos_para_vencer/60);
+    if(r.segundos_para_vencer < 900) return `<span class="urg-chip crit">⏱ Vence en ${min} min</span>`;
+    if(r.segundos_para_vencer < 3600) return `<span class="urg-chip warn">⏱ Vence en ${min} min</span>`;
+    return "";
+  }
+
+  function filaCarga(r){
+    const puedeCancelar = r.estado_efectivo==="pendiente" && r.pago_id===null;
+    const tooltipPago = r.pago_id!==null
+      ? `title="Tiene un pago vinculado (id ${esc(r.pago_id)}). No se puede cancelar desde acá — contactá al desarrollador."` : "";
+    const btn = r.estado_efectivo==="pendiente"
+      ? `<button class="btn-mini-accion peligro" data-accion="cancelar" data-id="${r.id}" type="button" ${puedeCancelar?"":"disabled"} ${tooltipPago}>Cancelar</button>`
+      : "";
+    const venceInfo = r.estado_efectivo==="pendiente" ? ` · vence en ${faltan(r.vence_en)}` : "";
+    const nota = r.mensaje ? `<div class="cg-sub" style="color:var(--red)">${esc(r.mensaje)}</div>` : "";
+    const warnPago = r.pago_id!==null
+      ? `<div class="dt-warn">⚠ Esta recarga tiene un pago vinculado (id ${esc(r.pago_id)}). No se puede cancelar desde el CRM — contactá al desarrollador o resolvé la relación manualmente en pagos.</div>`
+      : "";
+    return `<div class="carga-row" data-id="${r.id}">
+      <div class="cg-top">
+        <div class="cg-mid">
+          <div class="cg-user">@${esc(r.usuario)} <span class="carga-tag ${esc(r.estado_efectivo)}">${CARGA_TAG_TXT[r.estado_efectivo]||r.estado_efectivo}</span>${chipUrgencia(r)}</div>
+          <div class="cg-sub">#${r.id} · ref ${esc(r.referencia)} · ${r.coins} coins · creada ${hace(r.creada_en)}${venceInfo}</div>
+          ${nota}
+        </div>
+        <div class="cg-monto">${money(r.monto_pedido)}</div>
+        <div style="display:flex;gap:6px">${btn}</div>
+      </div>
+      <div class="cg-detalle">
+        ${warnPago}
+        <div class="dt-grid">
+          <div>Monto base: ${money(r.monto_base)}</div>
+          <div>Centavos: ${r.centavos!=null ? r.centavos : "—"}</div>
+          <div>Vence: ${r.vence_en ? faltan(r.vence_en) : "—"}</div>
+          <div>Acreditada: ${r.acreditada_en ? hace(r.acreditada_en) : "—"}</div>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  async function cargarCargas(){
+    let d;
+    try{ d = await jget({accion:"listar", estado:cgEstado, q:cgQ}, API_CG); }
+    catch(e){ $("#cgList").innerHTML = `<div class="nouser">Error al cargar.</div>`; return; }
+    if(!d.ok){ $("#cgList").innerHTML = `<div class="nouser">${esc(d.error||"Error")}</div>`; return; }
+    cgItems = d.items;
+    $("#cgCap").textContent = d.items.length + (d.items.length===1 ? " carga" : " cargas");
+    if(!d.items.length){ $("#cgList").innerHTML = `<div class="nouser">No hay cargas${cgEstado?" en ese estado":""}${cgQ?" para esa búsqueda":""}.</div>`; return; }
+
+    $("#cgList").innerHTML = d.items.map(filaCarga).join("");
+    $("#cgList").querySelectorAll(".carga-row").forEach(row=>{
+      row.addEventListener("click", e=>{
+        if(e.target.closest("[data-accion='cancelar']")) return;
+        row.classList.toggle("open");
+      });
+    });
+    $("#cgList").querySelectorAll("[data-accion='cancelar']:not(:disabled)").forEach(btn=>{
+      btn.addEventListener("click", e=>{
+        e.stopPropagation();
+        const fila = cgItems.find(x=>x.id===+btn.getAttribute("data-id"));
+        if(fila) abrirCancelarCarga(fila);
+      });
+    });
+  }
+
+  function abrirCancelarCarga(r){
+    cancelarCargaId = r.id;
+    $("#ccTitulo").textContent = `Cancelar recarga de @${r.usuario}`;
+    $("#ccSub").textContent = `Ref ${r.referencia}, ${money(r.monto_pedido)}. El jugador recibe un aviso, sin detalle del monto.`;
+    $("#ccNota").value = "";
+    $("#ccContador").textContent = "0/200";
+    $("#backCancelCarga").classList.add("on");
+    setTimeout(()=>$("#ccNota").focus(), 50);
+  }
+  $("#ccNota").addEventListener("input", e=>{ $("#ccContador").textContent = e.target.value.length + "/200"; });
+  $("#ccVolver").addEventListener("click", ()=> $("#backCancelCarga").classList.remove("on"));
+  $("#backCancelCarga").addEventListener("click", e=>{ if(e.target===$("#backCancelCarga")) $("#backCancelCarga").classList.remove("on"); });
+  $("#ccOk").addEventListener("click", async ()=>{
+    const nota = $("#ccNota").value.trim();
+    if(nota.length < 8){ toast("La nota tiene que tener al menos 8 caracteres"); return; }
+    const btn = $("#ccOk");
+    btn.disabled = true; btn.textContent = "…";
+    const d = await jpost({accion:"cancelar", id:cancelarCargaId, nota}, API_CG);
+    btn.disabled = false; btn.textContent = "Cancelar recarga";
+    if(d.ok){
+      $("#backCancelCarga").classList.remove("on");
+      toast("Recarga cancelada");
+      cargarCargas(); actualizarContadoresCargas();
+    } else { toast(d.error || "No se pudo cancelar"); }
+  });
+
+  $("#cgTabs").addEventListener("click", e=>{
+    const b = e.target.closest(".tab"); if(!b) return;
+    document.querySelectorAll("#cgTabs .tab").forEach(x=>x.classList.remove("on"));
+    b.classList.add("on");
+    cgEstado = b.getAttribute("data-e");
+    cargarCargas();
+  });
+  $("#cgQ").addEventListener("input", e=>{
+    clearTimeout(debounce);
+    debounce = setTimeout(()=>{ cgQ = e.target.value.trim(); cargarCargas(); }, 300);
+  });
+
+  // ---------- Transacciones globales (Fase A, Módulo 4) ----------
+  const API_MV = API_BASE + "/crm_movimientos.php";
+  const MV_LIMIT = 50;
+  let mvPagina = 1, mvTotal = 0;
+  let mvFiltros = { tipo:"", origen:"", usuario:"", operador:"", desde:"", hasta:"" };
+  const MV_TIPO_TXT   = {ficha:"Ficha", bono:"Bono", saldo:"Saldo"};
+  const MV_ORIGEN_TXT = {crm:"CRM", ruleta:"Ruleta", chatbot:"Chatbot", sistema:"Sistema"};
+
+  // "Quien" se deriva en el cliente, no en el backend: es puramente una
+  // etiqueta de UI, no algo por lo que se filtre (el filtro real es por
+  // columna `operador` cruda). Ver crm_movimientos.php sobre el bug de
+  // casing en operador -- por eso mvFiltros.operador compara con LOWER()
+  // del lado del servidor, no ac.
+  function quienMovimiento(m){
+    if(m.operador) return "@" + m.operador;
+    if(m.origen === "ruleta")  return "Ruleta (auto)";
+    if(m.origen === "chatbot") return "Jugador (chatbot)";
+    if(m.origen === "sistema") return "Sistema (auto)";
+    return "Operador desconocido";
+  }
+
+  async function cargarOperadoresMv(){
+    try{
+      const d = await jget({accion:"operadores"}, API_MV);
+      if(!d.ok) return;
+      const sel = $("#mvOperador");
+      sel.innerHTML = '<option value="">Todos los operadores</option>' +
+        d.operadores.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join("");
+    }catch(e){ /* silencioso: el filtro por operador solo queda sin opciones */ }
+  }
+
+  function filaMovimiento(m){
+    const signo = m.monto > 0 ? "pos" : (m.monto < 0 ? "neg" : "");
+    return `<tr>
+      <td>${hace(m.creado_en)}</td>
+      <td>@${esc(m.usuario)}</td>
+      <td><span class="mv-tag ${esc(m.tipo)}">${MV_TIPO_TXT[m.tipo]||m.tipo}</span></td>
+      <td class="mv-monto ${signo}">${m.monto>0?"+":""}${nf.format(m.monto)}</td>
+      <td>${esc(quienMovimiento(m))}</td>
+      <td>${esc(m.motivo || "—")}</td>
+      <td>${esc(MV_ORIGEN_TXT[m.origen]||m.origen)}</td>
+    </tr>`;
+  }
+
+  function actualizarPaginadorMv(){
+    const desde = mvTotal===0 ? 0 : (mvPagina-1)*MV_LIMIT + 1;
+    const hasta = Math.min(mvPagina*MV_LIMIT, mvTotal);
+    $("#mvPagInfo").textContent = mvTotal===0 ? "Sin resultados" : `${desde}–${hasta} de ${mvTotal}`;
+    $("#mvPrev").disabled = mvPagina <= 1;
+    $("#mvNext").disabled = (mvPagina*MV_LIMIT) >= mvTotal;
+  }
+
+  async function cargarMovimientos(){
+    const filtros = {};
+    Object.entries(mvFiltros).forEach(([k,v])=>{ if(v !== "") filtros[k] = v; });
+    const paramsListar = Object.assign({accion:"listar"}, filtros, {
+      limit: MV_LIMIT, offset: (mvPagina-1)*MV_LIMIT
+    });
+    const paramsContar = Object.assign({accion:"contar"}, filtros);
+
+    let d, dc;
+    try{
+      [d, dc] = await Promise.all([jget(paramsListar, API_MV), jget(paramsContar, API_MV)]);
+    }catch(e){
+      $("#mvBody").innerHTML = `<tr><td colspan="7" class="nouser">Error al cargar.</td></tr>`;
+      return;
+    }
+    if(!d.ok){
+      $("#mvBody").innerHTML = `<tr><td colspan="7" class="nouser">${esc(d.error||"Error")}</td></tr>`;
+      return;
+    }
+
+    mvTotal = dc.ok ? dc.total : 0;
+    $("#mvCap").textContent = mvTotal + (mvTotal===1 ? " movimiento" : " movimientos");
+
+    $("#mvBody").innerHTML = d.items.length
+      ? d.items.map(filaMovimiento).join("")
+      : `<tr><td colspan="7" class="nouser">No hay movimientos con esos filtros.</td></tr>`;
+
+    actualizarPaginadorMv();
+  }
+
+  function mvAplicarFiltros(){
+    mvFiltros.tipo     = $("#mvTipo").value;
+    mvFiltros.origen   = $("#mvOrigen").value;
+    mvFiltros.operador = $("#mvOperador").value;
+    mvFiltros.desde    = $("#mvDesde").value;
+    mvFiltros.hasta    = $("#mvHasta").value;
+    mvPagina = 1;
+    cargarMovimientos();
+  }
+  $("#mvTipo").addEventListener("change", mvAplicarFiltros);
+  $("#mvOrigen").addEventListener("change", mvAplicarFiltros);
+  $("#mvOperador").addEventListener("change", mvAplicarFiltros);
+  $("#mvDesde").addEventListener("change", mvAplicarFiltros);
+  $("#mvHasta").addEventListener("change", mvAplicarFiltros);
+  $("#mvQ").addEventListener("input", e=>{
+    clearTimeout(debounce);
+    debounce = setTimeout(()=>{ mvFiltros.usuario = e.target.value.trim(); mvPagina = 1; cargarMovimientos(); }, 300);
+  });
+  $("#mvLimpiar").addEventListener("click", ()=>{
+    $("#mvTipo").value = ""; $("#mvOrigen").value = ""; $("#mvOperador").value = "";
+    $("#mvDesde").value = ""; $("#mvHasta").value = ""; $("#mvQ").value = "";
+    mvFiltros = { tipo:"", origen:"", usuario:"", operador:"", desde:"", hasta:"" };
+    mvPagina = 1;
+    cargarMovimientos();
+  });
+  $("#mvPrev").addEventListener("click", ()=>{ if(mvPagina>1){ mvPagina--; cargarMovimientos(); } });
+  $("#mvNext").addEventListener("click", ()=>{ if(mvPagina*MV_LIMIT < mvTotal){ mvPagina++; cargarMovimientos(); } });
+
+  // ---------- Usuarios integrado (Fase A, Módulo 5) ----------
+  // Puerto 1:1 de landing/admin.html + api/admin_usuarios.php (que ya exige
+  // exigir_operador(), no se toco). Mismo default de pagina (25) y de orden
+  // (balance desc) que tenia admin.html.
+  const API_US = API_BASE + "/admin_usuarios.php";
+  const usSt = { q:"", filtro:"todos", orden:"balance", dir:"desc", pagina:1, porPagina:25 };
+
+  function pintarCardsUs(r){
+    const c = [
+      { k:"Usuarios",       v:nf.format(r.total_usuarios), cls:"" },
+      { k:"Con saldo",      v:nf.format(r.con_saldo),      cls:"green" },
+      { k:"Saldo total",    v:money(r.saldo_total),        cls:"green" },
+      { k:"Fichas totales", v:nf.format(r.coins_total),    cls:"gold" },
+      { k:"Bonos totales",  v:nf.format(r.bonos_total),    cls:"gold" },
+      { k:"Baneados",       v:nf.format(r.baneados),       cls:"red" },
+    ];
+    $("#usCards").innerHTML = c.map(x=>
+      `<div class="us-stat ${x.cls}"><div class="k">${esc(x.k)}</div><div class="v">${x.v}</div></div>`).join("");
+  }
+
+  function filaUsuario(u){
+    const estado = u.is_banned ? `<span class="us-tag ban">Baneado</span>` : `<span class="us-tag ok">Activo</span>`;
+    const saldo  = u.balance>0 ? `<span class="us-money">${money(u.balance)}</span>` : `<span class="us-zero">$0</span>`;
+    const coins  = u.coins>0   ? `<span class="us-coins">${nf.format(u.coins)}</span>` : `<span class="us-zero">0</span>`;
+    const bonos  = u.bonus>0   ? `<span class="us-coins">${nf.format(u.bonus)}</span>` : `<span class="us-zero">0</span>`;
+    const alta   = u.creation_date ? esc(u.creation_date).replace("T"," ").slice(0,10) : "—";
+    return `<tr>
+      <td><b>${esc(u.username)}</b></td>
+      <td class="num">${saldo}</td>
+      <td class="num">${coins}</td>
+      <td class="num">${bonos}</td>
+      <td class="num">${u.total_deposits>0 ? money(u.total_deposits) : '<span class="us-zero">$0</span>'}</td>
+      <td>${esc(u.role || "—")}</td>
+      <td>${estado}</td>
+      <td>${alta}</td>
+    </tr>`;
+  }
+
+  function pintarCabecerasUs(){
+    document.querySelectorAll("#usCabeceras th[data-o]").forEach(th=>{
+      const o = th.getAttribute("data-o");
+      const arr = th.querySelector(".arr");
+      if(o === usSt.orden){ th.classList.add("act"); arr.textContent = usSt.dir==="asc" ? "▲" : "▼"; }
+      else { th.classList.remove("act"); arr.textContent = ""; }
+    });
+  }
+
+  function pintarPagerUs(r){
+    const desde = r.total ? (r.pagina-1)*r.por_pagina + 1 : 0;
+    const hasta = Math.min(r.pagina*r.por_pagina, r.total);
+    $("#usInfoPag").textContent = `Mostrando ${nf.format(desde)}–${nf.format(hasta)} de ${nf.format(r.total)}`;
+
+    const tp = r.paginas || 1, cur = r.pagina;
+    const nums = [1];
+    for(let p=cur-2; p<=cur+2; p++) if(p>1 && p<tp) nums.push(p);
+    if(tp>1) nums.push(tp);
+    const uniq = [...new Set(nums)].sort((a,b)=>a-b);
+
+    let html = `<button ${cur<=1?"disabled":""} data-p="${cur-1}">‹</button>`;
+    let prev = 0;
+    uniq.forEach(p=>{
+      if(prev && p-prev>1) html += `<button disabled>…</button>`;
+      html += `<button class="${p===cur?"cur":""}" data-p="${p}">${p}</button>`;
+      prev = p;
+    });
+    html += `<button ${cur>=tp?"disabled":""} data-p="${cur+1}">›</button>`;
+    $("#usPgbtns").innerHTML = html;
+    $("#usPgbtns").querySelectorAll("button[data-p]").forEach(b=>{
+      b.addEventListener("click", ()=>{ usSt.pagina = +b.getAttribute("data-p"); cargarUsuarios(); });
+    });
+  }
+
+  async function cargarUsuarios(){
+    $("#usFilas").innerHTML = `<tr><td colspan="8"><div class="nouser">Cargando…</div></td></tr>`;
+    let r;
+    try{
+      r = await jget({
+        accion:"listar", q:usSt.q, filtro:usSt.filtro, orden:usSt.orden,
+        dir:usSt.dir, pagina:usSt.pagina, por_pagina:usSt.porPagina
+      }, API_US);
+    }catch(e){
+      $("#usFilas").innerHTML = `<tr><td colspan="8"><div class="nouser">Error al cargar.</div></td></tr>`;
+      return;
+    }
+    if(!r.ok){
+      $("#usFilas").innerHTML = `<tr><td colspan="8"><div class="nouser">${esc(r.error||"Error")}</div></td></tr>`;
+      return;
+    }
+
+    pintarCardsUs(r.resumen);
+    $("#usFilas").innerHTML = r.items.length
+      ? r.items.map(filaUsuario).join("")
+      : `<tr><td colspan="8"><div class="nouser">Sin resultados para este filtro.</div></td></tr>`;
+    pintarCabecerasUs();
+    pintarPagerUs(r);
+    $("#usCap").textContent = nf.format(r.total) + (r.total===1 ? " usuario" : " usuarios");
+  }
+
+  $("#usQ").addEventListener("input", e=>{
+    clearTimeout(debounce);
+    debounce = setTimeout(()=>{ usSt.q = e.target.value.trim(); usSt.pagina = 1; cargarUsuarios(); }, 350);
+  });
+  $("#usFiltros").addEventListener("click", e=>{
+    const b = e.target.closest(".tab"); if(!b) return;
+    document.querySelectorAll("#usFiltros .tab").forEach(x=>x.classList.remove("on"));
+    b.classList.add("on");
+    usSt.filtro = b.getAttribute("data-f");
+    usSt.pagina = 1;
+    cargarUsuarios();
+  });
+  $("#usCabeceras").addEventListener("click", e=>{
+    const th = e.target.closest("th[data-o]"); if(!th) return;
+    const o = th.getAttribute("data-o");
+    if(usSt.orden === o){ usSt.dir = usSt.dir==="asc" ? "desc" : "asc"; }
+    else { usSt.orden = o; usSt.dir = (o==="username") ? "asc" : "desc"; }
+    usSt.pagina = 1;
+    cargarUsuarios();
+  });
+  $("#usPorPagina").addEventListener("change", e=>{ usSt.porPagina = +e.target.value; usSt.pagina = 1; cargarUsuarios(); });
+
+  // CSV via fetch+blob (no window.location/<a href> directo): asi el boton
+  // puede mostrar un spinner real hasta que el archivo esta listo, y de
+  // paso pasa por apiFetch() -- si la sesion vencio en el medio, se
+  // comporta igual que el resto del CRM (login) en vez de descargar un
+  // JSON de error como si fuera el CSV.
+  $("#usBtnCsv").addEventListener("click", async ()=>{
+    const btn = $("#usBtnCsv");
+    const txtOriginal = btn.textContent;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="sp"></span> Generando…';
+    try{
+      const p = new URLSearchParams({ accion:"exportar", q:usSt.q, filtro:usSt.filtro, orden:usSt.orden, dir:usSt.dir });
+      const r = await apiFetch(API_US + "?" + p.toString());
+      if(!r.ok) throw new Error("HTTP " + r.status);
+      const blob = await r.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "usuarios_" + new Date().toISOString().slice(0,10) + ".csv";
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(a.href);
+    }catch(e){
+      if(!esSesionRequerida(e)) toast("No se pudo generar el CSV.");
+    }
+    btn.disabled = false;
+    btn.textContent = txtOriginal;
+  });
+
+  // ---------- Finanzas (Fase A, Módulo 6.A) ----------
+  // OJO, esto NO puede usar jget/jpost/apiFetch tal cual. apiFetch() trata
+  // TODO 401/403 como "la sesión de operador venció" y muestra el login
+  // general -- pero acá 403 en un GET significa "falta reverificar la
+  // contraseña de Finanzas" (nunca sesión) y 401 en verificar_password
+  // significa "contraseña de Finanzas incorrecta". fnFetch() es un fetch
+  // propio, con el mismo agregado de CSRF que apiFetch(), pero SIN el
+  // intercept automático -- cada caller interpreta 401/403 en su contexto.
+  const API_FN = API_BASE + "/crm_finanzas.php";
+  let fnVerificado = false;
+  let fnRangoActual = null;
+
+  async function fnFetch(url, options){
+    const opts = Object.assign({}, options || {});
+    opts.credentials = opts.credentials || "same-origin";
+    const metodo = (opts.method || "GET").toUpperCase();
+    if(["POST","PUT","PATCH","DELETE"].includes(metodo)){
+      const h = new Headers(opts.headers || {});
+      if(CSRF) h.set("X-CSRF-Token", CSRF);
+      opts.headers = h;
+    }
+    return fetch(url, opts);
+  }
+
+  /** GET con JSON. 401 = sesión de operador realmente vencida (login general).
+   *  403 = falta reverificar Finanzas (gate propio, no el login general). */
+  async function fnGetJson(params){
+    const r = await fnFetch(API_FN + "?" + new URLSearchParams(params));
+    if(r.status === 401){ mostrarLogin("Tu sesión expiró. Ingresá de nuevo."); throw new Error("sesion_requerida"); }
+    if(r.status === 403){ fnMostrarGate(); throw new Error("finanzas_no_verificado"); }
+    return r.json();
+  }
+
+  function fnMostrarGate(){
+    fnVerificado = false;
+    $("#fnGate").style.display = "flex";
+    $("#fnContenido").style.display = "none";
+    $("#fnPass").value = "";
+    $("#fnPassError").textContent = "";
+  }
+
+  function fnMostrarContenido(){
+    fnVerificado = true;
+    $("#fnGate").style.display = "none";
+    $("#fnContenido").style.display = "block";
+  }
+
+  /** Entrada a la vista: si ya se reverificó en esta pestaña, muestra el
+   *  contenido directo. Si no, pide la contraseña. No sobrevive a un F5 a
+   *  propósito, pero sí a navegar a otra vista y volver. */
+  function fnAbrir(){
+    if(fnVerificado){
+      fnMostrarContenido();
+      fnCargarTodo();
+    } else {
+      fnMostrarGate();
+      setTimeout(()=>{ const p=$("#fnPass"); if(p) p.focus(); }, 50);
+    }
+  }
+
+  function fnRangoDefault(){
+    const hasta = new Date();
+    const desde = new Date(hasta.getTime() - 29*86400000);
+    const fmt = d => d.toISOString().slice(0,10);
+    return { desde: fmt(desde), hasta: fmt(hasta) };
+  }
+  fnRangoActual = fnRangoDefault();
+
+  /** "$0,20" -- para el costo por ficha, un valor chico con centavos.
+   *  money() redondea a entero (bien para pesos grandes, mal para esto). */
+  function fnPesos2(n){ return "$" + Number(n).toFixed(2).replace(".", ","); }
+
+  async function fnCargarTodo(){
+    $("#fnDesde").value = fnRangoActual.desde;
+    $("#fnHasta").value = fnRangoActual.hasta;
+    try{
+      await Promise.all([fnCargarFoto(), fnCargarHoy(), fnCargarRango(fnRangoActual.desde, fnRangoActual.hasta)]);
+    }catch(e){ /* fnGetJson ya mostró login o gate si hacía falta */ }
+  }
+
+  async function fnCargarFoto(){
+    let d;
+    try{ d = await fnGetJson({accion:"foto"}); }
+    catch(e){ return; }
+    if(!d.ok){ toast(d.error || "Error al cargar la foto"); return; }
+    const f = d.foto;
+
+    $("#fnFotoEfectivo").textContent = money(f.efectivo_neto);
+    $("#fnFotoPasivo").textContent = money(f.fichas_jugadores);
+    $("#fnFotoPatrimonio").textContent = money(f.patrimonio_neto);
+    const cardPatrimonio = $("#fnFotoPatrimonio").closest(".fn-card");
+    cardPatrimonio.classList.toggle("pos", f.patrimonio_neto >= 0);
+    cardPatrimonio.classList.toggle("neg", f.patrimonio_neto < 0);
+
+    if(f.stock_fichas === null || f.stock_fichas === undefined){
+      $("#fnFotoStock").textContent = "N/A";
+      $("#fnFotoStockSub").textContent = "Pendiente integración con bot";
+    } else {
+      $("#fnFotoStock").textContent = nf.format(f.stock_fichas);
+      $("#fnFotoStockSub").textContent = "";
+    }
+    if(f.valor_stock === null || f.valor_stock === undefined){
+      $("#fnFotoValorStock").textContent = "N/A";
+      $("#fnFotoValorStockSub").textContent = "Pendiente integración con bot";
+    } else {
+      $("#fnFotoValorStock").textContent = money(f.valor_stock);
+      $("#fnFotoValorStockSub").textContent = "";
+    }
+
+    $("#fnFotoFormula").innerHTML =
+      "Efectivo neto histórico = recargas acreditadas de siempre − retiros confirmados de siempre.<br>" +
+      "Fichas en poder de jugadores = suma del saldo real de todos los jugadores hoy.<br>" +
+      "Patrimonio neto = efectivo neto − fichas en poder de jugadores" +
+      (f.stock_fichas === null
+        ? " (el valor del stock todavía no se suma acá — llega con la integración del bot en el Módulo 6.B)."
+        : " + valor del stock.");
+  }
+
+  async function fnCargarHoy(){
+    let d;
+    try{ d = await fnGetJson({accion:"hoy"}); }
+    catch(e){ return; }
+    if(!d.ok){ toast(d.error || "Error al cargar hoy"); return; }
+    const h = d.hoy;
+
+    $("#fnHoyRecargasMonto").textContent = money(h.recargas.monto);
+    $("#fnHoyRecargasCant").textContent = h.recargas.cantidad + (h.recargas.cantidad===1 ? " recarga" : " recargas");
+    $("#fnHoyRetirosMonto").textContent = money(h.retiros.monto);
+    $("#fnHoyRetirosCant").textContent = h.retiros.cantidad + (h.retiros.cantidad===1 ? " retiro" : " retiros");
+    $("#fnHoyBonosMonto").textContent = money(h.bonos.monto);
+    $("#fnHoyBonosCant").textContent = h.bonos.cantidad + (h.bonos.cantidad===1 ? " bono" : " bonos");
+    $("#fnHoyGanancia").textContent = money(h.ganancia);
+    const cardGanancia = $("#fnHoyGanancia").closest(".fn-card");
+    cardGanancia.classList.toggle("pos", h.ganancia >= 0);
+    cardGanancia.classList.toggle("neg", h.ganancia < 0);
+
+    $("#fnHoyFormula").innerHTML =
+      "Ganancia estimada hoy = Recargas − Retiros − Costo de fichas.<br>" +
+      "Costo de fichas hoy = (Recargas + Bonos) × " + fnPesos2(h.costo_por_ficha) +
+      " (costo por ficha configurado actualmente).";
+  }
+
+  async function fnCargarRango(desde, hasta){
+    let d;
+    try{ d = await fnGetJson({accion:"rango", desde, hasta}); }
+    catch(e){ return; }
+    if(!d.ok){ toast(d.error || "Error al cargar el período"); return; }
+    const r = d.rango;
+
+    $("#fnRangoIngresos").textContent = money(r.ingresos.monto);
+    $("#fnRangoRetiros").textContent = money(r.retiros.monto);
+    $("#fnRangoBonos").textContent = money(r.bonos.monto);
+    $("#fnRangoCostoFichas").textContent = money(r.costo_fichas);
+    $("#fnRangoGanancia").textContent = money(r.ganancia_bruta);
+    const cardGananciaR = $("#fnRangoGanancia").closest(".fn-card");
+    cardGananciaR.classList.toggle("pos", r.ganancia_bruta >= 0);
+    cardGananciaR.classList.toggle("neg", r.ganancia_bruta < 0);
+    $("#fnRangoRecargaProm").textContent = money(r.ingresos.promedio);
+    $("#fnRangoRetiroProm").textContent = money(r.retiros.promedio);
+    $("#fnRangoActivos").textContent = nf.format(r.jugadores_activos);
+    $("#fnRangoNuevos").textContent = nf.format(r.jugadores_nuevos);
+    $("#fnRangoRetencion").textContent = r.retencion.porcentaje === null ? "—" : r.retencion.porcentaje + "%";
+
+    $("#fnRangoFormula").innerHTML =
+      "Costo de fichas del período = (Ingresos + Bonos) × " + fnPesos2(r.costo_por_ficha) +
+      " (costo por ficha configurado actualmente).<br>" +
+      "Ganancia bruta = Ingresos − Retiros − Costo de fichas.<br>" +
+      "Retención = de los jugadores activos en el período anterior de igual duración" +
+      (r.retencion.activos_periodo_anterior
+        ? " (" + r.retencion.activos_periodo_anterior + "), cuántos volvieron a recargar en este período."
+        : ", pero ese período anterior no tuvo ningún jugador activo — no se puede calcular.");
+
+    fnPintarAlertas(d.alertas, d.umbrales);
+  }
+
+  // Cada tipo de alerta arma su propio texto interpolando el umbral REAL
+  // que devuelve el backend (umbrales.*) -- nunca un número escrito a mano.
+  const FN_ALERTA_TXT = {
+    mas_retiros_que_recargas: (a, u) =>
+      `@${esc(a.usuario)} retiró ${money(a.retiros)} y recargó ${money(a.recargas)} en el período — ` +
+      `diferencia de ${money(a.retiros - a.recargas)} (posible ganador acumulado, umbral: ${money(u.jugador_ganador)}).`,
+    retiro_grande: (a, u) =>
+      `Retiro pendiente de @${esc(a.usuario)} por ${money(a.monto)} (estado: ${esc(a.estado)}, umbral: ${money(u.retiro_grande)}).`,
+    retiro_muy_grande: (a, u) =>
+      `Retiro pendiente de @${esc(a.usuario)} por ${money(a.monto)} (estado: ${esc(a.estado)}) — revisión especial (umbral: ${money(u.retiro_muy_grande)}).`,
+  };
+
+  function fnPintarAlertas(alertas, umbrales){
+    if(!alertas || !alertas.length){
+      $("#fnAlertas").innerHTML = `<div class="nouser">Sin alertas en este período.</div>`;
+      return;
+    }
+    $("#fnAlertas").innerHTML = alertas.map(a=>{
+      const clase = a.tipo==="retiro_muy_grande" ? "rojo" : (a.tipo==="retiro_grande" ? "amarillo" : "info");
+      const tag   = a.tipo==="retiro_muy_grande" ? "MUY GRANDE" : (a.tipo==="retiro_grande" ? "GRANDE" : "GANADOR");
+      const fn    = FN_ALERTA_TXT[a.tipo];
+      const texto = fn ? fn(a, umbrales) : "Alerta";
+      return `<div class="fn-alerta ${clase}"><span>${texto}</span><span class="fn-alerta-tag">${tag}</span></div>`;
+    }).join("");
+  }
+
+  // ---------- gate: reverificación de contraseña ----------
+  $("#fnPassBtn").addEventListener("click", async ()=>{
+    const password = $("#fnPass").value;
+    if(!password){ $("#fnPassError").textContent = "Ingresá tu contraseña"; return; }
+    const btn = $("#fnPassBtn");
+    btn.disabled = true; btn.textContent = "…";
+    let d;
+    try{
+      const r = await fnFetch(API_FN, {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({accion:"verificar_password", password})
+      });
+      d = await r.json();
+    }catch(e){
+      btn.disabled = false; btn.textContent = "Ingresar";
+      $("#fnPassError").textContent = "Error de conexión. Probá de nuevo.";
+      return;
+    }
+    btn.disabled = false; btn.textContent = "Ingresar";
+    if(d.ok){
+      fnMostrarContenido();
+      fnCargarTodo();
+    } else {
+      $("#fnPassError").textContent = d.error || "No se pudo verificar";
+    }
+  });
+  $("#fnPass").addEventListener("keydown", e=>{ if(e.key==="Enter") $("#fnPassBtn").click(); });
+
+  // ---------- período ----------
+  $("#fnAplicarRango").addEventListener("click", ()=>{
+    const desde = $("#fnDesde").value, hasta = $("#fnHasta").value;
+    if(!desde || !hasta){ toast("Elegí las dos fechas"); return; }
+    if(desde > hasta){ toast("La fecha 'desde' no puede ser posterior a 'hasta'"); return; }
+    fnRangoActual = { desde, hasta };
+    fnCargarRango(desde, hasta);
+  });
+
+  // ---------- export ----------
+  $("#fnBtnCsv").addEventListener("click", async ()=>{
+    const desde = $("#fnDesde").value, hasta = $("#fnHasta").value;
+    if(!desde || !hasta){ toast("Elegí un período primero"); return; }
+    const btn = $("#fnBtnCsv"); const txt = btn.textContent;
+    btn.disabled = true; btn.innerHTML = '<span class="sp"></span> Generando…';
+    try{
+      const p = new URLSearchParams({accion:"export_csv", desde, hasta});
+      const r = await fnFetch(API_FN + "?" + p.toString());
+      if(r.status === 401){ mostrarLogin("Tu sesión expiró. Ingresá de nuevo."); return; }
+      if(r.status === 403){ fnMostrarGate(); return; }
+      if(!r.ok) throw new Error("HTTP " + r.status);
+      const blob = await r.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "finanzas_" + desde + "_" + hasta + ".csv";
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(a.href);
+    }catch(e){ toast("No se pudo generar el CSV."); }
+    btn.disabled = false; btn.textContent = txt;
+  });
+
+  $("#fnBtnJson").addEventListener("click", async ()=>{
+    const desde = $("#fnDesde").value, hasta = $("#fnHasta").value;
+    if(!desde || !hasta){ toast("Elegí un período primero"); return; }
+    const btn = $("#fnBtnJson"); const txt = btn.textContent;
+    btn.disabled = true; btn.innerHTML = '<span class="sp"></span> Generando…';
+    let d;
+    try{ d = await fnGetJson({accion:"export_json", desde, hasta}); }
+    catch(e){ btn.disabled = false; btn.textContent = txt; return; }
+    btn.disabled = false; btn.textContent = txt;
+    if(!d.ok){ toast(d.error || "No se pudo generar el JSON."); return; }
+    const { ok, ...limpio } = d;
+    const blob = new Blob([JSON.stringify(limpio, null, 2)], {type:"application/json"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "finanzas_" + desde + "_" + hasta + ".json";
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(a.href);
+  });
+
+  // ---------- tooltip: hover en desktop (CSS puro), click en mobile ----------
+  $("#viewFinanzas").addEventListener("click", e=>{
+    const info = e.target.closest(".fn-info");
+    document.querySelectorAll("#viewFinanzas .fn-info.open").forEach(el=>{
+      if(el !== info) el.classList.remove("open");
+    });
+    if(info){ info.classList.toggle("open"); e.stopPropagation(); }
+  });
+  document.addEventListener("click", e=>{
+    if(!e.target.closest(".fn-info")){
+      document.querySelectorAll("#viewFinanzas .fn-info.open").forEach(el=>el.classList.remove("open"));
+    }
+  });
+
+  // El texto de cada tooltip vive en data-tip; se copia una vez al .fn-popover
+  // (el HTML lo deja vacío). Sin esto los tooltips saldrían en blanco.
+  document.querySelectorAll("#viewFinanzas .fn-info").forEach(info=>{
+    const pop = info.querySelector(".fn-popover");
+    if(pop && !pop.textContent) pop.textContent = info.getAttribute("data-tip") || "";
+  });
+
+  // ---------- modal cargar/retirar/bono ----------
+  function abrirModal(accion, titulo, ganamos){
+    if(!st.usuario){ toast("Esta conversación no tiene usuario vinculado"); return; }
+    st.accion = accion;
+    $("#mTitulo").textContent = titulo;
+    $("#mSub").textContent = `Para @${st.usuario}. ` + (ganamos ? "Se encola para ejecutar en ganamos." : "Se acredita al instante.");
+    $("#mMonto").value=""; $("#mMotivo").value="";
+    $("#back").classList.add("on"); setTimeout(()=>$("#mMonto").focus(),50);
+  }
+  $("#btnSaldo").addEventListener("click", ()=>abrirModal("cargar_saldo","Cargar saldo",true));
+  $("#btnRetiro").addEventListener("click", ()=>abrirModal("retirar_saldo","Retirar saldo",true));
+  $("#btnBono").addEventListener("click", ()=>abrirModal("cargar_bono","Cargar bono",false));
+  $("#btnVer").addEventListener("click", ()=>{
+    if(!st.usuario){ toast("Sin usuario vinculado"); return; }
+    toast(`Saldo ${$("#uSaldo").textContent} · Fichas ${$("#uFichas").textContent} · Bonos ${$("#uBonos").textContent}`);
+    abrir(st.convId);
+  });
+  $("#mCancel").addEventListener("click", ()=>$("#back").classList.remove("on"));
+  $("#back").addEventListener("click", e=>{ if(e.target===$("#back")) $("#back").classList.remove("on"); });
+  $("#mOk").addEventListener("click", async ()=>{
+    const monto = parseInt($("#mMonto").value,10);
+    if(!monto || monto<=0){ toast("Poné una cantidad válida"); return; }
+    const btn=$("#mOk"); btn.disabled=true; btn.textContent="…";
+    const d = await jpost({accion:st.accion, usuario:st.usuario, monto, motivo:$("#mMotivo").value, conversacion_id:st.convId});
+    btn.disabled=false; btn.textContent="Cargar";
+    if(d.ok){
+      $("#back").classList.remove("on");
+      if(st.accion==="cargar_bono") toast(`Bono cargado (nuevo: ${nf.format(d.saldo)})`);
+      else toast(st.accion==="retirar_saldo" ? "Retiro encolado en ganamos" : "Carga de saldo encolada en ganamos");
+      abrir(st.convId);
+    } else { toast(d.error || "No se pudo"); }
+  });
+
+  /* ---------- notificación push ----------
+     No se manda nada al celular en el momento: se encola y cada dispositivo la
+     levanta cuando sondea (el widget a los ~25 s con la app abierta, el worker
+     del APK hasta 15 min después si está cerrada). Por eso el botón dice
+     "encolada" y muestra a cuántos celulares activos le va a llegar. */
+  const PLANTILLAS = [
+    { n:"🎁 Bono",   tipo:"bono",   t:"🎁 ¡Te regalamos un bono!",       c:"Ya lo tenés acreditado en tu cuenta. Entrá y usalo." },
+    { n:"🪙 Fichas", tipo:"fichas", t:"🪙 ¡Fichas de regalo!",           c:"Te cargamos fichas para que sigas jugando." },
+    { n:"🎯 Ruleta", tipo:"ruleta", t:"🎯 Te queda un giro gratis",      c:"Entrá a la app y girá la ruleta antes de que termine el día." },
+    { n:"🔥 Promo",  tipo:"promo",  t:"🔥 Promo por tiempo limitado",    c:"Recargá hoy y llevate un extra. Escribinos por el chat." }
+  ];
+  let nTipo = "promo";
+
+  $("#nChips").innerHTML = PLANTILLAS
+    .map((p,i)=>`<button type="button" class="chip" data-i="${i}">${esc(p.n)}</button>`).join("");
+  $("#nChips").addEventListener("click", e=>{
+    const b = e.target.closest(".chip"); if(!b) return;
+    const p = PLANTILLAS[+b.getAttribute("data-i")];
+    document.querySelectorAll("#nChips .chip").forEach(x=>x.classList.toggle("on", x===b));
+    nTipo = p.tipo; $("#nTitulo").value = p.t; $("#nCuerpo").value = p.c;
+  });
+
+  /** `forzar` = entró por el rail, o sea sin conversación: solo masiva. */
+  function abrirNotif(forzar){
+    const todos = !!forzar || !st.usuario;
+    $("#nTodos").checked = todos;
+    $("#nTodos").disabled = todos;
+    $("#nSub").textContent = todos
+      ? "Le va a llegar a todos los jugadores que tengan la app instalada."
+      : `Para @${st.usuario}. Le llega como notificación de Android.`;
+    $("#nTitulo").value=""; $("#nCuerpo").value=""; nTipo="promo";
+    document.querySelectorAll("#nChips .chip").forEach(x=>x.classList.remove("on"));
+    $("#backN").classList.add("on");
+    setTimeout(()=>$("#nTitulo").focus(),50);
+  }
+  $("#btnNotif").addEventListener("click", ()=>abrirNotif(false));
+  $("#nCancel").addEventListener("click", ()=>$("#backN").classList.remove("on"));
+  $("#backN").addEventListener("click", e=>{ if(e.target===$("#backN")) $("#backN").classList.remove("on"); });
+  $("#nOk").addEventListener("click", async ()=>{
+    const titulo = $("#nTitulo").value.trim(), cuerpo = $("#nCuerpo").value.trim();
+    if(!titulo || !cuerpo){ toast("Poné título y mensaje"); return; }
+    const todos = $("#nTodos").checked;
+    if(!todos && !st.usuario){ toast("Esta conversación no tiene usuario vinculado"); return; }
+    if(todos && !confirm("Se la va a mandar a TODOS los jugadores con la app. ¿Seguro?")) return;
+
+    const btn=$("#nOk"); btn.disabled=true; btn.textContent="…";
+    // La masiva no deja rastro en ningún hilo: no es de esa conversación.
+    const d = await jpost({ accion:"notificar", todos, usuario:todos?undefined:st.usuario,
+                            titulo, cuerpo, tipo:nTipo,
+                            conversacion_id:todos?undefined:st.convId });
+    btn.disabled=false; btn.textContent="Enviar";
+    if(d.ok){
+      $("#backN").classList.remove("on");
+      toast(d.alcance ? `Encolada para ${d.alcance} celular${d.alcance===1?"":"es"}`
+                      : "Encolada — le llega cuando abra la app");
+      if(st.convId) abrir(st.convId);
+    } else { toast(d.error || "No se pudo enviar"); }
+  });
+
+  // ---------- login ----------
+  // Fetch propio, deliberadamente SIN pasar por apiFetch: login.php no exige
+  // sesion (es el que la crea), un 401 acá es "usuario o contraseña
+  // incorrectos" -- no "sesión vencida" -- y lo maneja este mismo formulario,
+  // no el manejador global.
+  $("#loginForm").addEventListener("submit", async e=>{
+    e.preventDefault();
+    const usuario = $("#loginUser").value.trim();
+    const password = $("#loginPass").value;
+    if(!usuario || !password){ $("#loginError").textContent = "Completá usuario y contraseña"; return; }
+
+    const btn = $("#loginBtn");
+    btn.disabled = true; btn.innerHTML = '<span class="sp"></span>';
+    $("#loginError").textContent = "";
+
+    let r, d;
+    try{
+      r = await fetch(API_LOGIN, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accion:"login", usuario, password })
+      });
+      d = await r.json().catch(()=>({}));
+    }catch(err){
+      btn.disabled = false; btn.textContent = "Ingresar";
+      $("#loginError").textContent = "No se pudo conectar con el servidor. Probá de nuevo.";
+      return;
+    }
+    btn.disabled = false; btn.textContent = "Ingresar";
+
+    if(r.status === 429){
+      $("#loginError").textContent = d.error || "Demasiados intentos. Esperá 15 minutos.";
+      return;
+    }
+    // Nunca se muestra detalle del server acá -- solo el mensaje que ya
+    // viene curado en `d.error` (nunca un stack trace ni el body crudo).
+    if(!r.ok || !d.ok){
+      $("#loginError").textContent = d.error || "Usuario o contraseña incorrectos";
+      return;
+    }
+
+    CSRF = d.csrf || null;
+    OPERADOR = d.operador || usuario;
+    try{ localStorage.setItem("goldpaw_crm_operador", OPERADOR); }catch(err){}
+    $("#loginPass").value = "";
+    mostrarShell();
+    cargarLista();
+    iniciarPolling();
+  });
+
+  // ---------- logout ----------
+  $("#btnLogout").addEventListener("click", async ()=>{
+    if(!confirm("¿Cerrar sesión?")) return;
+    try{
+      await fetch(API_LOGIN, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: Object.assign({ "Content-Type":"application/json" }, CSRF ? {"X-CSRF-Token":CSRF} : {}),
+        body: JSON.stringify({ accion:"logout" })
+      });
+    }catch(err){ /* sin red o lo que sea: igual cerramos localmente */ }
+    CSRF = null; OPERADOR = null; st.convId = 0;
+    try{ localStorage.removeItem("goldpaw_crm_operador"); }catch(err){}
+    mostrarLogin();
+  });
+
+  // ---------- arranque ----------
+  // Un solo fetch de prueba decide todo: 401 -> login, cualquier otra cosa
+  // -> shell (y cargarLista() ya sabe mostrar su propio error si lo hay,
+  // como hacía antes de este paso). #app y #loginScreen arrancan los dos
+  // ocultos en el HTML a propósito, así nunca hay un flash del shell vacío
+  // ni del login de más mientras esto resuelve.
+  async function arrancar(){
+    // Nombre "recordado" de una sesión anterior, solo para no mostrar "—" un
+    // instante -- NUNCA el CSRF, ese vive solo en memoria y se pierde en
+    // cada carga de página a propósito (ver la nota junto a `let CSRF`).
+    try{
+      const previo = localStorage.getItem("goldpaw_crm_operador");
+      if(previo) OPERADOR = previo;
+    }catch(err){}
+
+    let r;
+    try{
+      r = await fetch(API + "?" + new URLSearchParams({accion:"conversaciones"}), { credentials:"same-origin" });
+    }catch(err){
+      mostrarLogin("No se pudo conectar con el servidor. Recargá la página para reintentar.");
+      return;
+    }
+    if(r.status === 401){ mostrarLogin(); return; }
+
+    mostrarShell();
+    cargarLista();
+    iniciarPolling();
+  }
+  arrancar();
+})();
+</script>
+</body>
+</html>
