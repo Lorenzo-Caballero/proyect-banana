@@ -44,8 +44,20 @@
  *
  * POST { accion:"verificar_password", password }  -> { ok, error? }
  * GET  ?accion=foto                                -> activos/pasivos/patrimonio actuales
- * GET  ?accion=hoy                                 -> operación del día
- * GET  ?accion=rango&desde=YYYY-MM-DD&hasta=YYYY-MM-DD -> KPIs del período + alertas
+ * GET  ?accion=hoy                                 -> operación del día (DEPRECADO desde el
+ *                                                      rediseño de dashboard unificado -- "Hoy"
+ *                                                      ahora es un filtro más de ?accion=rango.
+ *                                                      Queda vivo, sin uso desde el frontend
+ *                                                      nuevo. Ver TODO_FASE_A.md.)
+ * GET  ?accion=rango&desde=YYYY-MM-DD&hasta=YYYY-MM-DD&filtro=
+ *      -> KPIs del período + alertas + comparación contra el período anterior.
+ *         `filtro` es opcional, afecta SOLO cómo se calcula el período de
+ *         comparación (ver fn_periodo_anterior()): 'mes' = tramo contra
+ *         tramo del mes calendario anterior; 'todo' = sin comparación
+ *         (variacion: null); cualquier otro valor (o ausente) = mismo
+ *         largo de días inmediatamente antes de $desde.
+ * GET  ?accion=graficos&desde=&hasta=              -> series para los 5 gráficos
+ *                                                      (por_dia + por_hora)
  * GET  ?accion=export_csv&desde=&hasta=            -> CSV de detalle del período
  * GET  ?accion=export_json&desde=&hasta=           -> JSON pensado para pegar en un LLM
  */
@@ -182,6 +194,172 @@ function fn_retencion(PDO $pdo, string $desde, string $hasta): array
         'porcentaje'              => round($retenidos / $activosPrev * 100, 1),
         'periodo_anterior'        => ['desde' => $prevDesde, 'hasta' => $prevHasta],
     ];
+}
+
+/**
+ * Rango del período de comparación, según el filtro que mandó el frontend.
+ * Devuelve null si NO corresponde comparar (filtro=todo, o un rango que
+ * excede cualquier período histórico razonable -- protección server-side
+ * aunque el frontend no mande filtro=todo, por si alguien pega un rango
+ * absurdo a mano en la URL).
+ *
+ * filtro='mes': tramo contra tramo del mes calendario anterior (mismos
+ * días 1..N), recortado si el mes anterior tiene menos días (ej. 31 de
+ * agosto compara contra el 28/29 de febrero, nunca un 31 de febrero
+ * inexistente). Comparar contra el mes anterior COMPLETO sería engañoso
+ * con un mes en curso parcial (Nahuel, confirmado).
+ *
+ * Cualquier otro filtro (hoy/ayer/7d/30d/90d/custom): mismo largo de
+ * días, inmediatamente antes de $desde -- mismo mecanismo que ya usaba
+ * fn_retencion() para su propio período anterior, reusado acá.
+ */
+function fn_periodo_anterior(string $filtro, string $desde, string $hasta): ?array
+{
+    $dias = (int)((strtotime($hasta) - strtotime($desde)) / 86400) + 1;
+    if ($filtro === 'todo' || $desde < '2024-01-01' || $dias > 5 * 365) {
+        return null;
+    }
+
+    if ($filtro === 'mes') {
+        $inicioMes           = new DateTime(substr($desde, 0, 8) . '01');
+        $mesAnteriorInicio    = (clone $inicioMes)->modify('first day of last month');
+        $diaActual            = (int)(new DateTime($hasta))->format('j');
+        $ultimoDiaMesAnterior = (int)$mesAnteriorInicio->format('t');
+        $diaFin               = min($diaActual, $ultimoDiaMesAnterior);
+        $prevDesde = $mesAnteriorInicio->format('Y-m-d');
+        $prevHasta = (clone $mesAnteriorInicio)->modify('+' . ($diaFin - 1) . ' days')->format('Y-m-d');
+        return ['desde' => $prevDesde, 'hasta' => $prevHasta];
+    }
+
+    $prevHasta = date('Y-m-d', strtotime($desde . ' -1 day'));
+    $prevDesde = date('Y-m-d', strtotime($prevHasta . ' -' . ($dias - 1) . ' days'));
+    return ['desde' => $prevDesde, 'hasta' => $prevHasta];
+}
+
+/**
+ * Variación entre dos números, con los 4 casos especiales que definió
+ * Nahuel (evitan un "+inf%" o un "-100%" enganañoso):
+ *   previo=0, actual=0  -> sin_datos (el frontend muestra "—")
+ *   previo=0, actual>0  -> nuevo     (el frontend muestra "Nuevo" en verde)
+ *   previo>0, actual=0  -> -100% exacto, dir=down
+ *   caso normal         -> pct real, redondeado a 1 decimal
+ * `dir` es solo la dirección numérica (up/down/flat) -- el color
+ * (bueno/malo) lo decide el frontend según el KPI (retiros invierte).
+ */
+function fn_variacion(float $actual, float $previo): array
+{
+    if ($previo === 0.0 && $actual === 0.0) {
+        return ['dir' => 'sin_datos', 'pct' => null];
+    }
+    if ($previo === 0.0 && $actual > 0.0) {
+        return ['dir' => 'nuevo', 'pct' => null];
+    }
+    if ($previo > 0.0 && $actual === 0.0) {
+        return ['dir' => 'down', 'pct' => -100.0];
+    }
+    $pct = round((($actual - $previo) / $previo) * 100, 1);
+    $dir = $pct > 0 ? 'up' : ($pct < 0 ? 'down' : 'flat');
+    return ['dir' => $dir, 'pct' => $pct];
+}
+
+/**
+ * Serie diaria para los gráficos de línea/barra por día. Cuatro queries
+ * (una por fuente) mergeadas por fecha en PHP, sobre la secuencia
+ * COMPLETA de días del rango -- un día sin actividad sale en 0, no falta
+ * (un gráfico con huecos es peor que uno con ceros).
+ */
+function fn_serie_por_dia(PDO $pdo, string $desde, string $hasta, float $costoPorFicha): array
+{
+    $ing = $pdo->prepare(
+        "SELECT DATE(acreditada_en) fecha, SUM(monto_pedido) monto FROM recargas
+          WHERE estado='acreditada' AND acreditada_en >= ? AND acreditada_en < ? + INTERVAL 1 DAY
+          GROUP BY DATE(acreditada_en)"
+    );
+    $ing->execute([$desde, $hasta]);
+    $porIngresos = [];
+    foreach ($ing->fetchAll(PDO::FETCH_ASSOC) as $r) { $porIngresos[$r['fecha']] = (float)$r['monto']; }
+
+    $ret = $pdo->prepare(
+        "SELECT DATE(ejecutada_en) fecha, SUM(monto) monto FROM acciones_saldo
+          WHERE tipo='retirar' AND estado='hecha' AND ejecutada_en >= ? AND ejecutada_en < ? + INTERVAL 1 DAY
+          GROUP BY DATE(ejecutada_en)"
+    );
+    $ret->execute([$desde, $hasta]);
+    $porRetiros = [];
+    foreach ($ret->fetchAll(PDO::FETCH_ASSOC) as $r) { $porRetiros[$r['fecha']] = (float)$r['monto']; }
+
+    $bon = $pdo->prepare(
+        "SELECT DATE(creado_en) fecha, SUM(monto) monto FROM movimientos
+          WHERE tipo='bono' AND monto > 0 AND creado_en >= ? AND creado_en < ? + INTERVAL 1 DAY
+          GROUP BY DATE(creado_en)"
+    );
+    $bon->execute([$desde, $hasta]);
+    $porBonos = [];
+    foreach ($bon->fetchAll(PDO::FETCH_ASSOC) as $r) { $porBonos[$r['fecha']] = (float)$r['monto']; }
+
+    $act = $pdo->prepare(
+        "SELECT DATE(acreditada_en) fecha, COUNT(DISTINCT usuario) activos FROM recargas
+          WHERE estado='acreditada' AND acreditada_en >= ? AND acreditada_en < ? + INTERVAL 1 DAY
+          GROUP BY DATE(acreditada_en)"
+    );
+    $act->execute([$desde, $hasta]);
+    $porActivos = [];
+    foreach ($act->fetchAll(PDO::FETCH_ASSOC) as $r) { $porActivos[$r['fecha']] = (int)$r['activos']; }
+
+    $serie   = [];
+    $cursor  = new DateTime($desde);
+    $fin     = new DateTime($hasta);
+    while ($cursor <= $fin) {
+        $f           = $cursor->format('Y-m-d');
+        $ingresosDia = $porIngresos[$f] ?? 0.0;
+        $bonosDia    = $porBonos[$f] ?? 0.0;
+        $retirosDia  = $porRetiros[$f] ?? 0.0;
+        $costoDia    = ($ingresosDia + $bonosDia) * $costoPorFicha;
+        $serie[] = [
+            'fecha'    => $f,
+            'ingresos' => $ingresosDia,
+            'retiros'  => $retirosDia,
+            'ganancia' => $ingresosDia - $retirosDia - $costoDia,
+            'bonos'    => $bonosDia,
+            'activos'  => $porActivos[$f] ?? 0,
+        ];
+        $cursor->modify('+1 day');
+    }
+    return $serie;
+}
+
+/**
+ * Serie por hora del día (0-23), recargas + retiros COMBINADOS (Nahuel,
+ * confirmado -- sin separar por tipo, sin bonos: es "cuándo hay
+ * movimiento de plata", no "cuándo regala el operador"). Agregado sobre
+ * TODO el rango, no por día -- es un histograma de "a qué hora", no una
+ * serie temporal.
+ */
+function fn_serie_por_hora(PDO $pdo, string $desde, string $hasta): array
+{
+    $horas = array_fill(0, 24, 0);
+
+    $ing = $pdo->prepare(
+        "SELECT HOUR(acreditada_en) hora, COUNT(*) cantidad FROM recargas
+          WHERE estado='acreditada' AND acreditada_en >= ? AND acreditada_en < ? + INTERVAL 1 DAY
+          GROUP BY HOUR(acreditada_en)"
+    );
+    $ing->execute([$desde, $hasta]);
+    foreach ($ing->fetchAll(PDO::FETCH_ASSOC) as $r) { $horas[(int)$r['hora']] += (int)$r['cantidad']; }
+
+    $ret = $pdo->prepare(
+        "SELECT HOUR(ejecutada_en) hora, COUNT(*) cantidad FROM acciones_saldo
+          WHERE tipo='retirar' AND estado='hecha' AND ejecutada_en >= ? AND ejecutada_en < ? + INTERVAL 1 DAY
+          GROUP BY HOUR(ejecutada_en)"
+    );
+    $ret->execute([$desde, $hasta]);
+    foreach ($ret->fetchAll(PDO::FETCH_ASSOC) as $r) { $horas[(int)$r['hora']] += (int)$r['cantidad']; }
+
+    $serie = [];
+    foreach ($horas as $hora => $cantidad) {
+        $serie[] = ['hora' => $hora, 'cantidad' => $cantidad];
+    }
+    return $serie;
 }
 
 /** Foto del momento: activos/pasivo históricos, sin rango de fecha. */
@@ -427,6 +605,7 @@ if ($metodo === 'GET') {
 
         if ($accion === 'rango') {
             [$desde, $hasta] = fn_rango_fechas();
+            $filtro = (string)($_GET['filtro'] ?? '');
 
             $ingresos  = fn_ingresos($pdo, $desde, $hasta);
             $retiros   = fn_retiros($pdo, $desde, $hasta);
@@ -434,7 +613,38 @@ if ($metodo === 'GET') {
             $nuevos    = fn_nuevos($pdo, $desde, $hasta);
             $activos   = fn_activos($pdo, $desde, $hasta);
             $retencion = fn_retencion($pdo, $desde, $hasta);
-            $costoFichas = ($ingresos['monto'] + $bonos['monto']) * $costoPorFicha;
+            $costoFichas   = ($ingresos['monto'] + $bonos['monto']) * $costoPorFicha;
+            $gananciaBruta = $ingresos['monto'] - $retiros['monto'] - $costoFichas;
+
+            // Comparación contra el período anterior -- null si no
+            // corresponde (filtro=todo, o el auto-detectado en
+            // fn_periodo_anterior()). Reusa fn_ingresos/fn_retiros/
+            // fn_activos ya escritas, cero duplicación de las queries.
+            $periodoAnterior = fn_periodo_anterior($filtro, $desde, $hasta);
+            $comparacion = null;
+            $variacion   = null;
+            if ($periodoAnterior !== null) {
+                $ingresosPrev = fn_ingresos($pdo, $periodoAnterior['desde'], $periodoAnterior['hasta']);
+                $retirosPrev  = fn_retiros($pdo, $periodoAnterior['desde'], $periodoAnterior['hasta']);
+                $bonosPrev    = fn_bonos($pdo, $periodoAnterior['desde'], $periodoAnterior['hasta']);
+                $activosPrev  = fn_activos($pdo, $periodoAnterior['desde'], $periodoAnterior['hasta']);
+                $costoFichasPrev   = ($ingresosPrev['monto'] + $bonosPrev['monto']) * $costoPorFicha;
+                $gananciaBrutaPrev = $ingresosPrev['monto'] - $retirosPrev['monto'] - $costoFichasPrev;
+
+                $comparacion = [
+                    'periodo_anterior'  => $periodoAnterior,
+                    'ingresos'          => $ingresosPrev['monto'],
+                    'retiros'           => $retirosPrev['monto'],
+                    'ganancia_bruta'    => $gananciaBrutaPrev,
+                    'jugadores_activos' => $activosPrev,
+                ];
+                $variacion = [
+                    'ingresos'          => fn_variacion($ingresos['monto'], $ingresosPrev['monto']),
+                    'retiros'           => fn_variacion($retiros['monto'], $retirosPrev['monto']),
+                    'ganancia_bruta'    => fn_variacion($gananciaBruta, $gananciaBrutaPrev),
+                    'jugadores_activos' => fn_variacion((float)$activos, (float)$activosPrev),
+                ];
+            }
 
             salir(['ok' => true, 'rango' => [
                 'desde'             => $desde,
@@ -443,19 +653,30 @@ if ($metodo === 'GET') {
                 'retiros'           => $retiros,
                 'bonos'             => $bonos,
                 'costo_fichas'      => $costoFichas,
-                'ganancia_bruta'    => $ingresos['monto'] - $retiros['monto'] - $costoFichas,
+                'ganancia_bruta'    => $gananciaBruta,
                 'costo_por_ficha'   => $costoPorFicha,
                 'jugadores_nuevos'  => $nuevos,
                 'jugadores_activos' => $activos,
                 'retencion'         => $retencion,
             ],
-                'alertas'  => fn_alertas($pdo, $desde, $hasta, $umbralGrande, $umbralMuyGrande, $umbralGanador),
-                'umbrales' => [
+                'comparacion' => $comparacion,
+                'variacion'   => $variacion,
+                'alertas'     => fn_alertas($pdo, $desde, $hasta, $umbralGrande, $umbralMuyGrande, $umbralGanador),
+                'umbrales'    => [
                     'retiro_grande'      => $umbralGrande,
                     'retiro_muy_grande'  => $umbralMuyGrande,
                     'jugador_ganador'    => $umbralGanador,
                 ],
             ]);
+        }
+
+        if ($accion === 'graficos') {
+            [$desde, $hasta] = fn_rango_fechas();
+
+            salir(['ok' => true, 'graficos' => [
+                'por_dia'  => fn_serie_por_dia($pdo, $desde, $hasta, $costoPorFicha),
+                'por_hora' => fn_serie_por_hora($pdo, $desde, $hasta),
+            ]]);
         }
 
         if ($accion === 'export_csv') {

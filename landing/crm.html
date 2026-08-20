@@ -14,6 +14,11 @@
     document.documentElement.setAttribute('data-theme', t);
   })();
 </script>
+<!-- Chart.js para el módulo Finanzas (Fase A, Módulo 6.A) -- version fija
+     4.4.4, sin plugins/dependencias adicionales. Si el CDN no carga (sin
+     internet, bloqueado), fnRenderGraficos() lo detecta (typeof Chart
+     === "undefined") y no dibuja nada, sin romper el resto del panel. -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <style>
   :root{
     --bg1:#0a0f1e; --bg2:#0c1225; --glow:rgba(124,108,240,.16);
@@ -357,7 +362,7 @@
   }
 
   /* ---- Retiros pendientes (Fase A, Módulo 2) ---- */
-  .view-panel{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+  .view-panel{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;min-height:0}
   .ret-toolbar{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:flex-end}
   .ret-row{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line)}
   .ret-row .rr-mid{flex:1;min-width:0}
@@ -474,37 +479,75 @@
     border-radius:11px;color:var(--txt);outline:none;font-size:14px;margin-bottom:10px}
   .fn-gate-card input:focus{border-color:var(--violet);box-shadow:0 0 0 3px var(--violetSoft)}
   .fn-gate-error{color:var(--red);font-size:12.5px;min-height:16px;margin-bottom:10px}
+  .fn-contenido{flex:1;overflow-y:auto;min-height:0}
+
   .fn-bloque{padding:18px 20px;border-bottom:1px solid var(--line)}
   .fn-bloque:last-child{border-bottom:none}
   .fn-bloque h3{margin:0 0 12px;font-size:14px}
+
+  /* header + export */
+  .fn-header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px 0}
+  .fn-export-mini{display:flex;gap:8px}
+
+  /* filtros de tiempo */
+  .fn-filtros-tiempo{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:14px 20px;
+    border-bottom:1px solid var(--line)}
+  .fn-filtros-rapidos{display:flex;gap:6px;flex-wrap:wrap}
+  .fn-filtro-btn{background:transparent;border:1px solid var(--line);color:var(--muted);padding:6px 12px;
+    border-radius:20px;font-size:12.5px;transition:.15s}
+  .fn-filtro-btn:hover{border-color:var(--violet);color:var(--txt)}
+  .fn-filtro-btn.on{background:var(--violetSoft);border-color:var(--violet);color:var(--violet2);font-weight:600}
+  .fn-filtro-btn:disabled{opacity:.5;cursor:default}
+  .fn-filtro-custom{display:flex;gap:6px;align-items:center;margin-left:auto}
+  .fn-filtro-custom input[type=date]{background:var(--panel2);border:1px solid var(--line);border-radius:11px;
+    color:var(--txt);padding:7px 9px;outline:none;font-size:12.5px}
+
+  /* 5 KPIs */
+  .fn-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;padding:14px 20px}
+  .fn-kpi-card{background:var(--panel2);border:1px solid var(--line);border-radius:13px;padding:13px 14px}
+  .fn-kpi-card .k{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.03em;
+    display:flex;align-items:center;gap:5px}
+  .fn-kpi-card .v{font-size:20px;font-weight:800;margin-top:6px;white-space:nowrap}
+  .fn-kpi-var{font-size:11.5px;font-weight:700;margin-top:4px;display:inline-block}
+  .fn-kpi-var.up{color:var(--green2)}
+  .fn-kpi-var.down{color:var(--red)}
+  .fn-kpi-var.flat,.fn-kpi-var.sin_datos{color:var(--muted)}
+  .fn-kpi-var.nuevo{color:var(--green2)}
+  .fn-kpi-actual{color:var(--muted);font-size:11px;margin-top:4px}
+
+  /* gráficos */
+  .fn-graficos{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:14px 20px}
+  .fn-grafico{background:var(--panel2);border:1px solid var(--line);border-radius:13px;padding:14px;min-width:0}
+  .fn-grafico-titulo{font-size:12.5px;color:var(--muted);font-weight:600;margin-bottom:10px;
+    display:flex;align-items:center;gap:5px}
+  .fn-grafico-wrap{position:relative;height:220px}
+  .fn-grafico.fn-cargando canvas{opacity:.25}
+
+  .fn-mas-metricas-wrap{padding:0 20px}
+
+  /* cards genéricas (reusadas por "Ver más métricas") */
   .fn-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
   .fn-card{background:var(--panel2);border:1px solid var(--line);border-radius:13px;padding:14px 16px}
   .fn-card .k{color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;
     display:flex;align-items:center;gap:5px}
   .fn-card .v{font-size:21px;font-weight:800;margin-top:6px}
   .fn-card .sub{color:var(--muted);font-size:11.5px;margin-top:3px}
-  .fn-card.pos .v{color:var(--green2)}
-  .fn-card.neg .v{color:var(--red)}
-  .fn-card.warn .v{color:var(--orange2)}
-  .fn-card.blue .v{color:var(--blue)}
+
   .fn-info{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;
     border-radius:50%;background:var(--panel3);color:var(--muted);font-size:10.5px;cursor:pointer;
-    flex:none;position:relative;font-style:italic;font-weight:700}
+    flex:none;position:relative}
   .fn-info:hover{color:var(--violet2)}
   .fn-popover{display:none;position:absolute;bottom:calc(100% + 8px);left:0;z-index:5;width:220px;
     background:var(--panel3);border:1px solid var(--line);border-radius:11px;padding:10px 12px;
-    font-size:12px;color:var(--txt);box-shadow:var(--shadow-sm);font-weight:400;font-style:normal;line-height:1.4}
+    font-size:12px;color:var(--txt);box-shadow:var(--shadow-sm);font-weight:400;line-height:1.4}
   .fn-info:hover .fn-popover, .fn-info.open .fn-popover{display:block}
+
   .fn-explicacion{margin-top:14px;font-size:12.5px;color:var(--muted)}
   .fn-explicacion summary{cursor:pointer;color:var(--violet2);font-weight:600;user-select:none;list-style:none}
   .fn-explicacion summary::-webkit-details-marker{display:none}
   .fn-explicacion summary::before{content:"▸ "}
   .fn-explicacion[open] summary::before{content:"▾ "}
-  .fn-explicacion .fn-formula{margin-top:8px;padding:10px 12px;background:var(--panel2);
-    border:1px solid var(--line);border-radius:10px;line-height:1.5}
-  .fn-rango-filtros{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
-  .fn-rango-filtros input[type=date]{background:var(--panel2);border:1px solid var(--line);
-    border-radius:11px;color:var(--txt);padding:9px 10px;outline:none;font-size:12.5px}
+
   .fn-alertas-lista{display:flex;flex-direction:column;gap:8px}
   .fn-alerta{display:flex;justify-content:space-between;gap:12px;align-items:center;
     padding:11px 14px;border-radius:11px;border:1px solid var(--line);background:var(--panel2);font-size:13px}
@@ -514,7 +557,21 @@
   .fn-alerta.amarillo .fn-alerta-tag{background:rgba(245,166,35,.2);color:var(--orange2)}
   .fn-alerta.rojo .fn-alerta-tag{background:rgba(227,91,91,.2);color:var(--red)}
   .fn-alerta.info .fn-alerta-tag{background:var(--panel3);color:var(--muted)}
-  .fn-export-btns{display:flex;gap:10px;flex-wrap:wrap}
+
+  /* loading: texto placeholder atenuado, sin reflow */
+  .fn-kpi-card.fn-cargando .v,.fn-kpi-card.fn-cargando .fn-kpi-var{opacity:.35}
+
+  @media(max-width:1040px){
+    .fn-kpis{grid-template-columns:repeat(3,1fr)}
+    .fn-graficos{grid-template-columns:1fr}
+  }
+  @media(max-width:760px){
+    .fn-kpis{grid-template-columns:repeat(2,1fr)}
+    .fn-filtro-custom{margin-left:0;width:100%}
+  }
+  @media(max-width:420px){
+    .fn-kpis{grid-template-columns:1fr}
+  }
 </style>
 </head>
 <body>
@@ -847,157 +904,129 @@
     </div>
 
     <!-- Contenido real, oculto hasta finanzas_ok -->
-    <div id="fnContenido" style="display:none">
-      <div class="comp-head"><b>Finanzas</b></div>
+    <div id="fnContenido" class="fn-contenido" style="display:none">
 
-      <!-- 1. Foto del momento -->
-      <section class="fn-bloque">
-        <h3>Foto del momento</h3>
-        <div class="fn-cards">
-          <div class="fn-card">
-            <div class="k">Efectivo neto histórico
-              <span class="fn-info" data-tip="Toda la plata que entró por recargas menos toda la que salió por retiros confirmados, desde que arrancó el sistema.">i<span class="fn-popover"></span></span>
-            </div>
-            <div class="v" id="fnFotoEfectivo">—</div>
-          </div>
-          <div class="fn-card">
-            <div class="k">Stock de fichas
-              <span class="fn-info" data-tip="Fichas que tenés en tu panel de ganamos para vender.">i<span class="fn-popover"></span></span>
-            </div>
-            <div class="v" id="fnFotoStock">—</div>
-            <div class="sub" id="fnFotoStockSub"></div>
-          </div>
-          <div class="fn-card">
-            <div class="k">Valor del stock
-              <span class="fn-info" data-tip="Cuánto vale ese stock de fichas a tu costo por ficha.">i<span class="fn-popover"></span></span>
-            </div>
-            <div class="v" id="fnFotoValorStock">—</div>
-            <div class="sub" id="fnFotoValorStockSub"></div>
-          </div>
-          <div class="fn-card">
-            <div class="k">Fichas en poder de jugadores
-              <span class="fn-info" data-tip="Lo que le debés a tus jugadores hoy: la suma de todos los saldos reales en la plataforma. Si todos retiraran a la vez, esto es lo que pagarías.">i<span class="fn-popover"></span></span>
-            </div>
-            <div class="v" id="fnFotoPasivo">—</div>
-          </div>
-          <div class="fn-card">
-            <div class="k">Patrimonio neto estimado
-              <span class="fn-info" data-tip="Cuánto vale tu negocio hoy. Suma lo que tenés (efectivo + fichas en stock) y le resta lo que debés (saldo de los jugadores). Si es positivo, ganás; si es negativo, tenés más deuda que activos.">i<span class="fn-popover"></span></span>
-            </div>
-            <div class="v" id="fnFotoPatrimonio">—</div>
-          </div>
+      <!-- a) Header -->
+      <div class="fn-header">
+        <b>Finanzas</b>
+        <div class="fn-export-mini">
+          <button class="btn-mini-accion" id="fnBtnCsvTop" type="button">⬇ CSV</button>
+          <button class="btn-mini-accion" id="fnBtnJsonTop" type="button">⬇ JSON</button>
         </div>
-        <details class="fn-explicacion">
-          <summary>¿Cómo se calcula?</summary>
-          <div class="fn-formula" id="fnFotoFormula"></div>
-        </details>
-      </section>
+      </div>
 
-      <!-- 2. Operación del día -->
-      <section class="fn-bloque">
-        <h3>Operación del día</h3>
-        <div class="fn-cards">
-          <div class="fn-card">
-            <div class="k">Recargas hoy
-              <span class="fn-info" data-tip="Transferencias de jugadores ya acreditadas hoy.">i<span class="fn-popover"></span></span>
-            </div>
-            <div class="v" id="fnHoyRecargasMonto">—</div>
-            <div class="sub" id="fnHoyRecargasCant"></div>
-          </div>
-          <div class="fn-card">
-            <div class="k">Retiros hoy
-              <span class="fn-info" data-tip="Retiros ya confirmados hoy (plata que efectivamente salió).">i<span class="fn-popover"></span></span>
-            </div>
-            <div class="v" id="fnHoyRetirosMonto">—</div>
-            <div class="sub" id="fnHoyRetirosCant"></div>
-          </div>
-          <div class="fn-card">
-            <div class="k">Bonos regalados hoy
-              <span class="fn-info" data-tip="Fichas de regalo cargadas hoy (ruleta o a mano desde el CRM).">i<span class="fn-popover"></span></span>
-            </div>
-            <div class="v" id="fnHoyBonosMonto">—</div>
-            <div class="sub" id="fnHoyBonosCant"></div>
-          </div>
-          <div class="fn-card">
-            <div class="k">Ganancia estimada hoy
-              <span class="fn-info" data-tip="Lo que entró, menos lo que salió, menos lo que te costaron las fichas que entregaste hoy.">i<span class="fn-popover"></span></span>
-            </div>
-            <div class="v" id="fnHoyGanancia">—</div>
-          </div>
+      <!-- b) Filtros de tiempo -->
+      <div class="fn-filtros-tiempo">
+        <div class="fn-filtros-rapidos" id="fnFiltrosRapidos">
+          <button class="fn-filtro-btn on" data-f="hoy" type="button">Hoy</button>
+          <button class="fn-filtro-btn" data-f="ayer" type="button">Ayer</button>
+          <button class="fn-filtro-btn" data-f="7d" type="button">7 días</button>
+          <button class="fn-filtro-btn" data-f="30d" type="button">30 días</button>
+          <button class="fn-filtro-btn" data-f="90d" type="button">90 días</button>
+          <button class="fn-filtro-btn" data-f="mes" type="button">Este mes</button>
+          <button class="fn-filtro-btn" data-f="todo" type="button">Todo</button>
         </div>
-        <details class="fn-explicacion">
-          <summary>¿Cómo se calcula?</summary>
-          <div class="fn-formula" id="fnHoyFormula"></div>
-        </details>
-      </section>
-
-      <!-- 3. Rango configurable -->
-      <section class="fn-bloque">
-        <h3>Período</h3>
-        <div class="fn-rango-filtros">
+        <div class="fn-filtro-custom">
           <input type="date" id="fnDesde"> <input type="date" id="fnHasta">
           <button class="btn-mini-accion" id="fnAplicarRango" type="button">Aplicar</button>
         </div>
-        <div class="fn-cards">
-          <div class="fn-card">
-            <div class="k">Ingresos totales<span class="fn-info" data-tip="Suma de recargas acreditadas en el período.">i<span class="fn-popover"></span></span></div>
-            <div class="v" id="fnRangoIngresos">—</div>
-          </div>
-          <div class="fn-card">
-            <div class="k">Retiros totales<span class="fn-info" data-tip="Suma de retiros confirmados en el período.">i<span class="fn-popover"></span></span></div>
-            <div class="v" id="fnRangoRetiros">—</div>
-          </div>
-          <div class="fn-card">
-            <div class="k">Bonos regalados<span class="fn-info" data-tip="Suma de fichas de regalo entregadas en el período.">i<span class="fn-popover"></span></span></div>
-            <div class="v" id="fnRangoBonos">—</div>
-          </div>
-          <div class="fn-card">
-            <div class="k">Costo de fichas del período<span class="fn-info" data-tip="Lo que te costaron al proveedor las fichas que entregaste (recargas + bonos).">i<span class="fn-popover"></span></span></div>
-            <div class="v" id="fnRangoCostoFichas">—</div>
-          </div>
-          <div class="fn-card">
-            <div class="k">Ganancia bruta del período<span class="fn-info" data-tip="Ingresos menos retiros menos el costo de las fichas entregadas.">i<span class="fn-popover"></span></span></div>
-            <div class="v" id="fnRangoGanancia">—</div>
-          </div>
-          <div class="fn-card">
-            <div class="k">Recarga promedio<span class="fn-info" data-tip="Monto promedio por recarga acreditada en el período.">i<span class="fn-popover"></span></span></div>
-            <div class="v" id="fnRangoRecargaProm">—</div>
-          </div>
-          <div class="fn-card">
-            <div class="k">Retiro promedio<span class="fn-info" data-tip="Monto promedio por retiro confirmado en el período.">i<span class="fn-popover"></span></span></div>
-            <div class="v" id="fnRangoRetiroProm">—</div>
-          </div>
-          <div class="fn-card">
-            <div class="k">Jugadores activos únicos<span class="fn-info" data-tip="Jugadores distintos que recargaron al menos una vez en el período.">i<span class="fn-popover"></span></span></div>
-            <div class="v" id="fnRangoActivos">—</div>
-          </div>
-          <div class="fn-card">
-            <div class="k">Jugadores nuevos<span class="fn-info" data-tip="Altas nuevas en ganamos durante el período.">i<span class="fn-popover"></span></span></div>
-            <div class="v" id="fnRangoNuevos">—</div>
-          </div>
-          <div class="fn-card">
-            <div class="k">Retención<span class="fn-info" data-tip="De los jugadores activos en el período anterior de igual duración, qué porcentaje volvió a recargar en este período.">i<span class="fn-popover"></span></span></div>
-            <div class="v" id="fnRangoRetencion">—</div>
-          </div>
-        </div>
-        <details class="fn-explicacion">
-          <summary>¿Cómo se calcula?</summary>
-          <div class="fn-formula" id="fnRangoFormula"></div>
-        </details>
-      </section>
+      </div>
 
-      <!-- 4. Alertas -->
-      <section class="fn-bloque">
+      <!-- c) 5 KPI cards -->
+      <div class="fn-kpis" id="fnKpis">
+        <div class="fn-kpi-card" id="fnKpiCardIngresos">
+          <div class="k">Ingresos <span class="fn-info" data-tip="Suma de recargas acreditadas en el período elegido.">ⓘ<span class="fn-popover"></span></span></div>
+          <div class="v" id="fnKpiIngresos">—</div>
+          <div class="fn-kpi-var" id="fnKpiIngresosVar">—</div>
+        </div>
+        <div class="fn-kpi-card" id="fnKpiCardRetiros">
+          <div class="k">Retiros <span class="fn-info" data-tip="Suma de retiros confirmados (plata que efectivamente salió) en el período elegido.">ⓘ<span class="fn-popover"></span></span></div>
+          <div class="v" id="fnKpiRetiros">—</div>
+          <div class="fn-kpi-var" id="fnKpiRetirosVar">—</div>
+        </div>
+        <div class="fn-kpi-card" id="fnKpiCardGanancia">
+          <div class="k">Ganancia bruta <span class="fn-info" data-tip="Ingresos menos retiros menos el costo de las fichas entregadas (recargas + bonos) en el período.">ⓘ<span class="fn-popover"></span></span></div>
+          <div class="v" id="fnKpiGanancia">—</div>
+          <div class="fn-kpi-var" id="fnKpiGananciaVar">—</div>
+        </div>
+        <div class="fn-kpi-card" id="fnKpiCardActivos">
+          <div class="k">Jugadores activos <span class="fn-info" data-tip="Jugadores distintos que recargaron al menos una vez en el período.">ⓘ<span class="fn-popover"></span></span></div>
+          <div class="v" id="fnKpiActivos">—</div>
+          <div class="fn-kpi-var" id="fnKpiActivosVar">—</div>
+        </div>
+        <div class="fn-kpi-card">
+          <div class="k">Patrimonio neto <span class="fn-info" data-tip="Cuánto vale tu negocio hoy. Suma lo que tenés (efectivo + fichas en stock) y le resta lo que debés (saldo de los jugadores). Si es positivo, ganás; si es negativo, tenés más deuda que activos.">ⓘ<span class="fn-popover"></span></span></div>
+          <div class="v" id="fnKpiPatrimonio">—</div>
+          <div class="fn-kpi-var fn-kpi-actual">Actual, no depende del período</div>
+        </div>
+      </div>
+
+      <!-- d) 5 gráficos -->
+      <div class="fn-graficos" id="fnGraficos">
+        <div class="fn-grafico" id="fnGraficoCardFlujo">
+          <div class="fn-grafico-titulo">Ingresos vs Retiros por día <span class="fn-info" data-tip="Compara cuánto entró y cuánto salió cada día del período.">ⓘ<span class="fn-popover"></span></span></div>
+          <div class="fn-grafico-wrap"><canvas id="fnChartFlujo"></canvas></div>
+        </div>
+        <div class="fn-grafico" id="fnGraficoCardGanancia">
+          <div class="fn-grafico-titulo">Ganancia por día <span class="fn-info" data-tip="Ganancia bruta de cada día individual (verde = positivo, rojo = negativo).">ⓘ<span class="fn-popover"></span></span></div>
+          <div class="fn-grafico-wrap"><canvas id="fnChartGanancia"></canvas></div>
+        </div>
+        <div class="fn-grafico" id="fnGraficoCardHora">
+          <div class="fn-grafico-titulo">Actividad por hora <span class="fn-info" data-tip="Movimientos por hora del día (recargas + retiros combinados).">ⓘ<span class="fn-popover"></span></span></div>
+          <div class="fn-grafico-wrap"><canvas id="fnChartHora"></canvas></div>
+        </div>
+        <div class="fn-grafico" id="fnGraficoCardBonos">
+          <div class="fn-grafico-titulo">Bonos regalados por día <span class="fn-info" data-tip="Fichas de regalo entregadas cada día (ruleta o a mano desde el CRM).">ⓘ<span class="fn-popover"></span></span></div>
+          <div class="fn-grafico-wrap"><canvas id="fnChartBonos"></canvas></div>
+        </div>
+        <div class="fn-grafico" id="fnGraficoCardActivos">
+          <div class="fn-grafico-titulo">Jugadores activos por día <span class="fn-info" data-tip="Cuántos jugadores distintos recargaron cada día.">ⓘ<span class="fn-popover"></span></span></div>
+          <div class="fn-grafico-wrap"><canvas id="fnChartActivos"></canvas></div>
+        </div>
+      </div>
+
+      <!-- e) Ver más métricas -->
+      <div class="fn-mas-metricas-wrap">
+        <details class="fn-explicacion">
+          <summary>Ver más métricas</summary>
+          <div class="fn-cards" id="fnMasMetricas" style="margin-top:10px">
+            <div class="fn-card">
+              <div class="k">Costo de fichas del período<span class="fn-info" data-tip="...">ⓘ<span class="fn-popover"></span></span></div>
+              <div class="v" id="fnMasCostoFichas">—</div>
+            </div>
+            <div class="fn-card">
+              <div class="k">Recarga promedio<span class="fn-info" data-tip="Monto promedio por recarga acreditada en el período.">ⓘ<span class="fn-popover"></span></span></div>
+              <div class="v" id="fnMasRecargaProm">—</div>
+            </div>
+            <div class="fn-card">
+              <div class="k">Retiro promedio<span class="fn-info" data-tip="Monto promedio por retiro confirmado en el período.">ⓘ<span class="fn-popover"></span></span></div>
+              <div class="v" id="fnMasRetiroProm">—</div>
+            </div>
+            <div class="fn-card">
+              <div class="k">Jugadores nuevos<span class="fn-info" data-tip="Altas nuevas en ganamos durante el período.">ⓘ<span class="fn-popover"></span></span></div>
+              <div class="v" id="fnMasNuevos">—</div>
+            </div>
+            <div class="fn-card">
+              <div class="k">Retención<span class="fn-info" data-tip="De los jugadores activos en el período anterior de igual duración, qué porcentaje volvió a recargar en este período.">ⓘ<span class="fn-popover"></span></span></div>
+              <div class="v" id="fnMasRetencion">—</div>
+            </div>
+            <div class="fn-card">
+              <div class="k">Fichas en poder de jugadores<span class="fn-info" data-tip="Lo que le debés a tus jugadores hoy: la suma de todos los saldos reales en la plataforma.">ⓘ<span class="fn-popover"></span></span></div>
+              <div class="v" id="fnMasPasivo">—</div>
+            </div>
+            <div class="fn-card">
+              <div class="k">Stock de fichas<span class="fn-info" data-tip="Fichas que tenés en tu panel de ganamos para vender.">ⓘ<span class="fn-popover"></span></span></div>
+              <div class="v" id="fnMasStock">—</div>
+              <div class="sub" id="fnMasStockSub"></div>
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <!-- f) Alertas -- TODO el bloque oculto si no hay alertas -->
+      <section class="fn-bloque" id="fnBloqueAlertas" style="display:none">
         <h3>Alertas</h3>
         <div class="fn-alertas-lista" id="fnAlertas"></div>
-      </section>
-
-      <!-- 5. Export -->
-      <section class="fn-bloque">
-        <div class="fn-export-btns">
-          <button class="btn-mini-accion" id="fnBtnCsv" type="button">⬇ Exportar CSV</button>
-          <button class="btn-mini-accion" id="fnBtnJson" type="button">⬇ Exportar JSON</button>
-        </div>
       </section>
     </div>
   </div>
@@ -2170,13 +2199,20 @@
   // OJO, esto NO puede usar jget/jpost/apiFetch tal cual. apiFetch() trata
   // TODO 401/403 como "la sesión de operador venció" y muestra el login
   // general -- pero acá 403 en un GET significa "falta reverificar la
-  // contraseña de Finanzas" (nunca sesión) y 401 en verificar_password
-  // significa "contraseña de Finanzas incorrecta". fnFetch() es un fetch
-  // propio, con el mismo agregado de CSRF que apiFetch(), pero SIN el
-  // intercept automático -- cada caller interpreta 401/403 en su contexto.
+  // contraseña de Finanzas" (nunca sesión: exigir_operador() ya validó la
+  // sesión ANTES de que este archivo llegue a chequear finanzas_ok, y el
+  // chequeo de CSRF de exigir_operador() solo corre en POST, no en estos
+  // GET) y 401 en verificar_password significa "contraseña de Finanzas
+  // incorrecta" (por la misma razón: si la sesión real hubiera vencido,
+  // exigir_operador() corta antes con SU 401, este código nunca llega a
+  // correr). fnFetch() es un fetch propio, con el mismo agregado de CSRF
+  // que apiFetch(), pero SIN el intercept automático -- cada caller
+  // interpreta 401/403 en su propio contexto.
   const API_FN = API_BASE + "/crm_finanzas.php";
   let fnVerificado = false;
+  let fnFiltroActual = "hoy";
   let fnRangoActual = null;
+  const fnCharts = {};
 
   async function fnFetch(url, options){
     const opts = Object.assign({}, options || {});
@@ -2214,135 +2250,179 @@
   }
 
   /** Entrada a la vista: si ya se reverificó en esta pestaña, muestra el
-   *  contenido directo. Si no, pide la contraseña. No sobrevive a un F5 a
-   *  propósito, pero sí a navegar a otra vista y volver. */
+   *  contenido directo (recargando datos). Si no, pide la contraseña.
+   *  No sobrevive a un F5 a propósito -- fnVerificado es una variable de
+   *  módulo, no algo persistido -- pero sí sobrevive a navegar a otra
+   *  vista y volver, sin pedir contraseña dos veces en la misma pestaña. */
   function fnAbrir(){
     if(fnVerificado){
       fnMostrarContenido();
-      fnCargarTodo();
+      fnFixTooltips();
+      fnCargarFoto();
+      fnCargarTodo(fnFiltroActual);
     } else {
       fnMostrarGate();
       setTimeout(()=>{ const p=$("#fnPass"); if(p) p.focus(); }, 50);
     }
   }
 
-  function fnRangoDefault(){
-    const hasta = new Date();
-    const desde = new Date(hasta.getTime() - 29*86400000);
-    const fmt = d => d.toISOString().slice(0,10);
-    return { desde: fmt(desde), hasta: fmt(hasta) };
-  }
-  fnRangoActual = fnRangoDefault();
-
-  /** "$0,20" -- para el costo por ficha, un valor chico con centavos.
-   *  money() redondea a entero (bien para pesos grandes, mal para esto). */
+  /** "$0,20" -- para el costo por ficha, que es un valor chico con
+   *  centavos. money() redondea a entero (bien para pesos grandes, mal
+   *  para esto). */
   function fnPesos2(n){ return "$" + Number(n).toFixed(2).replace(".", ","); }
+  function fnFmtFecha(d){ return d.toISOString().slice(0, 10); }
 
-  async function fnCargarTodo(){
+  /** Traduce cada botón rápido a {desde,hasta}. "custom" no pasa por acá
+   *  -- se lee directo de los <input type=date>, ver fnAplicarRangoCustom. */
+  function fnCalcularRango(f){
+    const hoy = new Date();
+    const hoyStr = fnFmtFecha(hoy);
+    if(f === "hoy")  return { desde: hoyStr, hasta: hoyStr };
+    if(f === "ayer"){ const d = new Date(hoy.getTime() - 86400000); return { desde: fnFmtFecha(d), hasta: fnFmtFecha(d) }; }
+    if(f === "7d")   { const d = new Date(hoy.getTime() - 6*86400000);  return { desde: fnFmtFecha(d), hasta: hoyStr }; }
+    if(f === "30d")  { const d = new Date(hoy.getTime() - 29*86400000); return { desde: fnFmtFecha(d), hasta: hoyStr }; }
+    if(f === "90d")  { const d = new Date(hoy.getTime() - 89*86400000); return { desde: fnFmtFecha(d), hasta: hoyStr }; }
+    if(f === "mes")  { const d = new Date(hoy.getFullYear(), hoy.getMonth(), 1); return { desde: fnFmtFecha(d), hasta: hoyStr }; }
+    if(f === "todo") return { desde: "2020-01-01", hasta: hoyStr };
+    return { desde: hoyStr, hasta: hoyStr };
+  }
+
+  function fnFiltroRapido(f){
+    fnFiltroActual = f;
+    document.querySelectorAll("#fnFiltrosRapidos .fn-filtro-btn").forEach(b=>{
+      b.classList.toggle("on", b.getAttribute("data-f") === f);
+    });
+    fnRangoActual = fnCalcularRango(f);
     $("#fnDesde").value = fnRangoActual.desde;
     $("#fnHasta").value = fnRangoActual.hasta;
-    try{
-      await Promise.all([fnCargarFoto(), fnCargarHoy(), fnCargarRango(fnRangoActual.desde, fnRangoActual.hasta)]);
-    }catch(e){ /* fnGetJson ya mostró login o gate si hacía falta */ }
+    fnCargarTodo(f);
   }
 
+  function fnAplicarRangoCustom(){
+    const desde = $("#fnDesde").value, hasta = $("#fnHasta").value;
+    if(!desde || !hasta){ toast("Elegí las dos fechas"); return; }
+    if(desde > hasta){ toast("La fecha 'desde' no puede ser posterior a 'hasta'"); return; }
+    fnFiltroActual = "custom";
+    document.querySelectorAll("#fnFiltrosRapidos .fn-filtro-btn").forEach(b=>b.classList.remove("on"));
+    fnRangoActual = { desde, hasta };
+    fnCargarTodo("custom");
+  }
+
+  fnRangoActual = fnCalcularRango(fnFiltroActual);
+
+  /** Prende/apaga el estado de carga: deshabilita los botones de filtro
+   *  (evita doble click mientras espera) y atenúa KPIs/gráficos. No
+   *  toca el contenido de los gráficos -- Chart.js recién los pisa
+   *  cuando llega la respuesta, así que si tarda, lo que se ve mientras
+   *  tanto es el gráfico anterior atenuado, no un hueco vacío. */
+  function fnSetCargando(activo){
+    document.querySelectorAll("#fnFiltrosRapidos .fn-filtro-btn").forEach(b=>{ b.disabled = activo; });
+    $("#fnAplicarRango").disabled = activo;
+    document.querySelectorAll("#fnKpis .fn-kpi-card").forEach(c=>c.classList.toggle("fn-cargando", activo));
+    document.querySelectorAll("#fnGraficos .fn-grafico").forEach(c=>c.classList.toggle("fn-cargando", activo));
+    if(activo){
+      ["fnKpiIngresos","fnKpiRetiros","fnKpiGanancia","fnKpiActivos"].forEach(id=>{
+        const el = $("#"+id); if(el) el.textContent = "…";
+      });
+      ["fnKpiIngresosVar","fnKpiRetirosVar","fnKpiGananciaVar","fnKpiActivosVar"].forEach(id=>{
+        const el = $("#"+id); if(el) el.textContent = "…";
+      });
+    }
+  }
+
+  // ---------- KPIs + variación vs período anterior ----------
+  // Dirección "buena" por KPI (confirmado): ingresos/ganancia/activos
+  // suben = bueno; retiros suben = malo (es plata que se va). Reuso las
+  // clases CSS .up (verde) / .down (rojo) como "bueno/malo", NO como
+  // "subió/bajó" literal -- por eso retiros con dir="down" (bajaron,
+  // bien) pinta con la clase "up" (verde). Confuso al leer el nombre de
+  // la clase, pero es el mismo verde/rojo ya definidos en el CSS, sin
+  // duplicar reglas.
+  const FN_KPI_BUENO = { ingresos: "up", retiros: "down", ganancia_bruta: "up", jugadores_activos: "up" };
+
+  function fnClaseVariacion(kpi, dir){
+    if(dir === "sin_datos") return "sin_datos";
+    if(dir === "nuevo")     return "nuevo";
+    if(dir === "flat")      return "flat";
+    return dir === FN_KPI_BUENO[kpi] ? "up" : "down";
+  }
+
+  function fnTextoVariacion(v){
+    if(!v || v.dir === "sin_datos") return "—";
+    if(v.dir === "nuevo") return "Nuevo";
+    if(v.dir === "flat")  return "0.0%";
+    return (v.pct > 0 ? "+" : "") + v.pct.toFixed(1) + "%";
+  }
+
+  function fnRenderVar(idEl, kpi, variacion){
+    const el = $("#"+idEl);
+    if(!el) return;
+    // variacion===null -> filtro "todo" o auto-detectado sin período
+    // anterior razonable: "—" gris en TODAS las cards, sin cálculo.
+    if(!variacion){ el.textContent = "—"; el.className = "fn-kpi-var sin_datos"; return; }
+    const v = variacion[kpi];
+    el.textContent = fnTextoVariacion(v);
+    el.className = "fn-kpi-var " + fnClaseVariacion(kpi, v.dir);
+  }
+
+  function fnRenderKpis(rango, variacion){
+    $("#fnKpiIngresos").textContent = money(rango.ingresos.monto);
+    $("#fnKpiRetiros").textContent  = money(rango.retiros.monto);
+    $("#fnKpiGanancia").textContent = money(rango.ganancia_bruta);
+    $("#fnKpiActivos").textContent  = nf.format(rango.jugadores_activos);
+
+    fnRenderVar("fnKpiIngresosVar", "ingresos", variacion);
+    fnRenderVar("fnKpiRetirosVar", "retiros", variacion);
+    fnRenderVar("fnKpiGananciaVar", "ganancia_bruta", variacion);
+    fnRenderVar("fnKpiActivosVar", "jugadores_activos", variacion);
+  }
+
+  // ---------- Patrimonio (foto): independiente del filtro de tiempo ----------
   async function fnCargarFoto(){
     let d;
     try{ d = await fnGetJson({accion:"foto"}); }
     catch(e){ return; }
-    if(!d.ok){ toast(d.error || "Error al cargar la foto"); return; }
+    if(!d.ok){ toast(d.error || "Error al cargar el patrimonio"); return; }
     const f = d.foto;
 
-    $("#fnFotoEfectivo").textContent = money(f.efectivo_neto);
-    $("#fnFotoPasivo").textContent = money(f.fichas_jugadores);
-    $("#fnFotoPatrimonio").textContent = money(f.patrimonio_neto);
-    const cardPatrimonio = $("#fnFotoPatrimonio").closest(".fn-card");
-    cardPatrimonio.classList.toggle("pos", f.patrimonio_neto >= 0);
-    cardPatrimonio.classList.toggle("neg", f.patrimonio_neto < 0);
+    $("#fnKpiPatrimonio").textContent = money(f.patrimonio_neto);
+    $("#fnMasPasivo").textContent = money(f.fichas_jugadores);
 
+    // Dinámico según lo que devuelva el backend (no hardcodeado "N/A" en
+    // el HTML) -- listo para cuando M6.B empiece a mandar un número real,
+    // sin tocar el HTML.
     if(f.stock_fichas === null || f.stock_fichas === undefined){
-      $("#fnFotoStock").textContent = "N/A";
-      $("#fnFotoStockSub").textContent = "Pendiente integración con bot";
+      $("#fnMasStock").textContent = "N/A";
+      $("#fnMasStockSub").textContent = "Pendiente integración con bot";
     } else {
-      $("#fnFotoStock").textContent = nf.format(f.stock_fichas);
-      $("#fnFotoStockSub").textContent = "";
+      $("#fnMasStock").textContent = nf.format(f.stock_fichas);
+      $("#fnMasStockSub").textContent = "";
     }
-    if(f.valor_stock === null || f.valor_stock === undefined){
-      $("#fnFotoValorStock").textContent = "N/A";
-      $("#fnFotoValorStockSub").textContent = "Pendiente integración con bot";
-    } else {
-      $("#fnFotoValorStock").textContent = money(f.valor_stock);
-      $("#fnFotoValorStockSub").textContent = "";
+    fnFixTooltips();
+  }
+
+  // ---------- "Ver más métricas" ----------
+  function fnRenderMasMetricas(rango){
+    $("#fnMasCostoFichas").textContent = money(rango.costo_fichas);
+    $("#fnMasRecargaProm").textContent = money(rango.ingresos.promedio);
+    $("#fnMasRetiroProm").textContent  = money(rango.retiros.promedio);
+    $("#fnMasNuevos").textContent = nf.format(rango.jugadores_nuevos);
+    $("#fnMasRetencion").textContent = rango.retencion.porcentaje === null ? "—" : rango.retencion.porcentaje + "%";
+
+    // Tooltip dinámico: el costo por ficha es configurable
+    // (FINANZAS_COSTO_POR_FICHA), nunca un "0.20" fijo en el HTML.
+    const infoCosto = $("#fnMasCostoFichas").closest(".fn-card").querySelector(".fn-info");
+    if(infoCosto){
+      infoCosto.dataset.tip = "Lo que te costaron al proveedor las fichas que entregaste " +
+        "(recargas + bonos) × " + fnPesos2(rango.costo_por_ficha) + " por ficha (costo actual configurado).";
     }
-
-    $("#fnFotoFormula").innerHTML =
-      "Efectivo neto histórico = recargas acreditadas de siempre − retiros confirmados de siempre.<br>" +
-      "Fichas en poder de jugadores = suma del saldo real de todos los jugadores hoy.<br>" +
-      "Patrimonio neto = efectivo neto − fichas en poder de jugadores" +
-      (f.stock_fichas === null
-        ? " (el valor del stock todavía no se suma acá — llega con la integración del bot en el Módulo 6.B)."
-        : " + valor del stock.");
   }
 
-  async function fnCargarHoy(){
-    let d;
-    try{ d = await fnGetJson({accion:"hoy"}); }
-    catch(e){ return; }
-    if(!d.ok){ toast(d.error || "Error al cargar hoy"); return; }
-    const h = d.hoy;
-
-    $("#fnHoyRecargasMonto").textContent = money(h.recargas.monto);
-    $("#fnHoyRecargasCant").textContent = h.recargas.cantidad + (h.recargas.cantidad===1 ? " recarga" : " recargas");
-    $("#fnHoyRetirosMonto").textContent = money(h.retiros.monto);
-    $("#fnHoyRetirosCant").textContent = h.retiros.cantidad + (h.retiros.cantidad===1 ? " retiro" : " retiros");
-    $("#fnHoyBonosMonto").textContent = money(h.bonos.monto);
-    $("#fnHoyBonosCant").textContent = h.bonos.cantidad + (h.bonos.cantidad===1 ? " bono" : " bonos");
-    $("#fnHoyGanancia").textContent = money(h.ganancia);
-    const cardGanancia = $("#fnHoyGanancia").closest(".fn-card");
-    cardGanancia.classList.toggle("pos", h.ganancia >= 0);
-    cardGanancia.classList.toggle("neg", h.ganancia < 0);
-
-    $("#fnHoyFormula").innerHTML =
-      "Ganancia estimada hoy = Recargas − Retiros − Costo de fichas.<br>" +
-      "Costo de fichas hoy = (Recargas + Bonos) × " + fnPesos2(h.costo_por_ficha) +
-      " (costo por ficha configurado actualmente).";
-  }
-
-  async function fnCargarRango(desde, hasta){
-    let d;
-    try{ d = await fnGetJson({accion:"rango", desde, hasta}); }
-    catch(e){ return; }
-    if(!d.ok){ toast(d.error || "Error al cargar el período"); return; }
-    const r = d.rango;
-
-    $("#fnRangoIngresos").textContent = money(r.ingresos.monto);
-    $("#fnRangoRetiros").textContent = money(r.retiros.monto);
-    $("#fnRangoBonos").textContent = money(r.bonos.monto);
-    $("#fnRangoCostoFichas").textContent = money(r.costo_fichas);
-    $("#fnRangoGanancia").textContent = money(r.ganancia_bruta);
-    const cardGananciaR = $("#fnRangoGanancia").closest(".fn-card");
-    cardGananciaR.classList.toggle("pos", r.ganancia_bruta >= 0);
-    cardGananciaR.classList.toggle("neg", r.ganancia_bruta < 0);
-    $("#fnRangoRecargaProm").textContent = money(r.ingresos.promedio);
-    $("#fnRangoRetiroProm").textContent = money(r.retiros.promedio);
-    $("#fnRangoActivos").textContent = nf.format(r.jugadores_activos);
-    $("#fnRangoNuevos").textContent = nf.format(r.jugadores_nuevos);
-    $("#fnRangoRetencion").textContent = r.retencion.porcentaje === null ? "—" : r.retencion.porcentaje + "%";
-
-    $("#fnRangoFormula").innerHTML =
-      "Costo de fichas del período = (Ingresos + Bonos) × " + fnPesos2(r.costo_por_ficha) +
-      " (costo por ficha configurado actualmente).<br>" +
-      "Ganancia bruta = Ingresos − Retiros − Costo de fichas.<br>" +
-      "Retención = de los jugadores activos en el período anterior de igual duración" +
-      (r.retencion.activos_periodo_anterior
-        ? " (" + r.retencion.activos_periodo_anterior + "), cuántos volvieron a recargar en este período."
-        : ", pero ese período anterior no tuvo ningún jugador activo — no se puede calcular.");
-
-    fnPintarAlertas(d.alertas, d.umbrales);
-  }
-
-  // Cada tipo de alerta arma su propio texto interpolando el umbral REAL
-  // que devuelve el backend (umbrales.*) -- nunca un número escrito a mano.
+  // ---------- Alertas: todo el bloque se oculta si no hay ninguna ----------
+  // Cada tipo arma su propio texto interpolando el umbral REAL que
+  // devuelve el backend (umbrales.*) -- nunca un número escrito a mano
+  // acá, para que cambiar la constante en config.local.php no deje
+  // textos desactualizados dando vueltas.
   const FN_ALERTA_TXT = {
     mas_retiros_que_recargas: (a, u) =>
       `@${esc(a.usuario)} retiró ${money(a.retiros)} y recargó ${money(a.recargas)} en el período — ` +
@@ -2353,11 +2433,13 @@
       `Retiro pendiente de @${esc(a.usuario)} por ${money(a.monto)} (estado: ${esc(a.estado)}) — revisión especial (umbral: ${money(u.retiro_muy_grande)}).`,
   };
 
-  function fnPintarAlertas(alertas, umbrales){
+  function fnRenderAlertas(alertas, umbrales){
     if(!alertas || !alertas.length){
-      $("#fnAlertas").innerHTML = `<div class="nouser">Sin alertas en este período.</div>`;
+      $("#fnBloqueAlertas").style.display = "none";
+      $("#fnAlertas").innerHTML = "";
       return;
     }
+    $("#fnBloqueAlertas").style.display = "";
     $("#fnAlertas").innerHTML = alertas.map(a=>{
       const clase = a.tipo==="retiro_muy_grande" ? "rojo" : (a.tipo==="retiro_grande" ? "amarillo" : "info");
       const tag   = a.tipo==="retiro_muy_grande" ? "MUY GRANDE" : (a.tipo==="retiro_grande" ? "GRANDE" : "GANADOR");
@@ -2365,6 +2447,143 @@
       const texto = fn ? fn(a, umbrales) : "Alerta";
       return `<div class="fn-alerta ${clase}"><span>${texto}</span><span class="fn-alerta-tag">${tag}</span></div>`;
     }).join("");
+  }
+
+  // ---------- Gráficos (Chart.js) ----------
+  /** Lee un color ya resuelto (no "var(--x)" crudo -- Canvas 2D no lo
+   *  entiende) del tema activo en este momento. Si se cambia de tema
+   *  claro/oscuro DESPUÉS de dibujar, los gráficos ya pintados no se
+   *  actualizan solos (se resuelven de nuevo recién en el próximo
+   *  render) -- limitación conocida, no vale la pena un observer para
+   *  esto en un panel interno. */
+  function fnColor(varName){
+    return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+  }
+
+  function fnChartOpts(cfg){
+    cfg = cfg || {};
+    const leyenda = cfg.leyenda !== false;
+    const grid = fnColor("--line");
+    const texto = fnColor("--muted");
+    return {
+      maintainAspectRatio: false,
+      responsive: true,
+      animation: { duration: 250 },
+      plugins: {
+        legend: { display: leyenda, position: "bottom", labels: { color: texto, boxWidth: 12, font: { size: 11 } } },
+        tooltip: {
+          enabled: true, backgroundColor: fnColor("--panel3"), titleColor: fnColor("--txt"),
+          bodyColor: fnColor("--txt"), borderColor: fnColor("--line"), borderWidth: 1,
+        },
+      },
+      scales: {
+        x: { ticks: { color: texto, font: { size: 10 }, maxRotation: 0, autoSkip: true }, grid: { color: grid } },
+        y: { ticks: { color: texto, font: { size: 10 } }, grid: { color: grid } },
+      },
+    };
+  }
+
+  function fnDestruirCharts(){
+    Object.keys(fnCharts).forEach(k=>{
+      if(fnCharts[k]){ fnCharts[k].destroy(); fnCharts[k] = null; }
+    });
+  }
+
+  function fnRenderGraficos(graficos){
+    // Si el CDN no cargó (sin internet, bloqueado, lo que sea), no
+    // rompemos el resto del dashboard -- los KPIs/alertas siguen andando.
+    if(typeof Chart === "undefined"){ return; }
+    fnDestruirCharts();
+
+    const dias  = graficos.por_dia.map(d => d.fecha);
+    const horas = graficos.por_hora.map(h => h.hora + "h");
+
+    fnCharts.flujo = new Chart($("#fnChartFlujo"), {
+      type: "line",
+      data: { labels: dias, datasets: [
+        { label:"Ingresos", data: graficos.por_dia.map(d=>d.ingresos), borderColor: fnColor("--green2"), backgroundColor: fnColor("--green2"), tension:.25, pointRadius:2 },
+        { label:"Retiros",  data: graficos.por_dia.map(d=>d.retiros),  borderColor: fnColor("--red"),    backgroundColor: fnColor("--red"),    tension:.25, pointRadius:2 },
+      ]},
+      options: fnChartOpts({ leyenda: true }),
+    });
+
+    fnCharts.ganancia = new Chart($("#fnChartGanancia"), {
+      type: "bar",
+      data: { labels: dias, datasets: [
+        { label:"Ganancia", data: graficos.por_dia.map(d=>d.ganancia),
+          backgroundColor: graficos.por_dia.map(d => d.ganancia >= 0 ? fnColor("--green2") : fnColor("--red")) },
+      ]},
+      options: fnChartOpts({ leyenda: false }),
+    });
+
+    fnCharts.hora = new Chart($("#fnChartHora"), {
+      type: "bar",
+      data: { labels: horas, datasets: [
+        { label:"Movimientos", data: graficos.por_hora.map(h=>h.cantidad), backgroundColor: fnColor("--violet") },
+      ]},
+      options: fnChartOpts({ leyenda: false }),
+    });
+
+    fnCharts.bonos = new Chart($("#fnChartBonos"), {
+      type: "bar",
+      data: { labels: dias, datasets: [
+        { label:"Bonos", data: graficos.por_dia.map(d=>d.bonos), backgroundColor: fnColor("--orange2") },
+      ]},
+      options: fnChartOpts({ leyenda: false }),
+    });
+
+    fnCharts.activos = new Chart($("#fnChartActivos"), {
+      type: "line",
+      data: { labels: dias, datasets: [
+        { label:"Activos", data: graficos.por_dia.map(d=>d.activos), borderColor: fnColor("--blue"), backgroundColor: fnColor("--blue"), tension:.25, pointRadius:2 },
+      ]},
+      options: fnChartOpts({ leyenda: false }),
+    });
+  }
+
+  // ---------- fix de tooltips (bug: el popover interno quedaba vacío) ----------
+  function fnFixTooltips(){
+    document.querySelectorAll("#viewFinanzas .fn-info[data-tip]").forEach(el=>{
+      const pop = el.querySelector(".fn-popover");
+      if(pop) pop.textContent = el.dataset.tip;
+    });
+  }
+
+  // ---------- orquestador: rango + gráficos en paralelo ----------
+  // Promise.allSettled (no Promise.all): si graficos falla pero rango
+  // anda bien (o viceversa), la mitad que sí llegó se pinta igual --
+  // "que no rompa la UI" aplica también entre estas dos llamadas, no
+  // solo a errores de red sueltos.
+  async function fnCargarTodo(filtro){
+    const desde = fnRangoActual.desde, hasta = fnRangoActual.hasta;
+    fnSetCargando(true);
+
+    const [rRango, rGraficos] = await Promise.allSettled([
+      fnGetJson({ accion: "rango", desde, hasta, filtro }),
+      fnGetJson({ accion: "graficos", desde, hasta }),
+    ]);
+
+    if(rRango.status === "fulfilled" && rRango.value.ok){
+      const d = rRango.value;
+      fnRenderKpis(d.rango, d.variacion);
+      fnRenderMasMetricas(d.rango);
+      fnRenderAlertas(d.alertas, d.umbrales);
+    } else if(rRango.status === "fulfilled"){
+      toast(rRango.value.error || "Error al cargar el período");
+    } else if(!["sesion_requerida","finanzas_no_verificado"].includes(rRango.reason && rRango.reason.message)){
+      toast("Error al cargar Finanzas. Probá de nuevo.");
+    }
+
+    if(rGraficos.status === "fulfilled" && rGraficos.value.ok){
+      fnRenderGraficos(rGraficos.value.graficos);
+    } else if(rGraficos.status === "fulfilled"){
+      toast(rGraficos.value.error || "Error al cargar los gráficos");
+    } else if(!["sesion_requerida","finanzas_no_verificado"].includes(rGraficos.reason && rGraficos.reason.message)){
+      toast("Error al cargar los gráficos.");
+    }
+
+    fnFixTooltips();
+    fnSetCargando(false);
   }
 
   // ---------- gate: reverificación de contraseña ----------
@@ -2388,27 +2607,27 @@
     btn.disabled = false; btn.textContent = "Ingresar";
     if(d.ok){
       fnMostrarContenido();
-      fnCargarTodo();
+      fnFixTooltips();
+      fnCargarFoto();
+      fnCargarTodo(fnFiltroActual);
     } else {
       $("#fnPassError").textContent = d.error || "No se pudo verificar";
     }
   });
   $("#fnPass").addEventListener("keydown", e=>{ if(e.key==="Enter") $("#fnPassBtn").click(); });
 
-  // ---------- período ----------
-  $("#fnAplicarRango").addEventListener("click", ()=>{
-    const desde = $("#fnDesde").value, hasta = $("#fnHasta").value;
-    if(!desde || !hasta){ toast("Elegí las dos fechas"); return; }
-    if(desde > hasta){ toast("La fecha 'desde' no puede ser posterior a 'hasta'"); return; }
-    fnRangoActual = { desde, hasta };
-    fnCargarRango(desde, hasta);
+  // ---------- filtros de tiempo ----------
+  $("#fnFiltrosRapidos").addEventListener("click", e=>{
+    const b = e.target.closest(".fn-filtro-btn"); if(!b || b.disabled) return;
+    fnFiltroRapido(b.getAttribute("data-f"));
   });
+  $("#fnAplicarRango").addEventListener("click", fnAplicarRangoCustom);
 
-  // ---------- export ----------
-  $("#fnBtnCsv").addEventListener("click", async ()=>{
+  // ---------- export (solo arriba, en el header) ----------
+  async function fnExportarCsv(){
     const desde = $("#fnDesde").value, hasta = $("#fnHasta").value;
     if(!desde || !hasta){ toast("Elegí un período primero"); return; }
-    const btn = $("#fnBtnCsv"); const txt = btn.textContent;
+    const btn = $("#fnBtnCsvTop"); const txt = btn.textContent;
     btn.disabled = true; btn.innerHTML = '<span class="sp"></span> Generando…';
     try{
       const p = new URLSearchParams({accion:"export_csv", desde, hasta});
@@ -2424,18 +2643,20 @@
       URL.revokeObjectURL(a.href);
     }catch(e){ toast("No se pudo generar el CSV."); }
     btn.disabled = false; btn.textContent = txt;
-  });
+  }
 
-  $("#fnBtnJson").addEventListener("click", async ()=>{
+  async function fnExportarJson(){
     const desde = $("#fnDesde").value, hasta = $("#fnHasta").value;
     if(!desde || !hasta){ toast("Elegí un período primero"); return; }
-    const btn = $("#fnBtnJson"); const txt = btn.textContent;
+    const btn = $("#fnBtnJsonTop"); const txt = btn.textContent;
     btn.disabled = true; btn.innerHTML = '<span class="sp"></span> Generando…';
     let d;
     try{ d = await fnGetJson({accion:"export_json", desde, hasta}); }
     catch(e){ btn.disabled = false; btn.textContent = txt; return; }
     btn.disabled = false; btn.textContent = txt;
     if(!d.ok){ toast(d.error || "No se pudo generar el JSON."); return; }
+    // Sin el "ok" de transporte HTTP -- lo que se descarga es la
+    // estructura pensada para pegar en un LLM, tal cual se definió.
     const { ok, ...limpio } = d;
     const blob = new Blob([JSON.stringify(limpio, null, 2)], {type:"application/json"});
     const a = document.createElement("a");
@@ -2443,7 +2664,10 @@
     a.download = "finanzas_" + desde + "_" + hasta + ".json";
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(a.href);
-  });
+  }
+
+  $("#fnBtnCsvTop").addEventListener("click", fnExportarCsv);
+  $("#fnBtnJsonTop").addEventListener("click", fnExportarJson);
 
   // ---------- tooltip: hover en desktop (CSS puro), click en mobile ----------
   $("#viewFinanzas").addEventListener("click", e=>{
@@ -2457,13 +2681,6 @@
     if(!e.target.closest(".fn-info")){
       document.querySelectorAll("#viewFinanzas .fn-info.open").forEach(el=>el.classList.remove("open"));
     }
-  });
-
-  // El texto de cada tooltip vive en data-tip; se copia una vez al .fn-popover
-  // (el HTML lo deja vacío). Sin esto los tooltips saldrían en blanco.
-  document.querySelectorAll("#viewFinanzas .fn-info").forEach(info=>{
-    const pop = info.querySelector(".fn-popover");
-    if(pop && !pop.textContent) pop.textContent = info.getAttribute("data-tip") || "";
   });
 
   // ---------- modal cargar/retirar/bono ----------
