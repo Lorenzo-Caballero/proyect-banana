@@ -1602,13 +1602,14 @@
   "#gpr-fab-tag svg{width:10px;height:10px;flex:none;fill:none;stroke:#E3B14A;stroke-width:2.8;stroke-linecap:round;stroke-linejoin:round;"+
   "animation:gpr-flecha-baja 1.4s ease-in-out infinite}"+
   "@keyframes gpr-flecha-baja{0%,100%{transform:translateY(-2px);opacity:.55}50%{transform:translateY(2px);opacity:1}}"+
-  /* el globo late SOLO cuando queda un giro disponible hoy (.listo);
-     ya reclamado hoy = quieto, para no insistir de gusto */
+  /* el globo late SIEMPRE (zoom in/out + anillo), igual que el FAB del chat,
+     para llamar la atención de forma constante */
   "#gpr-fab{position:relative;width:48px;height:48px;border:0;border-radius:50%;cursor:pointer;"+
   "background:linear-gradient(145deg,#F0C567,#E3B14A);color:#4a2c00;display:grid;"+
-  "place-items:center;box-shadow:0 8px 22px rgba(227,177,74,.45);padding:0}"+
+  "place-items:center;box-shadow:0 8px 22px rgba(227,177,74,.45);padding:0;"+
+  "animation:gpr-latido 1.6s ease-in-out infinite}"+
   "#gpr-fab svg{width:26px;height:26px}"+
-  "#gpr-fab.listo{animation:gpr-latido 1.6s ease-in-out infinite}"+
+  "#gpr-fab.quieto{animation:none}"+     /* pausado con el modal abierto */
   "@keyframes gpr-latido{"+
   "0%{transform:scale(1);box-shadow:0 8px 20px rgba(227,177,74,.45),0 0 0 0 rgba(227,177,74,.55)}"+
   "50%{transform:scale(1.12);box-shadow:0 10px 24px rgba(227,177,74,.5),0 0 0 14px rgba(227,177,74,0)}"+
@@ -1706,11 +1707,13 @@
   function abrirRuleta(){
     ov.classList.add("show");
     lss(RULETA_DIA, new Date().toISOString().slice(0, 10));
-    // Ya la va a jugar ahora: el palpito y el letrero dejaron de tener sentido.
-    fabR.classList.remove("listo");
-    tagR.classList.add("oculto");
+    // Con el modal abierto no tiene sentido que el globo siga latiendo detrás.
+    fabR.classList.add("quieto");
   }
-  function cerrarRuleta(){ ov.classList.remove("show"); }
+  function cerrarRuleta(){
+    ov.classList.remove("show");
+    fabR.classList.remove("quieto");   // vuelve a latir
+  }
 
   fabR.addEventListener("click", abrirRuleta);
   $("gpr-x").addEventListener("click", cerrarRuleta);
@@ -1802,10 +1805,10 @@
     // El FAB tiene que aparecer SIEMPRE, pase lo que pase con la API o con
     // el dibujo de la rueda -- eso se decide acá, no adentro del .then() de
     // la red, para que un fetch caído o un error de dibujo no lo tumben.
+    // El palpito y el letrero van SIEMPRE (llaman la atención constante); lo
+    // único que depende del día es si la ruleta se abre sola.
     fabRWrap.classList.add("on");
     var yaJugoHoy = ls(RULETA_DIA) === new Date().toISOString().slice(0, 10);
-    fabR.classList.toggle("listo", !yaJugoHoy);
-    tagR.classList.toggle("oculto", yaJugoHoy);
 
     fetch(API_RULETA)
       .then(function (r){ return r.json(); })
