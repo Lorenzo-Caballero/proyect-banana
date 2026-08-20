@@ -81,9 +81,32 @@
   .msg{font-size:13px;margin-top:12px;min-height:18px}
   .msg.err{color:var(--bad)} .msg.ok{color:var(--ok)}
   .creado{background:var(--card2);border:1px solid var(--line);border-radius:10px;
-          padding:14px;margin-top:16px;font-family:var(--mono);font-size:12.5px;color:var(--mut);
-          white-space:pre-wrap;word-break:break-all}
+          padding:14px;margin-top:16px;font-size:13px;color:var(--tx)}
+  .creado dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:6px 12px;align-items:start}
+  .creado dt{color:var(--faint);font-family:var(--mono);font-size:11px;text-transform:uppercase;
+             letter-spacing:.05em;white-space:nowrap;padding-top:2px}
+  .creado dd{margin:0;font-family:var(--mono);font-size:12.5px;word-break:break-all}
+  .creado dd a{color:var(--ok);text-decoration:none}
+  .creado dd a:hover{text-decoration:underline}
   .hide{display:none}
+
+  /* toggle "tipo de cliente" -- reemplaza el checkbox suelto */
+  .tipo-toggle{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:14px 0 5px}
+  .tipo-opt{position:relative;border:1px solid var(--line);background:var(--card2);border-radius:10px;
+            padding:11px 13px;cursor:pointer;transition:.12s}
+  .tipo-opt:hover{border-color:var(--vio2)}
+  .tipo-opt input{position:absolute;opacity:0;pointer-events:none}
+  .tipo-opt b{display:block;font-size:13px;font-weight:650;color:var(--tx)}
+  .tipo-opt span{display:block;font-size:11.5px;color:var(--mut);margin-top:2px;line-height:1.35}
+  .tipo-opt.on{border-color:var(--vio);background:color-mix(in srgb,var(--vio) 12%,var(--card2))}
+  .tipo-opt.on b{color:var(--vio)}
+
+  /* preview de la URL final, en vivo mientras se completa el form */
+  .url-preview{display:flex;align-items:center;gap:8px;background:var(--card2);border:1px dashed var(--line);
+               border-radius:10px;padding:10px 13px;margin-top:6px;font-family:var(--mono);font-size:13px;
+               color:var(--mut);overflow-x:auto;white-space:nowrap}
+  .url-preview b{color:var(--gold);font-weight:600}
+  .url-preview.vacio{color:var(--faint);font-style:italic}
 </style>
 </head>
 <body>
@@ -137,14 +160,31 @@
     <p class="sub">Lo obligatorio es nombre y dominio. El resto se puede completar después.</p>
     <div class="grid">
       <div class="full"><label>Nombre *</label><input id="fNombre" class="field" placeholder="Casino del Fauno"></div>
+
       <div class="full">
-        <label style="display:flex;align-items:center;gap:8px;text-transform:none;font-family:inherit;font-size:14px;color:var(--tx)">
-          <input type="checkbox" id="fSinDominio" style="width:auto">
-          Cliente sin dominio propio (entra por /slug/ bajo el dominio del operador)
-        </label>
+        <label>Tipo de cliente</label>
+        <div class="tipo-toggle">
+          <label class="tipo-opt on" id="tipoPropio">
+            <input type="radio" name="tipoCliente" value="propio" checked>
+            <b>Dominio propio</b>
+            <span>Tiene su propio dominio (ej. casinofauno.com)</span>
+          </label>
+          <label class="tipo-opt" id="tipoPath">
+            <input type="radio" name="tipoCliente" value="path">
+            <b>Sin dominio propio</b>
+            <span>Entra por un path bajo tu dominio (ej. ganamoscrm.online/fauno)</span>
+          </label>
+        </div>
       </div>
+
       <div class="full"><label id="lblDominio">Dominio *</label><input id="fDominio" class="field" placeholder="casinofauno.com"></div>
       <div class="full hide" id="wrapSlug"><label>Slug (path) *</label><input id="fSlug" class="field" placeholder="fauno"></div>
+
+      <div class="full">
+        <label>URL final del cliente</label>
+        <div class="url-preview vacio" id="urlPreview">completá el dominio para ver la URL</div>
+      </div>
+
       <div><label>Agente ganamos — usuario</label><input id="fAgUser" class="field"></div>
       <div><label>Agente ganamos — clave</label><input id="fAgPass" class="field" type="password"></div>
       <div><label>Cobro — alias</label><input id="fAlias" class="field"></div>
@@ -246,9 +286,10 @@
       cs.forEach(function(c){
         var tr = document.createElement("tr");
         var domTxt = Number(c.path_tenant) ? (c.dominio + "/" + c.slug) : c.dominio;
+        var domUrl = "https://" + domTxt + "/crm.html";
         tr.innerHTML =
           '<td><strong>'+esc(c.nombre)+'</strong><br><span style="color:var(--faint);font-size:12px">'+esc(c.slug)+'</span></td>'+
-          '<td><span class="dom">'+esc(domTxt)+'</span></td>'+
+          '<td><a class="dom" href="'+esc(domUrl)+'" target="_blank" rel="noopener">'+esc(domTxt)+'</a></td>'+
           '<td>'+esc(c.cobro_alias||"—")+'</td>'+
           '<td>'+esc(c.coins_por_peso)+'</td>'+
           '<td><span class="pill '+esc(c.estado)+'">'+esc(c.estado)+'</span></td>'+
@@ -324,20 +365,52 @@
   }
 
   // ---------- crear ----------
+  function esSinDominio(){
+    var r = document.querySelector('input[name="tipoCliente"]:checked');
+    return !!r && r.value === "path";
+  }
   function abrir(){
     $("ov").classList.add("on"); $("crMsg").textContent=""; $("crOut").classList.add("hide");
-    $("fSinDominio").checked = false; toggleSinDominio();
+    document.querySelector('input[name="tipoCliente"][value="propio"]').checked = true;
+    aplicarTipoCliente();
   }
   function cerrar(){ $("ov").classList.remove("on"); }
-  function toggleSinDominio(){
-    var on = $("fSinDominio").checked;
+
+  function aplicarTipoCliente(){
+    var on = esSinDominio();
+    $("tipoPropio").classList.toggle("on", !on);
+    $("tipoPath").classList.toggle("on", on);
     $("wrapSlug").classList.toggle("hide", !on);
     $("lblDominio").textContent = on ? "Dominio del operador *" : "Dominio *";
     $("fDominio").placeholder = on ? "ganamoscrm.online" : "casinofauno.com";
+    actualizarPreview();
   }
+
+  function slugify(s){
+    return String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"")
+      .replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");
+  }
+
+  function actualizarPreview(){
+    var pv = $("urlPreview");
+    var dominio = $("fDominio").value.trim().replace(/^https?:\/\//i,"").replace(/\/+$/,"");
+    var on = esSinDominio();
+    var slug = on ? slugify($("fSlug").value || $("fNombre").value) : "";
+
+    if (!dominio || (on && !slug)){
+      pv.className = "url-preview vacio";
+      pv.textContent = on ? "completá dominio y slug para ver la URL" : "completá el dominio para ver la URL";
+      return;
+    }
+    var url = on ? ("https://" + dominio + "/" + slug + "/crm.html")
+                 : ("https://" + dominio + "/crm.html");
+    pv.className = "url-preview";
+    pv.innerHTML = "Así va a entrar el agente: <b>" + esc(url) + "</b>";
+  }
+
   function crear(){
     var msg = $("crMsg"); msg.className="msg"; msg.textContent="creando...";
-    var sinDominio = $("fSinDominio").checked;
+    var sinDominio = esSinDominio();
     api("crear", {
       nombre:$("fNombre").value, dominio:$("fDominio").value,
       path_tenant: sinDominio, slug: sinDominio ? $("fSlug").value : "",
@@ -348,12 +421,15 @@
       if (res.j.ok){
         msg.className="msg ok"; msg.textContent="¡Cliente creado!";
         var out = $("crOut"); out.classList.remove("hide");
-        out.textContent =
-          "slug: "+res.j.slug+"\n"+
-          "URL del CRM: "+res.j.url+"\n"+
-          "BOT_API_KEY (guardala, va en el .env del bot de este cliente):\n"+res.j.bot_api_key;
+        out.innerHTML =
+          '<dl>'+
+          '<dt>Slug</dt><dd>'+esc(res.j.slug)+'</dd>'+
+          '<dt>URL del CRM</dt><dd><a href="'+esc(res.j.url)+'" target="_blank" rel="noopener">'+esc(res.j.url)+'</a></dd>'+
+          '<dt>Bot API key</dt><dd>'+esc(res.j.bot_api_key)+'</dd>'+
+          '</dl>';
         ["fNombre","fDominio","fSlug","fAgUser","fAgPass","fAlias","fCbu","fTit","fCohere","fNotas"].forEach(function(i){$(i).value="";});
-        $("fSinDominio").checked = false; toggleSinDominio();
+        document.querySelector('input[name="tipoCliente"][value="propio"]').checked = true;
+        aplicarTipoCliente();
         cargar();
       } else {
         msg.className="msg err"; msg.textContent = res.j.error || "no se pudo crear";
@@ -370,7 +446,12 @@
   $("btnSalir").onclick = salir;
   $("btnNuevo").onclick = abrir;
   $("btnCerrar").onclick = cerrar;
-  $("fSinDominio").onchange = toggleSinDominio;
+  [].slice.call(document.querySelectorAll('input[name="tipoCliente"]')).forEach(function(r){
+    r.addEventListener("change", aplicarTipoCliente);
+  });
+  ["fDominio","fSlug","fNombre"].forEach(function(i){
+    $(i).addEventListener("input", actualizarPreview);
+  });
   $("btnCrear").onclick = crear;
   $("ov").addEventListener("click", function(e){ if(e.target === $("ov")) cerrar(); });
   $("opCerrar").onclick = cerrarOperadores;
