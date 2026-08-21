@@ -185,11 +185,14 @@
   /* ---- modal / toast ---- */
   .back{position:fixed;inset:0;background:rgba(6,9,20,.66);backdrop-filter:blur(3px);display:none;place-items:center;z-index:50;padding:20px}
   .back.on{display:grid}
-  .modal{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:24px;width:100%;max-width:370px;box-shadow:var(--shadow)}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:24px;width:100%;max-width:370px;
+         box-shadow:var(--shadow);max-height:calc(100vh - 40px);overflow-y:auto}
   .modal h3{margin:0 0 4px;font-size:18px} .modal p{color:var(--muted);margin:0 0 16px;font-size:13px}
   .modal label{display:block;font-size:12px;color:var(--muted);margin:12px 0 5px}
-  .modal input{width:100%;padding:12px;background:var(--panel2);border:1px solid var(--line);border-radius:11px;color:var(--txt);outline:none}
-  .modal input:focus{border-color:var(--violet);box-shadow:0 0 0 3px var(--violetSoft)}
+  .modal input,.modal textarea{width:100%;padding:12px;background:var(--panel2);border:1px solid var(--line);
+                                border-radius:11px;color:var(--txt);outline:none;font-family:inherit}
+  .modal input:focus,.modal textarea:focus{border-color:var(--violet);box-shadow:0 0 0 3px var(--violetSoft)}
+  .modal input:disabled{opacity:.6;cursor:not-allowed}
   .mbtns{display:flex;gap:9px;margin-top:20px}
   .mbtns button{flex:1;padding:12px;border-radius:11px;border:none;font-weight:700;font-size:14px}
   .mbtns .ok{background:linear-gradient(180deg,var(--violet2),var(--violet));color:#fff}
@@ -320,6 +323,11 @@
     .ag-wrap{padding:16px 14px 32px}
     .ag-card{flex-wrap:wrap}
     .ag-acciones{width:100%;justify-content:flex-end;margin-top:4px}
+    /* modales en general: menos margen perdido en pantallas angostas */
+    .back{padding:10px}
+    .modal{padding:18px;border-radius:15px;max-height:calc(100vh - 20px)}
+    .ag-rol-toggle{grid-template-columns:1fr}
+    .ag-modal-head{gap:10px}
   }
 
   /* ---- operador logueado (Fase 0.5) ---- */
@@ -687,6 +695,27 @@
   .ag-estado-pill.inactivo{background:var(--redSoft);color:var(--red)}
   .ag-modal-sub{margin:2px 0 16px;color:var(--muted);font-size:13px;line-height:1.5}
   .ag-modal-hint{margin:6px 0 0;font-size:12px;color:var(--muted)}
+  .ag-vos{font-size:11px;font-weight:600;color:var(--muted);margin-left:2px}
+
+  /* modal de agente: header con ícono + título/subtítulo, más aire */
+  .ag-modal{max-width:420px}
+  .ag-modal-head{display:flex;gap:12px;align-items:flex-start;margin-bottom:18px}
+  .ag-modal-ico{flex:none;width:38px;height:38px;border-radius:11px;background:var(--violetSoft);
+                color:var(--violet2);display:grid;place-items:center}
+  .ag-modal-ico svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  .ag-modal-head h3{margin:0 0 3px}
+  .ag-modal-head .ag-modal-sub{margin:0;max-width:none}
+
+  /* selector de rol: dos tarjetas, mismo patrón que .cb-field */
+  .ag-rol-toggle{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:2px 0 4px}
+  .ag-rol-opt{position:relative;border:1px solid var(--line);background:var(--panel2);border-radius:11px;
+              padding:11px 12px;cursor:pointer;transition:.15s}
+  .ag-rol-opt:hover{border-color:var(--line2)}
+  .ag-rol-opt input{position:absolute;opacity:0;pointer-events:none}
+  .ag-rol-opt b{display:block;font-size:13px;font-weight:700;color:var(--txt)}
+  .ag-rol-opt span{display:block;font-size:11.5px;color:var(--muted);margin-top:2px;line-height:1.35}
+  .ag-rol-opt.on{border-color:var(--violet);background:var(--violetSoft)}
+  .ag-rol-opt.on b{color:var(--violet2)}
 
   /* difusiones programadas, dentro del modal de Push */
   .n-programadas{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
@@ -1276,18 +1305,54 @@
 
   <!-- Alta / reset de agente -->
   <div class="back" id="backAgente">
-    <div class="modal">
-      <h3 id="agModalTitulo">Nuevo agente</h3>
-      <p class="ag-modal-sub" id="agModalSub">Se crea con rol de agente: atiende chats, no gestiona otros agentes.</p>
+    <div class="modal ag-modal">
+      <div class="ag-modal-head">
+        <div class="ag-modal-ico" id="agModalIco">
+          <svg viewBox="0 0 24 24"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/></svg>
+        </div>
+        <div>
+          <h3 id="agModalTitulo">Nuevo agente</h3>
+          <p class="ag-modal-sub" id="agModalSub">Atiende chats junto al resto del equipo.</p>
+        </div>
+      </div>
+
       <label for="agUsuario">Usuario</label>
       <input id="agUsuario" type="text" autocomplete="off" placeholder="Ej: facu, agustina…">
-      <label for="agPassword">Contraseña</label>
+
+      <label for="agPassword" id="agPasswordLabel">Contraseña</label>
       <input id="agPassword" type="text" autocomplete="off" placeholder="Mínimo 6 caracteres">
       <p class="ag-modal-hint" id="agModalHint"></p>
+
+      <label>Rol</label>
+      <div class="ag-rol-toggle">
+        <label class="ag-rol-opt on" data-rol="agente">
+          <input type="radio" name="agRol" value="agente" checked>
+          <b>Agente</b>
+          <span>Atiende chats.</span>
+        </label>
+        <label class="ag-rol-opt" data-rol="admin">
+          <input type="radio" name="agRol" value="admin">
+          <b>Admin</b>
+          <span>Además gestiona agentes.</span>
+        </label>
+      </div>
+
       <div id="agModalMsg" class="msg"></div>
       <div class="mbtns">
         <button class="no" id="agCancelar" type="button">Cancelar</button>
         <button class="ok" id="agGuardar" type="button">Crear agente</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirmar eliminación de un agente -->
+  <div class="back" id="backAgenteBorrar">
+    <div class="modal">
+      <h3>Eliminar agente</h3>
+      <p class="ag-modal-sub">¿Eliminar a <b id="agBorrarNombre">—</b>? No se puede deshacer. Sus mensajes y auditoría anteriores quedan igual, pero ya no va a poder entrar al CRM.</p>
+      <div class="mbtns">
+        <button class="no" id="agBorrarCancelar" type="button">Cancelar</button>
+        <button class="ok peligro" id="agBorrarOk" type="button">Eliminar</button>
       </div>
     </div>
   </div>
@@ -3327,21 +3392,32 @@
     if(!lista.length){ cont.innerHTML = `<div class="ag-vacio">Todavía no hay agentes cargados.</div>`; return; }
     cont.innerHTML = lista.map(a=>{
       const rolTxt = a.rol==="admin" ? "Admin" : "Agente";
-      const puedeTocar = a.username !== OPERADOR;   // nunca desactivarse a uno mismo
+      const esYo = a.username === OPERADOR;
+      const puedeTocar = !esYo;   // nunca desactivarse/eliminarse/editarse el rol a uno mismo
       return `<div class="ag-card ${a.activo?"":"inactivo"}" data-user="${esc(a.username)}">
         <div class="ag-av" style="background:${agColorDe(a.username)}">${esc(agIniciales(a.username))}</div>
         <div class="ag-info">
-          <div class="ag-nombre">${esc(a.username)}<span class="ag-rol ${a.rol}">${rolTxt}</span></div>
+          <div class="ag-nombre">${esc(a.username)}${esYo?' <span class="ag-vos">(vos)</span>':''}<span class="ag-rol ${a.rol}">${rolTxt}</span></div>
           <div class="ag-meta">${esc(agFechaCorta(a.ultimo_login))}</div>
         </div>
         <div class="ag-acciones">
           <span class="ag-estado-pill ${a.activo?"activo":"inactivo"}">${a.activo?"Activo":"Inactivo"}</span>
-          ${puedeTocar ? `<button class="btn-mini-accion${a.activo?" peligro":" exito"}" data-toggle="${esc(a.username)}" data-a="${a.activo?0:1}" type="button">${a.activo?"Desactivar":"Activar"}</button>` : ""}
+          <button class="btn-mini-accion" data-editar="${esc(a.username)}" data-rol="${esc(a.rol)}" type="button">Editar</button>
+          ${puedeTocar ? `
+            <button class="btn-mini-accion${a.activo?" peligro":" exito"}" data-toggle="${esc(a.username)}" data-a="${a.activo?0:1}" type="button">${a.activo?"Desactivar":"Activar"}</button>
+            <button class="btn-mini-accion peligro" data-borrar="${esc(a.username)}" type="button">Eliminar</button>
+          ` : ""}
         </div>
       </div>`;
     }).join("");
     cont.querySelectorAll("[data-toggle]").forEach(b=>{
       b.addEventListener("click", ()=> toggleAgenteEstado(b.getAttribute("data-toggle"), +b.getAttribute("data-a")));
+    });
+    cont.querySelectorAll("[data-editar]").forEach(b=>{
+      b.addEventListener("click", ()=> agAbrirModal(b.getAttribute("data-editar"), b.getAttribute("data-rol")));
+    });
+    cont.querySelectorAll("[data-borrar]").forEach(b=>{
+      b.addEventListener("click", ()=> agAbrirBorrar(b.getAttribute("data-borrar")));
     });
   }
 
@@ -3351,30 +3427,87 @@
     else { toast(d.error || "No se pudo cambiar"); }
   }
 
-  function agAbrirModal(){
-    $("#agUsuario").value = ""; $("#agPassword").value = "";
+  // ---------- alta / edición (mismo modal) ----------
+  let agEditando = null;   // username si estamos editando, null si es alta
+
+  function agSetRol(rol){
+    document.querySelectorAll(".ag-rol-opt").forEach(el=>{
+      const on = el.getAttribute("data-rol") === rol;
+      el.classList.toggle("on", on);
+      el.querySelector("input").checked = on;
+    });
+  }
+
+  function agAbrirModal(usuario, rol){
+    agEditando = usuario || null;
+    const editando = !!agEditando;
+    $("#agModalTitulo").textContent = editando ? "Editar agente" : "Nuevo agente";
+    $("#agModalSub").textContent = editando
+      ? `Cambiá el rol de @${usuario}, o dejale una contraseña nueva si hace falta.`
+      : "Atiende chats junto al resto del equipo.";
+    $("#agUsuario").value = usuario || "";
+    $("#agUsuario").disabled = editando;   // el usuario no se renombra, se recrea
+    $("#agPasswordLabel").textContent = editando ? "Nueva contraseña (opcional)" : "Contraseña";
+    $("#agPassword").value = "";
+    $("#agPassword").placeholder = editando ? "Dejar en blanco para no cambiarla" : "Mínimo 6 caracteres";
+    agSetRol(rol || "agente");
+    $("#agGuardar").textContent = editando ? "Guardar cambios" : "Crear agente";
     $("#agModalMsg").textContent = ""; $("#agModalMsg").className = "msg";
     $("#backAgente").classList.add("on");
-    setTimeout(()=>$("#agUsuario").focus(), 50);
+    setTimeout(()=>$(editando ? "#agPassword" : "#agUsuario").focus(), 50);
   }
-  $("#agNuevoBtn").addEventListener("click", agAbrirModal);
+  $("#agNuevoBtn").addEventListener("click", ()=>agAbrirModal(null, null));
   $("#agCancelar").addEventListener("click", ()=>$("#backAgente").classList.remove("on"));
   $("#backAgente").addEventListener("click", e=>{ if(e.target===$("#backAgente")) $("#backAgente").classList.remove("on"); });
+  document.querySelectorAll(".ag-rol-opt").forEach(el=>{
+    el.addEventListener("click", ()=> agSetRol(el.getAttribute("data-rol")));
+  });
   $("#agGuardar").addEventListener("click", async ()=>{
     const usuario = $("#agUsuario").value.trim(), password = $("#agPassword").value;
+    const rol = document.querySelector('input[name="agRol"]:checked').value;
     const msg = $("#agModalMsg");
     if(!usuario){ msg.className="msg err"; msg.textContent="Falta el usuario"; return; }
-    if(password.length < 6){ msg.className="msg err"; msg.textContent="La contraseña necesita al menos 6 caracteres"; return; }
+
     const btn = $("#agGuardar"); btn.disabled = true; msg.className="msg"; msg.textContent="Guardando…";
-    const d = await jpost({accion:"agente_crear", usuario, password});
+    let d;
+    if(agEditando){
+      d = await jpost({accion:"agente_editar", usuario:agEditando, rol, password: password || undefined});
+    } else {
+      if(password.length < 6){ msg.className="msg err"; msg.textContent="La contraseña necesita al menos 6 caracteres"; btn.disabled=false; return; }
+      d = await jpost({accion:"agente_crear", usuario, password});
+      if(d.ok && rol==="admin"){
+        // agente_crear siempre crea como 'agente' -- si eligieron Admin, un
+        // segundo paso lo sube de rol (evita duplicar la lógica de alta).
+        d = await jpost({accion:"agente_editar", usuario, rol:"admin"});
+      }
+    }
     btn.disabled = false;
     if(d.ok){
-      toast(`Agente ${d.accion}: ${d.usuario}`);
+      toast(agEditando ? `Agente actualizado: ${usuario}` : `Agente creado: ${usuario}`);
       $("#backAgente").classList.remove("on");
+      $("#agUsuario").disabled = false;
       cargarAgentes();
     } else {
-      msg.className="msg err"; msg.textContent = d.error || "No se pudo crear";
+      msg.className="msg err"; msg.textContent = d.error || "No se pudo guardar";
     }
+  });
+
+  // ---------- eliminar ----------
+  let agABorrar = null;
+  function agAbrirBorrar(usuario){
+    agABorrar = usuario;
+    $("#agBorrarNombre").textContent = "@"+usuario;
+    $("#backAgenteBorrar").classList.add("on");
+  }
+  $("#agBorrarCancelar").addEventListener("click", ()=>$("#backAgenteBorrar").classList.remove("on"));
+  $("#backAgenteBorrar").addEventListener("click", e=>{ if(e.target===$("#backAgenteBorrar")) $("#backAgenteBorrar").classList.remove("on"); });
+  $("#agBorrarOk").addEventListener("click", async ()=>{
+    if(!agABorrar) return;
+    const btn = $("#agBorrarOk"); btn.disabled = true;
+    const d = await jpost({accion:"agente_eliminar", usuario:agABorrar});
+    btn.disabled = false;
+    if(d.ok){ toast("Agente eliminado"); $("#backAgenteBorrar").classList.remove("on"); cargarAgentes(); }
+    else { toast(d.error || "No se pudo eliminar"); }
   });
 
   // ---------- arranque ----------

@@ -221,6 +221,56 @@ function crm_agente_estado(PDO $pdo, string $usuario, int $activo, string $quien
     return ['ok' => true];
 }
 
+/**
+ * Cambia el rol de un operador (nunca el propio, para no encerrarse sin
+ * ningún admin). $nuevaPassword opcional: si viene (≥6 chars), la resetea
+ * en la misma pasada.
+ */
+function crm_agente_editar(PDO $pdo, string $usuario, string $rol, ?string $nuevaPassword, string $quienLoHace): array
+{
+    if (!in_array($rol, ['admin', 'agente'], true)) {
+        return ['ok' => false, 'error' => 'Rol inválido'];
+    }
+    if ($usuario === $quienLoHace && $rol !== 'admin') {
+        return ['ok' => false, 'error' => 'No podés sacarte el rol admin a vos mismo'];
+    }
+    $st = $pdo->prepare("SELECT username FROM operadores WHERE username = ? LIMIT 1");
+    $st->execute([$usuario]);
+    if (!$st->fetchColumn()) { return ['ok' => false, 'error' => 'Ese agente no existe']; }
+
+    if ($nuevaPassword !== null && $nuevaPassword !== '') {
+        if (mb_strlen($nuevaPassword) < 6) {
+            return ['ok' => false, 'error' => 'La contraseña necesita al menos 6 caracteres'];
+        }
+        $hash = password_hash($nuevaPassword, PASSWORD_DEFAULT);
+        $pdo->prepare("UPDATE operadores SET rol = ?, password_hash = ? WHERE username = ?")
+            ->execute([$rol, $hash, $usuario]);
+    } else {
+        $pdo->prepare("UPDATE operadores SET rol = ? WHERE username = ?")->execute([$rol, $usuario]);
+    }
+    return ['ok' => true];
+}
+
+/** Elimina un operador (nunca a uno mismo). Sus mensajes/conversaciones no se
+ *  tocan: `mensajes.operador` y `conversacion_agentes.operador` son texto
+ *  suelto, no FK, así que la auditoría vieja queda intacta. */
+function crm_agente_eliminar(PDO $pdo, string $usuario, string $quienLoHace): array
+{
+    if ($usuario === $quienLoHace) {
+        return ['ok' => false, 'error' => 'No podés eliminarte a vos mismo'];
+    }
+    $st = $pdo->prepare("SELECT username FROM operadores WHERE username = ? LIMIT 1");
+    $st->execute([$usuario]);
+    if (!$st->fetchColumn()) { return ['ok' => false, 'error' => 'Ese agente no existe']; }
+
+    // Lo suelta de cualquier chat que estuviera atendiendo, y lo borra.
+    try {
+        $pdo->prepare("DELETE FROM conversacion_agentes WHERE operador = ?")->execute([$usuario]);
+    } catch (Throwable $e) { /* sin tabla (mig 30): nada que soltar */ }
+    $pdo->prepare("DELETE FROM operadores WHERE username = ?")->execute([$usuario]);
+    return ['ok' => true];
+}
+
 /** Carga la lib del chatbot (defaults + armado del prompt) una sola vez. */
 function crm_chatbot_lib(): void
 {
@@ -676,6 +726,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $activo  = !empty($body['activo']) ? 1 : 0;
             if ($usuario === '') { salir(['ok' => false, 'error' => 'Falta usuario'], 400); }
             $r = crm_agente_estado($pdo, $usuario, $activo, $operador);
+            salir($r, $r['ok'] ? 200 : 422);
+        }
+
+        // ---- editar rol (y opcionalmente resetear clave) de un operador ----
+        if ($accion === 'agente_editar') {
+            exigir_admin();
+            $usuario = trim((string)($body['usuario'] ?? ''));
+            $rol     = trim((string)($body['rol'] ?? ''));
+            $pass    = array_key_exists('password', $body) ? (string)$body['password'] : null;
+            if ($usuario === '') { salir(['ok' => false, 'error' => 'Falta usuario'], 400); }
+            $r = crm_agente_editar($pdo, $usuario, $rol, $pass, $operador);
+            salir($r, $r['ok'] ? 200 : 422);
+        }
+
+        // ---- eliminar un operador ----
+        if ($accion === 'agente_eliminar') {
+            exigir_admin();
+            $usuario = trim((string)($body['usuario'] ?? ''));
+            if ($usuario === '') { salir(['ok' => false, 'error' => 'Falta usuario'], 400); }
+            $r = crm_agente_eliminar($pdo, $usuario, $operador);
             salir($r, $r['ok'] ? 200 : 422);
         }
 
