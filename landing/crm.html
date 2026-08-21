@@ -1675,10 +1675,15 @@
     });
   });
 
-  function colorDe(nombre){
-    let h=0; const s=String(nombre||"?");
+  /** Hash simple de string -> entero, compartido por colorDe()/agColorDe()
+   *  (mismo algoritmo, cada uno lo usa para derivar un color distinto). */
+  function hashStr(s){
+    let h=0; s=String(s||"?");
     for(let i=0;i<s.length;i++) h=(h*31 + s.charCodeAt(i))|0;
-    const hue=((h%360)+360)%360;
+    return h;
+  }
+  function colorDe(nombre){
+    const hue=((hashStr(nombre)%360)+360)%360;
     return `linear-gradient(160deg, hsl(${hue} 70% 62%), hsl(${(hue+35)%360} 68% 48%))`;
   }
   function hace(iso){
@@ -1699,6 +1704,28 @@
   }
   function inic(nombre){ const n=(nombre||"").trim(); return n? n.slice(0,2).toUpperCase() : "?"; }
   function toast(t){ const el=$("#toast"); el.textContent=t; el.classList.add("on"); setTimeout(()=>el.classList.remove("on"),2300); }
+
+  /**
+   * Cablea el cierre de un modal `.back`: click en el botón cancelar y click
+   * en el backdrop (fuera de la tarjeta) lo cierran. Cada modal sigue abriendo
+   * distinto (llena campos propios antes de `.classList.add("on")`), pero
+   * cerrar es siempre lo mismo -- este patrón se repetía igual en 6 modales.
+   */
+  function wireModal(backdropId, cancelBtnId){
+    const back = $(backdropId);
+    if(cancelBtnId) $(cancelBtnId).addEventListener("click", ()=> back.classList.remove("on"));
+    back.addEventListener("click", e=>{ if(e.target===back) back.classList.remove("on"); });
+  }
+
+  /** Marca `btn` como el ".tab" activo dentro de `contenedorSel`, apagando
+   *  los demás. Puramente visual -- quien llama sigue siendo responsable de
+   *  actualizar su propia variable de filtro y recargar (eso varía por
+   *  módulo, no se unifica acá). Repetía este mismo par de líneas en
+   *  Retiros/Cargas/Usuarios. */
+  function activarTab(contenedorSel, btn){
+    document.querySelectorAll(`${contenedorSel} .tab`).forEach(x=>x.classList.remove("on"));
+    btn.classList.add("on");
+  }
 
   /**
    * Wrapper unico para TODOS los fetch autenticados (jget, jpost, y la subida
@@ -2184,8 +2211,7 @@
     $("#backCancelRet").classList.add("on");
     setTimeout(()=>$("#crNota").focus(), 50);
   }
-  $("#crVolver").addEventListener("click", ()=> $("#backCancelRet").classList.remove("on"));
-  $("#backCancelRet").addEventListener("click", e=>{ if(e.target===$("#backCancelRet")) $("#backCancelRet").classList.remove("on"); });
+  wireModal("#backCancelRet", "#crVolver");
   $("#crOk").addEventListener("click", async ()=>{
     const nota = $("#crNota").value.trim();
     if(nota.length < 8){ toast("La nota tiene que tener al menos 8 caracteres"); return; }
@@ -2202,8 +2228,7 @@
 
   $("#retTabs").addEventListener("click", e=>{
     const b = e.target.closest(".tab"); if(!b) return;
-    document.querySelectorAll("#retTabs .tab").forEach(x=>x.classList.remove("on"));
-    b.classList.add("on");
+    activarTab("#retTabs", b);
     retEstado = b.getAttribute("data-e");
     cargarRetiros();
   });
@@ -2323,8 +2348,7 @@
     setTimeout(()=>$("#ccNota").focus(), 50);
   }
   $("#ccNota").addEventListener("input", e=>{ $("#ccContador").textContent = e.target.value.length + "/200"; });
-  $("#ccVolver").addEventListener("click", ()=> $("#backCancelCarga").classList.remove("on"));
-  $("#backCancelCarga").addEventListener("click", e=>{ if(e.target===$("#backCancelCarga")) $("#backCancelCarga").classList.remove("on"); });
+  wireModal("#backCancelCarga", "#ccVolver");
   $("#ccOk").addEventListener("click", async ()=>{
     const nota = $("#ccNota").value.trim();
     if(nota.length < 8){ toast("La nota tiene que tener al menos 8 caracteres"); return; }
@@ -2341,8 +2365,7 @@
 
   $("#cgTabs").addEventListener("click", e=>{
     const b = e.target.closest(".tab"); if(!b) return;
-    document.querySelectorAll("#cgTabs .tab").forEach(x=>x.classList.remove("on"));
-    b.classList.add("on");
+    activarTab("#cgTabs", b);
     cgEstado = b.getAttribute("data-e");
     cargarCargas();
   });
@@ -2565,8 +2588,7 @@
   });
   $("#usFiltros").addEventListener("click", e=>{
     const b = e.target.closest(".tab"); if(!b) return;
-    document.querySelectorAll("#usFiltros .tab").forEach(x=>x.classList.remove("on"));
-    b.classList.add("on");
+    activarTab("#usFiltros", b);
     usSt.filtro = b.getAttribute("data-f");
     usSt.pagina = 1;
     cargarUsuarios();
@@ -3113,8 +3135,7 @@
     toast(`Saldo ${$("#uSaldo").textContent} · Fichas ${$("#uFichas").textContent} · Bonos ${$("#uBonos").textContent}`);
     abrir(st.convId);
   });
-  $("#mCancel").addEventListener("click", ()=>$("#back").classList.remove("on"));
-  $("#back").addEventListener("click", e=>{ if(e.target===$("#back")) $("#back").classList.remove("on"); });
+  wireModal("#back", "#mCancel");
   $("#mOk").addEventListener("click", async ()=>{
     const monto = parseInt($("#mMonto").value,10);
     if(!monto || monto<=0){ toast("Poné una cantidad válida"); return; }
@@ -3196,8 +3217,7 @@
     });
   }
   $("#btnNotif").addEventListener("click", ()=>abrirNotif(false));
-  $("#nCancel").addEventListener("click", ()=>$("#backN").classList.remove("on"));
-  $("#backN").addEventListener("click", e=>{ if(e.target===$("#backN")) $("#backN").classList.remove("on"); });
+  wireModal("#backN", "#nCancel");
   $("#nProgramar").addEventListener("change", ()=>{
     const on = $("#nProgramar").checked;
     $("#nCuando").style.display = on ? "block" : "none";
@@ -3367,14 +3387,14 @@
 
   // ---------- agentes (gestión, solo admin) ----------
   const AG_COLORES = ["#7c6cf0","#3ee08a","#f5a623","#4aa3f0","#e5595d","#17c06e","#9a8cff"];
+  // OJO: no reusa hashStr() (que usa |0) -- este hash es >>>0 a propósito,
+  // así el color asignado a cada agente no cambia respecto a como ya estaba.
   function agColorDe(nombre){
     let h=0; const s=String(nombre||"?");
     for(let i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i)) >>> 0;
     return AG_COLORES[h % AG_COLORES.length];
   }
-  function agIniciales(nombre){
-    return String(nombre||"?").trim().slice(0,2).toUpperCase();
-  }
+  const agIniciales = inic;   // mismo algoritmo que inic(), ver definición arriba
   function agFechaCorta(f){
     if(!f) return "nunca entró";
     try{ return "último ingreso " + new Date(f.replace(" ","T")).toLocaleString("es-AR", {day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"}); }
@@ -3457,8 +3477,7 @@
     setTimeout(()=>$(editando ? "#agPassword" : "#agUsuario").focus(), 50);
   }
   $("#agNuevoBtn").addEventListener("click", ()=>agAbrirModal(null, null));
-  $("#agCancelar").addEventListener("click", ()=>$("#backAgente").classList.remove("on"));
-  $("#backAgente").addEventListener("click", e=>{ if(e.target===$("#backAgente")) $("#backAgente").classList.remove("on"); });
+  wireModal("#backAgente", "#agCancelar");
   document.querySelectorAll(".ag-rol-opt").forEach(el=>{
     el.addEventListener("click", ()=> agSetRol(el.getAttribute("data-rol")));
   });
@@ -3499,8 +3518,7 @@
     $("#agBorrarNombre").textContent = "@"+usuario;
     $("#backAgenteBorrar").classList.add("on");
   }
-  $("#agBorrarCancelar").addEventListener("click", ()=>$("#backAgenteBorrar").classList.remove("on"));
-  $("#backAgenteBorrar").addEventListener("click", e=>{ if(e.target===$("#backAgenteBorrar")) $("#backAgenteBorrar").classList.remove("on"); });
+  wireModal("#backAgenteBorrar", "#agBorrarCancelar");
   $("#agBorrarOk").addEventListener("click", async ()=>{
     if(!agABorrar) return;
     const btn = $("#agBorrarOk"); btn.disabled = true;
