@@ -594,11 +594,22 @@
   .cb-nota{background:color-mix(in srgb,#f0b64e 12%,transparent);border:1px solid color-mix(in srgb,#f0b64e 35%,transparent);
            color:#c98a1e;border-radius:10px;padding:11px 13px;font-size:13px;line-height:1.5;display:none}
   .cb-nota.on{display:block}
-  .cb-label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted,#8a93a6)}
-  .cb-textarea{width:100%;min-height:340px;resize:vertical;border-radius:12px;border:1px solid var(--line,#2c3242);
-               background:var(--card2,#151a24);color:var(--tx,#e8ecf3);padding:14px 15px;font-size:13.5px;line-height:1.6;
-               font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;outline:none;transition:.15s}
-  .cb-textarea:focus{border-color:#7c4fe0;box-shadow:0 0 0 3px color-mix(in srgb,#7c4fe0 28%,transparent)}
+  /* tarjetas de campo (UX amigable) */
+  .cb-field{background:var(--card2,#151a24);border:1px solid var(--line,#2c3242);border-radius:14px;padding:16px 16px 14px}
+  .cb-field-head{display:flex;gap:12px;align-items:flex-start;margin-bottom:10px}
+  .cb-ico{font-size:20px;line-height:1.2;flex:none;width:34px;height:34px;display:grid;place-items:center;
+          background:color-mix(in srgb,#7c4fe0 14%,transparent);border-radius:10px}
+  .cb-flabel{display:block;font-size:14.5px;font-weight:700;color:var(--tx,#e8ecf3)}
+  .cb-opt{font-weight:500;font-size:12px;color:var(--muted,#8a93a6)}
+  .cb-help{margin:2px 0 0;font-size:12.5px;line-height:1.45;color:var(--muted,#8a93a6)}
+  .cb-input,.cb-area{width:100%;border-radius:10px;border:1px solid var(--line,#2c3242);
+                     background:var(--card,#0f1420);color:var(--tx,#e8ecf3);padding:11px 13px;font-size:14px;
+                     line-height:1.55;font-family:inherit;outline:none;transition:.15s;resize:vertical}
+  .cb-area{min-height:76px}
+  .cb-input:focus,.cb-area:focus{border-color:#7c4fe0;box-shadow:0 0 0 3px color-mix(in srgb,#7c4fe0 28%,transparent)}
+  .cb-locked{display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--muted,#8a93a6);
+             background:color-mix(in srgb,#8a93a6 8%,transparent);border:1px dashed var(--line,#2c3242);
+             border-radius:10px;padding:11px 13px;line-height:1.4}
   .cb-acciones{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
   .cb-acciones-der{display:flex;align-items:center;gap:14px;margin-left:auto}
   .cb-msg{font-size:13px}.cb-msg.ok{color:#22c55e}.cb-msg.err{color:#ff6b81}
@@ -1091,12 +1102,64 @@
         los conteste un agente.
       </div>
 
-      <label class="cb-label">Contexto del asistente (system prompt)</label>
-      <textarea id="cbContexto" class="cb-textarea" spellcheck="false"
-        placeholder="Instrucciones para el chatbot…"></textarea>
+      <!-- Nombre -->
+      <div class="cb-field">
+        <div class="cb-field-head">
+          <span class="cb-ico">🙋</span>
+          <div>
+            <label class="cb-flabel" for="cbNombre">Nombre del asistente</label>
+            <p class="cb-help">Con qué nombre se presenta a los jugadores.</p>
+          </div>
+        </div>
+        <input id="cbNombre" class="cb-input" maxlength="60" placeholder="Camila">
+      </div>
+
+      <!-- Tono -->
+      <div class="cb-field">
+        <div class="cb-field-head">
+          <span class="cb-ico">🎭</span>
+          <div>
+            <label class="cb-flabel" for="cbTono">Tono y personalidad</label>
+            <p class="cb-help">Cómo habla: formal o relajado, con vos o usted, cuántos emojis, etc.</p>
+          </div>
+        </div>
+        <textarea id="cbTono" class="cb-area" rows="4"
+          placeholder="Ej: Argentino, profesional y cordial. Habla de vos, sin exagerar ni gritar."></textarea>
+      </div>
+
+      <!-- Info del juego -->
+      <div class="cb-field">
+        <div class="cb-field-head">
+          <span class="cb-ico">🎮</span>
+          <div>
+            <label class="cb-flabel" for="cbJuego">¿De qué trata el juego?</label>
+            <p class="cb-help">Contale al bot qué es el juego, cómo se juega y para qué sirven fichas y bonos, así le responde bien a los jugadores.</p>
+          </div>
+        </div>
+        <textarea id="cbJuego" class="cb-area" rows="5"
+          placeholder="Ej: Es un juego de tragamonedas online. Las fichas son la moneda para jugar; los bonos son fichas de regalo que…"></textarea>
+      </div>
+
+      <!-- Reglas extra -->
+      <div class="cb-field">
+        <div class="cb-field-head">
+          <span class="cb-ico">📋</span>
+          <div>
+            <label class="cb-flabel" for="cbReglas">Indicaciones extra <span class="cb-opt">(opcional)</span></label>
+            <p class="cb-help">Reglas propias que quieras sumar. Ej: promos vigentes, horarios de atención, algo que el bot deba aclarar siempre.</p>
+          </div>
+        </div>
+        <textarea id="cbReglas" class="cb-area" rows="4"
+          placeholder="Ej: Los fines de semana hay bono doble en la primera carga."></textarea>
+      </div>
+
+      <div class="cb-locked">
+        🔒 La mecánica de <b>cargar</b>, <b>retirar</b> y <b>comprar fichas</b> ya viene
+        configurada y protegida — no hace falta que la toques.
+      </div>
 
       <div class="cb-acciones">
-        <button class="cb-btn-ghost" id="cbRestaurar" type="button">Restaurar al original</button>
+        <button class="cb-btn-ghost" id="cbRestaurar" type="button">Restaurar valores por defecto</button>
         <div class="cb-acciones-der">
           <span class="cb-msg" id="cbMsg"></span>
           <button class="cb-btn" id="cbGuardar" type="button">Guardar cambios</button>
@@ -2944,8 +3007,8 @@
     mostrarLogin();
   });
 
-  // ---------- chatbot (contexto editable + on/off) ----------
-  let cbDefault = "";   // el contexto original, para "Restaurar al original"
+  // ---------- chatbot (campos editables + on/off) ----------
+  let cbDefaults = {};   // defaults de cada campo, para "Restaurar por defecto"
 
   function cbSetActivo(on){
     $("#cbActivo").checked = !!on;
@@ -2959,8 +3022,11 @@
     try{ d = await jget({accion:"chatbot_config"}); }
     catch(e){ msg.className="cb-msg err"; msg.textContent = "No se pudo cargar."; return; }
     if(!d.ok){ msg.className="cb-msg err"; msg.textContent = d.error||"No se pudo cargar."; return; }
-    cbDefault = d.contexto_default || "";
-    $("#cbContexto").value = d.contexto || "";
+    cbDefaults = d.default || {};
+    $("#cbNombre").value = d.bot_nombre || "";
+    $("#cbTono").value   = d.bot_tono || "";
+    $("#cbJuego").value  = d.juego_desc || "";
+    $("#cbReglas").value = d.reglas_extra || "";
     cbSetActivo(!!d.activo);
     msg.textContent = "";
   }
@@ -2971,8 +3037,11 @@
     let d;
     try{
       d = await jpost({ accion:"chatbot_guardar",
-                        contexto: $("#cbContexto").value,
-                        activo: $("#cbActivo").checked });
+                        bot_nombre:   $("#cbNombre").value,
+                        bot_tono:     $("#cbTono").value,
+                        juego_desc:   $("#cbJuego").value,
+                        reglas_extra: $("#cbReglas").value,
+                        activo:       $("#cbActivo").checked });
     }catch(e){ msg.className="cb-msg err"; msg.textContent="No se pudo guardar."; btn.disabled=false; return; }
     btn.disabled = false;
     if(d.ok){ msg.className="cb-msg ok"; msg.textContent="Guardado ✓"; setTimeout(()=>{msg.textContent="";}, 2500); }
@@ -2982,9 +3051,11 @@
   $("#cbActivo").addEventListener("change", ()=> cbSetActivo($("#cbActivo").checked));
   $("#cbGuardar").addEventListener("click", guardarChatbotConfig);
   $("#cbRestaurar").addEventListener("click", ()=>{
-    if(!cbDefault) return;
-    if(confirm("¿Reemplazar el contexto por el original? Se pierde lo que hayas escrito (todavía no se guarda hasta que toques Guardar).")){
-      $("#cbContexto").value = cbDefault;
+    if(confirm("¿Volver a los valores por defecto? Se reemplaza lo que hayas escrito (no se guarda hasta que toques Guardar).")){
+      $("#cbNombre").value = cbDefaults.bot_nombre || "";
+      $("#cbTono").value   = cbDefaults.bot_tono || "";
+      $("#cbJuego").value  = cbDefaults.juego_desc || "";
+      $("#cbReglas").value = cbDefaults.reglas_extra || "";
     }
   });
 

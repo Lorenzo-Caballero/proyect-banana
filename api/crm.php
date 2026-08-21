@@ -75,45 +75,74 @@ function movimientos(PDO $pdo, string $usuario, int $limite = 30): array
     }, $st->fetchAll(PDO::FETCH_ASSOC));
 }
 
-/** El contexto por defecto del chatbot (la constante compartida). Vacío si el
- *  archivo no está (no debería pasar, pero no rompe el CRM si falta). */
-function crm_chatbot_default(): string
+/** Carga la lib del chatbot (defaults + armado del prompt) una sola vez. */
+function crm_chatbot_lib(): void
 {
     $f = __DIR__ . '/chatbot_contexto.php';
     if (is_file($f)) { require_once $f; }
-    return defined('CONTEXTO') ? CONTEXTO : '';
 }
 
-/** Lee la config del chatbot. Si la tabla no existe todavía (migración 26 sin
- *  correr), devuelve el default y activo=true, sin romper. */
-function crm_chatbot_leer(PDO $pdo): array
+/** Defaults de cada campo editable (para mostrar en el editor y para el botón
+ *  "restaurar"). Vacíos si la lib no está (no rompe el CRM). */
+function crm_chatbot_defaults(): array
 {
-    try {
-        $row = $pdo->query("SELECT contexto, activo FROM config_chatbot WHERE id = 1 LIMIT 1")
-                   ->fetch(PDO::FETCH_ASSOC);
-    } catch (Throwable $e) {
-        return ['contexto' => crm_chatbot_default(), 'activo' => true, 'usa_default' => true];
-    }
-    $ctx = $row ? trim((string)($row['contexto'] ?? '')) : '';
+    crm_chatbot_lib();
     return [
-        // Si está vacío en la base, mostramos el default para que el agente lo
-        // vea y edite desde ahí (guardar vacío = seguir usando el default).
-        'contexto'   => $ctx !== '' ? $ctx : crm_chatbot_default(),
-        'activo'     => $row ? ((int)($row['activo'] ?? 1) === 1) : true,
-        'usa_default' => $ctx === '',
+        'bot_nombre'   => defined('CB_DEF_NOMBRE')       ? CB_DEF_NOMBRE       : '',
+        'bot_tono'     => defined('CB_DEF_TONO')         ? CB_DEF_TONO         : '',
+        'juego_desc'   => defined('CB_DEF_JUEGO')        ? CB_DEF_JUEGO        : '',
+        'reglas_extra' => defined('CB_DEF_REGLAS_EXTRA') ? CB_DEF_REGLAS_EXTRA : '',
     ];
 }
 
-/** Guarda contexto (vacío = usar el default) y el flag activo. */
-function crm_chatbot_guardar(PDO $pdo, string $contexto, int $activo): void
+/** Lee la config del chatbot por CAMPOS. Cada campo vacío en la base se
+ *  muestra con su default, así el agente ve y edita desde algo concreto.
+ *  Robusto si faltan la tabla (mig. 26) o las columnas (mig. 28). */
+function crm_chatbot_leer(PDO $pdo): array
 {
-    // Si el texto es igual al default, guardamos NULL: así el cliente sigue el
-    // default y futuras mejoras del prompt base le llegan sin re-guardar.
-    $ctx = ($contexto === '' || $contexto === crm_chatbot_default()) ? null : $contexto;
+    $def = crm_chatbot_defaults();
+    try {
+        $row = $pdo->query("SELECT * FROM config_chatbot WHERE id = 1 LIMIT 1")
+                   ->fetch(PDO::FETCH_ASSOC);
+    } catch (Throwable $e) {
+        return array_merge($def, ['activo' => true, 'default' => $def]);
+    }
+    $val = function($k) use ($row, $def){
+        $v = $row ? trim((string)($row[$k] ?? '')) : '';
+        return $v !== '' ? $v : ($def[$k] ?? '');
+    };
+    return [
+        'bot_nombre'   => $val('bot_nombre'),
+        'bot_tono'     => $val('bot_tono'),
+        'juego_desc'   => $val('juego_desc'),
+        // reglas_extra NO cae al default: es opcional y su default es vacío.
+        'reglas_extra' => $row ? trim((string)($row['reglas_extra'] ?? '')) : '',
+        'activo'       => $row ? ((int)($row['activo'] ?? 1) === 1) : true,
+        'default'      => $def,   // para el botón "restaurar" del editor
+    ];
+}
+
+/** Guarda los campos editables + el flag activo. Un campo igual a su default
+ *  se guarda NULL, así el cliente hereda futuras mejoras del default. */
+function crm_chatbot_guardar(PDO $pdo, array $campos, int $activo): void
+{
+    $def = crm_chatbot_defaults();
+    $norm = function($k) use ($campos, $def){
+        $v = trim((string)($campos[$k] ?? ''));
+        // Vacío o igual al default -> NULL (sigue el default del código).
+        return ($v === '' || $v === trim((string)($def[$k] ?? ''))) ? null : $v;
+    };
     $pdo->prepare(
-        "INSERT INTO config_chatbot (id, contexto, activo) VALUES (1, ?, ?)
-         ON DUPLICATE KEY UPDATE contexto = VALUES(contexto), activo = VALUES(activo)"
-    )->execute([$ctx, $activo ? 1 : 0]);
+        "INSERT INTO config_chatbot (id, bot_nombre, bot_tono, juego_desc, reglas_extra, activo)
+         VALUES (1, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           bot_nombre = VALUES(bot_nombre), bot_tono = VALUES(bot_tono),
+           juego_desc = VALUES(juego_desc), reglas_extra = VALUES(reglas_extra),
+           activo = VALUES(activo)"
+    )->execute([
+        $norm('bot_nombre'), $norm('bot_tono'), $norm('juego_desc'),
+        $norm('reglas_extra'), $activo ? 1 : 0,
+    ]);
 }
 
 // =============================== GET ========================================
@@ -214,14 +243,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                    'usuario' => $ficha, 'movimientos' => $movs]);
         }
 
-        // ---- config del chatbot (contexto editable + on/off) ----
+        // ---- config del chatbot (campos editables + on/off) ----
         if ($accion === 'chatbot_config') {
-            $cfg = crm_chatbot_leer($pdo);
-            salir(['ok' => true,
-                   'contexto'         => $cfg['contexto'],
-                   'activo'           => $cfg['activo'],
-                   'contexto_default' => crm_chatbot_default(),
-            ]);
+            salir(array_merge(['ok' => true], crm_chatbot_leer($pdo)));
         }
 
         salir(['ok' => false, 'error' => 'accion desconocida'], 400);
@@ -395,12 +419,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             salir(['ok' => true, 'ia_activa' => (bool)$activa]);
         }
 
-        // ---- guardar config del chatbot (contexto + on/off) ----
+        // ---- guardar config del chatbot (campos + on/off) ----
         if ($accion === 'chatbot_guardar') {
-            // Contexto vacio = usar el default del codigo (se guarda NULL).
-            $ctx    = isset($body['contexto']) ? trim((string)$body['contexto']) : '';
             $activo = !empty($body['activo']) ? 1 : 0;
-            crm_chatbot_guardar($pdo, $ctx, $activo);
+            crm_chatbot_guardar($pdo, [
+                'bot_nombre'   => $body['bot_nombre']   ?? '',
+                'bot_tono'     => $body['bot_tono']     ?? '',
+                'juego_desc'   => $body['juego_desc']   ?? '',
+                'reglas_extra' => $body['reglas_extra'] ?? '',
+            ], $activo);
             salir(['ok' => true, 'activo' => (bool)$activo]);
         }
 

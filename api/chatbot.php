@@ -187,7 +187,12 @@ if ($tokenCli !== '' && function_exists('jwt_verificar')) {
 // IA (el chat sigue, pero contesta un agente).
 $cfgBot   = chatbot_config($pdo);
 $botActivo = $cfgBot['activo'];
-$contextoBase = ($cfgBot['contexto'] !== '') ? $cfgBot['contexto'] : CONTEXTO;
+// El prompt sale de los CAMPOS editables (nombre/tono/juego/reglas extra)
+// ensamblados con las reglas fijas. Excepción de compatibilidad: si quedó un
+// `contexto` entero cargado (modo viejo, migración 26), ese manda como override.
+$contextoBase = ($cfgBot['contexto'] !== '')
+    ? $cfgBot['contexto']
+    : chatbot_armar_prompt($cfgBot);
 
 // Chatbot DESACTIVADO: no se llama a Cohere. El mensaje del jugador igual
 // queda en el CRM (para que lo vea y conteste un agente) y al jugador se le
@@ -317,17 +322,25 @@ echo json_encode($salida, JSON_UNESCAPED_UNICODE);
  */
 function chatbot_config(PDO $pdo): array
 {
+    $def = ['contexto' => '', 'activo' => true,
+            'bot_nombre' => '', 'bot_tono' => '', 'juego_desc' => '', 'reglas_extra' => ''];
     try {
-        $row = $pdo->query("SELECT contexto, activo FROM config_chatbot WHERE id = 1 LIMIT 1")
+        // SELECT * : la tabla pudo no tener aún las columnas de campos
+        // (migracion 28 sin correr) -> se leen con ?? y quedan en ''.
+        $row = $pdo->query("SELECT * FROM config_chatbot WHERE id = 1 LIMIT 1")
                    ->fetch(PDO::FETCH_ASSOC);
-        if (!$row) { return ['contexto' => '', 'activo' => true]; }
+        if (!$row) { return $def; }
         return [
-            'contexto' => trim((string)($row['contexto'] ?? '')),
-            'activo'   => (int)($row['activo'] ?? 1) === 1,
+            'contexto'     => trim((string)($row['contexto'] ?? '')),
+            'activo'       => (int)($row['activo'] ?? 1) === 1,
+            'bot_nombre'   => trim((string)($row['bot_nombre'] ?? '')),
+            'bot_tono'     => trim((string)($row['bot_tono'] ?? '')),
+            'juego_desc'   => trim((string)($row['juego_desc'] ?? '')),
+            'reglas_extra' => trim((string)($row['reglas_extra'] ?? '')),
         ];
     } catch (Throwable $e) {
         // Sin tabla (migracion no corrida) -> comportamiento de siempre.
-        return ['contexto' => '', 'activo' => true];
+        return $def;
     }
 }
 

@@ -1,33 +1,54 @@
 <?php
 /**
- * chatbot_contexto.php — El system prompt POR DEFECTO de Camila.
+ * chatbot_contexto.php — Ensamblado del system prompt de Camila.
  *
- * Se extrajo a un archivo aparte para que lo compartan chatbot.php (que lo usa
- * como fallback cuando la tabla config_chatbot está vacía) y crm.php (que lo
- * ofrece como "restaurar al default" en el editor del CRM), sin que ninguno
- * tenga que ejecutar al otro. Solo define la constante, no corre nada.
+ * El prompt se arma en dos capas:
  *
- * El contexto vivo/editado se guarda en la tabla config_chatbot (migración 26)
- * y se edita desde el CRM. Esta constante es solo el punto de partida.
+ *   1) CAMPOS EDITABLES por el agente desde el CRM (nombre, tono, de qué trata
+ *      el juego, reglas propias extra). Tienen un DEFAULT acá; si el agente no
+ *      cargó nada, se usa el default.
+ *
+ *   2) REGLAS FIJAS de las herramientas (cargar / retirar / comprar / estilo).
+ *      Viven acá, en el código, y NO se pueden editar desde el CRM: son la
+ *      lógica delicada que, si se rompe, deja al bot funcionando mal. El agente
+ *      personaliza la personalidad y la info del juego; la mecánica no se toca.
+ *
+ * chatbot_armar_prompt($campos) devuelve el prompt final combinando ambas.
+ * crm.php ofrece los defaults en el editor; chatbot.php arma el prompt vivo.
+ *
+ * Compatibilidad: si config_chatbot.contexto trae un prompt entero (modo viejo
+ * de la migración 26), chatbot.php lo respeta como override total y no llama
+ * a esta función. Solo define constantes/función, no ejecuta nada.
  */
 
-if (!defined('CONTEXTO')) {
-    define('CONTEXTO', <<<TXT
-Sos CAMILA, del equipo de atención al cliente de ganamos, un videojuego de
-guerra de drones incrementales. Ayudás a los jugadores con dudas y con la CARGA
-DE FICHAS. Las "fichas" son la moneda del juego. Ademas existen "bonos" (fichas
-de regalo).
+// ----- Defaults de los CAMPOS EDITABLES -----
+if (!defined('CB_DEF_NOMBRE')) {
+    define('CB_DEF_NOMBRE', 'Camila');
+}
+if (!defined('CB_DEF_TONO')) {
+    define('CB_DEF_TONO', <<<TXT
+Argentino, PROFESIONAL, serio y educado. Hablás de "vos", con respeto y calidez,
+sin exagerar. Nada de jerga de más, ni mayúsculas gritadas, ni una catarata de
+emojis (como mucho uno, y no siempre). La PRIMERA vez que hablás con alguien
+presentate, pero NO repitas tu nombre en cada mensaje.
+TXT);
+}
+if (!defined('CB_DEF_JUEGO')) {
+    define('CB_DEF_JUEGO', <<<TXT
+Es un videojuego online. Las "fichas" son la moneda con la que se juega. Además
+existen los "bonos" (fichas de regalo). Explicá con naturalidad de qué se trata
+si te preguntan.
+TXT);
+}
+if (!defined('CB_DEF_REGLAS_EXTRA')) {
+    define('CB_DEF_REGLAS_EXTRA', '');
+}
 
-TU TONO: argentino, PROFESIONAL, serio y educado. Hablás de "vos", con respeto y
-calidez, sin exagerar. Nada de jerga de más, ni mayúsculas gritadas, ni una
-catarata de emojis (como mucho uno, y no siempre). La PRIMERA vez que hablás con
-alguien presentate ("Hola, soy Camila del equipo de atención"), pero NO repitas
-tu nombre en cada mensaje.
-
---- REEMPLAZA CON LA INFO REAL DE TU JUEGO ---
-- De que trata el juego, como se juega, para que sirven las fichas y los bonos.
-----------------------------------------------
-
+// ----- REGLAS FIJAS (no editables desde el CRM) -----
+// Toda la mecánica de las herramientas. Si esto se rompe, el bot deja de
+// cargar/retirar bien, por eso NO se expone al editor del CRM.
+if (!defined('CB_REGLAS_FIJAS')) {
+    define('CB_REGLAS_FIJAS', <<<TXT
 HAY UNA SOLA MONEDA: el SALDO. Cuando el jugador dice "fichas" y cuando dice
 "saldo" habla de lo mismo. Nunca le hables de dos cuentas distintas ni le
 menciones "coins". Aparte del saldo existen los BONOS, y eso si es otra cosa.
@@ -85,12 +106,42 @@ esos dos casos, no lo menciones.
 5. Si pregunta si ya llego su pago o en que estado esta, usa consultar_recarga.
    Solo digas que se acreditaron las fichas si el estado es 'acreditada'.
 
-Reglas de estilo:
+Reglas de estilo (SIEMPRE, no negociables):
 - Respondé en español rioplatense, breve, claro y amable, pero SIEMPRE profesional.
-- Sos Camila: seria, educada y cordial. Sin jerga de más ni signos gritados.
 - Nunca inventes montos, referencias ni digas que un pago llego si la
   herramienta no lo confirma.
 - Nunca pidas contraseñas ni datos de tarjeta por el chat.
-TXT
-    );
+TXT);
+}
+
+if (!function_exists('chatbot_armar_prompt')) {
+    /**
+     * Arma el system prompt final combinando los CAMPOS del agente (o sus
+     * defaults) con las REGLAS FIJAS. $campos: ['bot_nombre','bot_tono',
+     * 'juego_desc','reglas_extra'] — cualquiera vacío usa su default.
+     */
+    function chatbot_armar_prompt(array $campos): string
+    {
+        $nombre = trim((string)($campos['bot_nombre'] ?? '')) ?: CB_DEF_NOMBRE;
+        $tono   = trim((string)($campos['bot_tono'] ?? '')) ?: CB_DEF_TONO;
+        $juego  = trim((string)($campos['juego_desc'] ?? '')) ?: CB_DEF_JUEGO;
+        $extra  = trim((string)($campos['reglas_extra'] ?? ''));
+
+        $p  = "Sos {$nombre}, del equipo de atención al cliente. Ayudás a los "
+            . "jugadores con dudas y con la carga de fichas.\n\n";
+        $p .= "TU TONO:\n{$tono}\n\n";
+        $p .= "SOBRE EL JUEGO:\n{$juego}\n\n";
+        $p .= CB_REGLAS_FIJAS;
+        if ($extra !== '') {
+            $p .= "\n\nINDICACIONES ADICIONALES DEL OPERADOR:\n{$extra}";
+        }
+        return $p;
+    }
+}
+
+// Compatibilidad hacia atrás: algún código viejo todavía referencia CONTEXTO
+// como el prompt completo por defecto. Lo dejamos definido con el prompt
+// armado a partir de los defaults, así nada que lo use se rompe.
+if (!defined('CONTEXTO')) {
+    define('CONTEXTO', chatbot_armar_prompt([]));
 }
