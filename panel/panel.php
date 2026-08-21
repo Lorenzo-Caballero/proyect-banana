@@ -116,11 +116,17 @@ function operadores_asegurar_tabla(PDO $cpdo): void {
            id INT AUTO_INCREMENT PRIMARY KEY,
            username VARCHAR(120) NOT NULL UNIQUE,
            password_hash VARCHAR(255) NOT NULL,
+           rol ENUM('admin','agente') NOT NULL DEFAULT 'admin',
            activo TINYINT(1) NOT NULL DEFAULT 1,
            ultimo_login DATETIME DEFAULT NULL,
            creado TIMESTAMP DEFAULT CURRENT_TIMESTAMP
          ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
     );
+    // Clientes que ya tenían la tabla de antes de esta feature: agregarles la
+    // columna sin romper (mismo patrón de las migraciones de api/sql/).
+    try {
+        $cpdo->exec("ALTER TABLE operadores ADD COLUMN IF NOT EXISTS rol ENUM('admin','agente') NOT NULL DEFAULT 'admin' AFTER password_hash");
+    } catch (Throwable $e) { /* MariaDB viejo sin soporte de IF NOT EXISTS en ALTER: se ignora */ }
 }
 
 $in     = body();
@@ -219,7 +225,7 @@ switch ($accion) {
         try {
             $cpdo = conectar_cliente($cfg, $db);
             operadores_asegurar_tabla($cpdo);
-            $ops = $cpdo->query('SELECT id,username,activo,ultimo_login FROM operadores ORDER BY username')->fetchAll();
+            $ops = $cpdo->query('SELECT id,username,rol,activo,ultimo_login FROM operadores ORDER BY username')->fetchAll();
             salida(['ok' => true, 'operadores' => $ops]);
         } catch (PDOException $e) {
             salida(['ok' => false, 'error' => 'no pude leer los operadores de este cliente'], 500);
@@ -247,11 +253,15 @@ switch ($accion) {
             $ex->execute([$usr]);
             $hash = password_hash($pass, PASSWORD_DEFAULT);
             if ($ex->fetchColumn()) {
+                // Solo clave/activo: si ya era agente, resetear la clave no lo
+                // convierte en admin de golpe. El rol se cambia aparte, si hiciera falta.
                 $cpdo->prepare('UPDATE operadores SET password_hash = ?, activo = 1 WHERE username = ?')
                      ->execute([$hash, $usr]);
                 salida(['ok' => true, 'usuario' => $usr, 'accion' => 'actualizado']);
             }
-            $cpdo->prepare('INSERT INTO operadores (username,password_hash,activo) VALUES (?,?,1)')
+            // Los operadores que da de alta EL PANEL son accesos admin: pueden
+            // gestionar agentes desde el CRM (ver crm.php::exigir_admin()).
+            $cpdo->prepare("INSERT INTO operadores (username,password_hash,rol,activo) VALUES (?,?,'admin',1)")
                  ->execute([$usr, $hash]);
             salida(['ok' => true, 'usuario' => $usr, 'accion' => 'creado']);
         } catch (PDOException $e) {

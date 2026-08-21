@@ -64,7 +64,8 @@ if ($accion === 'login') {
     }
 
     if (operador_login($pdo, $usuario, (string) ($in['password'] ?? ''))) {
-        echo json_encode(['ok' => true, 'csrf' => csrf_token(), 'operador' => operador_actual()]);
+        echo json_encode(['ok' => true, 'csrf' => csrf_token(),
+                          'operador' => operador_actual(), 'rol' => operador_rol()]);
         exit;
     }
 

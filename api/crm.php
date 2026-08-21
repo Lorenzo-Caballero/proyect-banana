@@ -2,7 +2,9 @@
 /**
  * crm.php — Backend del CRM de conversaciones.
  *
- * Acceso directo (sin login), igual que admin_usuarios.php.
+ * Exige login de operador (exigir_operador()/exigir_admin() de crm_auth.php).
+ * Multi-agente: rol 'admin' gestiona agentes (agentes_listar/agente_crear/
+ * agente_estado); rol 'agente' solo atiende chats.
  *
  * GET  ?accion=conversaciones&q=&estado=todas|abierta|pendiente|cerrada
  *        -> { ok, items:[{id,usuario,session_id,estado,preview,no_leidos,actualizada_en}], resumen }
@@ -138,6 +140,85 @@ function crm_agentes_de(PDO $pdo, int $convId): array
         $st->execute([$convId]);
         return $st->fetchAll(PDO::FETCH_COLUMN) ?: [];
     } catch (Throwable $e) { return []; }
+}
+
+/** Lista todos los operadores (admins y agentes) de este cliente. */
+function crm_agentes_listar(PDO $pdo): array
+{
+    // rol puede no existir (migración 31 sin correr): se pide con COALESCE
+    // vía un try/catch, así no revienta si falta la columna.
+    try {
+        $rows = $pdo->query(
+            "SELECT username, rol, activo, ultimo_login, creado_en FROM operadores
+             ORDER BY (rol = 'admin') DESC, username ASC"
+        )->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $e) {
+        $rows = $pdo->query(
+            "SELECT username, 'admin' AS rol, activo, ultimo_login FROM operadores ORDER BY username ASC"
+        )->fetchAll(PDO::FETCH_ASSOC);
+    }
+    return array_map(function ($r) {
+        return [
+            'username'     => $r['username'],
+            'rol'          => in_array($r['rol'] ?? 'admin', ['admin', 'agente'], true) ? $r['rol'] : 'admin',
+            'activo'       => (int)($r['activo'] ?? 1) === 1,
+            'ultimo_login' => $r['ultimo_login'] ?? null,
+            'creado_en'    => $r['creado_en'] ?? null,
+        ];
+    }, $rows);
+}
+
+/** Crea un agente humano (rol='agente') o resetea su clave si ya existe.
+ *  SOLO agentes: crear otro admin no es cosa de este endpoint (ver nota en
+ *  la acción agente_crear). */
+function crm_agente_crear(PDO $pdo, string $usuario, string $password): array
+{
+    $usuario = trim($usuario);
+    if ($usuario === '' || !preg_match('/^[a-zA-Z0-9_.-]{3,60}$/', $usuario)) {
+        return ['ok' => false, 'error' => 'Usuario inválido (3-60 caracteres, sin espacios)'];
+    }
+    if (mb_strlen($password) < 6) {
+        return ['ok' => false, 'error' => 'La contraseña necesita al menos 6 caracteres'];
+    }
+    $hash = password_hash($password, PASSWORD_DEFAULT);
+
+    $st = $pdo->prepare("SELECT username FROM operadores WHERE username = ? LIMIT 1");
+    $st->execute([$usuario]);
+    $existe = (bool)$st->fetchColumn();
+
+    try {
+        if ($existe) {
+            $pdo->prepare("UPDATE operadores SET password_hash = ?, activo = 1 WHERE username = ?")
+                ->execute([$hash, $usuario]);
+        } else {
+            $pdo->prepare(
+                "INSERT INTO operadores (username, password_hash, rol, activo) VALUES (?, ?, 'agente', 1)"
+            )->execute([$usuario, $hash]);
+        }
+    } catch (Throwable $e) {
+        // Sin columna `rol` (migración 31 no corrida): igual se crea, va a
+        // quedar con el DEFAULT de la tabla (que hoy es 'admin' en muchos
+        // casos legacy) hasta que se corra la migración.
+        if ($existe) {
+            $pdo->prepare("UPDATE operadores SET password_hash = ?, activo = 1 WHERE username = ?")
+                ->execute([$hash, $usuario]);
+        } else {
+            $pdo->prepare(
+                "INSERT INTO operadores (username, password_hash, activo) VALUES (?, ?, 1)"
+            )->execute([$usuario, $hash]);
+        }
+    }
+    return ['ok' => true, 'usuario' => $usuario, 'accion' => $existe ? 'actualizado' : 'creado'];
+}
+
+/** Activa/desactiva un operador (nunca a uno mismo, para no encerrarse). */
+function crm_agente_estado(PDO $pdo, string $usuario, int $activo, string $quienLoHace): array
+{
+    if ($usuario === $quienLoHace) {
+        return ['ok' => false, 'error' => 'No podés desactivarte a vos mismo'];
+    }
+    $pdo->prepare("UPDATE operadores SET activo = ? WHERE username = ?")->execute([$activo, $usuario]);
+    return ['ok' => true];
 }
 
 /** Carga la lib del chatbot (defaults + armado del prompt) una sola vez. */
@@ -343,6 +424,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         // ---- config del chatbot (campos editables + on/off) ----
         if ($accion === 'chatbot_config') {
             salir(array_merge(['ok' => true], crm_chatbot_leer($pdo)));
+        }
+
+        // ---- quién soy (para recuperar el rol tras un F5, CSRF/ROL no
+        //      persisten en localStorage a propósito) ----
+        if ($accion === 'yo') {
+            salir(['ok' => true, 'operador' => $operador, 'rol' => operador_rol()]);
+        }
+
+        // ---- listar agentes/admins (solo admin) ----
+        if ($accion === 'agentes_listar') {
+            exigir_admin();
+            salir(['ok' => true, 'agentes' => crm_agentes_listar($pdo)]);
+        }
+
+        // ---- difusiones programadas que todavía no salieron ----
+        if ($accion === 'programadas_listar') {
+            salir(['ok' => true, 'programadas' => notif_programadas_listar($pdo)]);
         }
 
         salir(['ok' => false, 'error' => 'accion desconocida'], 400);
@@ -556,6 +654,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'reglas_extra' => $body['reglas_extra'] ?? '',
             ], $activo);
             salir(['ok' => true, 'activo' => (bool)$activo]);
+        }
+
+        // ---- crear un agente humano / resetear su clave (solo admin) ----
+        if ($accion === 'agente_crear') {
+            exigir_admin();
+            $r = crm_agente_crear($pdo, trim((string)($body['usuario'] ?? '')),
+                                  (string)($body['password'] ?? ''));
+            salir($r, $r['ok'] ? 200 : 422);
+        }
+
+        // ---- activar / desactivar un operador (solo admin) ----
+        if ($accion === 'agente_estado') {
+            exigir_admin();
+            $usuario = trim((string)($body['usuario'] ?? ''));
+            $activo  = !empty($body['activo']) ? 1 : 0;
+            if ($usuario === '') { salir(['ok' => false, 'error' => 'Falta usuario'], 400); }
+            $r = crm_agente_estado($pdo, $usuario, $activo, $operador);
+            salir($r, $r['ok'] ? 200 : 422);
+        }
+
+        // ---- cancelar una difusión programada antes de que salga ----
+        if ($accion === 'programada_cancelar') {
+            $id = (int)($body['id'] ?? 0);
+            if (!$id) { salir(['ok' => false, 'error' => 'Falta id'], 400); }
+            $ok = notif_programada_cancelar($pdo, $id);
+            salir(['ok' => $ok, 'error' => $ok ? null : 'No se pudo cancelar (¿ya salió?)']);
         }
 
         salir(['ok' => false, 'error' => 'accion desconocida'], 400);

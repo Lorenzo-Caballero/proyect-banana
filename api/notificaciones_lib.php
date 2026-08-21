@@ -246,6 +246,51 @@ if (!function_exists('notif_crear')) {
         );
     }
 
+    /**
+     * Difusiones PROGRAMADAS que todavía no salieron (programada_en futura,
+     * en UTC). Para el listado del CRM: devuelve la fecha ya convertida a
+     * hora de Argentina, lista para mostrar.
+     */
+    function notif_programadas_listar(PDO $pdo): array
+    {
+        try {
+            $rows = $pdo->query(
+                "SELECT id, usuario, titulo, cuerpo, tipo, programada_en
+                   FROM notificaciones
+                  WHERE programada_en IS NOT NULL AND programada_en > UTC_TIMESTAMP()
+                  ORDER BY programada_en ASC"
+            )->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Throwable $e) {
+            return [];   // sin columna (migración 29 no corrida)
+        }
+        return array_map(function ($r) {
+            $ar = '';
+            try {
+                $dt = new DateTime($r['programada_en'], new DateTimeZone('UTC'));
+                $dt->setTimezone(new DateTimeZone('America/Argentina/Buenos_Aires'));
+                $ar = $dt->format('Y-m-d H:i');
+            } catch (Throwable $e) {}
+            return [
+                'id' => (int)$r['id'], 'usuario' => $r['usuario'], 'titulo' => $r['titulo'],
+                'cuerpo' => $r['cuerpo'], 'tipo' => $r['tipo'], 'programada_en_ar' => $ar,
+            ];
+        }, $rows);
+    }
+
+    /** Cancela una difusión que todavía no salió. false si ya salió o no existe. */
+    function notif_programada_cancelar(PDO $pdo, int $id): bool
+    {
+        try {
+            $st = $pdo->prepare(
+                "DELETE FROM notificaciones WHERE id = ? AND programada_en > UTC_TIMESTAMP()"
+            );
+            $st->execute([$id]);
+            return $st->rowCount() === 1;
+        } catch (Throwable $e) {
+            return false;
+        }
+    }
+
     /** El jugador toco la notificacion. Solo para saber que promo funciona. */
     function notif_marcar_leida(PDO $pdo, string $deviceId, int $id): void
     {

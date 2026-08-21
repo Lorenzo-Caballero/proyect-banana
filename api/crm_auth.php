@@ -63,8 +63,11 @@ if (!function_exists('operador_login')) {
             return false;
         }
 
+        // SELECT * y no columnas puntuales: `rol` (migración 31) puede no
+        // existir todavía en algún cliente, y así no hace falta un try/catch
+        // aparte para el caso "columna faltante" — simplemente no viene en la fila.
         $st = $pdo->prepare(
-            "SELECT username, password_hash FROM operadores WHERE username = ? AND activo = 1 LIMIT 1"
+            "SELECT * FROM operadores WHERE username = ? AND activo = 1 LIMIT 1"
         );
         $st->execute([$usuario]);
         $fila = $st->fetch(PDO::FETCH_ASSOC);
@@ -85,6 +88,10 @@ if (!function_exists('operador_login')) {
         // haya tipeado su usuario al loguearse (bug real, ver
         // TODO_FASE_A.md -- Modulo 4).
         $_SESSION['operador'] = (string)$fila['username'];
+        // Sin columna `rol` (migración 31 no corrida) -> 'admin', igual que
+        // hoy: todos los operadores existentes pueden todo hasta que se corra.
+        $_SESSION['rol']      = in_array($fila['rol'] ?? 'admin', ['admin', 'agente'], true)
+                               ? $fila['rol'] : 'admin';
         $_SESSION['csrf']     = bin2hex(random_bytes(32));
 
         $pdo->prepare("UPDATE operadores SET ultimo_login = NOW() WHERE username = ?")
@@ -99,6 +106,15 @@ if (!function_exists('operador_login')) {
         _crm_sesion_iniciar();
         $op = $_SESSION['operador'] ?? null;
         return (is_string($op) && $op !== '') ? $op : null;
+    }
+
+    /** 'admin' | 'agente' del operador logueado, o null si no hay sesión. */
+    function operador_rol(): ?string
+    {
+        _crm_sesion_iniciar();
+        if (operador_actual() === null) { return null; }
+        $r = $_SESSION['rol'] ?? 'admin';
+        return in_array($r, ['admin', 'agente'], true) ? $r : 'admin';
     }
 
     /** El token CSRF de la sesión actual, o null si no hay sesión. */
@@ -143,6 +159,22 @@ if (!function_exists('operador_login')) {
             }
         }
 
+        return $operador;
+    }
+
+    /**
+     * Como exigir_operador(), pero además exige rol='admin'. Corta con 403
+     * si el operador es un agente. Devuelve el username, igual que la otra.
+     */
+    function exigir_admin(): string
+    {
+        $operador = exigir_operador();
+        if (operador_rol() !== 'admin') {
+            http_response_code(403);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['ok' => false, 'error' => 'Necesitás ser admin para esto']);
+            exit;
+        }
         return $operador;
     }
 
