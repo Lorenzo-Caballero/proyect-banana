@@ -25,6 +25,11 @@ $cfg = require __DIR__ . '/panel_config.php';
 
 $PLANTILLA = '/root/plantilla_esquema.sql';
 
+// Carpeta de migraciones versionadas (api/sql/). Por defecto la que sirve la
+// API en el VPS (symlink a /opt/goldpaw/api/sql). Se puede pisar en
+// panel_config.php con 'SQL_DIR' si tu layout es otro.
+$SQL_DIR = $cfg['SQL_DIR'] ?? '/var/www/api/sql';
+
 if (!is_file($PLANTILLA)) {
     fwrite(STDERR, "[" . date('c') . "] falta la plantilla $PLANTILLA\n");
     exit(1);
@@ -44,6 +49,41 @@ try {
 function marcar($pdo, $id, $ok, $detalle) {
     $st = $pdo->prepare('UPDATE clientes SET aprovisionado = ?, aprov_detalle = ? WHERE id = ?');
     $st->execute([$ok ? 1 : 0, substr($detalle, 0, 255), $id]);
+}
+
+// Migraciones LEGACY que NO hay que correr: la 01 y la 02 crean la tabla
+// `jugadores`, que la migración 07 borró y unificó en `usuarios` (ver
+// CLAUDE.md). Correrlas recrearía esquema muerto. La plantilla base ya trae
+// el esquema actual completo; estas quedan solo por historia en el repo.
+const MIGRACIONES_LEGACY = ['01_migracion.sql', '02_recargas.sql'];
+
+/**
+ * Corre las migraciones de $SQL_DIR (api/sql/*.sql) contra una base, en orden
+ * numérico, salteando las legacy. Son idempotentes (CREATE TABLE IF NOT
+ * EXISTS / ADD COLUMN IF NOT EXISTS): sobre una base que ya salió de la
+ * plantilla al día no hacen nada; sobre una vieja, la ponen al día. Red de
+ * seguridad — la fuente principal del esquema es la plantilla. Best-effort:
+ * si una falla no corta el resto, solo lo reporta. '' si no había nada.
+ */
+function aplicar_migraciones($db) {
+    global $SQL_DIR;
+    if (!is_dir($SQL_DIR)) { return 'sin carpeta ' . $SQL_DIR; }
+
+    $files = glob(rtrim($SQL_DIR, '/') . '/*.sql');
+    if (!$files) { return ''; }
+    // Orden por el prefijo numérico (01_, 02_, ... 26_), no alfabético crudo.
+    natsort($files);
+
+    $okN = 0; $fail = [];
+    foreach ($files as $f) {
+        if (in_array(basename($f), MIGRACIONES_LEGACY, true)) { continue; }
+        exec('mariadb ' . escapeshellarg($db) . ' < ' . escapeshellarg($f) . ' 2>&1', $out, $rc);
+        if ($rc === 0) { $okN++; }
+        else { $fail[] = basename($f) . ': ' . implode(' ', array_slice($out, 0, 2)); }
+        $out = [];
+    }
+    if ($fail) { return $okN . ' ok, ' . count($fail) . ' con error -> ' . implode(' | ', $fail); }
+    return $okN . ' aplicadas ok';
 }
 
 /**
@@ -186,6 +226,15 @@ foreach ($pend as $c) {
             continue;
         }
     }
+
+    // Migraciones versionadas (api/sql/*.sql): la plantilla es el esquema
+    // base, pero las tablas/columnas que se fueron agregando después viven en
+    // git como migraciones. Se corren SIEMPRE (son idempotentes:
+    // CREATE TABLE IF NOT EXISTS / ADD COLUMN IF NOT EXISTS), así un cliente
+    // nuevo queda al día sin mantener la plantilla a mano, y uno viejo se
+    // actualiza solo en la próxima corrida del cron. git es la fuente de verdad.
+    $migMsg = aplicar_migraciones($db);
+    if ($migMsg !== '') { echo date('c') . " {$c['slug']} migraciones: $migMsg\n"; }
 
     // Por-path: comparte el dominio del operador, que ya tiene DNS. No hay
     // subdominio propio que crear.

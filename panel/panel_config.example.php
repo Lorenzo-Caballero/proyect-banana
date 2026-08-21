@@ -19,4 +19,9 @@ return [
     'CF_ZONE_ID'   => '',
     'CF_ZONE_NAME' => 'ganamoscrm.online',  // los subdominios cuelgan de acá
     'VPS_IP'       => '168.231.98.136',      // a dónde apunta el A record
+
+    // Carpeta de migraciones (api/sql/*.sql) que provisionar.php corre sobre
+    // cada base como red de seguridad, además de la plantilla. Default:
+    // /var/www/api/sql. Descomentar solo si tu layout es distinto.
+    // 'SQL_DIR'   => '/var/www/api/sql',
 ];
