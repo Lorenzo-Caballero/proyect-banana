@@ -64,24 +64,44 @@ if (!function_exists('notif_crear')) {
         // sin ella para no romper (el catch de abajo lo cubre).
         $prog = ($programadaEn !== null && trim($programadaEn) !== '') ? trim($programadaEn) : null;
 
+        $params = [
+            $usuario !== '' ? mb_substr($usuario, 0, 50) : null,
+            mb_substr($titulo, 0, 120),
+            mb_substr($cuerpo, 0, 400),
+            $tipo,
+            $url !== null && $url !== '' ? mb_substr($url, 0, 300) : null,
+            mb_substr($origen, 0, 20),
+            $expiraEn,
+            $soloApp ? 1 : 0,
+            $prog,
+        ];
         try {
             $pdo->prepare(
                 "INSERT INTO notificaciones
                    (usuario, titulo, cuerpo, tipo, url, origen, expira_en, solo_app, programada_en)
                  VALUES (?,?,?,?,?,?,?,?,?)"
-            )->execute([
-                $usuario !== '' ? mb_substr($usuario, 0, 50) : null,
-                mb_substr($titulo, 0, 120),
-                mb_substr($cuerpo, 0, 400),
-                $tipo,
-                $url !== null && $url !== '' ? mb_substr($url, 0, 300) : null,
-                mb_substr($origen, 0, 20),
-                $expiraEn,
-                $soloApp ? 1 : 0,
-                $prog,
-            ]);
+            )->execute($params);
             return (int)$pdo->lastInsertId();
         } catch (Throwable $e) {
+            // Sin columna programada_en (migración 29 no corrida): si NO se
+            // pidió programar, la difusión normal no tiene por qué fallar por
+            // eso. Se reintenta sin esa columna. Si SÍ se pidió programar,
+            // no hay forma de cumplirlo sin la columna: se deja fallar (mejor
+            // avisar que "se perdió la fecha" en silencio).
+            if ($prog === null) {
+                try {
+                    array_pop($params);   // saca $prog del final
+                    $pdo->prepare(
+                        "INSERT INTO notificaciones
+                           (usuario, titulo, cuerpo, tipo, url, origen, expira_en, solo_app)
+                         VALUES (?,?,?,?,?,?,?,?)"
+                    )->execute($params);
+                    return (int)$pdo->lastInsertId();
+                } catch (Throwable $e2) {
+                    error_log('notif_crear (fallback): ' . $e2->getMessage());
+                    return 0;
+                }
+            }
             error_log('notif_crear: ' . $e->getMessage());
             return 0;
         }

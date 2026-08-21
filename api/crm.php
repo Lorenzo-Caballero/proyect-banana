@@ -595,7 +595,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $id = notif_crear($pdo, $usuario, $titulo, $cuerpo,
                               (string)($body['tipo'] ?? 'promo'), null, 'crm', null, false, $progEn);
-            if (!$id) { salir(['ok' => false, 'error' => 'No se pudo encolar'], 500); }
+            if (!$id) {
+                $err = $progEn
+                    ? 'No se pudo programar (¿falta correr la migración 29_notif_programada.sql?)'
+                    : 'No se pudo encolar';
+                salir(['ok' => false, 'error' => $err], 500);
+            }
 
             // Rastro en el hilo, para que despues se entienda por que escribio.
             $convId = (int)($body['conversacion_id'] ?? 0);
