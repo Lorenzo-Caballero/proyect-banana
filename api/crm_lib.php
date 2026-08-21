@@ -227,3 +227,113 @@ if (!function_exists('crm_conversacion_id')) {
         return true;
     }
 }
+
+if (!function_exists('crm_difusion_chat_aplicar')) {
+    /**
+     * Inserta $texto como mensaje del bot en la conversación de UN usuario
+     * (si $usuario viene) o en TODAS las conversaciones con usuario vinculado
+     * (si $usuario es null — difusión masiva). Solo toca conversaciones que
+     * YA EXISTEN: no crea una nueva para jugadores que nunca hablaron con el
+     * bot (evitar generar miles de chats vacíos de golpe).
+     *
+     * Devuelve la cantidad de conversaciones donde se insertó.
+     */
+    function crm_difusion_chat_aplicar(PDO $pdo, ?string $usuario, string $texto): int
+    {
+        $texto = trim($texto);
+        if ($texto === '') { return 0; }
+
+        if ($usuario !== null && $usuario !== '') {
+            $st = $pdo->prepare("SELECT id FROM conversaciones WHERE usuario = ? LIMIT 1");
+            $st->execute([mb_substr($usuario, 0, 50)]);
+            $id = $st->fetchColumn();
+            if (!$id) { return 0; }
+            crm_mensaje($pdo, (int)$id, 'bot', $texto);
+            $pdo->prepare("UPDATE conversaciones SET preview = ?, no_leidos = no_leidos + 1, actualizada_en = NOW() WHERE id = ?")
+                ->execute([mb_substr($texto, 0, 280), $id]);
+            return 1;
+        }
+
+        // Masiva: todas las conversaciones con usuario vinculado. Se recorre
+        // de a una (no un INSERT masivo) porque cada fila necesita su propio
+        // conversacion_id en `mensajes` — a la escala de un CRM de agencia
+        // (cientos/pocos miles de chats) esto es instantáneo.
+        $ids = $pdo->query("SELECT id FROM conversaciones WHERE usuario IS NOT NULL AND usuario <> ''")
+                   ->fetchAll(PDO::FETCH_COLUMN);
+        $upd = $pdo->prepare("UPDATE conversaciones SET preview = ?, no_leidos = no_leidos + 1, actualizada_en = NOW() WHERE id = ?");
+        $previewTxt = mb_substr($texto, 0, 280);
+        foreach ($ids as $id) {
+            crm_mensaje($pdo, (int)$id, 'bot', $texto);
+            $upd->execute([$previewTxt, $id]);
+        }
+        return count($ids);
+    }
+}
+
+if (!function_exists('crm_difusiones_chat_listar')) {
+    /** Difusiones de chat PROGRAMADAS que todavía no salieron, con la fecha ya
+     *  convertida a hora de Argentina para mostrar (igual criterio que
+     *  notif_programadas_listar). */
+    function crm_difusiones_chat_listar(PDO $pdo): array
+    {
+        try {
+            $rows = $pdo->query(
+                "SELECT id, usuario, texto, programada_en FROM difusiones_chat
+                  WHERE procesada_en IS NULL AND programada_en > UTC_TIMESTAMP()
+                  ORDER BY programada_en ASC"
+            )->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Throwable $e) {
+            return [];   // sin tabla (migración 32 no corrida)
+        }
+        return array_map(function ($r) {
+            $ar = '';
+            try {
+                $dt = new DateTime($r['programada_en'], new DateTimeZone('UTC'));
+                $dt->setTimezone(new DateTimeZone('America/Argentina/Buenos_Aires'));
+                $ar = $dt->format('Y-m-d H:i');
+            } catch (Throwable $e) {}
+            return ['id' => (int)$r['id'], 'usuario' => $r['usuario'], 'texto' => $r['texto'],
+                    'programada_en_ar' => $ar];
+        }, $rows);
+    }
+
+    /** Cancela una difusión de chat que todavía no salió. */
+    function crm_difusion_chat_cancelar(PDO $pdo, int $id): bool
+    {
+        try {
+            $st = $pdo->prepare(
+                "DELETE FROM difusiones_chat WHERE id = ? AND procesada_en IS NULL"
+            );
+            $st->execute([$id]);
+            return $st->rowCount() === 1;
+        } catch (Throwable $e) {
+            return false;
+        }
+    }
+}
+
+if (!function_exists('crm_parse_programada')) {
+    /**
+     * Convierte la fecha/hora que tipeó el agente (hora de Argentina, formato
+     * "YYYY-MM-DD HH:MM" o el "YYYY-MM-DDTHH:MM" de un <input datetime-local>)
+     * a un datetime en UTC "YYYY-MM-DD HH:MM:SS", que es como se guarda y como
+     * se compara al procesar (con UTC_TIMESTAMP()). Así no depende de la zona
+     * del server ni de la conexión MySQL. Devuelve null si es inválida o ya
+     * pasó. La usan crm.php (difusiones push) y el cron de difusiones de chat.
+     */
+    function crm_parse_programada(string $raw): ?string
+    {
+        $raw = trim(str_replace('T', ' ', $raw));
+        if (!preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/', $raw)) { return null; }
+        try {
+            $ar  = new DateTime($raw, new DateTimeZone('America/Argentina/Buenos_Aires'));
+            $now = new DateTime('now', new DateTimeZone('America/Argentina/Buenos_Aires'));
+            // Margen de 1 min: si eligió "ahora mismo", lo tomamos como inmediato válido.
+            if ($ar->getTimestamp() < $now->getTimestamp() - 60) { return null; }
+            $ar->setTimezone(new DateTimeZone('UTC'));
+            return $ar->format('Y-m-d H:i:s');
+        } catch (Throwable $e) {
+            return null;
+        }
+    }
+}

@@ -717,6 +717,10 @@
   .ag-rol-opt.on{border-color:var(--violet);background:var(--violetSoft)}
   .ag-rol-opt.on b{color:var(--violet2)}
 
+  /* selector de canal de difusión: 3 tarjetas en vez de 2 */
+  .n-canal-toggle{grid-template-columns:repeat(3,1fr);margin-bottom:18px}
+  @media(max-width:520px){ .n-canal-toggle{grid-template-columns:1fr} }
+
   /* difusiones programadas, dentro del modal de Push (ahora en su propia
      columna: sin borde superior, ese corte visual lo da el gap de columnas) */
   .n-programadas{margin-top:20px}
@@ -1412,19 +1416,45 @@
 <div class="back" id="backN">
   <div class="modal modal-ancho n-modal">
     <div class="n-modal-head">
-      <h3>Notificar al celular</h3>
-      <p id="nSub">Le llega como notificación de Android.</p>
+      <h3>Difusión</h3>
+      <p id="nSub">Elegí por dónde llega: notificación push, mensaje en el chat, o ambos.</p>
+    </div>
+
+    <label>Canal</label>
+    <div class="ag-rol-toggle n-canal-toggle">
+      <label class="ag-rol-opt on" data-canal="push">
+        <input type="radio" name="nCanal" value="push" checked>
+        <b>Push</b>
+        <span>Notificación de Android.</span>
+      </label>
+      <label class="ag-rol-opt" data-canal="chat">
+        <input type="radio" name="nCanal" value="chat">
+        <b>Chat</b>
+        <span>Mensaje del bot en la conversación.</span>
+      </label>
+      <label class="ag-rol-opt" data-canal="ambos">
+        <input type="radio" name="nCanal" value="ambos">
+        <b>Ambos</b>
+        <span>Push y chat con el mismo texto.</span>
+      </label>
     </div>
 
     <div class="n-modal-cols">
       <!-- columna izquierda: redactar -->
       <div class="n-col">
-        <label>Plantilla</label>
-        <div class="chips" id="nChips"></div>
-        <label for="nTitulo">Título</label>
-        <input id="nTitulo" type="text" maxlength="120" placeholder="🎁 ¡Te regalamos 500 fichas!">
-        <label for="nCuerpo">Mensaje</label>
-        <textarea id="nCuerpo" maxlength="400" placeholder="Entrá a la app y jugalas antes de que se venzan." rows="5"></textarea>
+        <div id="nBloquePush">
+          <label>Plantilla</label>
+          <div class="chips" id="nChips"></div>
+          <label for="nTitulo">Título</label>
+          <input id="nTitulo" type="text" maxlength="120" placeholder="🎁 ¡Te regalamos 500 fichas!">
+          <label for="nCuerpo" id="nCuerpoLabel">Mensaje</label>
+          <textarea id="nCuerpo" maxlength="400" placeholder="Entrá a la app y jugalas antes de que se venzan." rows="5"></textarea>
+        </div>
+        <div id="nBloqueChat" style="display:none">
+          <label for="nMensajeChat">Mensaje de chat</label>
+          <textarea id="nMensajeChat" maxlength="1500" placeholder="Así lo escribe el bot en la conversación de cada jugador…" rows="5"></textarea>
+          <p class="ag-modal-hint">Si dejás esto vacío y el canal es "Ambos", se usa el mismo texto del mensaje de push.</p>
+        </div>
       </div>
 
       <!-- columna derecha: a quién y cuándo -->
@@ -3198,15 +3228,29 @@
   });
 
   /** `forzar` = entró por el rail, o sea sin conversación: solo masiva. */
+  function nSetCanal(canal){
+    document.querySelectorAll('input[name="nCanal"]').forEach(r=>{ r.checked = r.value===canal; });
+    document.querySelectorAll(".n-canal-toggle .ag-rol-opt").forEach(el=>{
+      el.classList.toggle("on", el.getAttribute("data-canal")===canal);
+    });
+    $("#nBloquePush").style.display = (canal==="push"||canal==="ambos") ? "" : "none";
+    $("#nBloqueChat").style.display = (canal==="chat"||canal==="ambos") ? "" : "none";
+    $("#nCuerpoLabel").textContent = canal==="ambos" ? "Mensaje (push y, si no completás el de chat, también chat)" : "Mensaje";
+  }
+  document.querySelectorAll(".n-canal-toggle .ag-rol-opt").forEach(el=>{
+    el.addEventListener("click", ()=> nSetCanal(el.getAttribute("data-canal")));
+  });
+
   function abrirNotif(forzar){
     const todos = !!forzar || !st.usuario;
     $("#nTodos").checked = todos;
     $("#nTodos").disabled = todos;
     $("#nSub").textContent = todos
-      ? "Le va a llegar a todos los jugadores que tengan la app instalada."
-      : `Para @${st.usuario}. Le llega como notificación de Android.`;
-    $("#nTitulo").value=""; $("#nCuerpo").value=""; nTipo="promo";
+      ? "A todos los jugadores con la app instalada."
+      : `Para @${st.usuario}.`;
+    $("#nTitulo").value=""; $("#nCuerpo").value=""; $("#nMensajeChat").value=""; nTipo="promo";
     document.querySelectorAll("#nChips .chip").forEach(x=>x.classList.remove("on"));
+    nSetCanal("push");
     $("#nProgramar").checked=false; $("#nCuando").style.display="none"; $("#nFecha").value="";
     $("#nOk").textContent="Enviar";
     $("#backN").classList.add("on");
@@ -3214,6 +3258,7 @@
     cargarProgramadas();
   }
 
+  const N_CANAL_ICO = { push:"📲", chat:"💬" };
   async function cargarProgramadas(){
     const cont = $("#nProgramadasLista");
     cont.innerHTML = `<div class="ag-vacio" style="padding:16px">Cargando…</div>`;
@@ -3224,18 +3269,19 @@
     if(!lista.length){ cont.innerHTML = `<div class="ag-vacio" style="padding:16px">No hay difusiones programadas.</div>`; return; }
     cont.innerHTML = lista.map(p=>{
       const destino = p.usuario ? ("@"+esc(p.usuario)) : "a todos";
+      const ico = N_CANAL_ICO[p.canal] || "";
       return `<div class="n-prog-item" data-id="${p.id}">
         <div class="n-prog-info">
-          <div class="n-prog-titulo-msg">${esc(p.titulo)}</div>
+          <div class="n-prog-titulo-msg">${ico} ${esc(p.titulo)}</div>
           <div class="n-prog-meta">Sale <b>${esc(p.programada_en_ar)}</b> · ${destino}</div>
         </div>
-        <button class="btn-mini-accion peligro" data-cancelar="${p.id}" type="button">Cancelar</button>
+        <button class="btn-mini-accion peligro" data-cancelar="${p.id}" data-canal="${p.canal}" type="button">Cancelar</button>
       </div>`;
     }).join("");
     cont.querySelectorAll("[data-cancelar]").forEach(b=>{
       b.addEventListener("click", async ()=>{
         if(!confirm("¿Cancelar esta difusión programada?")) return;
-        const d2 = await jpost({accion:"programada_cancelar", id:+b.getAttribute("data-cancelar")});
+        const d2 = await jpost({accion:"programada_cancelar", id:+b.getAttribute("data-cancelar"), canal:b.getAttribute("data-canal")});
         if(d2.ok){ toast("Difusión cancelada"); cargarProgramadas(); }
         else { toast(d2.error || "No se pudo cancelar"); }
       });
@@ -3256,8 +3302,15 @@
     }
   });
   $("#nOk").addEventListener("click", async ()=>{
+    const canal = document.querySelector('input[name="nCanal"]:checked').value;
+    const incluyePush = canal==="push" || canal==="ambos";
+    const incluyeChat = canal==="chat" || canal==="ambos";
+
     const titulo = $("#nTitulo").value.trim(), cuerpo = $("#nCuerpo").value.trim();
-    if(!titulo || !cuerpo){ toast("Poné título y mensaje"); return; }
+    const mensajeChat = $("#nMensajeChat").value.trim();
+    if(incluyePush && (!titulo || !cuerpo)){ toast("Poné título y mensaje del push"); return; }
+    if(incluyeChat && !mensajeChat && !cuerpo){ toast("Poné el mensaje de chat"); return; }
+
     const todos = $("#nTodos").checked;
     if(!todos && !st.usuario){ toast("Esta conversación no tiene usuario vinculado"); return; }
 
@@ -3269,12 +3322,12 @@
     }
 
     const cuando = programar ? "PROGRAMAR para " + $("#nFecha").value.replace("T"," ") + " (hora Argentina)" : "ENVIAR ahora";
-    if(todos && !confirm(`Se la va a mandar a TODOS los jugadores con la app.\n\n${cuando}.\n\n¿Seguro?`)) return;
+    if(todos && !confirm(`Se la va a mandar a TODOS los jugadores${incluyeChat?" (push y/o chat)":""}.\n\n${cuando}.\n\n¿Seguro?`)) return;
 
     const btn=$("#nOk"); btn.disabled=true; const txtBtn=programar?"Programar":"Enviar"; btn.textContent="…";
     // La masiva no deja rastro en ningún hilo: no es de esa conversación.
     const d = await jpost({ accion:"notificar", todos, usuario:todos?undefined:st.usuario,
-                            titulo, cuerpo, tipo:nTipo,
+                            canal, titulo, cuerpo, mensaje_chat: mensajeChat || undefined, tipo:nTipo,
                             programada_en: programada || undefined,
                             conversacion_id:todos?undefined:st.convId });
     btn.disabled=false; btn.textContent=txtBtn;
@@ -3283,8 +3336,10 @@
       if(d.programada_en){
         toast(`Programada — sale el ${$("#nFecha").value.replace("T"," ")}`);
       } else {
-        toast(d.alcance ? `Encolada para ${d.alcance} celular${d.alcance===1?"":"es"}`
-                        : "Encolada — le llega cuando abra la app");
+        const partes = [];
+        if(incluyePush) partes.push(d.alcance ? `push a ${d.alcance} celular${d.alcance===1?"":"es"}` : "push encolado");
+        if(incluyeChat) partes.push(d.chat_alcance!=null ? `chat en ${d.chat_alcance} conversaci${d.chat_alcance===1?"ón":"ones"}` : "chat enviado");
+        toast(partes.join(" · ") || "Enviado");
       }
       if(st.convId) abrir(st.convId);
     } else { toast(d.error || "No se pudo enviar"); }

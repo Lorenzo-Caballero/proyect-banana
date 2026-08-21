@@ -85,28 +85,9 @@ function movimientos(PDO $pdo, string $usuario, int $limite = 30): array
     }, $st->fetchAll(PDO::FETCH_ASSOC));
 }
 
-/**
- * Convierte la fecha/hora que tipeó el agente (hora de Argentina, formato
- * "YYYY-MM-DD HH:MM" o el "YYYY-MM-DDTHH:MM" de un <input datetime-local">) a
- * un datetime en UTC "YYYY-MM-DD HH:MM:SS", que es como se guarda y como se
- * compara en el sondeo (con UTC_TIMESTAMP()). Así no depende de la zona del
- * server ni de la conexión MySQL. Devuelve null si es inválida o ya pasó.
- */
-function crm_parse_programada(string $raw): ?string
-{
-    $raw = trim(str_replace('T', ' ', $raw));
-    if (!preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/', $raw)) { return null; }
-    try {
-        $ar  = new DateTime($raw, new DateTimeZone('America/Argentina/Buenos_Aires'));
-        $now = new DateTime('now', new DateTimeZone('America/Argentina/Buenos_Aires'));
-        // Margen de 1 min: si eligió "ahora mismo", lo tomamos como inmediato válido.
-        if ($ar->getTimestamp() < $now->getTimestamp() - 60) { return null; }
-        $ar->setTimezone(new DateTimeZone('UTC'));
-        return $ar->format('Y-m-d H:i:s');
-    } catch (Throwable $e) {
-        return null;
-    }
-}
+// crm_parse_programada() vive en crm_lib.php (compartida con el cron de
+// difusiones de chat, que no puede incluir este archivo entero porque
+// dispara exigir_operador()).
 
 /** Marca a un agente como atendiendo un chat (idempotente). */
 function crm_agente_tomar(PDO $pdo, int $convId, string $operador): void
@@ -490,7 +471,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
         // ---- difusiones programadas que todavía no salieron ----
         if ($accion === 'programadas_listar') {
-            salir(['ok' => true, 'programadas' => notif_programadas_listar($pdo)]);
+            $push = array_map(function ($p) {
+                $p['canal'] = 'push';
+                return $p;
+            }, notif_programadas_listar($pdo));
+            $chat = array_map(function ($p) {
+                $p['canal']  = 'chat';
+                $p['titulo'] = $p['texto'];   // mismo campo que usa el front para mostrar
+                return $p;
+            }, crm_difusiones_chat_listar($pdo));
+            $todas = array_merge($push, $chat);
+            usort($todas, fn($a, $b) => strcmp($a['programada_en_ar'], $b['programada_en_ar']));
+            salir(['ok' => true, 'programadas' => $todas]);
         }
 
         salir(['ok' => false, 'error' => 'accion desconocida'], 400);
@@ -606,21 +598,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             salir(['ok' => true]);
         }
 
-        /* ---- notificacion push a mano ----
-           `todos: true` manda a todos los celulares con la app; si no, va al
-           jugador indicado. Es UNA fila aunque vaya a mil: la entrega la
-           resuelve notificaciones_entregas cuando cada celular sondea. */
+        /* ---- difusión: push, mensaje de chat, o ambos ----
+           `todos: true` manda a todos los celulares/conversaciones; si no, va
+           al jugador indicado. El push es UNA fila aunque vaya a mil (la
+           entrega la resuelve notificaciones_entregas al sondear); el chat
+           masivo SÍ inserta un mensaje por conversación (ver
+           crm_difusion_chat_aplicar), porque cada uno vive en su propio hilo. */
         if ($accion === 'notificar') {
             $todos   = !empty($body['todos']);
             $usuario = $todos ? null : trim((string)($body['usuario'] ?? ''));
-            $titulo  = trim((string)($body['titulo'] ?? ''));
-            $cuerpo  = trim((string)($body['cuerpo'] ?? ''));
+
+            $canal = (string)($body['canal'] ?? 'push');
+            if (!in_array($canal, ['push', 'chat', 'ambos'], true)) { $canal = 'push'; }
+            $incluyePush = $canal === 'push' || $canal === 'ambos';
+            $incluyeChat = $canal === 'chat' || $canal === 'ambos';
+
+            $titulo = trim((string)($body['titulo'] ?? ''));
+            $cuerpo = trim((string)($body['cuerpo'] ?? ''));
+            // Para el chat, si no mandaron un texto propio, se usa el cuerpo
+            // del push (evita pedir lo mismo dos veces cuando el canal es "ambos").
+            $mensajeChat = trim((string)($body['mensaje_chat'] ?? '')) ?: $cuerpo;
 
             if (!$todos && $usuario === '') {
                 salir(['ok' => false, 'error' => 'Elegí un jugador o marcá "a todos"'], 400);
             }
-            if ($titulo === '' || $cuerpo === '') {
+            if ($incluyePush && ($titulo === '' || $cuerpo === '')) {
                 salir(['ok' => false, 'error' => 'Falta el título o el mensaje'], 400);
+            }
+            if ($incluyeChat && $mensajeChat === '') {
+                salir(['ok' => false, 'error' => 'Falta el mensaje del chat'], 400);
             }
             if (!$todos) {
                 $st = $pdo->prepare("SELECT 1 FROM usuarios WHERE username = ? LIMIT 1");
@@ -632,8 +638,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // Programación opcional (difusiones a futuro). Llega como
             // 'programada_en' en formato "YYYY-MM-DD HH:MM" (hora de Argentina,
-            // lo que ve el agente). Se convierte a la hora del server para
-            // guardar, porque NOW() en el sondeo corre en la zona del server.
+            // lo que ve el agente). Se convierte a UTC para guardar y comparar.
             $progEn = null;
             $progRaw = trim((string)($body['programada_en'] ?? ''));
             if ($progRaw !== '') {
@@ -643,30 +648,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            $id = notif_crear($pdo, $usuario, $titulo, $cuerpo,
-                              (string)($body['tipo'] ?? 'promo'), null, 'crm', null, false, $progEn);
-            if (!$id) {
-                $err = $progEn
-                    ? 'No se pudo programar (¿falta correr la migración 29_notif_programada.sql?)'
-                    : 'No se pudo encolar';
-                salir(['ok' => false, 'error' => $err], 500);
+            $pushId = null;
+            if ($incluyePush) {
+                $pushId = notif_crear($pdo, $usuario, $titulo, $cuerpo,
+                                      (string)($body['tipo'] ?? 'promo'), null, 'crm', null, false, $progEn);
+                if (!$pushId) {
+                    $err = $progEn
+                        ? 'No se pudo programar el push (¿falta correr la migración 29_notif_programada.sql?)'
+                        : 'No se pudo encolar el push';
+                    salir(['ok' => false, 'error' => $err], 500);
+                }
+            }
+
+            $chatAlcance = null;
+            if ($incluyeChat) {
+                if ($progEn) {
+                    // Programado: se encola, un cron lo aplica en el momento
+                    // (ver difusiones_chat_procesar.php) -- insertarlo ya
+                    // mismo lo mostraría antes de tiempo en el chat.
+                    try {
+                        $pdo->prepare(
+                            "INSERT INTO difusiones_chat (usuario, texto, programada_en, creado_por) VALUES (?,?,?,?)"
+                        )->execute([$usuario, $mensajeChat, $progEn, $operador]);
+                    } catch (Throwable $e) {
+                        salir(['ok' => false, 'error' => 'No se pudo programar el chat (¿falta correr la migración 32_difusiones_chat.sql?)'], 500);
+                    }
+                } else {
+                    // Ahora mismo: se aplica en la misma request.
+                    $chatAlcance = crm_difusion_chat_aplicar($pdo, $usuario, $mensajeChat);
+                }
             }
 
             // Rastro en el hilo, para que despues se entienda por que escribio.
             $convId = (int)($body['conversacion_id'] ?? 0);
             if ($convId) {
-                $rastro = $progEn ? "Programó una notificación ($progEn): $titulo"
-                                  : "Envió una notificación: $titulo";
+                $partes = [];
+                if ($incluyePush) { $partes[] = $progEn ? "programó un push ($progEn)" : "envió un push"; }
+                if ($incluyeChat) { $partes[] = $progEn ? "programó un mensaje de chat ($progEn)" : "envió un mensaje de chat"; }
+                $rastro = ucfirst(implode(' y ', $partes)) . ": " . ($titulo ?: $mensajeChat);
                 crm_mensaje($pdo, $convId, 'agente', $rastro, ['interno' => true], $operador);
                 $pdo->prepare("UPDATE conversaciones SET actualizada_en = NOW() WHERE id = ?")
                     ->execute([$convId]);
             }
 
-            /* El alcance es informativo: cuenta los celulares ACTIVOS que la van
-               a recibir. Puede ser 0 y estar todo bien — el aviso queda en cola
-               y le llega al jugador la proxima vez que abra la app. */
-            salir(['ok' => true, 'id' => $id, 'programada_en' => $progEn,
-                   'alcance' => notif_alcance($pdo, $usuario)]);
+            /* El alcance del push es informativo: celulares ACTIVOS que la
+               van a recibir (puede ser 0 y estar todo bien). El del chat es
+               real: conversaciones donde efectivamente se insertó el mensaje
+               (null si quedó programado, todavía no se sabe). */
+            salir(['ok' => true, 'id' => $pushId, 'programada_en' => $progEn, 'canal' => $canal,
+                   'alcance' => $incluyePush ? notif_alcance($pdo, $usuario) : null,
+                   'chat_alcance' => $chatAlcance]);
         }
 
         // ---- anclar / desanclar ----
@@ -751,9 +782,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // ---- cancelar una difusión programada antes de que salga ----
         if ($accion === 'programada_cancelar') {
-            $id = (int)($body['id'] ?? 0);
+            $id    = (int)($body['id'] ?? 0);
+            $canal = (string)($body['canal'] ?? 'push');
             if (!$id) { salir(['ok' => false, 'error' => 'Falta id'], 400); }
-            $ok = notif_programada_cancelar($pdo, $id);
+            $ok = $canal === 'chat' ? crm_difusion_chat_cancelar($pdo, $id) : notif_programada_cancelar($pdo, $id);
             salir(['ok' => $ok, 'error' => $ok ? null : 'No se pudo cancelar (¿ya salió?)']);
         }
 
