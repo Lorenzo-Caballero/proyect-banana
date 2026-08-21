@@ -1602,13 +1602,13 @@
   "#gpr-fab-tag svg{width:10px;height:10px;flex:none;fill:none;stroke:#E3B14A;stroke-width:2.8;stroke-linecap:round;stroke-linejoin:round;"+
   "animation:gpr-flecha-baja 1.4s ease-in-out infinite}"+
   "@keyframes gpr-flecha-baja{0%,100%{transform:translateY(-2px);opacity:.55}50%{transform:translateY(2px);opacity:1}}"+
-  /* el globo late SIEMPRE (zoom in/out + anillo), igual que el FAB del chat,
-     para llamar la atención de forma constante */
+  /* el globo late SOLO cuando hay un giro para reclamar (.listo); sin giro
+     queda quieto. Con el modal abierto se pausa aunque este listo (.quieto) */
   "#gpr-fab{position:relative;width:48px;height:48px;border:0;border-radius:50%;cursor:pointer;"+
   "background:linear-gradient(145deg,#F0C567,#E3B14A);color:#4a2c00;display:grid;"+
-  "place-items:center;box-shadow:0 8px 22px rgba(227,177,74,.45);padding:0;"+
-  "animation:gpr-latido 1.6s ease-in-out infinite}"+
+  "place-items:center;box-shadow:0 8px 22px rgba(227,177,74,.45);padding:0}"+
   "#gpr-fab svg{width:26px;height:26px}"+
+  "#gpr-fab.listo{animation:gpr-latido 1.6s ease-in-out infinite}"+
   "#gpr-fab.quieto{animation:none}"+     /* pausado con el modal abierto */
   "@keyframes gpr-latido{"+
   "0%{transform:scale(1);box-shadow:0 8px 20px rgba(227,177,74,.45),0 0 0 0 rgba(227,177,74,.55)}"+
@@ -1712,7 +1712,7 @@
   }
   function cerrarRuleta(){
     ov.classList.remove("show");
-    fabR.classList.remove("quieto");   // vuelve a latir
+    fabR.classList.remove("quieto");   // si sigue .listo, vuelve a latir
   }
 
   fabR.addEventListener("click", abrirRuleta);
@@ -1733,6 +1733,9 @@
           inUser.style.display = "none";
           btnR.style.display = "none";
           $("gpr-skip").textContent = "Listo";
+          // Ya reclamó: no queda giro hoy. El FAB deja de palpitar y de mostrar
+          // el letrero (queda visible pero quieto hasta mañana).
+          pintarEstadoRuleta(false);
         } else {
           msgR.textContent = d.error || "No se pudo reclamar.";
           btnR.disabled = false; btnR.textContent = "Reclamar premio";
@@ -1765,6 +1768,7 @@
             resR.className = "gpr-res show nada";
             resR.innerHTML = "<b>" + d.label + "</b>" + (d.mensaje || "Ya reclamaste tu premio de hoy.");
             btnR.style.display = "none";
+            pintarEstadoRuleta(false);   // sin giro hasta mañana
             return;
           }
           if (d.bonus > 0){
@@ -1784,6 +1788,7 @@
             resR.className = "gpr-res show nada";
             resR.innerHTML = "<b>" + d.label + "</b>¡Suerte la próxima! Volvé mañana.";
             btnR.style.display = "none";
+            pintarEstadoRuleta(false);   // "Nada" igual consume el giro del día
           }
         }, 4700);   // dura lo que la animacion de la rueda
       })
@@ -1801,22 +1806,40 @@
     reclamar(u);
   });
 
+  // Palpito + letrero SOLO cuando hay un giro para reclamar. Sin giro
+  // disponible el FAB se ve pero queda quieto y sin cartel, para no insistir
+  // con algo que el jugador no puede reclamar hasta mañana.
+  function pintarEstadoRuleta(disponible){
+    fabR.classList.toggle("listo", !!disponible);
+    tagR.classList.toggle("oculto", !disponible);
+  }
+
   function cargarRuleta(){
     // El FAB tiene que aparecer SIEMPRE, pase lo que pase con la API o con
     // el dibujo de la rueda -- eso se decide acá, no adentro del .then() de
     // la red, para que un fetch caído o un error de dibujo no lo tumben.
-    // El palpito y el letrero van SIEMPRE (llaman la atención constante); lo
-    // único que depende del día es si la ruleta se abre sola.
     fabRWrap.classList.add("on");
+    // Estado inicial optimista con lo que sabe este dispositivo (localStorage);
+    // el fetch de abajo lo corrige con la verdad del server si conocemos al
+    // usuario (el server cruza dispositivos, localStorage no).
     var yaJugoHoy = ls(RULETA_DIA) === new Date().toISOString().slice(0, 10);
+    pintarEstadoRuleta(!yaJugoHoy);
 
-    fetch(API_RULETA)
+    var url = API_RULETA + (USUARIO ? ("?usuario=" + encodeURIComponent(USUARIO)) : "");
+    fetch(url)
       .then(function (r){ return r.json(); })
-      .then(function (d){ premios = (d.premios && d.premios.length) ? d.premios : FALLBACK; })
+      .then(function (d){
+        premios = (d.premios && d.premios.length) ? d.premios : FALLBACK;
+        // Si el server sabe del usuario, su 'disponible' manda.
+        if (typeof d.disponible === "boolean"){
+          yaJugoHoy = !d.disponible;
+          pintarEstadoRuleta(d.disponible);
+        }
+      })
       .catch(function (){ premios = FALLBACK; })
       .then(function (){
         try { dibujar(); } catch (e) { log("ruleta: error al dibujar", String(e && e.message || e)); }
-        // Se abre sola una vez por dia, para no ser pesada en cada apertura.
+        // Se abre sola una vez por dia SOLO si hay giro para reclamar.
         if (!yaJugoHoy){
           setTimeout(abrirRuleta, 900);
         }
