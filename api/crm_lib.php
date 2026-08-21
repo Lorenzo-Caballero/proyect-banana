@@ -107,11 +107,26 @@ if (!function_exists('crm_conversacion_id')) {
     }
 
     /** Inserta un mensaje en una conversacion. $meta es un array opcional (se guarda JSON). */
-    function crm_mensaje(PDO $pdo, int $convId, string $rol, string $texto, ?array $meta = null): void
+    function crm_mensaje(PDO $pdo, int $convId, string $rol, string $texto,
+                         ?array $meta = null, ?string $operador = null): void
     {
-        $pdo->prepare(
-            "INSERT INTO mensajes (conversacion_id, rol, texto, meta) VALUES (?,?,?,?)"
-        )->execute([$convId, $rol, $texto, $meta ? json_encode($meta, JSON_UNESCAPED_UNICODE) : null]);
+        // La columna `operador` existe desde la migración 30. Si no está
+        // (migración sin correr), se cae al INSERT clásico de 4 columnas para
+        // no romper el chat.
+        try {
+            $pdo->prepare(
+                "INSERT INTO mensajes (conversacion_id, rol, operador, texto, meta) VALUES (?,?,?,?,?)"
+            )->execute([
+                $convId, $rol,
+                ($operador !== null && $operador !== '') ? mb_substr($operador, 0, 60) : null,
+                $texto,
+                $meta ? json_encode($meta, JSON_UNESCAPED_UNICODE) : null,
+            ]);
+        } catch (Throwable $e) {
+            $pdo->prepare(
+                "INSERT INTO mensajes (conversacion_id, rol, texto, meta) VALUES (?,?,?,?)"
+            )->execute([$convId, $rol, $texto, $meta ? json_encode($meta, JSON_UNESCAPED_UNICODE) : null]);
+        }
     }
 
     /** Guarda un turno del chatbot. Nunca rompe el chat: si falla, solo loguea. */

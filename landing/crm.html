@@ -234,6 +234,14 @@
   .ia-toggle.ia-on .ia-track{background:#22c55e}
   .ia-toggle.ia-on .ia-knob{left:15px}
   .pin-mini{color:var(--orange2);display:inline-flex;margin-right:5px;flex:none}
+  /* multi-agente: etiqueta de quién escribió cada mensaje + agentes atendiendo */
+  .msg-agente{font-weight:700;color:var(--vio,#a985ff)}
+  .agentes-chat{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}
+  .ag-chip{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;line-height:1;
+           padding:3px 8px;border-radius:20px;background:rgba(124,79,224,.16);color:#c4b0ff;border:1px solid rgba(124,79,224,.4)}
+  .ag-chip.yo{background:rgba(34,197,94,.16);color:#7ee6a8;border-color:rgba(34,197,94,.45)}
+  .ag-chip .dot{width:5px;height:5px;border-radius:50%;background:currentColor}
+  #btnAtender.on{color:#22c55e;border-color:#22c55e;background:rgba(34,197,94,.12)}
   .pin-mini svg{width:12px;height:12px;fill:currentColor;stroke:none}
 
   /* ---- 4 botones de saldo ---- */
@@ -717,9 +725,11 @@
           <div>
             <b id="chatWho">—</b>
             <div class="sub" id="chatSub"></div>
+            <div class="agentes-chat" id="chatAgentes"></div>
           </div>
         </div>
         <div class="estbtns" id="estbtns">
+          <button class="pinbtn" id="btnAtender" type="button" title="Atender este chat"><svg viewBox="0 0 24 24"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/><path d="M17 11h6M20 8v6"/></svg></button>
           <button class="pinbtn btn-info" id="btnInfo" title="Ver info del usuario"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></button>
           <button class="ia-toggle" id="btnIA" type="button" role="switch" aria-checked="false" title="Prender / apagar la IA en este chat">
             <svg class="ia-bot" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M12 8V4M9 4h6"/><circle cx="8.5" cy="14" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="14" r="1.3" fill="currentColor" stroke="none"/></svg>
@@ -1588,11 +1598,14 @@
       const bg = c.usuario ? `style="background:${colorDe(c.usuario)}"` : "";
       const nl = c.no_leidos>0 ? `<span class="badge">${c.no_leidos}</span>` : "";
       const pin = c.fijada ? `<span class="pin-mini">${SVG.pin}</span>` : "";
+      const ags = (c.agentes && c.agentes.length)
+        ? `<div class="agentes-chat">${c.agentes.map(a=>`<span class="ag-chip${st.yo&&a===st.yo?" yo":""}"><span class="dot"></span>${esc(a)}</span>`).join("")}</div>`
+        : "";
       return `<div class="conv ${c.id===st.convId?"sel":""}" data-id="${c.id}">
         <div class="av ${anon}" ${bg}>${esc(inic(c.usuario||"?"))}</div>
         <div class="mid">
           <div class="n"><b>${pin}<span class="est-dot est-${esc(c.estado)}"></span>${esc(nombre)}</b><span class="t">${hace(c.actualizada_en)}</span></div>
-          <div class="pv">${esc(c.preview||"—")}</div>
+          <div class="pv">${esc(c.preview||"—")}</div>${ags}
         </div>${nl}
       </div>`;
     }).join("");
@@ -1627,6 +1640,8 @@
     $("#btnFijar").classList.toggle("on", !!c.fijada);
     st.iaActiva = (c.ia_activa !== false);
     pintarBtnIA();
+    st.yo = d.yo || "";
+    pintarAgentes(d.agentes || []);
 
     $("#thread").innerHTML = d.mensajes.map(m=>{
       const cls = m.rol==="user" ? "user" : (m.rol==="agente" ? "agente" : "bot");
@@ -1639,7 +1654,10 @@
         const ic = (m.rol==="agente" && /^(Cargó|Carga|Retiro)/.test(m.texto||"")) ? SVG.gift : "";
         inner = ic + esc(m.texto);
       }
-      return `<div class="row ${cls}"><div><div class="bub">${inner}</div><div class="meta">${hace(m.creado_en)}</div></div></div>`;
+      // Quién respondió: solo en mensajes de agente que tengan operador.
+      const quien = (m.rol==="agente" && m.operador)
+        ? `<span class="msg-agente">${esc(m.operador)}</span> · ` : "";
+      return `<div class="row ${cls}"><div><div class="bub">${inner}</div><div class="meta">${quien}${hace(m.creado_en)}</div></div></div>`;
     }).join("") || `<div class="nouser">Conversación vacía.</div>`;
     const th=$("#thread"); th.scrollTop = th.scrollHeight;
 
@@ -1712,6 +1730,34 @@
     const nueva = !$("#btnFijar").classList.contains("on");
     const d = await jpost({accion:"fijar", id:st.convId, fijar:nueva});
     if(d.ok){ $("#btnFijar").classList.toggle("on", d.fijada); cargarLista(); }
+  });
+
+  // ---------- agentes atendiendo (multi-agente) ----------
+  function pintarAgentes(lista){
+    st.agentes = lista || [];
+    const cont = $("#chatAgentes");
+    if(!cont) return;
+    cont.innerHTML = st.agentes.length
+      ? st.agentes.map(a=>{
+          const yo = st.yo && a===st.yo;
+          return `<span class="ag-chip${yo?" yo":""}"><span class="dot"></span>${esc(a)}${yo?" (vos)":""}</span>`;
+        }).join("")
+      : `<span style="color:var(--muted);font-size:11px">Sin agente asignado</span>`;
+    // El botón "Atender" queda encendido si YO estoy en la lista.
+    const yoAtiende = st.yo && st.agentes.includes(st.yo);
+    const b = $("#btnAtender");
+    b.classList.toggle("on", !!yoAtiende);
+    b.title = yoAtiende ? "Soltar este chat (pausar tu atención)" : "Atender este chat";
+  }
+  $("#btnAtender").addEventListener("click", async ()=>{
+    if(!st.convId) return;
+    const yoAtiende = st.yo && (st.agentes||[]).includes(st.yo);
+    const d = await jpost({accion: yoAtiende ? "soltar" : "atender", id:st.convId});
+    if(d.ok){
+      pintarAgentes(d.agentes || []);
+      cargarLista();  // refresca las etiquetas en el listado
+      toast(yoAtiende ? "Soltaste el chat" : "Estás atendiendo este chat");
+    } else { toast("No se pudo"); }
   });
 
   // ---------- IA por chat (prender/apagar el bot para ESTA conversación) ----

@@ -20,13 +20,21 @@ declare(strict_types=1);
 require __DIR__ . '/config.php';
 require __DIR__ . '/db.php';
 require __DIR__ . '/crm_lib.php';
+require __DIR__ . '/crm_auth.php';
 require __DIR__ . '/notificaciones_lib.php';
 
 header('Content-Type: application/json; charset=utf-8');
-header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type');
+header('Access-Control-Allow-Headers: Content-Type, X-CSRF-Token');
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
+
+// El CRM ahora exige login de operador (multi-agente): cada acción sabe QUÉ
+// agente la hizo. exigir_operador() corta con 401 (sin sesión) o 403 (CSRF
+// inválido en POST) y el frontend ya reacciona mostrando el login.
+// Se sirve del mismo origen que el CRM (no cross-origin), así la cookie de
+// sesión viaja; por eso se quitó el 'Access-Control-Allow-Origin: *' que
+// impedía mandar credenciales.
+$operador = exigir_operador();
 
 function salir($data, int $code = 200): void
 {
@@ -96,6 +104,40 @@ function crm_parse_programada(string $raw): ?string
     } catch (Throwable $e) {
         return null;
     }
+}
+
+/** Marca a un agente como atendiendo un chat (idempotente). */
+function crm_agente_tomar(PDO $pdo, int $convId, string $operador): void
+{
+    if ($operador === '') { return; }
+    try {
+        $pdo->prepare(
+            "INSERT IGNORE INTO conversacion_agentes (conversacion_id, operador) VALUES (?, ?)"
+        )->execute([$convId, mb_substr($operador, 0, 60)]);
+    } catch (Throwable $e) { /* sin tabla (mig 30 sin correr): se ignora */ }
+}
+
+/** Saca a un agente de un chat (relevo / pausa). */
+function crm_agente_soltar(PDO $pdo, int $convId, string $operador): void
+{
+    if ($operador === '') { return; }
+    try {
+        $pdo->prepare(
+            "DELETE FROM conversacion_agentes WHERE conversacion_id = ? AND operador = ?"
+        )->execute([$convId, mb_substr($operador, 0, 60)]);
+    } catch (Throwable $e) {}
+}
+
+/** Lista de agentes atendiendo un chat, el que tomó primero al frente. */
+function crm_agentes_de(PDO $pdo, int $convId): array
+{
+    try {
+        $st = $pdo->prepare(
+            "SELECT operador FROM conversacion_agentes WHERE conversacion_id = ? ORDER BY tomado_en ASC"
+        );
+        $st->execute([$convId]);
+        return $st->fetchAll(PDO::FETCH_COLUMN) ?: [];
+    } catch (Throwable $e) { return []; }
 }
 
 /** Carga la lib del chatbot (defaults + armado del prompt) una sola vez. */
@@ -201,8 +243,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 $it['id'] = (int)$it['id'];
                 $it['no_leidos'] = (int)$it['no_leidos'];
                 $it['fijada'] = (bool)$it['fijada'];
+                $it['agentes'] = [];
             }
             unset($it);
+
+            // Agentes atendiendo cada chat del listado, en UNA query (sin N+1).
+            if ($items) {
+                try {
+                    $ids = array_column($items, 'id');
+                    $ph  = implode(',', array_fill(0, count($ids), '?'));
+                    $stA = $pdo->prepare(
+                        "SELECT conversacion_id, operador FROM conversacion_agentes
+                         WHERE conversacion_id IN ($ph) ORDER BY tomado_en ASC"
+                    );
+                    $stA->execute($ids);
+                    $porConv = [];
+                    foreach ($stA->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                        $porConv[(int)$r['conversacion_id']][] = $r['operador'];
+                    }
+                    foreach ($items as &$it2) {
+                        $it2['agentes'] = $porConv[$it2['id']] ?? [];
+                    }
+                    unset($it2);
+                } catch (Throwable $e) { /* sin tabla (mig 30): quedan [] */ }
+            }
 
             $res = $pdo->query(
                 "SELECT COUNT(*) total,
@@ -249,9 +313,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             // marcar como leida
             $pdo->prepare("UPDATE conversaciones SET no_leidos = 0 WHERE id = ?")->execute([$id]);
 
-            $st = $pdo->prepare("SELECT rol, texto, meta, creado_en FROM mensajes
-                                 WHERE conversacion_id = ? ORDER BY creado_en ASC, id ASC");
-            $st->execute([$id]);
+            // `operador` por mensaje (migración 30). Si la columna no existe,
+            // se reintenta sin ella para no romper el hilo.
+            try {
+                $st = $pdo->prepare("SELECT rol, operador, texto, meta, creado_en FROM mensajes
+                                     WHERE conversacion_id = ? ORDER BY creado_en ASC, id ASC");
+                $st->execute([$id]);
+            } catch (Throwable $e) {
+                $st = $pdo->prepare("SELECT rol, texto, meta, creado_en FROM mensajes
+                                     WHERE conversacion_id = ? ORDER BY creado_en ASC, id ASC");
+                $st->execute([$id]);
+            }
             $mensajes = array_map(function ($m) {
                 $m['adjunto'] = $m['meta'] ? json_decode($m['meta'], true) : null;  // {tipo,url,nombre}
                 unset($m['meta']);
@@ -263,7 +335,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $movs  = $usuario !== '' ? movimientos($pdo, $usuario) : [];
 
             salir(['ok' => true, 'conversacion' => $conv, 'mensajes' => $mensajes,
-                   'usuario' => $ficha, 'movimientos' => $movs]);
+                   'usuario' => $ficha, 'movimientos' => $movs,
+                   'agentes' => crm_agentes_de($pdo, $id),
+                   'yo' => $operador]);
         }
 
         // ---- config del chatbot (campos editables + on/off) ----
@@ -314,7 +388,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 salir(['ok' => false, 'error' => 'Falta usuario o monto (no puede ser 0)'], 400);
             }
 
-            $r = crm_cargar($pdo, $usuario, $tipo, $monto, $motivo, 'crm');
+            $r = crm_cargar($pdo, $usuario, $tipo, $monto, $motivo, 'crm', $operador);
             if (!$r['ok']) { salir($r, 400); }
 
             /* Avisarle al jugador. Solo cuando es un REGALO: un monto negativo
@@ -333,7 +407,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $signo = $monto > 0 ? '+' : '';
                 crm_mensaje($pdo, $convId, 'agente',
                     "Cargó $signo" . number_format($monto, 0, ',', '.') . " $etiqueta"
-                    . ($motivo !== '' ? " · $motivo" : ''), ['interno' => true]);
+                    . ($motivo !== '' ? " · $motivo" : ''), ['interno' => true], $operador);
                 $pdo->prepare("UPDATE conversaciones SET actualizada_en = NOW() WHERE id = ?")->execute([$convId]);
             }
             salir(['ok' => true, 'tipo' => $tipo, 'saldo' => $r['saldo']]);
@@ -345,7 +419,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $monto   = (float)($body['monto'] ?? 0);
             $motivo  = mb_substr((string)($body['motivo'] ?? ''), 0, 200);
             $tipo    = $accion === 'retirar_saldo' ? 'retirar' : 'cargar';
-            $r = crm_saldo($pdo, $usuario, $tipo, $monto, $motivo);
+            $r = crm_saldo($pdo, $usuario, $tipo, $monto, $motivo, $operador);
             if (!$r['ok']) { salir($r, 400); }
 
             $convId = (int)($body['conversacion_id'] ?? 0);
@@ -353,7 +427,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $verbo = $tipo === 'retirar' ? 'Retiro de' : 'Carga de';
                 crm_mensaje($pdo, $convId, 'agente',
                     "$verbo $" . number_format($monto, 0, ',', '.') . " de saldo (pendiente en ganamos)"
-                    . ($motivo !== '' ? " · $motivo" : ''), ['interno' => true]);
+                    . ($motivo !== '' ? " · $motivo" : ''), ['interno' => true], $operador);
                 $pdo->prepare("UPDATE conversaciones SET actualizada_en = NOW() WHERE id = ?")->execute([$convId]);
             }
             salir(['ok' => true, 'encolada' => true]);
@@ -364,7 +438,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $id = (int)($body['id'] ?? 0);
             $texto = trim((string)($body['texto'] ?? ''));
             if (!$id || $texto === '') { salir(['ok' => false, 'error' => 'Falta id o texto'], 400); }
-            crm_mensaje($pdo, $id, 'agente', mb_substr($texto, 0, 2000));
+            crm_mensaje($pdo, $id, 'agente', mb_substr($texto, 0, 2000), null, $operador);
+            // Responder = atender: si el agente aún no estaba asignado a este
+            // chat, queda asignado solo (aparece su etiqueta sin tener que
+            // tocar "Atender" a mano).
+            crm_agente_tomar($pdo, $id, $operador);
             $pdo->prepare("UPDATE conversaciones SET preview = ?, actualizada_en = NOW() WHERE id = ?")
                 ->execute([mb_substr($texto, 0, 280), $id]);
 
@@ -426,7 +504,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($convId) {
                 $rastro = $progEn ? "Programó una notificación ($progEn): $titulo"
                                   : "Envió una notificación: $titulo";
-                crm_mensaje($pdo, $convId, 'agente', $rastro, ['interno' => true]);
+                crm_mensaje($pdo, $convId, 'agente', $rastro, ['interno' => true], $operador);
                 $pdo->prepare("UPDATE conversaciones SET actualizada_en = NOW() WHERE id = ?")
                     ->execute([$convId]);
             }
@@ -445,6 +523,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $fijar = !empty($body['fijar']) ? 1 : 0;
             $pdo->prepare("UPDATE conversaciones SET fijada = ? WHERE id = ?")->execute([$fijar, $id]);
             salir(['ok' => true, 'fijada' => (bool)$fijar]);
+        }
+
+        // ---- atender / soltar un chat (asignación de agente, relevo) ----
+        if ($accion === 'atender' || $accion === 'soltar') {
+            $id = (int)($body['id'] ?? 0);
+            if (!$id) { salir(['ok' => false, 'error' => 'Falta id'], 400); }
+            // El agente que atiende/suelta es SIEMPRE el logueado, nunca uno que
+            // venga por el body: así nadie asigna/desasigna en nombre de otro.
+            if ($accion === 'atender') { crm_agente_tomar($pdo, $id, $operador); }
+            else                       { crm_agente_soltar($pdo, $id, $operador); }
+            salir(['ok' => true, 'agentes' => crm_agentes_de($pdo, $id)]);
         }
 
         // ---- prender/apagar la IA para UN chat puntual ----
