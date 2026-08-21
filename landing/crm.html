@@ -220,6 +220,10 @@
   .pinbtn{background:var(--panel2);border:1px solid var(--line);color:var(--muted);width:34px;height:34px;border-radius:9px;display:grid;place-items:center;transition:.15s}
   .pinbtn:hover{color:var(--txt)} .pinbtn.on{color:var(--orange2);border-color:var(--orange);background:rgba(245,166,35,.12)}
   .pinbtn svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2}
+  /* boton IA por chat: verde=respondiendo, rojo tachado=apagada para este chat */
+  #btnIA.ia-on{color:#22c55e;border-color:#22c55e;background:rgba(34,197,94,.12)}
+  #btnIA.ia-off{color:#ff6b81;border-color:#ff6b81;background:rgba(255,107,129,.12);position:relative}
+  #btnIA.ia-off:after{content:'';position:absolute;left:6px;right:6px;top:50%;height:2px;background:currentColor;transform:rotate(-20deg)}
   .pin-mini{color:var(--orange2);display:inline-flex;margin-right:5px;flex:none}
   .pin-mini svg{width:12px;height:12px;fill:currentColor;stroke:none}
 
@@ -695,6 +699,7 @@
         </div>
         <div class="estbtns" id="estbtns">
           <button class="pinbtn btn-info" id="btnInfo" title="Ver info del usuario"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></button>
+          <button class="pinbtn" id="btnIA" title="IA de este chat"><svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M12 8V4M9 4h6"/><circle cx="8.5" cy="14" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="14" r="1.3" fill="currentColor" stroke="none"/></svg></button>
           <button class="pinbtn" id="btnFijar" title="Anclar"><svg viewBox="0 0 24 24"><path d="M12 17v5M9 3h6l-1 7 3 3v1H7v-1l3-3-1-7z"/></svg></button>
           <button data-e="abierta">Abierta</button>
           <button data-e="pendiente">Pendiente</button>
@@ -1533,6 +1538,8 @@
     $("#chatSub").textContent = c.usuario ? ("@"+c.usuario) : ("sesión " + (c.session_id||"").slice(0,8));
     $("#estbtns").querySelectorAll("button[data-e]").forEach(b=>b.classList.toggle("on", b.getAttribute("data-e")===c.estado));
     $("#btnFijar").classList.toggle("on", !!c.fijada);
+    st.iaActiva = (c.ia_activa !== false);
+    pintarBtnIA();
 
     $("#thread").innerHTML = d.mensajes.map(m=>{
       const cls = m.rol==="user" ? "user" : (m.rol==="agente" ? "agente" : "bot");
@@ -1618,6 +1625,27 @@
     const nueva = !$("#btnFijar").classList.contains("on");
     const d = await jpost({accion:"fijar", id:st.convId, fijar:nueva});
     if(d.ok){ $("#btnFijar").classList.toggle("on", d.fijada); cargarLista(); }
+  });
+
+  // ---------- IA por chat (prender/apagar el bot para ESTA conversación) ----
+  function pintarBtnIA(){
+    const b = $("#btnIA");
+    b.classList.toggle("ia-on", st.iaActiva === true);
+    b.classList.toggle("ia-off", st.iaActiva === false);
+    b.title = st.iaActiva ? "IA respondiendo — tocá para que conteste un agente"
+                          : "IA apagada en este chat — tocá para reactivarla";
+  }
+  $("#btnIA").addEventListener("click", async ()=>{
+    if(!st.convId) return;
+    const nueva = !(st.iaActiva === true);
+    const d = await jpost({accion:"chatbot_ia_chat", id:st.convId, activa:nueva});
+    if(d.ok){
+      st.iaActiva = !!d.ia_activa;
+      pintarBtnIA();
+      toast(st.iaActiva ? "IA activada para este chat" : "IA apagada — responde un agente");
+    } else {
+      toast("No se pudo cambiar");
+    }
   });
 
   // ---------- responder + adjuntar ----------

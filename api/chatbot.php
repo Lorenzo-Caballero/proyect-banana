@@ -192,7 +192,12 @@ $contextoBase = ($cfgBot['contexto'] !== '') ? $cfgBot['contexto'] : CONTEXTO;
 // Chatbot DESACTIVADO: no se llama a Cohere. El mensaje del jugador igual
 // queda en el CRM (para que lo vea y conteste un agente) y al jugador se le
 // avisa que en breve lo atienden.
-if (!$botActivo) {
+//
+// Se apaga por DOS motivos: el switch GLOBAL (config_chatbot.activo) o el
+// switch POR CHAT (conversaciones.ia_activa). El global manda: el por-chat
+// solo puede APAGAR un chat puntual cuando el global está prendido.
+$iaEsteChat = chatbot_ia_del_chat($pdo, $sessionId, $usuarioCliente);
+if (!$botActivo || !$iaEsteChat) {
     $ultimoUser = '';
     for ($i = count($historial) - 1; $i >= 0; $i--) {
         if ((($historial[$i]['role'] ?? '') === 'user') && !empty($historial[$i]['content'])) {
@@ -323,6 +328,33 @@ function chatbot_config(PDO $pdo): array
     } catch (Throwable $e) {
         // Sin tabla (migracion no corrida) -> comportamiento de siempre.
         return ['contexto' => '', 'activo' => true];
+    }
+}
+
+/**
+ * ¿La IA está activa para ESTE chat? (conversaciones.ia_activa, migracion 27).
+ * La conversacion se identifica igual que en el resto del CRM: por el usuario
+ * si se conoce (clave = usuario), o por el session_id (clave = anon:<sid>).
+ * true por defecto: si no hay fila todavia (chat nuevo) o falta la columna
+ * (migracion no corrida), se comporta como siempre.
+ */
+function chatbot_ia_del_chat(PDO $pdo, string $sessionId, string $usuario): bool
+{
+    try {
+        if ($usuario !== '') {
+            $st = $pdo->prepare("SELECT ia_activa FROM conversaciones WHERE clave = ? LIMIT 1");
+            $st->execute([mb_substr($usuario, 0, 50)]);
+        } elseif ($sessionId !== '') {
+            $st = $pdo->prepare("SELECT ia_activa FROM conversaciones WHERE clave = ? LIMIT 1");
+            $st->execute(['anon:' . substr($sessionId, 0, 64)]);
+        } else {
+            return true;
+        }
+        $v = $st->fetchColumn();
+        if ($v === false) { return true; }   // sin conversacion aun -> IA activa
+        return (int)$v === 1;
+    } catch (Throwable $e) {
+        return true;   // sin columna (migracion no corrida) -> como siempre
     }
 }
 

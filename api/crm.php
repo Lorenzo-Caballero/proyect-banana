@@ -191,6 +191,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $conv['id'] = (int)$conv['id'];
             $conv['no_leidos'] = (int)$conv['no_leidos'];
             $conv['fijada'] = (bool)($conv['fijada'] ?? false);
+            // ia_activa puede no existir si la migracion 27 no se corrio: default true.
+            $conv['ia_activa'] = !array_key_exists('ia_activa', $conv) || (int)$conv['ia_activa'] === 1;
 
             // marcar como leida
             $pdo->prepare("UPDATE conversaciones SET no_leidos = 0 WHERE id = ?")->execute([$id]);
@@ -381,6 +383,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $fijar = !empty($body['fijar']) ? 1 : 0;
             $pdo->prepare("UPDATE conversaciones SET fijada = ? WHERE id = ?")->execute([$fijar, $id]);
             salir(['ok' => true, 'fijada' => (bool)$fijar]);
+        }
+
+        // ---- prender/apagar la IA para UN chat puntual ----
+        if ($accion === 'chatbot_ia_chat') {
+            $id = (int)($body['id'] ?? 0);
+            if (!$id) { salir(['ok' => false, 'error' => 'Falta id'], 400); }
+            $activa = !empty($body['activa']) ? 1 : 0;
+            $pdo->prepare("UPDATE conversaciones SET ia_activa = ? WHERE id = ?")
+                ->execute([$activa, $id]);
+            salir(['ok' => true, 'ia_activa' => (bool)$activa]);
         }
 
         // ---- guardar config del chatbot (contexto + on/off) ----
