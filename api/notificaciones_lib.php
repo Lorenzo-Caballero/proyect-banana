@@ -188,14 +188,20 @@ if (!function_exists('notif_crear')) {
                 ->execute([$deviceId]);
 
             // creado_en del dispositivo: una instalacion nueva no arranca con
-            // toda la historia de promos encima.
+            // toda la historia de promos encima. Para las PROGRAMADAS el corte
+            // es contra programada_en, no contra creada_en: si no, una promo
+            // creada antes de que el dispositivo existiera pero programada
+            // para mas adelante nunca le llegaria a un celular nuevo.
             $st = $pdo->prepare(
                 "SELECT n.id, n.titulo, n.cuerpo, n.tipo, n.url, n.solo_app, n.creada_en
                    FROM notificaciones n
                    LEFT JOIN notificaciones_entregas e
                           ON e.notificacion_id = n.id AND e.device_id = ?
                   WHERE e.notificacion_id IS NULL
-                    AND n.creada_en > ?
+                    AND (CASE WHEN n.programada_en IS NULL
+                              THEN n.creada_en     > ?
+                              ELSE n.programada_en > ?
+                         END)
                     AND (n.programada_en IS NULL OR n.programada_en <= UTC_TIMESTAMP())
                     AND (CASE WHEN n.programada_en IS NULL
                               THEN n.creada_en    > DATE_SUB(NOW(),            INTERVAL " . NOTIF_VENTANA_DIAS . " DAY)
@@ -206,7 +212,7 @@ if (!function_exists('notif_crear')) {
                   ORDER BY n.id ASC
                   LIMIT $limite"
             );
-            $st->execute([$deviceId, $disp['creado_en'], (string)($disp['usuario'] ?? '')]);
+            $st->execute([$deviceId, $disp['creado_en'], $disp['creado_en'], (string)($disp['usuario'] ?? '')]);
             $filas = $st->fetchAll(PDO::FETCH_ASSOC);
 
             // Reservar antes de devolver: la fila que no se pudo insertar ya la
