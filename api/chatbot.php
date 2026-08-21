@@ -222,11 +222,12 @@ if (!$botActivo || !$iaEsteChat) {
     exit;
 }
 
-// La identidad va AL FINAL y en dos versiones excluyentes. Antes convivian dos
-// instrucciones contradictorias -"pedile siempre el usuario" arriba y "ya sabes
-// quien es" abajo- y el modelo obedecia las dos: saludaba por el nombre y acto
-// seguido preguntaba como se llamaba.
 $sys = $contextoBase;
+
+// Fecha y hora ACTUAL de Argentina, para que el bot ubique el momento (día de
+// la semana, si es finde, horario de atención, etc.). Se traduce a mano y no
+// con strftime/locale: el server puede no tener es_AR instalado.
+$sys .= "\n\n" . chatbot_fecha_ar();
 if ($usuarioCliente !== '') {
     $sys .= "\n\nIDENTIDAD (esto manda sobre todo lo anterior):\n"
           . "El jugador con el que estas hablando es '" . $usuarioCliente . "'. "
@@ -342,6 +343,37 @@ function chatbot_config(PDO $pdo): array
         // Sin tabla (migracion no corrida) -> comportamiento de siempre.
         return $def;
     }
+}
+
+/**
+ * Bloque de contexto con la fecha/hora actual de Argentina, en español y sin
+ * depender del locale del server. El modelo lo usa para ubicarse en el tiempo
+ * (día de la semana, fin de semana, horarios).
+ */
+function chatbot_fecha_ar(): string
+{
+    try {
+        $ahora = new DateTime('now', new DateTimeZone('America/Argentina/Buenos_Aires'));
+    } catch (Throwable $e) {
+        return '';
+    }
+    $dias  = ['Sunday' => 'domingo', 'Monday' => 'lunes', 'Tuesday' => 'martes',
+              'Wednesday' => 'miércoles', 'Thursday' => 'jueves', 'Friday' => 'viernes',
+              'Saturday' => 'sábado'];
+    $meses = [1 => 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
+              'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
+    $dia    = $dias[$ahora->format('l')] ?? $ahora->format('l');
+    $mes    = $meses[(int)$ahora->format('n')] ?? $ahora->format('F');
+    $finde  = in_array($ahora->format('l'), ['Saturday', 'Sunday'], true);
+
+    return "FECHA Y HORA ACTUAL (Argentina, zona America/Argentina/Buenos_Aires):\n"
+         . "Hoy es " . $dia . " " . $ahora->format('j') . " de " . $mes . " de "
+         . $ahora->format('Y') . ", " . $ahora->format('H:i') . " hs"
+         . ($finde ? " (es fin de semana)." : ".")
+         . "\nUsá esto si te preguntan la fecha/hora o para cosas que dependan del"
+         . " día (promos de finde, horarios de atención, etc.). No lo menciones si"
+         . " no viene al caso.";
 }
 
 /**
