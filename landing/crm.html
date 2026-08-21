@@ -597,8 +597,9 @@
   /* tarjetas de campo (UX amigable) */
   .cb-field{background:var(--card2,#151a24);border:1px solid var(--line,#2c3242);border-radius:14px;padding:16px 16px 14px}
   .cb-field-head{display:flex;gap:12px;align-items:flex-start;margin-bottom:10px}
-  .cb-ico{font-size:20px;line-height:1.2;flex:none;width:34px;height:34px;display:grid;place-items:center;
-          background:color-mix(in srgb,#7c4fe0 14%,transparent);border-radius:10px}
+  .cb-ico{flex:none;width:34px;height:34px;display:grid;place-items:center;
+          background:color-mix(in srgb,#7c4fe0 14%,transparent);border-radius:10px;color:#a78bfa}
+  .cb-ico svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
   .cb-flabel{display:block;font-size:14.5px;font-weight:700;color:var(--tx,#e8ecf3)}
   .cb-opt{font-weight:500;font-size:12px;color:var(--muted,#8a93a6)}
   .cb-help{margin:2px 0 0;font-size:12.5px;line-height:1.45;color:var(--muted,#8a93a6)}
@@ -607,9 +608,10 @@
                      line-height:1.55;font-family:inherit;outline:none;transition:.15s;resize:vertical}
   .cb-area{min-height:76px}
   .cb-input:focus,.cb-area:focus{border-color:#7c4fe0;box-shadow:0 0 0 3px color-mix(in srgb,#7c4fe0 28%,transparent)}
-  .cb-locked{display:flex;gap:8px;align-items:center;font-size:12.5px;color:var(--muted,#8a93a6);
+  .cb-locked{display:flex;gap:9px;align-items:center;font-size:12.5px;color:var(--muted,#8a93a6);
              background:color-mix(in srgb,#8a93a6 8%,transparent);border:1px dashed var(--line,#2c3242);
              border-radius:10px;padding:11px 13px;line-height:1.4}
+  .cb-locked svg{flex:none;width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
   .cb-acciones{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
   .cb-acciones-der{display:flex;align-items:center;gap:14px;margin-left:auto}
   .cb-msg{font-size:13px}.cb-msg.ok{color:#22c55e}.cb-msg.err{color:#ff6b81}
@@ -1105,7 +1107,7 @@
       <!-- Nombre -->
       <div class="cb-field">
         <div class="cb-field-head">
-          <span class="cb-ico">🙋</span>
+          <span class="cb-ico"><svg viewBox="0 0 24 24"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/></svg></span>
           <div>
             <label class="cb-flabel" for="cbNombre">Nombre del asistente</label>
             <p class="cb-help">Con qué nombre se presenta a los jugadores.</p>
@@ -1117,7 +1119,7 @@
       <!-- Tono -->
       <div class="cb-field">
         <div class="cb-field-head">
-          <span class="cb-ico">🎭</span>
+          <span class="cb-ico"><svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></span>
           <div>
             <label class="cb-flabel" for="cbTono">Tono y personalidad</label>
             <p class="cb-help">Cómo habla: formal o relajado, con vos o usted, cuántos emojis, etc.</p>
@@ -1130,7 +1132,7 @@
       <!-- Info del juego -->
       <div class="cb-field">
         <div class="cb-field-head">
-          <span class="cb-ico">🎮</span>
+          <span class="cb-ico"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="4"/><path d="M7 12h4M9 10v4"/><circle cx="16" cy="11" r="1" fill="currentColor" stroke="none"/><circle cx="18.5" cy="14" r="1" fill="currentColor" stroke="none"/></svg></span>
           <div>
             <label class="cb-flabel" for="cbJuego">¿De qué trata el juego?</label>
             <p class="cb-help">Contale al bot qué es el juego, cómo se juega y para qué sirven fichas y bonos, así le responde bien a los jugadores.</p>
@@ -1143,7 +1145,7 @@
       <!-- Reglas extra -->
       <div class="cb-field">
         <div class="cb-field-head">
-          <span class="cb-ico">📋</span>
+          <span class="cb-ico"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg></span>
           <div>
             <label class="cb-flabel" for="cbReglas">Indicaciones extra <span class="cb-opt">(opcional)</span></label>
             <p class="cb-help">Reglas propias que quieras sumar. Ej: promos vigentes, horarios de atención, algo que el bot deba aclarar siempre.</p>
@@ -1154,8 +1156,9 @@
       </div>
 
       <div class="cb-locked">
-        🔒 La mecánica de <b>cargar</b>, <b>retirar</b> y <b>comprar fichas</b> ya viene
-        configurada y protegida — no hace falta que la toques.
+        <svg viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+        <span>La mecánica de <b>cargar</b>, <b>retirar</b> y <b>comprar fichas</b> ya viene
+        configurada y protegida — no hace falta que la toques.</span>
       </div>
 
       <div class="cb-acciones">
