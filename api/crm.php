@@ -75,6 +75,29 @@ function movimientos(PDO $pdo, string $usuario, int $limite = 30): array
     }, $st->fetchAll(PDO::FETCH_ASSOC));
 }
 
+/**
+ * Convierte la fecha/hora que tipeó el agente (hora de Argentina, formato
+ * "YYYY-MM-DD HH:MM" o el "YYYY-MM-DDTHH:MM" de un <input datetime-local">) a
+ * un datetime en UTC "YYYY-MM-DD HH:MM:SS", que es como se guarda y como se
+ * compara en el sondeo (con UTC_TIMESTAMP()). Así no depende de la zona del
+ * server ni de la conexión MySQL. Devuelve null si es inválida o ya pasó.
+ */
+function crm_parse_programada(string $raw): ?string
+{
+    $raw = trim(str_replace('T', ' ', $raw));
+    if (!preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/', $raw)) { return null; }
+    try {
+        $ar  = new DateTime($raw, new DateTimeZone('America/Argentina/Buenos_Aires'));
+        $now = new DateTime('now', new DateTimeZone('America/Argentina/Buenos_Aires'));
+        // Margen de 1 min: si eligió "ahora mismo", lo tomamos como inmediato válido.
+        if ($ar->getTimestamp() < $now->getTimestamp() - 60) { return null; }
+        $ar->setTimezone(new DateTimeZone('UTC'));
+        return $ar->format('Y-m-d H:i:s');
+    } catch (Throwable $e) {
+        return null;
+    }
+}
+
 /** Carga la lib del chatbot (defaults + armado del prompt) una sola vez. */
 function crm_chatbot_lib(): void
 {
@@ -381,15 +404,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
+            // Programación opcional (difusiones a futuro). Llega como
+            // 'programada_en' en formato "YYYY-MM-DD HH:MM" (hora de Argentina,
+            // lo que ve el agente). Se convierte a la hora del server para
+            // guardar, porque NOW() en el sondeo corre en la zona del server.
+            $progEn = null;
+            $progRaw = trim((string)($body['programada_en'] ?? ''));
+            if ($progRaw !== '') {
+                $progEn = crm_parse_programada($progRaw);
+                if ($progEn === null) {
+                    salir(['ok' => false, 'error' => 'Fecha/hora de programación inválida'], 400);
+                }
+            }
+
             $id = notif_crear($pdo, $usuario, $titulo, $cuerpo,
-                              (string)($body['tipo'] ?? 'promo'), null, 'crm');
+                              (string)($body['tipo'] ?? 'promo'), null, 'crm', null, false, $progEn);
             if (!$id) { salir(['ok' => false, 'error' => 'No se pudo encolar'], 500); }
 
             // Rastro en el hilo, para que despues se entienda por que escribio.
             $convId = (int)($body['conversacion_id'] ?? 0);
             if ($convId) {
-                crm_mensaje($pdo, $convId, 'agente',
-                    "Envió una notificación: $titulo", ['interno' => true]);
+                $rastro = $progEn ? "Programó una notificación ($progEn): $titulo"
+                                  : "Envió una notificación: $titulo";
+                crm_mensaje($pdo, $convId, 'agente', $rastro, ['interno' => true]);
                 $pdo->prepare("UPDATE conversaciones SET actualizada_en = NOW() WHERE id = ?")
                     ->execute([$convId]);
             }
@@ -397,7 +434,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             /* El alcance es informativo: cuenta los celulares ACTIVOS que la van
                a recibir. Puede ser 0 y estar todo bien — el aviso queda en cola
                y le llega al jugador la proxima vez que abra la app. */
-            salir(['ok' => true, 'id' => $id, 'alcance' => notif_alcance($pdo, $usuario)]);
+            salir(['ok' => true, 'id' => $id, 'programada_en' => $progEn,
+                   'alcance' => notif_alcance($pdo, $usuario)]);
         }
 
         // ---- anclar / desanclar ----

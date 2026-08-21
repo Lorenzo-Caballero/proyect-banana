@@ -48,7 +48,7 @@ if (!function_exists('notif_crear')) {
     function notif_crear(PDO $pdo, ?string $usuario, string $titulo, string $cuerpo,
                          string $tipo = 'aviso', ?string $url = null,
                          string $origen = 'crm', ?string $expiraEn = null,
-                         bool $soloApp = false): int
+                         bool $soloApp = false, ?string $programadaEn = null): int
     {
         $usuario = $usuario !== null ? trim($usuario) : '';
         $titulo  = trim($titulo);
@@ -58,11 +58,17 @@ if (!function_exists('notif_crear')) {
         $tipos = ['bono', 'fichas', 'recarga', 'ruleta', 'promo', 'aviso'];
         if (!in_array($tipo, $tipos, true)) { $tipo = 'aviso'; }
 
+        // programada_en: NULL = se entrega ya; futura = recién en ese momento
+        // (el sondeo la ignora hasta entonces, ver notif_pendientes). La
+        // columna existe desde la migración 29; si no está, se cae al INSERT
+        // sin ella para no romper (el catch de abajo lo cubre).
+        $prog = ($programadaEn !== null && trim($programadaEn) !== '') ? trim($programadaEn) : null;
+
         try {
             $pdo->prepare(
                 "INSERT INTO notificaciones
-                   (usuario, titulo, cuerpo, tipo, url, origen, expira_en, solo_app)
-                 VALUES (?,?,?,?,?,?,?,?)"
+                   (usuario, titulo, cuerpo, tipo, url, origen, expira_en, solo_app, programada_en)
+                 VALUES (?,?,?,?,?,?,?,?,?)"
             )->execute([
                 $usuario !== '' ? mb_substr($usuario, 0, 50) : null,
                 mb_substr($titulo, 0, 120),
@@ -72,6 +78,7 @@ if (!function_exists('notif_crear')) {
                 mb_substr($origen, 0, 20),
                 $expiraEn,
                 $soloApp ? 1 : 0,
+                $prog,
             ]);
             return (int)$pdo->lastInsertId();
         } catch (Throwable $e) {
@@ -169,7 +176,11 @@ if (!function_exists('notif_crear')) {
                           ON e.notificacion_id = n.id AND e.device_id = ?
                   WHERE e.notificacion_id IS NULL
                     AND n.creada_en > ?
-                    AND n.creada_en > DATE_SUB(NOW(), INTERVAL " . NOTIF_VENTANA_DIAS . " DAY)
+                    AND (n.programada_en IS NULL OR n.programada_en <= UTC_TIMESTAMP())
+                    AND (CASE WHEN n.programada_en IS NULL
+                              THEN n.creada_en    > DATE_SUB(NOW(),            INTERVAL " . NOTIF_VENTANA_DIAS . " DAY)
+                              ELSE n.programada_en > DATE_SUB(UTC_TIMESTAMP(), INTERVAL " . NOTIF_VENTANA_DIAS . " DAY)
+                         END)
                     AND (n.expira_en IS NULL OR n.expira_en > NOW())
                     AND (n.usuario IS NULL OR n.usuario = ?)
                   ORDER BY n.id ASC

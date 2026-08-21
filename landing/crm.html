@@ -1238,6 +1238,14 @@
       <input type="checkbox" id="nTodos">
       <span><b>Mandársela a todos</b>Todos los jugadores con la app instalada.</span>
     </label>
+    <label class="todos" for="nProgramar">
+      <input type="checkbox" id="nProgramar">
+      <span><b>Programar para más tarde</b>En vez de enviarla ahora, elegí cuándo sale (hora de Argentina).</span>
+    </label>
+    <div id="nCuando" style="display:none">
+      <label>Fecha y hora</label>
+      <input id="nFecha" type="datetime-local">
+    </div>
     <div class="mbtns">
       <button class="no" id="nCancel">Cancelar</button>
       <button class="ok" id="nOk">Enviar</button>
@@ -2930,29 +2938,57 @@
       : `Para @${st.usuario}. Le llega como notificación de Android.`;
     $("#nTitulo").value=""; $("#nCuerpo").value=""; nTipo="promo";
     document.querySelectorAll("#nChips .chip").forEach(x=>x.classList.remove("on"));
+    $("#nProgramar").checked=false; $("#nCuando").style.display="none"; $("#nFecha").value="";
+    $("#nOk").textContent="Enviar";
     $("#backN").classList.add("on");
     setTimeout(()=>$("#nTitulo").focus(),50);
   }
   $("#btnNotif").addEventListener("click", ()=>abrirNotif(false));
   $("#nCancel").addEventListener("click", ()=>$("#backN").classList.remove("on"));
   $("#backN").addEventListener("click", e=>{ if(e.target===$("#backN")) $("#backN").classList.remove("on"); });
+  $("#nProgramar").addEventListener("change", ()=>{
+    const on = $("#nProgramar").checked;
+    $("#nCuando").style.display = on ? "block" : "none";
+    $("#nOk").textContent = on ? "Programar" : "Enviar";
+    if(on && !$("#nFecha").value){
+      // Sugerir "dentro de 1 hora" como punto de partida (hora local del navegador).
+      const t = new Date(Date.now() + 3600000);
+      const p = n => String(n).padStart(2,"0");
+      $("#nFecha").value = `${t.getFullYear()}-${p(t.getMonth()+1)}-${p(t.getDate())}T${p(t.getHours())}:${p(t.getMinutes())}`;
+      $("#nFecha").focus();
+    }
+  });
   $("#nOk").addEventListener("click", async ()=>{
     const titulo = $("#nTitulo").value.trim(), cuerpo = $("#nCuerpo").value.trim();
     if(!titulo || !cuerpo){ toast("Poné título y mensaje"); return; }
     const todos = $("#nTodos").checked;
     if(!todos && !st.usuario){ toast("Esta conversación no tiene usuario vinculado"); return; }
-    if(todos && !confirm("Se la va a mandar a TODOS los jugadores con la app. ¿Seguro?")) return;
 
-    const btn=$("#nOk"); btn.disabled=true; btn.textContent="…";
+    const programar = $("#nProgramar").checked;
+    let programada = "";
+    if(programar){
+      programada = $("#nFecha").value.trim();
+      if(!programada){ toast("Elegí la fecha y hora"); return; }
+    }
+
+    const cuando = programar ? "PROGRAMAR para " + $("#nFecha").value.replace("T"," ") + " (hora Argentina)" : "ENVIAR ahora";
+    if(todos && !confirm(`Se la va a mandar a TODOS los jugadores con la app.\n\n${cuando}.\n\n¿Seguro?`)) return;
+
+    const btn=$("#nOk"); btn.disabled=true; const txtBtn=programar?"Programar":"Enviar"; btn.textContent="…";
     // La masiva no deja rastro en ningún hilo: no es de esa conversación.
     const d = await jpost({ accion:"notificar", todos, usuario:todos?undefined:st.usuario,
                             titulo, cuerpo, tipo:nTipo,
+                            programada_en: programada || undefined,
                             conversacion_id:todos?undefined:st.convId });
-    btn.disabled=false; btn.textContent="Enviar";
+    btn.disabled=false; btn.textContent=txtBtn;
     if(d.ok){
       $("#backN").classList.remove("on");
-      toast(d.alcance ? `Encolada para ${d.alcance} celular${d.alcance===1?"":"es"}`
-                      : "Encolada — le llega cuando abra la app");
+      if(d.programada_en){
+        toast(`Programada — sale el ${$("#nFecha").value.replace("T"," ")}`);
+      } else {
+        toast(d.alcance ? `Encolada para ${d.alcance} celular${d.alcance===1?"":"es"}`
+                        : "Encolada — le llega cuando abra la app");
+      }
       if(st.convId) abrir(st.convId);
     } else { toast(d.error || "No se pudo enviar"); }
   });
