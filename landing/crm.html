@@ -717,8 +717,9 @@
   .ag-rol-opt.on{border-color:var(--violet);background:var(--violetSoft)}
   .ag-rol-opt.on b{color:var(--violet2)}
 
-  /* difusiones programadas, dentro del modal de Push */
-  .n-programadas{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
+  /* difusiones programadas, dentro del modal de Push (ahora en su propia
+     columna: sin borde superior, ese corte visual lo da el gap de columnas) */
+  .n-programadas{margin-top:20px}
   .n-prog-titulo{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
                  color:var(--muted);margin-bottom:10px}
   .n-prog-item{display:flex;align-items:center;gap:10px;background:var(--panel2);border:1px solid var(--line);
@@ -727,6 +728,17 @@
   .n-prog-titulo-msg{font-size:13px;font-weight:700;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .n-prog-meta{font-size:11.5px;color:var(--muted);margin-top:2px}
   .n-prog-meta b{color:var(--violet2)}
+
+  /* modal ancho (aprovecha el espacio en PC) -- lo usa Notificar, disponible
+     para cualquier otro modal que necesite más que los 370px del genérico */
+  .modal-ancho{max-width:min(720px, calc(100vw - 40px))}
+  .n-modal-head{margin-bottom:4px}
+  .n-modal-cols{display:grid;grid-template-columns:1fr 1fr;gap:0 28px;margin-top:4px}
+  .n-col{display:flex;flex-direction:column;min-width:0}
+  .n-col .todos:first-child{margin-top:0}
+  @media(max-width:680px){
+    .n-modal-cols{grid-template-columns:1fr;gap:0}
+  }
 </style>
 </head>
 <body>
@@ -1398,35 +1410,48 @@
 
 <!-- Notificación push. Va a la cola: el celular la levanta cuando sondea. -->
 <div class="back" id="backN">
-  <div class="modal">
-    <h3>Notificar al celular</h3>
-    <p id="nSub">Le llega como notificación de Android.</p>
-    <label>Plantilla</label>
-    <div class="chips" id="nChips"></div>
-    <label for="nTitulo">Título</label>
-    <input id="nTitulo" type="text" maxlength="120" placeholder="🎁 ¡Te regalamos 500 fichas!">
-    <label for="nCuerpo">Mensaje</label>
-    <textarea id="nCuerpo" maxlength="400" placeholder="Entrá a la app y jugalas antes de que se venzan."></textarea>
-    <label class="todos" for="nTodos">
-      <input type="checkbox" id="nTodos">
-      <span><b>Mandársela a todos</b>Todos los jugadores con la app instalada.</span>
-    </label>
-    <label class="todos" for="nProgramar">
-      <input type="checkbox" id="nProgramar">
-      <span><b>Programar para más tarde</b>En vez de enviarla ahora, elegí cuándo sale (hora de Argentina).</span>
-    </label>
-    <div id="nCuando" style="display:none">
-      <label for="nFecha">Fecha y hora</label>
-      <input id="nFecha" type="datetime-local">
+  <div class="modal modal-ancho n-modal">
+    <div class="n-modal-head">
+      <h3>Notificar al celular</h3>
+      <p id="nSub">Le llega como notificación de Android.</p>
     </div>
+
+    <div class="n-modal-cols">
+      <!-- columna izquierda: redactar -->
+      <div class="n-col">
+        <label>Plantilla</label>
+        <div class="chips" id="nChips"></div>
+        <label for="nTitulo">Título</label>
+        <input id="nTitulo" type="text" maxlength="120" placeholder="🎁 ¡Te regalamos 500 fichas!">
+        <label for="nCuerpo">Mensaje</label>
+        <textarea id="nCuerpo" maxlength="400" placeholder="Entrá a la app y jugalas antes de que se venzan." rows="5"></textarea>
+      </div>
+
+      <!-- columna derecha: a quién y cuándo -->
+      <div class="n-col">
+        <label class="todos" for="nTodos">
+          <input type="checkbox" id="nTodos">
+          <span><b>Mandársela a todos</b>Todos los jugadores con la app instalada.</span>
+        </label>
+        <label class="todos" for="nProgramar">
+          <input type="checkbox" id="nProgramar">
+          <span><b>Programar para más tarde</b>En vez de enviarla ahora, elegí cuándo sale (hora de Argentina).</span>
+        </label>
+        <div id="nCuando" style="display:none">
+          <label for="nFecha">Fecha y hora</label>
+          <input id="nFecha" type="datetime-local">
+        </div>
+
+        <div class="n-programadas" id="nProgramadasWrap">
+          <div class="n-prog-titulo">Difusiones programadas pendientes</div>
+          <div id="nProgramadasLista"><div class="ag-vacio" style="padding:16px">Cargando…</div></div>
+        </div>
+      </div>
+    </div>
+
     <div class="mbtns">
       <button class="no" id="nCancel">Cancelar</button>
       <button class="ok" id="nOk">Enviar</button>
-    </div>
-
-    <div class="n-programadas" id="nProgramadasWrap">
-      <div class="n-prog-titulo">Difusiones programadas pendientes</div>
-      <div id="nProgramadasLista"><div class="ag-vacio" style="padding:16px">Cargando…</div></div>
     </div>
   </div>
 </div>
