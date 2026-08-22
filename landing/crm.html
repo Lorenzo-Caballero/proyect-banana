@@ -1748,7 +1748,8 @@
     const txt = btn.textContent; btn.disabled = true; btn.textContent = "Redirigiendo…";
     try{
       const r = await fetch(API_SUS, {
-        method:"POST", credentials:"same-origin", headers:{"Content-Type":"application/json"},
+        method:"POST", credentials:"same-origin",
+        headers:{"Content-Type":"application/json", "X-CSRF-Token": CSRF || ""},
         body: JSON.stringify({ accion:"crear_preference", plan })
       });
       const d = await r.json();
