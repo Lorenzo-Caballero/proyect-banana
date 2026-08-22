@@ -464,7 +464,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         // ---- quién soy (para recuperar el rol tras un F5, CSRF/ROL no
         //      persisten en localStorage a propósito) ----
         if ($accion === 'yo') {
-            salir(['ok' => true, 'operador' => $operador, 'rol' => operador_rol()]);
+            // El CSRF viaja acá porque el front lo pierde en cada F5 (vive solo
+            // en memoria a propósito). Sin esto, después de recargar la página
+            // cualquier POST que no pase por apiFetch() -- que reacciona al 403
+            // mostrando el login -- se queda sin token y falla en silencio.
+            salir(['ok' => true, 'operador' => $operador, 'rol' => operador_rol(),
+                   'csrf' => csrf_token()]);
         }
 
         // ---- listar agentes/admins (solo admin) ----
