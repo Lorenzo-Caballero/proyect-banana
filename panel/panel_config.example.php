@@ -25,3 +25,10 @@ return [
     // /var/www/api/sql. Descomentar solo si tu layout es distinto.
     // 'SQL_DIR'   => '/var/www/api/sql',
 ];
+
+// El token de MercadoPago (cobro de suscripción de los clientes a la
+// plataforma) NO va acá: se guarda en goldpaw_control.config_plataforma
+// (tabla), se carga desde panel.html → botón "Cobro (MercadoPago)". Es un
+// solo token para TODOS los clientes, por eso vive en la base y no en un
+// archivo de config por-servidor -- panel.php, api/suscripcion.php y
+// api/mp_webhook.php lo leen todos de ahí. Ver panel/sql/04_facturacion.sql.

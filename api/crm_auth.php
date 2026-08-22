@@ -135,8 +135,12 @@ if (!function_exists('operador_login')) {
      * Se valida CSRF acá adentro y no en un chequeo aparte a propósito: un
      * segundo paso que el endpoint tiene que acordarse de llamar es un paso
      * que tarde o temprano alguien se olvida.
+     *
+     * $chequearSaldo=false lo usa ÚNICAMENTE api/suscripcion.php: un cliente
+     * sin saldo tiene que poder seguir entrando ahí para pagar y destrabarse,
+     * si no quedaría sin salida posible.
      */
-    function exigir_operador(): string
+    function exigir_operador(bool $chequearSaldo = true): string
     {
         _crm_sesion_iniciar();
 
@@ -159,7 +163,64 @@ if (!function_exists('operador_login')) {
             }
         }
 
+        if ($chequearSaldo) {
+            exigir_saldo_plataforma();
+        }
+
         return $operador;
+    }
+
+    /**
+     * Corta con 402 si la SUSCRIPCIÓN DE LA PLATAFORMA del cliente actual está
+     * sin saldo (no confundir con saldo de jugadores). Cachea el resultado en
+     * sesión 5 minutos para no pegarle a goldpaw_control en cada request
+     * autenticado del CRM -- el costo de tardar hasta 5 min en reflejar un
+     * bloqueo o una recarga es aceptable, esto es un corte administrativo, no
+     * un control de seguridad en tiempo real.
+     *
+     * Si goldpaw_control no responde, FAIL-OPEN (no bloquear el CRM de un
+     * cliente por un problema de infraestructura ajeno a él) y loguea.
+     */
+    function exigir_saldo_plataforma(): void
+    {
+        _crm_sesion_iniciar();
+
+        $cache = $_SESSION['saldo_plataforma_cache'] ?? null;
+        if (is_array($cache) && ($cache['exp'] ?? 0) > time()) {
+            if ($cache['bloqueado']) { _crm_cortar_sin_saldo($cache['mensaje'] ?? ''); }
+            return;
+        }
+
+        $bloqueado = false;
+        $mensaje   = '';
+        try {
+            $ctl = new PDO(
+                'mysql:host=' . cfg('DB_HOST', 'localhost') . ';dbname=' . cfg('CONTROL_DB_NAME', 'goldpaw_control') . ';charset=utf8mb4',
+                cfg('DB_USER'), cfg('DB_PASS'),
+                [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+            );
+            $st = $ctl->prepare('SELECT suscripcion_estado FROM clientes WHERE db_nombre = ? LIMIT 1');
+            $st->execute([$GLOBALS['TENANT_DB'] ?? '']);
+            $estado = $st->fetchColumn();
+            if ($estado === 'sin_saldo') {
+                $bloqueado = true;
+                $mensaje   = 'La suscripción de este CRM está sin saldo. Recargá desde "Mi suscripción" para reactivar el acceso.';
+            }
+        } catch (Throwable $e) {
+            error_log('exigir_saldo_plataforma: no se pudo consultar goldpaw_control: ' . $e->getMessage());
+            $bloqueado = false;
+        }
+
+        $_SESSION['saldo_plataforma_cache'] = ['bloqueado' => $bloqueado, 'mensaje' => $mensaje, 'exp' => time() + 300];
+        if ($bloqueado) { _crm_cortar_sin_saldo($mensaje); }
+    }
+
+    function _crm_cortar_sin_saldo(string $mensaje): void
+    {
+        http_response_code(402);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['ok' => false, 'error' => 'sin_saldo_plataforma', 'mensaje' => $mensaje]);
+        exit;
     }
 
     /**

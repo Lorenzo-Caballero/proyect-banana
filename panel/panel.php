@@ -152,7 +152,8 @@ if (!$oper) salida(['ok' => false, 'error' => 'no autorizado'], 401);
 switch ($accion) {
     case 'listar':
         $rows = $pdo->query(
-            'SELECT id,nombre,slug,dominio,path_tenant,cobro_alias,coins_por_peso,estado,creado
+            'SELECT id,nombre,slug,dominio,path_tenant,cobro_alias,coins_por_peso,estado,creado,
+                    saldo_usd,costo_diario_usd,suscripcion_estado,trial_hasta
              FROM clientes ORDER BY creado DESC'
         )->fetchAll();
         salida(['ok' => true, 'clientes' => $rows]);
@@ -186,9 +187,12 @@ switch ($accion) {
             $st = $pdo->prepare(
                 'INSERT INTO clientes
                  (nombre,slug,dominio,path_tenant,db_nombre,agente_usuario,agente_password,cobro_alias,cobro_cbu,
-                  cobro_titular,coins_por_peso,cohere_key,bot_api_key,notas)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+                  cobro_titular,coins_por_peso,cohere_key,bot_api_key,notas,suscripcion_estado,trial_hasta)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
             );
+            // Todo cliente nuevo arranca con 14 días de cortesía: el cron de
+            // consumo (panel/consumo_diario.php) no le descuenta saldo ni lo
+            // bloquea mientras siga en 'trial' y no haya pasado trial_hasta.
             $st->execute([
                 $nombre, $slug, $dominio, $pathTenant, $dbNombre,
                 $in['agente_usuario'] ?? null, $in['agente_password'] ?? null,
@@ -196,6 +200,7 @@ switch ($accion) {
                 (float) ($in['coins_por_peso'] ?? 1),
                 $in['cohere_key'] ?? null, $botKey,
                 $in['notas'] ?? null,
+                'trial', date('Y-m-d', strtotime('+14 days')),
             ]);
             // aprovisionado queda en 0 (default): el worker le crea la base en < 1 min.
             $url = $pathTenant ? ('https://' . $dominio . '/' . $slug . '/crm.html')
@@ -268,6 +273,56 @@ switch ($accion) {
             salida(['ok' => false, 'error' => 'no se pudo crear el operador'], 500);
         }
     }
+
+    case 'saldo_ajustar': {
+        // Ajuste manual de saldo de suscripción (cortesía, corrección). Queda
+        // auditado con motivo y quién lo hizo -- mismo espíritu que
+        // `movimientos` en la base de cada cliente.
+        $id     = (int) ($in['id'] ?? 0);
+        $delta  = (float) ($in['delta_usd'] ?? 0);
+        $motivo = trim((string) ($in['motivo'] ?? ''));
+        if ($id <= 0 || $delta == 0.0) {
+            salida(['ok' => false, 'error' => 'faltan id o delta_usd (no puede ser 0)'], 422);
+        }
+        try {
+            $pdo->beginTransaction();
+            $st = $pdo->prepare(
+                "UPDATE clientes SET saldo_usd = saldo_usd + ?,
+                    suscripcion_estado = IF(saldo_usd + ? > 0 AND suscripcion_estado = 'sin_saldo', 'activa', suscripcion_estado)
+                 WHERE id = ?"
+            );
+            $st->execute([$delta, $delta, $id]);
+            if ($st->rowCount() !== 1) {
+                $pdo->rollBack();
+                salida(['ok' => false, 'error' => 'cliente no existe'], 404);
+            }
+            $pdo->prepare(
+                'INSERT INTO ajustes_saldo_plataforma (cliente_id, delta_usd, motivo, operador) VALUES (?,?,?,?)'
+            )->execute([$id, $delta, $motivo !== '' ? $motivo : null, $oper]);
+            $pdo->commit();
+            salida(['ok' => true]);
+        } catch (PDOException $e) {
+            $pdo->rollBack();
+            salida(['ok' => false, 'error' => 'no se pudo ajustar el saldo'], 500);
+        }
+    }
+
+    case 'mp_config_ver':
+        // Nunca devuelve el token en claro, solo si está configurado.
+        $st = $pdo->prepare("SELECT valor FROM config_plataforma WHERE clave = 'MP_ACCESS_TOKEN'");
+        $st->execute();
+        $tok = $st->fetchColumn();
+        salida(['ok' => true, 'configurado' => is_string($tok) && $tok !== '']);
+
+    case 'mp_config_guardar':
+        $tok = trim((string) ($in['token'] ?? ''));
+        if ($tok === '') {
+            salida(['ok' => false, 'error' => 'falta el token'], 422);
+        }
+        $pdo->prepare(
+            'REPLACE INTO config_plataforma (clave, valor) VALUES (?, ?)'
+        )->execute(['MP_ACCESS_TOKEN', $tok]);
+        salida(['ok' => true]);
 
     default:
         salida(['ok' => false, 'error' => 'acción desconocida'], 400);

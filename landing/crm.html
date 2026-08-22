@@ -1419,6 +1419,20 @@
   </form>
 </div>
 
+<div class="login-screen" id="saldoScreen" style="display:none">
+  <div class="login-card" id="saldoCard">
+    <div class="login-logo">
+      <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div>
+      <b>Mi <span>suscripción</span></b>
+    </div>
+    <p class="login-sub" id="saldoMsg">Cargando…</p>
+    <div id="saldoInfo" style="margin-bottom:18px"></div>
+    <button type="button" class="login-btn" id="saldoBtnQuincena" style="margin-bottom:9px">Pagar 2 semanas</button>
+    <button type="button" class="login-btn" id="saldoBtnMes" style="background:var(--panel2);color:var(--txt)">Pagar 1 mes</button>
+    <div class="login-error" id="saldoError"></div>
+  </div>
+</div>
+
 <div class="back" id="back">
   <div class="modal">
     <h3 id="mTitulo">Cargar fichas</h3>
@@ -1616,6 +1630,66 @@
     $("#loginPass").value = "";
     setTimeout(()=>{ const u=$("#loginUser"); if(u) u.focus(); }, 50);
   }
+
+  /**
+   * Bloqueo por falta de saldo de SUSCRIPCIÓN A LA PLATAFORMA (no confundir
+   * con saldo de jugadores). A diferencia de mostrarLogin(), esta pantalla
+   * carga su propio estado y deja pagar desde acá mismo -- es la única
+   * salida posible del bloqueo, así que no puede depender de nada que el
+   * gate ya esté bloqueando.
+   */
+  let saldoCargado = false;
+  function mostrarSinSaldo(msg){
+    ocultarBoot();
+    detenerPolling();
+    if (typeof fnVerificado !== "undefined") { fnVerificado = false; }
+    $("#back").classList.remove("on");
+    $("#backN").classList.remove("on");
+    $("#loginScreen").style.display = "none";
+    $("#app").style.display = "none";
+    $("#saldoScreen").style.display = "grid";
+    $("#saldoMsg").textContent = msg || "La suscripción de este CRM está sin saldo.";
+    if(!saldoCargado){ saldoCargado = true; cargarEstadoSuscripcion(); }
+  }
+
+  async function cargarEstadoSuscripcion(){
+    const info = $("#saldoInfo");
+    try{
+      const r = await fetch("suscripcion.php?accion=estado", { credentials:"same-origin" });
+      const d = await r.json();
+      if(!d.ok){ info.textContent = "No se pudo consultar el estado."; return; }
+      info.innerHTML = `<div style="text-align:center;margin-bottom:14px">
+        <div style="font-size:22px;font-weight:800">$${nf.format(Math.round(d.saldo_usd))} USD</div>
+        <div style="color:var(--muted);font-size:12.5px">${d.dias_restantes>0 ? d.dias_restantes+" días restantes" : "sin saldo"}</div>
+      </div>`;
+      $("#saldoBtnQuincena").textContent = `Pagar 2 semanas — $${nf.format(Math.round(d.precio_ars.quincena))} ARS`;
+      $("#saldoBtnMes").textContent = `Pagar 1 mes — $${nf.format(Math.round(d.precio_ars.mes))} ARS`;
+    }catch(e){ info.textContent = "No se pudo consultar el estado."; }
+  }
+
+  async function pagarSuscripcion(plan){
+    $("#saldoError").textContent = "";
+    const btn = plan==="quincena" ? $("#saldoBtnQuincena") : $("#saldoBtnMes");
+    const txt = btn.textContent; btn.disabled = true; btn.textContent = "Redirigiendo…";
+    try{
+      const r = await fetch("suscripcion.php", {
+        method:"POST", credentials:"same-origin", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ accion:"crear_preference", plan })
+      });
+      const d = await r.json();
+      if(!d.ok || !d.init_point){
+        $("#saldoError").textContent = d.error || "No se pudo iniciar el pago.";
+        btn.disabled = false; btn.textContent = txt;
+        return;
+      }
+      location.href = d.init_point;
+    }catch(e){
+      $("#saldoError").textContent = "No se pudo iniciar el pago.";
+      btn.disabled = false; btn.textContent = txt;
+    }
+  }
+  $("#saldoBtnQuincena")?.addEventListener("click", ()=>pagarSuscripcion("quincena"));
+  $("#saldoBtnMes")?.addEventListener("click", ()=>pagarSuscripcion("mes"));
 
   function pintarOperador(){
     const el = $("#operadorNombre");
@@ -1840,12 +1914,23 @@
         : "Tu sesión expiró. Ingresá de nuevo.");
       throw new Error("sesion_requerida");
     }
+    if(r.status===402){
+      // Suscripción de la PLATAFORMA sin saldo (no confundir con saldo de
+      // jugadores) -- api/suscripcion.php es la única puerta que sigue
+      // funcionando para que el operador pueda pagar y destrabarse.
+      const j = await r.clone().json().catch(()=>({}));
+      mostrarSinSaldo(j.mensaje || "La suscripción de este CRM está sin saldo.");
+      throw new Error("sin_saldo_plataforma");
+    }
     return r;
   }
 
-  /** true si el error es el que tira apiFetch por sesion vencida/CSRF
-   *  invalido (ya mostró el login solo; nadie más tiene que reaccionar). */
-  function esSesionRequerida(e){ return e && e.message==="sesion_requerida"; }
+  /** true si el error es uno de los que ya mostró su propia pantalla y cortó
+   *  todo (sesión vencida/CSRF inválido, o suscripción de plataforma sin
+   *  saldo) -- en ambos casos nadie más tiene que reaccionar al error. */
+  function esSesionRequerida(e){
+    return e && (e.message==="sesion_requerida" || e.message==="sin_saldo_plataforma");
+  }
 
   /** `url` es opcional (default API=crm.php) para que otros módulos del CRM
    *  (crm_comprobantes.php, y los que vengan) reusen el mismo wrapper en vez
@@ -3427,6 +3512,12 @@
     ROL = d.rol || "admin";
     try{ localStorage.setItem("goldpaw_crm_operador", OPERADOR); }catch(err){}
     $("#loginPass").value = "";
+    // Suscripción de la plataforma sin saldo: directo a la pantalla de pago,
+    // sin mostrar el shell un instante para después bloquearlo.
+    if(d.sin_saldo){
+      mostrarSinSaldo("La suscripción de este CRM está sin saldo. Recargá para reactivar el acceso.");
+      return;
+    }
     mostrarShell();
     cargarLista();
     iniciarPolling();
