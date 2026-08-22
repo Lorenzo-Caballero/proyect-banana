@@ -126,22 +126,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $dias = $plan === 'quincena' ? 14 : 30;
         $montoArs = round($costoDiario * $dias * $blue, 2);
 
+        // La URL de vuelta es la del MISMO sitio por el que entró el operador
+        // (puede ser un cliente por-path: /<slug>/crm.html), no una fija --
+        // si no, un cliente por-path volvería al CRM de otro dominio.
+        $host   = $_SERVER['HTTP_HOST'] ?? 'ganamoscrm.online';
+        $slug   = $GLOBALS['TENANT_SLUG'] ?? '';
+        $base   = 'https://' . $host . ($slug !== '' ? '/' . $slug : '');
+        $volver = $base . '/crm.html';
+
         // Se llama a MP primero: si falla, no queda una fila basura en pagos_plataforma.
         $pref = [
             'items' => [[
-                'title' => 'Suscripción CRM Goldpaw — ' . ($plan === 'quincena' ? '2 semanas' : '1 mes'),
+                'title' => 'Suscripcion CRM Goldpaw - ' . ($plan === 'quincena' ? '2 semanas' : '1 mes'),
                 'quantity' => 1,
                 'unit_price' => $montoArs,
                 'currency_id' => 'ARS',
             ]],
             'external_reference' => $clienteId . ':pendiente',
-            'notification_url' => 'https://ganamoscrm.online/gp-api/mp_webhook.php',
+            'notification_url' => $base . '/gp-api/mp_webhook.php',
             'back_urls' => [
-                'success' => 'https://ganamoscrm.online/crm.html',
-                'failure' => 'https://ganamoscrm.online/crm.html',
-                'pending' => 'https://ganamoscrm.online/crm.html',
+                'success' => $volver,
+                'failure' => $volver,
+                'pending' => $volver,
             ],
-            'auto_return' => 'approved',
+            // Sin auto_return a propósito: exige que back_urls.success pase la
+            // validación de MP y es la causa más común de que la preference
+            // sea rechazada. El operador vuelve con el botón de MP igual.
         ];
 
         $ch = curl_init('https://api.mercadopago.com/checkout/preferences');
@@ -149,16 +159,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_POST => true,
             CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Authorization: Bearer ' . $token],
-            CURLOPT_POSTFIELDS => json_encode($pref),
+            CURLOPT_POSTFIELDS => json_encode($pref, JSON_UNESCAPED_UNICODE),
             CURLOPT_TIMEOUT => 15,
         ]);
         $resp = curl_exec($ch);
         $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErr = curl_error($ch);
         curl_close($ch);
 
         if ($resp === false || $code >= 300) {
-            error_log('suscripcion.php crear_preference: MP respondió ' . $code . ' ' . (string)$resp);
-            salir(['ok' => false, 'error' => 'No se pudo iniciar el pago, probá de nuevo'], 502);
+            error_log('suscripcion.php crear_preference: MP respondió ' . $code . ' ' . (string)$resp . ' ' . $curlErr);
+            // El detalle de MP se devuelve al operador: sin esto hay que ir a
+            // leer el log del server para saber qué rechazó, y el mensaje de
+            // MP suele decir exactamente qué campo está mal.
+            $det = json_decode((string)$resp, true);
+            $msg = $det['message'] ?? ($curlErr !== '' ? $curlErr : 'error ' . $code);
+            salir(['ok' => false, 'error' => 'MercadoPago rechazó el pago: ' . $msg], 502);
         }
 
         $j = json_decode((string)$resp, true);
