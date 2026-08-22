@@ -222,7 +222,10 @@
       accion:"listar", q:st.q, filtro:st.filtro, orden:st.orden,
       dir:st.dir, pagina:st.pagina, por_pagina:st.porPagina
     }, extra||{}));
-    const r = await fetch(API + "?" + p.toString());
+    // credentials: admin_usuarios.php ahora exige la sesión del CRM (antes era
+    // de acceso abierto). Esta página quedó como vista suelta -- lo mismo vive
+    // integrado en crm.html, apartado "Usuarios".
+    const r = await fetch(API + "?" + p.toString(), { credentials:"same-origin" });
     if(!r.ok){ const e = new Error("HTTP "+r.status); e.code = r.status; throw e; }
     return r.json();
   }
@@ -316,7 +319,10 @@
       pintarCabeceras();
       pintarPager(r);
     }catch(e){
-      $("#filas").innerHTML = `<tr><td colspan="8"><div class="estado-vacio">Error al cargar. Probá “Actualizar”.</div></td></tr>`;
+      const msg = (e.code === 401 || e.code === 403)
+        ? `Necesitás iniciar sesión. Entrá por <a href="crm.html" style="color:inherit">el CRM</a> y buscá el apartado “Usuarios”.`
+        : `Error al cargar. Probá “Actualizar”.`;
+      $("#filas").innerHTML = `<tr><td colspan="8"><div class="estado-vacio">${msg}</div></td></tr>`;
     }
   }
 

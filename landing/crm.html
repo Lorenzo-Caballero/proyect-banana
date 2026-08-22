@@ -1988,6 +1988,17 @@
     back.addEventListener("click", e=>{ if(e.target===back) back.classList.remove("on"); });
   }
 
+  /* Escape cierra el modal que esté abierto. Va como un solo listener global y
+     no uno por modal: los modales se abren de a uno, así que alcanza con cerrar
+     el último `.back.on` del DOM. Vale para los que se agreguen después sin
+     tener que acordarse de cablear nada. */
+  document.addEventListener("keydown", e=>{
+    if(e.key !== "Escape") return;
+    const abiertos = document.querySelectorAll(".back.on");
+    if(!abiertos.length) return;
+    abiertos[abiertos.length-1].classList.remove("on");
+  });
+
   /** Marca `btn` como el ".tab" activo dentro de `contenedorSel`, apagando
    *  los demás. Puramente visual -- quien llama sigue siendo responsable de
    *  actualizar su propia variable de filtro y recargar (eso varía por
@@ -2355,6 +2366,7 @@
   async function cargarComprobantes(){
     $("#compEmpty").style.display="flex"; $("#compDetail").style.display="none";
     compPagoActual = null;
+    $("#compList").innerHTML = `<div class="nouser">Cargando…</div>`;
     let d;
     try{ d = await jget({accion:"listar"}, API_COMP); }
     catch(e){ $("#compList").innerHTML = `<div class="nouser">Error al cargar.</div>`; return; }
@@ -2444,6 +2456,9 @@
   }
 
   async function cargarRetiros(){
+    // Solo en la primera carga: esto se auto-refresca cada 25 s y pintar
+    // "Cargando…" en cada vuelta haría parpadear la lista entera.
+    if(!$("#retList").children.length) $("#retList").innerHTML = `<div class="nouser">Cargando…</div>`;
     let d;
     try{ d = await jget({accion:"listar", estado:retEstado, q:retQ}, API_RET); }
     catch(e){ $("#retList").innerHTML = `<div class="nouser">Error al cargar.</div>`; return; }
@@ -2622,6 +2637,9 @@
   }
 
   async function cargarCargas(){
+    // Igual que Retiros: solo la primera vez, para no parpadear en cada
+    // auto-refresco de 25 s.
+    if(!$("#cgList").children.length) $("#cgList").innerHTML = `<div class="nouser">Cargando…</div>`;
     let d;
     try{ d = await jget({accion:"listar", estado:cgEstado, q:cgQ}, API_CG); }
     catch(e){ $("#cgList").innerHTML = `<div class="nouser">Error al cargar.</div>`; return; }
@@ -2741,6 +2759,11 @@
       limit: MV_LIMIT, offset: (mvPagina-1)*MV_LIMIT
     });
     const paramsContar = Object.assign({accion:"contar"}, filtros);
+
+    // Sin auto-refresco acá (es vista de auditoría), así que se pinta siempre:
+    // cada cambio de filtro o de página tarda y quedaba la tabla vieja a la
+    // vista, como si el filtro no hubiera hecho nada.
+    $("#mvBody").innerHTML = `<tr><td colspan="7" class="nouser">Cargando…</td></tr>`;
 
     let d, dc;
     try{
