@@ -788,6 +788,7 @@
       <button class="rail-item" data-nav="push" data-tip="Push & Notificaciones"><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></button>
       <button class="rail-item" data-nav="chatbot" data-tip="Chatbot (IA)"><svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M12 8V4M9 4h6"/><circle cx="8.5" cy="14" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="14" r="1.3" fill="currentColor" stroke="none"/></svg></button>
       <button class="rail-item" id="railAgentes" data-nav="agentes" data-tip="Agentes" style="display:none"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></button>
+      <button class="rail-item" data-nav="suscripcion" data-tip="Mi suscripción"><svg viewBox="0 0 24 24"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></button>
     </div>
     <div class="grp">
       <button class="rail-item" data-nav="config" data-tip="Configuración"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
@@ -1234,6 +1235,44 @@
   </div>
 
   <!-- ====================== CHATBOT (IA) ====================== -->
+  <div class="card-col view-panel" id="viewSuscripcion" style="display:none">
+    <div class="cb-wrap">
+      <div class="cb-head">
+        <div>
+          <h2 class="cb-title">Mi suscripción</h2>
+          <p class="cb-sub">Lo que pagás por tener acceso a este CRM. No tiene nada que ver con el saldo interno de tus jugadores.</p>
+        </div>
+      </div>
+
+      <div class="cb-nota" id="rsInfo">Cargando…</div>
+
+      <div class="cb-field">
+        <div class="cb-field-head">
+          <span class="cb-ico"><svg viewBox="0 0 24 24"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span>
+          <div>
+            <label class="cb-flabel">Recargar saldo</label>
+            <p class="cb-help">Se cobra en MercadoPago, en pesos, al tipo de cambio del momento.</p>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button type="button" class="login-btn" id="rsBtnQuincena" style="width:auto;padding:11px 18px">Pagar 2 semanas</button>
+          <button type="button" class="login-btn" id="rsBtnMes" style="width:auto;padding:11px 18px;background:var(--panel2);color:var(--txt)">Pagar 1 mes</button>
+        </div>
+        <div class="login-error" id="rsError" style="margin-top:10px"></div>
+      </div>
+
+      <div class="cb-field">
+        <div class="cb-field-head">
+          <span class="cb-ico"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg></span>
+          <div>
+            <label class="cb-flabel">Historial de pagos</label>
+          </div>
+        </div>
+        <div id="rsHistorial" class="cb-nota">—</div>
+      </div>
+    </div>
+  </div>
+
   <div class="card-col view-panel" id="viewChatbot" style="display:none">
     <div class="cb-wrap">
       <div class="cb-head">
@@ -1652,8 +1691,16 @@
     if(!saldoCargado){ saldoCargado = true; cargarEstadoSuscripcion(); }
   }
 
-  async function cargarEstadoSuscripcion(){
-    const info = $("#saldoInfo");
+  /**
+   * Estado + pago de "Mi suscripción". Se usa en DOS lugares con el mismo
+   * backend (api/suscripcion.php): la pantalla de bloqueo (#saldoScreen,
+   * IDs "saldo*") cuando ya no hay saldo, y la vista libre del rail
+   * (#viewSuscripcion, IDs "rs*") para recargar en cualquier momento antes
+   * de llegar a eso. `pref` elige qué juego de IDs pintar.
+   */
+  async function cargarEstadoSuscripcion(pref){
+    pref = pref || "saldo";
+    const info = $("#" + pref + "Info");
     try{
       const r = await fetch("suscripcion.php?accion=estado", { credentials:"same-origin" });
       const d = await r.json();
@@ -1662,14 +1709,41 @@
         <div style="font-size:22px;font-weight:800">$${nf.format(Math.round(d.saldo_usd))} USD</div>
         <div style="color:var(--muted);font-size:12.5px">${d.dias_restantes>0 ? d.dias_restantes+" días restantes" : "sin saldo"}</div>
       </div>`;
-      $("#saldoBtnQuincena").textContent = `Pagar 2 semanas — $${nf.format(Math.round(d.precio_ars.quincena))} ARS`;
-      $("#saldoBtnMes").textContent = `Pagar 1 mes — $${nf.format(Math.round(d.precio_ars.mes))} ARS`;
+      const btnQ = $("#" + pref + "BtnQuincena"), btnM = $("#" + pref + "BtnMes");
+      if(btnQ) btnQ.textContent = `Pagar 2 semanas — $${nf.format(Math.round(d.precio_ars.quincena))} ARS`;
+      if(btnM) btnM.textContent = `Pagar 1 mes — $${nf.format(Math.round(d.precio_ars.mes))} ARS`;
     }catch(e){ info.textContent = "No se pudo consultar el estado."; }
   }
 
-  async function pagarSuscripcion(plan){
-    $("#saldoError").textContent = "";
-    const btn = plan==="quincena" ? $("#saldoBtnQuincena") : $("#saldoBtnMes");
+  async function cargarHistorialSuscripcion(){
+    const el = $("#rsHistorial");
+    if(!el) return;
+    try{
+      const r = await fetch("suscripcion.php?accion=historial", { credentials:"same-origin" });
+      const d = await r.json();
+      if(!d.ok || !d.pagos || !d.pagos.length){ el.textContent = "Todavía no hiciste ningún pago."; return; }
+      const ESTADO_TXT = { pendiente:"pendiente", acreditado:"acreditado", rechazado:"rechazado", revision:"en revisión" };
+      el.innerHTML = d.pagos.map(p=>{
+        const plan = p.plan === "quincena" ? "2 semanas" : "1 mes";
+        const usd = p.monto_usd!=null ? ` · $${nf.format(p.monto_usd)} USD` : "";
+        return `<div style="padding:6px 0;border-bottom:1px solid var(--line)">
+          <b>${plan}</b> — $${nf.format(p.monto_ars)} ARS${usd}
+          <span style="color:var(--muted);font-size:12px"> · ${esc(ESTADO_TXT[p.estado]||p.estado)} · ${esc(p.creado)}</span>
+        </div>`;
+      }).join("");
+    }catch(e){ el.textContent = "No se pudo cargar el historial."; }
+  }
+
+  function cargarVistaSuscripcion(){
+    cargarEstadoSuscripcion("rs");
+    cargarHistorialSuscripcion();
+  }
+
+  async function pagarSuscripcion(plan, pref){
+    pref = pref || "saldo";
+    const errEl = $("#" + pref + "Error");
+    if(errEl) errEl.textContent = "";
+    const btn = plan==="quincena" ? $("#" + pref + "BtnQuincena") : $("#" + pref + "BtnMes");
     const txt = btn.textContent; btn.disabled = true; btn.textContent = "Redirigiendo…";
     try{
       const r = await fetch("suscripcion.php", {
@@ -1678,18 +1752,20 @@
       });
       const d = await r.json();
       if(!d.ok || !d.init_point){
-        $("#saldoError").textContent = d.error || "No se pudo iniciar el pago.";
+        if(errEl) errEl.textContent = d.error || "No se pudo iniciar el pago.";
         btn.disabled = false; btn.textContent = txt;
         return;
       }
       location.href = d.init_point;
     }catch(e){
-      $("#saldoError").textContent = "No se pudo iniciar el pago.";
+      if(errEl) errEl.textContent = "No se pudo iniciar el pago.";
       btn.disabled = false; btn.textContent = txt;
     }
   }
-  $("#saldoBtnQuincena")?.addEventListener("click", ()=>pagarSuscripcion("quincena"));
-  $("#saldoBtnMes")?.addEventListener("click", ()=>pagarSuscripcion("mes"));
+  $("#saldoBtnQuincena")?.addEventListener("click", ()=>pagarSuscripcion("quincena", "saldo"));
+  $("#saldoBtnMes")?.addEventListener("click", ()=>pagarSuscripcion("mes", "saldo"));
+  $("#rsBtnQuincena")?.addEventListener("click", ()=>pagarSuscripcion("quincena", "rs"));
+  $("#rsBtnMes")?.addEventListener("click", ()=>pagarSuscripcion("mes", "rs"));
 
   function pintarOperador(){
     const el = $("#operadorNombre");
@@ -1735,7 +1811,7 @@
   // modulos nuevos ocultan esas 3 columnas y muestran su propio contenedor.
   // Se va sumando un nombre a VISTAS + su contenedor a VISTA_CONTENEDOR por
   // cada modulo que se conecte, sin tocar el resto de la funcion.
-  const VISTAS = ["chats", "comprobantes", "retiros", "cargas", "transacciones", "usuarios", "finanzas", "chatbot", "agentes"];
+  const VISTAS = ["chats", "comprobantes", "retiros", "cargas", "transacciones", "usuarios", "finanzas", "chatbot", "agentes", "suscripcion"];
   const VISTA_CONTENEDOR = {
     comprobantes: "#viewComprobantes",
     retiros: "#viewRetiros",
@@ -1745,6 +1821,7 @@
     finanzas: "#viewFinanzas",
     chatbot: "#viewChatbot",
     agentes: "#viewAgentes",
+    suscripcion: "#viewSuscripcion",
   };
 
   function mostrarVista(nombre){
@@ -1805,6 +1882,9 @@
     }
     if(nombre==="agentes"){
       cargarAgentes();
+    }
+    if(nombre==="suscripcion"){
+      cargarVistaSuscripcion();
     }
   }
 
