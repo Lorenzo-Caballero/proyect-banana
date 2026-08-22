@@ -326,15 +326,51 @@
     .col-user .cerrar-drawer{display:grid}
   }
 
-  /* ===== Celular: una sola columna; el rail arriba en horizontal ===== */
+  /* ===== Celular: una sola columna; el rail arriba en horizontal =====
+     Doce íconos iguales en una tira que scrollea no se entienden: no hay
+     tooltip (no hay hover en un dedo) y no se ve que haya más a la derecha.
+     Acá cada ítem muestra su etiqueta -- el mismo texto del data-tip -- y el
+     contenedor marca con un degradado que la tira sigue. */
   @media(max-width:760px){
     .app{flex-direction:column;padding:8px;gap:8px}
     .rail{width:auto;flex-direction:row;align-items:center;justify-content:flex-start;
-      padding:7px 9px;gap:6px;overflow-x:auto}
+      padding:7px 9px;gap:6px;overflow-x:auto;overflow-y:hidden;min-height:0;
+      scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch;position:relative}
+    /* El borde se desvanece del lado donde queda contenido cortado: es la
+       señal de que la tira sigue. Las clases las pone el JS al detectar
+       scroll real -- si entran todos los íconos no se desvanece nada. Con
+       mask y no con un pseudo-elemento porque el rail scrollea: un ::after
+       se iría con el scroll en vez de quedarse en el borde. */
+    .rail.mas-der{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 28px),transparent);
+                  mask-image:linear-gradient(90deg,#000 calc(100% - 28px),transparent)}
+    .rail.mas-izq{-webkit-mask-image:linear-gradient(90deg,transparent,#000 28px);
+                  mask-image:linear-gradient(90deg,transparent,#000 28px)}
+    .rail.mas-izq.mas-der{
+      -webkit-mask-image:linear-gradient(90deg,transparent,#000 28px,#000 calc(100% - 28px),transparent);
+      mask-image:linear-gradient(90deg,transparent,#000 28px,#000 calc(100% - 28px),transparent)}
     .rail::-webkit-scrollbar{display:none}
-    .rail .grp{flex-direction:row;gap:6px}
-    .rail .logo{width:36px;height:36px;margin:0 6px 0 0}
-    .rail-item{width:40px;height:40px} .rail-item::after{display:none}
+    /* El scroll vertical del desktop (grupo de módulos) no aplica acá: en
+       horizontal scrollea el rail entero, no un grupo. */
+    .rail .grp,.rail .grp:first-of-type{flex-direction:row;gap:6px;overflow:visible;flex:0 0 auto}
+    .rail .logo{width:36px;height:36px;margin:0 6px 0 0;flex:none}
+    /* Ícono + etiqueta: el ancho lo da el texto, con un mínimo para que los
+       cortos (Push, IA) no queden apretados. */
+    .rail-item{width:auto;min-width:56px;height:auto;padding:7px 10px 6px;
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      gap:3px;flex:none;scroll-snap-align:start}
+    .rail-item svg{width:19px;height:19px}
+    /* La etiqueta sale de data-corto y no de data-tip: los tooltips del
+       desktop son descriptivos ("Push & Notificaciones") y acá se cortarían
+       con puntos suspensivos, que es peor que no tener nada. */
+    .rail-item::after{
+      content:attr(data-corto);position:static;transform:none;opacity:1;
+      background:none;border:0;padding:0;box-shadow:none;color:inherit;
+      font-size:9.5px;font-weight:600;letter-spacing:.1px;line-height:1;
+      white-space:nowrap;
+    }
+    /* El badge se ubicaba contra un cuadrado de 44px; ahora el ítem es más
+       alto y llevaría el número al medio del texto. */
+    .rail-item .rail-badge{top:3px;right:6px}
     .col-list,.col-chat{width:100%;min-width:0;flex:1;min-height:0}
     .app.viewing .col-list{display:none}
     .app:not(.viewing) .col-chat{display:none}
@@ -352,6 +388,15 @@
     .ia-toggle{padding:0 8px;gap:6px}
   }
   @media(max-width:420px){
+    /* Rail en pantallas muy angostas: se aprieta cada ítem para que entren
+       más de un vistazo, sin perder la etiqueta (que es lo que los hace
+       distinguibles). El logo se va: ocupa el ancho de un ítem entero y no
+       navega a ningún lado. */
+    .rail .logo{display:none}
+    .rail{padding:6px 7px;gap:4px}
+    .rail-item{min-width:50px;padding:6px 7px 5px}
+    .rail-item svg{width:18px;height:18px}
+    .rail-item::after{font-size:9px}
     /* .cb-field-head con ícono+texto en fila angosta: el ícono queda chico
        antes de que el texto se apriete demasiado. */
     .cb-ico{width:30px;height:30px}
@@ -797,21 +842,21 @@
   <nav class="rail card-col">
     <div class="grp">
       <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
-      <button class="rail-item active" data-nav="chats" data-tip="Conversaciones"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>
-      <button class="rail-item" data-nav="usuarios" data-tip="Usuarios"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></button>
-      <button class="rail-item" data-nav="cargas" data-tip="Cargas / Recargas"><svg viewBox="0 0 24 24"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></button>
-      <button class="rail-item" data-nav="transacciones" data-tip="Transacciones"><svg viewBox="0 0 24 24"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></button>
-      <button class="rail-item" data-nav="finanzas" data-tip="Finanzas"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></button>
-      <button class="rail-item" data-nav="retiros" data-tip="Retiros pendientes"><svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg><span class="rail-badge" id="badgeRetiros"></span></button>
-      <button class="rail-item" data-nav="comprobantes" data-tip="Comprobantes"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg><span class="rail-badge" id="badgeComprobantes"></span></button>
-      <button class="rail-item" data-nav="push" data-tip="Push & Notificaciones"><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></button>
-      <button class="rail-item" data-nav="chatbot" data-tip="Chatbot (IA)"><svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M12 8V4M9 4h6"/><circle cx="8.5" cy="14" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="14" r="1.3" fill="currentColor" stroke="none"/></svg></button>
-      <button class="rail-item" id="railAgentes" data-nav="agentes" data-tip="Agentes" style="display:none"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></button>
-      <button class="rail-item" data-nav="suscripcion" data-tip="Mi suscripción"><svg viewBox="0 0 24 24"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></button>
+      <button class="rail-item active" data-nav="chats" data-tip="Conversaciones" data-corto="Chats"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>
+      <button class="rail-item" data-nav="usuarios" data-tip="Usuarios" data-corto="Usuarios"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></button>
+      <button class="rail-item" data-nav="cargas" data-tip="Cargas / Recargas" data-corto="Cargas"><svg viewBox="0 0 24 24"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></button>
+      <button class="rail-item" data-nav="transacciones" data-tip="Transacciones" data-corto="Movim."><svg viewBox="0 0 24 24"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></button>
+      <button class="rail-item" data-nav="finanzas" data-tip="Finanzas" data-corto="Finanzas"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></button>
+      <button class="rail-item" data-nav="retiros" data-tip="Retiros pendientes" data-corto="Retiros"><svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg><span class="rail-badge" id="badgeRetiros"></span></button>
+      <button class="rail-item" data-nav="comprobantes" data-tip="Comprobantes" data-corto="Compr."><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg><span class="rail-badge" id="badgeComprobantes"></span></button>
+      <button class="rail-item" data-nav="push" data-tip="Push & Notificaciones" data-corto="Push"><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></button>
+      <button class="rail-item" data-nav="chatbot" data-tip="Chatbot (IA)" data-corto="Chatbot"><svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M12 8V4M9 4h6"/><circle cx="8.5" cy="14" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="14" r="1.3" fill="currentColor" stroke="none"/></svg></button>
+      <button class="rail-item" id="railAgentes" data-nav="agentes" data-tip="Agentes" data-corto="Agentes" style="display:none"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></button>
+      <button class="rail-item" data-nav="suscripcion" data-tip="Mi suscripción" data-corto="Saldo"><svg viewBox="0 0 24 24"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></button>
     </div>
     <div class="grp">
-      <button class="rail-item" data-nav="config" data-tip="Configuración"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
-      <button class="rail-item" id="themeBtn" data-tip="Tema"></button>
+      <button class="rail-item" data-nav="config" data-tip="Configuración" data-corto="Config"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+      <button class="rail-item" id="themeBtn" data-tip="Tema" data-corto="Tema"></button>
     </div>
   </nav>
 
@@ -1675,6 +1720,9 @@
     $("#loginScreen").style.display = "none";
     $("#app").style.display = "flex";
     pintarOperador();
+    // Recién ahora el rail tiene medidas reales (estaba en display:none):
+    // antes de esto scrollWidth/clientWidth dan 0 y no se marca ningún borde.
+    marcarBordesRail();
   }
 
   function mostrarLogin(msg){
@@ -1842,6 +1890,38 @@
   $("#themeBtn").addEventListener("click", toggleTema);
   const _b2 = $("#themeBtn2"); if(_b2) _b2.addEventListener("click", toggleTema);
 
+  /* ---------- rail en mobile: tira horizontal que scrollea ----------
+     En celular el rail es una fila de 12 ítems más ancha que la pantalla.
+     Estas dos funciones son las que hacen que se entienda: marcar de qué
+     lado queda contenido cortado, y traer a la vista el ítem activo. En
+     desktop no hacen nada (el rail no scrollea horizontalmente). */
+  function marcarBordesRail(){
+    const rail = $(".rail");
+    if(!rail) return;
+    const resto = rail.scrollWidth - rail.clientWidth;
+    if(resto <= 1){   // entra todo: sin degradados
+      rail.classList.remove("mas-izq", "mas-der");
+      return;
+    }
+    rail.classList.toggle("mas-izq", rail.scrollLeft > 4);
+    rail.classList.toggle("mas-der", rail.scrollLeft < resto - 4);
+  }
+
+  function traerAlRail(el){
+    const rail = $(".rail");
+    if(!rail || rail.scrollWidth <= rail.clientWidth) return;   // no scrollea
+    const r = rail.getBoundingClientRect(), e = el.getBoundingClientRect();
+    if(e.left >= r.left && e.right <= r.right) return;           // ya se ve
+    rail.scrollTo({
+      left: rail.scrollLeft + (e.left - r.left) - (r.width - e.width)/2,
+      behavior: "smooth"
+    });
+  }
+
+  $(".rail")?.addEventListener("scroll", marcarBordesRail, {passive:true});
+  window.addEventListener("resize", marcarBordesRail);
+  marcarBordesRail();
+
   // ---------- vistas del rail (Fase A) ----------
   // Dispatcher generico: "chats" es la vista de siempre (3 columnas); los
   // modulos nuevos ocultan esas 3 columnas y muestran su propio contenedor.
@@ -1863,7 +1943,12 @@
   function mostrarVista(nombre){
     if(!VISTAS.includes(nombre)) return;
     document.querySelectorAll(".rail-item[data-nav]").forEach(el=>{
-      el.classList.toggle("active", el.getAttribute("data-nav")===nombre);
+      const activo = el.getAttribute("data-nav")===nombre;
+      el.classList.toggle("active", activo);
+      // En mobile el rail es una tira que scrollea: si el ítem elegido quedó
+      // fuera de la vista (o se llegó por otro camino que no fue tocarlo),
+      // se lo trae al centro para que se vea cuál está activo.
+      if(activo) traerAlRail(el);
     });
     const chats = nombre==="chats";
     // "" (no "flex") para no pisar el valor que ya define la clase CSS —
