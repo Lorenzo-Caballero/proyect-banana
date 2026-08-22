@@ -130,15 +130,18 @@
   .chead .who b{font-size:15.5px}
   .chead .who .sub{color:var(--muted);font-size:12.5px}
   /* Dos grupos con intención distinta: acciones sobre ESTE chat (izq.) y el
-     estado del ticket (der.), separados por un divisor -- antes eran 7
-     botones sueltos en una fila sin jerarquía. */
-  .chead-grupos{display:flex;align-items:center;gap:14px;flex:none}
-  .chead-acciones{display:flex;align-items:center;gap:6px}
-  .chead-sep{width:1px;height:26px;background:var(--line);flex:none}
-  .estbtns{display:flex;gap:3px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:3px}
-  .estbtns button{background:transparent;border:none;color:var(--muted);padding:7px 13px;border-radius:7px;font-size:12.5px;font-weight:600;transition:.15s;cursor:pointer}
+     estado del ticket (der.), cada uno como una sola pieza (fondo y borde
+     propios) en vez de botones sueltos flotando a la misma altura que el
+     segmented-control de al lado. */
+  .chead-grupos{display:flex;align-items:center;gap:10px;flex:none}
+  .chead-acciones{display:flex;align-items:center;gap:2px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:10px;padding:3px}
+  .chead-sep{display:none}
+  .estbtns{display:flex;gap:2px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:3px}
+  .estbtns button{background:transparent;border:none;color:var(--muted);padding:6px 12px;border-radius:7px;
+    font-size:12px;font-weight:600;transition:.15s;cursor:pointer;white-space:nowrap}
   .estbtns button:hover{color:var(--txt)}
-  .estbtns button.on{color:#fff;background:var(--violet);box-shadow:var(--shadow-sm)}
+  .estbtns button.on{color:#fff;box-shadow:var(--shadow-sm)}
   .estbtns button.on[data-e="abierta"]{background:var(--green)}
   .estbtns button.on[data-e="pendiente"]{background:var(--orange)}
   .estbtns button.on[data-e="cerrada"]{background:var(--muted2)}
@@ -229,20 +232,24 @@
   .att-pdf svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;flex:none}
 
   /* ---- anclar ---- */
-  .pinbtn{background:var(--panel2);border:1px solid var(--line);color:var(--muted);width:34px;height:34px;border-radius:9px;display:grid;place-items:center;transition:.15s}
-  .pinbtn:hover{color:var(--txt)} .pinbtn.on{color:var(--orange2);border-color:var(--orange);background:rgba(245,166,35,.12)}
+  /* Dentro de .chead-acciones el fondo/borde ya lo pone el contenedor: cada
+     botón queda como ícono limpio (mismo patrón que un segmented-control),
+     y solo se pinta cuando está "on" -- así no compiten 4 cajas sueltas con
+     bordes propios contra el chip de estado de al lado. */
+  .pinbtn{background:transparent;border:none;color:var(--muted);width:32px;height:32px;border-radius:7px;display:grid;place-items:center;transition:.15s;cursor:pointer}
+  .pinbtn:hover{color:var(--txt);background:var(--panel3)} .pinbtn.on{color:var(--orange2);background:rgba(245,166,35,.14)}
   .pinbtn svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2}
-  /* interruptor de IA por chat: pill con robot + etiqueta + switch. Se lee
+  /* interruptor de IA por chat: robot + etiqueta + switch. Se lee
      claramente como on/off, verde=prendida gris=apagada. */
-  .ia-toggle{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 10px;border-radius:9px;
-             border:1px solid var(--line);background:var(--panel2);color:var(--muted);cursor:pointer;transition:.15s;flex:none}
-  .ia-toggle:hover{color:var(--txt);border-color:var(--muted)}
+  .ia-toggle{display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 10px;border-radius:7px;
+             border:none;background:transparent;color:var(--muted);cursor:pointer;transition:.15s;flex:none}
+  .ia-toggle:hover{color:var(--txt);background:var(--panel3)}
   .ia-toggle .ia-bot{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;flex:none}
   .ia-toggle .ia-txt{font-size:12px;font-weight:700;letter-spacing:.04em}
   .ia-track{position:relative;width:30px;height:17px;border-radius:20px;background:var(--line2);transition:.18s;flex:none}
   .ia-knob{position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#fff;transition:.18s;box-shadow:0 1px 2px rgba(0,0,0,.4)}
   /* prendida — mismo verde que el resto de indicadores "on" del sistema */
-  .ia-toggle.ia-on{color:var(--green2);border-color:var(--green);background:var(--greenSoft)}
+  .ia-toggle.ia-on{color:var(--green2);background:var(--greenSoft)}
   .ia-toggle.ia-on .ia-track{background:var(--green)}
   .ia-toggle.ia-on .ia-knob{left:15px}
   .pin-mini{color:var(--orange2);display:inline-flex;margin-right:5px;flex:none}
@@ -253,7 +260,7 @@
            padding:3px 8px;border-radius:20px;background:var(--violetSoft);color:var(--violet2);border:1px solid color-mix(in srgb,var(--violet) 40%,transparent)}
   .ag-chip.yo{background:var(--greenSoft);color:var(--green2);border-color:color-mix(in srgb,var(--green) 45%,transparent)}
   .ag-chip .dot{width:5px;height:5px;border-radius:50%;background:currentColor}
-  #btnAtender.on{color:var(--green2);border-color:var(--green);background:var(--greenSoft)}
+  #btnAtender.on{color:var(--green2);background:var(--greenSoft)}
   .pin-mini svg{width:12px;height:12px;fill:currentColor;stroke:none}
 
   /* ---- 4 botones de saldo ---- */
