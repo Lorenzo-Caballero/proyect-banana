@@ -75,9 +75,28 @@ function salir($data, int $code = 200): void
     exit;
 }
 
+/**
+ * ¿Este usuario tiene un giro para reclamar hoy? true si NO reclamó nada hoy.
+ * Se mira reclamado (no el mero giro): "Nada" también marca el día usado.
+ */
+function giro_disponible(PDO $pdo, string $usuario): bool
+{
+    if ($usuario === '') { return false; }
+    $st = $pdo->prepare("SELECT 1 FROM ruleta_giros
+                         WHERE usuario = ? AND dia = CURDATE() AND reclamado = 1 LIMIT 1");
+    $st->execute([$usuario]);
+    return !$st->fetchColumn();   // sin reclamo hoy = tiene giro
+}
+
 // --------------------------- GET: premios para dibujar ---------------------
+// Con ?usuario=NOMBRE agrega `disponible`: si ese jugador todavía puede
+// reclamar hoy. El widget lo usa para decidir si el FAB palpita o queda quieto,
+// en vez de fiarse solo de localStorage (que no cruza dispositivos).
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-    salir(['ok' => true, 'premios' => premios_publicos()]);
+    $u   = trim((string)($_GET['usuario'] ?? ''));
+    $out = ['ok' => true, 'premios' => premios_publicos()];
+    if ($u !== '') { $out['disponible'] = giro_disponible($pdo, $u); }
+    salir($out);
 }
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {

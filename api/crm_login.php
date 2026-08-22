@@ -64,7 +64,26 @@ if ($accion === 'login') {
     }
 
     if (operador_login($pdo, $usuario, (string) ($in['password'] ?? ''))) {
-        echo json_encode(['ok' => true, 'csrf' => csrf_token(), 'operador' => operador_actual()]);
+        // No corta el login (a diferencia de exigir_saldo_plataforma()): solo
+        // informa al frontend para que muestre la pantalla de bloqueo directo,
+        // sin el parpadeo de "carga el shell y al segundo se bloquea".
+        $sinSaldo = false;
+        try {
+            $ctl = new PDO(
+                'mysql:host=' . cfg('DB_HOST', 'localhost') . ';dbname=' . cfg('CONTROL_DB_NAME', 'goldpaw_control') . ';charset=utf8mb4',
+                cfg('DB_USER'), cfg('DB_PASS'),
+                [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+            );
+            $st = $ctl->prepare('SELECT suscripcion_estado FROM clientes WHERE db_nombre = ? LIMIT 1');
+            $st->execute([$GLOBALS['TENANT_DB'] ?? '']);
+            $sinSaldo = $st->fetchColumn() === 'sin_saldo';
+        } catch (Throwable $e) {
+            error_log('crm_login: no se pudo consultar goldpaw_control: ' . $e->getMessage());
+        }
+
+        echo json_encode(['ok' => true, 'csrf' => csrf_token(),
+                          'operador' => operador_actual(), 'rol' => operador_rol(),
+                          'sin_saldo' => $sinSaldo]);
         exit;
     }
 

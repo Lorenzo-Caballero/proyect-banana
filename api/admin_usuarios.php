@@ -5,7 +5,9 @@
  * Lee todo de la tabla `usuarios`: saldo (balance), fichas (coins) y bonos
  * son columnas de esa misma tabla.
  *
- * Acceso directo (sin login).
+ * Exige sesión de operador (crm_auth.php), igual que el resto del CRM: sin
+ * eso, cualquiera con la URL se llevaba la lista completa de jugadores con
+ * sus saldos, y ?accion=exportar se la daba en CSV de una sola pasada.
  *
  * GET  ?accion=listar   (default)
  *      q=texto            -> busca por username (LIKE)
@@ -22,9 +24,13 @@
 declare(strict_types=1);
 require __DIR__ . '/config.php';
 require __DIR__ . '/db.php';
+require __DIR__ . '/crm_auth.php';
 
-// Sin login: el panel es de acceso directo. Si algun dia querés cerrarlo,
-// aca iria un chequeo de clave (X-Admin-Pass vs cfg('ADMIN_PASS')).
+// Este endpoint devuelve la tabla `usuarios` entera (saldos incluidos) y sabe
+// exportarla en CSV: va detrás de la sesión del CRM, como todo lo demás.
+// La vista "Usuarios" de crm.html ya lo llama con apiFetch(), que manda la
+// cookie de sesión sola -- no hace falta tocar el frontend.
+exigir_operador();
 
 // ----------------------------- Parametros ----------------------------------
 $accion  = (string)($_GET['accion'] ?? 'listar');

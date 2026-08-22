@@ -12,22 +12,20 @@
  *
  * Guarda en api/uploads/ (con .htaccess que impide ejecutar PHP ahi).
  *
- * Fase 0.5: NO se agrego exigir_operador() aca.
- * - La rama del agente (conversacion_id > 0) ya va cubierta porque solo la
- *   llama crm.html, que requiere sesion desde Paso 6.
- * - La rama del jugador (session_id, sin conversacion_id) es un flujo
- *   anonimo por diseño: no puede exigir sesion. Queda abierta a subidas
- *   sin autenticacion.
- *
- * Gap conocido, prioridad ALTA para Fase A: sumar validacion de
- * session_id existente en `conversaciones` + rate limit por IP (reusar
- * patron de _limite() en api/auth.php).
+ * Dos ramas con reglas distintas:
+ * - AGENTE (conversacion_id > 0): exige sesion del CRM (exigir_operador) y
+ *   que la conversacion exista. Antes no lo pedia, y cualquiera podia
+ *   escribir en el hilo de cualquier jugador haciendose pasar por agente.
+ * - JUGADOR (session_id): anonima por diseño -- manda el comprobante antes
+ *   de identificarse. Se le exige session_id (sin eso el archivo quedaba
+ *   huerfano en el disco) y va con rate limit por IP.
  */
 
 declare(strict_types=1);
 require __DIR__ . '/config.php';
 require __DIR__ . '/db.php';
 require __DIR__ . '/crm_lib.php';
+require __DIR__ . '/crm_auth.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
@@ -43,6 +41,54 @@ $PERMITIDOS = [
     'image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp',
     'image/gif'  => 'gif', 'application/pdf' => 'pdf',
 ];
+
+/* ---------------------------------------------------------------------------
+ * Quién puede subir, y a dónde. Se resuelve ANTES de tocar el disco: si no,
+ * el archivo queda guardado igual aunque después rechacemos el mensaje.
+ *
+ *   conversacion_id > 0  -> subida del AGENTE: exige sesión del CRM. Sin esto
+ *                           cualquiera podía escribir en el hilo de cualquier
+ *                           jugador haciéndose pasar por un agente.
+ *   session_id           -> subida del JUGADOR: anónima por diseño (manda el
+ *                           comprobante antes de identificarse), pero la
+ *                           sesión tiene que existir de verdad en el CRM.
+ * ------------------------------------------------------------------------- */
+$convId    = (int)($_POST['conversacion_id'] ?? 0);
+$sessionId = trim((string)($_POST['session_id'] ?? ''));
+$esAgente  = $convId > 0;
+
+if ($esAgente) {
+    exigir_operador();
+    $st = $pdo->prepare('SELECT 1 FROM conversaciones WHERE id = ? LIMIT 1');
+    $st->execute([$convId]);
+    if (!$st->fetchColumn()) {
+        http_response_code(404);
+        echo json_encode(['ok' => false, 'error' => 'Esa conversación no existe']); exit;
+    }
+} else {
+    // Sin session_id no hay dónde guardar el mensaje: antes se aceptaba igual
+    // y el archivo quedaba huérfano en el disco para siempre.
+    if ($sessionId === '') {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Falta session_id']); exit;
+    }
+    // Rate limit por IP: sin esto un anónimo podía llenar el disco con
+    // archivos de 8 MB. Mismo patrón de archivo temporal que crm_login.php.
+    $ip = (string)($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0');
+    $rl = sys_get_temp_dir() . '/gp_subir_rl_' . md5($ip);
+    $hits = [];
+    if (is_file($rl)) {
+        foreach (explode(',', (string)@file_get_contents($rl)) as $t) {
+            if ($t !== '' && (int)$t > time() - 600) { $hits[] = (int)$t; }
+        }
+    }
+    if (count($hits) >= 10) {   // 10 archivos cada 10 minutos por IP
+        http_response_code(429);
+        echo json_encode(['ok' => false, 'error' => 'Demasiadas subidas. Esperá unos minutos.']); exit;
+    }
+    $hits[] = time();
+    @file_put_contents($rl, implode(',', $hits), LOCK_EX);
+}
 
 if (empty($_FILES['archivo']) || ($_FILES['archivo']['error'] ?? 1) !== UPLOAD_ERR_OK) {
     http_response_code(400); echo json_encode(['ok' => false, 'error' => 'No llegó el archivo']); exit;
@@ -77,23 +123,18 @@ $adjunto = [
     'nombre' => mb_substr((string)($f['name'] ?? $nombre), 0, 120),
 ];
 
-// Registrar el mensaje con el adjunto.
+// Registrar el mensaje con el adjunto. Quién sube y a dónde ya se validó
+// arriba, antes de guardar el archivo.
 try {
-    $convId = (int)($_POST['conversacion_id'] ?? 0);
-    if ($convId > 0) {
+    if ($esAgente) {
         // Subida del AGENTE (CRM)
         crm_mensaje($pdo, $convId, 'agente', '📎 ' . $adjunto['nombre'], $adjunto);
         $pdo->prepare("UPDATE conversaciones SET preview = ?, actualizada_en = NOW() WHERE id = ?")
             ->execute(['📎 ' . $adjunto['nombre'], $convId]);
     } else {
         // Subida del CLIENTE (chat del sitio)
-        $sessionId = trim((string)($_POST['session_id'] ?? ''));
-        $usuario   = trim((string)($_POST['usuario'] ?? ''));
-        if ($sessionId === '') {
-            echo json_encode(['ok' => true, 'adjunto' => $adjunto, 'aviso' => 'sin session_id: no se guardó en el CRM']);
-            exit;
-        }
-        $convId = crm_conversacion_id($pdo, $sessionId, $usuario !== '' ? $usuario : null);
+        $usuario = trim((string)($_POST['usuario'] ?? ''));
+        $convId  = crm_conversacion_id($pdo, $sessionId, $usuario !== '' ? $usuario : null);
         crm_mensaje($pdo, $convId, 'user', '📎 ' . $adjunto['nombre'], $adjunto);
         $etq = $adjunto['tipo'] === 'pdf' ? 'Comprobante (PDF)' : 'Comprobante (imagen)';
         $pdo->prepare("UPDATE conversaciones SET preview = ?, no_leidos = no_leidos + 1, actualizada_en = NOW() WHERE id = ?")

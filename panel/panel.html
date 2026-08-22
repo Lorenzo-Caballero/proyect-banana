@@ -207,16 +207,22 @@
         <h2>Tus clientes</h2>
         <p class="sub">Cada cliente = un agente de ganamos con su propia URL, su cobro y sus jugadores.</p>
       </div>
-      <button class="btn" id="btnNuevo">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-        Nuevo cliente
-      </button>
+      <div style="display:flex;gap:10px">
+        <button class="btn" id="btnMpConfig" style="background:var(--card2);border:1px solid var(--line);color:var(--tx)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+          Cobro (MercadoPago)
+        </button>
+        <button class="btn" id="btnNuevo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          Nuevo cliente
+        </button>
+      </div>
     </div>
 
     <div class="tbl-wrap">
       <table>
         <thead><tr>
-          <th>Cliente</th><th>URL</th><th>Cobro</th><th>Coins/peso</th><th>Estado</th><th></th>
+          <th>Cliente</th><th>URL</th><th>Cobro</th><th>Coins/peso</th><th>Estado</th><th>Suscripción</th><th></th>
         </tr></thead>
         <tbody id="tbody"></tbody>
       </table>
@@ -340,6 +346,69 @@
   </div>
 </div>
 
+<!-- MODAL AJUSTE DE SALDO DE SUSCRIPCIÓN -->
+<div class="ov" id="ovSaldo">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="ic">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+      </div>
+      <div>
+        <h3>Ajustar saldo de suscripción</h3>
+        <p class="sub" id="saCliente"></p>
+      </div>
+    </div>
+    <div class="grid">
+      <div><input id="saDelta" class="field" type="number" step="0.01" placeholder="Ej: 100 (o -50 para descontar)"></div>
+      <div><input id="saMotivo" class="field" placeholder="Motivo (cortesía, corrección…)"></div>
+    </div>
+    <div class="hint">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+      <span>Suma o resta USD directo, en dólares. Positivo para acreditar, negativo para descontar. Queda auditado con tu usuario.</span>
+    </div>
+    <div id="saMsg" class="msg"></div>
+    <div class="row-btns">
+      <button class="btn ghost" id="saCerrar">Cerrar</button>
+      <button class="btn" id="saAjustar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+        Ajustar
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL CONFIG DE COBRO (MERCADOPAGO) -->
+<div class="ov" id="ovMp">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="ic">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+      </div>
+      <div>
+        <h3>Cobro de suscripciones</h3>
+        <p class="sub">Un solo token de MercadoPago para toda la plataforma. Todos los clientes pagan al mismo destino.</p>
+      </div>
+    </div>
+    <p id="mpEstado" class="sub" style="margin:4px 0 14px"></p>
+    <label>Access Token de producción</label>
+    <div class="grid">
+      <div><input id="mpToken" class="field" type="text" placeholder="APP_USR-…" autocomplete="off"></div>
+    </div>
+    <div class="hint">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+      <span>Se guarda una sola vez para todos los clientes. Nunca se vuelve a mostrar en claro, solo si ya está configurado.</span>
+    </div>
+    <div id="mpMsg" class="msg"></div>
+    <div class="row-btns">
+      <button class="btn ghost" id="mpCerrar">Cerrar</button>
+      <button class="btn" id="mpGuardar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+        Guardar
+      </button>
+    </div>
+  </div>
+</div>
+
 <script>
 (function(){
   "use strict";
@@ -408,6 +477,10 @@
         var domHtml = Number(c.path_tenant)
           ? '<span class="op">'+esc(c.dominio)+'/</span><span class="sl">'+esc(c.slug)+'</span>'
           : esc(c.dominio);
+        var susEstado = c.suscripcion_estado || "trial";
+        var susClase = susEstado === "activa" ? "activo" : (susEstado === "sin_saldo" ? "baja" : "pausado");
+        var susTxt = susEstado === "sin_saldo" ? "sin saldo" : susEstado;
+        var saldoTxt = "$" + Number(c.saldo_usd||0).toFixed(2) + " USD";
         tr.innerHTML =
           '<td><strong>'+esc(c.nombre)+'</strong></td>'+
           '<td><a class="dom" href="'+esc(domUrl)+'" target="_blank" rel="noopener">'+
@@ -416,9 +489,11 @@
           '<td>'+esc(c.cobro_alias||"—")+'</td>'+
           '<td>'+esc(c.coins_por_peso)+'</td>'+
           '<td><span class="pill '+esc(c.estado)+'">'+esc(c.estado)+'</span></td>'+
+          '<td><span class="pill '+susClase+'">'+esc(susTxt)+'</span><br><span style="font-size:11.5px;color:var(--faint)">'+esc(saldoTxt)+'</span></td>'+
           '<td class="acc"></td>';
         var acc = tr.querySelector(".acc");
         acc.appendChild(botonOperadores(c));
+        acc.appendChild(botonSaldo(c));
         acc.appendChild(botonEstado(c));
         tb.appendChild(tr);
       });
@@ -486,6 +561,66 @@
         m.className="msg ok"; m.textContent = "Operador "+(res.j.accion||"listo")+": "+res.j.usuario;
         $("opUser").value=""; $("opPass").value="";
         cargarOperadores();
+      } else {
+        m.className="msg err"; m.textContent = res.j.error || "no se pudo";
+      }
+    }).catch(function(){ m.className="msg err"; m.textContent="no pude conectar"; });
+  }
+
+  // ---------- saldo de suscripción (por cliente) ----------
+  var ICO_SALDO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>';
+  var saClienteId = 0;
+  function botonSaldo(c){
+    var b = document.createElement("button");
+    b.innerHTML = ICO_SALDO + "<span>Saldo</span>";
+    b.title = "Ajustar saldo de suscripción";
+    b.onclick = function(){ abrirSaldo(c); };
+    return b;
+  }
+  function abrirSaldo(c){
+    saClienteId = c.id;
+    $("saCliente").textContent = c.nombre + " · saldo actual $" + Number(c.saldo_usd||0).toFixed(2) + " USD";
+    $("saDelta").value = ""; $("saMotivo").value = "";
+    $("saMsg").textContent = ""; $("saMsg").className = "msg";
+    $("ovSaldo").classList.add("on");
+  }
+  function cerrarSaldo(){ $("ovSaldo").classList.remove("on"); }
+  function ajustarSaldo(){
+    var m = $("saMsg"); m.className = "msg"; m.textContent = "guardando...";
+    var delta = parseFloat($("saDelta").value);
+    var motivo = $("saMotivo").value.trim();
+    if (!delta){ m.className="msg err"; m.textContent="ingresá un monto distinto de 0"; return; }
+    api("saldo_ajustar", { id:saClienteId, delta_usd:delta, motivo:motivo }).then(function(res){
+      if (res.j.ok){
+        m.className="msg ok"; m.textContent = "Saldo ajustado.";
+        cargar();
+      } else {
+        m.className="msg err"; m.textContent = res.j.error || "no se pudo";
+      }
+    }).catch(function(){ m.className="msg err"; m.textContent="no pude conectar"; });
+  }
+
+  // ---------- config de cobro (MercadoPago, único para toda la plataforma) ----------
+  function abrirMp(){
+    $("mpToken").value = ""; $("mpMsg").textContent = ""; $("mpMsg").className = "msg";
+    $("mpEstado").textContent = "consultando...";
+    $("ovMp").classList.add("on");
+    api("mp_config_ver", {}).then(function(res){
+      if (res.status === 401){ salir(); return; }
+      $("mpEstado").textContent = (res.j.ok && res.j.configurado)
+        ? "Ya hay un token configurado. Guardar uno nuevo lo reemplaza."
+        : "Todavía no configuraste ningún token.";
+    });
+  }
+  function cerrarMp(){ $("ovMp").classList.remove("on"); }
+  function guardarMp(){
+    var m = $("mpMsg"); m.className = "msg"; m.textContent = "guardando...";
+    var tok = $("mpToken").value.trim();
+    if (!tok){ m.className="msg err"; m.textContent="pegá el token"; return; }
+    api("mp_config_guardar", { token:tok }).then(function(res){
+      if (res.j.ok){
+        m.className="msg ok"; m.textContent = "Token guardado.";
+        $("mpToken").value = "";
       } else {
         m.className="msg err"; m.textContent = res.j.error || "no se pudo";
       }
@@ -565,6 +700,13 @@
   $("opCerrar").onclick = cerrarOperadores;
   $("opCrear").onclick = crearOperador;
   $("ovOp").addEventListener("click", function(e){ if(e.target === $("ovOp")) cerrarOperadores(); });
+  $("saCerrar").onclick = cerrarSaldo;
+  $("saAjustar").onclick = ajustarSaldo;
+  $("ovSaldo").addEventListener("click", function(e){ if(e.target === $("ovSaldo")) cerrarSaldo(); });
+  $("btnMpConfig").onclick = abrirMp;
+  $("mpCerrar").onclick = cerrarMp;
+  $("mpGuardar").onclick = guardarMp;
+  $("ovMp").addEventListener("click", function(e){ if(e.target === $("ovMp")) cerrarMp(); });
 
   // arranque: si hay token, probar; si no, login
   if (TK) mostrarApp(); else $("vLogin").classList.remove("hide");

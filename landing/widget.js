@@ -1575,7 +1575,9 @@
   "width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;border-top:17px solid #E3B14A;"+
   "filter:drop-shadow(0 2px 3px rgba(0,0,0,.5))}"+
   ".gpr-hub{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:2;width:44px;height:44px;"+
-  "border-radius:50%;background:linear-gradient(160deg,#241a5e,#120d2b);border:2px solid #3a2f7a;display:grid;place-items:center;font-size:19px}"+
+  "border-radius:50%;background:linear-gradient(160deg,#241a5e,#120d2b);border:2px solid #3a2f7a;display:grid;place-items:center;"+
+  "color:#E3B14A}"+
+  ".gpr-hub svg{width:22px;height:22px}"+
   ".gpr-in{width:100%;padding:11px 13px;border-radius:11px;border:1px solid #2a2350;background:#1b1540;color:#eef0fb;"+
   "font-size:15px;outline:none;margin-bottom:10px;display:none;font-family:inherit}"+
   ".gpr-btn{width:100%;padding:13px;border:0;border-radius:12px;cursor:pointer;font:700 15px inherit;color:#fff;"+
@@ -1587,23 +1589,55 @@
   ".gpr-res{display:none;font-size:13.5px;color:#eef0fb;margin-bottom:12px}"+
   ".gpr-res.show{display:block}.gpr-res b{display:block;font-size:23px;color:#E3B14A;margin-bottom:2px}"+
   ".gpr-res.nada b{color:#9aa0c4}"+
-  "#gpr-fab{position:fixed;right:16px;bottom:196px;width:48px;height:48px;border:0;border-radius:50%;cursor:pointer;"+
-  "z-index:2147483000;background:linear-gradient(145deg,#F0C567,#E3B14A);color:#4a2c00;font-size:22px;display:none;"+
+  /* contenedor: letrero "Girá y ganá!" arriba + globo dorado abajo, mismo
+     patron visual que #gp-fab-wrap (chat) para que se lean como hermanos */
+  "#gpr-fab-wrap{position:fixed;right:16px;bottom:196px;z-index:2147483000;display:none;"+
+  "flex-direction:column;align-items:flex-end;gap:8px}"+
+  "#gpr-fab-wrap.on{display:flex}"+
+  "#gpr-fab-tag{position:relative;background:#fff;color:#8a5a00;font:700 12px/1 system-ui,Segoe UI,Roboto,Arial,sans-serif;"+
+  "padding:7px 11px;border-radius:12px;box-shadow:0 6px 16px rgba(0,0,0,.22);white-space:nowrap;letter-spacing:.2px;"+
+  "display:flex;align-items:center;gap:5px}"+
+  "#gpr-fab-tag:after{content:'';position:absolute;bottom:-4px;right:20px;width:8px;height:8px;background:#fff;transform:rotate(45deg)}"+
+  "#gpr-fab-tag.oculto{display:none}"+
+  "#gpr-fab-tag svg{width:10px;height:10px;flex:none;fill:none;stroke:#E3B14A;stroke-width:2.8;stroke-linecap:round;stroke-linejoin:round;"+
+  "animation:gpr-flecha-baja 1.4s ease-in-out infinite}"+
+  "@keyframes gpr-flecha-baja{0%,100%{transform:translateY(-2px);opacity:.55}50%{transform:translateY(2px);opacity:1}}"+
+  /* el globo late SOLO cuando hay un giro para reclamar (.listo); sin giro
+     queda quieto. Con el modal abierto se pausa aunque este listo (.quieto) */
+  "#gpr-fab{position:relative;width:48px;height:48px;border:0;border-radius:50%;cursor:pointer;"+
+  "background:linear-gradient(145deg,#F0C567,#E3B14A);color:#4a2c00;display:grid;"+
   "place-items:center;box-shadow:0 8px 22px rgba(227,177,74,.45);padding:0}"+
-  "#gpr-fab.on{display:grid}#gpr-fab:active{transform:scale(.94)}";
+  "#gpr-fab svg{width:26px;height:26px}"+
+  "#gpr-fab.listo{animation:gpr-latido 1.6s ease-in-out infinite}"+
+  "#gpr-fab.quieto{animation:none}"+     /* pausado con el modal abierto */
+  "@keyframes gpr-latido{"+
+  "0%{transform:scale(1);box-shadow:0 8px 20px rgba(227,177,74,.45),0 0 0 0 rgba(227,177,74,.55)}"+
+  "50%{transform:scale(1.12);box-shadow:0 10px 24px rgba(227,177,74,.5),0 0 0 14px rgba(227,177,74,0)}"+
+  "100%{transform:scale(1);box-shadow:0 8px 20px rgba(227,177,74,.45),0 0 0 0 rgba(227,177,74,0)}}"+
+  "#gpr-fab:active{transform:scale(.94)}";
   var stR = document.createElement("style"); stR.textContent = cssR;
   document.head.appendChild(stR);
+
+  // Regalo (caja con moño) en SVG. Se usa en el FAB y en el centro de la
+  // rueda. Declarado ANTES de armar el modal: se usa en el hub del centro.
+  var SVG_RULETA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+
+    '<rect x="3" y="8" width="18" height="4" rx="1"/>'+
+    '<path d="M5 12v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8"/>'+
+    '<path d="M12 8v13"/>'+
+    '<path d="M12 8S10.5 3.5 8 3.5A2.5 2.5 0 0 0 8 8h4z"/>'+
+    '<path d="M12 8s1.5-4.5 4-4.5A2.5 2.5 0 0 1 16 8h-4z"/>'+
+    '</svg>';
 
   var ov = document.createElement("div");
   ov.id = "gpr-ov";
   ov.innerHTML =
     '<div class="gpr-card">'+
     '<button class="gpr-x" id="gpr-x" aria-label="Cerrar">&times;</button>'+
-    '<h2>🎁 Giro <span style="color:#E3B14A">gratis</span></h2>'+
+    '<h2>Giro <span style="color:#E3B14A">gratis</span></h2>'+
     '<div class="sub">Girá y reclamá tu premio en bonos</div>'+
     '<div class="gpr-wrap"><div class="gpr-pin"></div>'+
     '<svg class="gpr-wheel" id="gpr-wheel" viewBox="0 0 200 200"></svg>'+
-    '<div class="gpr-hub">🎯</div></div>'+
+    '<div class="gpr-hub">'+SVG_RULETA+'</div></div>'+
     '<div class="gpr-res" id="gpr-res"></div>'+
     '<input class="gpr-in" id="gpr-user" type="text" placeholder="Tu usuario del juego" autocomplete="username">'+
     '<div class="gpr-msg" id="gpr-msg"></div>'+
@@ -1614,9 +1648,18 @@
 
   var fabR = document.createElement("button");
   fabR.id = "gpr-fab";
-  fabR.setAttribute("aria-label", "Ruleta de bonos");
-  fabR.textContent = "🎁";
-  document.body.appendChild(fabR);
+  fabR.setAttribute("aria-label", "Ruleta de bonos — girá y ganá");
+  fabR.innerHTML = SVG_RULETA;
+
+  var tagR = document.createElement("div");
+  tagR.id = "gpr-fab-tag";
+  tagR.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg><span>¡Girá y ganá!</span>';
+
+  var fabRWrap = document.createElement("div");
+  fabRWrap.id = "gpr-fab-wrap";
+  fabRWrap.appendChild(tagR);
+  fabRWrap.appendChild(fabR);
+  document.body.appendChild(fabRWrap);
 
   var wheel = $("gpr-wheel"), inUser = $("gpr-user"), msgR = $("gpr-msg");
   var btnR = $("gpr-spin"), resR = $("gpr-res");
@@ -1662,8 +1705,13 @@
   function abrirRuleta(){
     ov.classList.add("show");
     lss(RULETA_DIA, new Date().toISOString().slice(0, 10));
+    // Con el modal abierto no tiene sentido que el globo siga latiendo detrás.
+    fabR.classList.add("quieto");
   }
-  function cerrarRuleta(){ ov.classList.remove("show"); }
+  function cerrarRuleta(){
+    ov.classList.remove("show");
+    fabR.classList.remove("quieto");   // si sigue .listo, vuelve a latir
+  }
 
   fabR.addEventListener("click", abrirRuleta);
   $("gpr-x").addEventListener("click", cerrarRuleta);
@@ -1683,6 +1731,9 @@
           inUser.style.display = "none";
           btnR.style.display = "none";
           $("gpr-skip").textContent = "Listo";
+          // Ya reclamó: no queda giro hoy. El FAB deja de palpitar y de mostrar
+          // el letrero (queda visible pero quieto hasta mañana).
+          pintarEstadoRuleta(false);
         } else {
           msgR.textContent = d.error || "No se pudo reclamar.";
           btnR.disabled = false; btnR.textContent = "Reclamar premio";
@@ -1715,6 +1766,7 @@
             resR.className = "gpr-res show nada";
             resR.innerHTML = "<b>" + d.label + "</b>" + (d.mensaje || "Ya reclamaste tu premio de hoy.");
             btnR.style.display = "none";
+            pintarEstadoRuleta(false);   // sin giro hasta mañana
             return;
           }
           if (d.bonus > 0){
@@ -1734,6 +1786,7 @@
             resR.className = "gpr-res show nada";
             resR.innerHTML = "<b>" + d.label + "</b>¡Suerte la próxima! Volvé mañana.";
             btnR.style.display = "none";
+            pintarEstadoRuleta(false);   // "Nada" igual consume el giro del día
           }
         }, 4700);   // dura lo que la animacion de la rueda
       })
@@ -1751,16 +1804,41 @@
     reclamar(u);
   });
 
+  // Palpito + letrero SOLO cuando hay un giro para reclamar. Sin giro
+  // disponible el FAB se ve pero queda quieto y sin cartel, para no insistir
+  // con algo que el jugador no puede reclamar hasta mañana.
+  function pintarEstadoRuleta(disponible){
+    fabR.classList.toggle("listo", !!disponible);
+    tagR.classList.toggle("oculto", !disponible);
+  }
+
   function cargarRuleta(){
-    fetch(API_RULETA)
+    // El FAB tiene que aparecer SIEMPRE, pase lo que pase con la API o con
+    // el dibujo de la rueda -- eso se decide acá, no adentro del .then() de
+    // la red, para que un fetch caído o un error de dibujo no lo tumben.
+    fabRWrap.classList.add("on");
+    // Estado inicial optimista con lo que sabe este dispositivo (localStorage);
+    // el fetch de abajo lo corrige con la verdad del server si conocemos al
+    // usuario (el server cruza dispositivos, localStorage no).
+    var yaJugoHoy = ls(RULETA_DIA) === new Date().toISOString().slice(0, 10);
+    pintarEstadoRuleta(!yaJugoHoy);
+
+    var url = API_RULETA + (USUARIO ? ("?usuario=" + encodeURIComponent(USUARIO)) : "");
+    fetch(url)
       .then(function (r){ return r.json(); })
-      .then(function (d){ premios = (d.premios && d.premios.length) ? d.premios : FALLBACK; })
+      .then(function (d){
+        premios = (d.premios && d.premios.length) ? d.premios : FALLBACK;
+        // Si el server sabe del usuario, su 'disponible' manda.
+        if (typeof d.disponible === "boolean"){
+          yaJugoHoy = !d.disponible;
+          pintarEstadoRuleta(d.disponible);
+        }
+      })
       .catch(function (){ premios = FALLBACK; })
       .then(function (){
-        dibujar();
-        fabR.classList.add("on");
-        // Se abre sola una vez por dia, para no ser pesada en cada apertura.
-        if (ls(RULETA_DIA) !== new Date().toISOString().slice(0, 10)){
+        try { dibujar(); } catch (e) { log("ruleta: error al dibujar", String(e && e.message || e)); }
+        // Se abre sola una vez por dia SOLO si hay giro para reclamar.
+        if (!yaJugoHoy){
           setTimeout(abrirRuleta, 900);
         }
       });

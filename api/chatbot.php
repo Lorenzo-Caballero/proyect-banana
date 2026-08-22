@@ -45,87 +45,11 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     exit;
 }
 
-// =====================  EDITA ESTO LIBREMENTE  =============================
-const CONTEXTO = <<<TXT
-Sos CAMILA, del equipo de atención al cliente de ganamos, un videojuego de
-guerra de drones incrementales. Ayudás a los jugadores con dudas y con la CARGA
-DE FICHAS. Las "fichas" son la moneda del juego. Ademas existen "bonos" (fichas
-de regalo).
-
-TU TONO: argentino, PROFESIONAL, serio y educado. Hablás de "vos", con respeto y
-calidez, sin exagerar. Nada de jerga de más, ni mayúsculas gritadas, ni una
-catarata de emojis (como mucho uno, y no siempre). La PRIMERA vez que hablás con
-alguien presentate ("Hola, soy Camila del equipo de atención"), pero NO repitas
-tu nombre en cada mensaje.
-
---- REEMPLAZA CON LA INFO REAL DE TU JUEGO ---
-- De que trata el juego, como se juega, para que sirven las fichas y los bonos.
-----------------------------------------------
-
-HAY UNA SOLA MONEDA: el SALDO. Cuando el jugador dice "fichas" y cuando dice
-"saldo" habla de lo mismo. Nunca le hables de dos cuentas distintas ni le
-menciones "coins". Aparte del saldo existen los BONOS, y eso si es otra cosa.
-
-PREGUNTAS vs ORDENES — leelo antes que nada:
-Una PREGUNTA nunca mueve plata. "¿Cuánto saldo tengo?", "¿cuántas fichas me
-quedan?", "¿tengo bonos?" se contestan con consultar_saldo y NADA MAS.
-- NO llames a cargar_al_juego para responder una pregunta.
-- NO inventes una cantidad NUNCA. Si el jugador no dijo un numero, no hay
-  cantidad: preguntasela o usa consultar_saldo, segun lo que haya pedido.
-- cargar_al_juego y retirar_del_juego se usan SOLO cuando el jugador pide la
-  operacion de forma explicita ("cargame 500", "quiero retirar 2000").
-
-CARGAR FICHAS:
-Cuando diga "cargame 500 fichas", "quiero cargar 1000" o similar CON una
-cantidad, llama a cargar_al_juego con esa cantidad.
-- NO le pidas que transfiera nada. NO uses crear_recarga para esto.
-- Lo unico que necesitas es la CANTIDAD. Si no la dijo, preguntasela. Nada mas.
-- NUNCA le pidas el nombre de usuario para cargar: el server ya sabe quien es.
-- Si devuelve 'sin_fichas': recien AHI ofrecele comprar (ver mas abajo).
-- Si devuelve 'en_curso': ya tiene una carga en camino, que espere a que llegue.
-- Si devuelve 'sin_sesion': pedile que inicie sesion en la pagina.
-- Cuando sale bien, la carga NO es instantanea: decile que en un ratito la ve en
-  su saldo. Nunca digas que ya esta acreditada.
-
-RETIRAR (sacar SALDO del juego):
-Cuando el jugador pida retirar, cobrar o sacar plata:
-- Si NO dijo cuanto: PRIMERO usa consultar_saldo, decile cuanto saldo tiene, y
-  preguntale si quiere retirar TODO ese saldo o solo una parte (y cuanto). NO
-  llames a retirar_del_juego todavia, hasta que confirme.
-- Cuando confirme: si dijo "todo" (o "todo mi saldo"), llama a retirar_del_juego
-  con todo:true. Si dijo un numero, llamala con cantidad: ese numero.
-- Los BONOS no se pueden retirar, SOLO el saldo. Si pide retirar bonos, aclaraselo.
-- El retiro tiene que ser MENOR o IGUAL al saldo. La herramienta lo controla; si
-  te dice que no alcanza, deciselo con el saldo que tiene.
-- NO es automatico: deja el pedido registrado y lo APRUEBA un AGENTE. Deciselo
-  tal cual; nunca le prometas que en un rato lo tiene.
-- Si devuelve 'sin_saldo' o 'saldo_bajo', decile cuanto tiene y hasta cuanto puede.
-- Si devuelve 'en_curso', ya tiene un retiro pedido y un agente lo esta viendo.
-
-COMPRAR FICHAS POR TRANSFERENCIA:
-Esto es SOLO para cuando el jugador pide expresamente comprar/recargar con
-plata, o cuando cargar_al_juego devolvio 'sin_fichas'. Si no estas en uno de
-esos dos casos, no lo menciones.
-1. Necesitas DOS datos: el nombre de usuario del juego y cuantas fichas quiere.
-   Si falta alguno, pedilo. No inventes ninguno.
-2. Cuando tengas los dos, llama a crear_recarga (el parametro se llama 'coins'
-   pero para el usuario son "fichas").
-3. Con lo que devuelve, decile que transfiera EXACTAMENTE el 'monto_pedido'
-   (insisti en que respete los centavos, es lo que identifica su pago) al
-   alias/CBU y titular indicados. Avisale que vence en 'vence_min' minutos y que
-   las fichas se acreditan SOLAS cuando llega la transferencia.
-4. Si crear_recarga devuelve codigo 'sin_usuario', decile que primero se
-   registre en el juego (con el boton de acceso) y despues vuelva.
-5. Si pregunta si ya llego su pago o en que estado esta, usa consultar_recarga.
-   Solo digas que se acreditaron las fichas si el estado es 'acreditada'.
-
-Reglas de estilo:
-- Respondé en español rioplatense, breve, claro y amable, pero SIEMPRE profesional.
-- Sos Camila: seria, educada y cordial. Sin jerga de más ni signos gritados.
-- Nunca inventes montos, referencias ni digas que un pago llego si la
-  herramienta no lo confirma.
-- Nunca pidas contraseñas ni datos de tarjeta por el chat.
-TXT;
+// El system prompt por defecto (constante CONTEXTO) vive en un archivo aparte
+// para compartirlo con crm.php sin ejecutar este endpoint. El contexto VIVO,
+// editable desde el CRM, se guarda en la tabla config_chatbot y se lee más
+// abajo (chatbot_config); si está vacío, se cae a esta constante.
+require __DIR__ . '/chatbot_contexto.php';
 
 const MODELO       = 'command-r-08-2024';
 const MAX_MENSAJES = 12;
@@ -257,11 +181,53 @@ if ($tokenCli !== '' && function_exists('jwt_verificar')) {
     }
 }
 
-// La identidad va AL FINAL y en dos versiones excluyentes. Antes convivian dos
-// instrucciones contradictorias -"pedile siempre el usuario" arriba y "ya sabes
-// quien es" abajo- y el modelo obedecia las dos: saludaba por el nombre y acto
-// seguido preguntaba como se llamaba.
-$sys = CONTEXTO;
+// Config editable desde el CRM (tabla config_chatbot, migracion 26). Si la
+// tabla no existe o el contexto esta vacio, se cae a la constante CONTEXTO de
+// arriba, asi nada se rompe si no se corrio la migracion. `activo`=0 apaga la
+// IA (el chat sigue, pero contesta un agente).
+$cfgBot   = chatbot_config($pdo);
+$botActivo = $cfgBot['activo'];
+// El prompt sale de los CAMPOS editables (nombre/tono/juego/reglas extra)
+// ensamblados con las reglas fijas. Excepción de compatibilidad: si quedó un
+// `contexto` entero cargado (modo viejo, migración 26), ese manda como override.
+$contextoBase = ($cfgBot['contexto'] !== '')
+    ? $cfgBot['contexto']
+    : chatbot_armar_prompt($cfgBot);
+
+// Chatbot DESACTIVADO: no se llama a Cohere. El mensaje del jugador igual
+// queda en el CRM (para que lo vea y conteste un agente) y al jugador se le
+// avisa que en breve lo atienden.
+//
+// Se apaga por DOS motivos: el switch GLOBAL (config_chatbot.activo) o el
+// switch POR CHAT (conversaciones.ia_activa). El global manda: el por-chat
+// solo puede APAGAR un chat puntual cuando el global está prendido.
+$iaEsteChat = chatbot_ia_del_chat($pdo, $sessionId, $usuarioCliente);
+if (!$botActivo || !$iaEsteChat) {
+    $ultimoUser = '';
+    for ($i = count($historial) - 1; $i >= 0; $i--) {
+        if ((($historial[$i]['role'] ?? '') === 'user') && !empty($historial[$i]['content'])) {
+            $ultimoUser = (string)$historial[$i]['content'];
+            break;
+        }
+    }
+    $aviso = 'En un momento te responde un agente. ¡Gracias por tu paciencia!';
+    // Guardamos el turno con el aviso como "respuesta", asi el hilo del CRM
+    // queda coherente y el agente ve el mensaje del jugador para contestarlo.
+    if (function_exists('crm_registrar_turno')) {
+        crm_registrar_turno($pdo, $sessionId, $ultimoUser, $aviso,
+            $usuarioCliente !== '' ? $usuarioCliente : null);
+    }
+    echo json_encode(['ok' => true, 'respuesta' => $aviso, 'bot_desactivado' => true],
+                     JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+$sys = $contextoBase;
+
+// Fecha y hora ACTUAL de Argentina, para que el bot ubique el momento (día de
+// la semana, si es finde, horario de atención, etc.). Se traduce a mano y no
+// con strftime/locale: el server puede no tener es_AR instalado.
+$sys .= "\n\n" . chatbot_fecha_ar();
 if ($usuarioCliente !== '') {
     $sys .= "\n\nIDENTIDAD (esto manda sobre todo lo anterior):\n"
           . "El jugador con el que estas hablando es '" . $usuarioCliente . "'. "
@@ -348,6 +314,94 @@ $salida = ['ok' => true, 'respuesta' => $texto];
 if ($cargaInfo) { $salida['carga'] = $cargaInfo; }
 echo json_encode($salida, JSON_UNESCAPED_UNICODE);
 
+
+/**
+ * Lee la config editable del chatbot (tabla config_chatbot, migracion 26).
+ * Devuelve ['contexto'=>string, 'activo'=>bool]. Si la tabla no existe o esta
+ * vacia, contexto='' (el caller usa la constante CONTEXTO) y activo=true, para
+ * que el chat siga andando aunque no se haya corrido la migracion.
+ */
+function chatbot_config(PDO $pdo): array
+{
+    $def = ['contexto' => '', 'activo' => true,
+            'bot_nombre' => '', 'bot_tono' => '', 'juego_desc' => '', 'reglas_extra' => ''];
+    try {
+        // SELECT * : la tabla pudo no tener aún las columnas de campos
+        // (migracion 28 sin correr) -> se leen con ?? y quedan en ''.
+        $row = $pdo->query("SELECT * FROM config_chatbot WHERE id = 1 LIMIT 1")
+                   ->fetch(PDO::FETCH_ASSOC);
+        if (!$row) { return $def; }
+        return [
+            'contexto'     => trim((string)($row['contexto'] ?? '')),
+            'activo'       => (int)($row['activo'] ?? 1) === 1,
+            'bot_nombre'   => trim((string)($row['bot_nombre'] ?? '')),
+            'bot_tono'     => trim((string)($row['bot_tono'] ?? '')),
+            'juego_desc'   => trim((string)($row['juego_desc'] ?? '')),
+            'reglas_extra' => trim((string)($row['reglas_extra'] ?? '')),
+        ];
+    } catch (Throwable $e) {
+        // Sin tabla (migracion no corrida) -> comportamiento de siempre.
+        return $def;
+    }
+}
+
+/**
+ * Bloque de contexto con la fecha/hora actual de Argentina, en español y sin
+ * depender del locale del server. El modelo lo usa para ubicarse en el tiempo
+ * (día de la semana, fin de semana, horarios).
+ */
+function chatbot_fecha_ar(): string
+{
+    try {
+        $ahora = new DateTime('now', new DateTimeZone('America/Argentina/Buenos_Aires'));
+    } catch (Throwable $e) {
+        return '';
+    }
+    $dias  = ['Sunday' => 'domingo', 'Monday' => 'lunes', 'Tuesday' => 'martes',
+              'Wednesday' => 'miércoles', 'Thursday' => 'jueves', 'Friday' => 'viernes',
+              'Saturday' => 'sábado'];
+    $meses = [1 => 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
+              'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+
+    $dia    = $dias[$ahora->format('l')] ?? $ahora->format('l');
+    $mes    = $meses[(int)$ahora->format('n')] ?? $ahora->format('F');
+    $finde  = in_array($ahora->format('l'), ['Saturday', 'Sunday'], true);
+
+    return "FECHA Y HORA ACTUAL (Argentina, zona America/Argentina/Buenos_Aires):\n"
+         . "Hoy es " . $dia . " " . $ahora->format('j') . " de " . $mes . " de "
+         . $ahora->format('Y') . ", " . $ahora->format('H:i') . " hs"
+         . ($finde ? " (es fin de semana)." : ".")
+         . "\nUsá esto si te preguntan la fecha/hora o para cosas que dependan del"
+         . " día (promos de finde, horarios de atención, etc.). No lo menciones si"
+         . " no viene al caso.";
+}
+
+/**
+ * ¿La IA está activa para ESTE chat? (conversaciones.ia_activa, migracion 27).
+ * La conversacion se identifica igual que en el resto del CRM: por el usuario
+ * si se conoce (clave = usuario), o por el session_id (clave = anon:<sid>).
+ * true por defecto: si no hay fila todavia (chat nuevo) o falta la columna
+ * (migracion no corrida), se comporta como siempre.
+ */
+function chatbot_ia_del_chat(PDO $pdo, string $sessionId, string $usuario): bool
+{
+    try {
+        if ($usuario !== '') {
+            $st = $pdo->prepare("SELECT ia_activa FROM conversaciones WHERE clave = ? LIMIT 1");
+            $st->execute([mb_substr($usuario, 0, 50)]);
+        } elseif ($sessionId !== '') {
+            $st = $pdo->prepare("SELECT ia_activa FROM conversaciones WHERE clave = ? LIMIT 1");
+            $st->execute(['anon:' . substr($sessionId, 0, 64)]);
+        } else {
+            return true;
+        }
+        $v = $st->fetchColumn();
+        if ($v === false) { return true; }   // sin conversacion aun -> IA activa
+        return (int)$v === 1;
+    } catch (Throwable $e) {
+        return true;   // sin columna (migracion no corrida) -> como siempre
+    }
+}
 
 // ===========================================================================
 //  NUCLEO (testeable: no toca red ni DB por si mismo, recibe closures)

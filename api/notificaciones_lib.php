@@ -48,7 +48,7 @@ if (!function_exists('notif_crear')) {
     function notif_crear(PDO $pdo, ?string $usuario, string $titulo, string $cuerpo,
                          string $tipo = 'aviso', ?string $url = null,
                          string $origen = 'crm', ?string $expiraEn = null,
-                         bool $soloApp = false): int
+                         bool $soloApp = false, ?string $programadaEn = null): int
     {
         $usuario = $usuario !== null ? trim($usuario) : '';
         $titulo  = trim($titulo);
@@ -58,23 +58,50 @@ if (!function_exists('notif_crear')) {
         $tipos = ['bono', 'fichas', 'recarga', 'ruleta', 'promo', 'aviso'];
         if (!in_array($tipo, $tipos, true)) { $tipo = 'aviso'; }
 
+        // programada_en: NULL = se entrega ya; futura = recién en ese momento
+        // (el sondeo la ignora hasta entonces, ver notif_pendientes). La
+        // columna existe desde la migración 29; si no está, se cae al INSERT
+        // sin ella para no romper (el catch de abajo lo cubre).
+        $prog = ($programadaEn !== null && trim($programadaEn) !== '') ? trim($programadaEn) : null;
+
+        $params = [
+            $usuario !== '' ? mb_substr($usuario, 0, 50) : null,
+            mb_substr($titulo, 0, 120),
+            mb_substr($cuerpo, 0, 400),
+            $tipo,
+            $url !== null && $url !== '' ? mb_substr($url, 0, 300) : null,
+            mb_substr($origen, 0, 20),
+            $expiraEn,
+            $soloApp ? 1 : 0,
+            $prog,
+        ];
         try {
             $pdo->prepare(
                 "INSERT INTO notificaciones
-                   (usuario, titulo, cuerpo, tipo, url, origen, expira_en, solo_app)
-                 VALUES (?,?,?,?,?,?,?,?)"
-            )->execute([
-                $usuario !== '' ? mb_substr($usuario, 0, 50) : null,
-                mb_substr($titulo, 0, 120),
-                mb_substr($cuerpo, 0, 400),
-                $tipo,
-                $url !== null && $url !== '' ? mb_substr($url, 0, 300) : null,
-                mb_substr($origen, 0, 20),
-                $expiraEn,
-                $soloApp ? 1 : 0,
-            ]);
+                   (usuario, titulo, cuerpo, tipo, url, origen, expira_en, solo_app, programada_en)
+                 VALUES (?,?,?,?,?,?,?,?,?)"
+            )->execute($params);
             return (int)$pdo->lastInsertId();
         } catch (Throwable $e) {
+            // Sin columna programada_en (migración 29 no corrida): si NO se
+            // pidió programar, la difusión normal no tiene por qué fallar por
+            // eso. Se reintenta sin esa columna. Si SÍ se pidió programar,
+            // no hay forma de cumplirlo sin la columna: se deja fallar (mejor
+            // avisar que "se perdió la fecha" en silencio).
+            if ($prog === null) {
+                try {
+                    array_pop($params);   // saca $prog del final
+                    $pdo->prepare(
+                        "INSERT INTO notificaciones
+                           (usuario, titulo, cuerpo, tipo, url, origen, expira_en, solo_app)
+                         VALUES (?,?,?,?,?,?,?,?)"
+                    )->execute($params);
+                    return (int)$pdo->lastInsertId();
+                } catch (Throwable $e2) {
+                    error_log('notif_crear (fallback): ' . $e2->getMessage());
+                    return 0;
+                }
+            }
             error_log('notif_crear: ' . $e->getMessage());
             return 0;
         }
@@ -161,21 +188,38 @@ if (!function_exists('notif_crear')) {
                 ->execute([$deviceId]);
 
             // creado_en del dispositivo: una instalacion nueva no arranca con
-            // toda la historia de promos encima.
+            // toda la historia de promos encima. Para las PROGRAMADAS el corte
+            // es contra programada_en, no contra creada_en: si no, una promo
+            // creada antes de que el dispositivo existiera pero programada
+            // para mas adelante nunca le llegaria a un celular nuevo.
             $st = $pdo->prepare(
                 "SELECT n.id, n.titulo, n.cuerpo, n.tipo, n.url, n.solo_app, n.creada_en
                    FROM notificaciones n
                    LEFT JOIN notificaciones_entregas e
                           ON e.notificacion_id = n.id AND e.device_id = ?
                   WHERE e.notificacion_id IS NULL
-                    AND n.creada_en > ?
-                    AND n.creada_en > DATE_SUB(NOW(), INTERVAL " . NOTIF_VENTANA_DIAS . " DAY)
+                    AND (CASE WHEN n.programada_en IS NULL
+                              THEN n.creada_en     > ?
+                              ELSE n.programada_en > ?
+                         END)
+                    AND (n.programada_en IS NULL OR n.programada_en <= UTC_TIMESTAMP())
+                    AND (CASE WHEN n.programada_en IS NULL
+                              THEN n.creada_en    > DATE_SUB(NOW(),            INTERVAL " . NOTIF_VENTANA_DIAS . " DAY)
+                              ELSE n.programada_en > DATE_SUB(UTC_TIMESTAMP(), INTERVAL " . NOTIF_VENTANA_DIAS . " DAY)
+                         END)
                     AND (n.expira_en IS NULL OR n.expira_en > NOW())
-                    AND (n.usuario IS NULL OR n.usuario = ?)
+                    AND (n.usuario IS NULL OR n.usuario <=> ?)
                   ORDER BY n.id ASC
                   LIMIT $limite"
             );
-            $st->execute([$deviceId, $disp['creado_en'], (string)($disp['usuario'] ?? '')]);
+            // El usuario va como NULL real, no como '': con el cast a string,
+            // un dispositivo sin usuario (registrado antes de saber quien es,
+            // o despues de cerrar sesion) comparaba `n.usuario = ''`, que no
+            // matchea nada -- las notificaciones personales encoladas mientras
+            // tanto no le llegaban nunca. El <=> compara NULL sin sorpresas.
+            $usuarioDisp = ($disp['usuario'] !== null && $disp['usuario'] !== '')
+                ? (string)$disp['usuario'] : null;
+            $st->execute([$deviceId, $disp['creado_en'], $disp['creado_en'], $usuarioDisp]);
             $filas = $st->fetchAll(PDO::FETCH_ASSOC);
 
             // Reservar antes de devolver: la fila que no se pudo insertar ya la
@@ -233,6 +277,51 @@ if (!function_exists('notif_crear')) {
             null,
             true
         );
+    }
+
+    /**
+     * Difusiones PROGRAMADAS que todavía no salieron (programada_en futura,
+     * en UTC). Para el listado del CRM: devuelve la fecha ya convertida a
+     * hora de Argentina, lista para mostrar.
+     */
+    function notif_programadas_listar(PDO $pdo): array
+    {
+        try {
+            $rows = $pdo->query(
+                "SELECT id, usuario, titulo, cuerpo, tipo, programada_en
+                   FROM notificaciones
+                  WHERE programada_en IS NOT NULL AND programada_en > UTC_TIMESTAMP()
+                  ORDER BY programada_en ASC"
+            )->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Throwable $e) {
+            return [];   // sin columna (migración 29 no corrida)
+        }
+        return array_map(function ($r) {
+            $ar = '';
+            try {
+                $dt = new DateTime($r['programada_en'], new DateTimeZone('UTC'));
+                $dt->setTimezone(new DateTimeZone('America/Argentina/Buenos_Aires'));
+                $ar = $dt->format('Y-m-d H:i');
+            } catch (Throwable $e) {}
+            return [
+                'id' => (int)$r['id'], 'usuario' => $r['usuario'], 'titulo' => $r['titulo'],
+                'cuerpo' => $r['cuerpo'], 'tipo' => $r['tipo'], 'programada_en_ar' => $ar,
+            ];
+        }, $rows);
+    }
+
+    /** Cancela una difusión que todavía no salió. false si ya salió o no existe. */
+    function notif_programada_cancelar(PDO $pdo, int $id): bool
+    {
+        try {
+            $st = $pdo->prepare(
+                "DELETE FROM notificaciones WHERE id = ? AND programada_en > UTC_TIMESTAMP()"
+            );
+            $st->execute([$id]);
+            return $st->rowCount() === 1;
+        } catch (Throwable $e) {
+            return false;
+        }
     }
 
     /** El jugador toco la notificacion. Solo para saber que promo funciona. */
