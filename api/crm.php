@@ -437,7 +437,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 $st->execute([$id]);
             }
             $mensajes = array_map(function ($m) {
-                $m['adjunto'] = $m['meta'] ? json_decode($m['meta'], true) : null;  // {tipo,url,nombre}
+                $meta = $m['meta'] ? json_decode($m['meta'], true) : null;
+                // adjunto: {tipo,url,nombre}. interno: true = rastro del agente
+                // ("Fiorella cargó $500"), no una respuesta real al cliente.
+                $m['adjunto'] = ($meta && isset($meta['url'])) ? $meta : null;
+                $m['interno'] = (bool)($meta['interno'] ?? false);
                 unset($m['meta']);
                 return $m;
             }, $st->fetchAll(PDO::FETCH_ASSOC));
