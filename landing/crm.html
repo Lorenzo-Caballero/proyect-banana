@@ -807,7 +807,7 @@
         </button>
       </div>
       <div class="saldo-int">
-        <div class="lbl"><svg viewBox="0 0 24 24"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> Saldo interno</div>
+        <div class="lbl"><svg viewBox="0 0 24 24"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> Fichas y jugadores</div>
         <div class="val" id="saldoInt">$0</div>
         <div class="glow-line"></div>
         <div class="mini-stats">
@@ -1615,6 +1615,7 @@
     (/(^|\.)(faunotattoo\.com|ganamoscrm\.online)$/i.test(location.hostname) ? "/gp-api" : "/api");
   const API = API_BASE + "/crm.php";
   const API_LOGIN = API_BASE + "/crm_login.php";
+  const API_SUS = API_BASE + "/suscripcion.php";
   const $ = s => document.querySelector(s);
 
   // ---------- sesion de operador (Fase 0.5) ----------
@@ -1702,7 +1703,7 @@
     pref = pref || "saldo";
     const info = $("#" + pref + "Info");
     try{
-      const r = await fetch("suscripcion.php?accion=estado", { credentials:"same-origin" });
+      const r = await fetch(API_SUS + "?accion=estado", { credentials:"same-origin" });
       const d = await r.json();
       if(!d.ok){ info.textContent = "No se pudo consultar el estado."; return; }
       info.innerHTML = `<div style="text-align:center;margin-bottom:14px">
@@ -1719,7 +1720,7 @@
     const el = $("#rsHistorial");
     if(!el) return;
     try{
-      const r = await fetch("suscripcion.php?accion=historial", { credentials:"same-origin" });
+      const r = await fetch(API_SUS + "?accion=historial", { credentials:"same-origin" });
       const d = await r.json();
       if(!d.ok || !d.pagos || !d.pagos.length){ el.textContent = "Todavía no hiciste ningún pago."; return; }
       const ESTADO_TXT = { pendiente:"pendiente", acreditado:"acreditado", rechazado:"rechazado", revision:"en revisión" };
@@ -1746,7 +1747,7 @@
     const btn = plan==="quincena" ? $("#" + pref + "BtnQuincena") : $("#" + pref + "BtnMes");
     const txt = btn.textContent; btn.disabled = true; btn.textContent = "Redirigiendo…";
     try{
-      const r = await fetch("suscripcion.php", {
+      const r = await fetch(API_SUS, {
         method:"POST", credentials:"same-origin", headers:{"Content-Type":"application/json"},
         body: JSON.stringify({ accion:"crear_preference", plan })
       });
