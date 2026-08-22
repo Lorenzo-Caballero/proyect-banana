@@ -124,15 +124,24 @@
   .est-abierta{background:var(--green);box-shadow:0 0 6px var(--green)} .est-pendiente{background:var(--orange)} .est-cerrada{background:var(--muted2)}
 
   /* ---- chat ---- */
-  .chead{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:12px}
-  .chead .who{display:flex;align-items:center;gap:11px}
+  .chead{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:16px}
+  .chead .who{display:flex;align-items:center;gap:11px;min-width:0}
   .chead .who .av{width:38px;height:38px}
   .chead .who b{font-size:15.5px}
   .chead .who .sub{color:var(--muted);font-size:12.5px}
-  .estbtns{display:flex;gap:6px}
-  .estbtns button{background:var(--panel2);border:1px solid var(--line);color:var(--muted);padding:7px 13px;border-radius:9px;font-size:12.5px;transition:.15s}
+  /* Dos grupos con intención distinta: acciones sobre ESTE chat (izq.) y el
+     estado del ticket (der.), separados por un divisor -- antes eran 7
+     botones sueltos en una fila sin jerarquía. */
+  .chead-grupos{display:flex;align-items:center;gap:14px;flex:none}
+  .chead-acciones{display:flex;align-items:center;gap:6px}
+  .chead-sep{width:1px;height:26px;background:var(--line);flex:none}
+  .estbtns{display:flex;gap:3px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:3px}
+  .estbtns button{background:transparent;border:none;color:var(--muted);padding:7px 13px;border-radius:7px;font-size:12.5px;font-weight:600;transition:.15s;cursor:pointer}
   .estbtns button:hover{color:var(--txt)}
-  .estbtns button.on{border-color:var(--violet);color:var(--violet2);background:var(--violetSoft);font-weight:600}
+  .estbtns button.on{color:#fff;background:var(--violet);box-shadow:var(--shadow-sm)}
+  .estbtns button.on[data-e="abierta"]{background:var(--green)}
+  .estbtns button.on[data-e="pendiente"]{background:var(--orange)}
+  .estbtns button.on[data-e="cerrada"]{background:var(--muted2)}
   .thread{flex:1;overflow-y:auto;padding:22px 20px;display:flex;flex-direction:column;gap:13px}
   .row{display:flex;max-width:76%}
   .row.user{align-self:flex-start} .row.saliente{align-self:flex-end} .row.interno{align-self:center;max-width:92%}
@@ -311,7 +320,8 @@
        en una fila angosta -- se deja envolver y el toggle de IA pierde el
        texto (queda ícono + switch, que ya se entiende solo). */
     .chead{flex-wrap:wrap;row-gap:8px}
-    .estbtns{flex-wrap:wrap;justify-content:flex-end}
+    .chead-grupos{flex-wrap:wrap;justify-content:flex-end;row-gap:8px;width:100%}
+    .chead-sep{display:none}
     .ia-toggle .ia-txt{display:none}
     .ia-toggle{padding:0 8px;gap:6px}
   }
@@ -833,18 +843,23 @@
             <div class="agentes-chat" id="chatAgentes"></div>
           </div>
         </div>
-        <div class="estbtns" id="estbtns">
-          <button class="pinbtn" id="btnAtender" type="button" title="Atender este chat"><svg viewBox="0 0 24 24"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/><path d="M17 11h6M20 8v6"/></svg></button>
-          <button class="pinbtn btn-info" id="btnInfo" title="Ver info del usuario"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></button>
-          <button class="ia-toggle" id="btnIA" type="button" role="switch" aria-checked="false" title="Prender / apagar la IA en este chat">
-            <svg class="ia-bot" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M12 8V4M9 4h6"/><circle cx="8.5" cy="14" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="14" r="1.3" fill="currentColor" stroke="none"/></svg>
-            <span class="ia-txt">IA</span>
-            <span class="ia-track"><span class="ia-knob"></span></span>
-          </button>
-          <button class="pinbtn" id="btnFijar" title="Anclar"><svg viewBox="0 0 24 24"><path d="M12 17v5M9 3h6l-1 7 3 3v1H7v-1l3-3-1-7z"/></svg></button>
-          <button data-e="abierta">Abierta</button>
-          <button data-e="pendiente">Pendiente</button>
-          <button data-e="cerrada">Cerrada</button>
+        <div class="chead-grupos">
+          <div class="chead-acciones">
+            <button class="pinbtn" id="btnAtender" type="button" title="Atender este chat"><svg viewBox="0 0 24 24"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/><path d="M17 11h6M20 8v6"/></svg></button>
+            <button class="pinbtn btn-info" id="btnInfo" title="Ver info del usuario"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></button>
+            <button class="ia-toggle" id="btnIA" type="button" role="switch" aria-checked="false" title="Prender / apagar la IA en este chat">
+              <svg class="ia-bot" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M12 8V4M9 4h6"/><circle cx="8.5" cy="14" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="14" r="1.3" fill="currentColor" stroke="none"/></svg>
+              <span class="ia-txt">IA</span>
+              <span class="ia-track"><span class="ia-knob"></span></span>
+            </button>
+            <button class="pinbtn" id="btnFijar" title="Anclar"><svg viewBox="0 0 24 24"><path d="M12 17v5M9 3h6l-1 7 3 3v1H7v-1l3-3-1-7z"/></svg></button>
+          </div>
+          <div class="chead-sep"></div>
+          <div class="estbtns" id="estbtns">
+            <button data-e="abierta">Abierta</button>
+            <button data-e="pendiente">Pendiente</button>
+            <button data-e="cerrada">Cerrada</button>
+          </div>
         </div>
       </div>
       <div class="thread" id="thread"></div>
