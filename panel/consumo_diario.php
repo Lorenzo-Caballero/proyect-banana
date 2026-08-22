@@ -14,6 +14,11 @@
  * aplicar_migraciones() en provisionar.php.
  */
 
+/* Tope de días atrasados que se cobran de una. Si el cron estuvo caído más
+   que esto, se cobra hasta acá y el resto se pierde a propósito: mejor eso
+   que vaciarle el saldo de golpe a un cliente por un problema nuestro. */
+const MAX_DIAS_ATRASO = 7;
+
 $cfg = require __DIR__ . '/panel_config.php';
 
 try {
@@ -55,16 +60,32 @@ foreach ($clientes as $c) {
             $pdo->prepare("UPDATE clientes SET suscripcion_estado = 'activa' WHERE id = ?")->execute([$id]);
         }
 
+        /* Cuántos días se deben. Si el cron no corrió (VPS caído, error de
+           PHP, mantenimiento), antes se descontaba UN día igual y se marcaba
+           ultimo_consumo=CURDATE(): los días de servicio efectivamente
+           prestados no se cobraban nunca y no quedaba rastro de la deuda.
+           El tope evita que un ultimo_consumo muy viejo (cliente recién
+           migrado, o que estuvo pausado) le vacíe el saldo de una. */
+        $dias = 1;
+        if (!empty($c['ultimo_consumo'])) {
+            $dias = (int)((new DateTime(date('Y-m-d')))
+                ->diff(new DateTime($c['ultimo_consumo']))->days);
+            $dias = max(1, min($dias, MAX_DIAS_ATRASO));
+        }
+
         // Guard optimista: solo descuenta si ultimo_consumo sigue siendo el
         // mismo valor leído arriba (evita doble descuento ante una corrida
         // solapada del cron).
         $upd = $pdo->prepare(
-            'UPDATE clientes SET saldo_usd = saldo_usd - costo_diario_usd, ultimo_consumo = CURDATE()
+            'UPDATE clientes SET saldo_usd = saldo_usd - (costo_diario_usd * ?), ultimo_consumo = CURDATE()
               WHERE id = ? AND (ultimo_consumo IS NULL OR ultimo_consumo < CURDATE())
                 AND (ultimo_consumo <=> ?)'
         );
-        $upd->execute([$id, $c['ultimo_consumo']]);
+        $upd->execute([$dias, $id, $c['ultimo_consumo']]);
         if ($upd->rowCount() !== 1) { continue; }
+        if ($dias > 1) {
+            echo date('c') . " cliente $id: se cobraron $dias días atrasados\n";
+        }
 
         $st = $pdo->prepare('SELECT saldo_usd FROM clientes WHERE id = ?');
         $st->execute([$id]);

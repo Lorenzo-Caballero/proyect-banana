@@ -57,20 +57,21 @@ try {
     // Solo usuarios que existen: sin esto, cualquiera llena la tabla de basura
     // con nombres inventados. El UPDATE ya lo garantiza (no crea filas), pero
     // devolver 'desconocido' le sirve al widget para dejar de insistir.
-    // Se escriben las DOS: `balance` para que la base coincida con lo que el
-    // jugador ve en la plataforma en tiempo real, y `balance_web` para dejar
-    // asentado que ese valor vino del navegador y no del panel.
     //
-    // Lo que sostiene esto es sync_usuarios.py: cada pasada pisa `balance` con
-    // el saldo real del panel de agentes, asi que un valor inventado desde el
-    // inspector se corrige solo en la proxima vuelta. Sin el sync corriendo,
-    // `balance` pasa a ser lo que diga el cliente y nadie lo desmiente nunca.
+    // SOLO `balance_web`, NUNCA `balance`. Este endpoint es publico y sin
+    // credenciales: lo que manda un cliente sirve para MOSTRAR, jamas para
+    // autorizar plata. `balance` es lo que mira fichas_pedir_retiro() para
+    // aprobar un retiro (ver fichas_lib.php), asi que escribirlo desde aca
+    // permitia inflarlo con un POST sin credenciales -- contra la cuenta de
+    // cualquier jugador, porque `usuario` es un parametro libre -- y pedir el
+    // retiro acto seguido. `balance` lo escribe unicamente sync_usuarios.py
+    // desde el panel de agentes.
     $upd = $pdo->prepare(
         "UPDATE usuarios
-            SET balance = ?, balance_web = ?, balance_web_en = NOW()
+            SET balance_web = ?, balance_web_en = NOW()
           WHERE username = ?"
     );
-    $upd->execute([$saldo, $saldo, $usuario]);
+    $upd->execute([$saldo, $usuario]);
 
     echo json_encode(['ok' => true, 'guardado' => $upd->rowCount() > 0]);
 

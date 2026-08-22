@@ -83,6 +83,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && $accion === 'estado') {
     $costoDiario = (float)$cliente['costo_diario_usd'];
     $dias = $costoDiario > 0 ? (float)$cliente['saldo_usd'] / $costoDiario : 0;
 
+    /* El gate de crm_auth.php cachea "sin saldo" 5 minutos en la sesión. Al
+       volver del checkout el estado real ya es 'activa', pero el CRM seguía
+       bloqueado hasta que venciera ese caché -- y lo natural es que el
+       operador crea que el pago falló y pague de nuevo. Si acá vemos que ya
+       hay saldo, se tira el caché para que entre en la próxima llamada. */
+    if ($cliente['suscripcion_estado'] !== 'sin_saldo') {
+        unset($_SESSION['saldo_plataforma_cache']);
+    }
+
     salir([
         'ok' => true,
         'saldo_usd' => (float)$cliente['saldo_usd'],
@@ -134,7 +143,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $base   = 'https://' . $host . ($slug !== '' ? '/' . $slug : '');
         $volver = $base . '/crm.html';
 
-        // Se llama a MP primero: si falla, no queda una fila basura en pagos_plataforma.
+        /* La fila local se reserva ANTES de llamar a MP, para que la preference
+           ya nazca con el external_reference definitivo.
+           Antes se hacía al revés (crear en MP con ":pendiente", insertar, y
+           después un PUT para corregir la referencia): si ese PUT fallaba
+           -- timeout, hipo de red -- el operador igual pagaba, y el webhook
+           recibía "17:pendiente", no podía ubicar la fila, y respondía 200
+           "ignorado". Plata cobrada, saldo sin acreditar, y MP sin reintentar.
+           Si ahora falla la creación en MP, queda una fila 'pendiente' huérfana
+           que nadie va a acreditar nunca: es basura inofensiva, mucho más
+           barata que perder un pago. */
+        $ctl->prepare(
+            'INSERT INTO pagos_plataforma (cliente_id, preference_id, plan, monto_ars, estado)
+             VALUES (?,?,?,?,\'pendiente\')'
+        )->execute([$clienteId, '', $plan, $montoArs]);
+        $pagoId = (int)$ctl->lastInsertId();
+
         $pref = [
             'items' => [[
                 'title' => 'Suscripcion CRM Goldpaw - ' . ($plan === 'quincena' ? '2 semanas' : '1 mes'),
@@ -142,7 +166,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'unit_price' => $montoArs,
                 'currency_id' => 'ARS',
             ]],
-            'external_reference' => $clienteId . ':pendiente',
+            'external_reference' => $clienteId . ':' . $pagoId,
             'notification_url' => $base . '/gp-api/mp_webhook.php',
             'back_urls' => [
                 'success' => $volver,
@@ -169,6 +193,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($resp === false || $code >= 300) {
             error_log('suscripcion.php crear_preference: MP respondió ' . $code . ' ' . (string)$resp . ' ' . $curlErr);
+            // La fila reservada ya no sirve: se descarta para no dejar
+            // "pendientes" fantasma en el historial del cliente.
+            $ctl->prepare("DELETE FROM pagos_plataforma WHERE id = ? AND estado = 'pendiente'")
+                ->execute([$pagoId]);
             // El detalle de MP se devuelve al operador: sin esto hay que ir a
             // leer el log del server para saber qué rechazó, y el mensaje de
             // MP suele decir exactamente qué campo está mal.
@@ -181,28 +209,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $preferenceId = (string)($j['id'] ?? '');
         $initPoint    = (string)($j['init_point'] ?? '');
         if ($preferenceId === '' || $initPoint === '') {
+            $ctl->prepare("DELETE FROM pagos_plataforma WHERE id = ? AND estado = 'pendiente'")
+                ->execute([$pagoId]);
             salir(['ok' => false, 'error' => 'Respuesta inesperada de MercadoPago'], 502);
         }
 
-        $ctl->prepare(
-            'INSERT INTO pagos_plataforma (cliente_id, preference_id, plan, monto_ars, estado)
-             VALUES (?,?,?,?,\'pendiente\')'
-        )->execute([$clienteId, $preferenceId, $plan, $montoArs]);
-        $pagoId = (int)$ctl->lastInsertId();
-
-        // external_reference real ahora que ya existe el id local -- se
-        // actualiza la preference en MP para que el webhook pueda ubicar la
-        // fila exacta sin ambigüedad.
-        $chUpd = curl_init('https://api.mercadopago.com/checkout/preferences/' . $preferenceId);
-        curl_setopt_array($chUpd, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_CUSTOMREQUEST => 'PUT',
-            CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Authorization: Bearer ' . $token],
-            CURLOPT_POSTFIELDS => json_encode(['external_reference' => $clienteId . ':' . $pagoId]),
-            CURLOPT_TIMEOUT => 15,
-        ]);
-        curl_exec($chUpd);
-        curl_close($chUpd);
+        // Se completa el preference_id ahora que MP lo devolvió. La referencia
+        // que importa (external_reference) ya viajó correcta desde el vamos.
+        $ctl->prepare('UPDATE pagos_plataforma SET preference_id = ? WHERE id = ?')
+            ->execute([$preferenceId, $pagoId]);
 
         salir(['ok' => true, 'init_point' => $initPoint]);
     }

@@ -208,11 +208,18 @@ if (!function_exists('notif_crear')) {
                               ELSE n.programada_en > DATE_SUB(UTC_TIMESTAMP(), INTERVAL " . NOTIF_VENTANA_DIAS . " DAY)
                          END)
                     AND (n.expira_en IS NULL OR n.expira_en > NOW())
-                    AND (n.usuario IS NULL OR n.usuario = ?)
+                    AND (n.usuario IS NULL OR n.usuario <=> ?)
                   ORDER BY n.id ASC
                   LIMIT $limite"
             );
-            $st->execute([$deviceId, $disp['creado_en'], $disp['creado_en'], (string)($disp['usuario'] ?? '')]);
+            // El usuario va como NULL real, no como '': con el cast a string,
+            // un dispositivo sin usuario (registrado antes de saber quien es,
+            // o despues de cerrar sesion) comparaba `n.usuario = ''`, que no
+            // matchea nada -- las notificaciones personales encoladas mientras
+            // tanto no le llegaban nunca. El <=> compara NULL sin sorpresas.
+            $usuarioDisp = ($disp['usuario'] !== null && $disp['usuario'] !== '')
+                ? (string)$disp['usuario'] : null;
+            $st->execute([$deviceId, $disp['creado_en'], $disp['creado_en'], $usuarioDisp]);
             $filas = $st->fetchAll(PDO::FETCH_ASSOC);
 
             // Reservar antes de devolver: la fila que no se pudo insertar ya la

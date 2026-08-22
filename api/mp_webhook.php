@@ -92,6 +92,7 @@ $pago = json_decode((string)$resp, true);
 $status = (string)($pago['status'] ?? '');
 $externalRef = (string)($pago['external_reference'] ?? '');
 $montoArsConfirmado = (float)($pago['transaction_amount'] ?? 0);
+$moneda = (string)($pago['currency_id'] ?? '');
 
 // external_reference = "<cliente_id>:<pagos_plataforma.id>"
 $partes = explode(':', $externalRef, 2);
@@ -110,16 +111,45 @@ if ($status !== 'approved') {
     salir(['ok' => true, 'status' => $status]);
 }
 
+/* Qué se esperaba cobrar. Sin este chequeo, el webhook acreditaba lo que
+   dijera el pago: como el external_reference es adivinable (dos enteros),
+   alguien podía mandar un pago propio de $100 con la referencia de otro y
+   destrabar la suscripción entera. Y sin mirar currency_id, un pago en USD
+   se dividía igual por el blue, inflando el saldo ~1000x. */
+$st = $ctl->prepare('SELECT monto_ars FROM pagos_plataforma WHERE id = ? AND cliente_id = ? LIMIT 1');
+$st->execute([$pagoLocalId, $clienteId]);
+$esperado = $st->fetch();
+if (!$esperado) {
+    error_log('mp_webhook: no existe el pago local ' . $pagoLocalId . ' del cliente ' . $clienteId);
+    salir(['ok' => true, 'ignorado' => true]);
+}
+$montoEsperado = (float)$esperado['monto_ars'];
+
 // Conversión a USD con el blue del momento; si la API externa falla, usa el
 // fallback configurado y marca la fila para revisión manual -- un pago
 // aprobado NUNCA queda sin acreditar por la caída de un servicio de terceros.
 $blue = dolar_blue();
-$estadoFinal = 'acreditado';
+$conFallback = false;
 if ($blue === null) {
     $blue = (float)config_plataforma_get($ctl, 'TC_ARS_USD_FALLBACK', '1000');
-    $estadoFinal = 'revision';
+    $conFallback = true;
 }
-$montoUsd = $blue > 0 ? round($montoArsConfirmado / $blue, 2) : 0;
+
+/* Moneda o monto que no cuadran con lo que se pidió: acá NO se acredita nada.
+   La plata ya está cobrada, así que tampoco se ignora: queda en 'revision'
+   con el payload guardado para que un humano decida. Se tolera 1 peso de
+   diferencia por redondeos de MP. */
+$sospechoso = ($moneda !== 'ARS' || $montoArsConfirmado + 1 < $montoEsperado);
+if ($sospechoso) {
+    error_log('mp_webhook: pago ' . $paymentId . ' no cuadra: ' . $moneda . ' ' .
+              $montoArsConfirmado . ' (esperado ARS ' . $montoEsperado . ')');
+}
+
+// El fallback de tipo de cambio SÍ acredita (un pago legítimo no puede
+// quedarse sin acreditar porque se cayó dolarapi), pero queda marcado para
+// revisar si la cotización usada era razonable.
+$estadoFinal = $sospechoso ? 'revision' : 'acreditado';
+$montoUsd = ($sospechoso || $blue <= 0) ? 0 : round($montoArsConfirmado / $blue, 2);
 
 $pdo = $ctl;
 $pdo->beginTransaction();
@@ -129,7 +159,14 @@ try {
                 acreditado_en=NOW(), raw_webhook=?
           WHERE id=? AND cliente_id=? AND estado='pendiente'"
     );
-    $upd->execute([$paymentId, $montoUsd, $blue, $estadoFinal, json_encode($pago), $pagoLocalId, $clienteId]);
+    // Se guarda el payload de MP junto con cómo se resolvió la conversión,
+    // para poder auditar después un pago que quedó en revisión.
+    $rastro = json_encode([
+        'pago' => $pago,
+        'tc_fallback' => $conFallback,
+        'monto_esperado_ars' => $montoEsperado,
+    ], JSON_UNESCAPED_UNICODE);
+    $upd->execute([$paymentId, $montoUsd, $blue, $estadoFinal, $rastro, $pagoLocalId, $clienteId]);
 
     if ($upd->rowCount() !== 1) {
         // Ya estaba procesado (reintento de MP) o no matchea -- no duplicar.
@@ -137,9 +174,14 @@ try {
         salir(['ok' => true, 'ya_procesado' => true]);
     }
 
+    // El AND sin_saldo importa: sin el, pagar durante el trial sacaba al
+    // cliente de la cortesia y el cron empezaba a descontarle al dia
+    // siguiente -- pagar por adelantado le salia mas caro que no pagar.
+    // Misma condicion que panel.php::saldo_ajustar.
     $pdo->prepare(
         "UPDATE clientes SET saldo_usd = saldo_usd + ?,
-                suscripcion_estado = IF(saldo_usd + ? > 0, 'activa', suscripcion_estado)
+                suscripcion_estado = IF(saldo_usd + ? > 0 AND suscripcion_estado = 'sin_saldo',
+                                        'activa', suscripcion_estado)
           WHERE id = ?"
     )->execute([$montoUsd, $montoUsd, $clienteId]);
 

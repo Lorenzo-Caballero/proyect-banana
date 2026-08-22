@@ -1727,7 +1727,10 @@
     pref = pref || "saldo";
     const info = $("#" + pref + "Info");
     try{
-      const r = await fetch(API_SUS + "?accion=estado", { credentials:"same-origin" });
+      // apiFetch y no fetch crudo: si la sesión venció, este manda al login en
+      // vez de dejar un "No se pudo consultar el estado" sin salida -- y esta
+      // es justo la pantalla de la que el operador necesita poder salir.
+      const r = await apiFetch(API_SUS + "?accion=estado");
       const d = await r.json();
       if(!d.ok){ info.textContent = "No se pudo consultar el estado."; return; }
       info.innerHTML = `<div style="text-align:center;margin-bottom:14px">
@@ -1737,14 +1740,17 @@
       const btnQ = $("#" + pref + "BtnQuincena"), btnM = $("#" + pref + "BtnMes");
       if(btnQ) btnQ.textContent = `Pagar 2 semanas — $${nf.format(Math.round(d.precio_ars.quincena))} ARS`;
       if(btnM) btnM.textContent = `Pagar 1 mes — $${nf.format(Math.round(d.precio_ars.mes))} ARS`;
-    }catch(e){ info.textContent = "No se pudo consultar el estado."; }
+    }catch(e){
+      // esSesionRequerida: apiFetch ya mostró el login, no pisar con un error.
+      if(!esSesionRequerida(e)) info.textContent = "No se pudo consultar el estado.";
+    }
   }
 
   async function cargarHistorialSuscripcion(){
     const el = $("#rsHistorial");
     if(!el) return;
     try{
-      const r = await fetch(API_SUS + "?accion=historial", { credentials:"same-origin" });
+      const r = await apiFetch(API_SUS + "?accion=historial");
       const d = await r.json();
       if(!d.ok || !d.pagos || !d.pagos.length){ el.textContent = "Todavía no hiciste ningún pago."; return; }
       const ESTADO_TXT = { pendiente:"pendiente", acreditado:"acreditado", rechazado:"rechazado", revision:"en revisión" };
@@ -1756,7 +1762,9 @@
           <span style="color:var(--muted);font-size:12px"> · ${esc(ESTADO_TXT[p.estado]||p.estado)} · ${esc(p.creado)}</span>
         </div>`;
       }).join("");
-    }catch(e){ el.textContent = "No se pudo cargar el historial."; }
+    }catch(e){
+      if(!esSesionRequerida(e)) el.textContent = "No se pudo cargar el historial.";
+    }
   }
 
   function cargarVistaSuscripcion(){
