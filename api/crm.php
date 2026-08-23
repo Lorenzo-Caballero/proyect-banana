@@ -55,13 +55,26 @@ function salir($data, int $code = 200): void
     exit;
 }
 
-/** Trae la ficha del usuario desde `usuarios`: saldo, fichas (coins), bonos, flags. */
+/** Trae la ficha del usuario desde `usuarios`: saldo (real, de ganamos),
+ *  bono pendiente (prometido, aún no acreditado) y flags.
+ *
+ *  OJO SALDO vs FICHAS: `coins` ("fichas") es un contador PROPIO que lleva
+ *  el CRM (cargas manuales + recargas acreditadas) -- el sync de ganamos NO
+ *  trae ningún campo de fichas, solo `balance` (dinero real). Mostrar los
+ *  dos como si fueran independientes confundía: acá solo se expone `saldo`
+ *  (`usuarios.balance`), que es el único dato real sincronizado.
+ *
+ *  OJO BONO: `usuarios.bonus` es un acumulado HISTÓRICO que solo suma
+ *  (ruleta + cargas manuales + bonos prometidos ya aplicados) y nunca se
+ *  resta -- no refleja "lo que el jugador tiene disponible ahora". Lo que
+ *  sí es accionable es `bonos_pendientes` con estado='pendiente': bonos
+ *  YA PROMETIDOS por notificación que todavía esperan la próxima recarga
+ *  del jugador para hacerse efectivos (ver crm_notificaciones.php). Eso es
+ *  lo que se expone como `bono_pendiente`. */
 function ficha_usuario(PDO $pdo, string $usuario): ?array
 {
     $st = $pdo->prepare(
         "SELECT id AS ganamos_id, username AS nombre_usuario,
-                COALESCE(coins, 0)  AS fichas,
-                COALESCE(bonus, 0)  AS bonus,
                 COALESCE(balance,0) AS saldo,
                 COALESCE(total_deposits,0) AS total_deposits,
                 role, is_banned, tiene_app, notificaciones,
@@ -72,15 +85,42 @@ function ficha_usuario(PDO $pdo, string $usuario): ?array
     $r = $st->fetch(PDO::FETCH_ASSOC);
     if (!$r) { return null; }
 
-    $r['fichas']         = (int)$r['fichas'];
-    $r['bonus']          = (int)$r['bonus'];
     $r['saldo']          = (float)$r['saldo'];
     $r['total_deposits'] = (float)$r['total_deposits'];
     $r['is_banned']      = (bool)$r['is_banned'];
     $r['tiene_app']      = (bool)($r['tiene_app'] ?? false);
     $r['notificaciones'] = (bool)($r['notificaciones'] ?? false);
     $r['registrado_sitio'] = true;
+    $r['bono_pendiente'] = bono_pendiente_total($pdo, $usuario);
     return $r;
+}
+
+/** Suma de bonos_pendientes (fichas + pct, estado='pendiente') de un
+ *  usuario. El de tipo 'pct' todavía no tiene monto fijo (depende de
+ *  cuánto cargue), así que se cuenta como cantidad de promesas, no como
+ *  pesos -- ver bono_pendiente_desglose() para el detalle completo.
+ *  Nunca lanza: si falta la migración 33, la ficha sigue andando sin este
+ *  dato (vuelve 0). */
+function bono_pendiente_total(PDO $pdo, string $usuario): array
+{
+    try {
+        $st = $pdo->prepare(
+            "SELECT tipo, COUNT(*) AS cant, COALESCE(SUM(valor),0) AS suma
+               FROM bonos_pendientes
+              WHERE usuario = ? AND estado = 'pendiente'
+              GROUP BY tipo"
+        );
+        $st->execute([$usuario]);
+        $out = ['fichas' => 0, 'pct_cantidad' => 0, 'giro_cantidad' => 0];
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            if ($r['tipo'] === 'fichas') { $out['fichas'] += (int)$r['suma']; }
+            if ($r['tipo'] === 'pct')    { $out['pct_cantidad'] += (int)$r['cant']; }
+            if ($r['tipo'] === 'giro')   { $out['giro_cantidad'] += (int)$r['cant']; }
+        }
+        return $out;
+    } catch (Throwable $e) {
+        return ['fichas' => 0, 'pct_cantidad' => 0, 'giro_cantidad' => 0];
+    }
 }
 
 function movimientos(PDO $pdo, string $usuario, int $limite = 30): array

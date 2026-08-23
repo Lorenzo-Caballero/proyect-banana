@@ -199,6 +199,9 @@
   .flag.on{color:var(--green2);border-color:var(--green);background:var(--greenSoft)}
   .flag.ban{color:var(--red);border-color:var(--red);background:var(--redSoft)}
   .saldos{display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px;padding:16px 15px}
+  /* Ficha de conversación: 2 cajas (Saldo real + Bono pendiente), no 3 --
+     "Fichas" (contador propio del CRM) se sacó de acá. */
+  .saldos.saldos2{grid-template-columns:1fr 1fr}
   .sbox{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:13px 6px;text-align:center;position:relative;overflow:hidden}
   .sbox .k{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
   .sbox .v{font-size:19px;font-weight:800;margin-top:4px;letter-spacing:.2px}
@@ -1128,10 +1131,15 @@
         <div class="u" id="uUser"></div>
         <div class="flags" id="uFlags"></div>
       </div>
-      <div class="saldos">
+      <!-- Saldo = usuarios.balance, el único dato REAL sincronizado desde
+           ganamos (antes se mostraba también "Fichas" = usuarios.coins, un
+           contador paralelo que lleva el propio CRM y no viene de la
+           plataforma -- se sacó para no confundir). Bono pendiente =
+           bonos_pendientes sin acreditar todavía (lo prometido, no lo
+           histórico acumulado) -- ver bono_pendiente_total() en crm.php. -->
+      <div class="saldos saldos2">
         <div class="sbox saldo"><div class="k">Saldo</div><div class="v" id="uSaldo">$0</div></div>
-        <div class="sbox fichas"><div class="k">Fichas</div><div class="v" id="uFichas">0</div></div>
-        <div class="sbox bono"><div class="k">Bonos</div><div class="v" id="uBonos">0</div></div>
+        <div class="sbox bono" id="uBonoBox" title="Bonos prometidos, aún no acreditados"><div class="k">Bono pendiente</div><div class="v" id="uBonos">0</div></div>
       </div>
       <div class="sec">
         <h4>Acciones</h4>
@@ -1323,8 +1331,8 @@
       <div class="tabs" id="usFiltros">
         <button class="tab on" data-f="todos">Todos</button>
         <button class="tab" data-f="con_saldo">Con saldo</button>
-        <button class="tab" data-f="con_coins">Con fichas</button>
-        <button class="tab" data-f="con_bonos">Con bonos</button>
+        <button class="tab" data-f="con_bono_pendiente">Con bono pendiente</button>
+        <button class="tab" data-f="con_bonos">Con bono histórico</button>
         <button class="tab" data-f="baneados">Baneados</button>
         <button class="tab" data-f="sin_saldo">Sin saldo</button>
       </div>
@@ -1342,8 +1350,8 @@
           <tr id="usCabeceras">
             <th data-o="username">Usuario <span class="arr"></span></th>
             <th data-o="balance" class="num-h">Saldo <span class="arr"></span></th>
-            <th data-o="coins" class="num-h">Fichas <span class="arr"></span></th>
-            <th data-o="bonus" class="num-h">Bonos <span class="arr"></span></th>
+            <th data-o="bono_pendiente" class="num-h" title="Bonos prometidos, aún no acreditados">Bono pendiente <span class="arr"></span></th>
+            <th data-o="bonus" class="num-h" title="Total histórico acreditado (nunca se resta)">Bono histórico <span class="arr"></span></th>
             <th data-o="total_deposits" class="num-h">Depósitos <span class="arr"></span></th>
             <th class="no-sort">Rol</th>
             <th class="no-sort">Estado</th>
@@ -2593,8 +2601,15 @@
     $("#uNombre").textContent = ((u.nombre||"")+" "+(u.apellido||"")).trim() || u.nombre_usuario;
     $("#uUser").textContent = "@"+u.nombre_usuario;
     $("#uSaldo").textContent = money(u.saldo);
-    $("#uFichas").textContent = nf.format(u.fichas||0);
-    $("#uBonos").textContent = nf.format(u.bonus||0);
+    // Bono pendiente: fichas fijas prometidas (en coins) + cuántas promesas
+    // de % y de giro de ruleta sin acreditar todavía -- ver
+    // bono_pendiente_total() en crm.php. No es el acumulado histórico.
+    const bp = u.bono_pendiente || {fichas:0, pct_cantidad:0, giro_cantidad:0};
+    const partesBono = [];
+    if(bp.fichas>0) partesBono.push(nf.format(bp.fichas));
+    if(bp.pct_cantidad>0) partesBono.push(`${bp.pct_cantidad}×%`);
+    if(bp.giro_cantidad>0) partesBono.push(`${bp.giro_cantidad}×giro`);
+    $("#uBonos").textContent = partesBono.length ? partesBono.join(" + ") : "0";
 
     const flags=[];
     if(u.is_banned) flags.push(`<span class="flag ban">Baneado</span>`);
@@ -3327,12 +3342,12 @@
 
   function pintarCardsUs(r){
     const c = [
-      { k:"Usuarios",       v:nf.format(r.total_usuarios), cls:"" },
-      { k:"Con saldo",      v:nf.format(r.con_saldo),      cls:"green" },
-      { k:"Saldo total",    v:money(r.saldo_total),        cls:"green" },
-      { k:"Fichas totales", v:nf.format(r.coins_total),    cls:"gold" },
-      { k:"Bonos totales",  v:nf.format(r.bonos_total),    cls:"gold" },
-      { k:"Baneados",       v:nf.format(r.baneados),       cls:"red" },
+      { k:"Usuarios",              v:nf.format(r.total_usuarios),     cls:"" },
+      { k:"Con saldo",             v:nf.format(r.con_saldo),          cls:"green" },
+      { k:"Saldo total",           v:money(r.saldo_total),            cls:"green" },
+      { k:"Bono pendiente total",  v:nf.format(r.bono_pendiente_total), cls:"gold" },
+      { k:"Bono histórico total",  v:nf.format(r.bonos_total),        cls:"gold" },
+      { k:"Baneados",              v:nf.format(r.baneados),           cls:"red" },
     ];
     $("#usCards").innerHTML = c.map(x=>
       `<div class="us-stat ${x.cls}"><div class="k">${esc(x.k)}</div><div class="v">${x.v}</div></div>`).join("");
@@ -3340,14 +3355,14 @@
 
   function filaUsuario(u){
     const estado = u.is_banned ? `<span class="us-tag ban">Baneado</span>` : `<span class="us-tag ok">Activo</span>`;
-    const saldo  = u.balance>0 ? `<span class="us-money">${money(u.balance)}</span>` : `<span class="us-zero">$0</span>`;
-    const coins  = u.coins>0   ? `<span class="us-coins">${nf.format(u.coins)}</span>` : `<span class="us-zero">0</span>`;
-    const bonos  = u.bonus>0   ? `<span class="us-coins">${nf.format(u.bonus)}</span>` : `<span class="us-zero">0</span>`;
+    const saldo   = u.balance>0        ? `<span class="us-money">${money(u.balance)}</span>` : `<span class="us-zero">$0</span>`;
+    const bonoPen = u.bono_pendiente>0 ? `<span class="us-coins">${nf.format(u.bono_pendiente)}</span>` : `<span class="us-zero">0</span>`;
+    const bonos   = u.bonus>0          ? `<span class="us-coins">${nf.format(u.bonus)}</span>` : `<span class="us-zero">0</span>`;
     const alta   = u.creation_date ? esc(u.creation_date).replace("T"," ").slice(0,10) : "—";
     return `<tr>
       <td><b>${esc(u.username)}</b></td>
       <td class="num">${saldo}</td>
-      <td class="num">${coins}</td>
+      <td class="num">${bonoPen}</td>
       <td class="num">${bonos}</td>
       <td class="num">${u.total_deposits>0 ? money(u.total_deposits) : '<span class="us-zero">$0</span>'}</td>
       <td>${esc(u.role || "—")}</td>
@@ -3966,7 +3981,7 @@
   $("#btnBono").addEventListener("click", ()=>abrirModal("cargar_bono","Cargar bono",false));
   $("#btnVer").addEventListener("click", ()=>{
     if(!st.usuario){ toast("Sin usuario vinculado"); return; }
-    toast(`Saldo ${$("#uSaldo").textContent} · Fichas ${$("#uFichas").textContent} · Bonos ${$("#uBonos").textContent}`);
+    toast(`Saldo ${$("#uSaldo").textContent} · Bono pendiente ${$("#uBonos").textContent}`);
     abrir(st.convId);
   });
   wireModal("#back", "#mCancel");
