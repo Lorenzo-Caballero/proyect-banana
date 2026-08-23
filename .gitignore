@@ -11,4 +11,6 @@ __pycache__/
 venv/
 api/uploads/
 colector/config.json
+*.log
+*.rar
 
