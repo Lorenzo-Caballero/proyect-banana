@@ -59,85 +59,93 @@
   .app{display:flex;height:100vh;padding:12px;gap:12px}
   .card-col{background:var(--panel);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow-sm)}
 
-  /* ---- nav rail ---- */
-  .rail{width:64px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:14px 0;min-height:0}
+  /* ---- nav rail ----
+     Desktop: rail ancho con ícono + etiqueta en fila, siempre visible (no
+     hover) -- referencia pedida por el usuario. El breakpoint de mobile
+     (max-width:760px) reescribe todo esto para la tira horizontal con
+     data-corto abajo del ícono; no se toca ese bloque. */
+  .rail{width:168px;display:flex;flex-direction:column;align-items:stretch;justify-content:space-between;padding:14px 10px;min-height:0}
   /* El primer grupo (los modulos) es el que crece: si no entran todos en la
      altura de la pantalla, scrollea el SOLO -- sin esto el rail desbordaba y
      los ultimos iconos quedaban cortados fuera de la vista. El segundo grupo
      (config/tema) nunca scrollea: queda siempre fijo abajo. */
-  .rail .grp{display:flex;flex-direction:column;align-items:center;gap:5px;min-height:0}
+  .rail .grp{display:flex;flex-direction:column;align-items:stretch;gap:3px;min-height:0}
   .rail .grp:first-of-type{overflow-y:auto;overflow-x:hidden;flex:0 1 auto;scrollbar-width:none}
   .rail .grp:first-of-type::-webkit-scrollbar{display:none}
   .logo{width:42px;height:42px;border-radius:13px;background:linear-gradient(160deg,var(--violet2),var(--violet));
-    color:#fff;display:grid;place-items:center;box-shadow:var(--shadow-sm);margin-bottom:10px}
+    color:#fff;display:grid;place-items:center;box-shadow:var(--shadow-sm);margin:0 auto 10px}
   .logo svg{width:22px;height:22px}
-  .rail-item{width:44px;height:44px;border-radius:13px;border:1px solid transparent;background:transparent;
-    color:var(--muted);display:grid;place-items:center;transition:.15s;position:relative}
+  .rail-item{width:100%;height:auto;border-radius:11px;border:1px solid transparent;background:transparent;
+    color:var(--muted);display:flex;align-items:center;gap:10px;padding:9px 11px;transition:.15s;position:relative;
+    text-align:left}
   .rail-item:hover{background:var(--panel2);color:var(--txt)}
   .rail-item.active{background:var(--violetSoft);color:var(--violet2);border-color:var(--violet)}
-  .rail-item svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:2}
-  .rail-item::after{content:attr(data-tip);position:absolute;left:52px;top:50%;transform:translateY(-50%) scale(.96);
-    background:var(--panel3);color:var(--txt);border:1px solid var(--line);padding:6px 10px;border-radius:9px;
-    font-size:12px;white-space:nowrap;opacity:0;pointer-events:none;transition:.12s;z-index:40;box-shadow:var(--shadow-sm)}
-  .rail-item:hover::after{opacity:1;transform:translateY(-50%) scale(1)}
+  .rail-item svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:2;flex:none}
+  .rail-item::after{content:attr(data-tip);font-size:12.5px;font-weight:600;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis;line-height:1.2}
 
   /* ---- columnas ---- */
   .col-list{width:328px;min-width:290px;display:flex;flex-direction:column;overflow:hidden}
   .col-chat{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden}
   .col-user{width:344px;min-width:300px;overflow-y:auto}
 
-  /* ---- stats + lista ---- */
-  .lhead{padding:15px 16px;border-bottom:1px solid var(--line)}
-  .brand{display:flex;align-items:center;justify-content:space-between;margin-bottom:13px}
-  .brand b{font-size:16px;letter-spacing:.4px}
+  /* ---- stats + lista ----
+     Header inspirado en referencia tipo Dakota: título grande y suelto
+     ("Conversaciones") con el contador chico al lado, en vez de la marca
+     "gana·mos" chica de antes -- la marca ya está en el logo del rail, acá
+     no hace falta repetirla. */
+  .lhead{padding:18px 16px 14px;border-bottom:1px solid var(--line)}
+  .brand{display:flex;align-items:baseline;gap:8px;margin-bottom:14px}
+  .brand b{font-size:21px;font-weight:800;letter-spacing:-.2px;color:var(--txt)}
   .brand b span{color:var(--violet2)}
-  .brand .cap{color:var(--muted);font-size:12px}
-  .saldo-int{background:linear-gradient(160deg, var(--greenSoft), transparent);
-    border:1px solid rgba(47,208,122,.32);border-radius:15px;padding:13px 15px}
-  .saldo-int .lbl{font-size:10.5px;letter-spacing:.7px;text-transform:uppercase;color:var(--muted);
-    display:flex;align-items:center;gap:7px}
-  .saldo-int .lbl svg{width:14px;height:14px;fill:none;stroke:var(--green);stroke-width:2}
-  .saldo-int .val{font-size:25px;font-weight:800;color:var(--green2);margin-top:3px;letter-spacing:.3px}
-  .saldo-int .sub-dias{font-size:11.5px;color:var(--muted);margin-top:1px}
-  .saldo-int .glow-line{height:4px;border-radius:3px;margin-top:9px;
+  .brand .cap{color:var(--muted);font-size:12.5px;font-weight:600}
+  /* Compacto a propósito: una sola fila (ícono + label + monto) más la
+     barra de progreso fina debajo. Las mini-stats de usuarios/fichas/bonos
+     se sacaron -- esa data ya se ve en el módulo Usuarios y en Finanzas, acá
+     solo quitaba lugar a la lista de chats. */
+  .saldo-int{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:9px 11px}
+  .saldo-int .lbl{font-size:10px;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);
+    display:flex;align-items:center;gap:6px;flex:1;min-width:0}
+  .saldo-int .lbl svg{width:12px;height:12px;fill:none;stroke:var(--green);stroke-width:2;flex:none}
+  .saldo-int .fila{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .saldo-int .val{font-size:13.5px;font-weight:800;color:var(--green2);white-space:nowrap;flex:none}
+  .saldo-int .sub-dias{font-size:10px;color:var(--muted);margin-top:3px}
+  .saldo-int .glow-line{height:3px;border-radius:3px;margin-top:6px;
     background:linear-gradient(90deg,var(--green),var(--green2),transparent)}
   /* Suscripcion vencida o por vencer: el mismo recuadro pasa a rojo/naranja
      para que se note sin tener que entrar a "Mi suscripcion". */
-  .saldo-int.alerta{background:linear-gradient(160deg, rgba(255,107,107,.16), transparent);
-    border-color:rgba(255,107,107,.38)}
+  .saldo-int.alerta{background:rgba(255,107,107,.12);border-color:rgba(255,107,107,.38)}
   .saldo-int.alerta .val{color:var(--red)}
   .saldo-int.alerta .lbl svg{stroke:var(--red)}
   .saldo-int.alerta .glow-line{background:linear-gradient(90deg,var(--red),#ff9a9a,transparent)}
-  .saldo-int.aviso{background:linear-gradient(160deg, rgba(245,166,35,.15), transparent);
-    border-color:rgba(245,166,35,.36)}
+  .saldo-int.aviso{background:rgba(245,166,35,.12);border-color:rgba(245,166,35,.36)}
   .saldo-int.aviso .val{color:var(--orange2)}
   .saldo-int.aviso .lbl svg{stroke:var(--orange)}
   .saldo-int.aviso .glow-line{background:linear-gradient(90deg,var(--orange),var(--orange2),transparent)}
-  .mini-stats{display:flex;gap:8px;margin-top:10px}
-  .mini-stat{flex:1;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:9px 6px;text-align:center}
-  .mini-stat .k{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
-  .mini-stat .v{font-size:15px;font-weight:800;margin-top:2px}
-  .mini-stat.us .v{color:var(--blue)} .mini-stat.fi .v{color:var(--green2)} .mini-stat.bo .v{color:var(--violet2)}
 
   .subhead{padding:12px 16px 0}
+  /* Búsqueda más suelta: fondo casi imperceptible, sin borde marcado hasta
+     el focus -- referencia Dakota, en vez del recuadro con borde de siempre. */
   .search{position:relative}
-  .search input{width:100%;padding:10px 12px 10px 36px;background:var(--panel2);border:1px solid var(--line);border-radius:11px;color:var(--txt);outline:none;transition:.15s}
-  .search input:focus{border-color:var(--violet);box-shadow:0 0 0 3px var(--violetSoft)}
-  .search svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);opacity:.5;width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2}
-  .tabs{display:flex;gap:6px;margin-top:11px;flex-wrap:wrap}
+  .search input{width:100%;padding:11px 14px 11px 38px;background:var(--panel2);border:1px solid transparent;border-radius:13px;color:var(--txt);outline:none;transition:.15s}
+  .search input:focus{border-color:var(--violet);box-shadow:0 0 0 3px var(--violetSoft);background:var(--panel)}
+  .search svg{position:absolute;left:13px;top:50%;transform:translateY(-50%);opacity:.45;width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2}
+  .tabs{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
   .tab{background:transparent;border:1px solid var(--line);color:var(--muted);padding:6px 12px;border-radius:20px;font-size:12.5px;transition:.15s}
   .tab.on{background:var(--violetSoft);border-color:var(--violet);color:var(--violet2);font-weight:600}
-  .list{flex:1;overflow-y:auto;padding:8px 8px 8px;margin-top:8px}
-  .conv{display:flex;gap:11px;padding:11px 12px;border-radius:14px;cursor:pointer;position:relative;transition:.12s;margin-bottom:2px}
+  /* Filas sueltas, sin bordes propios (el separador lo da el aire, no una
+     línea) -- más aire vertical y avatar redondo en vez de squircle. */
+  .list{flex:1;overflow-y:auto;padding:6px 10px 10px;margin-top:6px}
+  .conv{display:flex;gap:12px;padding:12px 10px;border-radius:14px;cursor:pointer;position:relative;transition:.12s;margin-bottom:1px}
   .conv:hover{background:var(--panel2)}
   .conv.sel{background:var(--violetSoft);box-shadow:inset 0 0 0 1px var(--violet)}
-  .av{width:40px;height:40px;border-radius:13px;flex:none;display:grid;place-items:center;font-weight:800;font-size:13px;color:#fff;box-shadow:var(--shadow-sm)}
+  .av{width:42px;height:42px;border-radius:50%;flex:none;display:grid;place-items:center;font-weight:800;font-size:13px;color:#fff;box-shadow:var(--shadow-sm)}
   .av.anon{background:var(--panel3)!important;color:var(--muted)}
   .conv .mid{min-width:0;flex:1}
   .conv .n{display:flex;justify-content:space-between;gap:8px;align-items:center}
   .conv .n b{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center}
   .conv .n .t{color:var(--muted);font-size:11.5px;white-space:nowrap}
-  .conv .pv{color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px}
+  .conv .pv{color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:4px}
   .badge{background:var(--violet);color:#fff;font-size:11px;font-weight:800;min-width:19px;height:19px;border-radius:10px;display:grid;place-items:center;padding:0 5px}
   .est-dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:6px;flex:none}
   .est-abierta{background:var(--green);box-shadow:0 0 6px var(--green)} .est-pendiente{background:var(--orange)} .est-cerrada{background:var(--muted2)}
@@ -368,9 +376,12 @@
       font-size:9.5px;font-weight:600;letter-spacing:.1px;line-height:1;
       white-space:nowrap;
     }
-    /* El badge se ubicaba contra un cuadrado de 44px; ahora el ítem es más
-       alto y llevaría el número al medio del texto. */
-    .rail-item .rail-badge{top:3px;right:6px}
+    /* Mobile: el item vuelve a ser un cuadrado compacto (ícono arriba, texto
+       abajo) -- el badge se ancla de nuevo como chip superpuesto arriba a la
+       derecha, en vez del chip en fila que usa el desktop ancho. */
+    .rail-item{position:relative}
+    .rail-item .rail-badge{position:absolute;top:3px;right:6px;margin-left:0;
+      box-shadow:0 0 0 2px var(--panel)}
     .col-list,.col-chat{width:100%;min-width:0;flex:1;min-height:0}
     .app.viewing .col-list{display:none}
     .app:not(.viewing) .col-chat{display:none}
@@ -447,9 +458,12 @@
   .login-btn:disabled{opacity:.7;cursor:default}
 
   /* ---- badge de cantidad en el rail (Fase A) ---- */
-  .rail-badge{position:absolute;top:2px;right:2px;background:var(--red);color:#fff;
-    font-size:9.5px;font-weight:800;min-width:15px;height:15px;border-radius:8px;
-    display:none;place-items:center;padding:0 3px;box-shadow:0 0 0 2px var(--panel)}
+  /* Desktop: chip al final de la fila (ícono + texto + badge), no superpuesto.
+     El breakpoint mobile (max-width:760px) lo reposiciona sobre el ícono,
+     donde el item vuelve a ser compacto -- ver ahí. */
+  .rail-badge{position:static;margin-left:auto;background:var(--red);color:#fff;
+    font-size:9.5px;font-weight:800;min-width:16px;height:16px;border-radius:8px;
+    display:none;place-items:center;padding:0 4px;flex:none}
   .rail-badge.on{display:grid}
 
   /* ---- Comprobantes sin resolver (Fase A, Módulo 1) ---- */
@@ -1003,7 +1017,9 @@
   <!-- ===== Lista + stats ===== -->
   <aside class="col-list card-col">
     <div class="lhead">
-      <div class="brand"><b>gana<span>mos</span></b><span class="cap" id="cap"></span></div>
+      <!-- Título grande de la sección (referencia Dakota) en vez de repetir
+           la marca acá -- el logo/marca "gana·mos" ya está en el rail. -->
+      <div class="brand"><b>Conversaciones</b><span class="cap" id="cap"></span></div>
       <div class="operador-bar">
         <span class="operador-nombre" id="operadorNombre">—</span>
         <button class="operador-logout" id="btnLogout" title="Cerrar sesión" type="button">
@@ -1012,18 +1028,17 @@
       </div>
       <!-- Creditos del CRM = la suscripcion de ESTE cliente a la plataforma
            (lo que paga por usar el CRM). Nada que ver con la plata de sus
-           jugadores, que son las mini-stats de abajo. Se clickea para ir a
+           jugadores (usuarios/fichas/bonos) -- esos totales ya se ven en el
+           módulo Usuarios y en Finanzas, así que se sacaron de acá para no
+           quitarle lugar a la lista de chats. Se clickea para ir a
            "Mi suscripcion" y recargar. -->
       <div class="saldo-int" id="saldoCrmBox" title="Ir a Mi suscripción" style="cursor:pointer">
-        <div class="lbl"><svg viewBox="0 0 24 24"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> Créditos del CRM</div>
-        <div class="val" id="saldoInt">—</div>
+        <div class="fila">
+          <div class="lbl"><svg viewBox="0 0 24 24"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> Créditos del CRM</div>
+          <div class="val" id="saldoInt">—</div>
+        </div>
         <div class="sub-dias" id="saldoCrmDias"></div>
         <div class="glow-line"></div>
-        <div class="mini-stats">
-          <div class="mini-stat us"><div class="k">Usuarios</div><div class="v" id="stUsuarios">0</div></div>
-          <div class="mini-stat fi"><div class="k">Fichas</div><div class="v" id="stFichas">0</div></div>
-          <div class="mini-stat bo"><div class="k">Bonos</div><div class="v" id="stBonos">0</div></div>
-        </div>
       </div>
     </div>
     <div class="subhead">
@@ -2433,11 +2448,10 @@
 
   function pintarStats(r){
     $("#cap").textContent = `${r.total||0} · ${r.abiertas||0} abiertas`;
-    // #saldoInt ya NO muestra r.saldo_interno (plata de los jugadores): ahora
-    // son los creditos del CRM, que vienen de otro lado (ver pintarCreditosCrm).
-    $("#stUsuarios").textContent = nf.format(r.usuarios||0);
-    $("#stFichas").textContent = nf.format(r.fichas_total||0);
-    $("#stBonos").textContent = nf.format(r.bonos_total||0);
+    // Los totales de usuarios/fichas/bonos (r.usuarios, r.fichas_total,
+    // r.bonos_total) ya no se pintan acá -- se sacaron del rail (ver
+    // módulo Usuarios / Finanzas para esos mismos números). #saldoInt es
+    // otra cosa: los créditos del CRM, pintados en pintarCreditosCrm().
   }
 
   /**
