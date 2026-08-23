@@ -22,6 +22,15 @@ declare(strict_types=1);
 if (is_file(__DIR__ . '/notificaciones_lib.php')) {
     require_once __DIR__ . '/notificaciones_lib.php';
 }
+// Opcional: si esta, un bono de fichas/porcentaje prometido por notificacion
+// se aplica solo en la proxima recarga acreditada de ese usuario. Si no esta,
+// la recarga se acredita igual, sin bono.
+if (is_file(__DIR__ . '/crm_notificaciones.php')) {
+    require_once __DIR__ . '/crm_notificaciones.php';
+}
+if (is_file(__DIR__ . '/crm_lib.php')) {
+    require_once __DIR__ . '/crm_lib.php';
+}
 
 // =====================  EDITA ESTO  =======================================
 const RL_COINS_POR_PESO = 1;        // 1 coin = 1 peso  (5000 coins => $5000)
@@ -321,6 +330,16 @@ function rl_acreditar(PDO $pdo, array $recarga, string $idUnico, string $conf, ?
                 asignado_en=IF(? IS NOT NULL, NOW(), NULL)
           WHERE id_unico=?"
     )->execute([$recarga['id'], $operador, $operador, $idUnico]);
+
+    // Si el jugador tiene un bono de fichas/porcentaje pendiente (prometido
+    // por notificacion), se aplica ahora. crm_cargar() adentro abre y comitea
+    // su propia transaccion -- mismo patron ya usado en ruleta.php al
+    // reclamar premio, no rompe nada nuevo. Nunca lanza: un problema ahi no
+    // puede hacer que esta recarga (ya efectivamente acreditada arriba)
+    // parezca fallida.
+    if (function_exists('crmnotif_bono_aplicar_en_recarga')) {
+        crmnotif_bono_aplicar_en_recarga($pdo, (string)$recarga['usuario'], (int)$recarga['id'], (int)$recarga['coins']);
+    }
 }
 
 /** Aviso de recarga acreditada. Mismo texto para el camino automatico y el

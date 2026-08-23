@@ -535,7 +535,93 @@
   .carga-row .cg-detalle .dt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px 14px}
   .char-count{font-size:11px;color:var(--muted);text-align:right;margin-top:-6px}
 
-  /* ---- Transacciones globales (Fase A, Módulo 4) ---- */
+  /* ---- Auditoría (Fase A, Módulo 4 — reemplaza a Transacciones) ----
+     Namespace .mv-* se mantiene a propósito: ya lo reutiliza el módulo de
+     Notificaciones (Historial/Bonos pendientes) con el mismo significado
+     genérico ("vista tabular con filtros"), renombrar generaría diff cruzado
+     entre módulos sin beneficio real. Lo nuevo y propio de Auditoría (KPIs,
+     badges de tipo/estado/actor, tabs) va con prefijo .au-*. */
+  .au-header{padding:15px 16px;border-bottom:1px solid var(--line);display:flex;
+    justify-content:space-between;align-items:center;gap:12px}
+  .au-header b{font-size:15px}
+  .au-btn-export{background:var(--panel2);border:1px solid var(--line);color:var(--muted);
+    padding:7px 13px;border-radius:9px;font-size:12px;font-weight:700;transition:.15s;flex:none;
+    display:inline-flex;align-items:center;gap:6px}
+  .au-btn-export:hover{border-color:var(--violet);color:var(--txt)}
+  .au-btn-export svg{width:14px;height:14px}
+
+  .au-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:14px 16px}
+  .au-kpi-card{background:var(--panel2);border:1px solid var(--line);border-radius:13px;padding:13px 14px;
+    border-left:3px solid var(--line2)}
+  .au-kpi-card.acento-azul{border-left-color:var(--blue)}
+  .au-kpi-card.acento-verde{border-left-color:var(--green)}
+  .au-kpi-card.acento-rojo{border-left-color:var(--red)}
+  .au-kpi-card.acento-naranja{border-left-color:var(--orange)}
+  .au-kpi-card .k{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.03em;font-weight:600}
+  .au-kpi-card .v{font-size:20px;font-weight:800;margin-top:6px;white-space:nowrap}
+  .au-kpi-card .sub{color:var(--muted);font-size:11.5px;margin-top:4px}
+  .au-kpi-card.cargando .v,.au-kpi-card.cargando .sub{opacity:.35}
+  @media(max-width:900px){ .au-kpis{grid-template-columns:repeat(2,1fr)} }
+  @media(max-width:520px){ .au-kpis{grid-template-columns:repeat(2,1fr);padding:12px} }
+
+  .au-filtros{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--line)}
+  .au-tabs{display:flex;gap:6px;flex-wrap:wrap}
+  .au-tab{background:transparent;border:1px solid var(--line);color:var(--muted);padding:6px 12px;
+    border-radius:20px;font-size:12.5px;transition:.15s}
+  .au-tab.on{background:var(--violetSoft);border-color:var(--violet);color:var(--violet2);font-weight:600}
+  .au-filtros select,.au-filtros input[type=date]{background:var(--panel2);border:1px solid var(--line);
+    border-radius:11px;color:var(--txt);padding:9px 10px;outline:none;font-size:12.5px;transition:.15s}
+  .au-filtros select:focus,.au-filtros input[type=date]:focus{border-color:var(--violet);box-shadow:0 0 0 3px var(--violetSoft)}
+
+  .au-badge-tipo{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;
+    padding:3px 9px;border-radius:999px;white-space:nowrap}
+  .au-badge-tipo.deposito{background:var(--greenSoft);color:var(--green2)}
+  .au-badge-tipo.retiro{background:var(--redSoft);color:var(--red)}
+  .au-badge-tipo.bono{background:rgba(245,166,35,.16);color:var(--orange2)}
+  .au-badge-tipo.ajuste{background:rgba(74,131,176,.16);color:var(--blue)}
+
+  .au-badge-estado{display:inline-block;font-size:10.5px;font-weight:700;padding:3px 9px;
+    border-radius:999px;white-space:nowrap;background:var(--panel3);color:var(--muted)}
+  .au-badge-estado.verde{background:var(--greenSoft);color:var(--green2)}
+  .au-badge-estado.rojo{background:var(--redSoft);color:var(--red)}
+  .au-badge-estado.naranja{background:rgba(245,166,35,.16);color:var(--orange2)}
+  .au-badge-estado.azul{background:rgba(74,131,176,.16);color:var(--blue)}
+
+  .au-monto{font-weight:800;text-align:right;white-space:nowrap}
+  .au-monto.pos{color:var(--green2)}
+  .au-monto.neg{color:var(--red)}
+
+  .au-operador{display:inline-flex;align-items:center;gap:5px;font-size:12.5px}
+  .au-operador.humano{color:var(--txt)}
+  .au-operador.bot{color:var(--blue)}
+  .au-operador.sistema{color:var(--muted)}
+  .au-operador.ninguno{color:var(--muted2)}
+
+  .au-detalle{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default}
+  .au-referencia{font-family:ui-monospace,"SF Mono",Consolas,monospace;color:var(--muted);font-size:11.5px}
+
+  .au-vacio{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
+    padding:56px 20px;color:var(--muted);text-align:center}
+  .au-vacio svg{width:40px;height:40px;opacity:.5}
+  .au-vacio b{color:var(--txt);font-size:14px}
+  .au-vacio span{font-size:12.5px}
+
+  .au-cargando{opacity:.5;pointer-events:none}
+
+  @media(max-width:900px){
+    .mv-tabla th.au-col-referencia, .mv-tabla td.au-col-referencia{display:none}
+  }
+  @media(max-width:600px){
+    .mv-tabla th.au-col-detalle, .mv-tabla td.au-col-detalle{display:none}
+    .au-badge-tipo .au-tipo-txt{display:none}
+    .au-fecha-desktop{display:none}
+    .au-fecha-mobile{display:inline !important}
+    .au-detalle-mobile{display:block;color:var(--muted);font-size:12px;margin-top:4px;
+      max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .mv-tabla tbody tr.au-expandida .au-detalle-mobile{white-space:normal;max-width:none}
+  }
+  @media(min-width:601px){ .au-detalle-mobile{display:none} }
+
   .mv-filtros{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line)}
   .mv-filtros .search{flex:1;min-width:180px}
   .mv-filtros select,.mv-filtros input[type=date]{background:var(--panel2);border:1px solid var(--line);
@@ -824,6 +910,60 @@
   @media(max-width:680px){
     .n-modal-cols{grid-template-columns:1fr;gap:0}
   }
+
+  /* ---- vista Notificaciones: página completa con tabs (Enviar / Historial /
+     Bonos pendientes), reemplaza el modal #backN anterior ---- */
+  .nv-tabs{display:flex;gap:6px;padding:12px 16px 0;border-bottom:1px solid var(--line)}
+  .nv-tab{background:transparent;border:none;color:var(--muted);padding:10px 14px;font-size:13px;
+    font-weight:600;border-bottom:2px solid transparent;margin-bottom:-1px;cursor:pointer;transition:.15s}
+  .nv-tab:hover{color:var(--txt)}
+  .nv-tab.on{color:var(--violet2);border-bottom-color:var(--violet)}
+  .nv-body{flex:1;overflow-y:auto;min-height:0}
+  .nv-pane{display:none;padding:18px 20px}
+  .nv-pane.on{display:block}
+  .nv-enviar-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 28px}
+  @media(max-width:760px){ .nv-enviar-grid{grid-template-columns:1fr} }
+
+  .nv-audiencia{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:2px 0 4px}
+  @media(max-width:520px){ .nv-audiencia{grid-template-columns:1fr} }
+  .nv-aud-opt{position:relative;border:1px solid var(--line);background:var(--panel2);border-radius:11px;
+    padding:10px 12px;cursor:pointer;transition:.15s}
+  .nv-aud-opt:hover{border-color:var(--line2)}
+  .nv-aud-opt input{position:absolute;opacity:0;pointer-events:none}
+  .nv-aud-opt b{display:block;font-size:13px;font-weight:700;color:var(--txt)}
+  .nv-aud-opt span{display:block;font-size:11.5px;color:var(--muted);margin-top:2px;line-height:1.35}
+  .nv-aud-opt.on{border-color:var(--violet);background:var(--violetSoft)}
+  .nv-aud-opt.on b{color:var(--violet2)}
+  .nv-inactivos-cfg{display:none;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;
+    padding:10px 12px;background:var(--panel2);border:1px solid var(--line);border-radius:11px}
+  .nv-inactivos-cfg.on{display:flex}
+  .nv-inactivos-cfg input[type=number]{width:70px;background:var(--panel);border:1px solid var(--line);
+    border-radius:9px;padding:7px 9px;color:var(--txt);font-size:13px}
+  .nv-alcance{color:var(--violet2);font-weight:700}
+  .nv-presets{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}
+  .nv-presets select{flex:1;min-width:140px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:9px;padding:8px 10px;color:var(--txt);font-size:12.5px}
+
+  .nv-hist-item,.nv-bono-item{display:flex;align-items:center;gap:12px;background:var(--panel2);
+    border:1px solid var(--line);border-radius:13px;padding:12px 14px;margin-bottom:8px}
+  .nv-hist-info,.nv-bono-info{flex:1;min-width:0}
+  .nv-hist-titulo{font-size:13.5px;font-weight:700;color:var(--txt)}
+  .nv-hist-meta,.nv-bono-meta{font-size:11.5px;color:var(--muted);margin-top:3px}
+  .nv-hist-meta b,.nv-bono-meta b{color:var(--violet2)}
+  .nv-badge{display:inline-block;font-size:10.5px;font-weight:700;text-transform:uppercase;
+    letter-spacing:.03em;padding:2px 8px;border-radius:20px;background:var(--violetSoft);color:var(--violet2)}
+  .nv-badge.masivo{background:var(--panel);border:1px solid var(--line);color:var(--muted)}
+  .nv-badge.pendiente{background:var(--violetSoft);color:var(--violet2)}
+  .nv-badge.aplicado{background:var(--greenSoft,rgba(34,197,94,.12));color:var(--green2)}
+  .nv-badge.cancelado{background:var(--redSoft);color:var(--red)}
+
+  .nv-bono-form{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;padding:14px 16px;
+    background:var(--panel2);border:1px solid var(--line);border-radius:13px;margin-bottom:16px}
+  .nv-bono-form label{display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--muted);font-weight:600}
+  .nv-bono-form input,.nv-bono-form select{background:var(--panel);border:1px solid var(--line);
+    border-radius:9px;padding:8px 10px;color:var(--txt);font-size:13px}
+  .nv-bono-form input[type=text]{width:150px}
+  .nv-bono-form input[type=number]{width:100px}
 </style>
 </head>
 <body>
@@ -845,7 +985,7 @@
       <button class="rail-item active" data-nav="chats" data-tip="Conversaciones" data-corto="Chats"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>
       <button class="rail-item" data-nav="usuarios" data-tip="Usuarios" data-corto="Usuarios"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></button>
       <button class="rail-item" data-nav="cargas" data-tip="Cargas / Recargas" data-corto="Cargas"><svg viewBox="0 0 24 24"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></button>
-      <button class="rail-item" data-nav="transacciones" data-tip="Transacciones" data-corto="Movim."><svg viewBox="0 0 24 24"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></button>
+      <button class="rail-item" data-nav="transacciones" data-tip="Auditoría" data-corto="Auditoría"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></button>
       <button class="rail-item" data-nav="finanzas" data-tip="Finanzas" data-corto="Finanzas"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></button>
       <button class="rail-item" data-nav="retiros" data-tip="Retiros pendientes" data-corto="Retiros"><svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg><span class="rail-badge" id="badgeRetiros"></span></button>
       <button class="rail-item" data-nav="comprobantes" data-tip="Comprobantes" data-corto="Compr."><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg><span class="rail-badge" id="badgeComprobantes"></span></button>
@@ -1066,49 +1206,78 @@
   </div>
 
   <div class="card-col view-panel" id="viewTransacciones" style="display:none">
-    <div class="comp-head">
-      <b>Transacciones</b>
-      <span class="cap" id="mvCap"></span>
+    <div class="au-header">
+      <b>Auditoría</b>
+      <button class="au-btn-export" id="auExportar" type="button">
+        <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+        Exportar CSV
+      </button>
     </div>
-    <div class="mv-filtros">
-      <label class="search">
-        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-        <input id="mvQ" placeholder="Buscar por usuario…" autocomplete="off">
-      </label>
-      <select id="mvTipo">
-        <option value="">Todos los tipos</option>
-        <option value="ficha">Ficha</option>
-        <option value="bono">Bono</option>
-        <option value="saldo">Saldo</option>
+
+    <div class="au-kpis" id="auKpis">
+      <div class="au-kpi-card acento-azul" id="auKpiTotal">
+        <div class="k">Total auditado</div>
+        <div class="v" id="auKpiTotalV">…</div>
+        <div class="sub">operaciones</div>
+      </div>
+      <div class="au-kpi-card acento-verde" id="auKpiDepositos">
+        <div class="k">Depósitos</div>
+        <div class="v" id="auKpiDepositosV">…</div>
+        <div class="sub" id="auKpiDepositosSub">—</div>
+      </div>
+      <div class="au-kpi-card acento-rojo" id="auKpiRetiros">
+        <div class="k">Retiros</div>
+        <div class="v" id="auKpiRetirosV">…</div>
+        <div class="sub" id="auKpiRetirosSub">—</div>
+      </div>
+      <div class="au-kpi-card acento-naranja" id="auKpiActor">
+        <div class="k">Manuales vs Automáticos</div>
+        <div class="v" id="auKpiActorV">…</div>
+        <div class="sub" id="auKpiActorSub">—</div>
+      </div>
+    </div>
+
+    <div class="au-filtros">
+      <div class="au-tabs" id="auTabs">
+        <button class="au-tab on" data-tipo="todos" type="button">Todas</button>
+        <button class="au-tab" data-tipo="deposito" type="button">Depósitos</button>
+        <button class="au-tab" data-tipo="retiro" type="button">Retiros</button>
+        <button class="au-tab" data-tipo="bono" type="button">Bonos</button>
+        <button class="au-tab" data-tipo="ajuste" type="button">Ajustes</button>
+      </div>
+      <select id="auActor">
+        <option value="todos">Todos los actores</option>
+        <option value="manual">Solo humanos</option>
+        <option value="automatico">Solo automáticos</option>
       </select>
-      <select id="mvOrigen">
-        <option value="">Todos los orígenes</option>
-        <option value="crm">CRM</option>
-        <option value="ruleta">Ruleta</option>
-        <option value="chatbot">Chatbot</option>
-        <option value="sistema">Sistema</option>
-      </select>
-      <select id="mvOperador">
+      <select id="auOperador">
         <option value="">Todos los operadores</option>
       </select>
-      <input type="date" id="mvDesde" title="Desde">
-      <input type="date" id="mvHasta" title="Hasta">
-      <button class="btn-mini-accion" id="mvLimpiar" type="button">Limpiar filtros</button>
+      <label class="search">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input id="auQ" placeholder="Buscar usuario…" autocomplete="off">
+      </label>
+      <input type="date" id="auDesde" title="Desde">
+      <input type="date" id="auHasta" title="Hasta">
+      <button class="btn-mini-accion" id="auAplicar" type="button">Aplicar</button>
     </div>
+
     <div class="mv-tabla-wrap">
       <table class="mv-tabla">
         <thead>
           <tr>
-            <th>Fecha</th><th>Usuario</th><th>Tipo</th><th>Monto</th><th>Quién</th><th>Motivo</th><th>Origen</th>
+            <th>Fecha</th><th>Tipo</th><th>Usuario</th><th style="text-align:right">Monto</th>
+            <th>Estado</th><th>Operador</th><th class="au-col-detalle">Detalle</th>
+            <th class="au-col-referencia">Referencia</th>
           </tr>
         </thead>
-        <tbody id="mvBody"></tbody>
+        <tbody id="auBody"></tbody>
       </table>
     </div>
-    <div class="mv-paginador">
-      <button class="btn-mini-accion" id="mvPrev" type="button">‹ Anterior</button>
-      <span id="mvPagInfo"></span>
-      <button class="btn-mini-accion" id="mvNext" type="button">Siguiente ›</button>
+    <div class="mv-paginador" id="auPaginador" style="display:none">
+      <button class="btn-mini-accion" id="auPrev" type="button">‹ Anterior</button>
+      <span id="auPagInfo"></span>
+      <button class="btn-mini-accion" id="auNext" type="button">Siguiente ›</button>
     </div>
   </div>
 
@@ -1300,6 +1469,179 @@
         <h3>Alertas</h3>
         <div class="fn-alertas-lista" id="fnAlertas"></div>
       </section>
+    </div>
+  </div>
+
+  <!-- ====================== NOTIFICACIONES (Push) ====================== -->
+  <div class="card-col view-panel" id="viewNotificaciones" style="display:none">
+    <div class="comp-head">
+      <b>Notificaciones</b>
+      <span class="cap" id="nvCap"></span>
+    </div>
+    <div class="nv-tabs">
+      <button class="nv-tab on" data-nvtab="enviar">Enviar</button>
+      <button class="nv-tab" data-nvtab="historial">Historial</button>
+      <button class="nv-tab" data-nvtab="bonos">Bonos pendientes</button>
+    </div>
+    <div class="nv-body">
+
+      <!-- ---------- Enviar ---------- -->
+      <div class="nv-pane on" id="nvPaneEnviar">
+        <label>Canal</label>
+        <div class="ag-rol-toggle n-canal-toggle">
+          <label class="ag-rol-opt on" data-canal="push">
+            <input type="radio" name="nCanal" value="push" checked>
+            <b>Push</b>
+            <span>Notificación de Android.</span>
+          </label>
+          <label class="ag-rol-opt" data-canal="chat">
+            <input type="radio" name="nCanal" value="chat">
+            <b>Chat</b>
+            <span>Mensaje del bot en la conversación.</span>
+          </label>
+          <label class="ag-rol-opt" data-canal="ambos">
+            <input type="radio" name="nCanal" value="ambos">
+            <b>Ambos</b>
+            <span>Push y chat con el mismo texto.</span>
+          </label>
+        </div>
+
+        <div class="nv-enviar-grid">
+          <!-- columna izquierda: redactar -->
+          <div class="n-col">
+            <div id="nBloquePush">
+              <label>Plantilla</label>
+              <div class="chips" id="nChips"></div>
+              <label for="nTitulo">Título</label>
+              <input id="nTitulo" type="text" maxlength="120" placeholder="🎁 ¡Te regalamos 500 fichas!">
+              <label for="nCuerpo" id="nCuerpoLabel">Mensaje</label>
+              <textarea id="nCuerpo" maxlength="400" placeholder="Entrá a la app y jugalas antes de que se venzan." rows="5"></textarea>
+            </div>
+            <div id="nBloqueChat" style="display:none">
+              <label for="nMensajeChat">Mensaje de chat</label>
+              <textarea id="nMensajeChat" maxlength="1500" placeholder="Así lo escribe el bot en la conversación de cada jugador…" rows="5"></textarea>
+              <p class="ag-modal-hint">Si dejás esto vacío y el canal es "Ambos", se usa el mismo texto del mensaje de push.</p>
+            </div>
+          </div>
+
+          <!-- columna derecha: a quién y cuándo -->
+          <div class="n-col">
+            <label>Audiencia</label>
+            <div class="nv-audiencia" id="nvAudiencia">
+              <label class="nv-aud-opt on" data-aud="todos">
+                <input type="radio" name="nvAud" value="todos" checked>
+                <b>Todos</b>
+                <span>Todos los jugadores con la app.</span>
+              </label>
+              <label class="nv-aud-opt" data-aud="usuario">
+                <input type="radio" name="nvAud" value="usuario">
+                <b>Un jugador</b>
+                <span id="nvAudUsuarioTxt">El de la conversación abierta.</span>
+              </label>
+              <label class="nv-aud-opt" data-aud="inactivos" style="grid-column:1/-1">
+                <input type="radio" name="nvAud" value="inactivos">
+                <b>Inactivos</b>
+                <span>No cargó fichas hace más de N días (sin ninguna carga = siempre entra).</span>
+              </label>
+            </div>
+            <div class="nv-inactivos-cfg" id="nvInactivosCfg">
+              <span>Más de</span>
+              <input type="number" id="nvDias" min="0" value="7">
+              <span>días sin cargar</span>
+              <button class="btn-mini-accion" id="nvVerAlcance" type="button">Ver alcance</button>
+              <span id="nvAlcanceTxt"></span>
+            </div>
+            <div class="nv-presets">
+              <select id="nvPresetSel"><option value="">— Preset guardado —</option></select>
+              <button class="btn-mini-accion" id="nvPresetUsar" type="button">Usar</button>
+              <button class="btn-mini-accion" id="nvPresetGuardar" type="button">Guardar actual…</button>
+              <button class="btn-mini-accion peligro" id="nvPresetBorrar" type="button">Borrar</button>
+            </div>
+
+            <label class="todos" for="nProgramar">
+              <input type="checkbox" id="nProgramar">
+              <span><b>Programar para más tarde</b>En vez de enviarla ahora, elegí cuándo sale (hora de Argentina).</span>
+            </label>
+            <div id="nCuando" style="display:none">
+              <label for="nFecha">Fecha y hora</label>
+              <input id="nFecha" type="datetime-local">
+            </div>
+
+            <div class="n-programadas" id="nProgramadasWrap">
+              <div class="n-prog-titulo">Difusiones programadas pendientes</div>
+              <div id="nProgramadasLista"><div class="ag-vacio" style="padding:16px">Cargando…</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mbtns" style="padding:16px 0 4px">
+          <button class="ok" id="nOk" style="width:auto;padding:12px 28px">Enviar</button>
+        </div>
+      </div>
+
+      <!-- ---------- Historial ---------- -->
+      <div class="nv-pane" id="nvPaneHistorial">
+        <div class="mv-filtros" style="padding:0 0 14px;border:none">
+          <label class="search">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+            <input id="nvHUsuario" placeholder="Filtrar por usuario…" autocomplete="off">
+          </label>
+          <select id="nvHTipo">
+            <option value="">Todos los tipos</option>
+            <option value="bono">Bono</option>
+            <option value="fichas">Fichas</option>
+            <option value="recarga">Recarga</option>
+            <option value="ruleta">Ruleta</option>
+            <option value="promo">Promo</option>
+            <option value="aviso">Aviso</option>
+          </select>
+          <input type="date" id="nvHDesde" title="Desde">
+          <input type="date" id="nvHHasta" title="Hasta">
+          <button class="btn-mini-accion" id="nvHBuscar" type="button">Buscar</button>
+          <button class="btn-mini-accion" id="nvHLimpiar" type="button">Limpiar</button>
+        </div>
+        <div id="nvHistorialLista"><div class="ag-vacio">Cargando…</div></div>
+        <div class="mv-paginador">
+          <button class="btn-mini-accion" id="nvHPrev" type="button">‹ Anterior</button>
+          <span id="nvHPagInfo"></span>
+          <button class="btn-mini-accion" id="nvHNext" type="button">Siguiente ›</button>
+        </div>
+      </div>
+
+      <!-- ---------- Bonos pendientes ---------- -->
+      <div class="nv-pane" id="nvPaneBonos">
+        <div class="nv-bono-form">
+          <label>Usuario
+            <input type="text" id="nvBUsuario" placeholder="nombre_usuario">
+          </label>
+          <label>Tipo
+            <select id="nvBTipo">
+              <option value="fichas">Fichas fijas</option>
+              <option value="pct">% sobre la carga</option>
+              <option value="giro">Giro de ruleta gratis</option>
+            </select>
+          </label>
+          <label id="nvBValorWrap">Valor
+            <input type="number" id="nvBValor" min="1" placeholder="500">
+          </label>
+          <button class="ok" id="nvBCrear" type="button" style="width:auto;padding:10px 18px">Prometer bono</button>
+        </div>
+        <div class="mv-filtros" style="padding:0 0 14px;border:none">
+          <select id="nvBEstado">
+            <option value="">Todos los estados</option>
+            <option value="pendiente">Pendiente</option>
+            <option value="aplicado">Aplicado</option>
+            <option value="cancelado">Cancelado</option>
+          </select>
+          <label class="search">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+            <input id="nvBUsuarioFiltro" placeholder="Filtrar por usuario…" autocomplete="off">
+          </label>
+          <button class="btn-mini-accion" id="nvBBuscar" type="button">Buscar</button>
+        </div>
+        <div id="nvBonosLista"><div class="ag-vacio">Cargando…</div></div>
+      </div>
+
     </div>
   </div>
 
@@ -1556,79 +1898,6 @@
   </div>
 </div>
 
-<!-- Notificación push. Va a la cola: el celular la levanta cuando sondea. -->
-<div class="back" id="backN">
-  <div class="modal modal-ancho n-modal">
-    <div class="n-modal-head">
-      <h3>Difusión</h3>
-      <p id="nSub">Elegí por dónde llega: notificación push, mensaje en el chat, o ambos.</p>
-    </div>
-
-    <label>Canal</label>
-    <div class="ag-rol-toggle n-canal-toggle">
-      <label class="ag-rol-opt on" data-canal="push">
-        <input type="radio" name="nCanal" value="push" checked>
-        <b>Push</b>
-        <span>Notificación de Android.</span>
-      </label>
-      <label class="ag-rol-opt" data-canal="chat">
-        <input type="radio" name="nCanal" value="chat">
-        <b>Chat</b>
-        <span>Mensaje del bot en la conversación.</span>
-      </label>
-      <label class="ag-rol-opt" data-canal="ambos">
-        <input type="radio" name="nCanal" value="ambos">
-        <b>Ambos</b>
-        <span>Push y chat con el mismo texto.</span>
-      </label>
-    </div>
-
-    <div class="n-modal-cols">
-      <!-- columna izquierda: redactar -->
-      <div class="n-col">
-        <div id="nBloquePush">
-          <label>Plantilla</label>
-          <div class="chips" id="nChips"></div>
-          <label for="nTitulo">Título</label>
-          <input id="nTitulo" type="text" maxlength="120" placeholder="🎁 ¡Te regalamos 500 fichas!">
-          <label for="nCuerpo" id="nCuerpoLabel">Mensaje</label>
-          <textarea id="nCuerpo" maxlength="400" placeholder="Entrá a la app y jugalas antes de que se venzan." rows="5"></textarea>
-        </div>
-        <div id="nBloqueChat" style="display:none">
-          <label for="nMensajeChat">Mensaje de chat</label>
-          <textarea id="nMensajeChat" maxlength="1500" placeholder="Así lo escribe el bot en la conversación de cada jugador…" rows="5"></textarea>
-          <p class="ag-modal-hint">Si dejás esto vacío y el canal es "Ambos", se usa el mismo texto del mensaje de push.</p>
-        </div>
-      </div>
-
-      <!-- columna derecha: a quién y cuándo -->
-      <div class="n-col">
-        <label class="todos" for="nTodos">
-          <input type="checkbox" id="nTodos">
-          <span><b>Mandársela a todos</b>Todos los jugadores con la app instalada.</span>
-        </label>
-        <label class="todos" for="nProgramar">
-          <input type="checkbox" id="nProgramar">
-          <span><b>Programar para más tarde</b>En vez de enviarla ahora, elegí cuándo sale (hora de Argentina).</span>
-        </label>
-        <div id="nCuando" style="display:none">
-          <label for="nFecha">Fecha y hora</label>
-          <input id="nFecha" type="datetime-local">
-        </div>
-
-        <div class="n-programadas" id="nProgramadasWrap">
-          <div class="n-prog-titulo">Difusiones programadas pendientes</div>
-          <div id="nProgramadasLista"><div class="ag-vacio" style="padding:16px">Cargando…</div></div>
-        </div>
-      </div>
-    </div>
-
-    <div class="mbtns">
-      <button class="no" id="nCancel">Cancelar</button>
-      <button class="ok" id="nOk">Enviar</button>
-    </div>
-  </div>
-</div>
 
 <!-- Cancelar retiro (Fase A, Módulo 2). Solo pendiente/error -- 'procesando'
      no tiene este botón porque el bot podría estar ejecutándolo ahora mismo. -->
@@ -1709,7 +1978,6 @@
   };
 
   const st = { q:"", estado:"todas", convId:0, usuario:"", modo:"ficha" };
-  let mvOperadoresCargados = false;
   let debounce, pollList, pollConv, pollBadgeComp, pollBadgeRet, pollRetirosVista, pollCargasVista;
 
   // ---------- sesion de operador: shell vs. login (Fase 0.5) ----------
@@ -1735,7 +2003,6 @@
     // dejamos colgado: aunque no se vea (el login lo tapa entero), mejor que
     // la proxima vez que se abra arranque limpio.
     $("#back").classList.remove("on");
-    $("#backN").classList.remove("on");
     $("#app").style.display = "none";
     $("#loginScreen").style.display = "grid";
     $("#loginError").textContent = msg || "";
@@ -1756,7 +2023,6 @@
     detenerPolling();
     if (typeof fnVerificado !== "undefined") { fnVerificado = false; }
     $("#back").classList.remove("on");
-    $("#backN").classList.remove("on");
     $("#loginScreen").style.display = "none";
     $("#app").style.display = "none";
     $("#saldoScreen").style.display = "grid";
@@ -1927,7 +2193,7 @@
   // modulos nuevos ocultan esas 3 columnas y muestran su propio contenedor.
   // Se va sumando un nombre a VISTAS + su contenedor a VISTA_CONTENEDOR por
   // cada modulo que se conecte, sin tocar el resto de la funcion.
-  const VISTAS = ["chats", "comprobantes", "retiros", "cargas", "transacciones", "usuarios", "finanzas", "chatbot", "agentes", "suscripcion"];
+  const VISTAS = ["chats", "comprobantes", "retiros", "cargas", "transacciones", "usuarios", "finanzas", "notificaciones", "chatbot", "agentes", "suscripcion"];
   const VISTA_CONTENEDOR = {
     comprobantes: "#viewComprobantes",
     retiros: "#viewRetiros",
@@ -1935,6 +2201,7 @@
     transacciones: "#viewTransacciones",
     usuarios: "#viewUsuarios",
     finanzas: "#viewFinanzas",
+    notificaciones: "#viewNotificaciones",
     chatbot: "#viewChatbot",
     agentes: "#viewAgentes",
     suscripcion: "#viewSuscripcion",
@@ -1980,12 +2247,12 @@
       actualizarContadoresCargas();
       pollCargasVista = setInterval(()=>{ cargarCargas(); actualizarContadoresCargas(); }, 25000);
     }
-    // Transacciones: sin auto-refresh a proposito -- es una vista de
+    // Auditoría: sin auto-refresh a proposito -- es una vista de
     // auditoria/historico, no una cola operativa con urgencia (a diferencia
     // de Retiros/Cargas). Se recarga con cada cambio de filtro o pagina.
     if(nombre==="transacciones"){
-      if(!mvOperadoresCargados){ cargarOperadoresMv(); mvOperadoresCargados = true; }
-      cargarMovimientos();
+      auPrepararVista();
+      auCargar();
     }
     // Usuarios: mismo criterio que Transacciones -- vista de
     // consulta/dashboard, sin auto-refresh. Se recarga con cada cambio de
@@ -2016,7 +2283,7 @@
       if(nav==="usuarios"){ mostrarVista("usuarios"); return; }
       if(nav==="finanzas"){ mostrarVista("finanzas"); return; }
       // Desde el rail siempre es masiva: no hay una conversación de contexto.
-      if(nav==="push"){ abrirNotif(true); return; }
+      if(nav==="push"){ mostrarVista("notificaciones"); abrirNotif(); return; }
       if(nav==="comprobantes"){ mostrarVista("comprobantes"); return; }
       if(nav==="retiros"){ mostrarVista("retiros"); return; }
       if(nav==="cargas"){ mostrarVista("cargas"); return; }
@@ -2793,120 +3060,233 @@
     debounce = setTimeout(()=>{ cgQ = e.target.value.trim(); cargarCargas(); }, 300);
   });
 
-  // ---------- Transacciones globales (Fase A, Módulo 4) ----------
-  const API_MV = API_BASE + "/crm_movimientos.php";
-  const MV_LIMIT = 50;
-  let mvPagina = 1, mvTotal = 0;
-  let mvFiltros = { tipo:"", origen:"", usuario:"", operador:"", desde:"", hasta:"" };
-  const MV_TIPO_TXT   = {ficha:"Ficha", bono:"Bono", saldo:"Saldo"};
-  const MV_ORIGEN_TXT = {crm:"CRM", ruleta:"Ruleta", chatbot:"Chatbot", sistema:"Sistema"};
+  // ---------- Auditoría (Fase A, Módulo 4 — reemplaza a Transacciones) ----------
+  // crm_movimientos.php queda deprecado (ver comentario en el archivo) pero
+  // vivo por compatibilidad; este módulo pega contra crm_auditoria.php, que
+  // unifica recargas + acciones_saldo + movimientos en una sola vista.
+  const API_AU = API_BASE + "/crm_auditoria.php";
+  const AU_PER_PAGE = 25;
+  let auPagina = 1, auPaginas = 1, auDebounce;
+  let auFiltros = { tipo:"todos", actor:"todos", operador:"", usuario:"", desde:"", hasta:"" };
+  let auExpandidaId = null;
 
-  // "Quien" se deriva en el cliente, no en el backend: es puramente una
-  // etiqueta de UI, no algo por lo que se filtre (el filtro real es por
-  // columna `operador` cruda). Ver crm_movimientos.php sobre el bug de
-  // casing en operador -- por eso mvFiltros.operador compara con LOWER()
-  // del lado del servidor, no ac.
-  function quienMovimiento(m){
-    if(m.operador) return "@" + m.operador;
-    if(m.origen === "ruleta")  return "Ruleta (auto)";
-    if(m.origen === "chatbot") return "Jugador (chatbot)";
-    if(m.origen === "sistema") return "Sistema (auto)";
-    return "Operador desconocido";
+  const AU_TIPO_TXT   = { deposito:"Depósito", retiro:"Retiro", bono:"Bono", ajuste:"Ajuste" };
+  const AU_ESTADO_COLOR = {
+    acreditada:"verde", pagado:"verde", hecha:"verde", aplicado:"verde",
+    pendiente:"", procesando:"azul",
+    cancelada:"rojo", vencida:"rojo", error:"rojo",
+    revision:"naranja", revisar:"naranja",
+  };
+  const AU_ESTADO_TXT = {
+    acreditada:"Acreditado", pendiente:"Pendiente", cancelada:"Cancelado",
+    vencida:"Vencido", revision:"En revisión", revisar:"Revisar",
+    procesando:"Procesando", hecha:"Pagado", error:"Error", aplicado:"Aplicado",
+  };
+  const AU_BADGE_ICO = { deposito:"🟢", retiro:"🔴", bono:"🟡", ajuste:"🔵" };
+
+  // Fecha por defecto: últimos 30 días, igual que el backend.
+  (function auInicializarFechas(){
+    const hoy = new Date();
+    const hace30 = new Date(Date.now() - 30*86400000);
+    const f = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    auFiltros.desde = f(hace30);
+    auFiltros.hasta = f(hoy);
+  })();
+
+  /** "DD/MM/YY HH:MM" en desktop. hace() (tiempo relativo) no sirve acá: el
+   *  spec pide fecha/hora absoluta, a diferencia del resto del CRM. */
+  function auFechaFmt(iso){
+    if(!iso) return "—";
+    const d = new Date(iso.replace(" ","T"));
+    const p = n => String(n).padStart(2,"0");
+    return `${p(d.getDate())}/${p(d.getMonth()+1)}/${String(d.getFullYear()).slice(-2)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+  /** Mobile: "HH:MM" si es hoy, "DD/MM" si no. */
+  function auFechaMobile(iso){
+    if(!iso) return "—";
+    const d = new Date(iso.replace(" ","T"));
+    const hoy = new Date();
+    const p = n => String(n).padStart(2,"0");
+    const esHoy = d.getDate()===hoy.getDate() && d.getMonth()===hoy.getMonth() && d.getFullYear()===hoy.getFullYear();
+    return esHoy ? `${p(d.getHours())}:${p(d.getMinutes())}` : `${p(d.getDate())}/${p(d.getMonth()+1)}`;
   }
 
-  async function cargarOperadoresMv(){
-    try{
-      const d = await jget({accion:"operadores"}, API_MV);
-      if(!d.ok) return;
-      const sel = $("#mvOperador");
-      sel.innerHTML = '<option value="">Todos los operadores</option>' +
-        d.operadores.map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join("");
-    }catch(e){ /* silencioso: el filtro por operador solo queda sin opciones */ }
+  function auOperadorHtml(f){
+    if(f.actor_tipo === "humano" && f.operador){
+      return `<span class="au-operador humano">👤 ${esc(f.operador)}</span>`;
+    }
+    if(f.actor_tipo === "bot"){
+      return `<span class="au-operador bot">🤖 Bot</span>`;
+    }
+    if(f.actor_tipo === "sistema"){
+      return `<span class="au-operador sistema">⚙️ Sistema</span>`;
+    }
+    return `<span class="au-operador ninguno">—</span>`;
   }
 
-  function filaMovimiento(m){
-    const signo = m.monto > 0 ? "pos" : (m.monto < 0 ? "neg" : "");
-    return `<tr>
-      <td>${hace(m.creado_en)}</td>
-      <td>@${esc(m.usuario)}</td>
-      <td><span class="mv-tag ${esc(m.tipo)}">${MV_TIPO_TXT[m.tipo]||m.tipo}</span></td>
-      <td class="mv-monto ${signo}">${m.monto>0?"+":""}${nf.format(m.monto)}</td>
-      <td>${esc(quienMovimiento(m))}</td>
-      <td>${esc(m.motivo || "—")}</td>
-      <td>${esc(MV_ORIGEN_TXT[m.origen]||m.origen)}</td>
+  function auEstadoBadge(subtipo){
+    const color = AU_ESTADO_COLOR[subtipo] ?? "";
+    const txt = AU_ESTADO_TXT[subtipo] ?? subtipo;
+    return `<span class="au-badge-estado ${color}">${esc(txt)}</span>`;
+  }
+
+  function auFilaHtml(f, idx){
+    const esIngreso = f.tipo === "deposito" || f.tipo === "bono";
+    const signo = esIngreso ? "pos" : "neg";
+    const rowId = `auRow${idx}`;
+    const detalleCorto = f.detalle && f.detalle.length > 60 ? f.detalle.slice(0,60) + "…" : (f.detalle || "—");
+    return `<tr id="${rowId}" data-usuario="${esc(f.usuario)}" class="au-fila-clickeable">
+      <td>
+        <span class="au-fecha-desktop">${auFechaFmt(f.fecha)}</span>
+        <span class="au-fecha-mobile" style="display:none">${auFechaMobile(f.fecha)}</span>
+      </td>
+      <td><span class="au-badge-tipo ${esc(f.tipo)}" title="${esc(AU_TIPO_TXT[f.tipo]||f.tipo)}">${AU_BADGE_ICO[f.tipo]||""}<span class="au-tipo-txt">${esc(AU_TIPO_TXT[f.tipo]||f.tipo)}</span></span></td>
+      <td data-usuario="${esc(f.usuario)}" title="${esc(f.usuario)}">@${esc(f.usuario)}</td>
+      <td class="au-monto ${signo}">${esIngreso?"+":"-"}${nf.format(f.monto)}</td>
+      <td>${auEstadoBadge(f.subtipo)}</td>
+      <td>${auOperadorHtml(f)}</td>
+      <td class="au-col-detalle au-detalle" title="${esc(f.detalle||"")}">${esc(detalleCorto)}
+        <div class="au-detalle-mobile">${esc(f.detalle||"—")} · <span class="au-referencia">#${f.referencia}</span></div>
+      </td>
+      <td class="au-col-referencia"><span class="au-referencia">#${f.referencia}</span></td>
     </tr>`;
   }
 
-  function actualizarPaginadorMv(){
-    const desde = mvTotal===0 ? 0 : (mvPagina-1)*MV_LIMIT + 1;
-    const hasta = Math.min(mvPagina*MV_LIMIT, mvTotal);
-    $("#mvPagInfo").textContent = mvTotal===0 ? "Sin resultados" : `${desde}–${hasta} de ${mvTotal}`;
-    $("#mvPrev").disabled = mvPagina <= 1;
-    $("#mvNext").disabled = (mvPagina*MV_LIMIT) >= mvTotal;
+  function auVacioHtml(){
+    return `<tr><td colspan="8"><div class="au-vacio">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+      </svg>
+      <b>No hay operaciones en este período</b>
+      <span>Probá ampliar el rango de fechas o cambiar los filtros</span>
+    </div></td></tr>`;
   }
 
-  async function cargarMovimientos(){
-    const filtros = {};
-    Object.entries(mvFiltros).forEach(([k,v])=>{ if(v !== "") filtros[k] = v; });
-    const paramsListar = Object.assign({accion:"listar"}, filtros, {
-      limit: MV_LIMIT, offset: (mvPagina-1)*MV_LIMIT
-    });
-    const paramsContar = Object.assign({accion:"contar"}, filtros);
+  function auActualizarPaginador(){
+    const wrap = $("#auPaginador");
+    if(auPaginas <= 1){ wrap.style.display = "none"; return; }
+    wrap.style.display = "flex";
+    $("#auPagInfo").textContent = `Página ${auPagina} de ${auPaginas}`;
+    $("#auPrev").disabled = auPagina <= 1;
+    $("#auNext").disabled = auPagina >= auPaginas;
+  }
 
-    // Sin auto-refresco acá (es vista de auditoría), así que se pinta siempre:
-    // cada cambio de filtro o de página tarda y quedaba la tabla vieja a la
-    // vista, como si el filtro no hubiera hecho nada.
-    $("#mvBody").innerHTML = `<tr><td colspan="7" class="nouser">Cargando…</td></tr>`;
+  function auPintarKpis(k){
+    if(!k){
+      ["auKpiTotalV","auKpiDepositosV","auKpiRetirosV","auKpiActorV"].forEach(id=>$("#"+id).textContent = "—");
+      return;
+    }
+    $("#auKpiTotalV").textContent = nf.format(k.total_operaciones);
+    $("#auKpiDepositosV").textContent = "$" + nf.format(k.depositos.monto);
+    $("#auKpiDepositosSub").textContent = `${nf.format(k.depositos.cantidad)} depósito${k.depositos.cantidad===1?"":"s"}`;
+    $("#auKpiRetirosV").textContent = "$" + nf.format(k.retiros.monto);
+    $("#auKpiRetirosSub").textContent = `${nf.format(k.retiros.cantidad)} retiro${k.retiros.cantidad===1?"":"s"}`;
+    $("#auKpiActorV").textContent = nf.format(k.manuales);
+    $("#auKpiActorSub").textContent = `${nf.format(k.automaticos)} automática${k.automaticos===1?"":"s"}`;
+  }
 
-    let d, dc;
+  function auSetCargando(on){
+    $("#viewTransacciones").classList.toggle("au-cargando", on);
+    document.querySelectorAll("#viewTransacciones .au-kpi-card").forEach(c=>c.classList.toggle("cargando", on));
+    document.querySelectorAll("#auTabs button, #auActor, #auOperador, #auDesde, #auHasta, #auAplicar, #auPrev, #auNext, #auExportar")
+      .forEach(el=>{ el.disabled = on; });
+  }
+
+  function auParams(){
+    const p = { desde: auFiltros.desde, hasta: auFiltros.hasta };
+    if(auFiltros.tipo !== "todos") p.tipo = auFiltros.tipo;
+    if(auFiltros.actor !== "todos") p.actor = auFiltros.actor;
+    if(auFiltros.operador) p.operador = auFiltros.operador;
+    if(auFiltros.usuario) p.usuario = auFiltros.usuario;
+    return p;
+  }
+
+  async function auCargar(){
+    auSetCargando(true);
+    let dListar, dKpis;
     try{
-      [d, dc] = await Promise.all([jget(paramsListar, API_MV), jget(paramsContar, API_MV)]);
+      [dListar, dKpis] = await Promise.all([
+        jget(Object.assign({accion:"listar", page:auPagina}, auParams()), API_AU),
+        jget(Object.assign({accion:"kpis"}, auParams()), API_AU),
+      ]);
     }catch(e){
-      $("#mvBody").innerHTML = `<tr><td colspan="7" class="nouser">Error al cargar.</td></tr>`;
+      auSetCargando(false);
+      toast("No se pudo cargar la auditoría");
       return;
     }
-    if(!d.ok){
-      $("#mvBody").innerHTML = `<tr><td colspan="7" class="nouser">${esc(d.error||"Error")}</td></tr>`;
+    auSetCargando(false);
+
+    if(!dListar.ok){
+      toast(dListar.error || "Error al cargar");
       return;
     }
 
-    mvTotal = dc.ok ? dc.total : 0;
-    $("#mvCap").textContent = mvTotal + (mvTotal===1 ? " movimiento" : " movimientos");
+    auPaginas = dListar.paginas || 1;
+    if(auPagina > auPaginas) auPagina = auPaginas;
 
-    $("#mvBody").innerHTML = d.items.length
-      ? d.items.map(filaMovimiento).join("")
-      : `<tr><td colspan="7" class="nouser">No hay movimientos con esos filtros.</td></tr>`;
+    $("#auBody").innerHTML = dListar.data.length
+      ? dListar.data.map(auFilaHtml).join("")
+      : auVacioHtml();
 
-    actualizarPaginadorMv();
+    // Expandir detalle al tap en mobile (spec: si está truncado, tap expande la fila).
+    document.querySelectorAll("#auBody tr.au-fila-clickeable").forEach(tr=>{
+      tr.addEventListener("click", ()=>{
+        if(window.innerWidth > 600) return;
+        tr.classList.toggle("au-expandida");
+      });
+    });
+
+    // Dropdown de operadores: se repuebla en cada carga (depende del rango
+    // de fechas activo, viene en la misma respuesta de "listar").
+    const selOp = $("#auOperador");
+    const valActual = selOp.value;
+    selOp.innerHTML = '<option value="">Todos los operadores</option>' +
+      (dListar.operadores||[]).map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join("");
+    if((dListar.operadores||[]).includes(valActual)) selOp.value = valActual;
+
+    auActualizarPaginador();
+    auPintarKpis(dKpis.ok ? dKpis.kpis : null);
   }
 
-  function mvAplicarFiltros(){
-    mvFiltros.tipo     = $("#mvTipo").value;
-    mvFiltros.origen   = $("#mvOrigen").value;
-    mvFiltros.operador = $("#mvOperador").value;
-    mvFiltros.desde    = $("#mvDesde").value;
-    mvFiltros.hasta    = $("#mvHasta").value;
-    mvPagina = 1;
-    cargarMovimientos();
+  function auAplicarFiltros(){
+    auPagina = 1;
+    auCargar();
   }
-  $("#mvTipo").addEventListener("change", mvAplicarFiltros);
-  $("#mvOrigen").addEventListener("change", mvAplicarFiltros);
-  $("#mvOperador").addEventListener("change", mvAplicarFiltros);
-  $("#mvDesde").addEventListener("change", mvAplicarFiltros);
-  $("#mvHasta").addEventListener("change", mvAplicarFiltros);
-  $("#mvQ").addEventListener("input", e=>{
-    clearTimeout(debounce);
-    debounce = setTimeout(()=>{ mvFiltros.usuario = e.target.value.trim(); mvPagina = 1; cargarMovimientos(); }, 300);
+
+  document.querySelectorAll("#auTabs .au-tab").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      document.querySelectorAll("#auTabs .au-tab").forEach(b=>b.classList.toggle("on", b===btn));
+      auFiltros.tipo = btn.getAttribute("data-tipo");
+      auAplicarFiltros();
+    });
   });
-  $("#mvLimpiar").addEventListener("click", ()=>{
-    $("#mvTipo").value = ""; $("#mvOrigen").value = ""; $("#mvOperador").value = "";
-    $("#mvDesde").value = ""; $("#mvHasta").value = ""; $("#mvQ").value = "";
-    mvFiltros = { tipo:"", origen:"", usuario:"", operador:"", desde:"", hasta:"" };
-    mvPagina = 1;
-    cargarMovimientos();
+  $("#auActor").addEventListener("change", ()=>{ auFiltros.actor = $("#auActor").value; auAplicarFiltros(); });
+  $("#auOperador").addEventListener("change", ()=>{ auFiltros.operador = $("#auOperador").value; auAplicarFiltros(); });
+  $("#auDesde").addEventListener("change", ()=>{ auFiltros.desde = $("#auDesde").value || auFiltros.desde; auAplicarFiltros(); });
+  $("#auHasta").addEventListener("change", ()=>{ auFiltros.hasta = $("#auHasta").value || auFiltros.hasta; auAplicarFiltros(); });
+  $("#auQ").addEventListener("input", e=>{
+    clearTimeout(auDebounce);
+    auDebounce = setTimeout(()=>{ auFiltros.usuario = e.target.value.trim(); auAplicarFiltros(); }, 400);
   });
-  $("#mvPrev").addEventListener("click", ()=>{ if(mvPagina>1){ mvPagina--; cargarMovimientos(); } });
-  $("#mvNext").addEventListener("click", ()=>{ if(mvPagina*MV_LIMIT < mvTotal){ mvPagina++; cargarMovimientos(); } });
+  $("#auAplicar").addEventListener("click", auAplicarFiltros);
+  $("#auPrev").addEventListener("click", ()=>{
+    if(auPagina>1){ auPagina--; auCargar(); $(".mv-tabla-wrap").scrollTo({top:0, behavior:"smooth"}); }
+  });
+  $("#auNext").addEventListener("click", ()=>{
+    if(auPagina<auPaginas){ auPagina++; auCargar(); $(".mv-tabla-wrap").scrollTo({top:0, behavior:"smooth"}); }
+  });
+  $("#auExportar").addEventListener("click", ()=>{
+    const qs = new URLSearchParams(Object.assign({accion:"export_csv"}, auParams())).toString();
+    window.open(API_AU + "?" + qs, "_blank");
+  });
+
+  // Fechas por defecto ya calculadas arriba (últimos 30 días) -- se pintan
+  // en los inputs recién al entrar a la vista, para no pisar el reloj del
+  // navegador si el operador tiene la pestaña abierta desde hace rato.
+  function auPrepararVista(){
+    $("#auDesde").value = auFiltros.desde;
+    $("#auHasta").value = auFiltros.hasta;
+  }
 
   // ---------- Usuarios integrado (Fase A, Módulo 5) ----------
   // Puerto 1:1 de landing/admin.html + api/admin_usuarios.php (que ya exige
@@ -3574,7 +3954,8 @@
     } else { toast(d.error || "No se pudo"); }
   });
 
-  /* ---------- notificación push ----------
+  /* ---------- Notificaciones: vista de página completa (Enviar / Historial
+     / Bonos pendientes), reemplaza el modal #backN de antes.
      No se manda nada al celular en el momento: se encola y cada dispositivo la
      levanta cuando sondea (el widget a los ~25 s con la app abierta, el worker
      del APK hasta 15 min después si está cerrada). Por eso el botón dice
@@ -3596,7 +3977,6 @@
     nTipo = p.tipo; $("#nTitulo").value = p.t; $("#nCuerpo").value = p.c;
   });
 
-  /** `forzar` = entró por el rail, o sea sin conversación: solo masiva. */
   function nSetCanal(canal){
     document.querySelectorAll('input[name="nCanal"]').forEach(r=>{ r.checked = r.value===canal; });
     document.querySelectorAll(".n-canal-toggle .ag-rol-opt").forEach(el=>{
@@ -3610,21 +3990,55 @@
     el.addEventListener("click", ()=> nSetCanal(el.getAttribute("data-canal")));
   });
 
-  function abrirNotif(forzar){
-    const todos = !!forzar || !st.usuario;
-    $("#nTodos").checked = todos;
-    $("#nTodos").disabled = todos;
-    $("#nSub").textContent = todos
-      ? "A todos los jugadores con la app instalada."
-      : `Para @${st.usuario}.`;
+  // ---- Tabs internas de la vista ----
+  document.querySelectorAll(".nv-tab").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const tab = btn.getAttribute("data-nvtab");
+      document.querySelectorAll(".nv-tab").forEach(b=>b.classList.toggle("on", b===btn));
+      document.querySelectorAll(".nv-pane").forEach(p=>p.classList.remove("on"));
+      $("#nvPane" + tab[0].toUpperCase() + tab.slice(1)).classList.add("on");
+      if(tab==="historial"){ nvHistorialPagina = 1; cargarHistorial(); }
+      if(tab==="bonos"){ cargarBonos(); }
+    });
+  });
+
+  // ---- Audiencia (todos / un jugador / inactivos) ----
+  function nvSetAudiencia(modo){
+    document.querySelectorAll('input[name="nvAud"]').forEach(r=>{ r.checked = r.value===modo; });
+    document.querySelectorAll(".nv-aud-opt").forEach(el=>{
+      el.classList.toggle("on", el.getAttribute("data-aud")===modo);
+    });
+    $("#nvInactivosCfg").classList.toggle("on", modo==="inactivos");
+    $("#nvAlcanceTxt").textContent = "";
+  }
+  document.querySelectorAll(".nv-aud-opt").forEach(el=>{
+    el.addEventListener("click", ()=> nvSetAudiencia(el.getAttribute("data-aud")));
+  });
+  $("#nvVerAlcance").addEventListener("click", async ()=>{
+    const dias = Math.max(0, +$("#nvDias").value || 0);
+    $("#nvAlcanceTxt").textContent = "Calculando…";
+    try{
+      const d = await jget({accion:"notif_alcance_inactivos", dias});
+      $("#nvAlcanceTxt").innerHTML = d.ok ? `<span class="nv-alcance">${d.alcance}</span> jugador${d.alcance===1?"":"es"}` : "Error";
+    } catch(e){ $("#nvAlcanceTxt").textContent = "Error"; }
+  });
+
+  function abrirNotif(){
+    if(st.usuario){
+      $("#nvAudUsuarioTxt").textContent = `@${st.usuario} (conversación abierta)`;
+      nvSetAudiencia("usuario");
+    } else {
+      $("#nvAudUsuarioTxt").textContent = "Abrí una conversación para elegir un jugador puntual.";
+      nvSetAudiencia("todos");
+    }
     $("#nTitulo").value=""; $("#nCuerpo").value=""; $("#nMensajeChat").value=""; nTipo="promo";
     document.querySelectorAll("#nChips .chip").forEach(x=>x.classList.remove("on"));
     nSetCanal("push");
     $("#nProgramar").checked=false; $("#nCuando").style.display="none"; $("#nFecha").value="";
     $("#nOk").textContent="Enviar";
-    $("#backN").classList.add("on");
-    setTimeout(()=>$("#nTitulo").focus(),50);
     cargarProgramadas();
+    cargarPresets();
+    setTimeout(()=>$("#nTitulo").focus(),50);
   }
 
   const N_CANAL_ICO = { push:"📲", chat:"💬" };
@@ -3656,8 +4070,45 @@
       });
     });
   }
-  $("#btnNotif").addEventListener("click", ()=>abrirNotif(false));
-  wireModal("#backN", "#nCancel");
+
+  // ---- Presets de filtro ----
+  let nvPresets = [];
+  async function cargarPresets(){
+    try{
+      const d = await jget({accion:"notif_presets_listar"});
+      nvPresets = (d.ok && d.presets) || [];
+    } catch(e){ nvPresets = []; }
+    $("#nvPresetSel").innerHTML = `<option value="">— Preset guardado —</option>` +
+      nvPresets.map(p=>`<option value="${p.id}">${esc(p.nombre)}</option>`).join("");
+  }
+  $("#nvPresetUsar").addEventListener("click", ()=>{
+    const id = +$("#nvPresetSel").value || 0;
+    const p = nvPresets.find(x=>x.id===id);
+    if(!p){ toast("Elegí un preset"); return; }
+    const f = p.filtro || {};
+    if(f.modo==="inactivos"){ nvSetAudiencia("inactivos"); $("#nvDias").value = f.dias ?? 7; }
+    else if(f.modo==="usuario"){ nvSetAudiencia("usuario"); }
+    else { nvSetAudiencia("todos"); }
+    toast(`Preset "${p.nombre}" aplicado`);
+  });
+  $("#nvPresetGuardar").addEventListener("click", async ()=>{
+    const modo = document.querySelector('input[name="nvAud"]:checked').value;
+    if(modo!=="inactivos"){ toast('Solo se pueden guardar presets de "Inactivos" por ahora'); return; }
+    const nombre = prompt("Nombre para este preset (ej: Inactivos 7 días):");
+    if(!nombre) return;
+    const filtro = { modo:"inactivos", dias: Math.max(0, +$("#nvDias").value || 0) };
+    const d = await jpost({accion:"notif_preset_guardar", nombre, filtro});
+    if(d.ok){ toast("Preset guardado"); cargarPresets(); } else { toast(d.error || "No se pudo guardar"); }
+  });
+  $("#nvPresetBorrar").addEventListener("click", async ()=>{
+    const id = +$("#nvPresetSel").value || 0;
+    if(!id){ toast("Elegí un preset"); return; }
+    if(!confirm("¿Borrar este preset?")) return;
+    const d = await jpost({accion:"notif_preset_borrar", id});
+    if(d.ok){ toast("Preset borrado"); cargarPresets(); } else { toast(d.error || "No se pudo borrar"); }
+  });
+
+  $("#btnNotif").addEventListener("click", ()=>{ mostrarVista("notificaciones"); abrirNotif(); });
   $("#nProgramar").addEventListener("change", ()=>{
     const on = $("#nProgramar").checked;
     $("#nCuando").style.display = on ? "block" : "none";
@@ -3674,15 +4125,16 @@
     const canal = document.querySelector('input[name="nCanal"]:checked').value;
     const incluyePush = canal==="push" || canal==="ambos";
     const incluyeChat = canal==="chat" || canal==="ambos";
+    const modoAud = document.querySelector('input[name="nvAud"]:checked').value;
 
     const titulo = $("#nTitulo").value.trim(), cuerpo = $("#nCuerpo").value.trim();
     const mensajeChat = $("#nMensajeChat").value.trim();
     if(incluyePush && (!titulo || !cuerpo)){ toast("Poné título y mensaje del push"); return; }
     if(incluyeChat && !mensajeChat && !cuerpo){ toast("Poné el mensaje de chat"); return; }
+    if(modoAud==="usuario" && !st.usuario){ toast("Abrí una conversación para elegir un jugador puntual"); return; }
+    if(modoAud==="inactivos" && incluyeChat){ toast('El filtro "Inactivos" solo manda por push, no por chat'); return; }
 
-    const todos = $("#nTodos").checked;
-    if(!todos && !st.usuario){ toast("Esta conversación no tiene usuario vinculado"); return; }
-
+    const todos = modoAud==="todos";
     const programar = $("#nProgramar").checked;
     let programada = "";
     if(programar){
@@ -3691,19 +4143,24 @@
     }
 
     const cuando = programar ? "PROGRAMAR para " + $("#nFecha").value.replace("T"," ") + " (hora Argentina)" : "ENVIAR ahora";
-    if(todos && !confirm(`Se la va a mandar a TODOS los jugadores${incluyeChat?" (push y/o chat)":""}.\n\n${cuando}.\n\n¿Seguro?`)) return;
+    let confirmMsg = null;
+    if(todos) confirmMsg = `Se la va a mandar a TODOS los jugadores${incluyeChat?" (push y/o chat)":""}.\n\n${cuando}.\n\n¿Seguro?`;
+    if(modoAud==="inactivos") confirmMsg = `Se la va a mandar a los jugadores inactivos hace más de ${Math.max(0,+$("#nvDias").value||0)} días.\n\n${cuando}.\n\n¿Seguro?`;
+    if(confirmMsg && !confirm(confirmMsg)) return;
 
+    const filtro = modoAud==="inactivos" ? { modo:"inactivos", dias: Math.max(0, +$("#nvDias").value || 0) } : undefined;
     const btn=$("#nOk"); btn.disabled=true; const txtBtn=programar?"Programar":"Enviar"; btn.textContent="…";
-    // La masiva no deja rastro en ningún hilo: no es de esa conversación.
-    const d = await jpost({ accion:"notificar", todos, usuario:todos?undefined:st.usuario,
-                            canal, titulo, cuerpo, mensaje_chat: mensajeChat || undefined, tipo:nTipo,
+    // La masiva/inactivos no deja rastro en ningún hilo: no es de esa conversación.
+    const d = await jpost({ accion:"notificar", todos, usuario: modoAud==="usuario" ? st.usuario : undefined,
+                            filtro, canal, titulo, cuerpo, mensaje_chat: mensajeChat || undefined, tipo:nTipo,
                             programada_en: programada || undefined,
-                            conversacion_id:todos?undefined:st.convId });
+                            conversacion_id: modoAud==="usuario" ? st.convId : undefined });
     btn.disabled=false; btn.textContent=txtBtn;
     if(d.ok){
-      $("#backN").classList.remove("on");
       if(d.programada_en){
         toast(`Programada — sale el ${$("#nFecha").value.replace("T"," ")}`);
+      } else if(modoAud==="inactivos"){
+        toast(`Enviado a ${d.alcance} jugador${d.alcance===1?"":"es"} inactivo${d.alcance===1?"":"s"}`);
       } else {
         const partes = [];
         if(incluyePush) partes.push(d.alcance ? `push a ${d.alcance} celular${d.alcance===1?"":"es"}` : "push encolado");
@@ -3711,8 +4168,107 @@
         toast(partes.join(" · ") || "Enviado");
       }
       if(st.convId) abrir(st.convId);
+      cargarProgramadas();
     } else { toast(d.error || "No se pudo enviar"); }
   });
+
+  // ---- Historial de notificaciones ya enviadas ----
+  let nvHistorialPagina = 1;
+  const NV_TIPO_LABEL = { bono:"🎁 Bono", fichas:"🪙 Fichas", recarga:"✅ Recarga", ruleta:"🎯 Ruleta", promo:"🔥 Promo", aviso:"💬 Aviso" };
+  async function cargarHistorial(){
+    const cont = $("#nvHistorialLista");
+    cont.innerHTML = `<div class="ag-vacio">Cargando…</div>`;
+    const opts = { accion:"notif_historial", pagina: nvHistorialPagina };
+    const usuario = $("#nvHUsuario").value.trim(); if(usuario) opts.usuario = usuario;
+    const tipo = $("#nvHTipo").value; if(tipo) opts.tipo = tipo;
+    const desde = $("#nvHDesde").value; if(desde) opts.desde = desde;
+    const hasta = $("#nvHHasta").value; if(hasta) opts.hasta = hasta;
+    let d;
+    try{ d = await jget(opts); } catch(e){ cont.innerHTML = `<div class="ag-vacio">No se pudo cargar.</div>`; return; }
+    if(!d.ok){ cont.innerHTML = `<div class="ag-vacio">${esc(d.error||"Error")}</div>`; return; }
+    const items = d.items || [];
+    if(!items.length){ cont.innerHTML = `<div class="ag-vacio">Sin envíos en este rango.</div>`; }
+    else {
+      cont.innerHTML = items.map(it=>{
+        const destino = it.masivo
+          ? `<span class="nv-badge masivo">Masivo${it.filtro && it.filtro.dias!=null ? " · inactivos "+it.filtro.dias+"d" : ""} · ${it.alcance_filas} jugador${it.alcance_filas===1?"":"es"}</span>`
+          : (it.usuario ? `@${esc(it.usuario)}` : "a todos");
+        return `<div class="nv-hist-item">
+          <div class="nv-hist-info">
+            <div class="nv-hist-titulo">${esc(NV_TIPO_LABEL[it.tipo] || it.tipo)} — ${esc(it.titulo)}</div>
+            <div class="nv-hist-meta">${esc(it.creada_en)} · ${destino}</div>
+          </div>
+        </div>`;
+      }).join("");
+    }
+    const totalPag = Math.max(1, Math.ceil(d.total / d.por_pagina));
+    $("#nvHPagInfo").textContent = `Página ${d.pagina} de ${totalPag}`;
+    $("#nvHPrev").disabled = d.pagina<=1;
+    $("#nvHNext").disabled = d.pagina>=totalPag;
+  }
+  $("#nvHBuscar").addEventListener("click", ()=>{ nvHistorialPagina=1; cargarHistorial(); });
+  $("#nvHLimpiar").addEventListener("click", ()=>{
+    $("#nvHUsuario").value=""; $("#nvHTipo").value=""; $("#nvHDesde").value=""; $("#nvHHasta").value="";
+    nvHistorialPagina=1; cargarHistorial();
+  });
+  $("#nvHPrev").addEventListener("click", ()=>{ if(nvHistorialPagina>1){ nvHistorialPagina--; cargarHistorial(); } });
+  $("#nvHNext").addEventListener("click", ()=>{ nvHistorialPagina++; cargarHistorial(); });
+
+  // ---- Bonos pendientes ----
+  const NV_BONO_LABEL = { fichas:"Fichas fijas", pct:"% sobre carga", giro:"Giro de ruleta" };
+  const NV_BONO_ESTADO_LABEL = { pendiente:"Pendiente", aplicado:"Aplicado", cancelado:"Cancelado" };
+  $("#nvBTipo").addEventListener("change", ()=>{
+    $("#nvBValorWrap").style.display = $("#nvBTipo").value==="giro" ? "none" : "flex";
+  });
+  $("#nvBCrear").addEventListener("click", async ()=>{
+    const usuario = $("#nvBUsuario").value.trim();
+    const tipo = $("#nvBTipo").value;
+    const valor = +$("#nvBValor").value || 0;
+    if(!usuario){ toast("Poné el usuario"); return; }
+    if(tipo!=="giro" && valor<=0){ toast("Poné un valor mayor a 0"); return; }
+    const d = await jpost({accion:"bono_crear", usuario, tipo, valor});
+    if(d.ok){
+      toast("Bono prometido");
+      $("#nvBUsuario").value=""; $("#nvBValor").value="";
+      cargarBonos();
+    } else { toast(d.error || "No se pudo crear"); }
+  });
+  async function cargarBonos(){
+    const cont = $("#nvBonosLista");
+    cont.innerHTML = `<div class="ag-vacio">Cargando…</div>`;
+    const opts = { accion:"bonos_listar" };
+    const usuario = $("#nvBUsuarioFiltro").value.trim(); if(usuario) opts.usuario = usuario;
+    const estado = $("#nvBEstado").value; if(estado) opts.estado = estado;
+    let d;
+    try{ d = await jget(opts); } catch(e){ cont.innerHTML = `<div class="ag-vacio">No se pudo cargar.</div>`; return; }
+    if(!d.ok){ cont.innerHTML = `<div class="ag-vacio">${esc(d.error||"Error")}</div>`; return; }
+    const bonos = d.bonos || [];
+    if(!bonos.length){ cont.innerHTML = `<div class="ag-vacio">Sin bonos pendientes.</div>`; return; }
+    cont.innerHTML = bonos.map(b=>{
+      const valorTxt = b.tipo==="giro" ? "1 giro gratis" : (b.tipo==="pct" ? `${b.valor}%` : `${b.valor} fichas`);
+      const meta = [
+        `Prometido${b.prometido_por ? " por "+esc(b.prometido_por) : ""} el ${esc(b.creado_en)}`,
+        b.estado==="aplicado" ? `Aplicado el ${esc(b.aplicado_en)}${b.recarga_id ? " (recarga #"+b.recarga_id+")" : ""}` : null,
+      ].filter(Boolean).join(" · ");
+      return `<div class="nv-bono-item">
+        <div class="nv-bono-info">
+          <div class="nv-hist-titulo">@${esc(b.usuario)} — ${esc(NV_BONO_LABEL[b.tipo]||b.tipo)} · <b>${esc(valorTxt)}</b>
+            <span class="nv-badge ${b.estado}">${esc(NV_BONO_ESTADO_LABEL[b.estado]||b.estado)}</span>
+          </div>
+          <div class="nv-bono-meta">${meta}</div>
+        </div>
+        ${b.estado==="pendiente" ? `<button class="btn-mini-accion peligro" data-borrar-bono="${b.id}" type="button">Cancelar</button>` : ""}
+      </div>`;
+    }).join("");
+    cont.querySelectorAll("[data-borrar-bono]").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        if(!confirm("¿Cancelar este bono pendiente?")) return;
+        const d2 = await jpost({accion:"bono_borrar", id:+btn.getAttribute("data-borrar-bono")});
+        if(d2.ok){ toast("Bono cancelado"); cargarBonos(); } else { toast(d2.error || "No se pudo cancelar"); }
+      });
+    });
+  }
+  $("#nvBBuscar").addEventListener("click", cargarBonos);
 
   // ---------- login ----------
   // Fetch propio, deliberadamente SIN pasar por apiFetch: login.php no exige

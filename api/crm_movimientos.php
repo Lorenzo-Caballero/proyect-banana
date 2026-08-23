@@ -1,4 +1,6 @@
 <?php
+// DEPRECADO: reemplazado por crm_auditoria.php (Módulo Auditoría)
+// Mantener por compatibilidad hasta confirmar que nada lo llama.
 /**
  * crm_movimientos.php — Backend del módulo "Transacciones" (Fase A, Módulo 4).
  *
