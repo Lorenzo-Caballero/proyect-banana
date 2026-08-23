@@ -90,83 +90,86 @@
   .col-user{width:344px;min-width:300px;overflow-y:auto}
 
   /* ---- stats + lista ----
-     Header inspirado en referencia tipo Dakota: título grande y suelto
-     ("Conversaciones") con el contador chico al lado, en vez de la marca
-     "gana·mos" chica de antes -- la marca ya está en el logo del rail, acá
-     no hace falta repetirla. */
-  .lhead{padding:18px 16px 14px;border-bottom:1px solid var(--line)}
-  .brand{display:flex;align-items:baseline;gap:8px;margin-bottom:14px}
-  .brand b{font-size:21px;font-weight:800;letter-spacing:-.2px;color:var(--txt)}
+     Prioridad 1 del rediseño: que la lista de chats empiece lo más arriba
+     posible. Todo lo de encima (título, créditos, búsqueda, filtros) pasa a
+     ocupar una fracción de lo que ocupaba antes -- una sola línea cada uno,
+     sin bordes/padding decorativos, para no competir con la bandeja. */
+  .lhead{padding:12px 14px 10px;border-bottom:1px solid var(--line)}
+  .brand{display:flex;align-items:baseline;gap:7px;margin-bottom:8px}
+  .brand b{font-size:15.5px;font-weight:800;letter-spacing:-.1px;color:var(--txt)}
   .brand b span{color:var(--violet2)}
-  .brand .cap{color:var(--muted);font-size:12.5px;font-weight:600}
-  /* Compacto a propósito: una sola fila (ícono + label + monto) más la
-     barra de progreso fina debajo. Las mini-stats de usuarios/fichas/bonos
-     se sacaron -- esa data ya se ve en el módulo Usuarios y en Finanzas, acá
-     solo quitaba lugar a la lista de chats. */
-  .saldo-int{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:9px 11px}
-  .saldo-int .lbl{font-size:10px;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);
-    display:flex;align-items:center;gap:6px;flex:1;min-width:0}
-  .saldo-int .lbl svg{width:12px;height:12px;fill:none;stroke:var(--green);stroke-width:2;flex:none}
-  .saldo-int .fila{display:flex;align-items:center;justify-content:space-between;gap:8px}
-  .saldo-int .val{font-size:13.5px;font-weight:800;color:var(--green2);white-space:nowrap;flex:none}
-  .saldo-int .sub-dias{font-size:10px;color:var(--muted);margin-top:3px}
-  .saldo-int .glow-line{height:3px;border-radius:3px;margin-top:6px;
+  .brand .cap{color:var(--muted);font-size:11.5px;font-weight:600}
+  /* Créditos: una micro-línea (ícono + label + monto + barrita), secundaria
+     a propósito -- referencia clara sin robarle protagonismo a los chats.
+     El detalle ("alcanza para X días") va como title del bloque (tooltip
+     nativo), no como línea de texto aparte -- ver pintarCreditosCrm(). */
+  .saldo-int{padding:5px 2px 0}
+  .saldo-int .fila{display:flex;align-items:center;gap:7px}
+  .saldo-int .lbl{display:flex;align-items:center;flex:none}
+  .saldo-int .lbl svg{width:11px;height:11px;fill:none;stroke:var(--green);stroke-width:2;flex:none}
+  .saldo-int .val{font-size:11.5px;font-weight:800;color:var(--green2);white-space:nowrap;flex:none}
+  .saldo-int .glow-line{height:3px;border-radius:3px;flex:1;min-width:24px;
     background:linear-gradient(90deg,var(--green),var(--green2),transparent)}
-  /* Suscripcion vencida o por vencer: el mismo recuadro pasa a rojo/naranja
-     para que se note sin tener que entrar a "Mi suscripcion". */
-  .saldo-int.alerta{background:rgba(255,107,107,.12);border-color:rgba(255,107,107,.38)}
+  /* Suscripcion vencida o por vencer: mismo criterio, solo cambia el color. */
   .saldo-int.alerta .val{color:var(--red)}
   .saldo-int.alerta .lbl svg{stroke:var(--red)}
   .saldo-int.alerta .glow-line{background:linear-gradient(90deg,var(--red),#ff9a9a,transparent)}
-  .saldo-int.aviso{background:rgba(245,166,35,.12);border-color:rgba(245,166,35,.36)}
   .saldo-int.aviso .val{color:var(--orange2)}
   .saldo-int.aviso .lbl svg{stroke:var(--orange)}
   .saldo-int.aviso .glow-line{background:linear-gradient(90deg,var(--orange),var(--orange2),transparent)}
 
-  .subhead{padding:12px 16px 0}
-  /* Búsqueda más suelta: fondo casi imperceptible, sin borde marcado hasta
-     el focus -- referencia Dakota, en vez del recuadro con borde de siempre. */
+  .subhead{padding:8px 14px 0}
+  /* Búsqueda baja: mismo look suelto de antes, con menos alto. */
   .search{position:relative}
-  .search input{width:100%;padding:11px 14px 11px 38px;background:var(--panel2);border:1px solid transparent;border-radius:13px;color:var(--txt);outline:none;transition:.15s}
+  .search input{width:100%;padding:8px 12px 8px 34px;background:var(--panel2);border:1px solid transparent;border-radius:11px;color:var(--txt);outline:none;transition:.15s;font-size:13px}
   .search input:focus{border-color:var(--violet);box-shadow:0 0 0 3px var(--violetSoft);background:var(--panel)}
-  .search svg{position:absolute;left:13px;top:50%;transform:translateY(-50%);opacity:.45;width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2}
+  .search svg{position:absolute;left:11px;top:50%;transform:translateY(-50%);opacity:.45;width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2}
   .tabs{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap}
   .tab{background:transparent;border:1px solid var(--line);color:var(--muted);padding:6px 12px;border-radius:20px;font-size:12.5px;transition:.15s}
   .tab.on{background:var(--violetSoft);border-color:var(--violet);color:var(--violet2);font-weight:600}
-  /* Filas sueltas, sin bordes propios (el separador lo da el aire, no una
-     línea) -- más aire vertical y avatar redondo en vez de squircle. */
-  .list{flex:1;overflow-y:auto;padding:6px 10px 10px;margin-top:6px}
-  .conv{display:flex;gap:12px;padding:12px 10px;border-radius:14px;cursor:pointer;position:relative;transition:.12s;margin-bottom:1px}
+  /* Filtros de la lista de chats: modificador de .tab (mantiene la clase
+     base para no romper el JS que hace querySelectorAll(".tab")), pero
+     mucho más chico y en una sola fila sin wrap, repartido en 4 columnas
+     iguales -- no afecta los .tab de otros módulos (Cargas/Retiros). */
+  .tabs-chat{display:flex;gap:4px;margin-top:8px}
+  .tab-chico{flex:1;padding:5px 4px;border-radius:8px;font-size:11px;font-weight:600;
+    text-align:center;white-space:nowrap}
+  /* Filas compactas: mucho menos padding vertical para ver más chats de un
+     vistazo (prioridad densidad), sin perder legibilidad de nombre/preview. */
+  .list{flex:1;overflow-y:auto;padding:4px 8px 8px;margin-top:2px}
+  .conv{display:flex;gap:10px;padding:8px 8px;border-radius:12px;cursor:pointer;position:relative;transition:.12s;margin-bottom:0}
   .conv:hover{background:var(--panel2)}
   .conv.sel{background:var(--violetSoft);box-shadow:inset 0 0 0 1px var(--violet)}
-  .av{width:42px;height:42px;border-radius:50%;flex:none;display:grid;place-items:center;font-weight:800;font-size:13px;color:#fff;box-shadow:var(--shadow-sm)}
+  .av{width:36px;height:36px;border-radius:50%;flex:none;display:grid;place-items:center;font-weight:800;font-size:12px;color:#fff;box-shadow:var(--shadow-sm)}
   .av.anon{background:var(--panel3)!important;color:var(--muted)}
   .conv .mid{min-width:0;flex:1}
   .conv .n{display:flex;justify-content:space-between;gap:8px;align-items:center}
-  .conv .n b{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center}
-  .conv .n .t{color:var(--muted);font-size:11.5px;white-space:nowrap}
-  .conv .pv{color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:4px}
+  .conv .n b{font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center}
+  .conv .n .t{color:var(--muted);font-size:11px;white-space:nowrap}
+  .conv .pv{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
   .badge{background:var(--violet);color:#fff;font-size:11px;font-weight:800;min-width:19px;height:19px;border-radius:10px;display:grid;place-items:center;padding:0 5px}
-  .est-dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:6px;flex:none}
+  .est-dot{width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:6px;flex:none}
   .est-abierta{background:var(--green);box-shadow:0 0 6px var(--green)} .est-pendiente{background:var(--orange)} .est-cerrada{background:var(--muted2)}
 
-  /* ---- chat ---- */
-  .chead{padding:14px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:16px}
-  .chead .who{display:flex;align-items:center;gap:11px;min-width:0}
-  .chead .who .av{width:38px;height:38px}
-  .chead .who b{font-size:15.5px}
-  .chead .who .sub{color:var(--muted);font-size:12.5px}
-  /* Dos grupos con intención distinta: acciones sobre ESTE chat (izq.) y el
-     estado del ticket (der.), cada uno como una sola pieza (fondo y borde
-     propios) en vez de botones sueltos flotando a la misma altura que el
-     segmented-control de al lado. */
-  .chead-grupos{display:flex;align-items:center;gap:10px;flex:none}
-  .chead-acciones{display:flex;align-items:center;gap:2px;background:var(--panel2);border:1px solid var(--line);
-    border-radius:10px;padding:3px}
+  /* ---- chat ----
+     Cabecera simplificada: nombre/avatar a la izquierda con mucho menos
+     alto; a la derecha, en orden de importancia, el toggle de BOT (pastilla
+     propia y clara), el estado del ticket (segmented chico) y por último
+     las acciones secundarias (Atender/Info/Fijar) como grupo de íconos. */
+  .chead{padding:10px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:14px}
+  .chead .who{display:flex;align-items:center;gap:9px;min-width:0}
+  .chead .who .av{width:34px;height:34px}
+  .chead .who b{font-size:14px}
+  .chead .who .sub{color:var(--muted);font-size:11.5px}
+  .chead-grupos{display:flex;align-items:center;gap:8px;flex:none}
+  .chead-acciones{display:flex;align-items:center;gap:1px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:9px;padding:2px}
   .chead-sep{display:none}
-  .estbtns{display:flex;gap:2px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:3px}
-  .estbtns button{background:transparent;border:none;color:var(--muted);padding:6px 12px;border-radius:7px;
-    font-size:12px;font-weight:600;transition:.15s;cursor:pointer;white-space:nowrap}
+  /* Estado del ticket: mismo segmented de siempre pero mucho más chico --
+     el color ya distingue el estado, el texto es apoyo, no protagonista. */
+  .estbtns{display:flex;gap:1px;background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:2px}
+  .estbtns button{background:transparent;border:none;color:var(--muted);padding:5px 9px;border-radius:6px;
+    font-size:10.5px;font-weight:600;transition:.15s;cursor:pointer;white-space:nowrap}
   .estbtns button:hover{color:var(--txt)}
   .estbtns button.on{color:#fff;box-shadow:var(--shadow-sm)}
   .estbtns button.on[data-e="abierta"]{background:var(--green)}
@@ -263,22 +266,24 @@
      botón queda como ícono limpio (mismo patrón que un segmented-control),
      y solo se pinta cuando está "on" -- así no compiten 4 cajas sueltas con
      bordes propios contra el chip de estado de al lado. */
-  .pinbtn{background:transparent;border:none;color:var(--muted);width:32px;height:32px;border-radius:7px;display:grid;place-items:center;transition:.15s;cursor:pointer}
+  .pinbtn{background:transparent;border:none;color:var(--muted);width:30px;height:30px;border-radius:7px;display:grid;place-items:center;transition:.15s;cursor:pointer}
   .pinbtn:hover{color:var(--txt);background:var(--panel3)} .pinbtn.on{color:var(--orange2);background:rgba(245,166,35,.14)}
-  .pinbtn svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2}
-  /* interruptor de IA por chat: robot + etiqueta + switch. Se lee
-     claramente como on/off, verde=prendida gris=apagada. */
-  .ia-toggle{display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 10px;border-radius:7px;
-             border:none;background:transparent;color:var(--muted);cursor:pointer;transition:.15s;flex:none}
-  .ia-toggle:hover{color:var(--txt);background:var(--panel3)}
-  .ia-toggle .ia-bot{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;flex:none}
-  .ia-toggle .ia-txt{font-size:12px;font-weight:700;letter-spacing:.04em}
-  .ia-track{position:relative;width:30px;height:17px;border-radius:20px;background:var(--line2);transition:.18s;flex:none}
-  .ia-knob{position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#fff;transition:.18s;box-shadow:0 1px 2px rgba(0,0,0,.4)}
-  /* prendida — mismo verde que el resto de indicadores "on" del sistema */
-  .ia-toggle.ia-on{color:var(--green2);background:var(--greenSoft)}
-  .ia-toggle.ia-on .ia-track{background:var(--green)}
-  .ia-toggle.ia-on .ia-knob{left:15px}
+  .pinbtn svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2}
+  /* BOT ON/OFF: pastilla PROPIA (borde y fondo visibles siempre, no solo en
+     hover) -- a propósito distinta de .chead-acciones/.estbtns, para que se
+     lea de un vistazo como el control más importante del header, no como
+     "un botón más" pegado a los demás. Apagado = gris neutro; prendido =
+     mismo verde que el resto de indicadores "on" del sistema. */
+  .bot-pill{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;border-radius:8px;
+             border:1px solid var(--line);background:var(--panel2);color:var(--muted);cursor:pointer;transition:.15s;flex:none}
+  .bot-pill:hover{border-color:var(--line2)}
+  .bot-pill .ia-bot{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;flex:none}
+  .bot-pill .ia-txt{font-size:10.5px;font-weight:800;letter-spacing:.05em}
+  .ia-track{position:relative;width:26px;height:15px;border-radius:20px;background:var(--line2);transition:.18s;flex:none}
+  .ia-knob{position:absolute;top:2px;left:2px;width:11px;height:11px;border-radius:50%;background:#fff;transition:.18s;box-shadow:0 1px 2px rgba(0,0,0,.4)}
+  .bot-pill.ia-on{color:var(--green2);background:var(--greenSoft);border-color:var(--green)}
+  .bot-pill.ia-on .ia-track{background:var(--green)}
+  .bot-pill.ia-on .ia-knob{left:13px}
   .pin-mini{color:var(--orange2);display:inline-flex;margin-right:5px;flex:none}
   /* multi-agente: etiqueta de quién escribió cada mensaje + agentes atendiendo */
   .msg-agente{font-weight:700;color:var(--violet2)}
@@ -389,14 +394,14 @@
     .thread{padding:16px 14px} .chead{padding:12px 14px}
     .col-user{width:min(360px,94vw)}
     .saldos{padding:14px 13px} .sec{padding:4px 14px 18px}
-    /* header del chat: con Atender + Info + IA + Fijar + 3 estados no entra
-       en una fila angosta -- se deja envolver y el toggle de IA pierde el
-       texto (queda ícono + switch, que ya se entiende solo). */
+    /* header del chat: con BOT + 3 estados + Atender/Info/Fijar no entra en
+       una fila angosta -- se deja envolver y el bot-pill pierde el texto
+       (queda ícono + switch, que ya se entiende solo). */
     .chead{flex-wrap:wrap;row-gap:8px}
     .chead-grupos{flex-wrap:wrap;justify-content:flex-end;row-gap:8px;width:100%}
     .chead-sep{display:none}
-    .ia-toggle .ia-txt{display:none}
-    .ia-toggle{padding:0 8px;gap:6px}
+    .bot-pill .ia-txt{display:none}
+    .bot-pill{padding:0 8px;gap:6px}
   }
   @media(max-width:420px){
     /* Rail en pantallas muy angostas: se aprieta cada ítem para que entren
@@ -1030,15 +1035,16 @@
            (lo que paga por usar el CRM). Nada que ver con la plata de sus
            jugadores (usuarios/fichas/bonos) -- esos totales ya se ven en el
            módulo Usuarios y en Finanzas, así que se sacaron de acá para no
-           quitarle lugar a la lista de chats. Se clickea para ir a
-           "Mi suscripcion" y recargar. -->
+           quitarle lugar a la lista de chats. Micro-línea: ícono + label +
+           monto + barrita, todo en una fila -- el detalle de "cuántos días
+           quedan" queda en el title (tooltip), no ocupa una línea propia.
+           Se clickea para ir a "Mi suscripcion" y recargar. -->
       <div class="saldo-int" id="saldoCrmBox" title="Ir a Mi suscripción" style="cursor:pointer">
         <div class="fila">
-          <div class="lbl"><svg viewBox="0 0 24 24"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> Créditos del CRM</div>
-          <div class="val" id="saldoInt">—</div>
+          <span class="lbl"><svg viewBox="0 0 24 24"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span>
+          <span class="val" id="saldoInt">—</span>
+          <span class="glow-line"></span>
         </div>
-        <div class="sub-dias" id="saldoCrmDias"></div>
-        <div class="glow-line"></div>
       </div>
     </div>
     <div class="subhead">
@@ -1046,11 +1052,15 @@
         <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
         <input id="q" placeholder="Buscar usuario o texto…" autocomplete="off">
       </label>
-      <div class="tabs" id="tabs">
-        <button class="tab on" data-e="todas">Todas</button>
-        <button class="tab" data-e="abierta">Abiertas</button>
-        <button class="tab" data-e="pendiente">Pendientes</button>
-        <button class="tab" data-e="cerrada">Cerradas</button>
+      <!-- Contenedor propio (.tabs-chat) para no tocar .tabs de otros
+           módulos (Cargas/Retiros la siguen usando tal cual). Cada botón
+           mantiene la clase .tab -- el JS de #tabs ya busca .tab -- y suma
+           .tab-chico solo para el estilo compacto de esta fila. -->
+      <div class="tabs-chat" id="tabs">
+        <button class="tab tab-chico on" data-e="todas">Todas</button>
+        <button class="tab tab-chico" data-e="abierta">Abiertas</button>
+        <button class="tab tab-chico" data-e="pendiente">Pendientes</button>
+        <button class="tab tab-chico" data-e="cerrada">Cerradas</button>
       </div>
     </div>
     <div class="list" id="list"></div>
@@ -1076,21 +1086,24 @@
           </div>
         </div>
         <div class="chead-grupos">
+          <!-- BOT ON/OFF: pastilla propia, separada del resto -- no debe
+               leerse como "un botón más" pegado a otros. -->
+          <button class="bot-pill" id="btnIA" type="button" role="switch" aria-checked="false" title="Prender / apagar la IA en este chat">
+            <svg class="ia-bot" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M12 8V4M9 4h6"/><circle cx="8.5" cy="14" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="14" r="1.3" fill="currentColor" stroke="none"/></svg>
+            <span class="ia-txt">BOT</span>
+            <span class="ia-track"><span class="ia-knob"></span></span>
+          </button>
+          <!-- Estado del ticket: segmented compacto, solo inicial + color. -->
+          <div class="estbtns" id="estbtns" title="Estado de la conversación">
+            <button data-e="abierta" title="Abierta">Abierta</button>
+            <button data-e="pendiente" title="Pendiente">Pendiente</button>
+            <button data-e="cerrada" title="Cerrada">Cerrada</button>
+          </div>
+          <!-- Acciones secundarias: solo íconos, agrupadas al final. -->
           <div class="chead-acciones">
             <button class="pinbtn" id="btnAtender" type="button" title="Atender este chat"><svg viewBox="0 0 24 24"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/><path d="M17 11h6M20 8v6"/></svg></button>
             <button class="pinbtn btn-info" id="btnInfo" title="Ver info del usuario"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></button>
-            <button class="ia-toggle" id="btnIA" type="button" role="switch" aria-checked="false" title="Prender / apagar la IA en este chat">
-              <svg class="ia-bot" viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M12 8V4M9 4h6"/><circle cx="8.5" cy="14" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="14" r="1.3" fill="currentColor" stroke="none"/></svg>
-              <span class="ia-txt">IA</span>
-              <span class="ia-track"><span class="ia-knob"></span></span>
-            </button>
             <button class="pinbtn" id="btnFijar" title="Anclar"><svg viewBox="0 0 24 24"><path d="M12 17v5M9 3h6l-1 7 3 3v1H7v-1l3-3-1-7z"/></svg></button>
-          </div>
-          <div class="chead-sep"></div>
-          <div class="estbtns" id="estbtns">
-            <button data-e="abierta">Abierta</button>
-            <button data-e="pendiente">Pendiente</button>
-            <button data-e="cerrada">Cerrada</button>
           </div>
         </div>
       </div>
@@ -2461,7 +2474,7 @@
    * un error consultando esto no puede romper la carga del CRM.
    */
   async function pintarCreditosCrm(){
-    const box = $("#saldoCrmBox"), val = $("#saldoInt"), dias = $("#saldoCrmDias");
+    const box = $("#saldoCrmBox"), val = $("#saldoInt");
     if(!box || !val) return;
     try{
       const r = await fetch(API_SUS + "?accion=estado", { credentials:"same-origin" });
@@ -2469,9 +2482,12 @@
       if(!d.ok) return;
       val.textContent = "$" + nf.format(Math.round(d.saldo_usd)) + " USD";
       const n = Number(d.dias_restantes) || 0;
-      dias.textContent = d.suscripcion_estado === "trial"
+      // El detalle ("alcanza para X días") ya no ocupa una línea propia --
+      // va como title del bloque entero, se lee al pasar el mouse.
+      const detalle = d.suscripcion_estado === "trial"
         ? "período de prueba"
         : (n > 0 ? `alcanza para ${n} día${n===1?"":"s"}` : "sin saldo — recargá para seguir");
+      box.title = `${detalle} · Ir a Mi suscripción`;
       box.classList.toggle("alerta", n <= 0 && d.suscripcion_estado !== "trial");
       box.classList.toggle("aviso",  n > 0 && n <= 5);
     }catch(e){ /* best-effort */ }
