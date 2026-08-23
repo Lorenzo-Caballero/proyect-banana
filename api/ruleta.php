@@ -23,6 +23,10 @@ require __DIR__ . '/db.php';
 // crm_lib es opcional: si esta, registra el movimiento en el historial.
 $crmLib = __DIR__ . '/crm_lib.php';
 if (is_file($crmLib)) { require_once $crmLib; }
+// crm_notificaciones es opcional: si esta, habilita el giro de cortesia
+// (bono de ruleta prometido por notificacion, fuera del limite diario normal).
+$crmNotif = __DIR__ . '/crm_notificaciones.php';
+if (is_file($crmNotif)) { require_once $crmNotif; }
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
@@ -95,7 +99,11 @@ function giro_disponible(PDO $pdo, string $usuario): bool
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     $u   = trim((string)($_GET['usuario'] ?? ''));
     $out = ['ok' => true, 'premios' => premios_publicos()];
-    if ($u !== '') { $out['disponible'] = giro_disponible($pdo, $u); }
+    if ($u !== '') {
+        $out['disponible'] = giro_disponible($pdo, $u);
+        $out['cortesia_disponible'] = function_exists('crmnotif_cortesia_disponible')
+            ? crmnotif_cortesia_disponible($pdo, $u) : false;
+    }
     salir($out);
 }
 
@@ -219,6 +227,65 @@ try {
         }
 
         salir(['ok' => true, 'bonus' => $bonus, 'usuario' => $usuario]);
+    }
+
+    // ====================== GIRAR (CORTESÍA) ================================
+    // Giro de cortesía prometido por notificación (tabla ruleta_giros_cortesia,
+    // aparte de ruleta_giros): no cuenta contra el límite diario normal, ni lo
+    // toca. Un giro y listo, sin token intermedio: se sortea y acredita en la
+    // misma llamada porque no hay "girar" y "reclamar" separados como en el
+    // camino normal -- el jugador ya demostró ser él al loguearse en la app.
+    if ($accion === 'girar_cortesia') {
+        $usuario = trim((string)($body['usuario'] ?? ''));
+        if ($usuario === '') {
+            salir(['ok' => false, 'error' => 'Falta el usuario'], 400);
+        }
+        if (!function_exists('crmnotif_cortesia_disponible') || !crmnotif_cortesia_disponible($pdo, $usuario)) {
+            salir(['ok' => false, 'codigo' => 'sin_cortesia', 'error' => 'No tenés un giro de cortesía disponible.']);
+        }
+
+        $pdo->beginTransaction();
+        try {
+            $st = $pdo->prepare(
+                "SELECT id FROM ruleta_giros_cortesia
+                  WHERE usuario = ? AND estado = 'pendiente'
+                  ORDER BY creado_en ASC LIMIT 1 FOR UPDATE"
+            );
+            $st->execute([$usuario]);
+            $g = $st->fetch(PDO::FETCH_ASSOC);
+            if (!$g) {
+                $pdo->rollBack();
+                salir(['ok' => false, 'codigo' => 'sin_cortesia', 'error' => 'No tenés un giro de cortesía disponible.']);
+            }
+
+            $upd = $pdo->prepare(
+                "UPDATE ruleta_giros_cortesia SET estado = 'usado', usado_en = NOW()
+                  WHERE id = ? AND estado = 'pendiente'"
+            );
+            $upd->execute([(int)$g['id']]);
+            if ($upd->rowCount() !== 1) {
+                $pdo->rollBack();
+                salir(['ok' => false, 'error' => 'Ese giro ya fue usado.']);
+            }
+            $pdo->commit();
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) { $pdo->rollBack(); }
+            error_log('ruleta girar_cortesia: ' . $e->getMessage());
+            salir(['ok' => false, 'error' => 'No se pudo procesar el giro'], 500);
+        }
+
+        $indice = elegir_indice();
+        $bonus  = (int)PREMIOS[$indice]['bonus'];
+        if ($bonus > 0) {
+            if (function_exists('crm_cargar')) {
+                $r = crm_cargar($pdo, $usuario, 'bono', $bonus, 'Giro de cortesía', 'ruleta_cortesia');
+                if (!$r['ok']) { salir(['ok' => false, 'error' => $r['error'] ?? 'No se pudo acreditar'], 400); }
+            } else {
+                $pdo->prepare("UPDATE usuarios SET bonus = bonus + ? WHERE username = ?")->execute([$bonus, $usuario]);
+            }
+        }
+
+        salir(['ok' => true, 'indice' => $indice, 'bonus' => $bonus, 'label' => PREMIOS[$indice]['label'], 'usuario' => $usuario]);
     }
 
     salir(['ok' => false, 'error' => 'accion desconocida'], 400);
