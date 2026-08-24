@@ -187,6 +187,75 @@ function asegurar_bot($c, $cfg) {
     return 'bot NO arrancó: ' . substr($out, 0, 120);
 }
 
+/**
+ * Asegura el contenedor de ALTAS de un cliente (bot_crear_jugador.py). Es el
+ * hermano de asegurar_bot() de arriba (mismo patrón: 1 por cliente, SUS
+ * credenciales, idempotente) pero para OTRO trabajo: sondea `altas_cola.php`
+ * (tabla `altas`, la cola que llena registro.html/crear_cuenta.php) y da de
+ * alta jugadores nuevos en el panel de agentes de ESE cliente, en vez de solo
+ * espejar los que ya existen.
+ *
+ * Mismo binario/imagen que asegurar_bot() (ganamos-bot:latest ya trae
+ * bot_crear_jugador.py, bot_cargar_fichas.py y sync_usuarios.py copiados,
+ * ver bot/Dockerfile) -- de hecho el CMD default de la imagen YA es
+ * bot_crear_jugador.py --headless; acá se lo pasa explícito igual, por
+ * claridad y para no depender de que el default de la imagen no cambie.
+ *
+ * Contenedor separado de sync_usuarios (nombre `altas-<slug>`, no
+ * `bot-<slug>`): son dos procesos con ciclos de vida y logs distintos, y así
+ * un fallo en uno no tira abajo al otro.
+ */
+function asegurar_bot_altas($c, $cfg) {
+    $slug = preg_replace('/[^a-z0-9_-]/i', '', (string) $c['slug']);
+    $user = (string) ($c['agente_usuario'] ?? '');
+    $pass = (string) ($c['agente_password'] ?? '');
+    if ($slug === '' || $user === '' || $pass === '') {
+        return 'sin bot de altas (faltan credenciales de agente)';
+    }
+
+    $base = 'https://' . $c['dominio'] . (!empty($c['path_tenant']) ? '/' . $slug : '');
+
+    $name = 'altas-' . $slug;
+    $existe = trim((string) shell_exec('docker ps -aq --filter ' . escapeshellarg('name=^' . $name . '$') . ' 2>/dev/null'));
+    if ($existe !== '') {
+        return 'bot de altas ya existía';
+    }
+
+    $img = trim((string) shell_exec("docker images -q ganamos-bot:latest 2>/dev/null"));
+    if ($img === '') {
+        return 'bot de altas NO: falta la imagen ganamos-bot:latest (construíla en ~/Bot-python)';
+    }
+
+    $apiKey = '';
+    if (is_file('/var/www/api/config.local.php')) {
+        $a = require '/var/www/api/config.local.php';
+        $apiKey = is_array($a) ? ($a['BOT_API_KEY'] ?? '') : '';
+    }
+
+    // Volumen propio (distinto del de sync_usuarios): cada proceso guarda su
+    // propia sesión de Playwright (estado_sesion.json) en su carpeta, no se
+    // pisan entre sí aunque compartan las mismas credenciales de agente.
+    @mkdir('/opt/bots-altas/' . $slug, 0750, true);
+
+    $cmd = 'docker run -d '
+         . '--name ' . escapeshellarg($name) . ' '
+         . '--restart unless-stopped --shm-size 1g --init '
+         . '-e ' . escapeshellarg('PANEL_USER=' . $user) . ' '
+         . '-e ' . escapeshellarg('PANEL_PASS=' . $pass) . ' '
+         . '-e ' . escapeshellarg('LOGIN_URL=https://agents.ganamos7.com/') . ' '
+         . '-e ' . escapeshellarg('PANEL_URL=https://agents.ganamos7.com/user/create-player') . ' '
+         . '-e ' . escapeshellarg('API_URL=' . $base . '/gp-api/altas_cola.php') . ' '
+         . '-e ' . escapeshellarg('API_KEY=' . $apiKey) . ' '
+         . '-v ' . escapeshellarg('/opt/bots-altas/' . $slug . ':/datos') . ' '
+         . 'ganamos-bot:latest python /app/bot_crear_jugador.py --headless 2>&1';
+
+    $out = trim((string) shell_exec($cmd));
+    if (preg_match('/^[0-9a-f]{12,}$/i', $out)) {
+        return 'bot de altas levantado';
+    }
+    return 'bot de altas NO arrancó: ' . substr($out, 0, 120);
+}
+
 // ---------------------------------------------------------------------------
 // Pasada 1: provisionar clientes nuevos (base + DNS)
 // ---------------------------------------------------------------------------
@@ -262,5 +331,13 @@ foreach ($activos as $c) {
     // Solo se loguea cuando hay novedad (arrancó o falló), no el 'ya existía'.
     if (strpos($msg, 'levantado') !== false || strpos($msg, 'NO') !== false) {
         echo date('c') . " bot {$c['slug']}: $msg\n";
+    }
+
+    // Bot de altas (registro.html / crear_cuenta.php): mismo criterio, mismas
+    // credenciales de agente, contenedor y trabajo distintos -- ver
+    // asegurar_bot_altas().
+    $msgAltas = asegurar_bot_altas($c, $cfg);
+    if (strpos($msgAltas, 'levantado') !== false || strpos($msgAltas, 'NO') !== false) {
+        echo date('c') . " bot-altas {$c['slug']}: $msgAltas\n";
     }
 }

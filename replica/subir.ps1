@@ -40,11 +40,13 @@ Write-Host "→ widget.js (desde landing/)" -ForegroundColor Cyan
 scp landing/widget.js "${destino}:/var/www/replica/widget.js"
 if ($LASTEXITCODE -ne 0) { throw "falló el scp del widget" }
 
-# Páginas del CRM servidas por el VPS bajo /replica/ (así el CRM de cada cliente
-# queda en https://<cliente>.faunotattoo.com/replica/crm.html y db.php resuelve
-# la base por el dominio). Necesitan el `location` de /replica/*.html en nginx
-# (subir.ps1 -Config lo instala). Si falta alguno, se saltea sin romper.
-foreach ($pagina in @("crm.html", "admin.html", "chat.html", "sw.js")) {
+# Páginas propias servidas por el VPS bajo /replica/ (así el CRM/landing de
+# cada cliente queda en https://<cliente>.faunotattoo.com/replica/crm.html y
+# db.php resuelve la base por el dominio). Necesitan el `location` de
+# /replica/*.html en nginx (subir.ps1 -Config lo instala). registro.html es
+# la landing pública de auto-alta (crea el pedido en `altas`, lo cumple
+# bot_crear_jugador.py). Si falta alguno, se saltea sin romper.
+foreach ($pagina in @("crm.html", "admin.html", "chat.html", "registro.html", "sw.js")) {
     if (Test-Path "landing/$pagina") {
         Write-Host "→ $pagina" -ForegroundColor Cyan
         scp "landing/$pagina" "${destino}:/var/www/replica/$pagina"
