@@ -295,6 +295,7 @@ function alta_encolar(PDO $pdo, array $d): array
                 SET password = ?, email = COALESCE(?, email),
                     estado = 'pendiente', intentos = 0,
                     mensaje = NULL, tomado_en = NULL,
+                    proximo_intento_en = NULL,
                     entrega_clave = ?, entrega_sid = ?
               WHERE id = ?"
         )->execute([

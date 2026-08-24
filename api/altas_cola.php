@@ -35,6 +35,13 @@ header('Content-Type: application/json; charset=utf-8');
 const MAX_INTENTOS   = 3;
 const MINUTOS_ZOMBIE = 15;   // reintentar los que quedaron colgados en 'procesando'
 
+// Backoff entre reintentos (ver sql/36_altas_backoff.sql): el WAF de
+// agents.ganamos7.com a veces frena altas reales con un challenge -- si el
+// bot reintenta enseguida (siguiente poll, 30s despues) le pega al WAF
+// todavia caliente. Minutos de espera ANTES del intento N+1, indexado por
+// cuantos intentos ya se gastaron (intentos=1 -> primer error -> espera[0]).
+const MINUTOS_BACKOFF = [5, 20, 60];
+
 // Sin clave configurada NO se abre: este endpoint devuelve las contraseñas en
 // claro, y una clave por defecto seria una clave publica (esta en el codigo).
 exigir_api_key();
@@ -94,7 +101,8 @@ if ($accion === 'reintentar' && $metodo === 'POST') {
             SET estado    = 'pendiente',
                 intentos  = 0,
                 mensaje   = NULL,
-                tomado_en = NULL
+                tomado_en = NULL,
+                proximo_intento_en = NULL
           WHERE id = ?
             AND estado IN ('error', 'procesando')
             AND password IS NOT NULL"
@@ -163,7 +171,8 @@ if ($accion === 'liberar' && $metodo === 'POST') {
         "UPDATE altas
             SET estado   = 'pendiente',
                 intentos = 0,
-                mensaje  = NULL
+                mensaje  = NULL,
+                proximo_intento_en = NULL
           WHERE estado   = 'procesando'
             AND password IS NOT NULL"
     );
@@ -195,12 +204,15 @@ if ($accion === 'pendientes' && $metodo === 'GET') {
 
         $pdo->beginTransaction();
         // Sin password el bot no puede completar el formulario: esos quedan
-        // afuera de la cola aunque figuren como pendientes.
+        // afuera de la cola aunque figuren como pendientes. proximo_intento_en
+        // NULL (nunca fallo, o es de antes de la migracion 36) cuenta como
+        // "ya se puede tomar".
         $sel = $pdo->prepare(
             "SELECT id FROM altas
               WHERE estado = 'pendiente'
                 AND intentos < ?
                 AND password IS NOT NULL
+                AND (proximo_intento_en IS NULL OR proximo_intento_en <= NOW())
               ORDER BY id ASC
               LIMIT $limite
               FOR UPDATE"
@@ -282,9 +294,24 @@ if ($accion === 'marcar' && $metodo === 'POST') {
                        password = NULL
                  WHERE id = ?";
     } else {
-        // Si fallo pero le quedan intentos, vuelve a la cola.
+        // Si fallo pero le quedan intentos, vuelve a la cola -- con espera
+        // (ver MINUTOS_BACKOFF): 'intentos' ya viene incrementado desde que
+        // 'pendientes' reclamo este registro, asi que intentos=1 aca es el
+        // primer fallo.
+        $casosMin = [];
+        foreach (MINUTOS_BACKOFF as $i => $min) {
+            $casosMin[] = "WHEN " . ($i + 1) . " THEN " . $min;
+        }
+        $caseMinutos = "CASE intentos " . implode(' ', $casosMin)
+                     . " ELSE " . end(MINUTOS_BACKOFF) . " END";
+
         $sql = "UPDATE altas
                    SET estado  = IF(intentos >= " . MAX_INTENTOS . ", 'error', 'pendiente'),
+                       proximo_intento_en = IF(
+                           intentos >= " . MAX_INTENTOS . ",
+                           NULL,
+                           DATE_ADD(NOW(), INTERVAL ($caseMinutos) MINUTE)
+                       ),
                        mensaje = ?
                  WHERE id = ? AND estado <> 'ok'";
     }
