@@ -177,9 +177,11 @@ validaciones pendientes (identidad, datos fiscales).
 > desarrollo. Conviene **renovarlo** desde MP Developers y cargar el nuevo
 > desde el panel.
 
-**2. `ganamos.faunotattoo.com` da "Dominio no registrado".** nginx acepta
-ese dominio, pero no hay fila para él en `goldpaw_control.clientes` (o está
-inactiva). Para ver qué falta:
+**2. Dominio propio: se usa `ganamoscrm.online`.** `ganamos.faunotattoo.com`
+quedó de una etapa anterior — nginx lo sigue aceptando en `server_name`, así
+que responde, pero no hay que apuntar nada nuevo ahí. Si algún endpoint da
+"Dominio no registrado", es que falta la fila en `goldpaw_control.clientes`
+para el dominio por el que entró el request. Para ver qué hay cargado:
 
 ```bash
 mariadb -u '<usuario>' -p'<clave>' goldpaw_control -e "SELECT id, nombre, slug, dominio, path_tenant, db_nombre, estado FROM clientes;"

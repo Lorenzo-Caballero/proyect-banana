@@ -12,10 +12,16 @@ ruleta de bonos y recargas automáticas por transferencia.
 | `orange-crab-483661.hostingersite.com` | Hosting propio (Hostinger): `landing/` + `api/` | Propio |
 | `ganamos7.com` | Front de la plataforma (React SPA) donde juega el usuario | De la plataforma |
 | `agents.ganamos7.com` | Panel de agentes: alta de jugadores, saldo, depósitos | Cuenta de agente propia |
-| `ganamos.faunotattoo.com` | Dominio propio que sirve la plataforma vía `replica/` | Propio (VPS) |
+| `ganamoscrm.online` | **Dominio en uso.** Sirve la plataforma vía `replica/` y la API en `/gp-api/` | Propio (VPS) |
+| `ganamos.faunotattoo.com` | Dominio viejo. nginx todavía lo acepta, pero **ya no se usa** | Propio (VPS) |
 
 **No se controla el DNS de `ganamos7.com`.** Descarta cualquier solución que
 necesite un subdominio de la plataforma.
+
+> **El dominio propio es `ganamoscrm.online`.** `ganamos.faunotattoo.com` quedó
+> de una etapa anterior: sigue en `server_name` de nginx, así que responde, pero
+> no apuntes nada nuevo ahí. Todo lo que se configure —el `.env` del bot, los
+> crons, las URLs de retorno— va contra `ganamoscrm.online`.
 
 > **La plataforma se mudó de `ganamosonline.com` a `ganamos7.com`.** El dominio
 > viejo (y `ganamos.online`, y `agents.ganamosonline.com`) ya no se usa: si lo

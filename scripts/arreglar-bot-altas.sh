@@ -19,7 +19,7 @@ set -euo pipefail
 BOT_DIR="${BOT_DIR:-$HOME/Bot-python}"
 ENV="$BOT_DIR/.env"
 CFG="${CFG:-/var/www/api/config.local.php}"
-DOMINIO="${DOMINIO:-ganamos.faunotattoo.com}"
+DOMINIO="${DOMINIO:-ganamoscrm.online}"
 
 API_URL_NUEVA="https://$DOMINIO/gp-api/altas_cola.php"
 PANEL_URL_NUEVA="https://agents.ganamos7.com/user/create-player"
