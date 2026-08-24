@@ -96,18 +96,24 @@ if ($accion === 'reintentar' && $metodo === 'POST') {
 
     // Sin password no hay nada que reintentar: el bot no puede tipear lo que
     // no tiene. Y estado='ok' no se toca ni por error: crearia un duplicado.
-    $n = $pdo->prepare(
-        "UPDATE altas
-            SET estado    = 'pendiente',
-                intentos  = 0,
-                mensaje   = NULL,
-                tomado_en = NULL,
-                proximo_intento_en = NULL
-          WHERE id = ?
-            AND estado IN ('error', 'procesando')
-            AND password IS NOT NULL"
-    );
-    $n->execute([$id]);
+    // Con y sin proximo_intento_en (migracion 37): destrabar un alta no puede
+    // depender de una columna de backoff.
+    $sqlRe = "UPDATE altas
+                 SET estado    = 'pendiente',
+                     intentos  = 0,
+                     mensaje   = NULL,
+                     tomado_en = NULL%s
+               WHERE id = ?
+                 AND estado IN ('error', 'procesando')
+                 AND password IS NOT NULL";
+    try {
+        $n = $pdo->prepare(sprintf($sqlRe, ",
+                     proximo_intento_en = NULL"));
+        $n->execute([$id]);
+    } catch (PDOException $e) {
+        $n = $pdo->prepare(sprintf($sqlRe, ''));
+        $n->execute([$id]);
+    }
 
     if ($n->rowCount() === 0) {
         http_response_code(409);
@@ -167,15 +173,18 @@ if ($accion === 'ver' && $metodo === 'GET') {
 // ---------------------------------------------------------------------------
 if ($accion === 'liberar' && $metodo === 'POST') {
 
-    $n = $pdo->exec(
-        "UPDATE altas
-            SET estado   = 'pendiente',
-                intentos = 0,
-                mensaje  = NULL,
-                proximo_intento_en = NULL
-          WHERE estado   = 'procesando'
-            AND password IS NOT NULL"
-    );
+    $sqlLib = "UPDATE altas
+                  SET estado   = 'pendiente',
+                      intentos = 0,
+                      mensaje  = NULL%s
+                WHERE estado   = 'procesando'
+                  AND password IS NOT NULL";
+    try {
+        $n = $pdo->exec(sprintf($sqlLib, ",
+                      proximo_intento_en = NULL"));
+    } catch (PDOException $e) {
+        $n = $pdo->exec(sprintf($sqlLib, ''));
+    }
     echo json_encode(['ok' => true, 'liberados' => (int)$n]);
     exit;
 }
@@ -207,17 +216,35 @@ if ($accion === 'pendientes' && $metodo === 'GET') {
         // afuera de la cola aunque figuren como pendientes. proximo_intento_en
         // NULL (nunca fallo, o es de antes de la migracion 36) cuenta como
         // "ya se puede tomar".
-        $sel = $pdo->prepare(
-            "SELECT id FROM altas
-              WHERE estado = 'pendiente'
-                AND intentos < ?
-                AND password IS NOT NULL
-                AND (proximo_intento_en IS NULL OR proximo_intento_en <= NOW())
-              ORDER BY id ASC
-              LIMIT $limite
-              FOR UPDATE"
-        );
-        $sel->execute([MAX_INTENTOS]);
+        // El filtro por proximo_intento_en solo existe con la migracion 37. Si
+        // falta, se consulta sin el: mejor tomar un registro antes de tiempo
+        // que dejar la cola entera sin atender por una columna de backoff.
+        try {
+            $sel = $pdo->prepare(
+                "SELECT id FROM altas
+                  WHERE estado = 'pendiente'
+                    AND intentos < ?
+                    AND password IS NOT NULL
+                    AND (proximo_intento_en IS NULL OR proximo_intento_en <= NOW())
+                  ORDER BY id ASC
+                  LIMIT $limite
+                  FOR UPDATE"
+            );
+            $sel->execute([MAX_INTENTOS]);
+        } catch (PDOException $e) {
+            error_log('altas_cola: sin proximo_intento_en (migracion 37). '
+                    . 'Sondeo sin backoff.');
+            $sel = $pdo->prepare(
+                "SELECT id FROM altas
+                  WHERE estado = 'pendiente'
+                    AND intentos < ?
+                    AND password IS NOT NULL
+                  ORDER BY id ASC
+                  LIMIT $limite
+                  FOR UPDATE"
+            );
+            $sel->execute([MAX_INTENTOS]);
+        }
         $ids = $sel->fetchAll(PDO::FETCH_COLUMN);
 
         if (!$ids) {
@@ -326,7 +353,21 @@ if ($accion === 'marcar' && $metodo === 'POST') {
                  WHERE id = ? AND estado <> 'ok'";
     }
 
-    $pdo->prepare($sql)->execute([$mensaje, $id]);
+    try {
+        $pdo->prepare($sql)->execute([$mensaje, $id]);
+    } catch (PDOException $e) {
+        // La rama de error escribe proximo_intento_en (migracion 37). Sin esa
+        // columna el bot no podia marcar NADA y la cola quedaba trabada: los
+        // registros se colgaban en 'procesando' para siempre. Se marca igual,
+        // sin backoff.
+        error_log('altas_cola marcar: ' . $e->getMessage() . ' -- reintento sin backoff');
+        $sqlSimple = ($estado === 'ok')
+            ? "UPDATE altas SET estado='ok', creado_en_panel=1, hecho_en=NOW(),
+                     mensaje=?, password=NULL WHERE id=?"
+            : "UPDATE altas SET estado=IF(intentos >= " . MAX_INTENTOS . ", 'error', 'pendiente'),
+                     mensaje=? WHERE id=? AND estado <> 'ok'";
+        $pdo->prepare($sqlSimple)->execute([$mensaje, $id]);
+    }
     echo json_encode(['ok' => true]);
     exit;
 }

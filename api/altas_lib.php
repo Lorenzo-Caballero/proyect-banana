@@ -309,20 +309,37 @@ function alta_encolar(PDO $pdo, array $d): array
     if ($fila['estado'] === 'error') {
         // Reintento explicito: vuelve a la cola con la clave nueva y el
         // contador en cero, si no arranca ya agotado y no lo toma nadie.
-        $pdo->prepare(
-            "UPDATE altas
-                SET password = ?, email = COALESCE(?, email),
-                    estado = 'pendiente', intentos = 0,
-                    mensaje = NULL, tomado_en = NULL,
-                    proximo_intento_en = NULL,
-                    entrega_clave = ?, entrega_sid = ?
-              WHERE id = ?"
-        )->execute([
+        $vals = [
             $password, $email !== '' ? $email : null,
             $entCla !== '' ? $entCla : null,
             $entSid !== '' ? $entSid : null,
             $fila['id'],
-        ]);
+        ];
+        try {
+            $pdo->prepare(
+                "UPDATE altas
+                    SET password = ?, email = COALESCE(?, email),
+                        estado = 'pendiente', intentos = 0,
+                        mensaje = NULL, tomado_en = NULL,
+                        proximo_intento_en = NULL,
+                        entrega_clave = ?, entrega_sid = ?
+                  WHERE id = ?"
+            )->execute($vals);
+        } catch (PDOException $e) {
+            // proximo_intento_en es de la migracion 37. Sin ella este UPDATE
+            // explota y el alta NO entra a la cola -- por una columna que solo
+            // sirve para espaciar los reintentos. Se reintenta sin ella.
+            error_log('altas: el UPDATE de reintento fallo (' . $e->getMessage()
+                    . '). Voy sin proximo_intento_en: revisa la migracion 37.');
+            $pdo->prepare(
+                "UPDATE altas
+                    SET password = ?, email = COALESCE(?, email),
+                        estado = 'pendiente', intentos = 0,
+                        mensaje = NULL, tomado_en = NULL,
+                        entrega_clave = ?, entrega_sid = ?
+                  WHERE id = ?"
+            )->execute($vals);
+        }
 
         return ['http' => 200, 'cuerpo' => [
             'ok'        => true,
