@@ -111,7 +111,10 @@ function alta_usuario_disponible(PDO $pdo, string $nombreCrudo): string
     $translit = @iconv('UTF-8', 'ASCII//TRANSLIT', $nombreCrudo);
     $base = preg_replace('/[^a-zA-Z0-9._-]/', '', $translit !== false ? $translit : $nombreCrudo);
     $base = mb_substr((string)$base, 0, 40); // deja lugar al sufijo sin pasar de 64
-    if (mb_strlen($base) < 3) {
+    // 4 y no 3: alta_validar() acepta desde 3, pero el PANEL rechaza los muy
+    // cortos y ahi el alta muere recien cuando el bot llena el formulario --
+    // con el jugador ya esperando. Se alarga aca, antes de encolar nada.
+    if (mb_strlen($base) < 4) {
         $base = 'jugador' . $base;
     }
 
@@ -331,12 +334,34 @@ function alta_encolar(PDO $pdo, array $d): array
  */
 function alta_estado(PDO $pdo, int $id, string $usuario): array
 {
-    $q = $pdo->prepare("SELECT estado FROM altas WHERE id = ? AND usuario = ?");
-    $q->execute([$id, $usuario]);
-    $fila = $q->fetch();
+    // creado_en_panel manda igual que en alta_entrega(): `listo` significa "la
+    // cuenta EXISTE", y de eso depende que el front muestre las credenciales.
+    // Si la columna no esta (migracion 36 sin correr) se cae a la consulta
+    // vieja pero NO se da por creada nada -- ver mas abajo.
+    $hayFlag = true;
+    try {
+        $q = $pdo->prepare("SELECT estado, creado_en_panel FROM altas WHERE id = ? AND usuario = ?");
+        $q->execute([$id, $usuario]);
+        $fila = $q->fetch();
+    } catch (PDOException $e) {
+        $hayFlag = false;
+        $q = $pdo->prepare("SELECT estado FROM altas WHERE id = ? AND usuario = ?");
+        $q->execute([$id, $usuario]);
+        $fila = $q->fetch();
+    }
 
     if (!$fila) {
         return ['http' => 404, 'cuerpo' => ['ok' => false, 'error' => 'Pedido inexistente']];
+    }
+
+    // Sin la bandera no se afirma que la cuenta exista: se responde "todavia
+    // no" y se avisa. Es el mismo criterio que alta_entrega().
+    $enPanel = $hayFlag
+        ? ((int)($fila['creado_en_panel'] ?? 0) === 1)
+        : false;
+    if (!$hayFlag) {
+        error_log('altas: falta la migracion 36 (creado_en_panel). '
+                . 'alta_estado() no confirma altas hasta que se corra.');
     }
 
     // El detalle tecnico que informa el bot (`mensaje`) NO sale de aca: no le
@@ -344,7 +369,7 @@ function alta_estado(PDO $pdo, int $id, string $usuario): array
     return ['http' => 200, 'cuerpo' => [
         'ok'     => true,
         'estado' => $fila['estado'],
-        'listo'  => $fila['estado'] === 'ok',
+        'listo'  => ($fila['estado'] === 'ok' && $enPanel),
         'fallo'  => $fila['estado'] === 'error',
     ]];
 }
@@ -393,14 +418,25 @@ function alta_entrega(PDO $pdo, int $id, string $sid): array
         return ['ok' => false, 'error' => 'Faltan datos'];
     }
 
-    $q = $pdo->prepare(
-        "SELECT usuario, estado, entrega_clave
-           FROM altas
-          WHERE id = ? AND entrega_sid = ?
-          LIMIT 1"
-    );
-    $q->execute([$id, mb_substr($sid, 0, 64)]);
-    $fila = $q->fetch();
+    try {
+        $q = $pdo->prepare(
+            "SELECT usuario, estado, entrega_clave, creado_en_panel
+               FROM altas
+              WHERE id = ? AND entrega_sid = ?
+              LIMIT 1"
+        );
+        $q->execute([$id, mb_substr($sid, 0, 64)]);
+        $fila = $q->fetch();
+    } catch (PDOException $e) {
+        // Sin la migracion 36 la columna no existe. NO se cae a "entregar
+        // igual": el sentido de esta bandera es no dar credenciales de una
+        // cuenta que capaz no se creo, y sin la columna no hay forma de
+        // saberlo. Se responde "todavia no" y se avisa en el log, que es lo
+        // que hay que arreglar.
+        error_log('altas: falta la migracion 36 (creado_en_panel). '
+                . 'No se entregan credenciales hasta que se corra.');
+        return ['ok' => true, 'estado' => 'en_curso', 'listo' => false];
+    }
 
     if (!$fila) {
         return ['ok' => false, 'error' => 'Pedido inexistente'];
@@ -413,18 +449,21 @@ function alta_entrega(PDO $pdo, int $id, string $sid): array
         return ['ok' => true, 'estado' => 'error', 'listo' => false, 'fallo' => true];
     }
 
-    // La clave sale SOLO con estado === 'ok' exacto, que es lo unico que
-    // significa "bot_crear_jugador.py la creo en el panel y el panel dijo que
-    // si". Todo lo demas -- 'pendiente', 'procesando', un estado que no
-    // conocemos, o la columna vacia -- es "todavia no".
+    // DOS condiciones, y las dos tienen que darse:
     //
-    // Antes esto estaba al reves: se listaban los estados que NO entregan y
-    // cualquier otro caia en el branch de entregar. Con eso, un valor
-    // inesperado devolvia usuario y contrasena de una cuenta que no existia:
-    // el jugador se quedaba con credenciales que no entran a ningun lado.
-    // Para una credencial la lista tiene que ser de lo que SI habilita, nunca
-    // de lo que no.
-    if ($estado !== 'ok') {
+    //   estado === 'ok'      la cola dice que el alta termino bien
+    //   creado_en_panel = 1  el bot confirmo que el PANEL la creo
+    //
+    // La segunda es la que manda. `estado` lo usa toda la cola para otras cosas
+    // y un valor inesperado o un UPDATE mal escrito ya nos hizo entregar
+    // credenciales de una cuenta que no existia. `creado_en_panel` no hace otra
+    // cosa que esto y solo lo escribe el bot al confirmar.
+    //
+    // La lista es de lo que SI habilita, nunca de lo que no: cualquier otro
+    // caso -- pendiente, procesando, un estado nuevo, la columna en NULL -- es
+    // "todavia no".
+    $enPanel = (int)($fila['creado_en_panel'] ?? 0) === 1;
+    if ($estado !== 'ok' || !$enPanel) {
         return ['ok' => true, 'estado' => 'en_curso', 'listo' => false];
     }
 

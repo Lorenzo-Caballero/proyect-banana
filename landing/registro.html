@@ -260,11 +260,23 @@
   const BASE_API = esPorPath ? '/' + partesRuta[0] + '/gp-api' : '/gp-api';
   const API = BASE_API + "/crear_cuenta.php";
 
-  // Contraseña fija para todas las cuentas nuevas -- decisión explícita del
-  // producto (menos fricción para el jugador, no tiene que copiar/guardar
-  // una clave random). Sabido y aceptado: todas las cuentas nuevas comparten
-  // esta misma clave hasta que el jugador la cambie por su cuenta.
-  const PASSWORD_FIJA = "12345678";
+  // La contraseña la genera el SERVER, una por cuenta, y vuelve en la
+  // respuesta del alta. Antes era fija para todas ("12345678"): cómodo, pero
+  // significaba que cualquiera que supiera un nombre de usuario entraba a esa
+  // cuenta y pedía un retiro. Con plata de por medio no se sostiene.
+  //
+  // La fricción de tener que copiarla se compensa acá: se muestra grande, con
+  // botón de copiar, y el aviso de guardarla.
+
+  /* Identifica ESTE pedido y es lo único que después autoriza a ver la
+     contraseña. Mismo criterio que el chat: sin esto, cualquiera que recorra
+     id=1,2,3... se lleva las credenciales de otro. Se guarda junto al pedido,
+     así un F5 o volver más tarde sigue pudiendo reclamarla. */
+  function nuevoSid(){
+    return (window.crypto && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : 's-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+  }
 
   const CLAVE_LOCAL = 'goldpaw_alta';
   const POLL_MS     = 3000;
@@ -387,8 +399,12 @@
 
       let data = null;
       try {
+        // El sid va SIEMPRE que lo tengamos: es lo que autoriza a recibir la
+        // clave cuando el alta se confirme. Un pedido viejo (guardado antes de
+        // este cambio) no lo tiene y sigue andando con el flujo anterior.
         const url = API + '?id=' + encodeURIComponent(p.id) +
-                          '&usuario=' + encodeURIComponent(p.usuario);
+                          '&usuario=' + encodeURIComponent(p.usuario) +
+                          (p.sid ? '&sid=' + encodeURIComponent(p.sid) : '');
         const res = await fetch(url, { cache:'no-store' });
 
         if (res.status === 404){       // el pedido no existe: no hay nada que esperar
@@ -403,7 +419,15 @@
       }
       if (!data) continue;
 
-      if (data.listo){ p.listo = true; guardar(p); return verListo(p); }
+      if (data.listo){
+        // La clave llega ACÁ, no antes: recién ahora la cuenta existe de verdad
+        // en el panel. Solo la manda una vez, así que se guarda en el acto.
+        if (data.password) p.password = data.password;
+        if (data.usuario)  p.usuario  = data.usuario;
+        p.listo = true;
+        guardar(p);
+        return verListo(p);
+      }
 
       if (data.fallo){
         olvidar();
@@ -430,19 +454,27 @@
     e.preventDefault();
     const u = usuario.value.trim();
     if (!u)               return error('Escribí tu nombre.');
-    if (u.length < 2)     return error('Mínimo 2 caracteres.');
+    // 4 y no 3: el backend acepta desde 3, pero el panel de agentes rechaza
+    // los muy cortos y ahi el alta muere despues, cuando el jugador ya vio
+    // 'creando tu cuenta'. Mejor frenarlo aca, donde puede corregirlo.
+    if (u.length < 4)     return error('Mínimo 4 caracteres.');
 
     btn.disabled = true; btn.textContent = 'Creando…';
 
     try {
+      const sid = nuevoSid();
       const res = await fetch(API, {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ usuario: u, password: PASSWORD_FIJA })
+        body: JSON.stringify({ usuario: u, sid: sid })
       });
       const data = await res.json().catch(()=> ({}));
 
       if (res.ok && data.ok && data.id && data.usuario){
-        const pedido = { id:data.id, usuario:data.usuario, password:PASSWORD_FIJA, desde:Date.now() };
+        // OJO: `password` viene VACÍA a propósito. La cuenta todavía no existe
+        // en el panel -- el bot la crea después y puede fallar. La clave llega
+        // en el sondeo, cuando el alta esté confirmada.
+        const pedido = { id:data.id, usuario:data.usuario, sid:sid,
+                         password:data.password || '', desde:Date.now() };
         // Guardar ANTES de mostrar nada: entre el alta y el cartel de éxito
         // pasan segundos en los que el pedido solo existe en esta pestaña.
         guardar(pedido);

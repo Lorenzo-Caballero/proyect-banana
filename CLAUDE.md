@@ -11,7 +11,7 @@ ruleta de bonos y recargas automáticas por transferencia.
 |---|---|---|
 | `orange-crab-483661.hostingersite.com` | Hosting propio (Hostinger): `landing/` + `api/` | Propio |
 | `ganamos7.com` | Front de la plataforma (React SPA) donde juega el usuario | De la plataforma |
-| `agents.ganamos7.com` | Panel de agentes: alta de jugadores, saldo, depósitos | Cuenta de agente propia |
+| `agents.ganamosonline.com` | **Panel de agentes en uso.** Alta de jugadores, saldo, depósitos | Cuenta de agente propia |
 | `ganamoscrm.online` | **Dominio en uso.** Sirve la plataforma vía `replica/` y la API en `/gp-api/` | Propio (VPS) |
 | `ganamos.faunotattoo.com` | Dominio viejo. nginx todavía lo acepta, pero **ya no se usa** | Propio (VPS) |
 
@@ -23,10 +23,18 @@ necesite un subdominio de la plataforma.
 > no apuntes nada nuevo ahí. Todo lo que se configure —el `.env` del bot, los
 > crons, las URLs de retorno— va contra `ganamoscrm.online`.
 
-> **La plataforma se mudó de `ganamosonline.com` a `ganamos7.com`.** El dominio
-> viejo (y `ganamos.online`, y `agents.ganamosonline.com`) ya no se usa: si lo
-> ves en algún archivo, es residuo. Ojo que el viejo **sigue respondiendo**, así
-> que apuntar ahí no falla de entrada — falla en silencio, contra datos viejos.
+> **El front de los jugadores es `ganamos7.com`, pero el PANEL DE AGENTES que
+> usa esta cuenta sigue siendo `agents.ganamosonline.com`** (verificado en
+> producción, agosto 2026). No son la misma mudanza: el sitio de juego se
+> movió, el panel de esta agencia no.
+>
+> Los dos dominios **responden**, así que apuntar al equivocado no falla de
+> entrada: crea los jugadores en un panel y el jugador intenta entrar en el
+> otro. Es la causa de "la cuenta se creó pero la contraseña no sirve".
+>
+> En el `.env` del bot va el panel de agentes, no el front:
+>     PANEL_URL=https://agents.ganamosonline.com/user/create-player
+>     LOGIN_URL=https://agents.ganamosonline.com/
 
 ## Estructura
 
