@@ -118,7 +118,7 @@ if ($metodo === 'POST') {
         // mandaba el navegador y era la misma para todos ("12345678"): con eso,
         // cualquiera que supiera un nombre de usuario entraba a esa cuenta y le
         // pedia un retiro. No se acepta mas lo que venga en el body.
-        $clave = alta_clave_random();
+        $clave = alta_clave_nueva();
 
         // El sid lo genera el navegador y es lo unico que despues autoriza a
         // ver la clave. Igual que en el chat: sin el, cualquiera que recorra

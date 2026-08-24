@@ -723,7 +723,7 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
         // La clave la genera el server, NUNCA el jugador ni el modelo: si se la
         // pidieramos por chat, queda escrita en `mensajes` para siempre y a la
         // vista de cualquier agente que abra la conversacion en el CRM.
-        $clave = alta_clave_random();
+        $clave = alta_clave_nueva();
 
         $r = alta_encolar($pdo, [
             'usuario'  => $u,

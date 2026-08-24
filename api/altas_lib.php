@@ -31,8 +31,24 @@ declare(strict_types=1);
 // Para prenderlo, en api/config.local.php:
 //     'ALTAS_POR_IP_HORA' => 20,
 //     'ALTAS_POR_IP_DIA'  => 100,
-const ALTAS_POR_IP_HORA = 0;
-const ALTAS_POR_IP_DIA  = 0;
+const ALTAS_POR_IP_HORA = 0;
+const ALTAS_POR_IP_DIA  = 0;
+
+// Clave con la que se crean TODAS las cuentas nuevas, por chat y por la
+// landing. Decision del producto: que el jugador no tenga que copiar ni
+// guardar nada para entrar la primera vez.
+//
+// El precio hay que tenerlo claro: es la misma para todos y los nombres de
+// usuario se ven en el chat, en el CRM y en el panel, asi que cualquiera que
+// sepa un nombre puede entrar a esa cuenta mientras el jugador no la cambie.
+// Si algun dia se quiere volver a una clave por cuenta, alcanza con que esto
+// devuelva alta_clave_random() -- los dos endpoints la piden por aca.
+const ALTA_CLAVE_FIJA = '12345678';
+
+function alta_clave_nueva(): string
+{
+    return ALTA_CLAVE_FIJA;
+}
 
 /**
  * Cuantas altas por hora/dia tolera una IP. Lee la config si esta, y si no
