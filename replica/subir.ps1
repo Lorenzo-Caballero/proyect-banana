@@ -82,13 +82,16 @@ if ($Config) {
     Write-Host "→ instalando y probando (nginx -t)" -ForegroundColor Cyan
     # Se recarga SOLO si nginx -t pasa: recargar una config rota deja el sitio
     # caído hasta que alguien lo note.
-    # OJO: `ssh $destino $remoto` (pasar el script como ARGUMENTO posicional)
-    # rompe: PowerShell parte $remoto en líneas y ssh las manda como palabras
-    # sueltas, no como un script -- bash ve "set -e" como flags sueltos y
-    # tira "invalid option: -" / "syntax error: unexpected end of file". El
-    # arreglo es mandar el script por STDIN con `bash -s`, que no depende de
-    # cómo PowerShell trocea el string al armar los argumentos del proceso.
-    $remoto = @'
+    # OJO: ni `ssh $destino $remoto` (arg posicional) ni `$remoto | ssh ... "bash -s"`
+    # (pipe) sirven en Windows PowerShell 5.1: el pipeline hacia un binario
+    # nativo pasa por la consola y le mete CRLF a cada línea -- bash ve un \r
+    # pegado al final de "set -e" y tira "invalid option: -" /
+    # "syntax error: unexpected end of file". El arreglo que sí funciona:
+    # escribir el script a un archivo LOCAL con salto de línea LF forzado
+    # (Out-File normal en 5.1 usa CRLF), subirlo por scp, y correrlo del
+    # lado remoto con `bash archivo` -- sin pipe ni argumento posicional de
+    # por medio.
+    $remotoTxt = @'
 set -e
 sudo mkdir -p /etc/nginx/snippets /var/cache/nginx/replica /var/www/replica
 BK=/etc/nginx/sites-available/replica.bak.$(date +%Y%m%d-%H%M%S)
@@ -106,7 +109,16 @@ else
     exit 1
 fi
 '@
-    $remoto | ssh $destino "bash -s"
+    $tmpLocal = [System.IO.Path]::GetTempFileName()
+    # LF explícito, sin BOM: [IO.File]::WriteAllText no agrega ninguno de los
+    # dos por default, a diferencia de Out-File/Set-Content en 5.1.
+    [System.IO.File]::WriteAllText($tmpLocal, $remotoTxt.Replace("`r`n", "`n"))
+
+    scp $tmpLocal "${destino}:/tmp/aplicar_nginx.sh"
+    if ($LASTEXITCODE -ne 0) { Remove-Item $tmpLocal; throw "falló el scp del script de config" }
+    Remove-Item $tmpLocal
+
+    ssh $destino "bash /tmp/aplicar_nginx.sh && rm -f /tmp/aplicar_nginx.sh"
     if ($LASTEXITCODE -ne 0) { throw "la config no pasó nginx -t" }
 
     Write-Host ""
