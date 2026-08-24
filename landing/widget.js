@@ -1064,6 +1064,9 @@
     '<div class="gp-h">' + avatar +
     '<div><b>' + esc(AGENTE_NOMBRE) + '</b>'+
     '<div class="s"><span class="dot"></span>' + esc(AGENTE_ESTADO) + '</div></div>'+
+    '<button class="x" id="gp-nuevo" aria-label="Empezar de nuevo" title="Empezar una conversación nueva">'+
+      '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>'+
+    '</button>'+
     '<button class="x" id="gp-x" aria-label="Cerrar">&times;</button></div>'+
     '<div class="gp-b" id="gp-body"></div>'+
     '<div class="gp-q" id="gp-quick">' + atajos + '</div>'+
@@ -1273,6 +1276,14 @@
 
   fab.addEventListener("click", abrir);
   $("gp-x").addEventListener("click", cerrar);
+
+  /* Empezar de nuevo. Existe porque la charla se guarda en localStorage y se
+     le manda al modelo como contexto: si en algún momento contestó algo mal
+     (por un error que ya se arregló en el server), lo sigue viendo en su
+     propio historial y lo repite. Esto lo borra y arranca en blanco. */
+  $("gp-nuevo").addEventListener("click", function (){
+    reiniciarCharla();
+  });
 
   text.addEventListener("input", function (){
     snd.disabled = text.value.trim() === "";
