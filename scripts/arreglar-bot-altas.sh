@@ -121,12 +121,15 @@ esac
 # ---------------------------------------------------------------------------
 # 4. Reiniciar el bot
 # ---------------------------------------------------------------------------
-echo "==> Reiniciando el bot"
+echo "==> Recreando el bot"
 cd "$BOT_DIR"
 if [ -f docker-compose.yml ] || [ -f compose.yml ]; then
-  docker compose restart || docker compose up -d
+  # `restart` NO alcanza: env_file se lee cuando el contenedor se CREA, así que
+  # un restart lo vuelve a levantar con las variables viejas y el .env nuevo se
+  # ignora. Hay que recrearlo.
+  docker compose up -d --force-recreate
 else
-  echo "   (no hay docker-compose acá: reinicialo como lo tengas montado)"
+  echo "   (no hay docker-compose acá: recrealo como lo tengas montado)"
 fi
 
 echo
