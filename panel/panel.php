@@ -307,6 +307,102 @@ switch ($accion) {
         }
     }
 
+    case 'editar': {
+        // Edita los datos de un cliente ya creado.
+        //
+        // NO se toca `slug` ni `dominio`: son la URL con la que el cliente ya
+        // esta operando y la llave con la que db.php resuelve su base. Y
+        // `db_nombre` menos todavia -- cambiarlo apunta el CRM a otra base
+        // (o a una que no existe) sin mover un solo dato.
+        $id = (int) ($in['id'] ?? 0);
+        if ($id <= 0) salida(['ok' => false, 'error' => 'falta el id'], 422);
+
+        $nombre = trim((string) ($in['nombre'] ?? ''));
+        if ($nombre === '') salida(['ok' => false, 'error' => 'el nombre es obligatorio'], 422);
+
+        // Solo estos campos son editables. Lo que no este en la lista no se
+        // toca, aunque venga en el body.
+        $campos = [
+            'nombre'         => $nombre,
+            'agente_usuario' => $in['agente_usuario'] ?? null,
+            'cobro_alias'    => $in['cobro_alias']    ?? null,
+            'cobro_cbu'      => $in['cobro_cbu']      ?? null,
+            'cobro_titular'  => $in['cobro_titular']  ?? null,
+            'coins_por_peso' => (float) ($in['coins_por_peso'] ?? 1),
+            'notas'          => $in['notas']          ?? null,
+        ];
+
+        // Las claves solo se pisan si mandaron una nueva: el formulario las
+        // muestra vacias (nunca se devuelven), y un vacio ahi significa
+        // "dejala como esta", no "borrala".
+        $agPass = (string) ($in['agente_password'] ?? '');
+        if ($agPass !== '') $campos['agente_password'] = $agPass;
+        $cohere = (string) ($in['cohere_key'] ?? '');
+        if ($cohere !== '') $campos['cohere_key'] = $cohere;
+
+        $sets = [];
+        $vals = [];
+        foreach ($campos as $col => $val) {
+            $sets[] = "$col = ?";
+            $vals[] = ($val === '') ? null : $val;
+        }
+        $vals[] = $id;
+
+        try {
+            $st = $pdo->prepare('UPDATE clientes SET ' . implode(', ', $sets) . ' WHERE id = ?');
+            $st->execute($vals);
+            // rowCount 0 tambien pasa si guardaron sin cambiar nada, asi que
+            // no alcanza para decir "no existe": se chequea aparte.
+            $ex = $pdo->prepare('SELECT 1 FROM clientes WHERE id = ?');
+            $ex->execute([$id]);
+            if (!$ex->fetchColumn()) salida(['ok' => false, 'error' => 'cliente no existe'], 404);
+            salida(['ok' => true]);
+        } catch (PDOException $e) {
+            salida(['ok' => false, 'error' => 'no se pudo guardar'], 500);
+        }
+    }
+
+    case 'borrar': {
+        // Baja de un cliente. Por defecto NO borra la fila: la marca
+        // estado='baja', que ya deja de resolver en db.php (su WHERE pide
+        // estado='activo') -- el CRM de ese cliente deja de atender en el acto.
+        //
+        // La base del cliente NUNCA se toca acá. Tiene sus jugadores, su
+        // historial de recargas y sus conversaciones; borrarla desde un boton
+        // del panel es irreversible y no hay como deshacerlo. Si de verdad hay
+        // que eliminarla, se hace a mano en el servidor, mirando lo que hay.
+        //
+        // Con purgar=true se borra la FILA de `clientes` (no la base), para
+        // sacar de la lista un cliente de prueba que nunca llego a usarse.
+        // Exige que el nombre escrito coincida: es el mismo freno de "escribi
+        // el nombre para confirmar" de GitHub, y evita el borrado por click.
+        $id = (int) ($in['id'] ?? 0);
+        if ($id <= 0) salida(['ok' => false, 'error' => 'falta el id'], 422);
+
+        $st = $pdo->prepare('SELECT nombre, db_nombre FROM clientes WHERE id = ?');
+        $st->execute([$id]);
+        $cli = $st->fetch();
+        if (!$cli) salida(['ok' => false, 'error' => 'cliente no existe'], 404);
+
+        if (empty($in['purgar'])) {
+            $pdo->prepare("UPDATE clientes SET estado = 'baja' WHERE id = ?")->execute([$id]);
+            salida(['ok' => true, 'modo' => 'baja']);
+        }
+
+        $confirma = trim((string) ($in['confirmar_nombre'] ?? ''));
+        if ($confirma !== (string) $cli['nombre']) {
+            salida(['ok' => false, 'error' => 'el nombre no coincide'], 422);
+        }
+        try {
+            $pdo->prepare('DELETE FROM clientes WHERE id = ?')->execute([$id]);
+            // La base del cliente queda en el servidor, a proposito. Se informa
+            // para que quien la quiera eliminar sepa cual es.
+            salida(['ok' => true, 'modo' => 'purgado', 'db_huerfana' => $cli['db_nombre']]);
+        } catch (PDOException $e) {
+            salida(['ok' => false, 'error' => 'no se pudo borrar'], 500);
+        }
+    }
+
     case 'mp_config_ver':
         // Nunca devuelve el token en claro, solo si está configurado.
         $st = $pdo->prepare("SELECT valor FROM config_plataforma WHERE clave = 'MP_ACCESS_TOKEN'");
