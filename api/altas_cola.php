@@ -275,11 +275,15 @@ if ($accion === 'marcar' && $metodo === 'POST') {
         // Alta confirmada: BORRAMOS la clave en claro, que era lo unico que
         // justificaba tenerla guardada. El jugador real llega a `usuarios`
         // cuando pase sync_usuarios.py; esta fila queda solo como historial.
+        // creado_en_panel = 1 es LA bandera que habilita entregar credenciales.
+        // Se escribe aca y en ningun otro lado: este es el unico punto del
+        // sistema donde consta que el panel de agentes confirmo el alta.
         $sql = "UPDATE altas
-                   SET estado   = 'ok',
-                       hecho_en = NOW(),
-                       mensaje  = ?,
-                       password = NULL
+                   SET estado          = 'ok',
+                       creado_en_panel = 1,
+                       hecho_en        = NOW(),
+                       mensaje         = ?,
+                       password        = NULL
                  WHERE id = ?";
     } else {
         // Si fallo pero le quedan intentos, vuelve a la cola.

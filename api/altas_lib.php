@@ -392,14 +392,25 @@ function alta_entrega(PDO $pdo, int $id, string $sid): array
         return ['ok' => false, 'error' => 'Faltan datos'];
     }
 
-    $q = $pdo->prepare(
-        "SELECT usuario, estado, entrega_clave
-           FROM altas
-          WHERE id = ? AND entrega_sid = ?
-          LIMIT 1"
-    );
-    $q->execute([$id, mb_substr($sid, 0, 64)]);
-    $fila = $q->fetch();
+    try {
+        $q = $pdo->prepare(
+            "SELECT usuario, estado, entrega_clave, creado_en_panel
+               FROM altas
+              WHERE id = ? AND entrega_sid = ?
+              LIMIT 1"
+        );
+        $q->execute([$id, mb_substr($sid, 0, 64)]);
+        $fila = $q->fetch();
+    } catch (PDOException $e) {
+        // Sin la migracion 36 la columna no existe. NO se cae a "entregar
+        // igual": el sentido de esta bandera es no dar credenciales de una
+        // cuenta que capaz no se creo, y sin la columna no hay forma de
+        // saberlo. Se responde "todavia no" y se avisa en el log, que es lo
+        // que hay que arreglar.
+        error_log('altas: falta la migracion 36 (creado_en_panel). '
+                . 'No se entregan credenciales hasta que se corra.');
+        return ['ok' => true, 'estado' => 'en_curso', 'listo' => false];
+    }
 
     if (!$fila) {
         return ['ok' => false, 'error' => 'Pedido inexistente'];
@@ -412,18 +423,21 @@ function alta_entrega(PDO $pdo, int $id, string $sid): array
         return ['ok' => true, 'estado' => 'error', 'listo' => false, 'fallo' => true];
     }
 
-    // La clave sale SOLO con estado === 'ok' exacto, que es lo unico que
-    // significa "bot_crear_jugador.py la creo en el panel y el panel dijo que
-    // si". Todo lo demas -- 'pendiente', 'procesando', un estado que no
-    // conocemos, o la columna vacia -- es "todavia no".
+    // DOS condiciones, y las dos tienen que darse:
     //
-    // Antes esto estaba al reves: se listaban los estados que NO entregan y
-    // cualquier otro caia en el branch de entregar. Con eso, un valor
-    // inesperado devolvia usuario y contrasena de una cuenta que no existia:
-    // el jugador se quedaba con credenciales que no entran a ningun lado.
-    // Para una credencial la lista tiene que ser de lo que SI habilita, nunca
-    // de lo que no.
-    if ($estado !== 'ok') {
+    //   estado === 'ok'      la cola dice que el alta termino bien
+    //   creado_en_panel = 1  el bot confirmo que el PANEL la creo
+    //
+    // La segunda es la que manda. `estado` lo usa toda la cola para otras cosas
+    // y un valor inesperado o un UPDATE mal escrito ya nos hizo entregar
+    // credenciales de una cuenta que no existia. `creado_en_panel` no hace otra
+    // cosa que esto y solo lo escribe el bot al confirmar.
+    //
+    // La lista es de lo que SI habilita, nunca de lo que no: cualquier otro
+    // caso -- pendiente, procesando, un estado nuevo, la columna en NULL -- es
+    // "todavia no".
+    $enPanel = (int)($fila['creado_en_panel'] ?? 0) === 1;
+    if ($estado !== 'ok' || !$enPanel) {
         return ['ok' => true, 'estado' => 'en_curso', 'listo' => false];
     }
 
