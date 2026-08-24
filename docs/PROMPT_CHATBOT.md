@@ -316,6 +316,11 @@ Lo que sí conviene saber:
   de cualquier agente que abra esa conversación en el CRM.
 - El alta **no es instantánea**: queda en la cola `altas` y la ejecuta
   `bot/bot_crear_jugador.py` contra el panel de agentes. Tarda un par de minutos.
+- **Los datos se entregan recién cuando el bot confirmó el alta**, no cuando se
+  pide. El bot de chat solo dice "la estoy creando"; usuario y contraseña los
+  muestra el widget solo, después, cuando la cuenta existe de verdad. Si el alta
+  falla, no se entrega nada y se ofrece un agente.
+- La contraseña se muestra **una sola vez** y solo al navegador que la pidió.
 - Hay **freno por IP** (3 por hora, 10 por día), el mismo que la landing. Cada
   alta hace que un bot abra Chromium y opere el panel de verdad.
 - Si el nombre está ocupado, el bot le pide otro. No reintenta el mismo.
@@ -361,13 +366,19 @@ Abrí el chat en una ventana de incógnito, sin iniciar sesión:
 |---|---|
 | "hola" | Preguntarte si ya tenés cuenta o querés que te cree una |
 | "no tengo cuenta" | Ofrecerte crearla y pedirte **solo** el nombre de usuario |
-| "quiero que se llame martin23" | Crearla y darte usuario y contraseña **en mensajes separados** |
+| "quiero que se llame martin23" | Decirte que la está creando — y **un par de minutos después**, darte usuario y contraseña en mensajes separados |
 | "cuánto saldo tengo" | Decirte que primero tenés que iniciar sesión, **sin** inventar un número |
 | pedir un usuario que ya existe | Avisarte que está ocupado y pedirte otro |
 
 Lo que **no** debería pasar: que te pida elegir la contraseña, que te pida mail,
-DNI o teléfono, que te mande usuario y contraseña en un solo mensaje, o que te
-diga que ya podés entrar de inmediato (el alta tarda un par de minutos).
+DNI o teléfono, que te mande usuario y contraseña en un solo mensaje, que te
+**invente** unas credenciales en el momento, o que te diga que ya podés entrar
+antes de que la cuenta exista.
+
+> Para que la entrega funcione, **el bot `bot_crear_jugador.py` tiene que estar
+> corriendo**. Si no corre, el alta queda encolada para siempre y el jugador
+> nunca recibe los datos: el chat le va a decir que se está tardando. Se
+> verifica con `ps aux | grep bot_crear_jugador`.
 
 ## Si querés ajustarlo
 

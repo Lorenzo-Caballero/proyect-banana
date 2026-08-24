@@ -107,6 +107,7 @@
 
   var API_CHAT   = BASE_API + "/chatbot.php";
   var API_CARGA  = BASE_API + "/carga_estado.php";
+  var API_ALTA   = BASE_API + "/alta_estado.php";
   var API_SUBIR  = BASE_API + "/subir.php";
   var API_MIS    = BASE_API + "/mis_mensajes.php";
   var API_RULETA = BASE_API + "/ruleta.php";
@@ -1305,10 +1306,12 @@
         if (d.mensajes && d.mensajes.length > 1){
           pintarVarios(d.mensajes, function (){
             if (d.carga) narrarCarga(d.carga);
+            if (d.alta)  narrarAlta(d.alta);
           });
         } else {
           pintar("b", d.respuesta);
           if (d.carga) narrarCarga(d.carga);   // narrar el proceso de la carga
+          if (d.alta)  narrarAlta(d.alta);     // esperar a que el bot la cree
         }
         /* Al historial va la versión plana: es lo que el modelo tiene que ver
            en el próximo turno, y los marcadores ya no existen a esta altura. */
@@ -1390,6 +1393,84 @@
       }, 900);
     }
     siguiente();
+  }
+
+  /* Espera a que el bot cree la cuenta en el panel y RECIÉN AHÍ entrega
+     usuario y contraseña, cada uno en su propio globo.
+
+     Por qué se espera: cuando el chat pide el alta, la cuenta todavía no
+     existe. Queda encolada y la crea bot_crear_jugador.py contra el panel de
+     agentes, que puede fallar. Dar las credenciales antes de esa confirmación
+     deja al jugador con datos que no entran a ningún lado — y convencido de
+     que ya tiene cuenta.
+
+     El alta pasa por el panel real (Chromium y todo), así que es lenta: se
+     espera bastante más que una carga. */
+  function narrarAlta(info){
+    if (!info || !info.id) return;
+    var id = info.id, intentos = 0, avisado = false;
+
+    function decir(txt, cb){
+      setEstado("escribiendo…", true);
+      var esp = escribiendo();
+      setTimeout(function (){
+        esp.remove();
+        setEstado(AGENTE_ESTADO, false);
+        pintar("b", txt);
+        if (cb) cb();
+      }, 1200);
+    }
+
+    setTimeout(sondear, 2500);
+
+    function sondear(){
+      if (intentos++ > 60){          // ~4 minutos
+        decir("La cuenta se está tardando más de lo normal. Quedate tranquilo "
+            + "que apenas esté te paso los datos por acá.");
+        return;
+      }
+      fetch(API_ALTA + "?id=" + id + "&sid=" + encodeURIComponent(sid) + "&_=" + Date.now())
+        .then(function (r){ return r.json(); })
+        .then(function (d){
+          if (!d || !d.ok){ setTimeout(sondear, 4000); return; }
+
+          if (d.estado === "ok"){
+            /* Ya se la mostramos antes (recargó la página, o entró otro
+               sondeo). No la repetimos: la clave se entrega una sola vez. */
+            if (d.entregada || !d.password){
+              decir("Tu cuenta ya está creada. Si perdiste la contraseña, "
+                  + "decímelo y te paso con un agente.");
+              return;
+            }
+            pintarVarios([
+              "¡Listo! Ya te creé la cuenta. Anotá estos datos 👇",
+              "Usuario: " + d.usuario,
+              "Contraseña: " + d.password
+            ], function (){
+              decir("Guardala bien, no te la voy a poder repetir. "
+                  + "Ya podés iniciar sesión con esos datos.");
+            });
+            return;
+          }
+
+          if (d.estado === "error"){
+            decir("Uy, no pude crear la cuenta con ese nombre. Ya le aviso a "
+                + "un agente para que lo resuelva.");
+            return;
+          }
+
+          // en_curso: avisar UNA vez que puede tardar, y seguir esperando.
+          if (!avisado && intentos > 6){
+            avisado = true;
+            decir("Dame un minuto que la estoy dando de alta…", function (){
+              setTimeout(sondear, 4000);
+            });
+            return;
+          }
+          setTimeout(sondear, 4000);
+        })
+        .catch(function (){ setTimeout(sondear, 4000); });
+    }
   }
 
   /* Narra el proceso de una carga como lo haría una persona: manda un mensaje,

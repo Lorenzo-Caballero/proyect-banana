@@ -281,23 +281,19 @@ if ($usuarioCliente !== '') {
           . "- Si devuelve limite: ya se pidieron varias cuentas desde ahi. Decile\n"
           . "  que espere un rato o que lo atienda un agente.\n"
           . "\n"
-          . "CUANDO crear_cuenta SALE BIEN - ES LO MAS IMPORTANTE:\n"
-          . "Dale los datos en TRES MENSAJES SEPARADOS, con este formato exacto:\n"
-          . "\n"
-          . "[[MSG]]Listo, ya te la estoy creando. Anota estos datos.\n"
-          . "[[MSG]]Usuario: EL_USUARIO\n"
-          . "[[MSG]]Contrasena: LA_PASSWORD_QUE_DEVOLVIO_LA_HERRAMIENTA\n"
-          . "\n"
-          . "Reglas de ese formato:\n"
-          . "- Cada mensaje arranca con [[MSG]] pegado, sin espacio antes.\n"
-          . "- El usuario y la contrasena van SOLOS en su mensaje: sin comillas,\n"
-          . "  sin negrita, sin ningun comentario al lado. Se copian y pegan.\n"
-          . "- Copia la contrasena TAL CUAL, respetando mayusculas y minusculas.\n"
-          . "  No la inventes ni la cambies nunca.\n"
-          . "- Despues de esos tres, en un cuarto mensaje normal (sin [[MSG]])\n"
-          . "  decile que la cuenta tarda un par de minutos en habilitarse, que\n"
-          . "  despues entre con esos datos, y que se guarde la contrasena porque\n"
-          . "  no se la vas a poder repetir.";
+          . "CUANDO crear_cuenta SALE BIEN - LEELO BIEN:\n"
+          . "La herramienta NO te devuelve ninguna contrasena, y es a proposito:\n"
+          . "la cuenta todavia NO existe. Queda pedida y la crea un proceso que\n"
+          . "tarda un par de minutos y que puede fallar.\n"
+          . "- Deci UNICAMENTE que la estas dando de alta y que en un par de\n"
+          . "  minutos le pasas los datos por aca. Una linea, corta.\n"
+          . "- NO inventes NUNCA un usuario o una contrasena. Ni de ejemplo.\n"
+          . "- NO digas que la cuenta ya esta lista, ni que ya puede entrar.\n"
+          . "- NO le pidas que espere en otro lado ni que recargue la pagina.\n"
+          . "- Los datos se los entrega el sistema solo, en cuanto la cuenta\n"
+          . "  este creada de verdad. Vos no tenes que hacer nada mas.\n"
+          . "- Si despues te pregunta si ya esta, decile que todavia la estas\n"
+          . "  creando y que apenas este le aparecen los datos por aca.";
 }
 $mensajes = [['role' => 'system', 'content' => $sys]];
 foreach (array_slice($historial, -MAX_MENSAJES) as $m) {
@@ -323,14 +319,20 @@ $usuarioDetectado = $usuarioCliente !== '' ? $usuarioCliente : null;
 // Si en este turno se ENCOLA una carga, guardamos su id para que el front pueda
 // narrar el proceso (sondea carga_estado.php hasta que el bot la deposita).
 $cargaInfo = null;
-$ejecutarTool = function (string $nombre, array $args) use ($pdo, &$usuarioDetectado, $usuarioCliente, $sesionVerificada, &$cargaInfo): array {
+// Igual que $cargaInfo pero para el alta: el front sondea con este id hasta
+// que el bot la crea, y recien ahi muestra usuario y contrasena.
+$altaInfo = null;
+$ejecutarTool = function (string $nombre, array $args) use ($pdo, &$usuarioDetectado, $usuarioCliente, $sesionVerificada, &$cargaInfo, &$altaInfo, $sessionId): array {
     if (!empty($args['usuario'])) { $usuarioDetectado = (string)$args['usuario']; }
     // $usuarioCliente sale de la sesion (token o header), NUNCA de lo que el
     // modelo haya sacado de la charla: si el jugador escribe "soy fulano", eso
     // llega en $args y para las fichas no se mira.
-    $res = ejecutar_tool($pdo, $nombre, $args, $usuarioCliente, $sesionVerificada);
+    $res = ejecutar_tool($pdo, $nombre, $args, $usuarioCliente, $sesionVerificada, $sessionId);
     if ($nombre === 'cargar_al_juego' && !empty($res['ok']) && !empty($res['id'])) {
         $cargaInfo = ['id' => (int)$res['id'], 'monto' => (int)($res['monto'] ?? 0)];
+    }
+    if ($nombre === 'crear_cuenta' && !empty($res['ok']) && !empty($res['id'])) {
+        $altaInfo = ['id' => (int)$res['id'], 'usuario' => (string)($res['usuario'] ?? '')];
     }
     return $res;
 };
@@ -381,6 +383,7 @@ $salida = ['ok' => true, 'respuesta' => $texto];
 // 99% de los turnos, que son de un solo mensaje.
 if (count($partes) > 1) { $salida['mensajes'] = $partes; }
 if ($cargaInfo) { $salida['carga'] = $cargaInfo; }
+if ($altaInfo)  { $salida['alta']  = $altaInfo; }
 echo json_encode($salida, JSON_UNESCAPED_UNICODE);
 
 
@@ -595,7 +598,7 @@ function cohere_texto(array $msg): string
  * herramientas que mueven plata usan ese y solo ese: lo que el modelo pasa en
  * $args viene, en ultima instancia, de lo que el jugador escribio.
  */
-function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSesion = '', bool $sesionVerificada = false): array
+function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSesion = '', bool $sesionVerificada = false, string $sid = ''): array
 {
     if (function_exists('gp_trace')) { gp_trace("señal: tool=$nombre usuario_sesion='$usuarioSesion' verif=" . (int)$sesionVerificada . " args=" . json_encode($args, JSON_UNESCAPED_UNICODE)); }  // TRACE TEMPORAL
 
@@ -669,12 +672,22 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
             'password' => $clave,
             'origen'   => 'chatbot',
             'ip'       => $ip,
+            // La clave queda guardada para entregarsela al jugador RECIEN
+            // cuando el bot confirme el alta, y atada al session_id de este
+            // chat para que no se la lleve otro.
+            'entrega_clave' => $clave,
+            'entrega_sid'   => $sid,
         ]);
 
         if (!empty($r['cuerpo']['ok'])) {
-            return ['ok' => true, 'usuario' => $u, 'password' => $clave,
+            // OJO: NO se devuelve la password. A esta altura la cuenta todavia
+            // no existe en el panel; el bot la crea despues y puede fallar. El
+            // widget sondea alta_estado.php y la muestra cuando este confirmada.
+            return ['ok' => true, 'usuario' => $u,
                     'id' => (int)($r['cuerpo']['id'] ?? 0),
-                    'mensaje' => 'Cuenta pedida. Se esta creando en la plataforma.'];
+                    'estado' => 'en_curso',
+                    'mensaje' => 'Alta pedida. Se esta creando en la plataforma; '
+                               . 'cuando este lista se le muestran los datos.'];
         }
 
         // 409 = el nombre ya esta tomado (o ya hay un alta en curso con ese

@@ -97,6 +97,10 @@ function alta_encolar(PDO $pdo, array $d): array
     $apellido = trim((string)($d['apellido'] ?? ''));
     $origen   = mb_substr(trim((string)($d['origen'] ?? 'crm')), 0, 32);
     $ip       = (string)($d['ip'] ?? '');
+    // Solo el chatbot los manda: la clave queda guardada aparte para
+    // entregarsela al jugador RECIEN cuando el bot confirme el alta.
+    $entSid   = mb_substr(trim((string)($d['entrega_sid'] ?? '')), 0, 64);
+    $entCla   = (string)($d['entrega_clave'] ?? '');
 
     $error = alta_validar($usuario, $password, $email);
     if ($error !== null) {
@@ -114,8 +118,9 @@ function alta_encolar(PDO $pdo, array $d): array
 
     try {
         $ins = $pdo->prepare(
-            "INSERT INTO altas (usuario, password, email, nombre, apellido, origen, ip)
-             VALUES (?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO altas (usuario, password, email, nombre, apellido, origen, ip,
+                                entrega_clave, entrega_sid)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
         );
         $ins->execute([
             $usuario,
@@ -125,6 +130,8 @@ function alta_encolar(PDO $pdo, array $d): array
             $apellido !== '' ? $apellido : null,
             $origen,
             $ip !== '' ? $ip : null,
+            $entCla !== '' ? $entCla : null,
+            $entSid !== '' ? $entSid : null,
         ]);
 
         return ['http' => 200, 'cuerpo' => [
@@ -158,9 +165,15 @@ function alta_encolar(PDO $pdo, array $d): array
             "UPDATE altas
                 SET password = ?, email = COALESCE(?, email),
                     estado = 'pendiente', intentos = 0,
-                    mensaje = NULL, tomado_en = NULL
+                    mensaje = NULL, tomado_en = NULL,
+                    entrega_clave = ?, entrega_sid = ?
               WHERE id = ?"
-        )->execute([$password, $email !== '' ? $email : null, $fila['id']]);
+        )->execute([
+            $password, $email !== '' ? $email : null,
+            $entCla !== '' ? $entCla : null,
+            $entSid !== '' ? $entSid : null,
+            $fila['id'],
+        ]);
 
         return ['http' => 200, 'cuerpo' => [
             'ok'        => true,
@@ -225,4 +238,73 @@ function alta_clave_random(int $largo = 10): string
         $s .= $abc[random_int(0, strlen($abc) - 1)];
     }
     return $s;
+}
+
+/**
+ * Estado de un alta pedida por el chat, y la clave SI YA ESTA CREADA.
+ *
+ * Es lo que sondea el widget mientras el bot trabaja. La clave se entrega una
+ * sola vez y recien cuando `estado = 'ok'`: hasta entonces la cuenta no existe
+ * en el panel y dar las credenciales seria mentirle al jugador.
+ *
+ * Pide el session_id ademas del id a proposito. Sin eso, cualquiera que
+ * recorra 1,2,3... se lleva las contrasenas de las altas de los demas. El sid
+ * lo genera el widget, no viaja en ningun lado publico, y solo lo tiene el
+ * navegador que pidio esa alta.
+ *
+ * La clave se BORRA al devolverla (UPDATE ... WHERE entrega_clave IS NOT NULL,
+ * mirando rowCount): si dos sondeos entran a la vez, uno solo se la lleva y el
+ * otro ve 'entregada'. Asi no queda dando vueltas en la base despues de que el
+ * jugador ya la anoto.
+ */
+function alta_entrega(PDO $pdo, int $id, string $sid): array
+{
+    if ($id <= 0 || $sid === '') {
+        return ['ok' => false, 'error' => 'Faltan datos'];
+    }
+
+    $q = $pdo->prepare(
+        "SELECT usuario, estado, entrega_clave
+           FROM altas
+          WHERE id = ? AND entrega_sid = ?
+          LIMIT 1"
+    );
+    $q->execute([$id, mb_substr($sid, 0, 64)]);
+    $fila = $q->fetch();
+
+    if (!$fila) {
+        return ['ok' => false, 'error' => 'Pedido inexistente'];
+    }
+
+    $estado = (string)$fila['estado'];
+
+    // Todavia trabajando: el bot no confirmo nada.
+    if ($estado === 'pendiente' || $estado === 'procesando') {
+        return ['ok' => true, 'estado' => 'en_curso', 'listo' => false];
+    }
+
+    // Fallo definitivo. NUNCA se entrega la clave: esa cuenta no existe.
+    if ($estado === 'error') {
+        return ['ok' => true, 'estado' => 'error', 'listo' => false, 'fallo' => true];
+    }
+
+    // estado = 'ok': la cuenta existe en el panel. Recien ACA va la clave.
+    $clave = (string)($fila['entrega_clave'] ?? '');
+    if ($clave === '') {
+        // Ya se la llevo (este mismo navegador, o un sondeo anterior).
+        return ['ok' => true, 'estado' => 'ok', 'listo' => true, 'entregada' => true];
+    }
+
+    $del = $pdo->prepare(
+        "UPDATE altas SET entrega_clave = NULL
+          WHERE id = ? AND entrega_clave IS NOT NULL"
+    );
+    $del->execute([$id]);
+    if ($del->rowCount() !== 1) {
+        // Otro sondeo se la llevo en el medio.
+        return ['ok' => true, 'estado' => 'ok', 'listo' => true, 'entregada' => true];
+    }
+
+    return ['ok' => true, 'estado' => 'ok', 'listo' => true,
+            'usuario' => (string)$fila['usuario'], 'password' => $clave];
 }
