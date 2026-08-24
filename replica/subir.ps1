@@ -82,12 +82,12 @@ if ($Config) {
     Write-Host "→ instalando y probando (nginx -t)" -ForegroundColor Cyan
     # Se recarga SOLO si nginx -t pasa: recargar una config rota deja el sitio
     # caído hasta que alguien lo note.
-    # OJO: este script se pasa por  ssh $destino $remoto  y PowerShell mastica
-    # las comillas al hacerlo. NO uses parentesis en textos de echo ni comillas
-    # dobles alrededor de mensajes: cuando PowerShell las come, bash ve un '('
-    # suelto y tira "syntax error near unexpected token". Frases planas, sin ( ).
-    # El $(date) va sin comillas y sobrevive; lo que rompe son las comillas
-    # dobles de los echo con parentesis adentro.
+    # OJO: `ssh $destino $remoto` (pasar el script como ARGUMENTO posicional)
+    # rompe: PowerShell parte $remoto en líneas y ssh las manda como palabras
+    # sueltas, no como un script -- bash ve "set -e" como flags sueltos y
+    # tira "invalid option: -" / "syntax error: unexpected end of file". El
+    # arreglo es mandar el script por STDIN con `bash -s`, que no depende de
+    # cómo PowerShell trocea el string al armar los argumentos del proceso.
     $remoto = @'
 set -e
 sudo mkdir -p /etc/nginx/snippets /var/cache/nginx/replica /var/www/replica
@@ -106,7 +106,7 @@ else
     exit 1
 fi
 '@
-    ssh $destino $remoto
+    $remoto | ssh $destino "bash -s"
     if ($LASTEXITCODE -ne 0) { throw "la config no pasó nginx -t" }
 
     Write-Host ""
