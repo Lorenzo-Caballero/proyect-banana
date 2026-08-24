@@ -1,6 +1,7 @@
 <?php
 /**
- * Alta de cuenta desde la landing (crear-cuenta.html). ENDPOINT PUBLICO.
+ * Alta de cuenta desde la landing (landing/registro.html). ENDPOINT PUBLICO.
+ * (El archivo se llamaba crear-cuenta.html; el nombre viejo quedo aca.)
  *
  *   POST                        -> {"usuario":"martin23","password":"aB3x..."}
  *                                  encola el pedido y devuelve {ok, id, usuario}
@@ -45,10 +46,33 @@ if ($metodo === 'GET') {
 
     $id      = (int)($_GET['id'] ?? 0);
     $usuario = trim((string)($_GET['usuario'] ?? ''));
+    $sid     = trim((string)($_GET['sid'] ?? ''));
 
     if (!$id || $usuario === '') {
         http_response_code(400);
         echo json_encode(['ok' => false, 'error' => 'Faltan datos']);
+        exit;
+    }
+
+    // Con sid entra por el mismo camino que el chat: la clave sale UNA vez y
+    // solo con el alta confirmada por el bot contra el panel. Sin sid queda el
+    // comportamiento viejo (solo estado), para no romper una pestaña que haya
+    // quedado abierta con el flujo anterior.
+    if ($sid !== '') {
+        $e = alta_entrega($pdo, $id, $sid);
+        if (empty($e['ok'])) {
+            http_response_code(404);
+            echo json_encode(['ok' => false, 'error' => 'Pedido inexistente'], JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+        echo json_encode([
+            'ok'       => true,
+            'estado'   => $e['estado'],
+            'listo'    => !empty($e['listo']),
+            'fallo'    => !empty($e['fallo']),
+            'usuario'  => $e['usuario']  ?? null,
+            'password' => $e['password'] ?? null,
+        ], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
@@ -96,6 +120,11 @@ if ($metodo === 'POST') {
         // pedia un retiro. No se acepta mas lo que venga en el body.
         $clave = alta_clave_random();
 
+        // El sid lo genera el navegador y es lo unico que despues autoriza a
+        // ver la clave. Igual que en el chat: sin el, cualquiera que recorra
+        // id=1,2,3... se lleva las credenciales de los demas.
+        $sid = mb_substr(trim((string)($body['sid'] ?? '')), 0, 64);
+
         $r = alta_encolar($pdo, [
             'usuario'  => $usuarioFinal,
             'password' => $clave,
@@ -103,6 +132,11 @@ if ($metodo === 'POST') {
             // completa el bot al llenar el formulario del panel.
             'origen'   => 'landing',
             'ip'       => $ip,
+            // Con sid, la clave queda guardada para entregarla cuando el bot
+            // confirme el alta. Sin sid (pestaña vieja) se sigue devolviendo
+            // en el POST, como antes.
+            'entrega_clave' => $sid !== '' ? $clave : '',
+            'entrega_sid'   => $sid,
         ]);
     } catch (Throwable $e) {
         // El detalle va al log, nunca a la respuesta: aca contesta cualquiera.
@@ -115,12 +149,14 @@ if ($metodo === 'POST') {
     // El frontend necesita saber el username REAL que quedó encolado (puede
     // no ser el que el jugador tipeó, si ese estaba ocupado).
     if ($r['cuerpo']['ok'] ?? false) {
-        $r['cuerpo']['usuario']  = $usuarioFinal;
-        // La clave viaja ACA porque es la unica vez que existe en claro para
-        // el jugador. La landing la guarda y la muestra recien cuando el alta
-        // pasa a 'listo' (ver registro.html): nunca antes de que la cuenta
-        // exista de verdad en el panel.
-        $r['cuerpo']['password'] = $clave;
+        $r['cuerpo']['usuario'] = $usuarioFinal;
+        // La clave NO viaja aca si hay sid: a esta altura la cuenta todavia no
+        // existe en el panel y el bot puede fallar. Se entrega en el sondeo,
+        // cuando el alta pase a 'ok'. Sin sid se devuelve, para no dejar sin
+        // credenciales a una pestaña con el flujo viejo.
+        if ($sid === '') {
+            $r['cuerpo']['password'] = $clave;
+        }
     }
 
     http_response_code($r['http']);
