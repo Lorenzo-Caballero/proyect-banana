@@ -149,23 +149,62 @@ function alta_encolar(PDO $pdo, array $d): array
         return ['http' => 409, 'cuerpo' => ['ok' => false, 'error' => 'Ese usuario ya existe']];
     }
 
+    $base = [
+        $usuario,
+        $password,
+        $email    !== '' ? $email    : null,
+        $nombre   !== '' ? $nombre   : null,
+        $apellido !== '' ? $apellido : null,
+        $origen,
+        $ip !== '' ? $ip : null,
+    ];
+
     try {
-        $ins = $pdo->prepare(
-            "INSERT INTO altas (usuario, password, email, nombre, apellido, origen, ip,
-                                entrega_clave, entrega_sid)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-        );
-        $ins->execute([
-            $usuario,
-            $password,
-            $email    !== '' ? $email    : null,
-            $nombre   !== '' ? $nombre   : null,
-            $apellido !== '' ? $apellido : null,
-            $origen,
-            $ip !== '' ? $ip : null,
-            $entCla !== '' ? $entCla : null,
-            $entSid !== '' ? $entSid : null,
-        ]);
+        try {
+            $ins = $pdo->prepare(
+                "INSERT INTO altas (usuario, password, email, nombre, apellido, origen, ip,
+                                    entrega_clave, entrega_sid)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            );
+            $ins->execute(array_merge($base, [
+                $entCla !== '' ? $entCla : null,
+                $entSid !== '' ? $entSid : null,
+            ]));
+        } catch (PDOException $e2) {
+            // El duplicado (23000) lo maneja el catch de afuera: es el flujo
+            // normal, no un problema de esquema.
+            if ($e2->getCode() === '23000') {
+                throw $e2;
+            }
+            // Cualquier otra cosa es, casi siempre, que no existen
+            // entrega_clave/entrega_sid porque falta la migracion 35. Se
+            // reintenta sin esas columnas.
+            //
+            // No se filtra por codigo de error a proposito: MySQL dice 42S22 y
+            // SQLite HY000 para lo mismo, y atarse a uno hace que el fallback
+            // no dispare justo donde hace falta. Si el reintento tambien falla,
+            // se propaga el error ORIGINAL, que es el que explica que paso.
+            //
+            // Degradar es mejor que romper: sin esto, una migracion sin correr
+            // se lleva puesto TODO el chat con un 502. Asi la cuenta se crea
+            // igual; lo unico que se pierde es la entrega automatica de la
+            // clave (queda en `altas.password`, el agente puede leerla).
+            error_log('altas: INSERT con entrega fallo (' . $e2->getMessage()
+                    . '). Reintento sin entrega_clave/entrega_sid: '
+                    . 'revisa que este corrida la migracion 35.');
+            try {
+                $ins = $pdo->prepare(
+                    "INSERT INTO altas (usuario, password, email, nombre, apellido, origen, ip)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)"
+                );
+                $ins->execute($base);
+            } catch (PDOException $e3) {
+                if ($e3->getCode() === '23000') {
+                    throw $e3;      // duplicado: lo resuelve el catch de afuera
+                }
+                throw $e2;          // el original explica mejor el problema
+            }
+        }
 
         return ['http' => 200, 'cuerpo' => [
             'ok'     => true,
