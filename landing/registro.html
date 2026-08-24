@@ -4,8 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Creá tu cuenta gratis</title>
-<link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32.png">
-<link rel="apple-touch-icon" href="img/apple-touch-icon.png">
+<!-- Mismo motivo que el logo de abajo: en el VPS esta página se sirve desde
+     /var/www/replica/, que no tiene carpeta img/ propia. Se reusa
+     /replica/logo.png (ya subido) en vez de una ruta que rompe en producción. -->
+<link rel="icon" type="image/png" href="/replica/logo.png">
+<link rel="apple-touch-icon" href="/replica/logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -171,10 +174,14 @@
 <body>
 
   <main class="card">
-    <!-- Logo de Ganamos: mismo archivo ya optimizado que usa el resto de
-         landings (192x192, ~65KB) -- no se genera nada nuevo, no pesa más
-         que el emoji que reemplaza en la práctica. -->
-    <div class="mascota"><img src="img/logo-192.png" alt="Ganamos" width="80" height="80" loading="eager"></div>
+    <!-- Logo de Ganamos: /replica/logo.png, NO "img/logo-192.png" -- esta
+         página se sirve desde /var/www/replica/ en el VPS (ver
+         nginx-replica.conf), que no tiene ninguna carpeta img/ propia; el
+         único archivo de logo que sí se sube ahí es /replica/logo.png (ver
+         subir.ps1 y el mismo patrón que ya usa widget.js). Misma ruta sirve
+         para dominio propio y cliente por-path -- location ^~ /replica/ no
+         depende del slug, los archivos son los mismos para todos. -->
+    <div class="mascota"><img src="/replica/logo.png" alt="Ganamos" width="80" height="80" loading="eager"></div>
 
     <!-- Vista 1: formulario -->
     <div id="vistaForm">
@@ -188,7 +195,7 @@
 
       <form id="form" novalidate>
         <input id="usuario" class="inp" type="text" inputmode="text"
-               autocomplete="username" placeholder="Ej: Martín" aria-label="Nombre de usuario">
+               autocomplete="name" placeholder="Ej: Martín" aria-label="Tu nombre">
         <span class="msg" id="msg" role="alert"></span>
         <button class="btn" id="btn" type="submit">Crear mi cuenta</button>
       </form>
@@ -415,13 +422,15 @@
   }
 
   // -- Alta -------------------------------------------------------------
+  // El jugador escribe su NOMBRE, no un username -- el server decide el
+  // usuario final (alta_usuario_disponible() en altas_lib.php), agregando
+  // un sufijo numérico solo si hace falta. Cero fricción de "ese usuario ya
+  // existe, probá con otro": eso ya no puede pasar acá.
   form.addEventListener('submit', async e=>{
     e.preventDefault();
     const u = usuario.value.trim();
-    if (!u)               return error('Escribí un nombre de usuario.');
-    if (u.length < 3)     return error('Mínimo 3 caracteres.');
-    if (!/^[\w.\-]{3,50}$/.test(u))
-                          return error('Solo letras, números, punto, guion y guion bajo.');
+    if (!u)               return error('Escribí tu nombre.');
+    if (u.length < 2)     return error('Mínimo 2 caracteres.');
 
     btn.disabled = true; btn.textContent = 'Creando…';
 
@@ -432,8 +441,8 @@
       });
       const data = await res.json().catch(()=> ({}));
 
-      if (res.ok && data.ok && data.id){
-        const pedido = { id:data.id, usuario:u, password:PASSWORD_FIJA, desde:Date.now() };
+      if (res.ok && data.ok && data.id && data.usuario){
+        const pedido = { id:data.id, usuario:data.usuario, password:PASSWORD_FIJA, desde:Date.now() };
         // Guardar ANTES de mostrar nada: entre el alta y el cartel de éxito
         // pasan segundos en los que el pedido solo existe en esta pestaña.
         guardar(pedido);
@@ -441,7 +450,6 @@
       }
 
       if (res.status === 429) return error(data.error || 'Esperá un rato antes de pedir otra cuenta.');
-      if (res.status === 409) return error('Ese usuario ya está en uso, probá con otro.');
       return error(data.error || 'No se pudo crear la cuenta. Probá de nuevo.');
 
     } catch (err) {
