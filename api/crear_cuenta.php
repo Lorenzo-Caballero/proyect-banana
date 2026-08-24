@@ -90,9 +90,15 @@ if ($metodo === 'POST') {
         // el mismo nombre), que sigue cubierta por el UNIQUE de la tabla.
         $usuarioFinal = alta_usuario_disponible($pdo, $nombrePedido);
 
+        // La clave la genera el SERVER, una distinta por cuenta. Antes la
+        // mandaba el navegador y era la misma para todos ("12345678"): con eso,
+        // cualquiera que supiera un nombre de usuario entraba a esa cuenta y le
+        // pedia un retiro. No se acepta mas lo que venga en el body.
+        $clave = alta_clave_random();
+
         $r = alta_encolar($pdo, [
             'usuario'  => $usuarioFinal,
-            'password' => $body['password'] ?? '',
+            'password' => $clave,
             // La landing solo pide el usuario. Nombre, apellido y correo los
             // completa el bot al llenar el formulario del panel.
             'origen'   => 'landing',
@@ -109,7 +115,12 @@ if ($metodo === 'POST') {
     // El frontend necesita saber el username REAL que quedó encolado (puede
     // no ser el que el jugador tipeó, si ese estaba ocupado).
     if ($r['cuerpo']['ok'] ?? false) {
-        $r['cuerpo']['usuario'] = $usuarioFinal;
+        $r['cuerpo']['usuario']  = $usuarioFinal;
+        // La clave viaja ACA porque es la unica vez que existe en claro para
+        // el jugador. La landing la guarda y la muestra recien cuando el alta
+        // pasa a 'listo' (ver registro.html): nunca antes de que la cuenta
+        // exista de verdad en el panel.
+        $r['cuerpo']['password'] = $clave;
     }
 
     http_response_code($r['http']);

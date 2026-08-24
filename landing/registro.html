@@ -260,11 +260,13 @@
   const BASE_API = esPorPath ? '/' + partesRuta[0] + '/gp-api' : '/gp-api';
   const API = BASE_API + "/crear_cuenta.php";
 
-  // Contraseña fija para todas las cuentas nuevas -- decisión explícita del
-  // producto (menos fricción para el jugador, no tiene que copiar/guardar
-  // una clave random). Sabido y aceptado: todas las cuentas nuevas comparten
-  // esta misma clave hasta que el jugador la cambie por su cuenta.
-  const PASSWORD_FIJA = "12345678";
+  // La contraseña la genera el SERVER, una por cuenta, y vuelve en la
+  // respuesta del alta. Antes era fija para todas ("12345678"): cómodo, pero
+  // significaba que cualquiera que supiera un nombre de usuario entraba a esa
+  // cuenta y pedía un retiro. Con plata de por medio no se sostiene.
+  //
+  // La fricción de tener que copiarla se compensa acá: se muestra grande, con
+  // botón de copiar, y el aviso de guardarla.
 
   const CLAVE_LOCAL = 'goldpaw_alta';
   const POLL_MS     = 3000;
@@ -437,12 +439,12 @@
     try {
       const res = await fetch(API, {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ usuario: u, password: PASSWORD_FIJA })
+        body: JSON.stringify({ usuario: u })
       });
       const data = await res.json().catch(()=> ({}));
 
       if (res.ok && data.ok && data.id && data.usuario){
-        const pedido = { id:data.id, usuario:data.usuario, password:PASSWORD_FIJA, desde:Date.now() };
+        const pedido = { id:data.id, usuario:data.usuario, password:data.password, desde:Date.now() };
         // Guardar ANTES de mostrar nada: entre el alta y el cartel de éxito
         // pasan segundos en los que el pedido solo existe en esta pestaña.
         guardar(pedido);
