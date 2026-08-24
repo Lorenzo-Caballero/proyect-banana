@@ -350,17 +350,26 @@ function alta_entrega(PDO $pdo, int $id, string $sid): array
 
     $estado = (string)$fila['estado'];
 
-    // Todavia trabajando: el bot no confirmo nada.
-    if ($estado === 'pendiente' || $estado === 'procesando') {
-        return ['ok' => true, 'estado' => 'en_curso', 'listo' => false];
-    }
-
     // Fallo definitivo. NUNCA se entrega la clave: esa cuenta no existe.
     if ($estado === 'error') {
         return ['ok' => true, 'estado' => 'error', 'listo' => false, 'fallo' => true];
     }
 
-    // estado = 'ok': la cuenta existe en el panel. Recien ACA va la clave.
+    // La clave sale SOLO con estado === 'ok' exacto, que es lo unico que
+    // significa "bot_crear_jugador.py la creo en el panel y el panel dijo que
+    // si". Todo lo demas -- 'pendiente', 'procesando', un estado que no
+    // conocemos, o la columna vacia -- es "todavia no".
+    //
+    // Antes esto estaba al reves: se listaban los estados que NO entregan y
+    // cualquier otro caia en el branch de entregar. Con eso, un valor
+    // inesperado devolvia usuario y contrasena de una cuenta que no existia:
+    // el jugador se quedaba con credenciales que no entran a ningun lado.
+    // Para una credencial la lista tiene que ser de lo que SI habilita, nunca
+    // de lo que no.
+    if ($estado !== 'ok') {
+        return ['ok' => true, 'estado' => 'en_curso', 'listo' => false];
+    }
+
     $clave = (string)($fila['entrega_clave'] ?? '');
     if ($clave === '') {
         // Ya se la llevo (este mismo navegador, o un sondeo anterior).
