@@ -889,13 +889,18 @@
     };
   } catch (e) {}
 
-  var sid = ls("goldpaw_sid");
-  if (!sid){
-    sid = (window.crypto && crypto.randomUUID)
+  /* Genera un session_id nuevo y lo deja guardado. Se usa al arrancar y al
+     cerrar sesión (ahí hace falta uno limpio: el viejo identifica la
+     conversación del jugador anterior en el CRM). */
+  function nuevoSid(){
+    var s = (window.crypto && crypto.randomUUID)
       ? crypto.randomUUID()
       : ("s-" + Date.now() + "-" + Math.random().toString(36).slice(2));
-    lss("goldpaw_sid", sid);
+    lss("goldpaw_sid", s);
+    return s;
   }
+
+  var sid = ls("goldpaw_sid") || nuevoSid();
 
   /* ---------- estilos ----------
    * Chat en vivo clásico: verde, cabecera oscura, fondo claro y burbujas tipo
@@ -1127,6 +1132,22 @@
     historial = []; charla = []; lastAgentId = 0;
     body.innerHTML = ""; saludado = false;
     lsd(CHAT_KEY);
+  }
+
+  /* Cerró sesión: se borra TODO rastro del jugador anterior, en memoria y en
+     localStorage. Si algo de esto sobrevive, el próximo que use el navegador
+     hereda la identidad del anterior — y con el token, sus permisos.
+
+     El sid también se tira: es la identidad de la conversación en el CRM y la
+     que autoriza a ver las credenciales de un alta. Reusarlo mezclaría dos
+     jugadores en el mismo hilo. Se reemplaza por uno nuevo en el acto. */
+  function limpiarSesion(){
+    USUARIO = ""; visto = ""; dePlataforma = ""; delMenu = ""; intentos = 0;
+    AUTH = "";
+    lsd("goldpaw_user");
+    lsd("API_AUTH_ACCESS_TOKEN");   // el JWT del login propio
+    lsd("goldpaw_sid");
+    sid = nuevoSid();             // uno nuevo YA: el proximo mensaje lo usa
   }
 
   // ---------- pintar ----------
@@ -1689,10 +1710,7 @@
     if (teniaSesion === true && !hay && USUARIO){
       log("SUELTA usuario:", USUARIO, "(cerro sesion)");
       avisarVps("SUELTA", { u: USUARIO });
-      // Tambien lo que dijo la plataforma y lo leido del menu: si no, el
-      // proximo que entre en este navegador hereda el nombre del anterior.
-      USUARIO = ""; visto = ""; dePlataforma = ""; delMenu = ""; intentos = 0;
-      lsd("goldpaw_user");
+      limpiarSesion();
       reiniciarCharla();
       notifRegistrar();     // lo desatamos: que no reciba los avisos del otro
     }
