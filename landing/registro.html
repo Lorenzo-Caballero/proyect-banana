@@ -237,10 +237,21 @@
   //
   // RUTA RELATIVA a propósito (no un dominio fijo de Hostinger): esta página
   // se sirve bajo el dominio propio de CADA agencia (replica/, ver
-  // nginx-replica.conf), así que "/api/crear_cuenta.php" ya pega contra la
-  // API de ese mismo cliente sin que haga falta tocar código por agencia.
-  // api/db.php resuelve la base correcta por el Host de la request.
-  const API = "/api/crear_cuenta.php";
+  // nginx-replica.conf). OJO el prefijo: en la réplica la API es "/gp-api",
+  // NUNCA "/api" -- ese lo tiene tomado la plataforma real (proxy_pass a
+  // ganamos7.com en location /), así que un fetch a "/api/..." cae ahí y
+  // da 404 (mismo motivo documentado en widget.js).
+  //
+  // Cliente por-path (ganamoscrm.online/<slug>/registro.html): la API vive
+  // bajo /<slug>/gp-api/, no en la raíz -- nginx usa ese slug para mandar
+  // X-Tenant-Slug a PHP (ver db.php). Se arma leyendo el propio pathname de
+  // esta página, ya que a diferencia del widget (inyectado dentro del proxy
+  // a la plataforma, sin acceso al path real) este archivo SÍ se sirve
+  // directo bajo /<slug>/registro.html y puede leer su slug de ahí.
+  const partesRuta = location.pathname.split('/').filter(Boolean);
+  const esPorPath = partesRuta.length >= 2 && partesRuta[1] === 'registro.html';
+  const BASE_API = esPorPath ? '/' + partesRuta[0] + '/gp-api' : '/gp-api';
+  const API = BASE_API + "/crear_cuenta.php";
 
   // Contraseña fija para todas las cuentas nuevas -- decisión explícita del
   // producto (menos fricción para el jugador, no tiene que copiar/guardar
@@ -354,10 +365,9 @@
     // ahí (limitación conocida y documentada en landing/widget.js -- el
     // proxy no preserva el path al reenviar a la plataforma). Para no
     // mandar al jugador a un juego sin SU chatbot, en ese caso se ofrece
-    // volver al /<slug>/chat.html propio en vez de la raíz.
-    const partes = location.pathname.split('/').filter(Boolean);
-    const esPorPath = partes.length >= 2 && partes[1] === 'registro.html';
-    const destino = esPorPath ? '/' + partes[0] + '/chat.html' : '/';
+    // volver al /<slug>/chat.html propio en vez de la raíz. esPorPath/
+    // partesRuta ya se calcularon arriba, junto con BASE_API.
+    const destino = esPorPath ? '/' + partesRuta[0] + '/chat.html' : '/';
     $('btnJugar').onclick = ()=>{ olvidar(); location.href = destino; };
   }
 
