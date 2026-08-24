@@ -302,12 +302,18 @@ if ($accion === 'marcar' && $metodo === 'POST') {
         // (ver MINUTOS_BACKOFF): 'intentos' ya viene incrementado desde que
         // 'pendientes' reclamo este registro, asi que intentos=1 aca es el
         // primer fallo.
+        // end() recibe el array POR REFERENCIA, asi que no acepta una
+        // constante: end(MINUTOS_BACKOFF) es un Error fatal en PHP 8 y dejaba
+        // este endpoint tirando 500. El bot no podia marcar NADA -- ni los
+        // errores ni las altas que salian bien -- y la cola quedaba trabada.
+        $backoff  = MINUTOS_BACKOFF;
         $casosMin = [];
-        foreach (MINUTOS_BACKOFF as $i => $min) {
-            $casosMin[] = "WHEN " . ($i + 1) . " THEN " . $min;
+        foreach ($backoff as $i => $min) {
+            $casosMin[] = "WHEN " . ($i + 1) . " THEN " . (int)$min;
         }
+        $ultimo = (int)end($backoff);
         $caseMinutos = "CASE intentos " . implode(' ', $casosMin)
-                     . " ELSE " . end(MINUTOS_BACKOFF) . " END";
+                     . " ELSE " . $ultimo . " END";
 
         $sql = "UPDATE altas
                    SET estado  = IF(intentos >= " . MAX_INTENTOS . ", 'error', 'pendiente'),
