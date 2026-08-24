@@ -205,3 +205,24 @@ function alta_estado(PDO $pdo, int $id, string $usuario): array
         'fallo'  => $fila['estado'] === 'error',
     ]];
 }
+
+/**
+ * Clave al azar para un alta pedida por chat.
+ *
+ * El jugador no elige la contrasena cuando la pide por el chat: se la damos
+ * hecha. Motivo: la unica forma de que la elija seria que la escriba en el
+ * chat, y eso la deja guardada en `mensajes` para siempre y a la vista de
+ * cualquier agente que abra esa conversacion en el CRM.
+ *
+ * Sin caracteres ambiguos (0/O, 1/l/I) porque mucha gente la copia a mano
+ * desde el celular. random_int() y no rand(): esto es una credencial.
+ */
+function alta_clave_random(int $largo = 10): string
+{
+    $abc = 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    $s = '';
+    for ($i = 0; $i < $largo; $i++) {
+        $s .= $abc[random_int(0, strlen($abc) - 1)];
+    }
+    return $s;
+}

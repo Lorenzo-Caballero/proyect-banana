@@ -23,6 +23,7 @@ require __DIR__ . '/config.php';
 require __DIR__ . '/db.php';
 require __DIR__ . '/recargas_lib.php';
 require __DIR__ . '/fichas_lib.php';
+require __DIR__ . '/altas_lib.php';
 // El CRM es opcional: si crm_lib.php no esta subido, el chat sigue funcionando.
 $crmLib = __DIR__ . '/crm_lib.php';
 if (is_file($crmLib)) { require_once $crmLib; }
@@ -132,6 +133,22 @@ $TOOLS = [
         ],
     ]],
     ['type' => 'function', 'function' => [
+        'name' => 'crear_cuenta',
+        'description' => 'Crea una cuenta NUEVA en la plataforma para alguien que TODAVIA NO TIENE. '
+            . 'Usala SOLO si el jugador no inicio sesion y dice que quiere registrarse / no tiene '
+            . 'cuenta. Lo unico que hay que pedirle es el NOMBRE DE USUARIO que quiere: la '
+            . 'contrasena la genera el sistema y te la devuelve esta herramienta. NUNCA le pidas '
+            . 'que el elija la contrasena ni que la escriba en el chat. Si el usuario ya esta '
+            . 'ocupado, devuelve ocupado y hay que pedirle otro.',
+        'parameters' => [
+            'type' => 'object',
+            'properties' => [
+                'usuario' => ['type' => 'string', 'description' => 'el nombre de usuario que quiere, 3 a 64 caracteres'],
+            ],
+            'required' => ['usuario'],
+        ],
+    ]],
+    ['type' => 'function', 'function' => [
         'name' => 'consultar_recarga',
         'description' => 'Consulta el estado de una recarga por su referencia (codigo corto) o '
             . 'por el nombre de usuario del juego. Usar cuando preguntan si llego el pago.',
@@ -237,13 +254,50 @@ if ($usuarioCliente !== '') {
           . "- Saludalo por su nombre y pasa directo a lo que necesite.\n"
           . "- Usa ese usuario para las recargas y las consultas.";
 } else {
-    $sys .= "\n\nIDENTIDAD:\n"
-          . "Todavia no sabes con quien estas hablando.\n"
-          . "- Saluda y pedile amablemente su nombre de usuario del juego.\n"
-          . "- Apenas te lo diga, llama a identificar_usuario con ese nombre y no\n"
-          . "  se lo vuelvas a pedir.\n"
+    $sys .= "\n\nIDENTIDAD (esto manda sobre todo lo anterior):\n"
+          . "El jugador NO inicio sesion. No sabes quien es.\n"
+          . "- NO podes cargarle fichas, ni retirarle, ni decirle su saldo. Esas\n"
+          . "  herramientas necesitan sesion: no las llames.\n"
+          . "- Lo PRIMERO es saber si YA TIENE cuenta o NO TIENE. Preguntaselo en\n"
+          . "  una linea, corto y natural.\n"
+          . "\n"
+          . "SI YA TIENE CUENTA:\n"
+          . "- Pedile su nombre de usuario y llama a identificar_usuario.\n"
+          . "- Decile que para cargarle o ver su saldo tiene que iniciar sesion\n"
+          . "  en la pagina.\n"
           . "- Si mas adelante dice ser OTRO usuario, volve a llamar a\n"
-          . "  identificar_usuario con el nuevo (cada usuario es un chat aparte).";
+          . "  identificar_usuario con el nuevo (cada usuario es un chat aparte).\n"
+          . "\n"
+          . "SI NO TIENE CUENTA (o dice que quiere registrarse):\n"
+          . "- Ofrecele crearsela vos, aca mismo, sin mandarlo a ningun lado.\n"
+          . "- Pedile UNA SOLA COSA: que nombre de usuario quiere. Nada mas.\n"
+          . "  NO le pidas contrasena, ni mail, ni nombre, ni DNI, ni telefono.\n"
+          . "- Cuando te lo diga, llama a crear_cuenta con ese nombre.\n"
+          . "- La contrasena la genera el sistema y te la devuelve la herramienta.\n"
+          . "  NUNCA le pidas que la elija el ni que la escriba en el chat.\n"
+          . "- Si devuelve ocupado: ese nombre ya existe. Deciselo y pedile otro.\n"
+          . "- Si devuelve invalido: el usuario va de 3 a 64 caracteres, con\n"
+          . "  letras, numeros, punto, guion o guion bajo.\n"
+          . "- Si devuelve limite: ya se pidieron varias cuentas desde ahi. Decile\n"
+          . "  que espere un rato o que lo atienda un agente.\n"
+          . "\n"
+          . "CUANDO crear_cuenta SALE BIEN - ES LO MAS IMPORTANTE:\n"
+          . "Dale los datos en TRES MENSAJES SEPARADOS, con este formato exacto:\n"
+          . "\n"
+          . "[[MSG]]Listo, ya te la estoy creando. Anota estos datos.\n"
+          . "[[MSG]]Usuario: EL_USUARIO\n"
+          . "[[MSG]]Contrasena: LA_PASSWORD_QUE_DEVOLVIO_LA_HERRAMIENTA\n"
+          . "\n"
+          . "Reglas de ese formato:\n"
+          . "- Cada mensaje arranca con [[MSG]] pegado, sin espacio antes.\n"
+          . "- El usuario y la contrasena van SOLOS en su mensaje: sin comillas,\n"
+          . "  sin negrita, sin ningun comentario al lado. Se copian y pegan.\n"
+          . "- Copia la contrasena TAL CUAL, respetando mayusculas y minusculas.\n"
+          . "  No la inventes ni la cambies nunca.\n"
+          . "- Despues de esos tres, en un cuarto mensaje normal (sin [[MSG]])\n"
+          . "  decile que la cuenta tarda un par de minutos en habilitarse, que\n"
+          . "  despues entre con esos datos, y que se guarde la contrasena porque\n"
+          . "  no se la vas a poder repetir.";
 }
 $mensajes = [['role' => 'system', 'content' => $sys]];
 foreach (array_slice($historial, -MAX_MENSAJES) as $m) {
@@ -290,6 +344,17 @@ try {
     exit;
 }
 
+/* El modelo puede partir su respuesta en varios mensajes con [[MSG]]. Se usa
+   al entregar usuario y contrasena de una cuenta recien creada: cada dato va
+   solo en su globo, para que se copie y pegue sin arrastrar texto al lado.
+
+   Se parte ACA y no en el widget porque el CRM guarda lo mismo que ve el
+   jugador: si el marcador llegara crudo a `mensajes`, el agente que abre la
+   conversacion se encontraria con "[[MSG]]" en el medio del texto. */
+$partes = chatbot_partir($texto);
+$texto  = implode("
+", $partes);   // version plana, para el CRM y la notificacion
+
 // Guardar el turno en el CRM (si falla, no afecta la respuesta al usuario).
 $ultimoUser = '';
 for ($i = count($mensajes) - 1; $i >= 0; $i--) {
@@ -311,9 +376,38 @@ if (function_exists('notif_chat')) {
 }
 
 $salida = ['ok' => true, 'respuesta' => $texto];
+// Solo si de verdad hay mas de uno: asi el widget viejo (que no conoce el
+// campo) sigue andando igual con `respuesta`, y el nuevo no cambia nada en el
+// 99% de los turnos, que son de un solo mensaje.
+if (count($partes) > 1) { $salida['mensajes'] = $partes; }
 if ($cargaInfo) { $salida['carga'] = $cargaInfo; }
 echo json_encode($salida, JSON_UNESCAPED_UNICODE);
 
+
+/**
+ * Parte la respuesta del modelo en varios mensajes segun el marcador [[MSG]].
+ *
+ * Devuelve SIEMPRE al menos un elemento. Si no hay marcador (el caso normal),
+ * devuelve [$texto] tal cual, asi el resto del flujo no cambia.
+ *
+ * Tolerante a proposito con lo que manda el modelo: acepta el marcador con o
+ * sin espacios alrededor, descarta los trozos que quedan vacios (un [[MSG]] al
+ * principio deja uno) y, si de tanto partir no queda nada, devuelve el texto
+ * original en vez de una respuesta en blanco.
+ */
+function chatbot_partir(string $texto): array
+{
+    if (strpos($texto, '[[MSG]]') === false) {
+        return [$texto];
+    }
+    $trozos = preg_split('/\s*\[\[MSG\]\]\s*/u', $texto);
+    $limpio = [];
+    foreach ($trozos as $t) {
+        $t = trim((string)$t);
+        if ($t !== '') { $limpio[] = $t; }
+    }
+    return $limpio ?: [trim($texto)];
+}
 
 /**
  * Lee la config editable del chatbot (tabla config_chatbot, migracion 26).
@@ -541,6 +635,57 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
         $st = $pdo->prepare("SELECT 1 FROM usuarios WHERE username = ? LIMIT 1");
         $st->execute([$u]);
         return ['ok' => true, 'usuario' => $u, 'existe' => (bool)$st->fetchColumn()];
+    }
+    if ($nombre === 'crear_cuenta') {
+        // Ya tiene sesion: no hay nada que crear. Sin esto, un jugador logueado
+        // que escribe "quiero otra cuenta" se lleva un alta que nadie pidio.
+        if ($usuarioSesion !== '') {
+            return ['ok' => false, 'codigo' => 'ya_logueado',
+                    'error' => 'Ya tenes una cuenta y estas usando esa sesion.'];
+        }
+
+        $u = trim((string)($args['usuario'] ?? ''));
+        if ($u === '') {
+            return ['ok' => false, 'codigo' => 'falta_usuario',
+                    'error' => 'Falta el nombre de usuario que quiere.'];
+        }
+
+        // El mismo freno por IP que la landing: cada alta que entra hace que un
+        // bot abra Chromium y opere el panel de agentes de verdad. El chat es
+        // igual de publico que la landing, asi que no puede saltearselo.
+        $ip = alta_ip();
+        $frenado = alta_limite_superado($pdo, $ip);
+        if ($frenado !== null) {
+            return ['ok' => false, 'codigo' => 'limite', 'error' => $frenado];
+        }
+
+        // La clave la genera el server, NUNCA el jugador ni el modelo: si se la
+        // pidieramos por chat, queda escrita en `mensajes` para siempre y a la
+        // vista de cualquier agente que abra la conversacion en el CRM.
+        $clave = alta_clave_random();
+
+        $r = alta_encolar($pdo, [
+            'usuario'  => $u,
+            'password' => $clave,
+            'origen'   => 'chatbot',
+            'ip'       => $ip,
+        ]);
+
+        if (!empty($r['cuerpo']['ok'])) {
+            return ['ok' => true, 'usuario' => $u, 'password' => $clave,
+                    'id' => (int)($r['cuerpo']['id'] ?? 0),
+                    'mensaje' => 'Cuenta pedida. Se esta creando en la plataforma.'];
+        }
+
+        // 409 = el nombre ya esta tomado (o ya hay un alta en curso con ese
+        // nombre). Es el caso mas comun y el modelo tiene que pedir otro, no
+        // reintentar el mismo.
+        if ((int)($r['http'] ?? 0) === 409) {
+            return ['ok' => false, 'codigo' => 'ocupado',
+                    'error' => 'Ese nombre de usuario ya esta ocupado. Pedile otro.'];
+        }
+        return ['ok' => false, 'codigo' => 'invalido',
+                'error' => (string)($r['cuerpo']['error'] ?? 'No se pudo crear la cuenta.')];
     }
     if ($nombre === 'crear_recarga') {
         return rl_crear_recarga($pdo, (string)($args['usuario'] ?? ''), (int)($args['coins'] ?? 0));

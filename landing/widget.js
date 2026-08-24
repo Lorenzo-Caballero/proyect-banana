@@ -186,6 +186,15 @@
     { rot: "RETIRAR", txt: "Quiero retirar",              clase: "" },
     { rot: "SOPORTE", txt: "Necesito hablar con alguien", clase: "" }
   ];
+  /* Sin sesión, "cargar" y "retirar" no llevan a ningún lado: las herramientas
+     necesitan usuario y el bot va a terminar pidiéndole que inicie sesión. Lo
+     que sí puede hacer un anónimo es crearse la cuenta, así que ese es el
+     atajo que le mostramos. */
+  var ATAJOS_ANON = [
+    { rot: "CREAR CUENTA", txt: "No tengo cuenta, quiero crear una", clase: "ok" },
+    { rot: "YA TENGO",     txt: "Ya tengo cuenta",                   clase: "" },
+    { rot: "SOPORTE",      txt: "Necesito hablar con alguien",       clase: "" }
+  ];
 
   function ls(k){ try { return localStorage.getItem(k); } catch (e) { return null; } }
   function lss(k,v){ try { localStorage.setItem(k,v); } catch (e) {} }
@@ -1030,9 +1039,18 @@
     (AGENTE_FOTO ? '<img src="' + esc(AGENTE_FOTO) + '" alt="" onerror="this.remove()">' : '') +
     '</div>';
 
-  var atajos = ATAJOS.map(function (a, i){
-    return '<button type="button" class="' + a.clase + '" data-i="' + i + '">' + esc(a.rot) + '</button>';
-  }).join("");
+  /* Qué atajos van ahora mismo. Se recalcula (pintarAtajos) cada vez que el
+     jugador entra o sale: el panel se arma una sola vez al cargar, pero la
+     sesión puede aparecer después. */
+  function atajosDeAhora(){ return USUARIO ? ATAJOS : ATAJOS_ANON; }
+
+  function htmlAtajos(lista){
+    return lista.map(function (a, i){
+      return '<button type="button" class="' + a.clase + '" data-i="' + i + '">' + esc(a.rot) + '</button>';
+    }).join("");
+  }
+
+  var atajos = htmlAtajos(atajosDeAhora());
 
   var panel = document.createElement("div");
   panel.id = "gp-panel";
@@ -1190,14 +1208,28 @@
   function saludar(){
     saludado = true;
     pintarSistema("Conectado. Escribinos y te respondemos.");
+    /* Sin sesión no le pedimos el usuario de entrada: puede no tener cuenta
+       todavía, y arrancar pidiéndole un dato que no tiene es la forma más
+       rápida de que cierre el chat. Primero averiguamos si ya es jugador. */
     pintar("b", USUARIO
       ? "¡Hola " + USUARIO + "! Soy Camila, del equipo de atención. ¿En qué te puedo ayudar con tu cuenta o tus fichas?"
-      : "¡Hola! Soy Camila, del equipo de atención. Te ayudo con tu cuenta, tus fichas y las recargas. ¿Me decís tu nombre de usuario del juego?");
+      : "¡Hola! Soy Camila, del equipo de atención. ¿Ya tenés cuenta en la plataforma o querés que te cree una?");
   }
 
   function reiniciarCharla(){
     olvidar();
+    pintarAtajos();   // entró o salió: los atajos de antes ya no aplican
     if (panel.classList.contains("open")) saludar();
+  }
+
+  /* Repinta la fila de atajos según haya sesión o no. Se llama en cada cambio
+     de identidad, no al abrir el chat: el jugador puede loguearse con el panel
+     ya abierto. */
+  function pintarAtajos(){
+    var cont = $("gp-quick");
+    if (!cont) return;
+    cont.innerHTML = htmlAtajos(atajosDeAhora());
+    quick = [].slice.call(cont.querySelectorAll("button"));
   }
 
   function abrir(){
@@ -1266,10 +1298,22 @@
       setEstado(AGENTE_ESTADO, false);
       var d = datos;
       if (d && d.ok){
-        pintar("b", d.respuesta);
+        /* El server puede mandar la respuesta partida en varios globos
+           (`mensajes`): se usa al entregar usuario y contraseña de una cuenta
+           nueva, para que cada dato quede solo en su burbuja y se copie sin
+           arrastrar el texto de al lado. Si no viene, es un mensaje y listo. */
+        if (d.mensajes && d.mensajes.length > 1){
+          pintarVarios(d.mensajes, function (){
+            if (d.carga) narrarCarga(d.carga);
+          });
+        } else {
+          pintar("b", d.respuesta);
+          if (d.carga) narrarCarga(d.carga);   // narrar el proceso de la carga
+        }
+        /* Al historial va la versión plana: es lo que el modelo tiene que ver
+           en el próximo turno, y los marcadores ya no existen a esta altura. */
         historial.push({ role: "assistant", content: d.respuesta });
         guardar();
-        if (d.carga) narrarCarga(d.carga);   // narrar el proceso de la carga
       } else if (d && d._neterr){
         pintar("b", "⚠️ No pude conectar. Fijate si tenés señal y probá de nuevo.");
       } else {
@@ -1317,6 +1361,35 @@
         log("chat <- NO SE PUDO LEER:", String(e && e.message || e));
         datos = { _neterr: true }; revelar();
       });
+  }
+
+  /* Pinta varios mensajes seguidos como los mandaría una persona: uno, una
+     pausa corta con el "escribiendo…", y el siguiente. De golpe se vería como
+     un volcado de sistema, que es justo lo contrario de lo que buscamos.
+
+     El primero sale ya (el jugador viene de esperar la respuesta); los que
+     siguen esperan. La pausa es corta a propósito: son datos que el jugador
+     está esperando para anotar, no charla. */
+  function pintarVarios(lista, alTerminar){
+    var i = 0;
+    function siguiente(){
+      if (i >= lista.length){ if (alTerminar) alTerminar(); return; }
+      var txt = lista[i++];
+      if (i === 1){                       // el primero, sin demora
+        pintar("b", txt);
+        setTimeout(siguiente, 700);
+        return;
+      }
+      setEstado("escribiendo…", true);
+      var esp = escribiendo();
+      setTimeout(function (){
+        esp.remove();
+        setEstado(AGENTE_ESTADO, false);
+        pintar("b", txt);
+        setTimeout(siguiente, 700);
+      }, 900);
+    }
+    siguiente();
   }
 
   /* Narra el proceso de una carga como lo haría una persona: manda un mensaje,
@@ -1381,7 +1454,7 @@
      segunda vía que mantener del lado del server. */
   $("gp-quick").addEventListener("click", function (e){
     var b = e.target.closest("button"); if (!b) return;
-    var a = ATAJOS[+b.getAttribute("data-i")]; if (!a) return;
+    var a = atajosDeAhora()[+b.getAttribute("data-i")]; if (!a) return;
     abrir();
     enviarMensaje(a.txt);
   });
