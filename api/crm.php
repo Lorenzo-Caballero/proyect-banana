@@ -15,7 +15,16 @@
  * POST { accion:"estado",       id, estado }
  * POST { accion:"cargar_fichas",usuario, monto, motivo, conversacion_id? }
  * POST { accion:"cargar_bono",  usuario, monto, motivo, conversacion_id? }
- * POST { accion:"notificar",    usuario|todos, titulo, cuerpo, tipo? }
+ * POST { accion:"notificar",    usuario|todos|filtro:{modo,dias?}, titulo, cuerpo, tipo? }
+ * GET  ?accion=notif_historial&usuario=&desde=&hasta=&tipo=&pagina=
+ * GET  ?accion=notif_alcance_inactivos&dias=N
+ * GET  ?accion=notif_presets_listar
+ * POST { accion:"notif_preset_guardar", nombre, filtro }
+ * POST { accion:"notif_preset_borrar",  id }
+ * GET  ?accion=bonos_listar&usuario=&estado=
+ * POST { accion:"bono_crear",  usuario, tipo:fichas|pct|giro, valor }
+ * POST { accion:"bono_editar", id, tipo, valor }
+ * POST { accion:"bono_borrar", id }
  */
 
 declare(strict_types=1);
@@ -24,6 +33,7 @@ require __DIR__ . '/db.php';
 require __DIR__ . '/crm_lib.php';
 require __DIR__ . '/crm_auth.php';
 require __DIR__ . '/notificaciones_lib.php';
+require __DIR__ . '/crm_notificaciones.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
@@ -45,13 +55,26 @@ function salir($data, int $code = 200): void
     exit;
 }
 
-/** Trae la ficha del usuario desde `usuarios`: saldo, fichas (coins), bonos, flags. */
+/** Trae la ficha del usuario desde `usuarios`: saldo (real, de ganamos),
+ *  bono pendiente (prometido, aún no acreditado) y flags.
+ *
+ *  OJO SALDO vs FICHAS: `coins` ("fichas") es un contador PROPIO que lleva
+ *  el CRM (cargas manuales + recargas acreditadas) -- el sync de ganamos NO
+ *  trae ningún campo de fichas, solo `balance` (dinero real). Mostrar los
+ *  dos como si fueran independientes confundía: acá solo se expone `saldo`
+ *  (`usuarios.balance`), que es el único dato real sincronizado.
+ *
+ *  OJO BONO: `usuarios.bonus` es un acumulado HISTÓRICO que solo suma
+ *  (ruleta + cargas manuales + bonos prometidos ya aplicados) y nunca se
+ *  resta -- no refleja "lo que el jugador tiene disponible ahora". Lo que
+ *  sí es accionable es `bonos_pendientes` con estado='pendiente': bonos
+ *  YA PROMETIDOS por notificación que todavía esperan la próxima recarga
+ *  del jugador para hacerse efectivos (ver crm_notificaciones.php). Eso es
+ *  lo que se expone como `bono_pendiente`. */
 function ficha_usuario(PDO $pdo, string $usuario): ?array
 {
     $st = $pdo->prepare(
         "SELECT id AS ganamos_id, username AS nombre_usuario,
-                COALESCE(coins, 0)  AS fichas,
-                COALESCE(bonus, 0)  AS bonus,
                 COALESCE(balance,0) AS saldo,
                 COALESCE(total_deposits,0) AS total_deposits,
                 role, is_banned, tiene_app, notificaciones,
@@ -62,15 +85,42 @@ function ficha_usuario(PDO $pdo, string $usuario): ?array
     $r = $st->fetch(PDO::FETCH_ASSOC);
     if (!$r) { return null; }
 
-    $r['fichas']         = (int)$r['fichas'];
-    $r['bonus']          = (int)$r['bonus'];
     $r['saldo']          = (float)$r['saldo'];
     $r['total_deposits'] = (float)$r['total_deposits'];
     $r['is_banned']      = (bool)$r['is_banned'];
     $r['tiene_app']      = (bool)($r['tiene_app'] ?? false);
     $r['notificaciones'] = (bool)($r['notificaciones'] ?? false);
     $r['registrado_sitio'] = true;
+    $r['bono_pendiente'] = bono_pendiente_total($pdo, $usuario);
     return $r;
+}
+
+/** Suma de bonos_pendientes (fichas + pct, estado='pendiente') de un
+ *  usuario. El de tipo 'pct' todavía no tiene monto fijo (depende de
+ *  cuánto cargue), así que se cuenta como cantidad de promesas, no como
+ *  pesos -- ver bono_pendiente_desglose() para el detalle completo.
+ *  Nunca lanza: si falta la migración 33, la ficha sigue andando sin este
+ *  dato (vuelve 0). */
+function bono_pendiente_total(PDO $pdo, string $usuario): array
+{
+    try {
+        $st = $pdo->prepare(
+            "SELECT tipo, COUNT(*) AS cant, COALESCE(SUM(valor),0) AS suma
+               FROM bonos_pendientes
+              WHERE usuario = ? AND estado = 'pendiente'
+              GROUP BY tipo"
+        );
+        $st->execute([$usuario]);
+        $out = ['fichas' => 0, 'pct_cantidad' => 0, 'giro_cantidad' => 0];
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            if ($r['tipo'] === 'fichas') { $out['fichas'] += (int)$r['suma']; }
+            if ($r['tipo'] === 'pct')    { $out['pct_cantidad'] += (int)$r['cant']; }
+            if ($r['tipo'] === 'giro')   { $out['giro_cantidad'] += (int)$r['cant']; }
+        }
+        return $out;
+    } catch (Throwable $e) {
+        return ['fichas' => 0, 'pct_cantidad' => 0, 'giro_cantidad' => 0];
+    }
 }
 
 function movimientos(PDO $pdo, string $usuario, int $limite = 30): array
@@ -494,6 +544,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             salir(['ok' => true, 'programadas' => $todas]);
         }
 
+        // ---- historial de notificaciones YA enviadas (a diferencia de
+        //      programadas_listar, que solo mira las futuras) ----
+        if ($accion === 'notif_historial') {
+            $opts = [
+                'usuario' => (string)($_GET['usuario'] ?? ''),
+                'desde'   => (string)($_GET['desde'] ?? ''),
+                'hasta'   => (string)($_GET['hasta'] ?? ''),
+                'tipo'    => (string)($_GET['tipo'] ?? ''),
+                'pagina'  => (int)($_GET['pagina'] ?? 1),
+            ];
+            salir(array_merge(['ok' => true], crmnotif_historial($pdo, $opts)));
+        }
+
+        // ---- preview de alcance para el filtro "inactivos hace N días" ----
+        if ($accion === 'notif_alcance_inactivos') {
+            $dias = (int)($_GET['dias'] ?? 0);
+            salir(['ok' => true, 'alcance' => crmnotif_alcance_inactivos($pdo, $dias)]);
+        }
+
+        // ---- presets de filtro guardados ----
+        if ($accion === 'notif_presets_listar') {
+            salir(['ok' => true, 'presets' => crmnotif_presets_listar($pdo)]);
+        }
+
+        // ---- bonos pendientes (catálogo de lo prometido por notificación) ----
+        if ($accion === 'bonos_listar') {
+            $opts = [
+                'usuario' => (string)($_GET['usuario'] ?? ''),
+                'estado'  => (string)($_GET['estado'] ?? ''),
+            ];
+            salir(['ok' => true, 'bonos' => crmnotif_bono_listar($pdo, $opts)]);
+        }
+
         salir(['ok' => false, 'error' => 'accion desconocida'], 400);
     } catch (Throwable $e) {
         error_log('crm GET: ' . $e->getMessage());
@@ -617,6 +700,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $todos   = !empty($body['todos']);
             $usuario = $todos ? null : trim((string)($body['usuario'] ?? ''));
 
+            // Filtro de audiencia (Fase notificaciones avanzadas): si viene
+            // filtro.modo="inactivos", el push NO va a "todos" ni a un
+            // usuario puntual -- se resuelve la lista de inactivos y se
+            // manda por crmnotif_enviar_masivo (una fila por destinatario,
+            // agrupadas por lote_id). El canal chat/programación siguen el
+            // camino de siempre para el resto de los modos.
+            $filtro = is_array($body['filtro'] ?? null) ? $body['filtro'] : null;
+            $modoFiltro = $filtro ? (string)($filtro['modo'] ?? '') : '';
+
             $canal = (string)($body['canal'] ?? 'push');
             if (!in_array($canal, ['push', 'chat', 'ambos'], true)) { $canal = 'push'; }
             $incluyePush = $canal === 'push' || $canal === 'ambos';
@@ -627,6 +719,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Para el chat, si no mandaron un texto propio, se usa el cuerpo
             // del push (evita pedir lo mismo dos veces cuando el canal es "ambos").
             $mensajeChat = trim((string)($body['mensaje_chat'] ?? '')) ?: $cuerpo;
+
+            if ($modoFiltro === 'inactivos') {
+                if ($incluyePush && ($titulo === '' || $cuerpo === '')) {
+                    salir(['ok' => false, 'error' => 'Falta el título o el mensaje'], 400);
+                }
+                $dias = max(0, (int)($filtro['dias'] ?? 0));
+                $r = crmnotif_enviar_masivo($pdo, ['modo' => 'inactivos', 'dias' => $dias],
+                                            $titulo, $cuerpo, (string)($body['tipo'] ?? 'promo'),
+                                            'crm', $operador);
+                if (!$r['ok']) { salir($r, 500); }
+                salir(['ok' => true, 'alcance' => $r['alcance'], 'lote_id' => $r['lote_id'], 'canal' => 'push']);
+            }
 
             if (!$todos && $usuario === '') {
                 salir(['ok' => false, 'error' => 'Elegí un jugador o marcá "a todos"'], 400);
@@ -707,6 +811,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             salir(['ok' => true, 'id' => $pushId, 'programada_en' => $progEn, 'canal' => $canal,
                    'alcance' => $incluyePush ? notif_alcance($pdo, $usuario) : null,
                    'chat_alcance' => $chatAlcance]);
+        }
+
+        // ---- presets de filtro (guardar/editar reusan el mismo UPSERT) ----
+        if ($accion === 'notif_preset_guardar') {
+            $nombre = trim((string)($body['nombre'] ?? ''));
+            $filtro = is_array($body['filtro'] ?? null) ? $body['filtro'] : [];
+            $r = crmnotif_preset_guardar($pdo, $nombre, $filtro, $operador);
+            salir($r, $r['ok'] ? 200 : 400);
+        }
+        if ($accion === 'notif_preset_borrar') {
+            $id = (int)($body['id'] ?? 0);
+            if (!$id) { salir(['ok' => false, 'error' => 'Falta id'], 400); }
+            $ok = crmnotif_preset_borrar($pdo, $id);
+            salir(['ok' => $ok], $ok ? 200 : 400);
+        }
+
+        // ---- bonos pendientes (prometidos por notificación) ----
+        if ($accion === 'bono_crear') {
+            $usuario = trim((string)($body['usuario'] ?? ''));
+            $tipo    = (string)($body['tipo'] ?? '');
+            $valor   = (int)($body['valor'] ?? 0);
+            $r = crmnotif_bono_crear($pdo, $usuario, $tipo, $valor, $operador,
+                                     isset($body['notificacion_id']) ? (int)$body['notificacion_id'] : null);
+            if ($r['ok']) {
+                crm_bitacora($pdo, $operador, 'bono_crear', "$usuario · $tipo · $valor");
+            }
+            salir($r, $r['ok'] ? 200 : 400);
+        }
+        if ($accion === 'bono_editar') {
+            $id    = (int)($body['id'] ?? 0);
+            $tipo  = (string)($body['tipo'] ?? '');
+            $valor = (int)($body['valor'] ?? 0);
+            if (!$id) { salir(['ok' => false, 'error' => 'Falta id'], 400); }
+            $r = crmnotif_bono_editar($pdo, $id, $tipo, $valor);
+            salir($r, $r['ok'] ? 200 : 400);
+        }
+        if ($accion === 'bono_borrar') {
+            $id = (int)($body['id'] ?? 0);
+            if (!$id) { salir(['ok' => false, 'error' => 'Falta id'], 400); }
+            $ok = crmnotif_bono_borrar($pdo, $id);
+            if ($ok) { crm_bitacora($pdo, $operador, 'bono_borrar', "id=$id"); }
+            salir(['ok' => $ok], $ok ? 200 : 400);
         }
 
         // ---- anclar / desanclar ----

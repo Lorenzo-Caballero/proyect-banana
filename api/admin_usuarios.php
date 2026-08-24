@@ -48,6 +48,7 @@ if (!in_array($porPag, [25, 50, 100, 200], true)) {
 $columnas = [
     'username'       => 'u.username',
     'balance'        => 'u.balance',
+    'bono_pendiente' => 'bp.suma',
     'coins'          => 'u.coins',
     'bonus'          => 'u.bonus',
     'total_deposits' => 'u.total_deposits',
@@ -64,19 +65,36 @@ if ($q !== '') {
     $params[] = '%' . $q . '%';
 }
 switch ($filtro) {
-    case 'con_saldo':  $where[] = 'u.balance > 0'; break;
-    case 'sin_saldo':  $where[] = 'u.balance = 0'; break;
-    case 'baneados':   $where[] = 'u.is_banned = 1'; break;
-    case 'con_coins':  $where[] = 'u.coins > 0'; break;
-    case 'con_bonos':  $where[] = 'u.bonus > 0'; break;
+    case 'con_saldo':          $where[] = 'u.balance > 0'; break;
+    case 'sin_saldo':          $where[] = 'u.balance = 0'; break;
+    case 'baneados':           $where[] = 'u.is_banned = 1'; break;
+    case 'con_bono_pendiente': $where[] = 'bp.suma > 0'; break;
+    case 'con_bonos':          $where[] = 'u.bonus > 0'; break;
 }
 $whereSql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
-// Ahora todo vive en `usuarios`: fichas (coins) y bonos son columnas de la tabla.
-$base = "FROM usuarios u $whereSql";
+
+// bono_pendiente: bonos_pendientes sin acreditar (prometidos por
+// notificación, esperan la próxima recarga del jugador) -- ver
+// bono_pendiente_total() en crm.php para el mismo concepto en la ficha de
+// conversación. Acá, a diferencia de la ficha, se muestra ya sumado en
+// coins-equivalente para poder ordenar/listar sin desglose por tipo (la
+// tabla es de muchas filas, no un detalle de un único usuario). Solo cuenta
+// tipo='fichas' -- 'pct' no tiene monto fijo hasta que el jugador carga, y
+// 'giro' no es coins. LEFT JOIN + COALESCE: un usuario sin bonos pendientes
+// no desaparece del listado. COLLATE explícito: usuarios está en collation
+// distinta a bonos_pendientes (ver CLAUDE.md, choque de collations).
+$base = "FROM usuarios u
+         LEFT JOIN (
+           SELECT usuario, SUM(valor) AS suma
+             FROM bonos_pendientes
+            WHERE estado = 'pendiente' AND tipo = 'fichas'
+            GROUP BY usuario
+         ) bp ON bp.usuario = u.username COLLATE utf8mb4_unicode_ci
+         $whereSql";
 
 $SELECT = "SELECT u.id, u.username, u.balance, u.bonus, u.total_deposits, u.role,
                   u.is_banned, u.creation_date, u.actualizado_en,
-                  COALESCE(u.coins, 0) AS coins";
+                  COALESCE(bp.suma, 0) AS bono_pendiente";
 
 /** Castea los tipos de una fila para que el JSON salga prolijo. */
 function tipar(array $it): array
@@ -84,8 +102,8 @@ function tipar(array $it): array
     $it['id']             = (int)$it['id'];
     $it['balance']        = (float)$it['balance'];
     $it['bonus']          = (float)$it['bonus'];
+    $it['bono_pendiente'] = (int)$it['bono_pendiente'];
     $it['total_deposits'] = (float)$it['total_deposits'];
-    $it['coins']          = (int)$it['coins'];
     $it['is_banned']      = (bool)$it['is_banned'];
     return $it;
 }
@@ -100,12 +118,12 @@ if ($accion === 'exportar') {
     header('Content-Disposition: attachment; filename="usuarios_' . date('Y-m-d') . '.csv"');
     $out = fopen('php://output', 'w');
     fprintf($out, "\xEF\xBB\xBF");   // BOM para que Excel abra bien los acentos
-    fputcsv($out, ['id', 'usuario', 'saldo', 'fichas', 'bonos', 'depositos_total',
+    fputcsv($out, ['id', 'usuario', 'saldo', 'bono_pendiente', 'bono_historico', 'depositos_total',
                    'rol', 'baneado', 'alta_ganamos', 'actualizado']);
     while ($row = $st->fetch(PDO::FETCH_ASSOC)) {
         $r = tipar($row);
         fputcsv($out, [
-            $r['id'], $r['username'], $r['balance'], $r['coins'], $r['bonus'],
+            $r['id'], $r['username'], $r['balance'], $r['bono_pendiente'], $r['bonus'],
             $r['total_deposits'], $r['role'], $r['is_banned'] ? 'si' : 'no',
             $r['creation_date'], $r['actualizado_en'],
         ]);
@@ -138,6 +156,19 @@ try {
                       FROM usuarios")->fetch(PDO::FETCH_ASSOC);
     $ultima = $pdo->query("SELECT MAX(actualizado_en) FROM usuarios")->fetchColumn();
 
+    // Bono pendiente total: suma de bonos_pendientes tipo='fichas' sin
+    // acreditar, de TODOS los usuarios (no filtrado). Try/catch propio: la
+    // tabla es de la migración 33, si alguna base de cliente todavía no la
+    // corrió, el resumen sigue andando con este dato en 0 en vez de romper
+    // toda la pantalla de Usuarios.
+    try {
+        $bonoPendienteTotal = (int)$pdo->query(
+            "SELECT COALESCE(SUM(valor),0) FROM bonos_pendientes WHERE estado='pendiente' AND tipo='fichas'"
+        )->fetchColumn();
+    } catch (Throwable $e) {
+        $bonoPendienteTotal = 0;
+    }
+
     echo json_encode([
         'ok'         => true,
         'items'      => $items,
@@ -146,14 +177,15 @@ try {
         'por_pagina' => $porPag,
         'paginas'    => (int)ceil($total / max(1, $porPag)),
         'resumen'    => [
-            'total_usuarios' => (int)$u['total'],
-            'con_saldo'      => (int)$u['con_saldo'],
-            'saldo_total'    => (float)$u['saldo_total'],
-            'baneados'       => (int)$u['baneados'],
-            'con_coins'      => (int)$u['con_coins'],
-            'coins_total'    => (int)$u['coins_total'],
-            'bonos_total'    => (int)$u['bonos_total'],
-            'ultima_sync'    => $ultima,
+            'total_usuarios'        => (int)$u['total'],
+            'con_saldo'             => (int)$u['con_saldo'],
+            'saldo_total'           => (float)$u['saldo_total'],
+            'baneados'              => (int)$u['baneados'],
+            'con_coins'             => (int)$u['con_coins'],
+            'coins_total'           => (int)$u['coins_total'],
+            'bonos_total'           => (int)$u['bonos_total'],
+            'bono_pendiente_total'  => $bonoPendienteTotal,
+            'ultima_sync'           => $ultima,
         ],
     ], JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
