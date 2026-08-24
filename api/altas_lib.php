@@ -21,12 +21,18 @@ declare(strict_types=1);
 // formalidad: sin freno, alguien encola mil altas en un minuto y te quema la
 // cuenta de agente.
 //
-// Son valores POR DEFECTO y se pisan desde api/config.local.php:
+// APAGADO por defecto (0 = sin limite), en TODOS los endpoints.
+//
+// Frenar un alta es perder un cliente: el que quiere abrir una cuenta la
+// quiere ahora, y un "espera una hora" lo manda a la competencia. El abuso,
+// si algun dia aparece, se ataja mirando la cola y prendiendo esto — no al
+// reves, castigando de entrada a todos los que si son clientes.
+//
+// Para prenderlo, en api/config.local.php:
 //     'ALTAS_POR_IP_HORA' => 20,
 //     'ALTAS_POR_IP_DIA'  => 100,
-// Con 0 el limite queda APAGADO.
-const ALTAS_POR_IP_HORA = 3;
-const ALTAS_POR_IP_DIA  = 10;
+const ALTAS_POR_IP_HORA = 0;
+const ALTAS_POR_IP_DIA  = 0;
 
 /**
  * Cuantas altas por hora/dia tolera una IP. Lee la config si esta, y si no
@@ -336,35 +342,3 @@ function alta_entrega(PDO $pdo, int $id, string $sid): array
             'usuario' => (string)$fila['usuario'], 'password' => $clave];
 }
 
-/**
- * Freno por IP con limites explicitos, para el chat.
- *
- * Igual que alta_limite_superado() pero recibiendo los numeros en vez de
- * leerlos de la config: el chat tiene su propio par de limites (apagados por
- * defecto) y no comparte los de la landing. Un limite en 0 no se aplica.
- */
-function alta_chat_limite(PDO $pdo, string $ip, int $porHora, int $porDia): ?string
-{
-    if ($ip === '' || ($porHora <= 0 && $porDia <= 0)) {
-        return null;
-    }
-
-    $q = $pdo->prepare(
-        "SELECT SUM(pedido_en > DATE_SUB(NOW(), INTERVAL 1 HOUR)) AS ultima_hora,
-                COUNT(*)                                          AS ultimo_dia
-           FROM altas
-          WHERE ip = ?
-            AND origen = 'chatbot'
-            AND pedido_en > DATE_SUB(NOW(), INTERVAL 1 DAY)"
-    );
-    $q->execute([$ip]);
-    $r = $q->fetch();
-
-    if ($porHora > 0 && (int)($r['ultima_hora'] ?? 0) >= $porHora) {
-        return 'Pediste varias cuentas hace un rato. Esperá un poco e intentá de nuevo.';
-    }
-    if ($porDia > 0 && (int)($r['ultimo_dia'] ?? 0) >= $porDia) {
-        return 'Alcanzaste el máximo de cuentas por día. Te paso con un agente.';
-    }
-    return null;
-}

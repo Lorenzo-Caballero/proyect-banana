@@ -14,17 +14,13 @@ return [
     'BOT_API_KEY' => 'PEGA-ACA-LA-CLAVE-DE-32-CARACTERES',
 
     // --- Altas de jugadores: freno por IP -----------------------------------
-    // Cada alta hace que un bot abra Chromium y opere el panel de agentes de
-    // verdad, asi que el formulario PUBLICO (landing) tiene tope. Con 0 se
-    // apaga. Estos son los valores por defecto:
-    // 'ALTAS_POR_IP_HORA' => 3,
-    // 'ALTAS_POR_IP_DIA'  => 10,
+    // APAGADO. Nadie tiene tope para crearse una cuenta, ni por chat ni por la
+    // landing: frenar un alta es perder un cliente.
     //
-    // El CHAT tiene su propio par, APAGADO por defecto: el que pide una cuenta
-    // por chat ya esta hablando con nosotros, y frenarlo con "espera una hora"
-    // es perder al cliente en la puerta. Prendelo solo si alguien abusa:
-    // 'ALTAS_CHAT_POR_IP_HORA' => 10,
-    // 'ALTAS_CHAT_POR_IP_DIA'  => 30,
+    // Cada alta hace que un bot abra Chromium y opere el panel de agentes de
+    // verdad, asi que si alguna vez alguien abusa, se prende asi (0 = apagado):
+    // 'ALTAS_POR_IP_HORA' => 20,
+    // 'ALTAS_POR_IP_DIA'  => 100,
 
     // Clave para entrar al panel de administracion (admin.html / admin_usuarios.php).
     // Elegi una que te acuerdes; minimo 6 caracteres. Es lo que escribis al entrar.
