@@ -362,6 +362,12 @@ try {
    Se parte ACA y no en el widget porque el CRM guarda lo mismo que ve el
    jugador: si el marcador llegara crudo a `mensajes`, el agente que abre la
    conversacion se encontraria con "[[MSG]]" en el medio del texto. */
+// El modelo NO entrega credenciales. Nunca. Las entrega el widget cuando
+// alta_estado.php confirma que la cuenta existe. Si el texto trae una
+// contrasena es porque el modelo se la invento, y eso le da al jugador una
+// cuenta que no existe -- el error mas caro de todo este flujo.
+$texto = chatbot_sin_credenciales($texto);
+
 $partes = chatbot_partir($texto);
 $texto  = implode("
 ", $partes);   // version plana, para el CRM y la notificacion
@@ -407,6 +413,52 @@ echo json_encode($salida, JSON_UNESCAPED_UNICODE);
  * principio deja uno) y, si de tanto partir no queda nada, devuelve el texto
  * original en vez de una respuesta en blanco.
  */
+/**
+ * Saca del texto del modelo cualquier cosa que parezca una contrasena.
+ *
+ * Por que existe, si el prompt ya se lo prohibe: un prompt es una instruccion,
+ * no una garantia. El modelo puede inventar un "Usuario: x / Contrasena: y" y
+ * el widget lo pinta tal cual, porque es texto suyo y no pasa por ninguna
+ * herramienta. Ya paso: el chat entrego credenciales de una cuenta que no
+ * existia, con el alta ni siquiera encolada.
+ *
+ * Las credenciales de verdad NO viajan por aca: las manda el widget cuando
+ * alta_estado.php confirma el alta (campo `alta` de la respuesta). Asi que
+ * cualquier contrasena en el texto del modelo sobra, sin excepcion.
+ *
+ * Se reemplaza la linea entera en vez de borrarla, para que el jugador vea que
+ * los datos vienen enseguida y no un mensaje cortado a la mitad.
+ */
+function chatbot_sin_credenciales(string $texto): string
+{
+    // "Contrasena: loquesea" / "Clave: ..." / "Password: ...", con o sin
+    // tilde, con : o =. Se corta en el fin de linea: lo que sigue despues
+    // (si el modelo escribio mas) se conserva.
+    // La palabra puede no estar al principio de la linea ("Tu clave: x") y
+    // puede haber un par de palabras antes de los dos puntos ("la password
+    // ES: x"). Se reemplaza la LINEA ENTERA. Filtrar de mas es barato;
+    // filtrar de menos entrega una cuenta que no existe.
+    $rx = '/^[^\r\n]*(?:contrase\x{00F1}a|contrasena|clave|password|pass)'
+        . '(?:[^\S\r\n]+\w+){0,3}[^\S\r\n]*[:=][^\r\n]*$/imu';
+
+    $limpio = preg_replace($rx,
+        'Los datos te van a aparecer acá apenas la cuenta esté lista.', $texto);
+
+    // preg_replace devuelve null si la regex falla: ante la duda, el texto
+    // original es mejor que una respuesta vacia.
+    if ($limpio === null) {
+        return $texto;
+    }
+
+    // Si cambio algo, dejarlo en el log: significa que el modelo intento
+    // entregar credenciales por su cuenta y hay que mirar el prompt.
+    if ($limpio !== $texto) {
+        error_log('chatbot: el modelo intento entregar credenciales en el texto. '
+                . 'Se filtraron (las entrega el widget al confirmarse el alta).');
+    }
+    return $limpio;
+}
+
 function chatbot_partir(string $texto): array
 {
     if (strpos($texto, '[[MSG]]') === false) {
