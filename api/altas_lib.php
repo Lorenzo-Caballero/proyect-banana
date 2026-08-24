@@ -333,12 +333,34 @@ function alta_encolar(PDO $pdo, array $d): array
  */
 function alta_estado(PDO $pdo, int $id, string $usuario): array
 {
-    $q = $pdo->prepare("SELECT estado FROM altas WHERE id = ? AND usuario = ?");
-    $q->execute([$id, $usuario]);
-    $fila = $q->fetch();
+    // creado_en_panel manda igual que en alta_entrega(): `listo` significa "la
+    // cuenta EXISTE", y de eso depende que el front muestre las credenciales.
+    // Si la columna no esta (migracion 36 sin correr) se cae a la consulta
+    // vieja pero NO se da por creada nada -- ver mas abajo.
+    $hayFlag = true;
+    try {
+        $q = $pdo->prepare("SELECT estado, creado_en_panel FROM altas WHERE id = ? AND usuario = ?");
+        $q->execute([$id, $usuario]);
+        $fila = $q->fetch();
+    } catch (PDOException $e) {
+        $hayFlag = false;
+        $q = $pdo->prepare("SELECT estado FROM altas WHERE id = ? AND usuario = ?");
+        $q->execute([$id, $usuario]);
+        $fila = $q->fetch();
+    }
 
     if (!$fila) {
         return ['http' => 404, 'cuerpo' => ['ok' => false, 'error' => 'Pedido inexistente']];
+    }
+
+    // Sin la bandera no se afirma que la cuenta exista: se responde "todavia
+    // no" y se avisa. Es el mismo criterio que alta_entrega().
+    $enPanel = $hayFlag
+        ? ((int)($fila['creado_en_panel'] ?? 0) === 1)
+        : false;
+    if (!$hayFlag) {
+        error_log('altas: falta la migracion 36 (creado_en_panel). '
+                . 'alta_estado() no confirma altas hasta que se corra.');
     }
 
     // El detalle tecnico que informa el bot (`mensaje`) NO sale de aca: no le
@@ -346,7 +368,7 @@ function alta_estado(PDO $pdo, int $id, string $usuario): array
     return ['http' => 200, 'cuerpo' => [
         'ok'     => true,
         'estado' => $fila['estado'],
-        'listo'  => $fila['estado'] === 'ok',
+        'listo'  => ($fila['estado'] === 'ok' && $enPanel),
         'fallo'  => $fila['estado'] === 'error',
     ]];
 }
