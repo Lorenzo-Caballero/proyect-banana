@@ -16,10 +16,33 @@
 
 declare(strict_types=1);
 
-// Freno del endpoint publico. Cada alta encolada hace que un bot abra Chromium
-// y opere el panel de agentes de verdad, asi que esto no es una formalidad.
+// Freno por IP. Cada alta encolada hace que un bot abra Chromium y opere el
+// panel de agentes de verdad, asi que en un endpoint publico no es una
+// formalidad: sin freno, alguien encola mil altas en un minuto y te quema la
+// cuenta de agente.
+//
+// Son valores POR DEFECTO y se pisan desde api/config.local.php:
+//     'ALTAS_POR_IP_HORA' => 20,
+//     'ALTAS_POR_IP_DIA'  => 100,
+// Con 0 el limite queda APAGADO.
 const ALTAS_POR_IP_HORA = 3;
 const ALTAS_POR_IP_DIA  = 10;
+
+/**
+ * Cuantas altas por hora/dia tolera una IP. Lee la config si esta, y si no
+ * cae a las constantes de arriba. 0 = sin limite.
+ */
+function alta_limite_hora(): int
+{
+    $v = function_exists('cfg') ? cfg('ALTAS_POR_IP_HORA', '') : '';
+    return ($v === '' || $v === null) ? ALTAS_POR_IP_HORA : max(0, (int)$v);
+}
+
+function alta_limite_dia(): int
+{
+    $v = function_exists('cfg') ? cfg('ALTAS_POR_IP_DIA', '') : '';
+    return ($v === '' || $v === null) ? ALTAS_POR_IP_DIA : max(0, (int)$v);
+}
 
 /**
  * REMOTE_ADDR y nada mas. Las cabeceras tipo X-Forwarded-For las manda el
@@ -59,7 +82,11 @@ function alta_validar(string $usuario, string $password, string $email): ?string
  */
 function alta_limite_superado(PDO $pdo, string $ip): ?string
 {
-    if ($ip === '') {
+    $porHora = alta_limite_hora();
+    $porDia  = alta_limite_dia();
+
+    // Los dos en 0 = freno apagado: ni siquiera consultamos la base.
+    if ($ip === '' || ($porHora === 0 && $porDia === 0)) {
         return null;
     }
 
@@ -73,10 +100,10 @@ function alta_limite_superado(PDO $pdo, string $ip): ?string
     $q->execute([$ip]);
     $r = $q->fetch();
 
-    if ((int)($r['ultima_hora'] ?? 0) >= ALTAS_POR_IP_HORA) {
+    if ($porHora > 0 && (int)($r['ultima_hora'] ?? 0) >= $porHora) {
         return 'Ya pediste varias cuentas hace un rato. Esperá una hora e intentá de nuevo.';
     }
-    if ((int)($r['ultimo_dia'] ?? 0) >= ALTAS_POR_IP_DIA) {
+    if ($porDia > 0 && (int)($r['ultimo_dia'] ?? 0) >= $porDia) {
         return 'Alcanzaste el máximo de cuentas por día. Escribinos por chat si necesitás otra.';
     }
     return null;
@@ -307,4 +334,37 @@ function alta_entrega(PDO $pdo, int $id, string $sid): array
 
     return ['ok' => true, 'estado' => 'ok', 'listo' => true,
             'usuario' => (string)$fila['usuario'], 'password' => $clave];
+}
+
+/**
+ * Freno por IP con limites explicitos, para el chat.
+ *
+ * Igual que alta_limite_superado() pero recibiendo los numeros en vez de
+ * leerlos de la config: el chat tiene su propio par de limites (apagados por
+ * defecto) y no comparte los de la landing. Un limite en 0 no se aplica.
+ */
+function alta_chat_limite(PDO $pdo, string $ip, int $porHora, int $porDia): ?string
+{
+    if ($ip === '' || ($porHora <= 0 && $porDia <= 0)) {
+        return null;
+    }
+
+    $q = $pdo->prepare(
+        "SELECT SUM(pedido_en > DATE_SUB(NOW(), INTERVAL 1 HOUR)) AS ultima_hora,
+                COUNT(*)                                          AS ultimo_dia
+           FROM altas
+          WHERE ip = ?
+            AND origen = 'chatbot'
+            AND pedido_en > DATE_SUB(NOW(), INTERVAL 1 DAY)"
+    );
+    $q->execute([$ip]);
+    $r = $q->fetch();
+
+    if ($porHora > 0 && (int)($r['ultima_hora'] ?? 0) >= $porHora) {
+        return 'Pediste varias cuentas hace un rato. Esperá un poco e intentá de nuevo.';
+    }
+    if ($porDia > 0 && (int)($r['ultimo_dia'] ?? 0) >= $porDia) {
+        return 'Alcanzaste el máximo de cuentas por día. Te paso con un agente.';
+    }
+    return null;
 }

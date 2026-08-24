@@ -653,13 +653,23 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
                     'error' => 'Falta el nombre de usuario que quiere.'];
         }
 
-        // El mismo freno por IP que la landing: cada alta que entra hace que un
-        // bot abra Chromium y opere el panel de agentes de verdad. El chat es
-        // igual de publico que la landing, asi que no puede saltearselo.
+        // Freno por IP. APAGADO por defecto en el chat: el jugador que pide una
+        // cuenta por aca ya esta hablando con nosotros, y frenarlo con "espera
+        // una hora" es perder al cliente en la puerta. La landing, que es un
+        // formulario anonimo y automatizable, si lo mantiene.
+        //
+        // Se puede prender para el chat desde api/config.local.php si alguna
+        // vez alguien abusa:
+        //     'ALTAS_CHAT_POR_IP_HORA' => 10,
+        //     'ALTAS_CHAT_POR_IP_DIA'  => 30,
         $ip = alta_ip();
-        $frenado = alta_limite_superado($pdo, $ip);
-        if ($frenado !== null) {
-            return ['ok' => false, 'codigo' => 'limite', 'error' => $frenado];
+        $limHora = (int)cfg('ALTAS_CHAT_POR_IP_HORA', 0);
+        $limDia  = (int)cfg('ALTAS_CHAT_POR_IP_DIA', 0);
+        if ($limHora > 0 || $limDia > 0) {
+            $frenado = alta_chat_limite($pdo, $ip, $limHora, $limDia);
+            if ($frenado !== null) {
+                return ['ok' => false, 'codigo' => 'limite', 'error' => $frenado];
+            }
         }
 
         // La clave la genera el server, NUNCA el jugador ni el modelo: si se la
