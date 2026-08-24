@@ -111,7 +111,10 @@ function alta_usuario_disponible(PDO $pdo, string $nombreCrudo): string
     $translit = @iconv('UTF-8', 'ASCII//TRANSLIT', $nombreCrudo);
     $base = preg_replace('/[^a-zA-Z0-9._-]/', '', $translit !== false ? $translit : $nombreCrudo);
     $base = mb_substr((string)$base, 0, 40); // deja lugar al sufijo sin pasar de 64
-    if (mb_strlen($base) < 3) {
+    // 4 y no 3: alta_validar() acepta desde 3, pero el PANEL rechaza los muy
+    // cortos y ahi el alta muere recien cuando el bot llena el formulario --
+    // con el jugador ya esperando. Se alarga aca, antes de encolar nada.
+    if (mb_strlen($base) < 4) {
         $base = 'jugador' . $base;
     }
 

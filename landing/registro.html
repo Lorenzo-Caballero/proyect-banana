@@ -454,7 +454,10 @@
     e.preventDefault();
     const u = usuario.value.trim();
     if (!u)               return error('Escribí tu nombre.');
-    if (u.length < 2)     return error('Mínimo 2 caracteres.');
+    // 4 y no 3: el backend acepta desde 3, pero el panel de agentes rechaza
+    // los muy cortos y ahi el alta muere despues, cuando el jugador ya vio
+    // 'creando tu cuenta'. Mejor frenarlo aca, donde puede corregirlo.
+    if (u.length < 4)     return error('Mínimo 4 caracteres.');
 
     btn.disabled = true; btn.textContent = 'Creando…';
 
