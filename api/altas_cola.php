@@ -272,15 +272,36 @@ if ($accion === 'marcar' && $metodo === 'POST') {
     }
 
     if ($estado === 'ok') {
-        // Alta confirmada: BORRAMOS la clave en claro, que era lo unico que
-        // justificaba tenerla guardada. El jugador real llega a `usuarios`
-        // cuando pase sync_usuarios.py; esta fila queda solo como historial.
-        $sql = "UPDATE altas
-                   SET estado   = 'ok',
-                       hecho_en = NOW(),
-                       mensaje  = ?,
-                       password = NULL
-                 WHERE id = ?";
+        // La clave REAL de la cuenta, si el bot la pudo leer de la pantalla del
+        // panel. Hace falta porque el panel GENERA la suya y descarta la que el
+        // bot tipea: la que encolamos no abre la cuenta, y entregarsela al
+        // jugador es darle algo que no funciona.
+        $claveReal = trim((string)($body['password'] ?? ''));
+
+        // Alta confirmada: se BORRA `password` (la que tipeamos, que ya no
+        // sirve para nada) y se deja en `entrega_clave` la que de verdad abre
+        // la cuenta, para mostrarsela una sola vez al que la pidio.
+        //
+        // Si el bot no pudo leerla, entrega_clave queda como estaba: peor es
+        // no darle nada, y el agente todavia puede resolverlo por chat.
+        if ($claveReal !== '') {
+            $sql = "UPDATE altas
+                       SET estado        = 'ok',
+                           hecho_en      = NOW(),
+                           mensaje       = ?,
+                           password      = NULL,
+                           entrega_clave = ?
+                     WHERE id = ?";
+            $params = [$mensaje, mb_substr($claveReal, 0, 128), $id];
+        } else {
+            $sql = "UPDATE altas
+                       SET estado   = 'ok',
+                           hecho_en = NOW(),
+                           mensaje  = ?,
+                           password = NULL
+                     WHERE id = ?";
+            $params = [$mensaje, $id];
+        }
     } else {
         // Si fallo pero le quedan intentos, vuelve a la cola.
         $sql = "UPDATE altas
@@ -289,7 +310,8 @@ if ($accion === 'marcar' && $metodo === 'POST') {
                  WHERE id = ? AND estado <> 'ok'";
     }
 
-    $pdo->prepare($sql)->execute([$mensaje, $id]);
+    // $params lo arma cada rama: la de 'ok' con clave lleva un placeholder mas.
+    $pdo->prepare($sql)->execute($params ?? [$mensaje, $id]);
     echo json_encode(['ok' => true]);
     exit;
 }
