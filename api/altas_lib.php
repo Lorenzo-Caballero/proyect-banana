@@ -77,6 +77,63 @@ function alta_validar(string $usuario, string $password, string $email): ?string
 }
 
 /**
+ * A partir de lo que el jugador escribió como nombre, devuelve un username
+ * LIBRE (sin chocar con `usuarios` ni con un pedido ya en `altas`), sin que
+ * tenga que reintentar a mano.
+ *
+ * Solo la usa la landing pública (crear_cuenta.php): ahí "elegí otro
+ * usuario" es fricción pura -- el jugador puso su nombre una vez y espera
+ * una cuenta, no una negociación de username. El chatbot y el CRM siguen
+ * pidiendo el nombre EXACTO tal cual lo escribió el operador/jugador (no se
+ * tocó esa lógica).
+ *
+ * Estrategia: saneás el texto a lo que el panel acepta, y si ya está
+ * ocupado le vas agregando un sufijo numérico corto (nombre2, nombre3, ...)
+ * hasta encontrar uno libre. Nunca vuelve null: si el saneo deja un string
+ * vacío/muy corto, cae a un prefijo genérico.
+ */
+function alta_usuario_disponible(PDO $pdo, string $nombreCrudo): string
+{
+    // Mismo alfabeto que exige alta_validar(): letras, números, punto,
+    // guion, guion bajo. Se sanea ACA (no se confía en que el frontend ya
+    // lo haya hecho) porque esta función también decide el username final.
+    //
+    // Tildes/eñes ANTES del preg_replace ASCII: "María" sin esto perdía la
+    // "í" entera (preg_replace sin flag Unicode corta bytes multibyte a lo
+    // bruto) -- iconv translitera a lo más parecido en ASCII ("Maria") y
+    // recién ahí se filtra lo que no entra en el alfabeto del panel.
+    $translit = @iconv('UTF-8', 'ASCII//TRANSLIT', $nombreCrudo);
+    $base = preg_replace('/[^a-zA-Z0-9._-]/', '', $translit !== false ? $translit : $nombreCrudo);
+    $base = mb_substr((string)$base, 0, 40); // deja lugar al sufijo sin pasar de 64
+    if (mb_strlen($base) < 3) {
+        $base = 'jugador' . $base;
+    }
+
+    for ($intento = 0; $intento < 50; $intento++) {
+        $candidato = $intento === 0 ? $base : $base . random_int(2, 999);
+
+        // Un solo viaje a la base por candidato: existe en `usuarios` O hay
+        // un pedido no fallido en `altas` con ese nombre. 'error' no cuenta
+        // como ocupado -- ver alta_encolar(), ese estado se puede reintentar
+        // con el mismo usuario.
+        $st = $pdo->prepare(
+            "SELECT
+               (SELECT 1 FROM usuarios WHERE username = ? LIMIT 1) AS en_usuarios,
+               (SELECT 1 FROM altas WHERE usuario = ? AND estado <> 'error' LIMIT 1) AS en_altas"
+        );
+        $st->execute([$candidato, $candidato]);
+        $r = $st->fetch();
+        if (!$r['en_usuarios'] && !$r['en_altas']) {
+            return $candidato;
+        }
+    }
+
+    // Extremadamente improbable (50 intentos con sufijo random fallando
+    // todos): último recurso, con timestamp para garantizar unicidad.
+    return $base . substr((string)time(), -6);
+}
+
+/**
  * Devuelve el mensaje de rechazo si la IP se paso del limite, o null.
  * Solo cuenta pedidos que llegaron a entrar: los rechazados no suman.
  */
