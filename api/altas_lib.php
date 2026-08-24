@@ -38,11 +38,11 @@ const ALTAS_POR_IP_DIA  = 0;
 // landing. Decision del producto: que el jugador no tenga que copiar ni
 // guardar nada para entrar la primera vez.
 //
-// El precio hay que tenerlo claro: es la misma para todos y los nombres de
+// El precio hay que tenerlo claro: es la misma para todos, y los nombres de
 // usuario se ven en el chat, en el CRM y en el panel, asi que cualquiera que
 // sepa un nombre puede entrar a esa cuenta mientras el jugador no la cambie.
-// Si algun dia se quiere volver a una clave por cuenta, alcanza con que esto
-// devuelva alta_clave_random() -- los dos endpoints la piden por aca.
+// Para volver a una clave por cuenta alcanza con que esto devuelva
+// alta_clave_random(): los dos endpoints la piden por aca.
 const ALTA_CLAVE_FIJA = '12345678';
 
 function alta_clave_nueva(): string
@@ -314,6 +314,7 @@ function alta_encolar(PDO $pdo, array $d): array
                 SET password = ?, email = COALESCE(?, email),
                     estado = 'pendiente', intentos = 0,
                     mensaje = NULL, tomado_en = NULL,
+                    proximo_intento_en = NULL,
                     entrega_clave = ?, entrega_sid = ?
               WHERE id = ?"
         )->execute([
