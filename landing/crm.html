@@ -172,6 +172,13 @@
   .sel-bar button.peligro{color:var(--red)}
   .sel-bar button .ico{width:13px;height:13px}
   .sel-bar .sel-x{padding:7px 8px;color:var(--muted)}
+  /* El menu del click derecho reusa el chasis del menu "..." del chat
+     (.menu-pop/.menu-item): mismo dibujo, otra posicion. Va fixed porque se
+     abre donde este el puntero, no colgado de un boton. */
+  .menu-pop.ctx{position:fixed;right:auto;top:auto;min-width:200px;z-index:130}
+  .menu-cab{padding:7px 10px 6px;font-size:11px;font-weight:700;color:var(--muted);
+    text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--line);
+    margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .av{width:36px;height:36px;border-radius:50%;flex:none;display:grid;place-items:center;font-weight:800;font-size:12px;color:#fff;box-shadow:var(--shadow-sm)}
   .av.anon{background:var(--panel3)!important;color:var(--muted)}
   .conv .mid{min-width:0;flex:1}
@@ -1363,6 +1370,8 @@
         <button id="selEliminar" type="button" class="peligro" title="Eliminar las marcadas"><svg class="ico" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6"/></svg>Eliminar</button>
         <button class="sel-x" id="selLimpiar" type="button" title="Quitar selección"><svg class="ico" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
       </div>
+      <!-- Menu contextual de la lista (click derecho). Se llena al abrir. -->
+      <div class="menu-pop ctx" id="ctxMenu" role="menu"></div>
       <div class="tabs-chat" id="tabs">
         <button class="tab tab-chico on" data-e="todas">Todas</button>
         <button class="tab tab-chico" data-e="abierta">Abiertas</button>
@@ -2635,6 +2644,10 @@
      pero se limpia al cambiar de pestaña -- una seleccion que cruza pestañas
      actuaria sobre cosas que ya no estan a la vista. */
   const seleccion = new Set();
+  /* La ultima lista renderizada, por id. El menu contextual la necesita para
+     saber si una conversacion esta fijada o quien es, sin volver al server ni
+     esconder datos en atributos del DOM. */
+  let listaCache = new Map();
   let debounce, pollList, pollConv, pollBadgeComp, pollBadgeRet, pollRetirosVista, pollCargasVista;
 
   // ---------- sesion de operador: shell vs. login (Fase 0.5) ----------
@@ -3340,6 +3353,7 @@
     $("#tabArchivadas").textContent = nArch ? `Archivadas ${nArch}` : "Archivadas";
 
     if(!d.items.length){ $("#list").innerHTML = `<div class="nouser">No hay conversaciones${st.q?" para esa búsqueda":""}.</div>`; return; }
+    listaCache = new Map(d.items.map(c=> [c.id, c]));
     $("#list").innerHTML = d.items.map(c=>{
       const nombre = c.usuario || "Anónimo";
       const anon = c.usuario ? "" : "anon";
@@ -3381,6 +3395,7 @@
       let lpTimer = 0, lpX = 0, lpY = 0;
       el.addEventListener("pointerdown", e=>{
         if (e.pointerType === "mouse") return;   // el mouse ya tiene Ctrl
+        tocando = true;
         lpX = e.clientX; lpY = e.clientY;
         lpTimer = setTimeout(()=>{
           lpTimer = 0;
@@ -3394,11 +3409,102 @@
         }
       });
       ["pointerup","pointercancel"].forEach(ev=>
-        el.addEventListener(ev, ()=>{ if (lpTimer){ clearTimeout(lpTimer); lpTimer = 0; } }));
-      // Sin menu contextual del navegador encima del long-press.
-      el.addEventListener("contextmenu", e=>{ if (seleccion.size) e.preventDefault(); });
+        el.addEventListener(ev, ()=>{
+          if (lpTimer){ clearTimeout(lpTimer); lpTimer = 0; }
+          /* La bandera se suelta un tick despues: el contextmenu del
+             long-press llega DESPUES del pointerup, y tiene que encontrarla
+             todavia levantada. */
+          setTimeout(()=>{ tocando = false; }, 400);
+        }));
+      el.addEventListener("contextmenu", e=>{
+        /* En tactil el long-press ya es el gesto de seleccion, y ademas
+           algunos navegadores disparan contextmenu con el mismo apreton:
+           abrir el menu encima seria pelear dos gestos por el mismo dedo. */
+        e.preventDefault();
+        if (tocando) return;
+        abrirCtx(e, id);
+      });
     });
   }
+
+  /* ---------- menu contextual (click derecho en la lista) ----------
+     La regla de a quien apunta: click derecho sobre una MARCADA actua sobre
+     toda la seleccion; sobre una sin marcar, solo sobre esa -- aunque haya
+     otras marcadas. Es lo que hacen el explorador de archivos y Gmail, asi
+     que es lo que la mano ya espera. */
+  let tocando = false;   // true mientras hay un dedo apoyado (no mouse)
+
+  function abrirCtx(e, id){
+    const multi = seleccion.size > 1 && seleccion.has(id);
+    const ids = multi ? [...seleccion] : [id];
+    const c = listaCache.get(id) || {};
+    const enArchivadas = st.estado === "archivadas";
+
+    const item = (accion, icono, texto, extra) =>
+      `<button class="menu-item${extra || ""}" type="button" data-a="${accion}">${icono}<span>${texto}</span></button>`;
+    const I = {
+      abrir:    '<svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+      marcar:   '<svg viewBox="0 0 24 24"><path d="m9 12 2.2 2.2L15.5 10"/><rect x="3" y="3" width="18" height="18" rx="4"/></svg>',
+      pin:      '<svg viewBox="0 0 24 24"><path d="M12 17v5M9 3h6l-1 7 3 3v1H7v-1l3-3-1-7z"/></svg>',
+      archivo:  '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></svg>',
+      difundir: '<svg viewBox="0 0 24 24"><path d="m3 11 18-8-8 18-2-8z"/></svg>',
+      quitar:   '<svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+      borrar:   '<svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6"/><path d="M10 11v6M14 11v6"/></svg>'
+    };
+
+    let html = `<div class="menu-cab">${multi
+      ? `${ids.length} marcadas`
+      : esc(c.usuario || "Conversación anónima")}</div>`;
+
+    if (!multi){
+      html += item("abrir", I.abrir, "Abrir");
+      html += item("marcar", I.marcar, seleccion.has(id) ? "Quitar de la selección" : "Marcar");
+      html += item("fijar", I.pin, c.fijada ? "Desanclar" : "Anclar arriba");
+    } else {
+      html += item("quitar", I.quitar, "Quitar selección");
+    }
+    html += item("archivar", I.archivo, enArchivadas ? "Devolver a la bandeja" : "Archivar");
+    html += item("difundir", I.difundir, multi ? "Mensaje a las marcadas" : "Mandar mensaje");
+    if (ROL === "admin"){
+      html += `<div class="menu-sep"></div>`;
+      html += item("eliminar", I.borrar, "Eliminar", " peligro");
+    }
+
+    const menu = $("#ctxMenu");
+    menu.innerHTML = html;
+    menu.classList.add("on");
+    /* Pegado al puntero pero SIEMPRE adentro de la pantalla: primero se
+       muestra (sin medida no hay clamp posible), despues se acomoda. */
+    const r = menu.getBoundingClientRect();
+    menu.style.left = Math.min(e.clientX, window.innerWidth - r.width - 8) + "px";
+    menu.style.top  = Math.min(e.clientY, window.innerHeight - r.height - 8) + "px";
+
+    menu.querySelectorAll(".menu-item").forEach(b=>{
+      b.addEventListener("click", ()=>{
+        cerrarCtx();
+        const a = b.getAttribute("data-a");
+        if (a === "abrir")    abrir(id);
+        if (a === "marcar")   seleccionToggle(id);
+        if (a === "quitar")   seleccionLimpiar();
+        if (a === "archivar") loteArchivar(ids);
+        if (a === "difundir") abrirDifusion(ids);
+        if (a === "eliminar") loteEliminar(ids);
+        if (a === "fijar"){
+          jpost({accion:"fijar", id, fijar: !c.fijada})
+            .then(d=>{ if (d.ok) cargarLista(); else toast(d.error || "No pude anclar"); })
+            .catch(err=> toast("No pude anclar: " + err.message));
+        }
+      });
+    });
+  }
+
+  function cerrarCtx(){ $("#ctxMenu").classList.remove("on"); }
+  /* Un menu flotante que sobrevive al gesto que sigue tapa la lista: se
+     cierra con cualquier click afuera, Esc, scroll de la lista o resize. */
+  document.addEventListener("click", cerrarCtx);
+  document.addEventListener("keydown", e=>{ if (e.key === "Escape") cerrarCtx(); });
+  window.addEventListener("resize", cerrarCtx);
+  $("#list").addEventListener("scroll", cerrarCtx);
 
   // ---------- seleccion multiple ----------
   function seleccionToggle(id){
@@ -3442,46 +3548,55 @@
 
   $("#selLimpiar").addEventListener("click", seleccionLimpiar);
 
-  $("#selArchivar").addEventListener("click", async ()=>{
-    if (!seleccion.size) return;
-    const ids = [...seleccion];
+  /* Las tres acciones toman IDS, no leen la seleccion: asi las dispara igual
+     la barra del lote (con lo marcado) que el click derecho (con una sola,
+     este marcada o no). */
+  async function loteArchivar(ids){
+    if (!ids.length) return;
     let d;
     try{ d = await jpost({accion:"archivar", ids, archivar: st.estado !== "archivadas"}); }
     catch(e){ toast("No pude archivar: " + e.message); return; }
     if (!d.ok){ toast(d.error || "No pude archivar"); return; }
     toast(st.estado === "archivadas"
-      ? `${d.afectadas} devueltas a la bandeja`
-      : `${d.afectadas} archivadas`);
+      ? `${d.afectadas} devuelta${d.afectadas === 1 ? "" : "s"} a la bandeja`
+      : `${d.afectadas} archivada${d.afectadas === 1 ? "" : "s"}`);
     if (ids.includes(st.convId)) cerrarChat();
     seleccionLimpiar();
     cargarLista();
-  });
+  }
 
-  $("#selEliminar").addEventListener("click", async ()=>{
-    if (!seleccion.size) return;
-    const n = seleccion.size;
+  async function loteEliminar(ids){
+    if (!ids.length) return;
+    const n = ids.length;
     if (!confirm(
       `Vas a ELIMINAR ${n} conversaci${n === 1 ? "ón" : "ones"}, con todos sus mensajes.\n\n` +
       "No se puede deshacer. Las recargas, pagos y movimientos NO se tocan.\n\n" +
-      "Si solo querés sacarlas de la bandeja, usá Archivar.")) return;
-    const ids = [...seleccion];
+      `Si solo querés sacarla${n === 1 ? "" : "s"} de la bandeja, usá Archivar.`)) return;
     let d;
     try{ d = await jpost({accion:"eliminar", ids}); }
     catch(e){ toast("No pude eliminar: " + e.message); return; }
     if (!d.ok){ toast(d.error || "No pude eliminar"); return; }
-    toast(`${d.eliminadas} eliminadas`);
+    toast(`${d.eliminadas} eliminada${d.eliminadas === 1 ? "" : "s"}`);
     if (ids.includes(st.convId)) cerrarChat();
     seleccionLimpiar();
     cargarLista();
-  });
+  }
 
-  $("#selDifundir").addEventListener("click", ()=>{
-    if (!seleccion.size) return;
-    $("#difSelN").textContent = seleccion.size;
+  /* El modal de difusion recuerda A QUIENES va: antes leia la seleccion al
+     enviar, y un click derecho sobre una conversacion suelta no la marca. */
+  let difIds = [];
+  function abrirDifusion(ids){
+    if (!ids.length) return;
+    difIds = ids;
+    $("#difSelN").textContent = ids.length;
     $("#difSelTexto").value = "";
     $("#backDifSel").classList.add("on");
     $("#difSelTexto").focus();
-  });
+  }
+
+  $("#selArchivar").addEventListener("click", ()=> loteArchivar([...seleccion]));
+  $("#selEliminar").addEventListener("click", ()=> loteEliminar([...seleccion]));
+  $("#selDifundir").addEventListener("click", ()=> abrirDifusion([...seleccion]));
   $("#difSelCancelar").addEventListener("click", ()=> $("#backDifSel").classList.remove("on"));
   $("#difSelEnviar").addEventListener("click", async ()=>{
     const texto = $("#difSelTexto").value.trim();
@@ -3489,7 +3604,7 @@
     const btn = $("#difSelEnviar");
     btn.disabled = true;
     let d;
-    try{ d = await jpost({accion:"difusion_seleccion", ids:[...seleccion], texto}); }
+    try{ d = await jpost({accion:"difusion_seleccion", ids: difIds, texto}); }
     catch(e){ btn.disabled = false; toast("No pude enviar: " + e.message); return; }
     btn.disabled = false;
     if (!d.ok){ toast(d.error || "No pude enviar"); return; }
