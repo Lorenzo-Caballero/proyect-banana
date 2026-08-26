@@ -1448,6 +1448,11 @@
     if (!info || !info.id) return;
     var id = info.id, intentos = 0, avisado = false;
 
+    /* Los primeros ~15 s se pregunta cada 1,2 s (la mayoria de las altas
+       entran ahi); despues cada 4, que alcanza para las lentas sin dejar el
+       navegador preguntando cada segundo durante dos minutos. */
+    function proxima(){ return intentos < 12 ? 1200 : 4000; }
+
     function decir(txt, cb){
       setEstado("escribiendo…", true);
       var esp = escribiendo();
@@ -1459,7 +1464,11 @@
       }, 1200);
     }
 
-    setTimeout(sondear, 2500);
+    /* Sondeo escalonado: rapido al principio, mas espaciado despues.
+       El alta tarda entre pocos segundos y un par de minutos; con un intervalo
+       fijo de 4s se perdian hasta 4 segundos DESPUES de que la cuenta ya
+       estaba lista, que es justo cuando el jugador esta mirando la pantalla. */
+    setTimeout(sondear, 1200);
 
     function sondear(){
       if (intentos++ > 60){          // ~4 minutos
@@ -1470,7 +1479,7 @@
       fetch(API_ALTA + "?id=" + id + "&sid=" + encodeURIComponent(sid) + "&_=" + Date.now())
         .then(function (r){ return r.json(); })
         .then(function (d){
-          if (!d || !d.ok){ setTimeout(sondear, 4000); return; }
+          if (!d || !d.ok){ setTimeout(sondear, proxima()); return; }
 
           if (d.estado === "ok"){
             /* Ya se la mostramos antes (recargó la página, o entró otro
@@ -1501,13 +1510,13 @@
           if (!avisado && intentos > 6){
             avisado = true;
             decir("Dame un minuto que la estoy dando de alta…", function (){
-              setTimeout(sondear, 4000);
+              setTimeout(sondear, proxima());
             });
             return;
           }
-          setTimeout(sondear, 4000);
+          setTimeout(sondear, proxima());
         })
-        .catch(function (){ setTimeout(sondear, 4000); });
+        .catch(function (){ setTimeout(sondear, proxima()); });
     }
   }
 

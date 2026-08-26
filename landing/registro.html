@@ -279,7 +279,14 @@
   }
 
   const CLAVE_LOCAL = 'goldpaw_alta';
-  const POLL_MS     = 3000;
+  /* Sondeo escalonado: rapido al principio (la mayoria de las altas entran
+     en los primeros segundos) y mas espaciado despues, para no dejar el
+     navegador preguntando cada segundo durante dos minutos. Con un intervalo
+     fijo de 3s se perdian hasta 3 segundos DESPUES de que la cuenta ya estaba
+     lista -- justo cuando el jugador esta mirando la pantalla de espera. */
+  const POLL_RAPIDO = 1200;   // primeros ~15 s
+  const POLL_LENTO  = 4000;
+  const POLL_VUELTAS_RAPIDAS = 12;
   const AVISO_MS    = 90 * 1000;        // a los 90s cambiamos el texto
   const LIMITE_MS   = 6 * 60 * 1000;    // a los 6 min lo mandamos al chat
   const VENCE_MS    = 24 * 3600 * 1000; // pedido guardado que ya no interesa
@@ -394,8 +401,9 @@
   async function sondear(p){
     verEspera(p.usuario);
 
+    let vuelta = 0;
     for(;;){
-      await dormir(POLL_MS);
+      await dormir(vuelta++ < POLL_VUELTAS_RAPIDAS ? POLL_RAPIDO : POLL_LENTO);
 
       let data = null;
       try {
