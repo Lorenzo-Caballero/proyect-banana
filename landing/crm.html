@@ -378,6 +378,26 @@
      aire entre íconos vecinos. Antes eran 30 pegados de a 1px. */
   .pinbtn{background:transparent;border:none;color:var(--muted);width:32px;height:32px;border-radius:8px;display:grid;place-items:center;transition:.15s;cursor:pointer}
   .pinbtn:hover{color:var(--txt);background:var(--panel3)} .pinbtn.on{color:var(--orange2);background:rgba(245,166,35,.14)}
+  /* Menu "..." del chat. UN boton y no dos sueltos: el header ya venia
+     apretado (BOT + 3 estados + 3 iconos) y sumarle "archivar" y "eliminar"
+     al lado lo volvia otra vez una tira ilegible. Ademas deja el borrado a
+     dos gestos, que para algo irreversible no es friccion, es una red. */
+  .chead-menu{position:relative}
+  .menu-pop{position:absolute;right:0;top:calc(100% + 6px);z-index:40;min-width:206px;
+    background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:5px;
+    box-shadow:0 14px 38px rgba(0,0,0,.45);display:none}
+  .menu-pop.on{display:block}
+  .menu-item{display:flex;align-items:center;gap:9px;width:100%;padding:9px 10px;border:0;
+    background:none;border-radius:8px;cursor:pointer;color:var(--txt);font:inherit;
+    font-size:13px;text-align:left}
+  .menu-item:hover{background:var(--panel3)}
+  .menu-item svg{width:15px;height:15px;flex:none;fill:none;stroke:currentColor;
+    stroke-width:2;stroke-linecap:round;stroke-linejoin:round;color:var(--muted)}
+  .menu-item:hover svg{color:inherit}
+  .menu-sep{height:1px;background:var(--line);margin:5px 6px}
+  /* Rojo desde el vamos: que se distinga ANTES de leerlo, no despues. */
+  .menu-item.peligro,.menu-item.peligro svg{color:var(--red)}
+  .menu-item.peligro:hover{background:var(--redSoft)}
   .pinbtn svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.9}
   /* BOT ON/OFF: pastilla PROPIA (borde y fondo visibles siempre, no solo en
      hover) -- a propósito distinta de .chead-acciones/.estbtns, para que se
@@ -1270,6 +1290,9 @@
         <button class="tab tab-chico" data-e="abierta">Abiertas</button>
         <button class="tab tab-chico" data-e="pendiente">Pendientes</button>
         <button class="tab tab-chico" data-e="cerrada">Cerradas</button>
+        <!-- Las archivadas viven SOLO acá: si siguieran saliendo en "Todas",
+             archivar no sacaría nada de la bandeja. -->
+        <button class="tab tab-chico" data-e="archivadas" id="tabArchivadas">Archivadas</button>
       </div>
       <!-- Inactividad: grupo APARTE del estado del ticket. Son dos preguntas
            independientes ("¿está abierta?" y "¿hace cuánto no recarga?") y se
@@ -1351,6 +1374,24 @@
             <button class="pinbtn" id="btnAtender" type="button" title="Atender este chat"><svg viewBox="0 0 24 24"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/><path d="M17 11h6M20 8v6"/></svg></button>
             <button class="pinbtn btn-info" id="btnInfo" title="Ver info del usuario"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></button>
             <button class="pinbtn" id="btnFijar" title="Anclar"><svg viewBox="0 0 24 24"><path d="M12 17v5M9 3h6l-1 7 3 3v1H7v-1l3-3-1-7z"/></svg></button>
+            <div class="chead-menu">
+              <button class="pinbtn" id="btnMas" type="button" title="Más acciones"
+                      aria-haspopup="menu" aria-expanded="false">
+                <svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="19" r="1.6" fill="currentColor" stroke="none"/></svg>
+              </button>
+              <div class="menu-pop" id="menuMas" role="menu">
+                <button class="menu-item" id="miArchivar" type="button" role="menuitem">
+                  <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></svg>
+                  <span id="miArchivarTxt">Archivar conversación</span>
+                </button>
+                <!-- Solo admin. Esto no esconde: destruye lo que se dijo. -->
+                <div class="menu-sep" id="miSep"></div>
+                <button class="menu-item peligro" id="miEliminar" type="button" role="menuitem">
+                  <svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6"/><path d="M10 11v6M14 11v6"/></svg>
+                  <span>Eliminar conversación</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -2462,7 +2503,8 @@
   };
 
   const st = { q:"", estado:"todas", inactivos:0, inactivosTipo:"carga",
-               orden:"reciente", convId:0, usuario:"", modo:"ficha" };
+               orden:"reciente", convId:0, usuario:"", modo:"ficha",
+               archivada:false, mensajes:0 };
   let debounce, pollList, pollConv, pollBadgeComp, pollBadgeRet, pollRetirosVista, pollCargasVista;
 
   // ---------- sesion de operador: shell vs. login (Fase 0.5) ----------
@@ -3134,6 +3176,10 @@
     if(!d.ok){ $("#list").innerHTML = `<div class="nouser">${esc(d.detalle||d.error||"Error")}</div>`; return; }
 
     if(d.resumen) pintarStats(d.resumen);
+    /* El numero en la pestaña de archivadas. Va solo si hay alguna: un "(0)"
+       fijo convierte una pestaña que casi nunca se usa en ruido permanente. */
+    const nArch = d.resumen ? (d.resumen.archivadas || 0) : 0;
+    $("#tabArchivadas").textContent = nArch ? `Archivadas ${nArch}` : "Archivadas";
 
     if(!d.items.length){ $("#list").innerHTML = `<div class="nouser">No hay conversaciones${st.q?" para esa búsqueda":""}.</div>`; return; }
     $("#list").innerHTML = d.items.map(c=>{
@@ -3182,6 +3228,9 @@
     $("#chatSub").textContent = c.usuario ? ("@"+c.usuario) : ("sesión " + (c.session_id||"").slice(0,8));
     $("#estbtns").querySelectorAll("button[data-e]").forEach(b=>b.classList.toggle("on", b.getAttribute("data-e")===c.estado));
     $("#btnFijar").classList.toggle("on", !!c.fijada);
+    st.archivada = !!c.archivada;
+    st.mensajes  = d.mensajes.length;
+    pintarMenuMas();
     st.iaActiva = (c.ia_activa !== false);
     pintarBtnIA();
     st.yo = d.yo || "";
@@ -3317,6 +3366,83 @@
   });
 
   // ---------- anclar ----------
+  /* El menú "..." del chat: archivar y eliminar. */
+  function pintarMenuMas(){
+    $("#miArchivarTxt").textContent = st.archivada
+      ? "Devolver a la bandeja"
+      : "Archivar conversación";
+    // Eliminar es solo de admin. Se esconde el separador con el ítem para no
+    // dejar una línea suelta colgando al final del menú.
+    const soyAdmin = ROL === "admin";
+    $("#miEliminar").classList.toggle("hide", !soyAdmin);
+    $("#miSep").classList.toggle("hide", !soyAdmin);
+  }
+  function cerrarMenuMas(){
+    $("#menuMas").classList.remove("on");
+    $("#btnMas").setAttribute("aria-expanded", "false");
+  }
+  $("#btnMas").addEventListener("click", e=>{
+    e.stopPropagation();
+    const abierto = $("#menuMas").classList.toggle("on");
+    $("#btnMas").setAttribute("aria-expanded", abierto ? "true" : "false");
+  });
+  // Cerrar al tocar afuera o con Escape: un menú flotante que se queda pegado
+  // tapa el hilo justo cuando el agente vuelve a leerlo.
+  document.addEventListener("click", cerrarMenuMas);
+  document.addEventListener("keydown", e=>{ if(e.key === "Escape") cerrarMenuMas(); });
+  $("#menuMas").addEventListener("click", e=> e.stopPropagation());
+
+  /* Volver a la pantalla vacía. Se usa después de archivar o eliminar: en los
+     dos casos la conversación deja de estar en la lista que se está viendo, y
+     dejarla abierta al lado de una lista donde ya no figura se lee como un
+     bug. */
+  function cerrarChat(){
+    st.convId = 0; st.usuario = ""; st.archivada = false;
+    $("#chatView").style.display = "none";
+    $("#chatEmpty").style.display = "";
+    $("#app").classList.remove("viewing", "info");
+  }
+
+  $("#miArchivar").addEventListener("click", async ()=>{
+    cerrarMenuMas();
+    if(!st.convId) return;
+    const volver = st.archivada;
+    let d;
+    try{ d = await jpost({accion:"archivar", id:st.convId, archivar:!volver}); }
+    catch(e){ toast("No pude archivar: " + e.message); return; }
+    if(!d.ok){ toast(d.error || "No pude archivar"); return; }
+    toast(volver ? "Devuelta a la bandeja" : "Conversación archivada");
+    /* Si sigue visible en la pestaña actual no hace falta cerrar el chat: al
+       desarchivar parado en "Archivadas" sí desaparece, y al archivar parado
+       en cualquier otra, también. */
+    const sigueVisible = volver ? (st.estado !== "archivadas") : (st.estado === "archivadas");
+    if(sigueVisible) st.archivada = !volver; else cerrarChat();
+    pintarMenuMas();
+    cargarLista();
+  });
+
+  $("#miEliminar").addEventListener("click", async ()=>{
+    cerrarMenuMas();
+    if(!st.convId) return;
+    /* El confirm dice QUÉ se pierde y CUÁNTO, con nombre y número. "¿Estás
+       seguro?" a secas no le da a nadie con qué decidir. */
+    const quien = st.usuario ? `de ${st.usuario}` : "anónima";
+    const plural = st.mensajes === 1 ? "mensaje" : "mensajes";
+    if(!confirm(
+      `Vas a ELIMINAR la conversación ${quien}, con sus ${st.mensajes} ${plural}.\n\n` +
+      "No se puede deshacer: se borra lo que se habló, incluidos los comprobantes " +
+      "y lo que se le prometió al jugador. Las recargas, pagos y movimientos NO se tocan.\n\n" +
+      "Si solo querés sacarla de la bandeja, usá Archivar.")) return;
+
+    let d;
+    try{ d = await jpost({accion:"eliminar", id:st.convId}); }
+    catch(e){ toast("No pude eliminar: " + e.message); return; }
+    if(!d.ok){ toast(d.error || "No pude eliminar"); return; }
+    toast("Conversación eliminada");
+    cerrarChat();
+    cargarLista();
+  });
+
   $("#btnFijar").addEventListener("click", async ()=>{
     if(!st.convId) return;
     const nueva = !$("#btnFijar").classList.contains("on");

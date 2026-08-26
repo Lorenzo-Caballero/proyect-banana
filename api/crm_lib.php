@@ -129,6 +129,36 @@ if (!function_exists('crm_conversacion_id')) {
         }
     }
 
+    /**
+     * ¿Esta base ya tiene `conversaciones.archivada` (migracion 41)?
+     *
+     * Se pregunta en vez de darlo por hecho: una migracion sin correr no puede
+     * dejar el CRM sin lista de conversaciones ni tragarse un mensaje del
+     * jugador. Ya paso cuatro veces en este proyecto. Una sola consulta por
+     * request, cacheada en un static.
+     */
+    function crm_hay_archivada(PDO $pdo): bool
+    {
+        /* El cache va POR CONEXION, no por proceso. Esto es multi-tenant: un
+           script que recorre varias bases en la misma corrida se llevaria la
+           respuesta de la primera, y si esa tenia la columna y la siguiente
+           no, el UPDATE de crm_registrar_turno falla y se PIERDE el mensaje
+           del jugador. Un static suelto es barato hasta el dia que no. */
+        static $porConexion = [];
+        $k = spl_object_id($pdo);
+        if (!array_key_exists($k, $porConexion)) {
+            try {
+                // Un SELECT que no trae filas y no depende del dialecto:
+                // SHOW COLUMNS es solo de MySQL y no se puede probar afuera.
+                $pdo->query("SELECT archivada FROM conversaciones LIMIT 0");
+                $porConexion[$k] = true;
+            } catch (Throwable $e) {
+                $porConexion[$k] = false;
+            }
+        }
+        return $porConexion[$k];
+    }
+
     /** Guarda un turno del chatbot. Nunca rompe el chat: si falla, solo loguea. */
     function crm_registrar_turno(PDO $pdo, string $sessionId, string $textoUser,
                                  string $textoBot, ?string $usuario = null): void
@@ -140,8 +170,23 @@ if (!function_exists('crm_conversacion_id')) {
             if ($textoUser !== '') { crm_mensaje($pdo, $convId, 'user', $textoUser); }
             if ($textoBot  !== '') { crm_mensaje($pdo, $convId, 'bot',  $textoBot); }
             $preview = mb_substr($textoBot !== '' ? $textoBot : $textoUser, 0, 280);
+
+            /* Si el jugador VUELVE A ESCRIBIR, la conversacion vuelve a la
+               bandeja. Archivar es "por ahora no me interesa", no "mutear a
+               esta persona para siempre": sin esto, alguien archivado que
+               escribe con un problema de plata no le aparece a nadie nunca
+               mas, y el agente ni se entera de que lo esta ignorando.
+
+               Solo cuando hablo EL: un turno donde solo contesta el bot no
+               desarchiva nada. Y las difusiones masivas tampoco tocan esto a
+               proposito -- ver crm_difusion_chat_aplicar(). */
+            $desarchiva = ($textoUser !== '' && crm_hay_archivada($pdo))
+                ? ', archivada = 0, archivada_en = NULL, archivada_por = NULL'
+                : '';
             $pdo->prepare(
-                "UPDATE conversaciones SET preview = ?, no_leidos = no_leidos + 1 WHERE id = ?"
+                "UPDATE conversaciones
+                    SET preview = ?, no_leidos = no_leidos + 1$desarchiva
+                  WHERE id = ?"
             )->execute([$preview, $convId]);
             $pdo->commit();
         } catch (Throwable $e) {

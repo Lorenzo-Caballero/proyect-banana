@@ -6,13 +6,17 @@
  * Multi-agente: rol 'admin' gestiona agentes (agentes_listar/agente_crear/
  * agente_estado); rol 'agente' solo atiende chats.
  *
- * GET  ?accion=conversaciones&q=&estado=todas|abierta|pendiente|cerrada
+ * GET  ?accion=conversaciones&q=&estado=todas|abierta|pendiente|cerrada|archivadas
+ *          &inactivos=0|15|30|90&inactivos_tipo=carga|chat
+ *          &orden=reciente|antiguo|inactivos
  *        -> { ok, items:[{id,usuario,session_id,estado,preview,no_leidos,actualizada_en}], resumen }
  * GET  ?accion=conversacion&id=N
  *        -> { ok, conversacion, mensajes:[...], usuario:{...}|null, movimientos:[...] }
  *
  * POST { accion:"nota",         id, notas }
  * POST { accion:"estado",       id, estado }
+ * POST { accion:"archivar",     id, archivar? }   // sacar/devolver a la bandeja
+ * POST { accion:"eliminar",     id }              // borra el hilo — SOLO ADMIN
  * POST { accion:"cargar_fichas",usuario, monto, motivo, conversacion_id? }
  * POST { accion:"cargar_bono",  usuario, monto, motivo, conversacion_id? }
  * POST { accion:"notificar",    usuario|todos|filtro:{modo,dias?}, titulo, cuerpo, tipo? }
@@ -386,12 +390,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $where = [];
             $params = [];
             if ($q !== '') {
-                $where[] = '(usuario LIKE ? OR session_id LIKE ? OR preview LIKE ?)';
+                $where[] = '(c.usuario LIKE ? OR c.session_id LIKE ? OR c.preview LIKE ?)';
                 $params[] = "%$q%"; $params[] = "%$q%"; $params[] = "%$q%";
             }
             if (in_array($estado, ['abierta', 'pendiente', 'cerrada'], true)) {
-                $where[] = 'estado = ?';
+                $where[] = 'c.estado = ?';
                 $params[] = $estado;
+            }
+
+            /* Archivadas: se ven SOLO en su pestaña. Es lo que hace que
+               archivar sirva -- si siguieran apareciendo en "Todas", sacarlas
+               de la bandeja no sacaria nada.
+
+               La pestaña es un valor de `estado` en el front pero NO toca el
+               ENUM: una archivada conserva si estaba abierta o pendiente. */
+            if (crm_hay_archivada($pdo)) {
+                $where[] = $estado === 'archivadas' ? 'c.archivada = 1' : 'c.archivada = 0';
+            } elseif ($estado === 'archivadas') {
+                // Sin la migracion no hay archivadas. Devolver la lista entera
+                // seria peor que devolver nada: parece que se archivo todo.
+                $where[] = '1 = 0';
             }
 
             /* Inactividad: MISMA definicion que la tabla de Usuarios y que el
@@ -519,13 +537,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 } catch (Throwable $e) { /* sin tabla (mig 30): quedan [] */ }
             }
 
+            /* Los totales del panel cuentan la BANDEJA, no la base: una
+               conversacion archivada no es un pendiente que alguien tenga que
+               atender, y si contara, el numero de "abiertas" nunca bajaria por
+               archivar y el agente no vería el efecto de haber ordenado. */
+            $vivas   = crm_hay_archivada($pdo) ? 'WHERE archivada = 0' : '';
             $res = $pdo->query(
                 "SELECT COUNT(*) total,
                         SUM(estado='abierta')   abiertas,
                         SUM(estado='pendiente') pendientes,
                         SUM(no_leidos>0)        con_no_leidos
-                 FROM conversaciones"
+                 FROM conversaciones $vivas"
             )->fetch(PDO::FETCH_ASSOC);
+
+            $archivadas = 0;
+            if (crm_hay_archivada($pdo)) {
+                $archivadas = (int)$pdo->query(
+                    "SELECT COUNT(*) FROM conversaciones WHERE archivada = 1"
+                )->fetchColumn();
+            }
 
             // Totales de la base (para las estadisticas del panel lateral).
             $g = $pdo->query(
@@ -539,6 +569,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 'abiertas'      => (int)$res['abiertas'],
                 'pendientes'    => (int)$res['pendientes'],
                 'con_no_leidos' => (int)$res['con_no_leidos'],
+                'archivadas'    => $archivadas,
                 'usuarios'      => (int)$g['usuarios'],
                 'saldo_interno' => (float)$g['saldo'],
                 'fichas_total'  => (int)$g['fichas'],
@@ -558,6 +589,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $conv['id'] = (int)$conv['id'];
             $conv['no_leidos'] = (int)$conv['no_leidos'];
             $conv['fijada'] = (bool)($conv['fijada'] ?? false);
+            // Puede no existir si la migracion 41 no se corrio: default false.
+            $conv['archivada'] = (bool)($conv['archivada'] ?? false);
             // ia_activa puede no existir si la migracion 27 no se corrio: default true.
             $conv['ia_activa'] = !array_key_exists('ia_activa', $conv) || (int)$conv['ia_activa'] === 1;
 
@@ -702,6 +735,75 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $pdo->prepare("UPDATE conversaciones SET estado = ? WHERE id = ?")->execute([$estado, $id]);
             salir(['ok' => true]);
+        }
+
+        // ---- archivar / desarchivar ----
+        if ($accion === 'archivar') {
+            if (!crm_hay_archivada($pdo)) {
+                salir(['ok' => false, 'error' => 'Falta correr la migración 41 en esta base.'], 409);
+            }
+            $id = (int)($body['id'] ?? 0);
+            if (!$id) { salir(['ok' => false, 'error' => 'Falta id'], 400); }
+            // Por defecto archiva; se manda archivar:false para sacarla del archivo.
+            $archivar = !array_key_exists('archivar', $body) || (bool)$body['archivar'];
+
+            /* Al archivar se dan por leidos los no_leidos. Una conversacion
+               guardada que sigue contando como "sin leer" deja el globito rojo
+               prendido por algo que el agente ya decidio no atender. */
+            if ($archivar) {
+                $pdo->prepare(
+                    "UPDATE conversaciones
+                        SET archivada = 1, archivada_en = NOW(), archivada_por = ?, no_leidos = 0
+                      WHERE id = ?"
+                )->execute([$operador, $id]);
+            } else {
+                $pdo->prepare(
+                    "UPDATE conversaciones
+                        SET archivada = 0, archivada_en = NULL, archivada_por = NULL
+                      WHERE id = ?"
+                )->execute([$id]);
+            }
+
+            // Queda anotado: archivar esconde de la bandeja una conversacion
+            // donde se hablo de plata, y esa decision tiene dueño.
+            crm_bitacora($pdo, $operador,
+                $archivar ? 'conversacion_archivar' : 'conversacion_desarchivar', "id=$id");
+            salir(['ok' => true, 'archivada' => $archivar]);
+        }
+
+        // ---- eliminar la conversacion (borra el hilo entero) ----
+        if ($accion === 'eliminar') {
+            /* SOLO ADMIN, y a proposito. Esto no esconde: destruye lo que se
+               dijo. Un agente que promete algo por chat no puede ser el mismo
+               que despues borra la prueba de que lo prometio.
+               `mensajes` y `conversacion_agentes` se van solos por el ON
+               DELETE CASCADE de sus FK (migraciones 05 y 30). */
+            exigir_admin();
+
+            $id = (int)($body['id'] ?? 0);
+            if (!$id) { salir(['ok' => false, 'error' => 'Falta id'], 400); }
+
+            $st = $pdo->prepare(
+                "SELECT c.usuario, c.session_id,
+                        (SELECT COUNT(*) FROM mensajes m WHERE m.conversacion_id = c.id) AS mensajes
+                   FROM conversaciones c WHERE c.id = ? LIMIT 1"
+            );
+            $st->execute([$id]);
+            $conv = $st->fetch(PDO::FETCH_ASSOC);
+            if (!$conv) { salir(['ok' => false, 'error' => 'Esa conversación ya no existe'], 404); }
+
+            /* La bitacora va ANTES del DELETE y con lo que se pierde adentro.
+               Despues del DELETE no queda nada que consultar: si el rastro no
+               dice a quien y cuantos mensajes, el borrado es invisible. */
+            crm_bitacora($pdo, $operador, 'conversacion_eliminar', json_encode([
+                'id'       => $id,
+                'usuario'  => $conv['usuario'],
+                'session'  => $conv['session_id'],
+                'mensajes' => (int)$conv['mensajes'],
+            ], JSON_UNESCAPED_UNICODE));
+
+            $pdo->prepare("DELETE FROM conversaciones WHERE id = ?")->execute([$id]);
+            salir(['ok' => true, 'mensajes' => (int)$conv['mensajes']]);
         }
 
         // ---- cargar fichas o bono ----
