@@ -406,31 +406,74 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                listado de "inactivos" seria mayormente ruido de gente que
                nunca se identifico. */
             $inact = (int)($_GET['inactivos'] ?? 0);
+            // Dos preguntas distintas y el agente elige cual:
+            //   carga -> hace N dias que no pone plata  (recargas)
+            //   chat  -> hace N dias que no escribe     (actualizada_en)
+            // Un jugador puede estar activo en una y muerto en la otra: el que
+            // charla todos los dias pero no carga hace un mes es justo al que
+            // hay que ir a buscar, y con un solo criterio no aparece.
+            $inactTipo = ($_GET['inactivos_tipo'] ?? 'carga') === 'chat' ? 'chat' : 'carga';
+
+            // El orden solo cambia si hay filtro puesto: sin filtro, la lista
+            // sigue siendo "lo ultimo que se movio", que es lo que el agente
+            // espera al abrir el CRM.
+            $ordenInact = ($_GET['orden'] ?? '') === 'inactivos';
+
+            /* Fecha de la ultima recarga acreditada. Se calcula aparte porque
+               la usan el filtro Y el orden: sin esto habria que repetir la
+               subconsulta en los dos lugares y que no se despeguen.
+
+               COLLATE explicito y NO es decorativo: `conversaciones` declara
+               utf8mb4_unicode_ci (migracion 05) y `recargas` no declara
+               ninguna (migracion 02), asi que cae en el default del servidor.
+               Sin esto, "Illegal mix of collations" se lleva puesta la lista
+               entera. Misma trampa que documenta CLAUDE.md. */
+            $ultimaCarga = "(SELECT MAX(r.acreditada_en) FROM recargas r
+                              WHERE r.usuario COLLATE utf8mb4_unicode_ci
+                                    = c.usuario COLLATE utf8mb4_unicode_ci
+                                AND r.estado = 'acreditada')";
+
             if (in_array($inact, [15, 30, 90], true)) {
-                /* COLLATE explicito y NO es decorativo: `conversaciones`
-                   declara utf8mb4_unicode_ci (migracion 05) y `recargas` no
-                   declara ninguna (migracion 02), asi que cae en el default
-                   del servidor -- uca1400 en esta base. Comparar las dos
-                   columnas sin esto tira "Illegal mix of collations" y se
-                   lleva puesta la lista de conversaciones entera. Es la misma
-                   trampa documentada en CLAUDE.md. */
-                $where[] = "usuario IS NOT NULL AND usuario <> ''
-                            AND NOT EXISTS (
-                              SELECT 1 FROM recargas r
-                               WHERE r.usuario COLLATE utf8mb4_unicode_ci
-                                     = conversaciones.usuario COLLATE utf8mb4_unicode_ci
-                                 AND r.estado = 'acreditada'
-                                 AND r.acreditada_en > DATE_SUB(NOW(), INTERVAL ? DAY)
-                            )";
-                $params[] = $inact;
+                if ($inactTipo === 'chat') {
+                    // Sin escribir: la propia conversacion lo dice. Entran los
+                    // anonimos tambien -- un chat abandonado es un chat
+                    // abandonado, con nombre o sin el.
+                    $where[]  = "c.actualizada_en < DATE_SUB(NOW(), INTERVAL ? DAY)";
+                    $params[] = $inact;
+                } else {
+                    // Sin cargar: hace falta usuario. Un chat anonimo no tiene
+                    // recargas, asi que sin este filtro entrarian todos y la
+                    // lista seria ruido de gente que nunca se identifico.
+                    $where[]  = "c.usuario IS NOT NULL AND c.usuario <> ''
+                                 AND COALESCE($ultimaCarga, '1000-01-01')
+                                     < DATE_SUB(NOW(), INTERVAL ? DAY)";
+                    $params[] = $inact;
+                }
             }
 
             $wsql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
 
+            /* Orden. Con "mas inactivos primero" se ordena por la fecha que
+               corresponde al criterio elegido, ascendente: el que hace mas
+               tiempo que no aparece queda arriba. Las fijadas siguen mandando
+               -- el agente las clavo ahi por algo. */
+            if ($ordenInact) {
+                $ordenSql = $inactTipo === 'chat'
+                    ? 'c.fijada DESC, c.actualizada_en ASC'
+                    // COALESCE con una fecha imposible: el que NUNCA cargo es
+                    // el mas inactivo de todos y tiene que salir primero, no
+                    // ultimo por ser NULL.
+                    : "c.fijada DESC, COALESCE($ultimaCarga, '1000-01-01') ASC";
+            } else {
+                $ordenSql = 'c.fijada DESC, c.actualizada_en DESC';
+            }
+
             $st = $pdo->prepare(
-                "SELECT id, session_id, usuario, estado, preview, no_leidos, fijada, actualizada_en
-                 FROM conversaciones $wsql
-                 ORDER BY fijada DESC, actualizada_en DESC LIMIT 200"
+                "SELECT c.id, c.session_id, c.usuario, c.estado, c.preview,
+                        c.no_leidos, c.fijada, c.actualizada_en,
+                        $ultimaCarga AS ultima_carga
+                 FROM conversaciones c $wsql
+                 ORDER BY $ordenSql LIMIT 200"
             );
             $st->execute($params);
             $items = $st->fetchAll(PDO::FETCH_ASSOC);

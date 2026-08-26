@@ -213,9 +213,20 @@
   .tabs-sep{width:1px;align-self:stretch;margin:2px 4px;background:var(--line)}
   /* La fila de inactividad va rotulada: un "15d / 30d / 90d" suelto debajo de
      los estados no dice de qué son esos días. */
-  .tabs-inact{margin-top:6px;align-items:center}
+  /* Una sola fila con las tres decisiones en orden de lectura:
+     QUÉ es inactivo -> CUÁNTO tiempo -> cómo ordenar. */
+  .inact-fila{display:flex;align-items:center;gap:10px;margin-top:7px;flex-wrap:wrap}
+  .inact-tipo{display:flex;align-items:center;gap:3px;background:var(--panel2);
+    border:1px solid var(--line);border-radius:9px;padding:3px 3px 3px 8px}
   .inact-rot{font-size:10.5px;font-weight:700;letter-spacing:.03em;
     text-transform:uppercase;color:var(--muted);margin-right:2px;white-space:nowrap}
+  .inact-orden{display:inline-flex;align-items:center;gap:6px;cursor:pointer;
+    background:var(--panel2);border:1px solid var(--line);border-radius:9px;
+    padding:6px 11px;color:var(--muted);font-size:11px;font-weight:600;transition:.15s}
+  .inact-orden:hover{border-color:var(--line2);color:var(--txt)}
+  .inact-orden.on{background:var(--violetSoft);border-color:var(--violet);color:var(--violet2)}
+  .inact-orden svg{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  .hide{display:none!important}
 
   /* --- Configuración: una tarjeta por ajuste ---------------------------
      Cada una dice QUÉ hace y QUÉ pasa si se apaga, al lado del interruptor.
@@ -1186,12 +1197,29 @@
            independientes ("¿está abierta?" y "¿hace cuánto no recarga?") y se
            combinan: se puede pedir las abiertas de quien no recarga hace 30
            días. Mezclarlas en un solo grupo obligaría a elegir una sola. -->
-      <div class="tabs-chat tabs-inact" id="tabsInact">
-        <span class="inact-rot">Sin recargar</span>
-        <button class="tab tab-chico on" data-i="0">Todos</button>
-        <button class="tab tab-chico" data-i="15" title="No recarga hace 15 días o más">15d</button>
-        <button class="tab tab-chico" data-i="30" title="No recarga hace 30 días o más">30d</button>
-        <button class="tab tab-chico" data-i="90" title="No recarga hace 90 días o más">90d</button>
+      <div class="inact-fila">
+        <!-- Qué es "inactivo". Son dos preguntas distintas y el mismo jugador
+             puede estar vivo en una y muerto en la otra: el que charla todos
+             los días pero no carga hace un mes es justo al que hay que ir a
+             buscar, y con un solo criterio no aparece. -->
+        <div class="inact-tipo" id="inactTipo" role="group" aria-label="Criterio de inactividad">
+          <span class="inact-rot">Sin</span>
+          <button class="tab tab-chico on" data-t="carga" title="Sin recargas acreditadas">cargar</button>
+          <button class="tab tab-chico" data-t="chat" title="Sin mensajes en la conversación">hablar</button>
+        </div>
+        <div class="tabs-chat" id="tabsInact">
+          <button class="tab tab-chico on" data-i="0">Todos</button>
+          <button class="tab tab-chico" data-i="15">15d</button>
+          <button class="tab tab-chico" data-i="30">30d</button>
+          <button class="tab tab-chico" data-i="90">90d</button>
+        </div>
+        <!-- Solo aparece con un filtro puesto: sin filtro, "más inactivos
+             primero" no ordena nada útil y sobra en la fila. -->
+        <button class="inact-orden hide" id="inactOrden" type="button"
+                title="Ordenar por los que hace más tiempo que no aparecen">
+          <svg viewBox="0 0 24 24" width="13" height="13"><path d="M3 6h13M3 12h9M3 18h5"/><path d="M18 9v9M15 15l3 3 3-3"/></svg>
+          <span>Más inactivos</span>
+        </button>
       </div>
     </div>
     <div class="list" id="list"></div>
@@ -2266,7 +2294,8 @@
     pin:'<svg viewBox="0 0 24 24"><path d="M9 3h6l-1 6 3 3v1.5h-4V21h-2v-7.5H7V12l3-3z"/></svg>'
   };
 
-  const st = { q:"", estado:"todas", inactivos:0, convId:0, usuario:"", modo:"ficha" };
+  const st = { q:"", estado:"todas", inactivos:0, inactivosTipo:"carga",
+               ordenInactivos:false, convId:0, usuario:"", modo:"ficha" };
   let debounce, pollList, pollConv, pollBadgeComp, pollBadgeRet, pollRetirosVista, pollCargasVista;
 
   // ---------- sesion de operador: shell vs. login (Fase 0.5) ----------
@@ -2865,7 +2894,9 @@
   async function cargarLista(){
     let d;
     try{ d = await jget({accion:"conversaciones", q:st.q, estado:st.estado,
-                        inactivos:st.inactivos}); }
+                        inactivos:st.inactivos,
+                        inactivos_tipo:st.inactivosTipo,
+                        orden:st.ordenInactivos ? "inactivos" : ""}); }
     catch(e){ $("#list").innerHTML = `<div class="nouser">Error al cargar.<br><small>${esc(e.message)}</small></div>`; return; }
     if(!d.ok){ $("#list").innerHTML = `<div class="nouser">${esc(d.detalle||d.error||"Error")}</div>`; return; }
 
@@ -2996,11 +3027,41 @@
   $("#tabs").addEventListener("click", e=>{ const b=e.target.closest(".tab"); if(!b)return;
     document.querySelectorAll("#tabs .tab").forEach(x=>x.classList.remove("on")); b.classList.add("on");
     st.estado=b.getAttribute("data-e"); cargarLista(); });
+  /* El boton de orden solo tiene sentido con un filtro puesto: sin filtro,
+     "mas inactivos primero" ordenaria toda la lista por algo que el agente no
+     pidio. Al sacar el filtro tambien se apaga el orden, para no dejar la
+     lista ordenada de una forma que ya no se ve por que. */
+  function pintarOrdenInact(){
+    const btn = $("#inactOrden");
+    btn.classList.toggle("hide", !st.inactivos);
+    if(!st.inactivos && st.ordenInactivos){
+      st.ordenInactivos = false;
+    }
+    btn.classList.toggle("on", st.ordenInactivos);
+  }
+
   $("#tabsInact").addEventListener("click", e=>{
     const b = e.target.closest(".tab"); if(!b) return;
     document.querySelectorAll("#tabsInact .tab").forEach(x=>x.classList.remove("on"));
     b.classList.add("on");
     st.inactivos = parseInt(b.getAttribute("data-i"), 10) || 0;
+    pintarOrdenInact();
+    cargarLista();
+  });
+
+  $("#inactTipo").addEventListener("click", e=>{
+    const b = e.target.closest(".tab"); if(!b) return;
+    document.querySelectorAll("#inactTipo .tab").forEach(x=>x.classList.remove("on"));
+    b.classList.add("on");
+    st.inactivosTipo = b.getAttribute("data-t");
+    // Solo recarga si hay filtro: cambiar el criterio con "Todos" puesto no
+    // cambia nada de lo que se ve.
+    if(st.inactivos) cargarLista();
+  });
+
+  $("#inactOrden").addEventListener("click", ()=>{
+    st.ordenInactivos = !st.ordenInactivos;
+    pintarOrdenInact();
     cargarLista();
   });
   $("#estbtns").addEventListener("click", async e=>{
