@@ -402,7 +402,39 @@
 
   /* ---- modal / toast ---- */
   .back{position:fixed;inset:0;background:rgba(6,9,20,.66);backdrop-filter:blur(3px);display:none;place-items:center;z-index:50;padding:20px}
-  .back.on{display:grid}
+  /* El fade del fondo y el pop de la tarjeta corren cada vez que se abre:
+     pasar de display:none a grid reinicia las animaciones solo, sin JS. */
+  .back.on{display:grid;animation:backFade .16s ease-out}
+  @keyframes backFade{from{opacity:0}to{opacity:1}}
+  .back.on .modal{animation:modalPop .24s cubic-bezier(.3,1.4,.6,1)}
+  @keyframes modalPop{from{transform:translateY(14px) scale(.96);opacity:0}
+    to{transform:none;opacity:1}}
+  @media (prefers-reduced-motion:reduce){
+    .back.on,.back.on .modal{animation:none}
+  }
+
+  /* ---- confirmacion peligrosa (eliminar conversaciones) ----
+     Reemplaza al confirm() del navegador: aquel no se puede estilar, cada
+     browser lo dibuja distinto, y para una accion irreversible el dialogo
+     tiene que verse tan serio como lo que hace. */
+  .pel-cab{display:flex;align-items:flex-start;gap:13px;margin-bottom:12px}
+  .pel-ico{flex:none;width:44px;height:44px;border-radius:13px;display:grid;place-items:center;
+    background:var(--redSoft);color:var(--red)}
+  .pel-ico svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:2;
+    stroke-linecap:round;stroke-linejoin:round;animation:pelSacude .5s ease-in-out .15s}
+  @keyframes pelSacude{0%,100%{transform:rotate(0)}25%{transform:rotate(-7deg)}
+    60%{transform:rotate(6deg)}}
+  .pel-cab h3{margin:2px 0 3px;font-size:16.5px;color:var(--txt)}
+  .pel-cab p{margin:0;font-size:12.5px;color:var(--muted);line-height:1.5}
+  .pel-nota{font-size:12.5px;color:var(--muted);line-height:1.55;margin:0 0 4px;
+    background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:11px 13px}
+  .pel-nota b{color:var(--red)}
+  .pel-botones{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+  .btn-peligro{border:0;border-radius:11px;padding:10px 16px;cursor:pointer;color:#fff;
+    font:700 13px inherit;background:linear-gradient(180deg,#e5484d,#c0272d);
+    box-shadow:0 8px 20px rgba(229,72,77,.3);transition:.15s}
+  .btn-peligro:hover{filter:brightness(1.08)}
+  @media (prefers-reduced-motion:reduce){ .pel-ico svg{animation:none} }
   .modal{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:24px;width:100%;max-width:370px;
          box-shadow:var(--shadow);max-height:calc(100vh - 40px);overflow-y:auto}
   .modal h3{margin:0 0 4px;font-size:18px} .modal p{color:var(--muted);margin:0 0 16px;font-size:13px}
@@ -2458,6 +2490,26 @@
     </div>
   </div>
 
+  <!-- Confirmación peligrosa (eliminar). Un solo modal para los dos caminos
+       (menú "..." y lote/click derecho): confirmarPeligro() lo llena y
+       devuelve una promesa. -->
+  <div class="back" id="backPeligro">
+    <div class="modal">
+      <div class="pel-cab">
+        <span class="pel-ico"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6"/><path d="M10 11v6M14 11v6"/></svg></span>
+        <div>
+          <h3 id="pelTitulo">¿Eliminar?</h3>
+          <p id="pelSub"></p>
+        </div>
+      </div>
+      <p class="pel-nota" id="pelNota"></p>
+      <div class="pel-botones">
+        <button class="cb-btn-ghost" id="pelCancelar" type="button">Cancelar</button>
+        <button class="btn-peligro" id="pelOk" type="button">Eliminar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Difusión a la selección -->
   <div class="back" id="backDifSel">
     <div class="modal">
@@ -3620,7 +3672,11 @@
     seleccionPintar();
   });
   document.addEventListener("keydown", e=>{
-    if (e.key === "Escape" && seleccion.size) seleccionLimpiar();
+    /* Con el modal de eliminar abierto, Escape es "cancelar el borrado" y
+       nada mas: si ademas vaciara la seleccion, cancelar castigaria con
+       tener que marcar todo de nuevo. */
+    if (e.key === "Escape" && seleccion.size &&
+        !$("#backPeligro").classList.contains("on")) seleccionLimpiar();
   });
 
   $("#selLimpiar").addEventListener("click", seleccionLimpiar);
@@ -3629,6 +3685,36 @@
     document.querySelectorAll("#list .conv").forEach(el=>
       seleccion.add(+el.getAttribute("data-id")));
     seleccionPintar();
+  });
+
+  /* La confirmacion peligrosa como promesa. Un solo modal para todos los
+     borrados: se llena, se muestra, y resuelve true/false segun que boton
+     (o Escape / click afuera, que cuentan como "no"). El foco arranca en
+     CANCELAR: en un dialogo irreversible, el Enter distraido tiene que caer
+     del lado que no destruye nada. */
+  let pelResolver = null;
+  function confirmarPeligro({titulo, sub, nota, boton}){
+    return new Promise(res=>{
+      pelResolver = res;
+      $("#pelTitulo").textContent = titulo || "¿Eliminar?";
+      $("#pelSub").textContent = sub || "";
+      $("#pelNota").innerHTML = nota || "";
+      $("#pelOk").textContent = boton || "Eliminar";
+      $("#backPeligro").classList.add("on");
+      $("#pelCancelar").focus();
+    });
+  }
+  function pelCerrar(v){
+    $("#backPeligro").classList.remove("on");
+    if (pelResolver){ pelResolver(v); pelResolver = null; }
+  }
+  $("#pelOk").addEventListener("click", ()=> pelCerrar(true));
+  $("#pelCancelar").addEventListener("click", ()=> pelCerrar(false));
+  $("#backPeligro").addEventListener("click", e=>{
+    if (e.target === $("#backPeligro")) pelCerrar(false);
+  });
+  document.addEventListener("keydown", e=>{
+    if (e.key === "Escape" && $("#backPeligro").classList.contains("on")) pelCerrar(false);
   });
 
   /* Las tres acciones toman IDS, no leen la seleccion: asi las dispara igual
@@ -3651,10 +3737,21 @@
   async function loteEliminar(ids){
     if (!ids.length) return;
     const n = ids.length;
-    if (!confirm(
-      `Vas a ELIMINAR ${n} conversaci${n === 1 ? "ón" : "ones"}, con todos sus mensajes.\n\n` +
-      "No se puede deshacer. Las recargas, pagos y movimientos NO se tocan.\n\n" +
-      `Si solo querés sacarla${n === 1 ? "" : "s"} de la bandeja, usá Archivar.`)) return;
+    /* El nombre solo cuando es UNA: en un lote, listar veinte usuarios no
+       ayuda a decidir, y el numero grande ya dice todo. */
+    const uno = n === 1 ? (listaCache.get(ids[0]) || {}) : null;
+    const ok = await confirmarPeligro({
+      titulo: n === 1 ? "¿Eliminar la conversación?" : `¿Eliminar ${n} conversaciones?`,
+      sub: uno
+        ? (uno.usuario ? `La de ${uno.usuario}, con todos sus mensajes.` : "Anónima, con todos sus mensajes.")
+        : "Con todos sus mensajes.",
+      nota: "<b>No se puede deshacer.</b> Se borra lo que se habló, incluidos los " +
+            "comprobantes y lo que se le prometió al jugador. Las recargas, pagos y " +
+            "movimientos no se tocan. Si solo querés sacarla" + (n === 1 ? "" : "s") +
+            " de la bandeja, usá Archivar.",
+      boton: n === 1 ? "Eliminar" : `Eliminar ${n}`
+    });
+    if (!ok) return;
     let d;
     try{ d = await jpost({accion:"eliminar", ids}); }
     catch(e){ toast("No pude eliminar: " + e.message); return; }
@@ -4103,15 +4200,17 @@
   $("#miEliminar").addEventListener("click", async ()=>{
     cerrarMenuMas();
     if(!st.convId) return;
-    /* El confirm dice QUÉ se pierde y CUÁNTO, con nombre y número. "¿Estás
+    /* El dialogo dice QUÉ se pierde y CUÁNTO, con nombre y número. "¿Estás
        seguro?" a secas no le da a nadie con qué decidir. */
-    const quien = st.usuario ? `de ${st.usuario}` : "anónima";
-    const plural = st.mensajes === 1 ? "mensaje" : "mensajes";
-    if(!confirm(
-      `Vas a ELIMINAR la conversación ${quien}, con sus ${st.mensajes} ${plural}.\n\n` +
-      "No se puede deshacer: se borra lo que se habló, incluidos los comprobantes " +
-      "y lo que se le prometió al jugador. Las recargas, pagos y movimientos NO se tocan.\n\n" +
-      "Si solo querés sacarla de la bandeja, usá Archivar.")) return;
+    const quien = st.usuario ? `La de ${st.usuario}` : "Anónima";
+    const ok = await confirmarPeligro({
+      titulo: "¿Eliminar la conversación?",
+      sub: `${quien}, con sus ${st.mensajes} mensaje${st.mensajes === 1 ? "" : "s"}.`,
+      nota: "<b>No se puede deshacer.</b> Se borra lo que se habló, incluidos los " +
+            "comprobantes y lo que se le prometió al jugador. Las recargas, pagos y " +
+            "movimientos no se tocan. Si solo querés sacarla de la bandeja, usá Archivar."
+    });
+    if(!ok) return;
 
     let d;
     try{ d = await jpost({accion:"eliminar", id:st.convId}); }
