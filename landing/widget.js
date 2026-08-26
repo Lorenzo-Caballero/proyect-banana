@@ -979,7 +979,16 @@
   ".gp-h .x:hover{color:#fff}"+
 
   /* --- cuerpo --- */
-  ".gp-b{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 12px;display:flex;flex-direction:column;gap:7px}"+
+  ".gp-b{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 12px;display:flex;flex-direction:column;gap:7px;"+
+  "scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.18) transparent}"+
+  /* Barra fina y del tema SOLO en los contenedores propios. Nada de un
+     selector global: este widget se inyecta DENTRO de la pagina de la
+     plataforma, y estilarle las barras al juego de un tercero es
+     exactamente el tipo de efecto colateral que no nos corresponde. */
+  ".gp-b::-webkit-scrollbar,#gpj-sheet::-webkit-scrollbar{width:9px}"+
+  ".gp-b::-webkit-scrollbar-thumb,#gpj-sheet::-webkit-scrollbar-thumb{"+
+  "background:rgba(255,255,255,.18);border-radius:20px;border:3px solid transparent;background-clip:content-box}"+
+  ".gp-b::-webkit-scrollbar-track,#gpj-sheet::-webkit-scrollbar-track{background:transparent}"+
   ".gp-r{display:flex;max-width:82%}.gp-r.u{align-self:flex-end}.gp-r.b{align-self:flex-start}"+
   ".gp-bub{padding:8px 11px;border-radius:9px;font-size:14px;white-space:pre-wrap;word-break:break-word;"+
   "box-shadow:0 1px 1px rgba(11,20,26,.13)}"+

@@ -45,6 +45,21 @@
     --shadow:0 16px 40px rgba(40,54,90,.14); --shadow-sm:0 6px 18px rgba(40,54,90,.10);
   }
   *{box-sizing:border-box}
+  /* --- barras de scroll de TODO el CRM, en un solo lugar ---------------
+     El estilo que ya usaba Configuracion (.cb-wrap), promovido a global:
+     finas, con el pulgar del color de las lineas del tema y sin riel. La
+     barra gorda gris del sistema era lo unico que quedaba sin tematizar.
+     El borde transparente + background-clip es lo que la hace verse fina
+     sin achicar el area de agarre. Los contenedores que ESCONDEN su barra
+     a proposito (rail, fila de controles del chat) ya lo declaran ellos y
+     ganan por especificidad. */
+  *{scrollbar-width:thin;scrollbar-color:var(--line2) transparent}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:var(--line2);border-radius:20px;
+    border:3px solid transparent;background-clip:content-box}
+  ::-webkit-scrollbar-thumb:hover{background:var(--muted2);background-clip:content-box}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-corner{background:transparent}
   html,body{margin:0;height:100%}
   body{
     background:radial-gradient(1000px 500px at 82% -8%, var(--glow), transparent 60%),
@@ -1082,11 +1097,7 @@
      siguiente. Aparecio al sumar las dos tarjetas de juegos, que fue cuando la
      columna paso a no entrar en pantalla. */
   .cb-wrap > *{flex:0 0 auto}
-  .cb-wrap::-webkit-scrollbar{width:10px}
-  .cb-wrap::-webkit-scrollbar-thumb{background:var(--line2);border-radius:20px;
-    border:3px solid transparent;background-clip:content-box}
-  .cb-wrap::-webkit-scrollbar-thumb:hover{background:var(--muted2);background-clip:content-box}
-  .cb-wrap::-webkit-scrollbar-track{background:transparent}
+  /* La barra la estila la regla global de arriba de todo. */
   /* Sticky: con la pagina larga, el boton de guardar se iba de la pantalla y
      habia que subir a buscarlo despues de tocar el ultimo ajuste. El fondo es
      opaco a proposito -- si no, las tarjetas se ven pasar por abajo del
