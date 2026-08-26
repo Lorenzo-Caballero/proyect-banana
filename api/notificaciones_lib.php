@@ -269,7 +269,7 @@ if (!function_exists('notif_crear')) {
         return notif_crear(
             $pdo,
             $usuario,
-            $deAgente ? '💬 Un agente te respondió' : '💬 GOLDPAW te respondió',
+            $deAgente ? 'Un agente te respondió' : 'GOLDPAW te respondió',
             $texto,
             'aviso',
             null,
@@ -366,10 +366,10 @@ if (!function_exists('notif_crear')) {
     {
         $n = number_format($monto, 0, ',', '.');
         if ($tipo === 'bono') {
-            $titulo = '🎁 ¡Te regalamos ' . $n . ' bonos!';
+            $titulo = '¡Te regalamos ' . $n . ' bonos!';
             $cuerpo = 'Ya están acreditados en tu cuenta.';
         } else {
-            $titulo = '🪙 ¡Te cargamos ' . $n . ' fichas!';
+            $titulo = '¡Te cargamos ' . $n . ' fichas!';
             $cuerpo = 'Ya las tenés disponibles para jugar.';
         }
         if (trim($motivo) !== '') {

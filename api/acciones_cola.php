@@ -199,8 +199,8 @@ try {
                 notif_crear(
                     $pdo,
                     $a['usuario'],
-                    '✅ ¡Fichas acreditadas!',
-                    'Ya te cargamos ' . $cuanto . ' fichas.' . $saldo . ' A jugar 🎰',
+                    '¡Fichas acreditadas!',
+                    'Ya te cargamos ' . $cuanto . ' fichas.' . $saldo . ' A jugar.',
                     'fichas',
                     null,
                     'carga'

@@ -43,20 +43,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
 // de la ruleta: sumar un juego del mismo tamano duplica el costo diario de
 // golpe. El 40% de "nada" es lo que hace que el 5% de 2.000 se sienta.
 const RASPA_PREMIOS = [
-    ['label' => 'Nada 😢',  'bonus' => 0,    'peso' => 40],
-    ['label' => '100 🎁',   'bonus' => 100,  'peso' => 25],
-    ['label' => '300 🎁',   'bonus' => 300,  'peso' => 20],
-    ['label' => '800 🎁',   'bonus' => 800,  'peso' => 10],
-    ['label' => '2.000 🎁', 'bonus' => 2000, 'peso' => 5],
+    ['label' => 'Sin premio',   'bonus' => 0,    'peso' => 40],
+    ['label' => '100 bonos',    'bonus' => 100,  'peso' => 25],
+    ['label' => '300 bonos',    'bonus' => 300,  'peso' => 20],
+    ['label' => '800 bonos',    'bonus' => 800,  'peso' => 10],
+    ['label' => '2.000 bonos',  'bonus' => 2000, 'peso' => 5],
 ];
 const RASPA_CELDAS = 6;   // cuantas casillas tiene el carton
 
 // El simbolo que se dibuja en la casilla, UNO POR FILA DE RASPA_PREMIOS y en
-// el mismo orden. Va aca y no en el widget porque `celdas` viaja como indices
+// el mismo orden. Son CLAVES, no emoji: el widget las dibuja como SVG.
+// Va aca y no en el widget porque `celdas` viaja como indices
 // de esa tabla: si los simbolos vivieran en el JS, agregar un premio aca
 // correria todos los dibujos sin que nadie se entere. Si editas los premios,
 // edita esta linea en el mismo movimiento.
-const RASPA_SIMBOLOS = ['🍋', '🍒', '🔔', '⭐', '💎'];
+const RASPA_SIMBOLOS = ['limon', 'cereza', 'campana', 'estrella', 'diamante'];
 // ==========================================================================
 
 /**

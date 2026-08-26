@@ -39,11 +39,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
 // El ORDEN importa: el cliente dibuja los sectores en este mismo orden.
 // 'bonus' = cuantos bonos se acreditan. 'peso' = probabilidad relativa.
 const PREMIOS = [
-    ['label' => '400 🎁',   'bonus' => 400,  'peso' => 30],
-    ['label' => '1.000 🎁', 'bonus' => 1000, 'peso' => 30],
-    ['label' => 'Nada 😢',   'bonus' => 0,    'peso' => 5],
-    ['label' => '500 🎁',   'bonus' => 500,  'peso' => 25],
-    ['label' => '2.000 🎁', 'bonus' => 2000, 'peso' => 10],
+    ['label' => '400',   'bonus' => 400,  'peso' => 30],
+    ['label' => '1.000', 'bonus' => 1000, 'peso' => 30],
+    ['label' => 'Nada',  'bonus' => 0,    'peso' => 5],
+    ['label' => '500',   'bonus' => 500,  'peso' => 25],
+    ['label' => '2.000', 'bonus' => 2000, 'peso' => 10],
 ];
 // ==========================================================================
 
@@ -164,7 +164,7 @@ try {
                 'label'     => PREMIOS[$i]['label'],
                 'ya_giro'   => true,
                 'reclamado' => (bool)$g['reclamado'],
-                'mensaje'   => $g['reclamado'] ? 'Ya reclamaste tu premio de hoy. Volvé mañana. 🕛' : '',
+                'mensaje'   => $g['reclamado'] ? 'Ya reclamaste tu premio de hoy. Volvé mañana.' : '',
             ]);
         }
 
@@ -232,7 +232,7 @@ try {
         $st->execute([$usuario]);
         if ($st->fetchColumn()) {
             salir(['ok' => false, 'codigo' => 'ya_reclamo_hoy',
-                   'error' => 'Ese usuario ya reclamó un premio hoy. Volvé mañana. 🕛']);
+                   'error' => 'Ese usuario ya reclamó un premio hoy. Volvé mañana.']);
         }
 
         // Marcamos el giro (guarda anti doble-reclamo por affected rows) y acreditamos.

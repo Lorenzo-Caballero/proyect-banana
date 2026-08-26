@@ -128,14 +128,14 @@ $adjunto = [
 try {
     if ($esAgente) {
         // Subida del AGENTE (CRM)
-        crm_mensaje($pdo, $convId, 'agente', '📎 ' . $adjunto['nombre'], $adjunto);
+        crm_mensaje($pdo, $convId, 'agente', $adjunto['nombre'], $adjunto);
         $pdo->prepare("UPDATE conversaciones SET preview = ?, actualizada_en = NOW() WHERE id = ?")
-            ->execute(['📎 ' . $adjunto['nombre'], $convId]);
+            ->execute([$adjunto['nombre'], $convId]);
     } else {
         // Subida del CLIENTE (chat del sitio)
         $usuario = trim((string)($_POST['usuario'] ?? ''));
         $convId  = crm_conversacion_id($pdo, $sessionId, $usuario !== '' ? $usuario : null);
-        crm_mensaje($pdo, $convId, 'user', '📎 ' . $adjunto['nombre'], $adjunto);
+        crm_mensaje($pdo, $convId, 'user', $adjunto['nombre'], $adjunto);
         $etq = $adjunto['tipo'] === 'pdf' ? 'Comprobante (PDF)' : 'Comprobante (imagen)';
         $pdo->prepare("UPDATE conversaciones SET preview = ?, no_leidos = no_leidos + 1, actualizada_en = NOW() WHERE id = ?")
             ->execute([$etq, $convId]);

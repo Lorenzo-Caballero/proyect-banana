@@ -250,6 +250,15 @@
   .cfg-opt{color:var(--muted);font-weight:500}
   .cfg-hint{margin:6px 0 0;font-size:11.5px;color:var(--muted)}
   .cfg-pie{margin:2px 0 0;font-size:12px;color:var(--muted);text-align:center}
+  /* Iconos de interfaz. Toman el color del texto donde caen y el tamaño de
+     su fuente, así que un mismo ícono sirve en una chip de 11px y en un
+     título de 20px sin tocarle nada. */
+  .ico{width:1em;height:1em;flex:none;vertical-align:-.14em;fill:none;
+    stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+  /* El punto de color de auditoría. Era un emoji de círculo: se veía de
+     distinto tamaño en cada sistema operativo y desalineaba la columna. */
+  .au-punto{display:inline-block;width:9px;height:9px;border-radius:50%;
+    margin-right:6px;vertical-align:.02em;flex:none}
   /* Seis interruptores en fila plana obligan a leerlos todos para encontrar
      uno. Agrupados por para-que-sirve, se salta directo al grupo. */
   .cfg-sec{display:flex;align-items:baseline;gap:10px;margin:10px 0 -4px}
@@ -1407,7 +1416,7 @@
 
   <!-- ===== Ficha ===== -->
   <aside class="col-user card-col" id="userPane">
-    <button class="cerrar-drawer" id="cerrarDrawer" aria-label="Cerrar">✕</button>
+    <button class="cerrar-drawer" id="cerrarDrawer" aria-label="Cerrar"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
     <div class="nouser" id="noUser">Sin conversación seleccionada.</div>
     <div id="userCard" style="display:none">
       <div class="uhead">
@@ -1842,7 +1851,7 @@
               <label>Plantilla</label>
               <div class="chips" id="nChips"></div>
               <label for="nTitulo">Título</label>
-              <input id="nTitulo" type="text" maxlength="120" placeholder="🎁 ¡Te regalamos 500 fichas!">
+              <input id="nTitulo" type="text" maxlength="120" placeholder="¡Te regalamos 500 fichas!">
               <label for="nCuerpo" id="nCuerpoLabel">Mensaje</label>
               <textarea id="nCuerpo" maxlength="400" placeholder="Entrá a la app y jugalas antes de que se venzan." rows="5"></textarea>
             </div>
@@ -3064,6 +3073,34 @@
    *  actualizar su propia variable de filtro y recargar (eso varía por
    *  módulo, no se unifica acá). Repetía este mismo par de líneas en
    *  Retiros/Cargas/Usuarios. */
+  /* Los íconos de la interfaz, en un solo lugar.
+     Reemplazan a los emoji que había antes: un emoji lo dibuja la fuente del
+     sistema operativo, así que el mismo símbolo sale de distinto tamaño y
+     estilo en cada máquina, no toma el color del texto y desalinea las filas
+     de una tabla. Estos son trazos que heredan currentColor. */
+  const ICO = {
+    equis:   '<path d="M18 6 6 18M6 6l12 12"/>',
+    alerta:  '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h16.9a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4.5M12 17.2h.01"/>',
+    persona: '<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/>',
+    bot:     '<rect x="3" y="8" width="18" height="12" rx="2"/><path d="M12 8V4M9 4h6"/><path d="M8.5 14h.01M15.5 14h.01"/>',
+    engrane: '<circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/>',
+    regalo:  '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M5 12v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8"/><path d="M12 8v13"/><path d="M12 8S10.5 3.5 8 3.5A2.5 2.5 0 0 0 8 8h4z"/><path d="M12 8s1.5-4.5 4-4.5A2.5 2.5 0 0 1 16 8h-4z"/>',
+    ficha:   '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/>',
+    diana:   '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4"/>',
+    rayo:    '<path d="M13 2 4.5 13.5H11l-1 8.5 8.5-11.5H12z"/>',
+    ok:      '<circle cx="12" cy="12" r="9"/><path d="m8.5 12.2 2.4 2.4 4.6-4.9"/>',
+    movil:   '<rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18.5h2"/>',
+    globo:   '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+    campana: '<path d="M18 8a6 6 0 0 0-12 0c0 6-3 7-3 7h18s-3-1-3-7"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>',
+    lupa:    '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/>'
+  };
+  /** Devuelve el markup de un ícono. `cls` opcional, para tamaño o color. */
+  function ico(nombre, cls){
+    const d = ICO[nombre];
+    if(!d) return "";
+    return `<svg class="ico${cls ? " " + cls : ""}" viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
+  }
+
   function activarTab(contenedorSel, btn){
     document.querySelectorAll(`${contenedorSel} .tab`).forEach(x=>x.classList.remove("on"));
     btn.classList.add("on");
@@ -3567,7 +3604,7 @@
     catch(e){ $("#compList").innerHTML = `<div class="nouser">Error al cargar.</div>`; return; }
     if(!d.ok){ $("#compList").innerHTML = `<div class="nouser">${esc(d.error||"Error")}</div>`; return; }
     $("#compCap").textContent = d.items.length + (d.items.length===1 ? " pendiente" : " pendientes");
-    if(!d.items.length){ $("#compList").innerHTML = `<div class="nouser">No hay comprobantes sin resolver. 🎉</div>`; return; }
+    if(!d.items.length){ $("#compList").innerHTML = `<div class="nouser">No hay comprobantes sin resolver.</div>`; return; }
     $("#compList").innerHTML = d.items.map(p=>`
       <div class="comp-row" data-id="${esc(p.id_unico)}">
         <div class="cr-top"><span>${esc(p.remitente||"Sin remitente")}</span><span>${money(p.monto)}</span></div>
@@ -3599,7 +3636,7 @@
     $("#compCands").innerHTML = !d.candidatas.length
       ? `<div class="nouser">No hay recargas pendientes${q?" para esa búsqueda":""}.</div>`
       : d.candidatas.map(c=>{
-          const warn = pareceMismaPersona(d.pago.remitente, c.usuario) ? "" : `<span class="warn-chip">⚠ nombre no coincide</span>`;
+          const warn = pareceMismaPersona(d.pago.remitente, c.usuario) ? "" : `<span class="warn-chip">${ico("alerta")} nombre no coincide</span>`;
           return `<div class="cand">
             <div class="cd-mid">
               <div class="cd-user">@${esc(c.usuario)}${warn}</div>
@@ -3807,7 +3844,7 @@
     const venceInfo = r.estado_efectivo==="pendiente" ? ` · vence en ${faltan(r.vence_en)}` : "";
     const nota = r.mensaje ? `<div class="cg-sub" style="color:var(--red)">${esc(r.mensaje)}</div>` : "";
     const warnPago = r.pago_id!==null
-      ? `<div class="dt-warn">⚠ Esta recarga tiene un pago vinculado (id ${esc(r.pago_id)}). No se puede cancelar desde el CRM — contactá al desarrollador o resolvé la relación manualmente en pagos.</div>`
+      ? `<div class="dt-warn">${ico("alerta")} Esta recarga tiene un pago vinculado (id ${esc(r.pago_id)}). No se puede cancelar desde el CRM — contactá al desarrollador o resolvé la relación manualmente en pagos.</div>`
       : "";
     return `<div class="carga-row" data-id="${r.id}">
       <div class="cg-top">
@@ -3917,7 +3954,13 @@
     vencida:"Vencido", revision:"En revisión", revisar:"Revisar",
     procesando:"Procesando", hecha:"Pagado", error:"Error", aplicado:"Aplicado",
   };
-  const AU_BADGE_ICO = { deposito:"🟢", retiro:"🔴", bono:"🟡", ajuste:"🔵" };
+  /* El punto de color de cada tipo. Un <span> pintado por CSS en vez de un
+     emoji de círculo: el emoji cambia de tamaño según el sistema y movía
+     el texto de la columna de un renglón a otro. */
+  const AU_BADGE_COLOR = { deposito:"var(--green)", retiro:"var(--red)",
+                          bono:"var(--orange2)", ajuste:"var(--violet)" };
+  const AU_BADGE_ICO = Object.fromEntries(Object.entries(AU_BADGE_COLOR)
+    .map(([k, c]) => [k, `<span class="au-punto" style="background:${c}"></span>`]));
 
   // Fecha por defecto: últimos 30 días, igual que el backend.
   (function auInicializarFechas(){
@@ -3948,13 +3991,13 @@
 
   function auOperadorHtml(f){
     if(f.actor_tipo === "humano" && f.operador){
-      return `<span class="au-operador humano">👤 ${esc(f.operador)}</span>`;
+      return `<span class="au-operador humano">${ico("persona")} ${esc(f.operador)}</span>`;
     }
     if(f.actor_tipo === "bot"){
-      return `<span class="au-operador bot">🤖 Bot</span>`;
+      return `<span class="au-operador bot">${ico("bot")} Bot</span>`;
     }
     if(f.actor_tipo === "sistema"){
-      return `<span class="au-operador sistema">⚙️ Sistema</span>`;
+      return `<span class="au-operador sistema">${ico("engrane")} Sistema</span>`;
     }
     return `<span class="au-operador ninguno">—</span>`;
   }
@@ -4803,10 +4846,10 @@
      del APK hasta 15 min después si está cerrada). Por eso el botón dice
      "encolada" y muestra a cuántos celulares activos le va a llegar. */
   const PLANTILLAS = [
-    { n:"🎁 Bono",   tipo:"bono",   t:"🎁 ¡Te regalamos un bono!",       c:"Ya lo tenés acreditado en tu cuenta. Entrá y usalo." },
-    { n:"🪙 Fichas", tipo:"fichas", t:"🪙 ¡Fichas de regalo!",           c:"Te cargamos fichas para que sigas jugando." },
-    { n:"🎯 Ruleta", tipo:"ruleta", t:"🎯 Te queda un giro gratis",      c:"Entrá a la app y girá la ruleta antes de que termine el día." },
-    { n:"🔥 Promo",  tipo:"promo",  t:"🔥 Promo por tiempo limitado",    c:"Recargá hoy y llevate un extra. Escribinos por el chat." }
+    { n:"Bono",   tipo:"bono",   t:"¡Te regalamos un bono!",       c:"Ya lo tenés acreditado en tu cuenta. Entrá y usalo." },
+    { n:"Fichas", tipo:"fichas", t:"¡Fichas de regalo!",           c:"Te cargamos fichas para que sigas jugando." },
+    { n:"Ruleta", tipo:"ruleta", t:"Te queda un giro gratis",      c:"Entrá a la app y girá la ruleta antes de que termine el día." },
+    { n:"Promo",  tipo:"promo",  t:"Promo por tiempo limitado",    c:"Recargá hoy y llevate un extra. Escribinos por el chat." }
   ];
   let nTipo = "promo";
 
@@ -4886,7 +4929,7 @@
     setTimeout(()=>$("#nTitulo").focus(),50);
   }
 
-  const N_CANAL_ICO = { push:"📲", chat:"💬" };
+  const N_CANAL_ICO = { push: ico("movil"), chat: ico("globo") };
   async function cargarProgramadas(){
     const cont = $("#nProgramadasLista");
     cont.innerHTML = `<div class="ag-vacio" style="padding:16px">Cargando…</div>`;
@@ -5060,7 +5103,7 @@
 
   // ---- Historial de notificaciones ya enviadas ----
   let nvHistorialPagina = 1;
-  const NV_TIPO_LABEL = { bono:"🎁 Bono", fichas:"🪙 Fichas", recarga:"✅ Recarga", ruleta:"🎯 Ruleta", promo:"🔥 Promo", aviso:"💬 Aviso" };
+  const NV_TIPO_LABEL = { bono:`${ico("regalo")} Bono`, fichas:`${ico("ficha")} Fichas`, recarga:`${ico("ok")} Recarga`, ruleta:`${ico("diana")} Ruleta`, promo:`${ico("rayo")} Promo`, aviso:`${ico("campana")} Aviso` };
   async function cargarHistorial(){
     const cont = $("#nvHistorialLista");
     cont.innerHTML = `<div class="ag-vacio">Cargando…</div>`;
@@ -5268,7 +5311,7 @@
                         activo:       $("#cbActivo").checked });
     }catch(e){ msg.className="cb-msg err"; msg.textContent="No se pudo guardar."; btn.disabled=false; return; }
     btn.disabled = false;
-    if(d.ok){ msg.className="cb-msg ok"; msg.textContent="Guardado ✓"; setTimeout(()=>{msg.textContent="";}, 2500); }
+    if(d.ok){ msg.className="cb-msg ok"; msg.textContent="Guardado"; setTimeout(()=>{msg.textContent="";}, 2500); }
     else { msg.className="cb-msg err"; msg.textContent = d.error||"No se pudo guardar."; }
   }
 

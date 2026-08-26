@@ -35,23 +35,27 @@ header('Access-Control-Allow-Headers: Content-Type');
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
 
 // =====================  EDITA EL JUEGO  ===================================
-const SLOT_SIMBOLOS = ['🍒', '🍋', '🔔', '⭐', '7️⃣'];
+// CLAVES, no emoji: el widget las dibuja como SVG propios. Un emoji lo dibuja
+// la fuente del sistema, asi que el mismo rodillo se ve distinto en cada
+// telefono y no se le puede poner color ni animacion -- que es justo lo que
+// hace que un tragamonedas se sienta uno.
+const SLOT_SIMBOLOS = ['cereza', 'limon', 'campana', 'estrella', 'siete'];
 
 // 'combo' = indices de SLOT_SIMBOLOS, o null para "nada".
-// 'dos_cerezas' arma dos 🍒 en posiciones al azar (el premio chico que hace
-// que el juego no se sienta una pared).
+// 'dos_cerezas' arma dos cerezas en posiciones al azar: es el premio chico
+// que hace que el juego no se sienta una pared.
 //
 // Valor esperado ~164 por tirada -> ~492/dia con las 3 gratis. El 60% de
 // "nada" es lo que hace que se sienta un tragamonedas y no un reparto; el 1%
 // de 777 es el premio del que se habla.
 const SLOT_PAGOS = [
-    ['label' => '¡7 7 7! 🎉', 'combo' => [4, 4, 4], 'bonus' => 5000, 'peso' => 1],
-    ['label' => '⭐⭐⭐',        'combo' => [3, 3, 3], 'bonus' => 1500, 'peso' => 2],
-    ['label' => '🔔🔔🔔',        'combo' => [2, 2, 2], 'bonus' => 600,  'peso' => 5],
-    ['label' => '🍋🍋🍋',        'combo' => [1, 1, 1], 'bonus' => 300,  'peso' => 8],
-    ['label' => '🍒🍒🍒',        'combo' => [0, 0, 0], 'bonus' => 200,  'peso' => 9],
-    ['label' => 'Dos 🍒',       'combo' => 'dos_cerezas', 'bonus' => 80, 'peso' => 15],
-    ['label' => 'Nada 😢',      'combo' => null,      'bonus' => 0,    'peso' => 60],
+    ['label' => 'Siete, siete, siete', 'combo' => [4, 4, 4], 'bonus' => 5000, 'peso' => 1],
+    ['label' => 'Tres estrellas',      'combo' => [3, 3, 3], 'bonus' => 1500, 'peso' => 2],
+    ['label' => 'Tres campanas',       'combo' => [2, 2, 2], 'bonus' => 600,  'peso' => 5],
+    ['label' => 'Tres limones',        'combo' => [1, 1, 1], 'bonus' => 300,  'peso' => 8],
+    ['label' => 'Tres cerezas',        'combo' => [0, 0, 0], 'bonus' => 200,  'peso' => 9],
+    ['label' => 'Dos cerezas',         'combo' => 'dos_cerezas', 'bonus' => 80, 'peso' => 15],
+    ['label' => 'Sin premio',          'combo' => null,      'bonus' => 0,    'peso' => 60],
 ];
 
 const SLOT_TIRADAS_DIA = 3;      // gratis por usuario por dia
@@ -75,8 +79,8 @@ function slot_paga(array $r): bool
  * Los rodillos que corresponden a la fila sorteada.
  *
  * Para "nada" se generan al azar y se re-tira mientras caigan en algo que
- * paga: si no, el jugador veria 🍒🍒🍒 en pantalla y el server le diria que
- * no gano -- la peor experiencia posible en un juego de azar.
+ * paga: si no, el jugador veria tres cerezas en pantalla y el server le
+ * diria que no gano -- la peor experiencia posible en un juego de azar.
  */
 function slot_rodillos($combo): array
 {
@@ -97,7 +101,7 @@ function slot_rodillos($combo): array
         $r = [random_int(0, $n - 1), random_int(0, $n - 1), random_int(0, $n - 1)];
         if (!slot_paga($r)) { return $r; }
     }
-    return [1, 2, 3];   // 🍋 🔔 ⭐: ni trio ni cerezas
+    return [1, 2, 3];   // limon, campana, estrella: ni trio ni cerezas
 }
 
 // ---------------------------------------------------------------- GET

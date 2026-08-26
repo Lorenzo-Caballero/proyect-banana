@@ -352,7 +352,7 @@ function rl_notificar_acreditada(PDO $pdo, array $recarga): void
     notif_crear(
         $pdo,
         (string)$recarga['usuario'],
-        '✅ Recarga acreditada',
+        'Recarga acreditada',
         'Ya tenés tus ' . number_format((int)$recarga['coins'], 0, ',', '.')
             . ' fichas disponibles. ¡A jugar!',
         'recarga',

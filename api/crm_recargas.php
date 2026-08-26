@@ -259,7 +259,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 notif_crear(
                     $pdo,
                     (string)$fila['usuario'],
-                    '🔴 Recarga cancelada',
+                    'Recarga cancelada',
                     'Tu solicitud de recarga fue cancelada. Consultá por chat si necesitás más info.',
                     'aviso',
                     null,

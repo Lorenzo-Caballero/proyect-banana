@@ -78,7 +78,7 @@ try {
         notif_crear(
             $pdo,
             $usuario,
-            '🎰 ¡Tenés un giro gratis!',
+            '¡Tenés un giro gratis!',
             'Tu giro diario en la ruleta ya está disponible. Girá y ganá bonos.',
             'ruleta',
             null,
@@ -93,7 +93,7 @@ try {
                 // session_id vacío: no viene de un dispositivo puntual, es el
                 // chat del usuario por su nombre (clave = usuario).
                 $conv = crm_conversacion_id($pdo, '', $usuario);
-                $texto = '¡Hola! 🎰 Tu giro diario en la ruleta ya está disponible. '
+                $texto = '¡Hola! Tu giro diario en la ruleta ya está disponible. '
                        . 'Tocá la ruleta y reclamá tus bonos antes de que termine el día.';
                 crm_mensaje($pdo, $conv, 'bot', $texto);   // 'bot' = el rol que usa el proyecto
                 $pdo->prepare(

@@ -132,7 +132,8 @@
      no de página colgada. */
   .spinner{width:46px;height:46px;margin:4px auto 14px;position:relative}
   .spinner .cara{position:absolute;inset:0;display:grid;place-items:center;
-    font-size:34px;animation:gira 1.8s ease-in-out infinite}
+    color:var(--violet);animation:gira 1.8s ease-in-out infinite}
+  .spinner .cara svg{width:34px;height:34px}
   @keyframes gira{
     0%{transform:rotate(0deg) scale(1)}
     50%{transform:rotate(180deg) scale(1.15)}
@@ -155,11 +156,16 @@
   .lista{display:none;text-align:center;margin-top:10px}
   .lista.show{display:block}
   .check{width:64px;height:64px;margin:4px auto 16px;border-radius:50%;
-    display:grid;place-items:center;font-size:32px;
+    display:grid;place-items:center;color:var(--ok);
     background:radial-gradient(circle,rgba(84,230,181,.24),transparent 70%);
     animation:pop .5s cubic-bezier(.34,1.56,.64,1)}
   @keyframes pop{0%{transform:scale(0);opacity:0}70%{transform:scale(1.15)}100%{transform:scale(1);opacity:1}}
+  .check svg{width:32px;height:32px}
   .lista h2{font-size:21px;font-weight:800;color:var(--ok)}
+  /* Los iconos sueltos del texto (bono, candado) van a la altura de la
+     linea donde caen, para que no empujen el renglón. */
+  .ico{width:1em;height:1em;vertical-align:-.14em;fill:none;stroke:currentColor;
+    stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
 
   @media (prefers-reduced-motion:reduce){
     .btn::after{animation:none}
@@ -189,7 +195,7 @@
       <p class="sub">Estamos Online 24hs!</p>
 
       <div class="bono">
-        <b>🎁 ¡GANASTE UN BONO DE BIENVENIDA!</b>
+        <b><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M5 12v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8"/><path d="M12 8v13"/><path d="M12 8S10.5 3.5 8 3.5A2.5 2.5 0 0 0 8 8h4z"/><path d="M12 8s1.5-4.5 4-4.5A2.5 2.5 0 0 1 16 8h-4z"/></svg> ¡GANASTE UN BONO DE BIENVENIDA!</b>
         <small>Creá tu cuenta y activalo</small>
       </div>
 
@@ -200,7 +206,7 @@
         <button class="btn" id="btn" type="submit">Crear mi cuenta</button>
       </form>
 
-      <p class="pie">🔒 registro seguro · sin tarjeta · gratis</p>
+      <p class="pie"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10.5" width="16" height="10.5" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg> registro seguro · sin tarjeta · gratis</p>
     </div>
 
     <!-- Vista 2: esperando al bot.
@@ -209,7 +215,9 @@
          DE ESTE CLIENTE (multi-agencia: la request ya resuelve la base
          correcta por dominio, ver api/db.php). Puede tardar. -->
     <div class="espera" id="vistaEspera">
-      <div class="spinner"><span class="cara">🎲</span></div>
+      <!-- Dado en SVG: el emoji lo dibujaba la fuente del sistema y al
+           rotarlo en loop se veia de distinto tamaño segun el telefono. -->
+      <div class="spinner"><span class="cara"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8.2" cy="8.2" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.8" cy="8.2" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="8.2" cy="15.8" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.8" cy="15.8" r="1.3" fill="currentColor" stroke="none"/></svg></span></div>
       <h2 id="esperaTitulo">Creando tu cuenta…</h2>
       <p>Estamos dando de alta <b id="esperaUser"></b> en el sistema.</p>
       <div class="barra"><i></i></div>
@@ -219,13 +227,13 @@
     <!-- Vista 2.5: transición corta antes de mostrar las credenciales, para
          que el cambio de estado se perciba (no un salto directo a los datos). -->
     <div class="lista" id="vistaLista">
-      <div class="check">✅</div>
+      <div class="check"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
       <h2>¡Usuario creado!</h2>
     </div>
 
     <!-- Vista 3: cuenta creada -->
     <div class="exito" id="vistaExito">
-      <h2>¡Cuenta creada! 🎉</h2>
+      <h2>¡Cuenta creada!</h2>
       <p>Guardá estos datos para ingresar al juego.</p>
       <div class="cred"><span class="k">Usuario</span><span class="v" id="outUser"></span></div>
       <div class="cred"><span class="k">Contraseña</span><span class="v" id="outPass"></span></div>

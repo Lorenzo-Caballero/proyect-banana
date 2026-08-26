@@ -43,6 +43,11 @@
   .bub{padding:7px 10px 6px;border-radius:9px;font-size:14.5px;white-space:pre-wrap;word-break:break-word;
     box-shadow:0 1px 1px rgba(11,20,26,.13);position:relative}
   .row.user .bub{background:var(--mia);border-top-right-radius:2px}
+  /* El icono de un aviso: flotado, para que el texto lo envuelva. */
+  .bub-ico{float:left;margin:1px 6px 0 0;color:#f2b705}
+  .bub-ico .ico{width:15px;height:15px}
+  .att-pdf .ico{width:15px;height:15px;margin-right:5px}
+  .ico{vertical-align:-.14em}
   .row.bot .bub{background:var(--burbuja);border-top-left-radius:2px}
   /* La hora flota abajo a la derecha y el texto la envuelve, como en WhatsApp. */
   .bub .hora{float:right;margin:7px -2px -2px 9px;font-size:11px;color:var(--muted);line-height:1}
@@ -189,6 +194,19 @@
     return b;
   }
 
+  /* Un aviso del sistema: la misma burbuja del bot, con el icono de alerta
+     adelante. El texto sigue entrando como nodo de texto -- lo unico que se
+     interpreta como HTML es el icono, que lo pone este archivo. */
+  function pintarAviso(txt){
+    const b = burbuja('bot');
+    const sp = document.createElement('span');
+    sp.className = 'bub-ico';
+    sp.innerHTML = ico('alerta');
+    b.appendChild(sp);
+    b.appendChild(document.createTextNode(txt));
+    body.scrollTop = body.scrollHeight;
+  }
+
   function pintar(quien, txt){
     const b = burbuja(quien);
     b.appendChild(document.createTextNode(txt));
@@ -202,10 +220,30 @@
       const im = document.createElement('img'); im.className='att'; im.src = adj.url; im.alt='Comprobante';
       a.appendChild(im);
     } else {
-      a.className = 'att-pdf'; a.textContent = '📄 '+(adj.nombre||'Comprobante.pdf');
+      /* El icono va aparte y el nombre por createTextNode: el nombre del
+         archivo lo elige quien lo sube, no se interpreta como HTML. */
+      a.className = 'att-pdf';
+      const ip = document.createElement('span'); ip.innerHTML = ico('archivo');
+      a.appendChild(ip);
+      a.appendChild(document.createTextNode(adj.nombre||'Comprobante.pdf'));
     }
     b.appendChild(a);
     body.scrollTop = body.scrollHeight;
+  }
+
+  /* Los iconos de esta pantalla. Antes eran emoji: los dibuja la fuente del
+     sistema, salen distintos en cada telefono y no toman el color del texto.
+     Estos son trazos que heredan currentColor. */
+  const ICO = {
+    archivo: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/>',
+    clip:    '<path d="M21.4 11.1 12.3 20a5 5 0 0 1-7.1-7.1l9.2-9.2a3 3 0 0 1 4.3 4.3l-9.2 9.2a1 1 0 0 1-1.5-1.4l8.5-8.5"/>',
+    alerta:  '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h16.9a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4.5M12 17.2h.01"/>'
+  };
+  function ico(n){
+    return ICO[n]
+      ? `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor"
+              stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${ICO[n]}</svg>`
+      : "";
   }
 
   /* Aviso centrado, sin remitente: es estado de la conexión, no conversación. */
@@ -240,8 +278,8 @@
   // ---------- arranque ----------
   $('form').style.display='flex';
   pintarSistema('Conectado. Escribinos y te respondemos.');
-  pintar('bot', USUARIO ? `¡Hola ${USUARIO}! 👋 ¿En qué te ayudo con tu cuenta o tus fichas?`
-                        : '¡Hola! 👋 Te ayudo con tu cuenta, tus fichas y las recargas. ¿Me decís tu nombre de usuario del juego?');
+  pintar('bot', USUARIO ? `¡Hola ${USUARIO}! ¿En qué te ayudo con tu cuenta o tus fichas?`
+                        : '¡Hola! Te ayudo con tu cuenta, tus fichas y las recargas. ¿Me decís tu nombre de usuario del juego?');
 
   text.addEventListener('input', ()=>{
     send.disabled = text.value.trim()==='';
@@ -264,8 +302,8 @@
         body: JSON.stringify({ mensajes:historial, session_id:sid, usuario:USUARIO||undefined, token:AUTH }) });
       const d = await r.json(); typing(false);
       if(d.ok){ pintar('bot', d.respuesta); historial.push({role:'assistant',content:d.respuesta}); }
-      else pintar('bot', '⚠️ '+(d.error||'No pude responder ahora.'));
-    }catch(err){ typing(false); pintar('bot','⚠️ No pude conectar con el servidor.'); }
+      else pintarAviso(d.error||'No pude responder ahora.');
+    }catch(err){ typing(false); pintarAviso('No pude conectar con el servidor.'); }
     finally{
       enviando=false;
       quick.forEach(b=>b.disabled=false);
@@ -278,12 +316,12 @@
   $('attach').addEventListener('click', ()=> fileI.click());
   fileI.addEventListener('change', async ()=>{
     const f = fileI.files[0]; fileI.value=''; if(!f) return;
-    if(f.size > 8*1024*1024){ pintar('bot','⚠️ El archivo supera 8 MB.'); return; }
+    if(f.size > 8*1024*1024){ pintarAviso('El archivo supera 8 MB.'); return; }
     const fd = new FormData(); fd.append('archivo', f); fd.append('session_id', sid); if(USUARIO) fd.append('usuario', USUARIO);
-    pintar('user','📎 Enviando comprobante…');
+    pintar('user','Enviando comprobante…');
     try{ const r = await fetch(API_SUBIR,{method:'POST',body:fd}); const d = await r.json();
-      if(d.ok && d.adjunto) pintarAdj('user', d.adjunto); else pintar('bot','⚠️ '+(d.error||'No pude subir.'));
-    }catch(e){ pintar('bot','⚠️ No pude subir el archivo.'); }
+      if(d.ok && d.adjunto) pintarAdj('user', d.adjunto); else pintarAviso(d.error||'No pude subir.');
+    }catch(e){ pintarAviso('No pude subir el archivo.'); }
   });
 
   async function verAgente(){

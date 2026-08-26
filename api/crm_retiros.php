@@ -256,7 +256,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 notif_crear(
                     $pdo,
                     (string)$fila['usuario'],
-                    '🔴 Retiro cancelado',
+                    'Retiro cancelado',
                     'Tu retiro fue cancelado por el equipo. Consultá por chat si necesitás más info.',
                     'aviso',
                     null,

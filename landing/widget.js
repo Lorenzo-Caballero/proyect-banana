@@ -990,7 +990,11 @@
   /* hora + tildes flotadas abajo a la derecha, como WhatsApp: el texto las envuelve */
   ".gp-meta{float:right;margin:6px -3px -2px 9px;font-size:10.5px;color:#667781;line-height:1;white-space:nowrap;user-select:none}"+
   ".gp-r.u .gp-meta{color:#5c8a72}"+
-  ".gp-tk{margin-left:3px;letter-spacing:-2px}"+
+  ".gp-tk{margin-left:4px;display:inline-flex;align-items:center;vertical-align:-1px}"+
+  ".gp-tk .gp-ico{width:14px;height:14px}"+
+  /* El aviso del sistema lleva su icono al principio de la burbuja. */
+  ".gp-bico{float:left;margin:1px 6px 0 0;color:#f2b705}"+
+  ".gp-bico .gp-ico{width:15px;height:15px}"+
   ".gp-tk.rd{color:#53bdeb}"+
   /* aviso del sistema: centrado, sin remitente, como el "Conectado" */
   ".gp-sys{align-self:center;background:#d3edf7;color:#37697f;font-size:12.5px;padding:6px 13px;border-radius:9px;"+
@@ -1023,6 +1027,132 @@
   ".gp-f textarea::placeholder{color:#8696a0}";
   var st = document.createElement("style"); st.textContent = css;
   document.head.appendChild(st);
+
+  /* =====================================================================
+   * ICONOS
+   *
+   * POR QUE NO EMOJI
+   * Un emoji no lo dibuja esta pagina: lo dibuja la fuente del sistema. Eso
+   * significa que el mismo simbolo se ve distinto en cada telefono, que no se
+   * le puede dar color, tamaño ni animacion, y que en un Android viejo sin la
+   * fuente sale directamente un cuadradito. Para decoracion da igual; para
+   * los rodillos de un tragamonedas -- donde el simbolo ES el juego -- no.
+   *
+   * Hay dos familias y no se mezclan:
+   *
+   *   gpIco(n)      iconos de interfaz. Trazo, 24x24, heredan currentColor,
+   *                 asi que toman el color del texto donde caen.
+   *   gpSimbolo(n)  simbolos de juego. Relleno, con degradé y brillo. Son
+   *                 dibujos, no iconos: tienen color propio a proposito.
+   *
+   * Los degradés viven UNA sola vez en un <svg> escondido al final del body.
+   * Un degradé se referencia por id de forma global, asi que las 18 copias de
+   * un simbolo en pantalla apuntan todas a la misma definicion en vez de
+   * traerse cada una la suya (y en vez de repetir 18 ids iguales, que es lo
+   * que pasa si uno mete los <defs> dentro de cada copia).
+   * ===================================================================== */
+
+  var GP_ICO = {
+    // --- estados del mensaje (estilo tilde de WhatsApp) ---
+    tilde:   '<path d="M20 6 9 17l-5-5"/>',
+    tilde2:  '<path d="M13 6 6.5 17 3 13.5"/><path d="M21 6l-6.5 11-1.2-1.9"/>',
+    // --- avisos ---
+    alerta:  '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h16.9a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4.5M12 17.2h.01"/>',
+    ok:      '<circle cx="12" cy="12" r="9"/><path d="m8.5 12.2 2.4 2.4 4.6-4.9"/>',
+    reloj:   '<circle cx="12" cy="12" r="9"/><path d="M12 7v5.2l3.2 2"/>',
+    abajo:   '<path d="M12 5v13M18.5 12.5 12 19l-6.5-6.5"/>',
+    // --- adjuntos ---
+    clip:    '<path d="M21.4 11.1 12.3 20a5 5 0 0 1-7.1-7.1l9.2-9.2a3 3 0 0 1 4.3 4.3l-9.2 9.2a1 1 0 0 1-1.5-1.4l8.5-8.5"/>',
+    archivo: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/>',
+    // --- juegos (los del hub) ---
+    regalo:  '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M5 12v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8"/><path d="M12 8v13"/><path d="M12 8S10.5 3.5 8 3.5A2.5 2.5 0 0 0 8 8h4z"/><path d="M12 8s1.5-4.5 4-4.5A2.5 2.5 0 0 1 16 8h-4z"/>',
+    ticket:  '<path d="M3 9V6a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v3a3 3 0 0 0 0 6v3a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-3a3 3 0 0 0 0-6z"/><path d="M14 5v3M14 11v2M14 16v3"/>',
+    maquina: '<rect x="4" y="7" width="16" height="13" rx="2"/><path d="M4 12h16"/><path d="M8 16h.01M12 16h.01M16 16h.01"/><path d="M8 7V4h8v3"/>',
+    // --- notificaciones ---
+    campana: '<path d="M18 8a6 6 0 0 0-12 0c0 6-3 7-3 7h18s-3-1-3-7"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>',
+    ficha:   '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/>',
+    diana:   '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4"/>',
+    rayo:    '<path d="M13 2 4.5 13.5H11l-1 8.5 8.5-11.5H12z"/>',
+    // --- varios de la interfaz ---
+    trebol:  '<path d="M12 21v-6"/><path d="M12 15c-3.5 3-7 1.5-7-1.5S8 10 12 15z"/><path d="M12 15c3.5 3 7 1.5 7-1.5S16 10 12 15z"/><path d="M12 15c-3-3.5-1.5-7 1.5-7S17 11.5 12 15z"/>',
+    persona: '<path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/>',
+    mano:    '<path d="M18 11V6a1.5 1.5 0 0 0-3 0M15 6V4.5a1.5 1.5 0 0 0-3 0V6M12 6a1.5 1.5 0 0 0-3 0v5"/><path d="M9 11V8.5a1.5 1.5 0 0 0-3 0V15a7 7 0 0 0 12 5"/>'
+  };
+
+  /**
+   * Un icono de interfaz. `cls` es opcional y va al <svg>, para poder darle
+   * tamaño o color desde el CSS de quien lo usa.
+   */
+  function gpIco(nombre, cls){
+    var d = GP_ICO[nombre];
+    if (!d) return "";
+    return '<svg class="gp-ico' + (cls ? " " + cls : "") + '" viewBox="0 0 24 24" ' +
+           'aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" ' +
+           'stroke-linecap="round" stroke-linejoin="round">' + d + '</svg>';
+  }
+
+  /* Los simbolos de los juegos. Relleno y color propio: son dibujos, no
+     iconos. Cada uno lleva un brillo (el <path> blanco semitransparente) que
+     es lo que los saca de "figura plana" y los hace parecer una ficha de
+     maquina de verdad. */
+  var GP_SIMBOLO = {
+    cereza:
+      '<path d="M16 6c-2.2 3.8-5.6 5.8-8.6 6.9" stroke="#3f9142" stroke-width="1.9" fill="none" stroke-linecap="round"/>' +
+      '<path d="M16 6c1.2 3.8 3.9 6 6.8 7.6" stroke="#3f9142" stroke-width="1.9" fill="none" stroke-linecap="round"/>' +
+      '<path d="M16 6.2c1.9-2.4 5-2.8 6.6-1.6-1.6 2.4-4.6 3.2-6.6 1.6z" fill="#57ba5b"/>' +
+      '<circle cx="9.5" cy="21.5" r="6.2" fill="url(#gpgRojo)"/>' +
+      '<circle cx="22.6" cy="22.6" r="5.4" fill="url(#gpgRojo)"/>' +
+      '<ellipse cx="7.4" cy="19.4" rx="1.9" ry="1.3" fill="#fff" opacity=".5"/>' +
+      '<ellipse cx="20.8" cy="20.8" rx="1.5" ry="1" fill="#fff" opacity=".45"/>',
+    limon:
+      '<ellipse cx="16" cy="18.5" rx="11.2" ry="8.6" fill="url(#gpgAmarillo)" transform="rotate(-18 16 18.5)"/>' +
+      '<path d="M16.5 9.4c2.6-3.2 6.6-3.9 8.8-2.9-1.4 2.9-4.9 4.6-8.2 4.1z" fill="#57ba5b"/>' +
+      '<ellipse cx="11" cy="14.8" rx="3.2" ry="1.7" fill="#fff" opacity=".45" transform="rotate(-18 11 14.8)"/>',
+    campana:
+      '<path d="M16 3.6a2.1 2.1 0 0 1 2.1 2.1v1.1A8.4 8.4 0 0 1 24.2 15v5.1l2.3 3.3H5.5l2.3-3.3V15a8.4 8.4 0 0 1 6.1-8.2V5.7A2.1 2.1 0 0 1 16 3.6z" fill="url(#gpgOro)"/>' +
+      '<path d="M12.6 25.1h6.8a3.4 3.4 0 0 1-6.8 0z" fill="#c1880f"/>' +
+      '<path d="M12.2 10.6c-1.6 1.7-2.3 3.5-2.3 5.6" stroke="#fff" stroke-opacity=".55" stroke-width="1.8" fill="none" stroke-linecap="round"/>',
+    estrella:
+      '<path d="m16 3.2 3.9 7.9 8.7 1.3-6.3 6.1 1.5 8.7L16 23.1l-7.8 4.1 1.5-8.7-6.3-6.1 8.7-1.3z" fill="url(#gpgOro)"/>' +
+      '<path d="m16 7.4 2.2 4.5" stroke="#fff" stroke-opacity=".6" stroke-width="1.8" fill="none" stroke-linecap="round"/>',
+    siete:
+      '<rect x="3.4" y="3.4" width="25.2" height="25.2" rx="6.4" fill="url(#gpgRojo)"/>' +
+      '<path d="M10.2 9.4h12.1l-7.1 14.4h-4.4l6.4-11.1h-7z" fill="url(#gpgOro)"/>' +
+      '<path d="M6.6 7.4c1-1.4 2.4-2.3 3.9-2.6" stroke="#fff" stroke-opacity=".45" stroke-width="1.8" fill="none" stroke-linecap="round"/>',
+    diamante:
+      '<path d="M9.4 4.6h13.2l6.2 8.1L16 28.2 3.2 12.7z" fill="url(#gpgCian)"/>' +
+      '<path d="M9.4 4.6 3.2 12.7h25.6l-6.2-8.1z" fill="#fff" fill-opacity=".22"/>' +
+      '<path d="M16 28.2 9.4 4.6h6.6z" fill="#fff" fill-opacity=".13"/>'
+  };
+
+  /** Un simbolo de juego, para meter con innerHTML en una celda o un rodillo. */
+  function gpSimbolo(nombre, cls){
+    var d = GP_SIMBOLO[nombre];
+    if (!d) { return '<svg class="gp-simb" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="4" fill="#5d5590"/></svg>'; }
+    return '<svg class="gp-simb' + (cls ? " " + cls : "") + '" viewBox="0 0 32 32" ' +
+           'role="img" aria-label="' + nombre + '">' + d + '</svg>';
+  }
+
+  /* Los degradés, una sola vez para toda la pagina. El <svg> mide 0 y no
+     dibuja nada: solo existe para que los url(#...) de arriba encuentren algo.
+     aria-hidden porque no es contenido, y position:absolute porque un <svg>
+     de 0x0 igual ocupa una linea de texto en el flujo. */
+  var defsJ = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  defsJ.setAttribute("width", "0"); defsJ.setAttribute("height", "0");
+  defsJ.setAttribute("aria-hidden", "true");
+  defsJ.style.position = "absolute";
+  defsJ.innerHTML =
+    '<defs>' +
+    '<linearGradient id="gpgRojo" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0" stop-color="#ff6b6b"/><stop offset="1" stop-color="#c0272d"/></linearGradient>' +
+    '<linearGradient id="gpgAmarillo" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0" stop-color="#ffe66d"/><stop offset="1" stop-color="#f0a500"/></linearGradient>' +
+    '<linearGradient id="gpgOro" x1="0" y1="0" x2="0" y2="1">' +
+      '<stop offset="0" stop-color="#ffdd80"/><stop offset="1" stop-color="#d29310"/></linearGradient>' +
+    '<linearGradient id="gpgCian" x1="0" y1="0" x2="1" y2="1">' +
+      '<stop offset="0" stop-color="#9df0ff"/><stop offset="1" stop-color="#1795c4"/></linearGradient>' +
+    '</defs>';
+  document.body.appendChild(defsJ);
 
   // ---------- DOM ----------
   // Globo de chat relleno, como el de cualquier mensajería.
@@ -1167,16 +1297,20 @@
   }
 
   // Tildes tipo WhatsApp sobre un mensaje del usuario:
-  //   "enviado"  -> ✓        "recibido" -> ✓✓ gris        "leido" -> ✓✓ azul
+  //   "enviado"  -> una tilde     "recibido" -> dos grises     "leido" -> dos azules
   function marcarTilde(fila, estado){
     if (!fila || !fila._tk) return;
     var tk = fila._tk;
-    if (estado === "recibido"){ tk.textContent = "✓✓"; tk.className = "gp-tk"; }
-    else if (estado === "leido"){ tk.textContent = "✓✓"; tk.className = "gp-tk rd"; }
-    else { tk.textContent = "✓"; tk.className = "gp-tk"; }
+    if (estado === "recibido"){ tk.innerHTML = gpIco("tilde2"); tk.className = "gp-tk"; }
+    else if (estado === "leido"){ tk.innerHTML = gpIco("tilde2"); tk.className = "gp-tk rd"; }
+    else { tk.innerHTML = gpIco("tilde"); tk.className = "gp-tk"; }
   }
 
-  function pintar(quien, txt, mudo){
+  /* `icono` es opcional y es el nombre de un gpIco(): lo usan los avisos
+     del sistema (sin conexion, archivo muy grande). Va como nodo aparte y
+     el texto sigue entrando por createTextNode, asi que nada de lo que
+     escribe el server se interpreta como HTML. */
+  function pintar(quien, txt, mudo, icono){
     var r = document.createElement("div"); r.className = "gp-r " + (quien === "u" ? "u" : "b");
     var b = document.createElement("div"); b.className = "gp-bub";
 
@@ -1185,12 +1319,18 @@
     var meta = document.createElement("span"); meta.className = "gp-meta";
     meta.appendChild(document.createTextNode(hora()));
     if (quien === "u"){
-      var tk = document.createElement("span"); tk.className = "gp-tk"; tk.textContent = "✓";
-      if (mudo){ tk.textContent = "✓✓"; tk.className = "gp-tk rd"; }   // historial: ya leído
+      var tk = document.createElement("span"); tk.className = "gp-tk"; tk.innerHTML = gpIco("tilde");
+      if (mudo){ tk.innerHTML = gpIco("tilde2"); tk.className = "gp-tk rd"; }   // historial: ya leído
       meta.appendChild(tk);
       r._tk = tk;
     }
     b.appendChild(meta);
+    if (icono){
+      var ic = document.createElement("span");
+      ic.className = "gp-bico";
+      ic.innerHTML = gpIco(icono);
+      b.appendChild(ic);
+    }
     b.appendChild(document.createTextNode(txt));
 
     r.appendChild(b); body.appendChild(r); body.scrollTop = body.scrollHeight;
@@ -1205,7 +1345,13 @@
     if (adj.tipo === "imagen"){
       var im = document.createElement("img"); im.src = adj.url; im.alt = "Comprobante"; a.appendChild(im);
     } else {
-      a.textContent = "📄 " + (adj.nombre || "Comprobante.pdf");
+      // El icono va como nodo propio y el nombre por createTextNode: el
+      // nombre del archivo lo elige quien lo sube, no se interpreta.
+      var ic = document.createElement("span");
+      ic.className = "gp-bico"; ic.style.color = "inherit";
+      ic.innerHTML = gpIco("archivo");
+      a.appendChild(ic);
+      a.appendChild(document.createTextNode(adj.nombre || "Comprobante.pdf"));
     }
     b.appendChild(a); r.appendChild(b); body.appendChild(r); body.scrollTop = body.scrollHeight;
     if (!mudo){ charla.push({ q: quien, adj: adj }); guardar(); }
@@ -1350,9 +1496,9 @@
         historial.push({ role: "assistant", content: d.respuesta });
         guardar();
       } else if (d && d._neterr){
-        pintar("b", "⚠️ No pude conectar. Fijate si tenés señal y probá de nuevo.");
+        pintar("b", "No pude conectar. Fijate si tenés señal y probá de nuevo.", false, "alerta");
       } else {
-        pintar("b", "⚠️ " + ((d && d.error) || "No pude responder ahora."));
+        pintar("b", (d && d.error) || "No pude responder ahora.", false, "alerta");
       }
       enviando = false;
       quick.forEach(function (b){ b.disabled = false; });
@@ -1363,7 +1509,7 @@
       setTimeout(mirarNotif, 600);
     }
 
-    // Tildes: enviado (✓, ya está) -> recibido -> leído; y ahí sí, "escribiendo…".
+    // Tildes: enviado (una, ya está) -> recibido -> leído; y ahí sí, "escribiendo…".
     setTimeout(function (){ marcarTilde(miFila, "recibido"); }, 350);
     setTimeout(function (){
       marcarTilde(miFila, "leido");
@@ -1490,7 +1636,7 @@
               return;
             }
             pintarVarios([
-              "¡Listo! Ya te creé la cuenta. Anotá estos datos 👇",
+              "¡Listo! Ya te creé la cuenta. Anotá estos datos:",
               "Usuario: " + d.usuario,
               "Contraseña: " + d.password
             ], function (){
@@ -1541,7 +1687,7 @@
     }
 
     // Primer mensaje humano, apenas queda encolada.
-    decir("Perfecto, dame un minutito que la proceso. 🙌", sondear);
+    decir("Perfecto, dame un minutito que la proceso.", sondear);
 
     function sondear(){
       if (intentos++ > 40){   // ~2 min y medio de paciencia
@@ -1554,7 +1700,7 @@
           if (!d || !d.ok){ setTimeout(sondear, 3500); return; }
 
           if (d.estado === "hecha"){
-            decir("¡Listo! Ya te acredité la carga. En un ratito la vas a ver reflejada en tu panel. ✅");
+            decir("¡Listo! Ya te acredité la carga. En un ratito la vas a ver reflejada en tu panel.");
             return;
           }
           if (d.estado === "error" || d.estado === "revisar" || d.estado === "cancelada"){
@@ -1592,21 +1738,21 @@
 
   fileI.addEventListener("change", function (){
     var f = fileI.files[0]; fileI.value = ""; if (!f) return;
-    if (f.size > 8 * 1024 * 1024){ pintar("b", "⚠️ El archivo supera 8 MB."); return; }
+    if (f.size > 8 * 1024 * 1024){ pintar("b", "El archivo supera 8 MB.", false, "alerta"); return; }
 
     var fd = new FormData();
     fd.append("archivo", f); fd.append("session_id", sid);
     if (USUARIO) fd.append("usuario", USUARIO);
 
-    var aviso = pintar("u", "📎 Enviando comprobante…", true);
+    var aviso = pintar("u", "Enviando comprobante…", true, "clip");
     fetch(API_SUBIR, { method: "POST", body: fd })
       .then(function (r){ return r.json(); })
       .then(function (d){
         aviso.remove();
         if (d.ok && d.adjunto) pintarAdj("u", d.adjunto);
-        else pintar("b", "⚠️ " + (d.error || "No pude subir el archivo."));
+        else pintar("b", d.error || "No pude subir el archivo.", false, "alerta");
       })
-      .catch(function (){ aviso.remove(); pintar("b", "⚠️ No pude subir el archivo."); });
+      .catch(function (){ aviso.remove(); pintar("b", "No pude subir el archivo.", false, "alerta"); });
   });
 
   // ---------- respuestas humanas del agente (CRM) ----------
@@ -1870,7 +2016,10 @@
     ["#00e5ff","#5b6cff"], ["#ff5fd0","#8a4bff"], ["#8a94a6","#5a6272"],
     ["#7dff9e","#18b46a"], ["#ffd34e","#ff5f6d"]
   ];
-  var FALLBACK = [{label:"400 🎁"},{label:"1.000 🎁"},{label:"Nada 😢"},{label:"500 🎁"},{label:"2.000 🎁"}];
+  // Mismos textos que PREMIOS de ruleta.php. Sin emoji: en la rueda los
+  // dibuja la fuente del sistema, salen de distinto tamaño en cada
+  // telefono y descuadran las porciones.
+  var FALLBACK = [{label:"400"},{label:"1.000"},{label:"Nada"},{label:"500"},{label:"2.000"}];
 
   var premios = [], rot = 0, fase = "girar", giro = null, girando = false;
 
@@ -1932,7 +2081,7 @@
       .then(function (d){
         if (d.ok){
           resR.className = "gpr-res show";
-          resR.innerHTML = "<b>🎉 +" + d.bonus + " bonos</b>Acreditados en tu cuenta. ¡Volvé mañana!";
+          resR.innerHTML = "<b>+" + d.bonus + " bonos</b>Acreditados en tu cuenta. ¡Volvé mañana!";
           inUser.style.display = "none";
           btnR.style.display = "none";
           $("gpr-skip").textContent = "Listo";
@@ -1978,11 +2127,11 @@
             resR.className = "gpr-res show";
             if (USUARIO){
               // Ya sabemos quien es: se reclama solo.
-              resR.innerHTML = "<b>🎉 ¡Salió " + d.label + "!</b>Acreditando a " + USUARIO + "…";
+              resR.innerHTML = "<b>¡Salió " + d.label + "!</b>Acreditando a " + USUARIO + "…";
               fase = "reclamar";
               reclamar(USUARIO);
             } else {
-              resR.innerHTML = "<b>🎉 ¡Salió " + d.label + "!</b>Ingresá tu usuario para reclamarlo en bonos.";
+              resR.innerHTML = "<b>¡Salió " + d.label + "!</b>Ingresá tu usuario para reclamarlo en bonos.";
               inUser.style.display = "block"; inUser.focus();
               btnR.disabled = false; btnR.textContent = "Reclamar premio";
               fase = "reclamar";
@@ -2052,6 +2201,7 @@
       });
   }
 
+
   /* =====================================================================
    * JUEGOS PROPIOS — hub + Raspa y Gana + Tragamonedas 777
    *
@@ -2087,6 +2237,10 @@
      .gpr-card, .gpr-btn): son la misma familia visual y duplicarlo garantiza
      que en el proximo retoque uno quede distinto del otro. */
   var cssJ =
+    /* Los dos tamaños base de la familia de iconos. gp-ico va en 1em para
+       tomar el tamaño del texto donde cae; gp-simb llena su contenedor. */
+    ".gp-ico{width:1em;height:1em;flex:none;vertical-align:-.14em}" +
+    ".gp-simb{display:block;width:100%;height:100%}" +
     "#gpj-ov{position:fixed;inset:0;background:rgba(6,3,15,.78);z-index:2147483002;" +
     "display:none;align-items:flex-end;justify-content:center;backdrop-filter:blur(3px);" +
     "font:14px/1.5 system-ui,Segoe UI,Roboto,Arial,sans-serif}" +
@@ -2101,7 +2255,8 @@
     "background:#1b1540;border:1px solid #2a2350;border-radius:14px;padding:12px 13px;margin-bottom:9px;" +
     "transition:border-color .15s,transform .15s;font-family:inherit;color:#eef0fb}" +
     ".gpj-item:hover{border-color:#4a3f8a;transform:translateY(-1px)}" +
-    ".gpj-ico{width:42px;height:42px;border-radius:12px;flex:none;display:grid;place-items:center;font-size:21px}" +
+    ".gpj-ico{width:42px;height:42px;border-radius:12px;flex:none;display:grid;place-items:center}" +
+    ".gpj-ico .gp-ico{width:21px;height:21px}" +
     ".gpj-tx{flex:1;min-width:0}" +
     ".gpj-tx b{display:block;font-size:14.5px;font-weight:700}" +
     ".gpj-chip{display:inline-block;margin-top:4px;font-size:10.5px;font-weight:700;line-height:1;" +
@@ -2116,7 +2271,14 @@
     "border-radius:14px;overflow:hidden;background:#241a5e}" +
     ".gpj-celdas{position:absolute;inset:0;display:grid;grid-template-columns:repeat(3,1fr);" +
     "grid-template-rows:repeat(2,1fr);gap:6px;padding:9px}" +
-    ".gpj-celda{display:grid;place-items:center;background:#1b1540;border-radius:10px;font-size:27px}" +
+    ".gpj-celda{display:grid;place-items:center;background:#1b1540;border-radius:10px;" +
+    "border:1px solid transparent;transition:border-color .2s,box-shadow .2s}" +
+    ".gpj-celda .gp-simb{width:30px;height:30px}" +
+    /* Las tres que forman el trio se prenden al cobrar: sin esto el jugador
+       tiene que buscar a ojo cuales eran, justo en el momento de festejar. */
+    ".gpj-celda.gana{border-color:#E3B14A;box-shadow:0 0 12px rgba(227,177,74,.5)}" +
+    ".gpj-celda.gana .gp-simb{animation:gpjLate .6s ease-in-out 3}" +
+    "@keyframes gpjLate{0%,100%{transform:scale(1)}50%{transform:scale(1.18)}}" +
     "#gpj-raspa-cv{position:absolute;inset:0;width:100%;height:100%;cursor:pointer;touch-action:none;display:block}" +
 
     /* ---- slot: un gabinete con rodillos de verdad ----
@@ -2137,7 +2299,8 @@
     ".gpj-reel:after{content:'';position:absolute;inset:0;pointer-events:none;border-radius:12px;" +
     "background:linear-gradient(180deg,rgba(0,0,0,.6),transparent 30%,transparent 70%,rgba(0,0,0,.6))}" +
     ".gpj-strip{display:flex;flex-direction:column;will-change:transform}" +
-    ".gpj-sym{height:88px;flex:none;display:grid;place-items:center;font-size:38px;line-height:1}" +
+    ".gpj-sym{height:88px;flex:none;display:grid;place-items:center}" +
+    ".gpj-sym .gp-simb{width:46px;height:46px}" +
     ".gpj-reel.gira .gpj-strip{animation:gpjRodar .3s linear infinite}" +
     "@keyframes gpjRodar{from{transform:translateY(0)}to{transform:translateY(-440px)}}" +
     /* La linea de pago. Sin ella los tres simbolos son tres dibujos sueltos y
@@ -2147,6 +2310,27 @@
     ".gpj-cab.gano .gpj-reel{border-color:#E3B14A;box-shadow:0 0 18px rgba(227,177,74,.5)}" +
     ".gpj-cab.gano .gpj-linea{animation:gpjLinea .55s ease-in-out 3}" +
     "@keyframes gpjLinea{50%{box-shadow:0 0 16px 4px rgba(227,177,74,.75)}}" +
+    /* El premio se FESTEJA, no se avisa. Tres efectos que entran juntos y se
+       terminan solos: los simbolos laten, un barrido de luz cruza el gabinete
+       y saltan chispas. Todo CSS -- en un WebView dentro de un juego de
+       terceros no hay presupuesto para una libreria de particulas. */
+    ".gpj-cab.gano .gpj-sym .gp-simb{animation:gpjPremio .62s ease-in-out 3}" +
+    "@keyframes gpjPremio{0%,100%{transform:scale(1);filter:none}" +
+    "50%{transform:scale(1.2);filter:drop-shadow(0 0 9px rgba(227,177,74,.95))}}" +
+    ".gpj-cab:after{content:'';position:absolute;inset:0;border-radius:18px;pointer-events:none;opacity:0;" +
+    "background:linear-gradient(105deg,transparent 38%,rgba(255,255,255,.42) 50%,transparent 62%);" +
+    "background-size:260% 100%}" +
+    ".gpj-cab.gano:after{opacity:1;animation:gpjBarrido 1.05s ease-out 2}" +
+    "@keyframes gpjBarrido{from{background-position:190% 0}to{background-position:-90% 0}}" +
+    ".gpj-chispas{position:absolute;inset:0;pointer-events:none;overflow:hidden;border-radius:18px}" +
+    ".gpj-chispa{position:absolute;bottom:14px;width:7px;height:7px;border-radius:2px;" +
+    "background:linear-gradient(180deg,#ffdd80,#d29310);opacity:0;animation:gpjChispa 1.15s ease-out forwards}" +
+    "@keyframes gpjChispa{0%{opacity:0;transform:translateY(0) rotate(0) scale(.6)}" +
+    "12%{opacity:1}100%{opacity:0;transform:translateY(-120px) rotate(320deg) scale(1)}}" +
+    /* Con menos movimiento pedido queda el brillo, que dice lo mismo sin que
+       nada se mueva por la pantalla. */
+    "@media (prefers-reduced-motion:reduce){.gpj-cab.gano .gpj-sym .gp-simb,.gpj-cab.gano:after," +
+    ".gpj-chispa,.gpj-celda.gana .gp-simb{animation:none}.gpj-chispas{display:none}}" +
     ".gpj-restantes{font-size:12px;font-weight:600;color:#9aa0c4;margin-bottom:8px;min-height:16px}" +
     /* La animacion ES el juego, asi que no se apaga: se acorta. Quien pidio
        menos movimiento igual tiene que poder ver que salio. */
@@ -2174,9 +2358,9 @@
   ovJ.addEventListener("click", function (e){ if (e.target === ovJ) cerrarHub(); });
 
   var DEF_JUEGOS = {
-    ruleta: { ico: "🎁", nombre: "Ruleta de bonos",  fondo: "rgba(227,177,74,.16)" },
-    raspa:  { ico: "🎫", nombre: "Raspa y Gana",     fondo: "rgba(120,200,140,.16)" },
-    slot:   { ico: "🎰", nombre: "Tragamonedas 777", fondo: "rgba(160,140,240,.16)" }
+    ruleta: { ico: "regalo",  nombre: "Ruleta de bonos",   fondo: "rgba(227,177,74,.16)",  color: "#E3B14A" },
+    raspa:  { ico: "ticket",  nombre: "Raspa y Gana",      fondo: "rgba(120,200,140,.16)", color: "#78c88c" },
+    slot:   { ico: "maquina", nombre: "Tragamonedas 777",  fondo: "rgba(160,140,240,.16)", color: "#a08cf0" }
   };
 
   /** Los juegos prendidos desde el CRM, en orden de presentacion. */
@@ -2231,7 +2415,8 @@
       b.className = "gpj-item";
       b.type = "button";
       b.innerHTML =
-        '<span class="gpj-ico" style="background:' + d.fondo + '">' + d.ico + '</span>' +
+        '<span class="gpj-ico" style="background:' + d.fondo + ';color:' + d.color + '">' +
+        gpIco(d.ico) + '</span>' +
         '<span class="gpj-tx"><b>' + d.nombre + '</b>' +
         '<span class="gpj-chip' + (c.hay ? " hay" : "") + '">' + c.txt + '</span></span>' +
         '<svg class="gpj-fl" viewBox="0 0 24 24" width="16" height="16" fill="none" ' +
@@ -2283,7 +2468,10 @@
   document.body.appendChild(ovR);
 
   var raspaTok = null, raspaCobrando = false, raspaEnganchado = false;
-  var raspaSimbolos = ["🍋", "🍒", "🔔", "⭐", "💎"];   // respaldo; manda el server
+  // Claves de GP_SIMBOLO, en el mismo orden que RASPA_PREMIOS del server.
+  // Es solo el respaldo: la lista real llega con el carton.
+  var raspaSimbolos = ["limon", "cereza", "campana", "estrella", "diamante"];
+  var raspaCeldas   = [];   // las del carton en juego, para marcar el trio
 
   function abrirRaspa(){
     /* Se reinicia en cada apertura: el modal vive todo el rato en el DOM, y
@@ -2306,14 +2494,30 @@
   function pintarCeldas(celdas){
     var cont = $("gpj-celdas");
     cont.innerHTML = "";
+    raspaCeldas = celdas.slice();
     celdas.forEach(function (i){
       var d = document.createElement("div");
       d.className = "gpj-celda";
       // `celdas` viaja como indices de la tabla de premios del server, y
       // `simbolos` es esa misma tabla dibujada. Por eso los dos vienen juntos.
-      d.textContent = raspaSimbolos[i] || "•";
+      d.innerHTML = gpSimbolo(raspaSimbolos[i]);
       cont.appendChild(d);
     });
+  }
+
+  /* Prende las tres casillas que forman el trio. El server no dice cuales
+     son, pero no hace falta: el trio es el unico simbolo que aparece tres
+     veces, y eso se calcula mirando el carton que ya esta en pantalla. */
+  function marcarTrioRaspa(){
+    var cuenta = {};
+    raspaCeldas.forEach(function (i){ cuenta[i] = (cuenta[i] || 0) + 1; });
+    var ganador = null;
+    Object.keys(cuenta).forEach(function (k){ if (cuenta[k] >= 3) ganador = k; });
+    if (ganador === null) return;
+    var celdas = $("gpj-celdas").children;
+    for (var i = 0; i < raspaCeldas.length; i++) {
+      if (String(raspaCeldas[i]) === ganador && celdas[i]) celdas[i].classList.add("gana");
+    }
   }
 
   /* La lamina dorada que se rasca. destination-out la BORRA siguiendo el dedo,
@@ -2332,7 +2536,7 @@
     ctx.fillStyle = "rgba(74,44,0,.8)";
     ctx.font = "700 15px system-ui,Segoe UI,Roboto,Arial,sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("Raspá acá 👆", cv.width / 2, cv.height / 2 + 5);
+    ctx.fillText("Raspá acá", cv.width / 2, cv.height / 2 + 5);
     ctx.globalCompositeOperation = "destination-out";
     return ctx;
   }
@@ -2415,8 +2619,9 @@
         var res = $("gpj-raspa-res");
         res.className = "gpr-res show" + (d.bonus > 0 ? "" : " nada");
         res.innerHTML = d.bonus > 0
-          ? "<b>🎉 +" + d.bonus + " bonos</b>Acreditados en tu cuenta. ¡Volvé mañana!"
-          : "<b>Esta vez no</b>Mañana tenés otro cartón. 🍀";
+          ? "<b>+" + d.bonus + " bonos</b>Acreditados en tu cuenta. ¡Volvé mañana!"
+          : "<b>Esta vez no</b>Mañana tenés otro cartón.";
+        if (d.bonus > 0) marcarTrioRaspa();
         $("gpj-raspa-btn").style.display = "none";
         refrescarJuegos();
       })
@@ -2476,7 +2681,8 @@
     '<div class="gpj-reel" id="gpj-r0"><div class="gpj-strip"></div></div>' +
     '<div class="gpj-reel" id="gpj-r1"><div class="gpj-strip"></div></div>' +
     '<div class="gpj-reel" id="gpj-r2"><div class="gpj-strip"></div></div>' +
-    '<div class="gpj-linea"></div></div></div>' +
+    '<div class="gpj-linea"></div></div>' +
+    '<div class="gpj-chispas" id="gpj-chispas"></div></div>' +
     '<div class="gpr-res" id="gpj-slot-res"></div>' +
     '<div class="gpj-restantes" id="gpj-slot-rest"></div>' +
     '<div class="gpr-msg" id="gpj-slot-msg"></div>' +
@@ -2485,7 +2691,8 @@
     '</div>';
   document.body.appendChild(ovS);
 
-  var slotSimbolos = ["🍒", "🍋", "🔔", "⭐", "7️⃣"], slotGirando = false;
+  // Claves de GP_SIMBOLO, mismo orden que SLOT_SIMBOLOS del server.
+  var slotSimbolos = ["cereza", "limon", "campana", "estrella", "siete"], slotGirando = false;
 
   var SLOT_ALTO  = 88;   // tiene que coincidir con .gpj-sym del CSS
   var SLOT_ANTES = 4;    // cuantos simbolos pasan de largo antes del resultado
@@ -2503,7 +2710,7 @@
     simbolos.forEach(function (sim){
       var d = document.createElement("div");
       d.className = "gpj-sym";
-      d.textContent = sim;
+      d.innerHTML = gpSimbolo(sim);
       st.appendChild(d);
     });
     return st;
@@ -2537,6 +2744,26 @@
     st.style.transform  = "translateY(-" + (SLOT_ANTES * SLOT_ALTO) + "px)";
   }
 
+  /* Las chispas del premio. Se crean al ganar y se borran solas al terminar
+     la animacion: dejarlas puestas llenaria el gabinete de nodos muertos
+     tirada tras tirada. El azar de la posicion es decoracion pura. */
+  function tirarChispas(){
+    var caja = $("gpj-chispas");
+    if (!caja) return;
+    caja.innerHTML = "";
+    for (var i = 0; i < 16; i++){
+      var c = document.createElement("i");
+      c.className = "gpj-chispa";
+      c.style.left = (6 + Math.random() * 88) + "%";
+      c.style.animationDelay = (Math.random() * 0.35).toFixed(2) + "s";
+      c.style.background = i % 3 === 0
+        ? "linear-gradient(180deg,#fff2c2,#e0b34a)"
+        : "linear-gradient(180deg,#ffdd80,#d29310)";
+      caja.appendChild(c);
+    }
+    setTimeout(function (){ if (caja) caja.innerHTML = ""; }, 1700);
+  }
+
   function pintarRestantesSlot(n){
     $("gpj-slot-rest").textContent = n == null ? ""
       : (n > 0 ? "Te quedan " + n + (n === 1 ? " tirada" : " tiradas") + " hoy"
@@ -2547,6 +2774,7 @@
   function abrirSlot(){
     var j = estadoJuegos && estadoJuegos.slot;
     $("gpj-cab").classList.remove("gano");
+    $("gpj-chispas").innerHTML = "";
     $("gpj-slot-res").className = "gpr-res";
     $("gpj-slot-res").textContent = "";
     $("gpj-slot-msg").textContent = "";
@@ -2610,7 +2838,7 @@
            tercero es el que arma toda la expectativa. */
         PASOS.forEach(function (ms, i){
           setTimeout(function (){
-            slotFrenar(i, slotSimbolos[d.rodillos[i]] || "❔", 850);
+            slotFrenar(i, slotSimbolos[d.rodillos[i]] || "cereza", 850);
           }, ms);
         });
 
@@ -2619,9 +2847,9 @@
           var res = $("gpj-slot-res");
           res.className = "gpr-res show" + (d.bonus > 0 ? "" : " nada");
           res.innerHTML = d.bonus > 0
-            ? "<b>🎉 +" + d.bonus + " bonos</b>" + d.label + " — acreditados en tu cuenta."
-            : "<b>Casi</b>No salió. ¡Probá otra! 🍀";
-          if (d.bonus > 0) $("gpj-cab").classList.add("gano");
+            ? "<b>+" + d.bonus + " bonos</b>" + d.label + " — acreditados en tu cuenta."
+            : "<b>Casi</b>No salió. ¡Probá otra!";
+          if (d.bonus > 0){ $("gpj-cab").classList.add("gano"); tirarChispas(); }
           pintarRestantesSlot(d.restantes);
           refrescarJuegos();
         }, PASOS[2] + 900);
@@ -2803,8 +3031,9 @@
   "box-shadow:0 16px 40px rgba(0,0,0,.6);color:#eef0fb;cursor:pointer;"+
   "transform:translateY(-16px);opacity:0;transition:transform .25s,opacity .25s}"+
   ".gpn.on{transform:none;opacity:1}"+
-  ".gpn .ic{flex:none;width:36px;height:36px;border-radius:11px;display:grid;place-items:center;font-size:19px;"+
-  "background:linear-gradient(160deg,#F0C567,#E3B14A)}"+
+  ".gpn .ic{flex:none;width:36px;height:36px;border-radius:11px;display:grid;place-items:center;"+
+  "color:#4a2c00;background:linear-gradient(160deg,#F0C567,#E3B14A)}"+
+  ".gpn .ic .gp-ico{width:19px;height:19px}"+
   ".gpn .tx{flex:1;min-width:0}"+
   ".gpn .tt{font-weight:700;font-size:14px;margin-bottom:1px}"+
   ".gpn .cp{font-size:12.5px;color:#c7cbe6}"+
@@ -2819,7 +3048,7 @@
   wrapN.id = "gpn-wrap";
   document.body.appendChild(wrapN);
 
-  var ICONO = { bono:"🎁", fichas:"🪙", recarga:"✅", ruleta:"🎯", promo:"🔥", aviso:"🔔" };
+  var ICONO = { bono:"regalo", fichas:"ficha", recarga:"ok", ruleta:"diana", promo:"rayo", aviso:"campana" };
 
   function marcarLeida(id){
     fetch(API_NOTIF, {
@@ -2832,7 +3061,7 @@
     var card = document.createElement("div");
     card.className = "gpn";
     var ic = document.createElement("div");
-    ic.className = "ic"; ic.textContent = ICONO[n.tipo] || ICONO.aviso;
+    ic.className = "ic"; ic.innerHTML = gpIco(ICONO[n.tipo] || ICONO.aviso);
     var tx = document.createElement("div"); tx.className = "tx";
     var tt = document.createElement("div"); tt.className = "tt"; tt.textContent = n.titulo;
     var cp = document.createElement("div"); cp.className = "cp"; cp.textContent = n.cuerpo;
@@ -2947,7 +3176,7 @@
 
     var card = document.createElement("div");
     card.className = "gpn aviso";
-    var ic = document.createElement("div"); ic.className = "ic"; ic.textContent = "🔔";
+    var ic = document.createElement("div"); ic.className = "ic"; ic.innerHTML = gpIco("campana");
     var tx = document.createElement("div"); tx.className = "tx";
     var tt = document.createElement("div"); tt.className = "tt";
     tt.textContent = "Activá las notificaciones";
