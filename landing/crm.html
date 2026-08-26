@@ -1094,6 +1094,62 @@
   .nv-presets select{flex:1;min-width:140px;background:var(--panel2);border:1px solid var(--line);
     border-radius:9px;padding:8px 10px;color:var(--txt);font-size:12.5px}
 
+  /* --- Campos de la vista Notificaciones -------------------------------
+     La vista se porto de un modal, pero .modal input/.modal label solo
+     aplican DENTRO de .modal: aca los campos quedaban con el estilo del
+     navegador (cajas blancas sobre fondo oscuro) y los labels sin jerarquia.
+     Es la mitad del "se ve poco profesional". */
+  .nv-pane input[type=text],.nv-pane input[type=datetime-local],.nv-pane textarea{
+    width:100%;padding:11px 13px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:11px;color:var(--txt);outline:none;font-family:inherit;font-size:13.5px}
+  .nv-pane textarea{resize:vertical;min-height:96px;line-height:1.5}
+  .nv-pane input:focus,.nv-pane textarea:focus{border-color:var(--violet);box-shadow:0 0 0 3px var(--violetSoft)}
+  /* Solo los labels de campo: .todos / .ag-rol-opt / .nv-aud-opt son labels
+     estructurales (tarjetas con radio adentro) y no van en mayusculas. */
+  .nv-pane label:not(.todos):not(.ag-rol-opt):not(.nv-aud-opt){
+    display:block;font-size:11.5px;font-weight:700;text-transform:uppercase;
+    letter-spacing:.05em;color:var(--muted);margin:15px 0 6px}
+
+  /* Titulos de seccion con linea: separan Mensaje / Destinatarios / Cuando.
+     Sin ellos las dos columnas eran una lista continua de controles. */
+  .nv-sec{display:flex;align-items:center;gap:8px;font-size:11.5px;font-weight:800;
+    text-transform:uppercase;letter-spacing:.06em;color:var(--violet2);margin:20px 0 10px}
+  .nv-sec::after{content:"";flex:1;height:1px;background:var(--line)}
+  .n-col > .nv-sec:first-child{margin-top:0}
+
+  /* Vista previa: como se va a ver ANTES de mandarlo a mil celulares. */
+  .nv-prev-wrap{margin-top:4px;display:flex;flex-direction:column;gap:8px}
+  .nv-prev{display:flex;gap:11px;background:var(--panel3);border:1px solid var(--line2);
+    border-radius:14px;padding:12px 14px;box-shadow:var(--shadow-sm)}
+  .nv-prev-ico{width:34px;height:34px;border-radius:9px;flex:none;display:grid;place-items:center;
+    background:linear-gradient(180deg,var(--violet2),var(--violet));color:#fff}
+  .nv-prev-ico svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:2;
+    stroke-linecap:round;stroke-linejoin:round}
+  .nv-prev-txt{flex:1;min-width:0}
+  .nv-prev-app{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--muted);margin-bottom:3px}
+  .nv-prev-txt b{display:block;font-size:13.5px;color:var(--txt);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .nv-prev-txt span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+    overflow:hidden;font-size:12.5px;color:var(--muted);line-height:1.45}
+  .nv-prev-bub{display:inline-block;max-width:88%;background:var(--panel2);border:1px solid var(--line);
+    border-radius:14px 14px 14px 5px;padding:10px 13px;font-size:13px;color:var(--txt);white-space:pre-wrap}
+  .nv-prev-wrap .vacio{opacity:.55;font-style:italic}
+
+  /* Pie con resumen + CTA: antes el boton "Enviar" era un boton chico suelto
+     abajo a la izquierda. Un envio masivo merece confirmar DE UN VISTAZO que
+     va a pasar (canal, a quien, cuando) al lado del boton que lo dispara. */
+  .nv-footer{display:flex;align-items:center;justify-content:space-between;gap:14px;
+    margin-top:22px;padding:14px 16px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:13px;flex-wrap:wrap}
+  .nv-resumen{font-size:12.5px;color:var(--muted)}
+  .nv-resumen b{color:var(--txt)}
+  .nv-cta{background:linear-gradient(180deg,var(--violet2),var(--violet));color:#fff;border:none;
+    border-radius:11px;padding:12px 32px;font-size:14px;font-weight:800;cursor:pointer;
+    box-shadow:0 6px 18px -8px var(--violet);transition:.16s}
+  .nv-cta:hover{transform:translateY(-1px);box-shadow:0 9px 22px -8px var(--violet)}
+  .nv-cta:disabled{opacity:.6;transform:none;cursor:wait}
+
   .nv-hist-item,.nv-bono-item{display:flex;align-items:center;gap:12px;background:var(--panel2);
     border:1px solid var(--line);border-radius:13px;padding:12px 14px;margin-bottom:8px}
   .nv-hist-info,.nv-bono-info{flex:1;min-width:0}
@@ -1686,7 +1742,7 @@
 
       <!-- ---------- Enviar ---------- -->
       <div class="nv-pane on" id="nvPaneEnviar">
-        <label>Canal</label>
+        <div class="nv-sec">Canal</div>
         <div class="ag-rol-toggle n-canal-toggle">
           <label class="ag-rol-opt on" data-canal="push">
             <input type="radio" name="nCanal" value="push" checked>
@@ -1708,6 +1764,7 @@
         <div class="nv-enviar-grid">
           <!-- columna izquierda: redactar -->
           <div class="n-col">
+            <div class="nv-sec">Mensaje</div>
             <div id="nBloquePush">
               <label>Plantilla</label>
               <div class="chips" id="nChips"></div>
@@ -1721,11 +1778,28 @@
               <textarea id="nMensajeChat" maxlength="1500" placeholder="Así lo escribe el bot en la conversación de cada jugador…" rows="5"></textarea>
               <p class="ag-modal-hint">Si dejás esto vacío y el canal es "Ambos", se usa el mismo texto del mensaje de push.</p>
             </div>
+
+            <!-- Vista previa en vivo: lo que va a ver el jugador, antes de
+                 mandarselo a todos. Se actualiza al tipear (nvPintarPreview). -->
+            <div class="nv-sec">Vista previa</div>
+            <div class="nv-prev-wrap">
+              <div class="nv-prev" id="nvPrevPush">
+                <div class="nv-prev-ico"><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></div>
+                <div class="nv-prev-txt">
+                  <div class="nv-prev-app">Notificación · ahora</div>
+                  <b id="nvPrevTitulo" class="vacio">Título de la notificación</b>
+                  <span id="nvPrevCuerpo" class="vacio">Así se va a leer en el celular del jugador.</span>
+                </div>
+              </div>
+              <div id="nvPrevChat" style="display:none">
+                <div class="nv-prev-bub vacio" id="nvPrevBub">Así se va a leer en la conversación.</div>
+              </div>
+            </div>
           </div>
 
           <!-- columna derecha: a quién y cuándo -->
           <div class="n-col">
-            <label>Audiencia</label>
+            <div class="nv-sec">Destinatarios</div>
             <div class="nv-audiencia" id="nvAudiencia">
               <label class="nv-aud-opt on" data-aud="todos">
                 <input type="radio" name="nvAud" value="todos" checked>
@@ -1757,6 +1831,7 @@
               <button class="btn-mini-accion peligro" id="nvPresetBorrar" type="button">Borrar</button>
             </div>
 
+            <div class="nv-sec">Cuándo</div>
             <label class="todos" for="nProgramar">
               <input type="checkbox" id="nProgramar">
               <span><b>Programar para más tarde</b>En vez de enviarla ahora, elegí cuándo sale (hora de Argentina).</span>
@@ -1773,8 +1848,9 @@
           </div>
         </div>
 
-        <div class="mbtns" style="padding:16px 0 4px">
-          <button class="ok" id="nOk" style="width:auto;padding:12px 28px">Enviar</button>
+        <div class="nv-footer">
+          <div class="nv-resumen" id="nvResumen">…</div>
+          <button class="nv-cta" id="nOk">Enviar</button>
         </div>
       </div>
 
@@ -4519,6 +4595,9 @@
     $("#nOk").textContent="Enviar";
     cargarProgramadas();
     cargarPresets();
+    // Preview y resumen al estado recien reseteado (typeof: por si el
+    // bloque de UI todavia no se definio en el orden del archivo).
+    if(typeof nvPintarPreview==="function"){ nvPintarPreview(); nvPintarResumen(); }
     setTimeout(()=>$("#nTitulo").focus(),50);
   }
 
@@ -4602,6 +4681,47 @@
       $("#nFecha").focus();
     }
   });
+  /* ---- vista previa + resumen en vivo -------------------------------
+     El resumen existe para el "medir dos veces": un push masivo no se
+     deshace, y confirmar canal/destino/cuando al lado del boton evita el
+     clasico "se lo mande a todos en vez de a uno". */
+  function nvCanalActual(){ const r=document.querySelector('input[name="nCanal"]:checked'); return r?r.value:"push"; }
+  function nvAudActual(){ const r=document.querySelector('input[name="nvAud"]:checked'); return r?r.value:"todos"; }
+
+  function nvPintarPreview(){
+    const canal = nvCanalActual();
+    $("#nvPrevPush").style.display = canal==="chat" ? "none" : "";
+    $("#nvPrevChat").style.display = canal==="push" ? "none" : "";
+    const t=$("#nTitulo").value.trim(), c=$("#nCuerpo").value.trim();
+    $("#nvPrevTitulo").textContent = t || "Título de la notificación";
+    $("#nvPrevCuerpo").textContent = c || "Así se va a leer en el celular del jugador.";
+    $("#nvPrevTitulo").classList.toggle("vacio", !t);
+    $("#nvPrevCuerpo").classList.toggle("vacio", !c);
+    const m = $("#nMensajeChat").value.trim() || (canal==="ambos" ? c : "");
+    $("#nvPrevBub").textContent = m || "Así se va a leer en la conversación.";
+    $("#nvPrevBub").classList.toggle("vacio", !m);
+  }
+
+  function nvPintarResumen(){
+    const canal = {push:"Push", chat:"Chat", ambos:"Push + Chat"}[nvCanalActual()];
+    const aud = nvAudActual()==="inactivos"
+      ? ("inactivos hace " + ($("#nvDias").value||0) + "+ días")
+      : (nvAudActual()==="usuario" ? "un jugador" : "todos los jugadores");
+    let cuando = "ahora";
+    if($("#nProgramar").checked){
+      const f = $("#nFecha").value;
+      cuando = f ? ("el " + f.replace("T"," ") + " hs") : "programado (falta la fecha)";
+    }
+    $("#nvResumen").innerHTML = "Se envía por <b>"+canal+"</b> a <b>"+aud+"</b> · <b>"+cuando+"</b>";
+  }
+
+  ["nTitulo","nCuerpo","nMensajeChat","nvDias","nFecha"].forEach(id=>
+    $("#"+id).addEventListener("input", ()=>{ nvPintarPreview(); nvPintarResumen(); }));
+  document.querySelectorAll('input[name="nCanal"], input[name="nvAud"]').forEach(r=>
+    r.addEventListener("change", ()=>{ nvPintarPreview(); nvPintarResumen(); }));
+  $("#nProgramar").addEventListener("change", nvPintarResumen);
+  nvPintarPreview(); nvPintarResumen();
+
   $("#nOk").addEventListener("click", async ()=>{
     const canal = document.querySelector('input[name="nCanal"]:checked').value;
     const incluyePush = canal==="push" || canal==="ambos";
