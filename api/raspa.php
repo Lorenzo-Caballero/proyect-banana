@@ -50,6 +50,13 @@ const RASPA_PREMIOS = [
     ['label' => '2.000 🎁', 'bonus' => 2000, 'peso' => 5],
 ];
 const RASPA_CELDAS = 6;   // cuantas casillas tiene el carton
+
+// El simbolo que se dibuja en la casilla, UNO POR FILA DE RASPA_PREMIOS y en
+// el mismo orden. Va aca y no en el widget porque `celdas` viaja como indices
+// de esa tabla: si los simbolos vivieran en el JS, agregar un premio aca
+// correria todos los dibujos sin que nadie se entere. Si editas los premios,
+// edita esta linea en el mismo movimiento.
+const RASPA_SIMBOLOS = ['🍋', '🍒', '🔔', '⭐', '💎'];
 // ==========================================================================
 
 /**
@@ -102,6 +109,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         'ok'      => true,
         'activa'  => cfg_crm_activo($pdo, 'raspa_activo') && jug_puede_acreditar(),
         'premios' => jug_premios_publicos(RASPA_PREMIOS),
+        'simbolos'=> RASPA_SIMBOLOS,
         'celdas'  => RASPA_CELDAS,
     ]);
 }
@@ -170,6 +178,7 @@ try {
                 'ok'      => true,
                 'token'   => $prev['token'],
                 'celdas'  => array_map('intval', explode(',', (string)$prev['celdas'])),
+                'simbolos'=> RASPA_SIMBOLOS,
                 'cobrado' => (bool)(int)$prev['cobrado'],
                 'repetido'=> true,
             ]);
@@ -179,6 +188,7 @@ try {
             'ok'      => true,
             'token'   => $token,
             'celdas'  => $celdas,
+            'simbolos'=> RASPA_SIMBOLOS,
             'cobrado' => false,
         ]);
     }

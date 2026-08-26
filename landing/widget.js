@@ -1756,11 +1756,15 @@
    * ===================================================================*/
   var RULETA_DIA = "goldpaw_ruleta_dia";
 
+  /* Si a la ruleta le queda giro HOY. Vive afuera de cargarRuleta() porque el
+     hub de juegos tambien lo mira para pintar su chip. */
+  var ruletaDisponible = false;
+
   var cssR =
-  "#gpr-ov{position:fixed;inset:0;z-index:2147483002;display:none;align-items:center;justify-content:center;padding:18px;"+
+  "#gpr-ov,.gpr-ov{position:fixed;inset:0;z-index:2147483002;display:none;align-items:center;justify-content:center;padding:18px;"+
   "background:rgba(6,3,15,.78);backdrop-filter:blur(3px);"+
   "font:14px/1.5 system-ui,Segoe UI,Roboto,Arial,sans-serif;color:#eef0fb}"+
-  "#gpr-ov.show{display:flex}"+
+  "#gpr-ov.show,.gpr-ov.show{display:flex}"+
   ".gpr-card{position:relative;width:100%;max-width:340px;background:linear-gradient(170deg,#1a1440,#120d2b);"+
   "border:1px solid #2a2350;border-radius:20px;padding:22px 20px;text-align:center;box-shadow:0 26px 70px rgba(0,0,0,.65)}"+
   ".gpr-card h2{font-size:19px;margin:0 0 4px;font-weight:700}"+
@@ -1911,7 +1915,10 @@
     fabR.classList.remove("quieto");   // si sigue .listo, vuelve a latir
   }
 
-  fabR.addEventListener("click", abrirRuleta);
+  /* El globo abre el HUB de juegos, no la ruleta. Con un solo juego prendido
+     abrirJuegos() va derecho a ese, asi que el gesto no cambia para quien solo
+     tiene la ruleta. */
+  fabR.addEventListener("click", abrirJuegos);
   $("gpr-x").addEventListener("click", cerrarRuleta);
   $("gpr-skip").addEventListener("click", cerrarRuleta);
 
@@ -2002,62 +2009,588 @@
     reclamar(u);
   });
 
-  // Palpito + letrero SOLO cuando hay un giro para reclamar. Sin giro
-  // disponible el FAB se ve pero queda quieto y sin cartel, para no insistir
-  // con algo que el jugador no puede reclamar hasta mañana.
+  /* La ruleta ya no manda sola sobre el globo: ese boton ahora abre el hub y
+     late si CUALQUIER juego tiene algo para hoy. Aca solo se anota el estado de
+     la ruleta y se repinta el conjunto. */
   function pintarEstadoRuleta(disponible){
-    fabR.classList.toggle("listo", !!disponible);
-    tagR.classList.toggle("oculto", !disponible);
+    ruletaDisponible = !!disponible;
+    pintarFabJuegos();
   }
 
   function cargarRuleta(){
-    /* El FAB arranca OCULTO y se muestra recién cuando el server confirma que
-       la ruleta está prendida.
+    /* Prepara la rueda: los premios y si a ESTE jugador le queda giro. Ya NO
+       decide si el globo se ve -- eso lo resuelve pintarFabJuegos() mirando los
+       tres juegos juntos, porque el globo es de todos.
 
-       Antes se mostraba de entrada ("optimista") y se escondía después, en el
-       .then(): con la ruleta apagada desde el CRM igual aparecían el globo y
-       el letrero "¡Girá y ganá!" un instante, y encima si el fetch fallaba se
-       quedaban puestos para siempre. Prometerle un premio a alguien y
-       borrárselo medio segundo después es peor que no ofrecérselo. */
+       Devuelve una promesa para que iniciarJuegos() pinte el FAB recien cuando
+       la respuesta llego. Antes se mostraba de entrada ("optimista") y se
+       escondia despues: con la ruleta apagada desde el CRM igual aparecian el
+       globo y el letrero "¡Girá y ganá!" un instante. Prometerle un premio a
+       alguien y borrarselo medio segundo despues es peor que no ofrecerlo. */
     var yaJugoHoy = ls(RULETA_DIA) === new Date().toISOString().slice(0, 10);
 
     var url = API_RULETA + (USUARIO ? ("?usuario=" + encodeURIComponent(USUARIO)) : "");
-    fetch(url)
+    return fetch(url)
       .then(function (r){ return r.json(); })
       .then(function (d){
-        /* Apagada desde el CRM: no se muestra NADA. El server igual rechaza
-           los giros -- este endpoint es público y esconder el botón no
-           protege nada -- pero un botón que está y no hace nada es peor que
-           no tenerlo. */
-        if (d && d.activa === false){
-          fabRWrap.classList.remove("on");
-          return false;
-        }
         premios = (d && d.premios && d.premios.length) ? d.premios : FALLBACK;
         // Si el server sabe del usuario, su 'disponible' manda.
         if (d && typeof d.disponible === "boolean"){
           yaJugoHoy = !d.disponible;
         }
-        return true;
       })
       .catch(function (){
-        /* Sin respuesta no se puede saber si está prendida. Se muestra igual
-           con los premios de respaldo: la ruleta lleva años siendo parte del
-           sitio, y esconderla porque se cayó un fetch es más disruptivo que
-           mostrarla y que el giro falle (el server lo rechaza con su motivo).
-           El caso "apagada" ya se resolvió arriba con una respuesta real. */
+        /* Sin respuesta se dibuja con los premios de respaldo: el dibujo es
+           cosmetico y el giro lo valida igual el server, con su propio motivo.
+           El caso "apagada" ya lo resolvio juegos_estado.php antes de llamar
+           aca, asi que un fetch caido no puede ofrecer un juego apagado. */
         premios = FALLBACK;
-        return true;
       })
-      .then(function (mostrar){
-        if (!mostrar) return;
-        fabRWrap.classList.add("on");
-        pintarEstadoRuleta(!yaJugoHoy);
+      .then(function (){
+        ruletaDisponible = !yaJugoHoy;
         try { dibujar(); } catch (e) { log("ruleta: error al dibujar", String(e && e.message || e)); }
-        // Se abre sola una vez por dia SOLO si hay giro para reclamar.
-        if (!yaJugoHoy){
-          setTimeout(abrirRuleta, 900);
+      });
+  }
+
+  /* =====================================================================
+   * JUEGOS PROPIOS — hub + Raspa y Gana + Tragamonedas 777
+   *
+   * POR QUE UN HUB Y NO UN GLOBO POR JUEGO
+   * Cada juego con su propio FAB seria una columna de botones flotantes con el
+   * `bottom` puesto a mano: se pisan en cualquier pantalla baja, y tres cosas
+   * palpitando a la vez no comunican nada -- el palpito de la ruleta funciona
+   * PORQUE es el unico. Ademas este widget se inyecta DENTRO del juego de la
+   * plataforma: cada globo de mas es superficie que le tapamos al juego que el
+   * jugador vino a jugar.
+   *
+   * El chat queda AFUERA del hub a proposito: no es un juego, es soporte.
+   * Meterlo en un menu de premios lo esconde justo cuando alguien tiene un
+   * problema de plata.
+   *
+   * QUE SABE EL CLIENTE
+   * Nada que importe. El premio lo sortea y lo persiste el server; aca solo se
+   * anima un resultado que ya vino decidido. Que el carton se pueda leer con
+   * DevTools no es un agujero: el premio ya esta escrito en la base, espiarlo
+   * solo se arruina la sorpresa a uno mismo.
+   * ===================================================================== */
+
+  var API_JUEGOS = BASE_API + "/juegos_estado.php";
+  var API_RASPA  = BASE_API + "/raspa.php";
+  var API_SLOT   = BASE_API + "/slot777.php";
+
+  var JUEGOS_DIA   = "goldpaw_juegos_dia";
+  var estadoJuegos = null;    // ultima respuesta de juegos_estado.php
+
+  /* Mismo patron que el resto del widget: un <style> propio, inyectado una vez.
+     Las clases van con prefijo gpj- para no chocar con el chat (gp-) ni con la
+     ruleta (gpr-). El chasis de los modales SI se reusa de la ruleta (.gpr-ov,
+     .gpr-card, .gpr-btn): son la misma familia visual y duplicarlo garantiza
+     que en el proximo retoque uno quede distinto del otro. */
+  var cssJ =
+    "#gpj-ov{position:fixed;inset:0;background:rgba(6,3,15,.78);z-index:2147483002;" +
+    "display:none;align-items:flex-end;justify-content:center;backdrop-filter:blur(3px);" +
+    "font:14px/1.5 system-ui,Segoe UI,Roboto,Arial,sans-serif}" +
+    "#gpj-ov.show{display:flex}" +
+    "#gpj-sheet{width:100%;max-width:400px;background:linear-gradient(170deg,#1a1440,#120d2b);" +
+    "border:1px solid #2a2350;border-bottom:0;border-radius:20px 20px 0 0;padding:18px 16px 20px;" +
+    "box-shadow:0 -20px 60px rgba(0,0,0,.6);animation:gpjSube .22s ease-out}" +
+    "@keyframes gpjSube{from{transform:translateY(26px);opacity:.3}to{transform:none;opacity:1}}" +
+    "#gpj-sheet h3{margin:0 0 3px;font-size:18px;font-weight:700;color:#eef0fb}" +
+    "#gpj-sheet .gpj-sub{margin:0 0 14px;font-size:13px;color:#9aa0c4}" +
+    ".gpj-item{display:flex;align-items:center;gap:12px;width:100%;text-align:left;cursor:pointer;" +
+    "background:#1b1540;border:1px solid #2a2350;border-radius:14px;padding:12px 13px;margin-bottom:9px;" +
+    "transition:border-color .15s,transform .15s;font-family:inherit;color:#eef0fb}" +
+    ".gpj-item:hover{border-color:#4a3f8a;transform:translateY(-1px)}" +
+    ".gpj-ico{width:42px;height:42px;border-radius:12px;flex:none;display:grid;place-items:center;font-size:21px}" +
+    ".gpj-tx{flex:1;min-width:0}" +
+    ".gpj-tx b{display:block;font-size:14.5px;font-weight:700}" +
+    ".gpj-chip{display:inline-block;margin-top:4px;font-size:10.5px;font-weight:700;line-height:1;" +
+    "padding:4px 8px;border-radius:20px;background:#241a5e;color:#9aa0c4}" +
+    ".gpj-chip.hay{background:rgba(227,177,74,.16);color:#E3B14A}" +
+    ".gpj-fl{color:#5d5590;flex:none}" +
+    "#gpj-cerrar{width:100%;margin-top:4px;background:0;border:0;color:#9aa0c4;" +
+    "font:600 13px inherit;padding:10px;cursor:pointer}" +
+
+    /* ---- raspa ---- */
+    ".gpj-raspa-box{position:relative;width:100%;max-width:290px;height:150px;margin:4px auto 14px;" +
+    "border-radius:14px;overflow:hidden;background:#241a5e}" +
+    ".gpj-celdas{position:absolute;inset:0;display:grid;grid-template-columns:repeat(3,1fr);" +
+    "grid-template-rows:repeat(2,1fr);gap:6px;padding:9px}" +
+    ".gpj-celda{display:grid;place-items:center;background:#1b1540;border-radius:10px;font-size:27px}" +
+    "#gpj-raspa-cv{position:absolute;inset:0;width:100%;height:100%;cursor:pointer;touch-action:none;display:block}" +
+
+    /* ---- slot ---- */
+    ".gpj-reels{display:flex;gap:8px;justify-content:center;margin:6px 0 14px}" +
+    ".gpj-reel{width:74px;height:88px;border-radius:14px;background:#1b1540;border:1px solid #2a2350;" +
+    "display:grid;place-items:center;font-size:38px;overflow:hidden}" +
+    ".gpj-reel.gira{animation:gpjGira .12s linear infinite}" +
+    "@keyframes gpjGira{from{transform:translateY(-6px)}to{transform:translateY(6px)}}" +
+    ".gpj-restantes{font-size:12px;font-weight:600;color:#9aa0c4;margin-bottom:8px;min-height:16px}";
+  var stJ = document.createElement("style"); stJ.textContent = cssJ;
+  document.head.appendChild(stJ);
+
+  /* El hub. Se arma vacio y se rellena en abrirHub() con lo que este prendido:
+     los juegos se apagan desde el CRM en cualquier momento y una lista fija
+     ofreceria algo que el server ya rechaza. */
+  var ovJ = document.createElement("div");
+  ovJ.id = "gpj-ov";
+  ovJ.innerHTML =
+    '<div id="gpj-sheet">' +
+    '<h3>Juegos</h3>' +
+    '<p class="gpj-sub">Premios en bonos, gratis todos los días.</p>' +
+    '<div id="gpj-lista"></div>' +
+    '<button id="gpj-cerrar" type="button">Cerrar</button>' +
+    '</div>';
+  document.body.appendChild(ovJ);
+
+  function cerrarHub(){ ovJ.classList.remove("show"); fabR.classList.remove("quieto"); }
+  $("gpj-cerrar").addEventListener("click", cerrarHub);
+  ovJ.addEventListener("click", function (e){ if (e.target === ovJ) cerrarHub(); });
+
+  var DEF_JUEGOS = {
+    ruleta: { ico: "🎁", nombre: "Ruleta de bonos",  fondo: "rgba(227,177,74,.16)" },
+    raspa:  { ico: "🎫", nombre: "Raspa y Gana",     fondo: "rgba(120,200,140,.16)" },
+    slot:   { ico: "🎰", nombre: "Tragamonedas 777", fondo: "rgba(160,140,240,.16)" }
+  };
+
+  /** Los juegos prendidos desde el CRM, en orden de presentacion. */
+  function juegosActivos(){
+    if (!estadoJuegos) return [];
+    return ["ruleta", "raspa", "slot"].filter(function (k){
+      return estadoJuegos[k] && estadoJuegos[k].activo;
+    });
+  }
+
+  /* Cuantos tienen algo para jugar HOY. Un solo numero en vez de tres palpitos
+     compitiendo por la misma esquina de la pantalla. */
+  function juegosDisponibles(){
+    return juegosActivos().filter(function (k){ return chipDe(k).hay; }).length;
+  }
+
+  /* El texto del chip de cada juego en el hub, y si eso cuenta como
+     "disponible". La ruleta no viene con `disponible` de juegos_estado.php a
+     proposito: esa regla vive en ruleta.php y la resuelve cargarRuleta(). */
+  function chipDe(clave){
+    var j = estadoJuegos && estadoJuegos[clave];
+    if (!j || !j.activo) return { txt: "", hay: false };
+    if (j.requiere_login && !AUTH) return { txt: "Ingresá para jugar", hay: false };
+    if (clave === "ruleta") {
+      return ruletaDisponible
+        ? { txt: "Girá gratis", hay: true }
+        : { txt: "Volvé mañana", hay: false };
+    }
+    if (clave === "slot") {
+      return j.restantes > 0
+        ? { txt: j.restantes + (j.restantes === 1 ? " tirada" : " tiradas"), hay: true }
+        : { txt: "Volvé mañana", hay: false };
+    }
+    return j.disponible
+      ? { txt: "Tenés tu cartón", hay: true }
+      : { txt: "Volvé mañana", hay: false };
+  }
+
+  function abrirHub(){
+    var lista = $("gpj-lista");
+    lista.innerHTML = "";
+
+    juegosActivos().forEach(function (clave){
+      var d = DEF_JUEGOS[clave], c = chipDe(clave);
+      var b = document.createElement("button");
+      b.className = "gpj-item";
+      b.type = "button";
+      b.innerHTML =
+        '<span class="gpj-ico" style="background:' + d.fondo + '">' + d.ico + '</span>' +
+        '<span class="gpj-tx"><b>' + d.nombre + '</b>' +
+        '<span class="gpj-chip' + (c.hay ? " hay" : "") + '">' + c.txt + '</span></span>' +
+        '<svg class="gpj-fl" viewBox="0 0 24 24" width="16" height="16" fill="none" ' +
+        'stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>';
+      /* Un juego sin cupo NO se deshabilita: se entra igual y el propio juego
+         explica por que no se puede jugar. Un boton muerto solo genera la
+         pregunta "por que no me deja" en el chat. */
+      b.addEventListener("click", function (){ cerrarHub(); abrirJuego(clave); });
+      lista.appendChild(b);
+    });
+
+    ovJ.classList.add("show");
+    fabR.classList.add("quieto");   // con el hub abierto no late detras
+  }
+
+  function abrirJuego(clave){
+    if (clave === "ruleta") return abrirRuleta();
+    if (clave === "raspa")  return abrirRaspa();
+    if (clave === "slot")   return abrirSlot();
+  }
+
+  /* Lo que hace el FAB. Con UN solo juego prendido va directo: un menu de un
+     item es friccion pura. */
+  function abrirJuegos(){
+    var activos = juegosActivos();
+    if (!activos.length) return;
+    lss(JUEGOS_DIA, new Date().toISOString().slice(0, 10));
+    if (activos.length === 1) return abrirJuego(activos[0]);
+    abrirHub();
+  }
+
+  /* ---------------------------------------------------------------- RASPA */
+  var ovR = document.createElement("div");
+  ovR.className = "gpr-ov";                  // reusa el chasis de la ruleta
+  ovR.innerHTML =
+    '<div class="gpr-card">' +
+    '<button class="gpr-x" id="gpj-raspa-x" aria-label="Cerrar">&times;</button>' +
+    '<h2>Raspa y <span style="color:#E3B14A">Gana</span></h2>' +
+    '<div class="sub">Raspá las 6 casillas. Tres iguales, ganás.</div>' +
+    '<div class="gpj-raspa-box">' +
+    '<div class="gpj-celdas" id="gpj-celdas"></div>' +
+    '<canvas id="gpj-raspa-cv"></canvas>' +
+    '</div>' +
+    '<div class="gpr-res" id="gpj-raspa-res"></div>' +
+    '<div class="gpr-msg" id="gpj-raspa-msg"></div>' +
+    '<button class="gpr-btn" id="gpj-raspa-btn" type="button">Quiero mi cartón</button>' +
+    '<button class="gpr-skip" id="gpj-raspa-skip" type="button">Ahora no</button>' +
+    '</div>';
+  document.body.appendChild(ovR);
+
+  var raspaTok = null, raspaCobrando = false;
+  var raspaSimbolos = ["🍋", "🍒", "🔔", "⭐", "💎"];   // respaldo; manda el server
+
+  function abrirRaspa(){
+    /* Se reinicia en cada apertura: el modal vive todo el rato en el DOM, y
+       sin esto el jugador se encontraria con el resultado de la vez anterior. */
+    raspaTok = null; raspaCobrando = false;
+    $("gpj-celdas").innerHTML = "";
+    $("gpj-raspa-res").className = "gpr-res";
+    $("gpj-raspa-res").textContent = "";
+    $("gpj-raspa-msg").textContent = "";
+    var cv = $("gpj-raspa-cv");
+    try { cv.getContext("2d").clearRect(0, 0, cv.width, cv.height); } catch (e) {}
+    var btn = $("gpj-raspa-btn");
+    btn.style.display = ""; btn.disabled = false; btn.textContent = "Quiero mi cartón";
+    ovR.classList.add("show");
+  }
+  function cerrarRaspa(){ ovR.classList.remove("show"); }
+  $("gpj-raspa-x").addEventListener("click", cerrarRaspa);
+  $("gpj-raspa-skip").addEventListener("click", cerrarRaspa);
+
+  function pintarCeldas(celdas){
+    var cont = $("gpj-celdas");
+    cont.innerHTML = "";
+    celdas.forEach(function (i){
+      var d = document.createElement("div");
+      d.className = "gpj-celda";
+      // `celdas` viaja como indices de la tabla de premios del server, y
+      // `simbolos` es esa misma tabla dibujada. Por eso los dos vienen juntos.
+      d.textContent = raspaSimbolos[i] || "•";
+      cont.appendChild(d);
+    });
+  }
+
+  /* La lamina dorada que se rasca. destination-out la BORRA siguiendo el dedo,
+     dejando ver las celdas que ya estan debajo en el DOM. */
+  function prepararLamina(){
+    var cv = $("gpj-raspa-cv");
+    var r  = cv.getBoundingClientRect();
+    cv.width  = Math.max(1, Math.round(r.width));
+    cv.height = Math.max(1, Math.round(r.height));
+    var ctx = cv.getContext("2d");
+    var g = ctx.createLinearGradient(0, 0, cv.width, cv.height);
+    g.addColorStop(0, "#C9A227"); g.addColorStop(.5, "#F0C567"); g.addColorStop(1, "#B8901F");
+    ctx.globalCompositeOperation = "source-over";
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.fillStyle = "rgba(74,44,0,.8)";
+    ctx.font = "700 15px system-ui,Segoe UI,Roboto,Arial,sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("Raspá acá 👆", cv.width / 2, cv.height / 2 + 5);
+    ctx.globalCompositeOperation = "destination-out";
+    return ctx;
+  }
+
+  function armarRascado(){
+    var cv  = $("gpj-raspa-cv");
+    var ctx = prepararLamina();
+    var rascando = false, ultimoChequeo = 0;
+
+    function pos(e){
+      var r = cv.getBoundingClientRect();
+      var p = (e.touches && e.touches[0]) || e;
+      return { x: (p.clientX - r.left) * (cv.width / r.width),
+               y: (p.clientY - r.top)  * (cv.height / r.height) };
+    }
+    function borrar(e){
+      if (!rascando) return;
+      e.preventDefault();
+      var p = pos(e);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 16, 0, Math.PI * 2);
+      ctx.fill();
+      /* El chequeo va cada 120 ms sobre una muestra, no en cada movimiento y no
+         pixel por pixel: getImageData del canvas entero en cada mousemove traba
+         el dedo en un celular. */
+      var ahora = Date.now();
+      if (ahora - ultimoChequeo > 120){
+        ultimoChequeo = ahora;
+        if (bastante(ctx, cv)) cobrarRaspa();
+      }
+    }
+
+    ["mousedown", "touchstart"].forEach(function (ev){
+      cv.addEventListener(ev, function (e){ rascando = true; borrar(e); }, { passive: false }); });
+    ["mousemove", "touchmove"].forEach(function (ev){
+      cv.addEventListener(ev, borrar, { passive: false }); });
+    ["mouseup", "mouseleave", "touchend", "touchcancel"].forEach(function (ev){
+      cv.addEventListener(ev, function (){ rascando = false; }); });
+  }
+
+  /** ¿Ya rasco lo suficiente como para que el carton se entienda? */
+  function bastante(ctx, cv){
+    try {
+      var d = ctx.getImageData(0, 0, cv.width, cv.height).data;
+      var vacios = 0, total = 0;
+      for (var i = 3; i < d.length; i += 4 * 40){ total++; if (d[i] === 0) vacios++; }
+      return total > 0 && vacios / total > 0.55;
+    } catch (e) {
+      /* Canvas "sucio" o sin permiso: no se puede medir. Se da por raspado en
+         vez de dejar al jugador rascando para siempre sin cobrar nunca. */
+      return true;
+    }
+  }
+
+  function cobrarRaspa(){
+    if (raspaCobrando || !raspaTok) return;
+    raspaCobrando = true;                       // guarda: se cobra UNA sola vez
+    fetch(API_RASPA, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accion: "raspar", token: AUTH || undefined, carton: raspaTok })
+    })
+      .then(function (r){ return r.json(); })
+      .then(function (d){
+        if (!d || !d.ok){
+          $("gpj-raspa-msg").textContent = (d && d.error) || "No pude cobrarlo. Escribinos por el chat.";
+          return;
         }
+        var res = $("gpj-raspa-res");
+        res.className = "gpr-res show" + (d.bonus > 0 ? "" : " nada");
+        res.innerHTML = d.bonus > 0
+          ? "<b>🎉 +" + d.bonus + " bonos</b>Acreditados en tu cuenta. ¡Volvé mañana!"
+          : "<b>Esta vez no</b>Mañana tenés otro cartón. 🍀";
+        $("gpj-raspa-btn").style.display = "none";
+        refrescarJuegos();
+      })
+      .catch(function (){
+        // Se libera la guarda: la jugada no llego al server, se puede reintentar.
+        raspaCobrando = false;
+        $("gpj-raspa-msg").textContent = "No pude conectar. Probá de nuevo.";
+      });
+  }
+
+  $("gpj-raspa-btn").addEventListener("click", function (){
+    var btn = this;
+    btn.disabled = true; btn.textContent = "Buscando tu cartón…";
+    $("gpj-raspa-msg").textContent = "";
+    fetch(API_RASPA, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accion: "crear", token: AUTH || undefined })
+    })
+      .then(function (r){ return r.json(); })
+      .then(function (d){
+        btn.disabled = false; btn.textContent = "Quiero mi cartón";
+        if (!d || !d.ok){
+          $("gpj-raspa-msg").textContent = (d && d.error) || "No pude darte un cartón.";
+          return;
+        }
+        raspaTok      = d.token;
+        raspaCobrando = !!d.cobrado;            // ya cobrado: no se vuelve a cobrar
+        if (d.simbolos && d.simbolos.length) raspaSimbolos = d.simbolos;
+        pintarCeldas(d.celdas || []);
+        btn.style.display = "none";
+
+        if (d.cobrado){
+          /* Ya lo habia raspado antes (volvio a entrar): se revela entero y no
+             se arma el rascado -- rascar de nuevo no puede pagar de nuevo. */
+          $("gpj-raspa-res").className = "gpr-res show nada";
+          $("gpj-raspa-res").innerHTML = "<b>Ya lo jugaste</b>Este es tu cartón de hoy. ¡Volvé mañana!";
+          return;
+        }
+        // Recien aca el canvas tiene su tamaño real (el modal ya esta visible).
+        setTimeout(armarRascado, 30);
+      })
+      .catch(function (){
+        btn.disabled = false; btn.textContent = "Quiero mi cartón";
+        $("gpj-raspa-msg").textContent = "No pude conectar.";
+      });
+  });
+
+  /* ----------------------------------------------------------------- SLOT */
+  var ovS = document.createElement("div");
+  ovS.className = "gpr-ov";
+  ovS.innerHTML =
+    '<div class="gpr-card">' +
+    '<button class="gpr-x" id="gpj-slot-x" aria-label="Cerrar">&times;</button>' +
+    '<h2>Tragamonedas <span style="color:#E3B14A">777</span></h2>' +
+    '<div class="sub">Tres iguales pagan. Tres 7, pagan fuerte.</div>' +
+    '<div class="gpj-reels"><div class="gpj-reel" id="gpj-r0">🍒</div>' +
+    '<div class="gpj-reel" id="gpj-r1">🍋</div><div class="gpj-reel" id="gpj-r2">🔔</div></div>' +
+    '<div class="gpr-res" id="gpj-slot-res"></div>' +
+    '<div class="gpj-restantes" id="gpj-slot-rest"></div>' +
+    '<div class="gpr-msg" id="gpj-slot-msg"></div>' +
+    '<button class="gpr-btn" id="gpj-slot-btn" type="button">Tirar</button>' +
+    '<button class="gpr-skip" id="gpj-slot-skip" type="button">Ahora no</button>' +
+    '</div>';
+  document.body.appendChild(ovS);
+
+  var slotSimbolos = ["🍒", "🍋", "🔔", "⭐", "7️⃣"], slotGirando = false;
+
+  function pintarRestantesSlot(n){
+    $("gpj-slot-rest").textContent = n == null ? ""
+      : (n > 0 ? "Te quedan " + n + (n === 1 ? " tirada" : " tiradas") + " hoy"
+               : "Sin tiradas por hoy");
+    $("gpj-slot-btn").disabled = (n != null && n <= 0);
+  }
+
+  function abrirSlot(){
+    var j = estadoJuegos && estadoJuegos.slot;
+    $("gpj-slot-res").className = "gpr-res";
+    $("gpj-slot-res").textContent = "";
+    $("gpj-slot-msg").textContent = "";
+    pintarRestantesSlot(j ? j.restantes : null);
+    ovS.classList.add("show");
+  }
+  function cerrarSlot(){ ovS.classList.remove("show"); }
+  $("gpj-slot-x").addEventListener("click", cerrarSlot);
+  $("gpj-slot-skip").addEventListener("click", cerrarSlot);
+
+  $("gpj-slot-btn").addEventListener("click", function (){
+    if (slotGirando) return;
+    slotGirando = true;
+    var btn = this;
+    btn.disabled = true;
+    $("gpj-slot-res").className = "gpr-res";
+    $("gpj-slot-res").textContent = "";
+    $("gpj-slot-msg").textContent = "";
+
+    var reels = [$("gpj-r0"), $("gpj-r1"), $("gpj-r2")];
+    reels.forEach(function (r){ r.classList.add("gira"); });
+    /* Mientras vuelve el server, los rodillos muestran simbolos al azar. Es
+       DECORACION: el resultado ya lo decidio el server y llega en la respuesta;
+       este random no entra en el premio. */
+    var ruido = setInterval(function (){
+      reels.forEach(function (r){
+        r.textContent = slotSimbolos[Math.floor(Math.random() * slotSimbolos.length)];
+      });
+    }, 80);
+
+    function frenarTodo(){
+      clearInterval(ruido);
+      reels.forEach(function (r){ r.classList.remove("gira"); });
+      slotGirando = false;
+    }
+
+    fetch(API_SLOT, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accion: "tirar", token: AUTH || undefined })
+    })
+      .then(function (r){ return r.json(); })
+      .then(function (d){
+        if (d && d.simbolos && d.simbolos.length) slotSimbolos = d.simbolos;
+
+        /* Los tres carretes frenan escalonados: si paran juntos no se siente un
+           tragamonedas, y el tercero es el que arma la expectativa. El ruido se
+           corta con el ultimo, si no los ya frenados seguirian cambiando. */
+        [700, 1100, 1500].forEach(function (ms, i){
+          setTimeout(function (){
+            if (i === 2) clearInterval(ruido);
+            reels[i].classList.remove("gira");
+            if (d && d.ok && d.rodillos) reels[i].textContent = slotSimbolos[d.rodillos[i]];
+          }, ms);
+        });
+
+        setTimeout(function (){
+          frenarTodo();
+          if (!d || !d.ok){
+            $("gpj-slot-msg").textContent = (d && d.error) || "No pude tirar.";
+            if (d && d.restantes != null) pintarRestantesSlot(d.restantes);
+            else btn.disabled = false;
+            return;
+          }
+          var res = $("gpj-slot-res");
+          res.className = "gpr-res show" + (d.bonus > 0 ? "" : " nada");
+          res.innerHTML = d.bonus > 0
+            ? "<b>🎉 +" + d.bonus + " bonos</b>" + d.label + " — acreditados en tu cuenta."
+            : "<b>Casi</b>No salió. ¡Probá otra! 🍀";
+          pintarRestantesSlot(d.restantes);
+          refrescarJuegos();
+        }, 1700);
+      })
+      .catch(function (){
+        frenarTodo();
+        btn.disabled = false;
+        $("gpj-slot-msg").textContent = "No pude conectar.";
+      });
+  });
+
+  /* -------------------------------------------------------------- ESTADO */
+
+  /* Una sola consulta para los tres juegos. Se repite despues de cada jugada
+     porque el cupo cambio: el chip del hub tiene que decir la verdad sin que el
+     jugador recargue la pagina. */
+  function refrescarJuegos(){
+    return fetch(API_JUEGOS, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: AUTH || undefined })
+    })
+      .then(function (r){ return r.json(); })
+      .then(function (d){
+        estadoJuegos = (d && d.ok && d.juegos) ? d.juegos : null;
+        pintarFabJuegos();
+        return estadoJuegos;
+      })
+      .catch(function (){
+        /* Sin respuesta no se toca nada: se deja lo que ya estaba pintado. Es
+           mejor que un globo que aparece y desaparece con cada corte de red. */
+        return estadoJuegos;
+      });
+  }
+
+  function pintarFabJuegos(){
+    var activos = juegosActivos();
+    if (!activos.length){
+      /* Ningun juego prendido: no se muestra NADA. Un globo que no lleva a
+         ningun lado es peor que no tenerlo. */
+      fabRWrap.classList.remove("on");
+      return;
+    }
+    fabRWrap.classList.add("on");
+
+    var hay = juegosDisponibles();
+    fabR.classList.toggle("listo", hay > 0);
+    tagR.classList.toggle("oculto", hay === 0);
+
+    /* El letrero deja de hablar solo de la ruleta cuando hay mas de un juego.
+       El aria-label acompaña: quien navega con lector de pantalla no puede ver
+       que el globo ahora abre un menu. */
+    var uno  = activos.length === 1 ? activos[0] : null;
+    var span = tagR.querySelector("span");
+    if (span) span.textContent = uno === "ruleta" ? "¡Girá y ganá!" : "¡Jugá gratis!";
+    fabR.setAttribute("aria-label", uno
+      ? DEF_JUEGOS[uno].nombre
+      : "Juegos — " + activos.length + " juegos gratis");
+  }
+
+  /* El arranque. Primero juegos_estado.php, que dice que hay prendido; la
+     ruleta se consulta DESPUES y solo si esta activa, para no pegarle a
+     ruleta.php cuando el CRM la tiene apagada. */
+  function iniciarJuegos(){
+    refrescarJuegos()
+      .then(function (){
+        var e = estadoJuegos;
+        return (e && e.ruleta && e.ruleta.activo) ? cargarRuleta() : null;
+      })
+      .then(function (){
+        pintarFabJuegos();
+        /* Se abre sola UNA vez por dia, y solo si hay algo para reclamar:
+           abrirla sin cupo es prometer un premio que no existe. */
+        if (ls(JUEGOS_DIA) === new Date().toISOString().slice(0, 10)) return;
+        if (juegosDisponibles() > 0) setTimeout(abrirJuegos, 900);
       });
   }
 
@@ -2416,7 +2949,7 @@
   timerAgente = setInterval(mirarAgente, 6000);
   revisarSesion();
   setInterval(revisarSesion, 1200);
-  cargarRuleta();
+  iniciarJuegos();
 
   notifRegistrar();
   setTimeout(mirarNotif, 3000);

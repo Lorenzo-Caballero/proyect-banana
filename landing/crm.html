@@ -257,6 +257,9 @@
   .cfg-card.on .cfg-card-body{display:none}
   .cfg-card.meta .cfg-card-body{display:none}
   .cfg-card.meta.on .cfg-card-body{display:block}
+  /* Los juegos, igual que Meta: apagados no hay nada que configurar. */
+  .cfg-card.juego .cfg-card-body{display:none}
+  .cfg-card.juego.on .cfg-card-body{display:block}
   .cfg-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
   .cfg-checks{display:flex;flex-direction:column;gap:9px;margin-top:8px}
   .cfg-checks label{display:flex;align-items:flex-start;gap:9px;cursor:pointer;font-size:12.5px;color:var(--muted)}
@@ -2099,6 +2102,50 @@
         </div>
       </div>
 
+      <!-- Raspa y Gana -------------------------------------------------- -->
+      <div class="cfg-card juego">
+        <div class="cfg-card-head">
+          <span class="cb-ico"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 10h4M7 14h7"/><path d="m15 8 4 4-4 4"/></svg></span>
+          <div class="cfg-card-txt">
+            <b>Raspa y Gana</b>
+            <span>Un cartón gratis por día. El jugador raspa y ve si ganó bonos.</span>
+          </div>
+          <label class="cb-switch">
+            <input type="checkbox" id="cfgRaspa">
+            <span class="cb-slider"></span>
+          </label>
+        </div>
+        <div class="cfg-card-body">
+          <label class="cb-flabel">Tope de bonos por día <span class="cfg-opt">(0 = sin tope)</span></label>
+          <input class="cb-input" id="cfgRaspaTope" type="number" min="0" step="100" placeholder="0">
+          <p class="cfg-hint">Cuando la casa llega a este total en el día, el juego dice «volvé mañana». Es el freno para que un pico no te desarme el presupuesto.</p>
+          <label class="cb-flabel" style="margin-top:14px">Mensaje cuando está apagado <span class="cfg-opt">(opcional)</span></label>
+          <input class="cb-input" id="cfgRaspaMsg" maxlength="160" placeholder="Ej: Los cartones vuelven el lunes.">
+        </div>
+      </div>
+
+      <!-- Tragamonedas 777 ---------------------------------------------- -->
+      <div class="cfg-card juego">
+        <div class="cfg-card-head">
+          <span class="cb-ico"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16M15 4v16"/><path d="M6 12h.01M12 12h.01M18 12h.01"/></svg></span>
+          <div class="cfg-card-txt">
+            <b>Tragamonedas 777</b>
+            <span>Tres tiradas gratis por día. No se paga con fichas: son de la casa.</span>
+          </div>
+          <label class="cb-switch">
+            <input type="checkbox" id="cfgSlot">
+            <span class="cb-slider"></span>
+          </label>
+        </div>
+        <div class="cfg-card-body">
+          <label class="cb-flabel">Tope de bonos por día <span class="cfg-opt">(0 = sin tope)</span></label>
+          <input class="cb-input" id="cfgSlotTope" type="number" min="0" step="100" placeholder="0">
+          <p class="cfg-hint">Con las 3 tiradas gratis, un jugador que juega todo se lleva ~490 bonos por día en promedio.</p>
+          <label class="cb-flabel" style="margin-top:14px">Mensaje cuando está apagado <span class="cfg-opt">(opcional)</span></label>
+          <input class="cb-input" id="cfgSlotMsg" maxlength="160" placeholder="Ej: La máquina vuelve mañana.">
+        </div>
+      </div>
+
       <!-- Chatbot ------------------------------------------------------ -->
       <div class="cfg-card">
         <div class="cfg-card-head">
@@ -2696,6 +2743,13 @@
      Se leen y guardan por crm.php ?accion=config / config_guardar. */
   const CFG_CAMPOS = {
     ruleta_activa:   { el: "#cfgRuleta",    tipo: "bool" },
+
+    raspa_activo:    { el: "#cfgRaspa",     tipo: "bool"  },
+    raspa_mensaje:   { el: "#cfgRaspaMsg",  tipo: "texto" },
+    raspa_tope_dia:  { el: "#cfgRaspaTope", tipo: "texto" },
+    slot_activo:     { el: "#cfgSlot",      tipo: "bool"  },
+    slot_mensaje:    { el: "#cfgSlotMsg",   tipo: "texto" },
+    slot_tope_dia:   { el: "#cfgSlotTope",  tipo: "texto" },
     ruleta_mensaje:  { el: "#cfgRuletaMsg", tipo: "texto" },
     chat_activo:     { el: "#cfgChat",      tipo: "bool" },
     registro_activo: { el: "#cfgRegistro",  tipo: "bool" },
@@ -2728,7 +2782,20 @@
   function cfgPintarRuleta(){
     const tarjeta = $("#cfgRuleta").closest(".cfg-card");
     if(tarjeta) tarjeta.classList.toggle("on", $("#cfgRuleta").checked);
+    cfgPintarJuegos();
     cfgPintarActivas();
+  }
+
+  /* Raspa y slot abren su cuerpo al PRENDER, como Meta: apagados no hay nada
+     que configurar. La ruleta va al revés (su mensaje solo aplica apagada),
+     por eso no entra en esta lista. */
+  const CFG_JUEGOS = ["#cfgRaspa", "#cfgSlot"];
+  function cfgPintarJuegos(){
+    CFG_JUEGOS.forEach(sel=>{
+      const el = $(sel); if(!el) return;
+      const t = el.closest(".cfg-card");
+      if(t) t.classList.toggle("on", el.checked);
+    });
   }
 
   /* Meta al reves que la ruleta: apagado no hay nada que configurar, asi que
@@ -2752,6 +2819,7 @@
         else el.value = v == null ? "" : v;
       });
       cfgPintarRuleta();
+      cfgPintarJuegos();
       cfgPintarMeta();
     }catch(e){
       aviso.style.display = "";
@@ -2766,6 +2834,8 @@
   $("#cfgMeta").addEventListener("change", cfgPintarMeta);
   ["#cfgChat","#cfgRegistro"].forEach(sel=>
     $(sel).addEventListener("change", cfgPintarActivas));
+  CFG_JUEGOS.forEach(sel=>
+    $(sel).addEventListener("change", ()=>{ cfgPintarJuegos(); cfgPintarActivas(); }));
 
   async function guardarConfig(){
     const btn = $("#cfgGuardar");
