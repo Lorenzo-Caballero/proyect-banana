@@ -2011,37 +2011,48 @@
   }
 
   function cargarRuleta(){
-    // El FAB tiene que aparecer SIEMPRE, pase lo que pase con la API o con
-    // el dibujo de la rueda -- eso se decide acá, no adentro del .then() de
-    // la red, para que un fetch caído o un error de dibujo no lo tumben.
-    fabRWrap.classList.add("on");
-    // Estado inicial optimista con lo que sabe este dispositivo (localStorage);
-    // el fetch de abajo lo corrige con la verdad del server si conocemos al
-    // usuario (el server cruza dispositivos, localStorage no).
+    /* El FAB arranca OCULTO y se muestra recién cuando el server confirma que
+       la ruleta está prendida.
+
+       Antes se mostraba de entrada ("optimista") y se escondía después, en el
+       .then(): con la ruleta apagada desde el CRM igual aparecían el globo y
+       el letrero "¡Girá y ganá!" un instante, y encima si el fetch fallaba se
+       quedaban puestos para siempre. Prometerle un premio a alguien y
+       borrárselo medio segundo después es peor que no ofrecérselo. */
     var yaJugoHoy = ls(RULETA_DIA) === new Date().toISOString().slice(0, 10);
-    pintarEstadoRuleta(!yaJugoHoy);
 
     var url = API_RULETA + (USUARIO ? ("?usuario=" + encodeURIComponent(USUARIO)) : "");
     fetch(url)
       .then(function (r){ return r.json(); })
       .then(function (d){
-        /* Apagada desde el CRM: se esconde el FAB entero. No alcanza con no
-           dejar girar -- un botón que está ahí y no hace nada es peor que no
-           tenerlo. El server igual rechaza los giros, porque este endpoint es
-           público y esconder el botón no protege nada. */
+        /* Apagada desde el CRM: no se muestra NADA. El server igual rechaza
+           los giros -- este endpoint es público y esconder el botón no
+           protege nada -- pero un botón que está y no hace nada es peor que
+           no tenerlo. */
         if (d && d.activa === false){
           fabRWrap.classList.remove("on");
-          return;
+          return false;
         }
-        premios = (d.premios && d.premios.length) ? d.premios : FALLBACK;
+        premios = (d && d.premios && d.premios.length) ? d.premios : FALLBACK;
         // Si el server sabe del usuario, su 'disponible' manda.
-        if (typeof d.disponible === "boolean"){
+        if (d && typeof d.disponible === "boolean"){
           yaJugoHoy = !d.disponible;
-          pintarEstadoRuleta(d.disponible);
         }
+        return true;
       })
-      .catch(function (){ premios = FALLBACK; })
-      .then(function (){
+      .catch(function (){
+        /* Sin respuesta no se puede saber si está prendida. Se muestra igual
+           con los premios de respaldo: la ruleta lleva años siendo parte del
+           sitio, y esconderla porque se cayó un fetch es más disruptivo que
+           mostrarla y que el giro falle (el server lo rechaza con su motivo).
+           El caso "apagada" ya se resolvió arriba con una respuesta real. */
+        premios = FALLBACK;
+        return true;
+      })
+      .then(function (mostrar){
+        if (!mostrar) return;
+        fabRWrap.classList.add("on");
+        pintarEstadoRuleta(!yaJugoHoy);
         try { dibujar(); } catch (e) { log("ruleta: error al dibujar", String(e && e.message || e)); }
         // Se abre sola una vez por dia SOLO si hay giro para reclamar.
         if (!yaJugoHoy){
