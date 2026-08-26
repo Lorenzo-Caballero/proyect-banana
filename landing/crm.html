@@ -3635,7 +3635,14 @@
         dir:usSt.dir, pagina:usSt.pagina, por_pagina:usSt.porPagina
       }, API_US);
     }catch(e){
-      $("#usFilas").innerHTML = `<tr><td colspan="8"><div class="nouser">Error al cargar.</div></td></tr>`;
+      // El detalle SE MUESTRA: admin_usuarios.php ya lo manda (dice qué tabla o
+      // columna falta) y esconderlo obligaba a ir a buscar el log del server
+      // para algo que el propio error explica. Mismo criterio que la lista de
+      // conversaciones.
+      $("#usFilas").innerHTML =
+        `<tr><td colspan="8"><div class="nouser">No pude cargar los usuarios.` +
+        (e && e.message ? `<br><small>${esc(e.message)}</small>` : "") +
+        `</div></td></tr>`;
       return;
     }
     if(!r.ok){

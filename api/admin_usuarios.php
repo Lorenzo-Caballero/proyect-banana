@@ -108,18 +108,56 @@ $whereSql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
 // 'giro' no es coins. LEFT JOIN + COALESCE: un usuario sin bonos pendientes
 // no desaparece del listado. COLLATE explícito: usuarios está en collation
 // distinta a bonos_pendientes (ver CLAUDE.md, choque de collations).
-$base = "FROM usuarios u
-         LEFT JOIN (
-           SELECT usuario, SUM(valor) AS suma
-             FROM bonos_pendientes
-            WHERE estado = 'pendiente' AND tipo = 'fichas'
-            GROUP BY usuario
-         ) bp ON bp.usuario = u.username COLLATE utf8mb4_unicode_ci
-         $whereSql";
+/* `bonos_pendientes` es de la migración 33. Si una base de cliente todavía
+   no la corrió, este JOIN hace fallar TODAS las consultas de la pantalla --
+   no solo la columna de bono pendiente: la lista entera, el conteo y el CSV.
+   La pantalla de Usuarios quedaba en "Error al cargar" por una columna
+   accesoria.
+
+   Se detecta una vez y se arma la query con o sin el JOIN. El resumen de
+   arriba ya hacía esto con su propio try/catch; faltaba acá, que es lo que
+   de verdad tumbaba la vista. */
+$hayBonosPend = true;
+try {
+    $pdo->query("SELECT 1 FROM bonos_pendientes LIMIT 1")->fetchColumn();
+} catch (Throwable $e) {
+    $hayBonosPend = false;
+    error_log('admin_usuarios: sin tabla bonos_pendientes (¿falta la migración 33?). '
+            . 'Se lista sin la columna de bono pendiente.');
+}
+
+if ($hayBonosPend) {
+    $base = "FROM usuarios u
+             LEFT JOIN (
+               SELECT usuario, SUM(valor) AS suma
+                 FROM bonos_pendientes
+                WHERE estado = 'pendiente' AND tipo = 'fichas'
+                GROUP BY usuario
+             ) bp ON bp.usuario = u.username COLLATE utf8mb4_unicode_ci
+             $whereSql";
+    $selBono = "COALESCE(bp.suma, 0) AS bono_pendiente";
+} else {
+    // Sin la tabla no hay con qué filtrar ni ordenar por bono pendiente: se
+    // devuelve 0 para que el frontend siga mostrando la columna sin romperse.
+    // El filtro "con bono pendiente" tambien mira bp.suma: sin la tabla no
+    // puede haber ninguno, asi que la condicion se vuelve imposible en vez de
+    // referenciar una columna que no existe.
+    $where = array_map(
+        static fn($c) => $c === 'bp.suma > 0' ? '1 = 0' : $c,
+        $where
+    );
+    $whereSql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
+
+    $base = "FROM usuarios u $whereSql";
+    $selBono = "0 AS bono_pendiente";
+    if ($ordenSql === 'bp.suma') {
+        $ordenSql = 'u.balance';
+    }
+}
 
 $SELECT = "SELECT u.id, u.username, u.balance, u.bonus, u.total_deposits, u.role,
                   u.is_banned, u.creation_date, u.actualizado_en,
-                  COALESCE(bp.suma, 0) AS bono_pendiente";
+                  $selBono";
 
 /** Castea los tipos de una fila para que el JSON salga prolijo. */
 function tipar(array $it): array
