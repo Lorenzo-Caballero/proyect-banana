@@ -192,7 +192,9 @@
   .row.saliente .bub{background:linear-gradient(180deg,var(--violet),#6a5be8);color:#fff;border-bottom-right-radius:5px}
   .row.interno .bub{background:var(--greenSoft);border:1px solid var(--green);color:var(--green2);font-size:13px;text-align:center;font-weight:600;display:flex;align-items:center;gap:7px}
   .row.interno .bub svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;flex:none}
-  .row .meta{font-size:10.5px;color:var(--muted);margin-top:5px;padding:0 4px}
+  /* La hora, discreta y pegada a su burbuja: antes quedaba muy separada y
+     con el mismo peso que el texto, compitiendo con lo que importa. */
+  .row .meta{font-size:10.5px;color:var(--muted);margin-top:4px;padding:0 6px;opacity:.75}
   .row.saliente .meta{text-align:right}
   .empty{flex:1;display:grid;place-items:center;color:var(--muted);text-align:center;padding:30px}
   .empty svg{width:52px;height:52px;fill:none;stroke:currentColor;stroke-width:1.5;opacity:.4;margin-bottom:12px}
@@ -408,17 +410,31 @@
     .thread{padding:16px 14px} .chead{padding:12px 14px}
     .col-user{width:min(360px,94vw)}
     .saldos{padding:14px 13px} .sec{padding:4px 14px 18px}
-    /* header del chat: con BOT + 3 estados + Atender/Info/Fijar no entra en
-       una fila angosta -- se deja envolver y el bot-pill pierde el texto
-       (queda ícono + switch, que ya se entiende solo). */
-    .chead{flex-wrap:wrap;row-gap:8px}
-    .chead-grupos{flex-wrap:wrap;justify-content:flex-end;row-gap:8px;width:100%;gap:10px}
-    /* Sin separadores cuando envuelve: al pasar de fila la linea queda
-       colgando al principio del renglon, que se ve peor que no tenerla. */
+    /* Header del chat en angosto: DOS FILAS claras, nunca una sola apretada.
+       Con BOT + 3 estados + 3 acciones no hay ancho que alcance, y al forzarlo
+       los controles terminaban montados sobre el nombre del jugador.
+
+       Fila 1: quién es. Fila 2: los controles.
+       Cada una ocupa el 100%, así que no pueden pisarse entre sí. */
+    .chead{flex-wrap:wrap;row-gap:10px;padding:12px 14px}
+    .chead .who{width:100%;min-width:0}
+    .chead .who b{font-size:15px}
+
+    /* Los controles en su propia fila. Si aun así no entran, se DESLIZAN en
+       horizontal en vez de romper el layout -- es preferible arrastrar el
+       dedo a que el header crezca tres renglones. */
+    .chead-grupos{width:100%;gap:10px;flex-wrap:nowrap;overflow-x:auto;
+      justify-content:flex-start;padding-bottom:2px;
+      scrollbar-width:none;-ms-overflow-style:none}
+    .chead-grupos::-webkit-scrollbar{display:none}
+    .chead-grupos > *{flex:none}
+    /* Sin separadores acá: con scroll horizontal quedan cortados a la mitad. */
     .chead-grupos > * + *::before{display:none}
     .chead-sep{display:none}
-    .bot-pill .ia-txt{display:none}
-    .bot-pill{padding:0 8px;gap:6px}
+
+    /* Las acciones se van al final y quedan pegadas al borde derecho, que es
+       donde la mano las busca. */
+    .chead-acciones{margin-left:auto}
   }
   @media(max-width:420px){
     /* Rail en pantallas muy angostas: se aprieta cada ítem para que entren
