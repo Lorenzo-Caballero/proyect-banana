@@ -35,6 +35,25 @@ const CFG_CRM_DEFAULTS = [
 
     // Alta de cuentas nuevas desde la landing y el chat.
     'registro_activo' => '1',
+
+    // ----- Meta Ads (Pixel + Conversions API) -----
+    // Apagado por defecto: sin pixel cargado no hay nada que mandar, y un
+    // pixel a medio configurar ensucia las metricas de la campaña.
+    'meta_activo'      => '0',
+    'meta_pixel_id'    => '',
+    // Token de CAPI: solo de servidor. meta_config_publica() NO lo devuelve --
+    // en el HTML lo leeria cualquiera y podria mandar eventos falsos al pixel.
+    'meta_capi_token'  => '',
+    // Con esto puesto los eventos van a "Eventos de prueba" y NO cuentan para
+    // la campaña. Vaciarlo al terminar de probar.
+    'meta_test_code'   => '',
+    // Donde se dispara PageView: registro | panel | ambos | off
+    'meta_pageview_en' => 'registro',
+    // Cada evento se prende/apaga por separado.
+    'meta_ev_contact'  => '1',
+    'meta_ev_registro' => '1',
+    'meta_ev_checkout' => '1',
+    'meta_ev_purchase' => '1',
 ];
 
 /** Cache por request: estas funciones se llaman varias veces por pedido. */

@@ -173,6 +173,25 @@ try {
             $acc = $pdo->prepare("SELECT usuario, tipo, monto FROM acciones_saldo WHERE id = ?");
             $acc->execute([$id]);
             if ($a = $acc->fetch()) {
+                /* Purchase para Meta: ACA, no cuando el chatbot encolo. Este
+                   es el mismo punto donde se le avisa al jugador "ya lo tenes"
+                   -- el unico momento en que decirlo no es mentira. Reportarlo
+                   antes haria que la campaña optimice contra pedidos y no
+                   contra plata acreditada.
+
+                   Solo las cargas: un retiro no es una compra. */
+                if (($a['tipo'] ?? '') === 'cargar') {
+                    try {
+                        require_once __DIR__ . '/meta_lib.php';
+                        meta_evento($pdo, 'Purchase', [
+                            'usuario' => (string)$a['usuario'],
+                            'valor'   => (float)$a['monto'],
+                            'ref'     => 'carga:' . $id,
+                        ]);
+                    } catch (Throwable $e) {
+                        error_log('meta Purchase: ' . $e->getMessage());
+                    }
+                }
                 $cuanto = number_format((float)$a['monto'], 0, ',', '.');
                 $saldo  = $sDespues !== null
                         ? ' Tu saldo quedó en ' . number_format($sDespues, 0, ',', '.') . '.'

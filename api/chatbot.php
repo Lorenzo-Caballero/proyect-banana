@@ -25,6 +25,7 @@ require __DIR__ . '/recargas_lib.php';
 require __DIR__ . '/fichas_lib.php';
 require __DIR__ . '/altas_lib.php';
 require __DIR__ . '/config_crm.php';
+require __DIR__ . '/meta_lib.php';
 // El CRM es opcional: si crm_lib.php no esta subido, el chat sigue funcionando.
 $crmLib = __DIR__ . '/crm_lib.php';
 if (is_file($crmLib)) { require_once $crmLib; }
@@ -388,6 +389,22 @@ for ($i = count($mensajes) - 1; $i >= 0; $i--) {
 }
 if (function_exists('crm_registrar_turno')) {
     crm_registrar_turno($pdo, $sessionId, $ultimoUser, $texto, $usuarioDetectado);
+}
+
+/* Contact: el jugador esta hablando con nosotros. Se manda UNA vez por
+   conversacion, no por mensaje -- el `ref` es el session_id, asi que el
+   event_id sale igual en cada turno y Meta lo deduplica solo. Sin eso, una
+   charla de veinte mensajes reportaria veinte Contact y la campaña
+   optimizaria hacia gente que escribe mucho, no hacia gente que juega. */
+try {
+    meta_evento($pdo, 'Contact', [
+        'usuario' => $usuarioDetectado ?? '',
+        'ref'     => 'chat:' . ($sessionId !== '' ? $sessionId : 'anon'),
+        'fbp'     => (string)($body['fbp'] ?? ''),
+        'fbc'     => (string)($body['fbc'] ?? ''),
+    ]);
+} catch (Throwable $e) {
+    error_log('meta Contact: ' . $e->getMessage());
 }
 
 /* Aviso de "te contestamos". Va SIEMPRE, pero marcado como solo_app: si el

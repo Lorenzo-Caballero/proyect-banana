@@ -183,6 +183,31 @@ function fichas_pedir_carga(PDO $pdo, string $usuario, int $monto, string $orige
 
         $id = (int)$pdo->lastInsertId();
         $pdo->commit();
+
+        /* InitiateCheckout: el jugador PIDIO la carga. Todavia no es una
+           compra -- el bot la deposita despues en el panel y puede fallar. El
+           Purchase se dispara cuando la accion pasa a 'hecha' (ver
+           acciones_cola.php), que es el unico momento en que la plata se movio
+           de verdad. Reportar la compra aca optimizaria la campaña contra
+           intenciones en vez de contra ingresos.
+
+           Va DESPUES del commit: si se disparara adentro de la transaccion y
+           el commit fallara, habriamos reportado algo que no existe.
+
+           `ref` hace el event_id reproducible: un reintento o un doble click
+           generan el mismo id y Meta lo cuenta UNA vez. */
+        try {
+            require_once __DIR__ . '/meta_lib.php';
+            meta_evento($pdo, 'InitiateCheckout', [
+                'usuario' => $usuario,
+                'valor'   => $monto,
+                'ref'     => 'carga:' . $id,
+            ]);
+        } catch (Throwable $e) {
+            // Que la campaña pierda un evento es molesto; que el jugador no
+            // pueda cargar porque Facebook esta caido, no.
+            error_log('meta InitiateCheckout: ' . $e->getMessage());
+        }
         if (function_exists('gp_trace')) { gp_trace("carga: ENCOLADA id=$id usuario='$usuario' monto=$monto (espera al bot)"); }  // TRACE TEMPORAL
 
         return ['ok' => true, 'id' => $id, 'monto' => $monto,

@@ -368,6 +368,24 @@ if ($accion === 'marcar' && $metodo === 'POST') {
                      mensaje=? WHERE id=? AND estado <> 'ok'";
         $pdo->prepare($sqlSimple)->execute([$mensaje, $id]);
     }
+    /* CompleteRegistration para Meta: cuando el panel confirmo el alta, no
+       cuando se encolo. Mismo criterio que el resto -- se reporta lo que paso,
+       no lo que se pidio. `ref` con el id del alta hace el event_id
+       reproducible, asi un reintento del bot no cuenta dos registros. */
+    if ($estado === 'ok') {
+        try {
+            require_once __DIR__ . '/meta_lib.php';
+            $u = $pdo->prepare("SELECT usuario FROM altas WHERE id = ?");
+            $u->execute([$id]);
+            meta_evento($pdo, 'CompleteRegistration', [
+                'usuario' => (string)($u->fetchColumn() ?: ''),
+                'ref'     => 'alta:' . $id,
+            ]);
+        } catch (Throwable $e) {
+            error_log('meta CompleteRegistration: ' . $e->getMessage());
+        }
+    }
+
     echo json_encode(['ok' => true]);
     exit;
 }
