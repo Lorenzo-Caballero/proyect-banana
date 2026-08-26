@@ -1380,6 +1380,12 @@
         mensajes: historial.slice(-MAX_CONTEXTO),
         session_id: sid,
         usuario: USUARIO || undefined,
+        /* Cookies del Pixel de Meta. Son lo que ata el evento al click del
+           anuncio: sin ellas el backend manda el Contact/Purchase pero Meta
+           no puede atribuirlo a ninguna campaña. metaCookies() la define
+           meta-pixel.js; si el pixel no está cargado, van vacías. */
+        fbp: (window.metaCookies ? window.metaCookies().fbp : "") || undefined,
+        fbc: (window.metaCookies ? window.metaCookies().fbc : "") || undefined,
         // Si hay login propio, el server verifica la firma y ESE usuario manda
         // sobre el `usuario` de arriba, que lo dice el navegador.
         token: AUTH || undefined
