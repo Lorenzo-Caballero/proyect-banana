@@ -145,6 +145,33 @@
   .conv{display:flex;gap:10px;padding:8px 8px;border-radius:12px;cursor:pointer;position:relative;transition:.12s;margin-bottom:0}
   .conv:hover{background:var(--panel2)}
   .conv.sel{background:var(--violetSoft);box-shadow:inset 0 0 0 1px var(--violet)}
+  /* Seleccion multiple. `.marcada` es OTRA cosa que `.sel` (la abierta): la
+     marca vive en el borde izquierdo + tilde, para no pelearle el color al
+     resaltado de la conversacion abierta. */
+  .conv.marcada{background:var(--violetSoft);box-shadow:inset 3px 0 0 var(--violet)}
+  .conv .marca{position:absolute;top:6px;right:6px;width:18px;height:18px;border-radius:50%;
+    display:none;place-items:center;background:var(--violet);color:#fff}
+  .conv .marca svg{width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:3;
+    stroke-linecap:round;stroke-linejoin:round}
+  .conv.marcada .marca{display:grid}
+  /* En modo seleccion las conversaciones no se "abren", se marcan: el cursor
+     lo dice antes que el primer click equivocado. */
+  .list.seleccionando .conv{cursor:copy}
+
+  /* La barra de acciones del lote. Reemplaza al buscador mientras haya algo
+     marcado: las dos cosas juntas no entran y con seleccion activa lo que se
+     busca es actuar, no filtrar. */
+  .sel-bar{display:none;align-items:center;gap:6px;padding:8px 10px;border-radius:12px;
+    background:var(--violetSoft);border:1px solid var(--violet);margin-bottom:8px}
+  .sel-bar.on{display:flex}
+  .sel-bar b{font-size:12.5px;color:var(--violet2);flex:1;min-width:0;white-space:nowrap}
+  .sel-bar button{border:0;background:var(--panel);color:var(--txt);border-radius:9px;
+    padding:7px 10px;font:600 11.5px inherit;cursor:pointer;display:inline-flex;
+    align-items:center;gap:5px;transition:.15s}
+  .sel-bar button:hover{background:var(--panel3)}
+  .sel-bar button.peligro{color:var(--red)}
+  .sel-bar button .ico{width:13px;height:13px}
+  .sel-bar .sel-x{padding:7px 8px;color:var(--muted)}
   .av{width:36px;height:36px;border-radius:50%;flex:none;display:grid;place-items:center;font-weight:800;font-size:12px;color:#fff;box-shadow:var(--shadow-sm)}
   .av.anon{background:var(--panel3)!important;color:var(--muted)}
   .conv .mid{min-width:0;flex:1}
@@ -360,6 +387,40 @@
   .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
   .sp{display:inline-block;width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--violet);border-radius:50%;animation:sp .7s linear infinite}
   @keyframes sp{to{transform:rotate(360deg)}}
+
+  /* ---- plantillas: menu de /comandos sobre el composer ---- */
+  .plant-pop{position:absolute;left:12px;right:12px;bottom:calc(100% + 6px);z-index:30;
+    background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:5px;
+    box-shadow:0 -10px 30px rgba(0,0,0,.4);display:none;max-height:240px;overflow-y:auto}
+  .plant-pop.on{display:block}
+  .plant-item{display:flex;align-items:baseline;gap:8px;width:100%;padding:8px 10px;border:0;
+    background:none;border-radius:8px;cursor:pointer;font:inherit;text-align:left;color:var(--txt)}
+  .plant-item:hover,.plant-item.activa{background:var(--panel3)}
+  .plant-item code{font:700 12px ui-monospace,monospace;color:var(--violet2);flex:none}
+  .plant-item span{flex:1;min-width:0;font-size:12px;color:var(--muted);overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .plant-item kbd{flex:none;font:600 10px ui-monospace,monospace;color:var(--muted);
+    border:1px solid var(--line);border-radius:5px;padding:2px 5px;background:var(--panel2)}
+  .plant-pie{display:flex;justify-content:space-between;align-items:center;padding:6px 10px 4px;
+    border-top:1px solid var(--line);margin-top:4px}
+  .plant-pie small{font-size:10.5px;color:var(--muted)}
+  .plant-pie button{border:0;background:none;color:var(--violet2);font:600 11px inherit;cursor:pointer}
+
+  /* ---- gestor de plantillas (modal) ---- */
+  .pl-lista{display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto;margin-bottom:12px}
+  .pl-fila{display:flex;align-items:center;gap:8px;padding:7px 9px;border:1px solid var(--line);
+    border-radius:9px;background:var(--panel2)}
+  .pl-fila code{font:700 12px ui-monospace,monospace;color:var(--violet2)}
+  .pl-fila span{flex:1;min-width:0;font-size:12px;color:var(--muted);overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .pl-fila kbd{font:600 10px ui-monospace,monospace;border:1px solid var(--line);border-radius:5px;
+    padding:2px 5px;color:var(--muted)}
+  .pl-fila button{border:0;background:none;cursor:pointer;color:var(--muted);padding:3px}
+  .pl-fila button:hover{color:var(--txt)}
+  .pl-fila button.borrar:hover{color:var(--red)}
+  .pl-fila button .ico{width:13px;height:13px}
+  #plAtajo{cursor:pointer}
+  #plAtajo.grabando{border-color:var(--violet);box-shadow:0 0 0 3px var(--violetSoft)}
 
   /* ---- composer (responder) ---- */
   .composer{border-top:1px solid var(--line);padding:12px 14px;display:flex;align-items:flex-end;gap:9px}
@@ -1294,6 +1355,14 @@
            módulos (Cargas/Retiros la siguen usando tal cual). Cada botón
            mantiene la clase .tab -- el JS de #tabs ya busca .tab -- y suma
            .tab-chico solo para el estilo compacto de esta fila. -->
+      <!-- Barra del lote: aparece cuando hay conversaciones marcadas. -->
+      <div class="sel-bar" id="selBar">
+        <b id="selCuenta">0</b>
+        <button id="selArchivar" type="button" title="Archivar las marcadas"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></svg>Archivar</button>
+        <button id="selDifundir" type="button" title="Mandar un mensaje a todas las marcadas"><svg class="ico" viewBox="0 0 24 24"><path d="m3 11 18-8-8 18-2-8z"/></svg>Difundir</button>
+        <button id="selEliminar" type="button" class="peligro" title="Eliminar las marcadas"><svg class="ico" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6"/></svg>Eliminar</button>
+        <button class="sel-x" id="selLimpiar" type="button" title="Quitar selección"><svg class="ico" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+      </div>
       <div class="tabs-chat" id="tabs">
         <button class="tab tab-chico on" data-e="todas">Todas</button>
         <button class="tab tab-chico" data-e="abierta">Abiertas</button>
@@ -1405,10 +1474,16 @@
         </div>
       </div>
       <div class="thread" id="thread"></div>
-      <div class="composer">
+      <div class="composer" style="position:relative">
         <input type="file" id="fileAg" accept="image/*,application/pdf" hidden>
         <button class="att" id="btnAttach" title="Adjuntar"><svg viewBox="0 0 24 24"><path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3 3 0 0 1 4.24 4.24l-9.2 9.19a1 1 0 0 1-1.41-1.41l8.49-8.48"/></svg></button>
-        <textarea id="respText" rows="1" placeholder="Escribí una respuesta al cliente…"></textarea>
+        <!-- Sin este boton, el gestor solo se descubre tipeando "/" con
+             plantillas ya creadas: el primer dia nadie llegaria nunca. -->
+        <button class="att" id="btnPlantillas" title="Plantillas de mensaje" type="button"><svg viewBox="0 0 24 24"><path d="M4 5h16M4 12h10M4 19h7"/><path d="m17 15 2 2 4-4"/></svg></button>
+        <!-- El menu de /comandos vive pegado al composer, por eso el padre
+             relativo. Se llena desde plantillasPintarMenu(). -->
+        <div class="plant-pop" id="plantPop"></div>
+        <textarea id="respText" rows="1" placeholder="Escribí una respuesta al cliente… (/ para plantillas)"></textarea>
         <button class="send" id="btnResp" title="Enviar"><svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
       </div>
     </div>
@@ -2325,6 +2400,47 @@
     </div>
   </div>
 
+  <!-- Difusión a la selección -->
+  <div class="back" id="backDifSel">
+    <div class="modal">
+      <h3 style="margin:0 0 4px">Mensaje a <span id="difSelN">0</span> conversaciones</h3>
+      <p style="margin:0 0 12px;font-size:12.5px;color:var(--muted)">
+        Les llega como una respuesta tuya en el chat, con su aviso. No crea
+        conversaciones nuevas: va solo a las que marcaste.</p>
+      <textarea id="difSelTexto" class="cb-area" rows="4" maxlength="2000"
+                placeholder="Escribí el mensaje…"></textarea>
+      <div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end">
+        <button class="cb-btn-ghost" id="difSelCancelar" type="button">Cancelar</button>
+        <button class="cb-btn" id="difSelEnviar" type="button">Enviar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gestor de plantillas -->
+  <div class="back" id="backPlantillas">
+    <div class="modal" style="max-width:430px">
+      <h3 style="margin:0 0 4px">Plantillas de mensaje</h3>
+      <p style="margin:0 0 12px;font-size:12.5px;color:var(--muted)">
+        Se escriben con <code>/comando</code> en el chat o con su atajo de
+        teclado. Son del equipo: las ve todo el mundo.</p>
+      <div class="pl-lista" id="plLista"></div>
+
+      <label class="cb-flabel">Comando</label>
+      <input class="cb-input" id="plComando" maxlength="30" placeholder="saludo"
+             autocomplete="off" spellcheck="false">
+      <label class="cb-flabel" style="margin-top:10px">Texto</label>
+      <textarea class="cb-area" id="plTexto" rows="3" maxlength="2000"
+                placeholder="¡Hola! ¿En qué te puedo ayudar?"></textarea>
+      <label class="cb-flabel" style="margin-top:10px">Atajo de teclado <span class="cfg-opt">(opcional)</span></label>
+      <input class="cb-input" id="plAtajo" readonly placeholder="Hacé click y apretá el atajo (F3, Ctrl+G…)">
+      <p class="cfg-hint">Esc lo borra. El atajo dispara la plantilla con el cursor en el chat.</p>
+      <div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end">
+        <button class="cb-btn-ghost" id="plCerrar" type="button">Cerrar</button>
+        <button class="cb-btn" id="plGuardar" type="button">Guardar plantilla</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Alta / reset de agente -->
   <div class="back" id="backAgente">
     <div class="modal ag-modal">
@@ -2514,6 +2630,11 @@
   const st = { q:"", estado:"todas", inactivos:0, inactivosTipo:"carga",
                orden:"reciente", convId:0, usuario:"", modo:"ficha",
                archivada:false, mensajes:0 };
+  /* La seleccion multiple. Un Set de ids, fuera de `st` porque no es un
+     filtro: sobrevive a recargas de la lista (el render la vuelve a pintar)
+     pero se limpia al cambiar de pestaña -- una seleccion que cruza pestañas
+     actuaria sobre cosas que ya no estan a la vista. */
+  const seleccion = new Set();
   let debounce, pollList, pollConv, pollBadgeComp, pollBadgeRet, pollRetirosVista, pollCargasVista;
 
   // ---------- sesion de operador: shell vs. login (Fase 0.5) ----------
@@ -3228,7 +3349,8 @@
       const ags = (c.agentes && c.agentes.length)
         ? `<div class="agentes-chat">${c.agentes.map(a=>`<span class="ag-chip${st.yo&&a===st.yo?" yo":""}"><span class="dot"></span>${esc(a)}</span>`).join("")}</div>`
         : "";
-      return `<div class="conv ${c.id===st.convId?"sel":""}" data-id="${c.id}">
+      return `<div class="conv ${c.id===st.convId?"sel":""}${seleccion.has(c.id)?" marcada":""}" data-id="${c.id}">
+        <span class="marca"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span>
         <div class="av ${anon}" ${bg}>${esc(inic(c.usuario||"?"))}</div>
         <div class="mid">
           <div class="n"><b>${pin}<span class="est-dot est-${esc(c.estado)}"></span>${esc(nombre)}</b><span class="t">${hace(c.actualizada_en)}</span></div>
@@ -3237,9 +3359,328 @@
       </div>`;
     }).join("");
     $("#list").querySelectorAll(".conv").forEach(el=>{
-      el.addEventListener("click", ()=> abrir(+el.getAttribute("data-id")));
+      const id = +el.getAttribute("data-id");
+
+      el.addEventListener("click", e=>{
+        /* Ctrl/Cmd+click marca sin abrir. Y si YA hay seleccion, el click
+           comun tambien marca: es el modo seleccion de WhatsApp -- una vez
+           adentro, cada toque suma o resta, y al vaciarse se vuelve a
+           navegar normal. */
+        if (e.ctrlKey || e.metaKey || seleccion.size){
+          e.preventDefault();
+          seleccionToggle(id);
+          return;
+        }
+        abrir(id);
+      });
+
+      /* Celular: mantener apretado arranca la seleccion con esa conversacion.
+         Se arma a mano con pointer events porque el WebView no dispara
+         contextmenu de forma confiable. El umbral de 500 ms y la tolerancia
+         de 10 px distinguen "apreto" de "scrolleo". */
+      let lpTimer = 0, lpX = 0, lpY = 0;
+      el.addEventListener("pointerdown", e=>{
+        if (e.pointerType === "mouse") return;   // el mouse ya tiene Ctrl
+        lpX = e.clientX; lpY = e.clientY;
+        lpTimer = setTimeout(()=>{
+          lpTimer = 0;
+          seleccionToggle(id);
+          if (navigator.vibrate) navigator.vibrate(12);  // acuse tactil
+        }, 500);
+      });
+      el.addEventListener("pointermove", e=>{
+        if (lpTimer && (Math.abs(e.clientX-lpX) > 10 || Math.abs(e.clientY-lpY) > 10)){
+          clearTimeout(lpTimer); lpTimer = 0;   // se movio: era scroll
+        }
+      });
+      ["pointerup","pointercancel"].forEach(ev=>
+        el.addEventListener(ev, ()=>{ if (lpTimer){ clearTimeout(lpTimer); lpTimer = 0; } }));
+      // Sin menu contextual del navegador encima del long-press.
+      el.addEventListener("contextmenu", e=>{ if (seleccion.size) e.preventDefault(); });
     });
   }
+
+  // ---------- seleccion multiple ----------
+  function seleccionToggle(id){
+    if (seleccion.has(id)) seleccion.delete(id); else seleccion.add(id);
+    seleccionPintar();
+  }
+  function seleccionLimpiar(){
+    seleccion.clear();
+    seleccionPintar();
+  }
+  /* Pinta marca por marca sin re-renderizar la lista: el render completo
+     resetea el scroll, y en una seleccion larga eso es perder el lugar. */
+  function seleccionPintar(){
+    document.querySelectorAll("#list .conv").forEach(el=>{
+      el.classList.toggle("marcada", seleccion.has(+el.getAttribute("data-id")));
+    });
+    $("#list").classList.toggle("seleccionando", seleccion.size > 0);
+    $("#selBar").classList.toggle("on", seleccion.size > 0);
+    $("#selCuenta").textContent = seleccion.size === 1
+      ? "1 marcada" : seleccion.size + " marcadas";
+    // Eliminar es solo de admin, igual que en el menu del chat.
+    $("#selEliminar").style.display = (ROL === "admin") ? "" : "none";
+  }
+
+  /* Ctrl+A marca todo lo VISIBLE, solo con el foco fuera de un campo de
+     texto: adentro de un input, Ctrl+A tiene que seguir seleccionando el
+     texto, no la bandeja. */
+  document.addEventListener("keydown", e=>{
+    if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "a") return;
+    const t = e.target;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+    const convs = document.querySelectorAll("#list .conv");
+    if (!convs.length) return;
+    e.preventDefault();
+    convs.forEach(el=> seleccion.add(+el.getAttribute("data-id")));
+    seleccionPintar();
+  });
+  document.addEventListener("keydown", e=>{
+    if (e.key === "Escape" && seleccion.size) seleccionLimpiar();
+  });
+
+  $("#selLimpiar").addEventListener("click", seleccionLimpiar);
+
+  $("#selArchivar").addEventListener("click", async ()=>{
+    if (!seleccion.size) return;
+    const ids = [...seleccion];
+    let d;
+    try{ d = await jpost({accion:"archivar", ids, archivar: st.estado !== "archivadas"}); }
+    catch(e){ toast("No pude archivar: " + e.message); return; }
+    if (!d.ok){ toast(d.error || "No pude archivar"); return; }
+    toast(st.estado === "archivadas"
+      ? `${d.afectadas} devueltas a la bandeja`
+      : `${d.afectadas} archivadas`);
+    if (ids.includes(st.convId)) cerrarChat();
+    seleccionLimpiar();
+    cargarLista();
+  });
+
+  $("#selEliminar").addEventListener("click", async ()=>{
+    if (!seleccion.size) return;
+    const n = seleccion.size;
+    if (!confirm(
+      `Vas a ELIMINAR ${n} conversaci${n === 1 ? "ón" : "ones"}, con todos sus mensajes.\n\n` +
+      "No se puede deshacer. Las recargas, pagos y movimientos NO se tocan.\n\n" +
+      "Si solo querés sacarlas de la bandeja, usá Archivar.")) return;
+    const ids = [...seleccion];
+    let d;
+    try{ d = await jpost({accion:"eliminar", ids}); }
+    catch(e){ toast("No pude eliminar: " + e.message); return; }
+    if (!d.ok){ toast(d.error || "No pude eliminar"); return; }
+    toast(`${d.eliminadas} eliminadas`);
+    if (ids.includes(st.convId)) cerrarChat();
+    seleccionLimpiar();
+    cargarLista();
+  });
+
+  $("#selDifundir").addEventListener("click", ()=>{
+    if (!seleccion.size) return;
+    $("#difSelN").textContent = seleccion.size;
+    $("#difSelTexto").value = "";
+    $("#backDifSel").classList.add("on");
+    $("#difSelTexto").focus();
+  });
+  $("#difSelCancelar").addEventListener("click", ()=> $("#backDifSel").classList.remove("on"));
+  $("#difSelEnviar").addEventListener("click", async ()=>{
+    const texto = $("#difSelTexto").value.trim();
+    if (!texto){ $("#difSelTexto").focus(); return; }
+    const btn = $("#difSelEnviar");
+    btn.disabled = true;
+    let d;
+    try{ d = await jpost({accion:"difusion_seleccion", ids:[...seleccion], texto}); }
+    catch(e){ btn.disabled = false; toast("No pude enviar: " + e.message); return; }
+    btn.disabled = false;
+    if (!d.ok){ toast(d.error || "No pude enviar"); return; }
+    $("#backDifSel").classList.remove("on");
+    toast(`Mensaje enviado a ${d.enviados} chats`);
+    seleccionLimpiar();
+    cargarLista();
+  });
+
+  /* ================== PLANTILLAS DE MENSAJE ==================
+     Respuestas enlatadas del equipo. Dos formas de dispararlas, las dos con
+     el cursor en el composer:
+       /comando  -> menu filtrado mientras se escribe; Enter/Tab/click inserta
+       atajo     -> F3, Ctrl+G, Alt+1... configurado por plantilla
+     Viven en la base (migracion 42) y las comparte todo el equipo. */
+  let plantillas = [];        // [{id, comando, texto, atajo}]
+  let plantillaActiva = -1;   // indice resaltado en el menu del composer
+
+  async function plantillasCargar(){
+    try{
+      const d = await jget({accion:"plantillas"});
+      plantillas = (d && d.ok && d.items) ? d.items : [];
+    }catch(e){ plantillas = []; }
+  }
+
+  /* --- el menu de /comandos sobre el composer --- */
+  function plantillasFiltradas(){
+    const v = $("#respText").value;
+    if (!v.startsWith("/")) return null;          // solo si el mensaje ARRANCA con /
+    const q = v.slice(1).toLowerCase();
+    return plantillas.filter(t=> t.comando.startsWith(q));
+  }
+
+  function plantillasPintarMenu(){
+    const pop = $("#plantPop");
+    const lista = plantillasFiltradas();
+    if (!lista || (!lista.length && !plantillas.length)){
+      pop.classList.remove("on");
+      plantillaActiva = -1;
+      return;
+    }
+    if (plantillaActiva >= lista.length) plantillaActiva = lista.length - 1;
+    if (plantillaActiva < 0 && lista.length) plantillaActiva = 0;
+    pop.innerHTML = lista.map((t, i)=>
+      `<button class="plant-item${i === plantillaActiva ? " activa" : ""}" type="button" data-i="${i}">
+         <code>/${esc(t.comando)}</code><span>${esc(t.texto)}</span>
+         ${t.atajo ? `<kbd>${esc(t.atajo)}</kbd>` : ""}
+       </button>`).join("") +
+      (lista.length ? "" : `<div style="padding:8px 10px;font-size:12px;color:var(--muted)">Sin plantillas para eso.</div>`) +
+      `<div class="plant-pie"><small>Enter inserta · Esc cierra</small>
+       <button type="button" id="plantGestionar">Gestionar plantillas</button></div>`;
+    pop.classList.add("on");
+    pop.querySelectorAll(".plant-item").forEach(b=>
+      b.addEventListener("click", ()=> plantillaInsertar(lista[+b.getAttribute("data-i")])));
+    const g = pop.querySelector("#plantGestionar");
+    if (g) g.addEventListener("click", ()=>{ plantCerrarMenu(); abrirPlantillas(); });
+  }
+
+  function plantCerrarMenu(){
+    $("#plantPop").classList.remove("on");
+    plantillaActiva = -1;
+  }
+
+  function plantillaInsertar(t){
+    if (!t) return;
+    const ta = $("#respText");
+    ta.value = t.texto;
+    plantCerrarMenu();
+    ta.focus();
+    // El cursor queda al final: lo normal es retocar el saludo, no reescribirlo.
+    ta.selectionStart = ta.selectionEnd = ta.value.length;
+  }
+
+  $("#respText").addEventListener("input", ()=>{ plantillaActiva = -1; plantillasPintarMenu(); });
+
+  $("#respText").addEventListener("keydown", e=>{
+    const pop = $("#plantPop");
+    if (pop.classList.contains("on")){
+      const lista = plantillasFiltradas() || [];
+      if (e.key === "ArrowDown"){ e.preventDefault(); plantillaActiva = Math.min(plantillaActiva + 1, lista.length - 1); plantillasPintarMenu(); return; }
+      if (e.key === "ArrowUp"){ e.preventDefault(); plantillaActiva = Math.max(plantillaActiva - 1, 0); plantillasPintarMenu(); return; }
+      if (e.key === "Enter" || e.key === "Tab"){
+        if (lista.length){ e.preventDefault(); plantillaInsertar(lista[Math.max(0, plantillaActiva)]); return; }
+      }
+      if (e.key === "Escape"){ e.preventDefault(); plantCerrarMenu(); return; }
+    }
+  });
+
+  /* --- atajos de teclado --- */
+  /* Normaliza un KeyboardEvent a "Ctrl+Shift+G" / "F3" / "Alt+1". Mods en
+     orden fijo para que la comparacion sea de strings y listo. */
+  function atajoDeEvento(e){
+    const mods = [];
+    if (e.ctrlKey || e.metaKey) mods.push("Ctrl");
+    if (e.altKey) mods.push("Alt");
+    if (e.shiftKey) mods.push("Shift");
+    let k = e.key;
+    if (["Control","Alt","Shift","Meta"].includes(k)) return null;   // solo el mod, todavia
+    if (k === " ") k = "Space";
+    if (k.length === 1) k = k.toUpperCase();
+    // Una tecla pelada solo vale si es F1-F12: "G" sin mods es escribir la g.
+    if (!mods.length && !/^F\d{1,2}$/.test(k)) return null;
+    return mods.concat(k).join("+");
+  }
+
+  document.addEventListener("keydown", e=>{
+    if (!plantillas.length) return;
+    // Los atajos disparan solo con el cursor en el composer: una plantilla
+    // que se autoescribe mientras navegas la lista es un accidente esperando.
+    if (e.target !== $("#respText")) return;
+    const combo = atajoDeEvento(e);
+    if (!combo) return;
+    const t = plantillas.find(x=> x.atajo === combo);
+    if (t){ e.preventDefault(); plantillaInsertar(t); }
+  });
+
+  /* --- el gestor (modal) --- */
+  let plEditando = 0;   // id en edicion, 0 = nueva
+
+  function abrirPlantillas(){
+    plEditando = 0;
+    $("#plComando").value = ""; $("#plTexto").value = ""; $("#plAtajo").value = "";
+    plPintarLista();
+    $("#backPlantillas").classList.add("on");
+  }
+
+  function plPintarLista(){
+    const cont = $("#plLista");
+    if (!plantillas.length){
+      cont.innerHTML = `<div style="padding:10px;font-size:12px;color:var(--muted)">Todavía no hay plantillas. Creá la primera abajo.</div>`;
+      return;
+    }
+    cont.innerHTML = plantillas.map(t=>
+      `<div class="pl-fila" data-id="${t.id}">
+         <code>/${esc(t.comando)}</code><span>${esc(t.texto)}</span>
+         ${t.atajo ? `<kbd>${esc(t.atajo)}</kbd>` : ""}
+         <button type="button" class="editar" title="Editar"><svg class="ico" viewBox="0 0 24 24"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/></svg></button>
+         <button type="button" class="borrar" title="Borrar"><svg class="ico" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6"/></svg></button>
+       </div>`).join("");
+    cont.querySelectorAll(".pl-fila").forEach(f=>{
+      const id = +f.getAttribute("data-id");
+      const t = plantillas.find(x=> x.id === id);
+      f.querySelector(".editar").addEventListener("click", ()=>{
+        plEditando = id;
+        $("#plComando").value = t.comando;
+        $("#plTexto").value = t.texto;
+        $("#plAtajo").value = t.atajo || "";
+      });
+      f.querySelector(".borrar").addEventListener("click", async ()=>{
+        if (!confirm(`¿Borrar la plantilla /${t.comando}?`)) return;
+        const d = await jpost({accion:"plantilla_borrar", id});
+        if (!d.ok){ toast(d.error || "No pude borrar"); return; }
+        await plantillasCargar();
+        plPintarLista();
+      });
+    });
+  }
+
+  /* El campo de atajo GRABA en vez de escribirse: click y apretar la
+     combinacion. Escribirlo a mano invita a "ctrl-g", "CTRL + G" y cuatro
+     formatos que despues no matchean con lo que produce el keydown. */
+  $("#plAtajo").addEventListener("focus", function(){ this.classList.add("grabando"); this.value = "…"; });
+  $("#plAtajo").addEventListener("blur", function(){
+    this.classList.remove("grabando");
+    if (this.value === "…") this.value = "";
+  });
+  $("#plAtajo").addEventListener("keydown", function(e){
+    e.preventDefault();
+    if (e.key === "Escape"){ this.value = ""; this.blur(); return; }
+    const combo = atajoDeEvento(e);
+    if (combo){ this.value = combo; this.blur(); }
+  });
+
+  $("#plGuardar").addEventListener("click", async ()=>{
+    const comando = $("#plComando").value.trim().replace(/^\//, "");
+    const texto = $("#plTexto").value.trim();
+    if (!comando || !texto){ toast("Falta el comando o el texto"); return; }
+    const d = await jpost({accion:"plantilla_guardar", id: plEditando || undefined,
+                           comando, texto, atajo: $("#plAtajo").value.trim()});
+    if (!d.ok){ toast(d.error || "No pude guardar"); return; }
+    toast(plEditando ? "Plantilla actualizada" : "Plantilla creada");
+    plEditando = 0;
+    $("#plComando").value = ""; $("#plTexto").value = ""; $("#plAtajo").value = "";
+    await plantillasCargar();
+    plPintarLista();
+  });
+  $("#plCerrar").addEventListener("click", ()=> $("#backPlantillas").classList.remove("on"));
+
+  $("#btnPlantillas").addEventListener("click", abrirPlantillas);
+
+  plantillasCargar();
 
   // ---------- abrir ----------
   async function abrir(id){
@@ -3345,7 +3786,10 @@
   $("#q").addEventListener("input", e=>{ clearTimeout(debounce); debounce=setTimeout(()=>{ st.q=e.target.value.trim(); cargarLista(); },300); });
   $("#tabs").addEventListener("click", e=>{ const b=e.target.closest(".tab"); if(!b)return;
     document.querySelectorAll("#tabs .tab").forEach(x=>x.classList.remove("on")); b.classList.add("on");
-    st.estado=b.getAttribute("data-e"); cargarLista(); });
+    st.estado=b.getAttribute("data-e");
+    // La seleccion no cruza pestañas: actuaria sobre cosas ya fuera de vista.
+    seleccionLimpiar();
+    cargarLista(); });
   /* "Mas inactivos" solo existe con un filtro puesto: sin filtro ordenaria
      toda la lista por algo que el agente no pidio. Al sacar el filtro, si ese
      era el orden elegido se vuelve al de siempre -- dejar la lista ordenada

@@ -15,8 +15,12 @@
  *
  * POST { accion:"nota",         id, notas }
  * POST { accion:"estado",       id, estado }
- * POST { accion:"archivar",     id, archivar? }   // sacar/devolver a la bandeja
- * POST { accion:"eliminar",     id }              // borra el hilo — SOLO ADMIN
+ * POST { accion:"archivar",     id|ids[], archivar? }  // sacar/devolver a la bandeja
+ * POST { accion:"eliminar",     id|ids[] }             // borra el hilo — SOLO ADMIN
+ * POST { accion:"difusion_seleccion", ids[], texto }   // mensaje de agente a varios chats
+ * GET  ?accion=plantillas
+ * POST { accion:"plantilla_guardar", id?, comando, texto, atajo? }
+ * POST { accion:"plantilla_borrar",  id }
  * POST { accion:"cargar_fichas",usuario, monto, motivo, conversacion_id? }
  * POST { accion:"cargar_bono",  usuario, monto, motivo, conversacion_id? }
  * POST { accion:"notificar",    usuario|todos|filtro:{modo,dias?}, titulo, cuerpo, tipo? }
@@ -628,6 +632,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                    'yo' => $operador]);
         }
 
+        // ---- plantillas de mensaje ----
+        if ($accion === 'plantillas') {
+            try {
+                $items = $pdo->query(
+                    "SELECT id, comando, texto, atajo FROM plantillas_mensaje ORDER BY comando"
+                )->fetchAll(PDO::FETCH_ASSOC);
+            } catch (Throwable $e) {
+                // Sin la migracion 42 no hay plantillas: lista vacia, no error.
+                // El composer tiene que andar igual en una base vieja.
+                $items = [];
+            }
+            salir(['ok' => true, 'items' => $items]);
+        }
+
         // ---- config del chatbot (campos editables + on/off) ----
         if ($accion === 'chatbot_config') {
             salir(array_merge(['ok' => true], crm_chatbot_leer($pdo)));
@@ -737,41 +755,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             salir(['ok' => true]);
         }
 
-        // ---- archivar / desarchivar ----
+        /* Los ids de una accion en lote. Acepta `ids` (array) o el `id`
+           suelto de siempre, asi los llamadores viejos siguen andando. Tope
+           de 200: es lo que la lista muestra como maximo, y un lote mas
+           grande que la pantalla es un bug del cliente, no un pedido. */
+        $lote = function (array $body): array {
+            $ids = [];
+            foreach ((array)($body['ids'] ?? []) as $x) {
+                if ((int)$x > 0) { $ids[] = (int)$x; }
+            }
+            if (!$ids && (int)($body['id'] ?? 0) > 0) { $ids[] = (int)$body['id']; }
+            return array_slice(array_values(array_unique($ids)), 0, 200);
+        };
+
+        // ---- archivar / desarchivar (uno o varios) ----
         if ($accion === 'archivar') {
             if (!crm_hay_archivada($pdo)) {
                 salir(['ok' => false, 'error' => 'Falta correr la migración 41 en esta base.'], 409);
             }
-            $id = (int)($body['id'] ?? 0);
-            if (!$id) { salir(['ok' => false, 'error' => 'Falta id'], 400); }
+            $ids = $lote($body);
+            if (!$ids) { salir(['ok' => false, 'error' => 'Falta id'], 400); }
             // Por defecto archiva; se manda archivar:false para sacarla del archivo.
             $archivar = !array_key_exists('archivar', $body) || (bool)$body['archivar'];
 
+            $ph = implode(',', array_fill(0, count($ids), '?'));
             /* Al archivar se dan por leidos los no_leidos. Una conversacion
                guardada que sigue contando como "sin leer" deja el globito rojo
                prendido por algo que el agente ya decidio no atender. */
             if ($archivar) {
-                $pdo->prepare(
+                $st = $pdo->prepare(
                     "UPDATE conversaciones
                         SET archivada = 1, archivada_en = NOW(), archivada_por = ?, no_leidos = 0
-                      WHERE id = ?"
-                )->execute([$operador, $id]);
+                      WHERE id IN ($ph)"
+                );
+                $st->execute(array_merge([$operador], $ids));
             } else {
-                $pdo->prepare(
+                $st = $pdo->prepare(
                     "UPDATE conversaciones
                         SET archivada = 0, archivada_en = NULL, archivada_por = NULL
-                      WHERE id = ?"
-                )->execute([$id]);
+                      WHERE id IN ($ph)"
+                );
+                $st->execute($ids);
             }
 
             // Queda anotado: archivar esconde de la bandeja una conversacion
             // donde se hablo de plata, y esa decision tiene dueño.
             crm_bitacora($pdo, $operador,
-                $archivar ? 'conversacion_archivar' : 'conversacion_desarchivar', "id=$id");
-            salir(['ok' => true, 'archivada' => $archivar]);
+                $archivar ? 'conversacion_archivar' : 'conversacion_desarchivar',
+                'ids=' . implode(',', $ids));
+            salir(['ok' => true, 'archivada' => $archivar, 'afectadas' => $st->rowCount()]);
         }
 
-        // ---- eliminar la conversacion (borra el hilo entero) ----
+        // ---- eliminar conversaciones (una o varias; borra el hilo entero) ----
         if ($accion === 'eliminar') {
             /* SOLO ADMIN, y a proposito. Esto no esconde: destruye lo que se
                dijo. Un agente que promete algo por chat no puede ser el mismo
@@ -780,30 +815,124 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                DELETE CASCADE de sus FK (migraciones 05 y 30). */
             exigir_admin();
 
+            $ids = $lote($body);
+            if (!$ids) { salir(['ok' => false, 'error' => 'Falta id'], 400); }
+
+            $ph = implode(',', array_fill(0, count($ids), '?'));
+            $st = $pdo->prepare(
+                "SELECT c.id, c.usuario, c.session_id,
+                        (SELECT COUNT(*) FROM mensajes m WHERE m.conversacion_id = c.id) AS mensajes
+                   FROM conversaciones c WHERE c.id IN ($ph)"
+            );
+            $st->execute($ids);
+            $convs = $st->fetchAll(PDO::FETCH_ASSOC);
+            if (!$convs) { salir(['ok' => false, 'error' => 'Esas conversaciones ya no existen'], 404); }
+
+            /* La bitacora va ANTES del DELETE y con lo que se pierde adentro
+               -- una fila POR conversacion, no un resumen del lote. Despues
+               del DELETE no queda nada que consultar: si el rastro no dice a
+               quien y cuantos mensajes, el borrado es invisible. */
+            foreach ($convs as $conv) {
+                crm_bitacora($pdo, $operador, 'conversacion_eliminar', json_encode([
+                    'id'       => (int)$conv['id'],
+                    'usuario'  => $conv['usuario'],
+                    'session'  => $conv['session_id'],
+                    'mensajes' => (int)$conv['mensajes'],
+                ], JSON_UNESCAPED_UNICODE));
+            }
+
+            $del = $pdo->prepare("DELETE FROM conversaciones WHERE id IN ($ph)");
+            $del->execute($ids);
+            salir(['ok' => true, 'eliminadas' => count($convs)]);
+        }
+
+        /* ---- difusion a la SELECCION (mensaje de agente a varios chats) ----
+           Distinto de accion=notificar: aca el destino son conversaciones
+           elegidas a mano, no "todos" ni un filtro. Es el mismo camino que
+           `responder`, en lote: mensaje de agente + preview + aviso push por
+           chat. El jugador lo ve como una respuesta del agente, porque eso
+           es. */
+        if ($accion === 'difusion_seleccion') {
+            $ids   = $lote($body);
+            $texto = trim((string)($body['texto'] ?? ''));
+            if (!$ids || $texto === '') { salir(['ok' => false, 'error' => 'Falta seleccion o texto'], 400); }
+            $texto = mb_substr($texto, 0, 2000);
+
+            $ph = implode(',', array_fill(0, count($ids), '?'));
+            $st = $pdo->prepare("SELECT id, usuario FROM conversaciones WHERE id IN ($ph)");
+            $st->execute($ids);
+            $convs = $st->fetchAll(PDO::FETCH_ASSOC);
+
+            $prev = $pdo->prepare(
+                "UPDATE conversaciones SET preview = ?, actualizada_en = NOW() WHERE id = ?"
+            );
+            $n = 0;
+            foreach ($convs as $c) {
+                try {
+                    crm_mensaje($pdo, (int)$c['id'], 'agente', $texto, null, $operador);
+                    $prev->execute([mb_substr($texto, 0, 280), (int)$c['id']]);
+                    // El aviso solo si hay a quien: un chat anonimo no tiene
+                    // dispositivo asociado.
+                    if ((string)$c['usuario'] !== '') {
+                        notif_chat($pdo, (string)$c['usuario'], $texto, true);
+                    }
+                    $n++;
+                } catch (Throwable $e) {
+                    // Un chat que falla no frena el resto del lote.
+                    error_log('difusion_seleccion conv ' . $c['id'] . ': ' . $e->getMessage());
+                }
+            }
+
+            crm_bitacora($pdo, $operador, 'difusion_seleccion',
+                'chats=' . $n . ' texto=' . mb_substr($texto, 0, 120));
+            salir(['ok' => true, 'enviados' => $n]);
+        }
+
+        /* ---- plantillas de mensaje (guardar / borrar) ----
+           En la base y no en localStorage: las comparte el equipo entero.
+           Requiere sql/42_plantillas.sql; sin la migracion avisa en claro. */
+        if ($accion === 'plantilla_guardar') {
+            $id      = (int)($body['id'] ?? 0);
+            $comando = strtolower(trim((string)($body['comando'] ?? ''), "/ \t"));
+            $texto   = trim((string)($body['texto'] ?? ''));
+            $atajo   = mb_substr(trim((string)($body['atajo'] ?? '')), 0, 40);
+            if ($comando === '' || $texto === '') {
+                salir(['ok' => false, 'error' => 'Falta el comando o el texto'], 400);
+            }
+            // Solo letras/numeros/guiones: el comando se tipea en el composer
+            // y un espacio o una barra adentro lo haria inescribible.
+            if (!preg_match('/^[a-z0-9_-]{1,30}$/', $comando)) {
+                salir(['ok' => false, 'error' => 'El comando: solo letras, números y guiones (máx. 30)'], 400);
+            }
+            try {
+                if ($id) {
+                    $pdo->prepare(
+                        "UPDATE plantillas_mensaje SET comando = ?, texto = ?, atajo = ? WHERE id = ?"
+                    )->execute([$comando, mb_substr($texto, 0, 2000), $atajo ?: null, $id]);
+                } else {
+                    $pdo->prepare(
+                        "INSERT INTO plantillas_mensaje (comando, texto, atajo, creado_por) VALUES (?,?,?,?)"
+                    )->execute([$comando, mb_substr($texto, 0, 2000), $atajo ?: null, $operador]);
+                    $id = (int)$pdo->lastInsertId();
+                }
+            } catch (PDOException $e) {
+                if ($e->getCode() === '23000') {
+                    salir(['ok' => false, 'error' => "Ya existe una plantilla /$comando"], 409);
+                }
+                salir(['ok' => false, 'error' => 'No pude guardar (¿falta correr la migración 42?)'], 500);
+            }
+            salir(['ok' => true, 'id' => $id]);
+        }
+
+        if ($accion === 'plantilla_borrar') {
             $id = (int)($body['id'] ?? 0);
             if (!$id) { salir(['ok' => false, 'error' => 'Falta id'], 400); }
-
-            $st = $pdo->prepare(
-                "SELECT c.usuario, c.session_id,
-                        (SELECT COUNT(*) FROM mensajes m WHERE m.conversacion_id = c.id) AS mensajes
-                   FROM conversaciones c WHERE c.id = ? LIMIT 1"
-            );
-            $st->execute([$id]);
-            $conv = $st->fetch(PDO::FETCH_ASSOC);
-            if (!$conv) { salir(['ok' => false, 'error' => 'Esa conversación ya no existe'], 404); }
-
-            /* La bitacora va ANTES del DELETE y con lo que se pierde adentro.
-               Despues del DELETE no queda nada que consultar: si el rastro no
-               dice a quien y cuantos mensajes, el borrado es invisible. */
-            crm_bitacora($pdo, $operador, 'conversacion_eliminar', json_encode([
-                'id'       => $id,
-                'usuario'  => $conv['usuario'],
-                'session'  => $conv['session_id'],
-                'mensajes' => (int)$conv['mensajes'],
-            ], JSON_UNESCAPED_UNICODE));
-
-            $pdo->prepare("DELETE FROM conversaciones WHERE id = ?")->execute([$id]);
-            salir(['ok' => true, 'mensajes' => (int)$conv['mensajes']]);
+            try {
+                $pdo->prepare("DELETE FROM plantillas_mensaje WHERE id = ?")->execute([$id]);
+            } catch (Throwable $e) {
+                salir(['ok' => false, 'error' => 'No pude borrar'], 500);
+            }
+            salir(['ok' => true]);
         }
 
         // ---- cargar fichas o bono ----
