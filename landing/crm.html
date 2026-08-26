@@ -524,7 +524,9 @@
   .act.notif{background:linear-gradient(180deg,var(--violet2),var(--violet))}
   .chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:4px}
   .chip{padding:7px 11px;border-radius:9px;border:1px solid var(--line);background:var(--panel2);
-        color:var(--muted);font-size:12.5px;transition:.15s}
+        color:var(--muted);font-size:12.5px;transition:.15s;
+        display:inline-flex;align-items:center;gap:6px}
+  .chip .ico{width:13px;height:13px}
   .chip:hover{color:var(--txt);border-color:var(--violet)}
   .chip.on{color:#fff;border-color:var(--violet);background:var(--violet)}
   .modal textarea{min-height:78px}
@@ -5471,15 +5473,15 @@
      del APK hasta 15 min después si está cerrada). Por eso el botón dice
      "encolada" y muestra a cuántos celulares activos le va a llegar. */
   const PLANTILLAS = [
-    { n:"Bono",   tipo:"bono",   t:"¡Te regalamos un bono!",       c:"Ya lo tenés acreditado en tu cuenta. Entrá y usalo." },
-    { n:"Fichas", tipo:"fichas", t:"¡Fichas de regalo!",           c:"Te cargamos fichas para que sigas jugando." },
-    { n:"Ruleta", tipo:"ruleta", t:"Te queda un giro gratis",      c:"Entrá a la app y girá la ruleta antes de que termine el día." },
-    { n:"Promo",  tipo:"promo",  t:"Promo por tiempo limitado",    c:"Recargá hoy y llevate un extra. Escribinos por el chat." }
+    { n:"Bono",   ico:"regalo", tipo:"bono",   t:"¡Te regalamos un bono!",       c:"Ya lo tenés acreditado en tu cuenta. Entrá y usalo." },
+    { n:"Fichas", ico:"ficha",  tipo:"fichas", t:"¡Fichas de regalo!",           c:"Te cargamos fichas para que sigas jugando." },
+    { n:"Ruleta", ico:"diana",  tipo:"ruleta", t:"Te queda un giro gratis",      c:"Entrá a la app y girá la ruleta antes de que termine el día." },
+    { n:"Promo",  ico:"rayo",   tipo:"promo",  t:"Promo por tiempo limitado",    c:"Recargá hoy y llevate un extra. Escribinos por el chat." }
   ];
   let nTipo = "promo";
 
   $("#nChips").innerHTML = PLANTILLAS
-    .map((p,i)=>`<button type="button" class="chip" data-i="${i}">${esc(p.n)}</button>`).join("");
+    .map((p,i)=>`<button type="button" class="chip" data-i="${i}">${ico(p.ico)}${esc(p.n)}</button>`).join("");
   $("#nChips").addEventListener("click", e=>{
     const b = e.target.closest(".chip"); if(!b) return;
     const p = PLANTILLAS[+b.getAttribute("data-i")];
