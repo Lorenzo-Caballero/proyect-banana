@@ -251,6 +251,18 @@
   .cfg-opt{color:var(--muted);font-weight:500}
   .cfg-hint{margin:6px 0 0;font-size:11.5px;color:var(--muted)}
   .cfg-pie{margin:2px 0 0;font-size:12px;color:var(--muted);text-align:center}
+  /* Seis interruptores en fila plana obligan a leerlos todos para encontrar
+     uno. Agrupados por para-que-sirve, se salta directo al grupo. */
+  .cfg-sec{display:flex;align-items:baseline;gap:10px;margin:10px 0 -4px}
+  .cfg-sec:first-of-type{margin-top:0}
+  .cfg-sec h3{margin:0;font-size:12px;font-weight:700;text-transform:uppercase;
+    letter-spacing:.07em;color:var(--muted2)}
+  .cfg-sec span{font-size:12px;color:var(--muted)}
+  .cfg-sec-linea{flex:1;height:1px;background:var(--line)}
+  /* Cuantos hay prendidos en el grupo. Es el dato que se busca al entrar. */
+  .cfg-sec b{font-size:11px;font-weight:700;color:var(--muted);
+    background:var(--panel3);border-radius:20px;padding:3px 8px;line-height:1}
+  .cfg-sec b.hay{background:var(--greenSoft,rgba(52,199,123,.15));color:var(--green)}
   /* El bloque del mensaje solo tiene sentido con la ruleta apagada. */
   /* La ruleta esconde su cuerpo cuando está PRENDIDA (el mensaje solo aplica
      apagada); Meta al revés: sin prender no hay nada que configurar. */
@@ -932,6 +944,14 @@
     display:flex;flex-direction:column;gap:16px;
     flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain}
   /* Barra fina y discreta: es una columna de lectura, no un panel de datos. */
+  /* SIN ESTO LA PANTALLA SE ROMPE. .cb-wrap es un flex en columna con
+     overflow-y:auto, y los hijos de un flex traen flex-shrink:1: cuando el
+     contenido pasa del alto disponible, en vez de desbordar (y por lo tanto
+     scrollear) las tarjetas se APLASTAN. Como .cfg-card tiene overflow:hidden,
+     el texto queda cortado a la mitad y una tarjeta se monta sobre la
+     siguiente. Aparecio al sumar las dos tarjetas de juegos, que fue cuando la
+     columna paso a no entrar en pantalla. */
+  .cb-wrap > *{flex:0 0 auto}
   .cb-wrap::-webkit-scrollbar{width:10px}
   .cb-wrap::-webkit-scrollbar-thumb{background:var(--line2);border-radius:20px;
     border:3px solid transparent;background-clip:content-box}
@@ -2081,6 +2101,11 @@
 
       <div id="cfgAviso" class="cb-nota" style="display:none"></div>
 
+      <div class="cfg-sec">
+        <h3>Juegos</h3><b id="cfgCuentaJuegos">0 de 3</b>
+        <span class="cfg-sec-linea"></span>
+      </div>
+
       <!-- Ruleta ------------------------------------------------------- -->
       <div class="cfg-card">
         <div class="cfg-card-head">
@@ -2146,6 +2171,11 @@
         </div>
       </div>
 
+      <div class="cfg-sec">
+        <h3>Atención al jugador</h3><b id="cfgCuentaAtencion">0 de 2</b>
+        <span class="cfg-sec-linea"></span>
+      </div>
+
       <!-- Chatbot ------------------------------------------------------ -->
       <div class="cfg-card">
         <div class="cfg-card-head">
@@ -2174,6 +2204,11 @@
             <span class="cb-slider"></span>
           </label>
         </div>
+      </div>
+
+      <div class="cfg-sec">
+        <h3>Marketing</h3>
+        <span class="cfg-sec-linea"></span>
       </div>
 
       <!-- Meta Ads --------------------------------------------------- -->
@@ -2777,6 +2812,40 @@
       const tarjeta = el.closest(".cfg-card");
       if(tarjeta && el.closest(".cfg-card-head")) tarjeta.classList.toggle("activa", el.checked);
     });
+    cfgPintarCuentas();
+  }
+
+  /* El contador de cada seccion. Es el dato que uno viene a buscar cuando
+     entra: cuantos juegos tengo prendidos, no cual es cual. */
+  const CFG_GRUPOS = {
+    "#cfgCuentaJuegos":   ["#cfgRuleta", "#cfgRaspa", "#cfgSlot"],
+    "#cfgCuentaAtencion": ["#cfgChat", "#cfgRegistro"],
+  };
+  function cfgPintarCuentas(){
+    Object.entries(CFG_GRUPOS).forEach(([destino, campos])=>{
+      const el = $(destino); if(!el) return;
+      const on = campos.filter(sel=> $(sel) && $(sel).checked).length;
+      el.textContent = on + " de " + campos.length;
+      el.classList.toggle("hay", on > 0);
+    });
+  }
+
+  /* Si hay cambios sin guardar. Sin esto, el boton se ve igual con todo
+     guardado que con media pantalla tocada, y la unica forma de saber si
+     apretaste era volver a apretar. */
+  let cfgLimpio = "";
+  function cfgInstantanea(){
+    return Object.entries(CFG_CAMPOS).map(([clave, def])=>{
+      const el = $(def.el);
+      if(!el) return clave + "=";
+      return clave + "=" + (def.tipo === "bool" ? (el.checked ? "1" : "0") : el.value.trim());
+    }).join("");
+  }
+  function cfgPintarSucio(){
+    const btn = $("#cfgGuardar");
+    const sucio = cfgInstantanea() !== cfgLimpio;
+    btn.disabled = !sucio;
+    btn.textContent = sucio ? "Guardar cambios" : "Todo guardado";
   }
 
   function cfgPintarRuleta(){
@@ -2821,6 +2890,9 @@
       cfgPintarRuleta();
       cfgPintarJuegos();
       cfgPintarMeta();
+      // Lo recien cargado ES el estado guardado: desde aca se mide "sucio".
+      cfgLimpio = cfgInstantanea();
+      cfgPintarSucio();
     }catch(e){
       aviso.style.display = "";
       aviso.textContent = "No pude cargar los ajustes. Probá recargar la página.";
@@ -2836,6 +2908,10 @@
     $(sel).addEventListener("change", cfgPintarActivas));
   CFG_JUEGOS.forEach(sel=>
     $(sel).addEventListener("change", ()=>{ cfgPintarJuegos(); cfgPintarActivas(); }));
+  /* Un solo listener delegado en la vista entera en vez de uno por campo: son
+     quince campos y cada uno nuevo se olvidaria de engancharse. */
+  ["input","change"].forEach(ev=>
+    $("#viewConfig").addEventListener(ev, cfgPintarSucio));
 
   async function guardarConfig(){
     const btn = $("#cfgGuardar");
@@ -2847,12 +2923,13 @@
     });
 
     btn.disabled = true;
-    const txt = btn.textContent;
     btn.textContent = "Guardando…";
     try{
       const d = await jpost({ accion: "config_guardar", config });
       if(!d || !d.ok) throw new Error(d && d.error);
       aviso.style.display = "none";
+      // Lo que se acaba de mandar pasa a ser el estado limpio.
+      cfgLimpio = cfgInstantanea();
       toast("Ajustes guardados");
     }catch(e){
       aviso.style.display = "";
@@ -2861,8 +2938,9 @@
         ? e.message
         : "No pude guardar. Solo los administradores pueden cambiar esto.";
     }finally{
-      btn.disabled = false;
-      btn.textContent = txt;
+      // No se restaura el texto a mano: cfgPintarSucio() sabe si quedo limpio
+      // (dice "Todo guardado") o si fallo y sigue habiendo cambios pendientes.
+      cfgPintarSucio();
     }
   }
 

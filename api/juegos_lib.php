@@ -64,25 +64,53 @@ function jug_body(): array
 }
 
 /**
- * Quien es el jugador, VERIFICADO.
+ * Quien es el jugador. Dos caminos, en este orden:
  *
- * Solo el JWT propio cuenta. El `usuario` suelto que manda el navegador sirve
- * para conversar, no para cobrar: si alcanzara, cualquiera escribe el nombre
- * de otro y le juega -- y le gasta -- su carton del dia.
+ *   1. El JWT propio (auth.php). Si esta y verifica, MANDA.
+ *   2. El `usuario` suelto, pero solo si EXISTE en `usuarios`.
  *
- * Devuelve el username o '' si no hay sesion verificable.
+ * El paso 2 no es una comodidad, es la unica forma de que estos juegos
+ * existan: el widget se inyecta DENTRO de la plataforma, donde el jugador se
+ * loguea en ganamos, no en auth.php. Casi nadie tiene el JWT propio. Exigirlo
+ * dejaba a los dos juegos nuevos rechazando a todo el mundo con "Iniciá
+ * sesión para jugar", que es exactamente el bug que aparecio en produccion.
+ *
+ * Es el MISMO nivel de garantia que ya tiene la ruleta, que reparte bonos con
+ * un username suelto verificado contra `usuarios` desde el primer dia. Lo que
+ * se acepta y lo que no:
+ *
+ *   - Los bonos SIEMPRE caen en la cuenta nombrada. No hay forma de desviarlos.
+ *   - Quien sepa el usuario de otro puede QUEMARLE el carton del dia. Molesta,
+ *     no roba, y es la exposicion que la ruleta ya tenia. Quien quiera cerrar
+ *     eso, que se loguee con auth.php: el JWT gana sobre el nombre suelto.
+ *
+ * Devuelve el username tal como esta escrito en la base (asi `crm_cargar`
+ * encuentra la fila aunque el navegador lo haya mandado con otra caja), o ''.
  */
-function jug_identidad(array $body): string
+function jug_identidad(PDO $pdo, array $body): string
 {
     $tok = trim((string)($body['token'] ?? ''));
-    if ($tok === '' || !function_exists('jwt_verificar')) {
+    if ($tok !== '' && function_exists('jwt_verificar')) {
+        $claims = jwt_verificar($tok, cfg('JWT_SECRET'));
+        if ($claims && !empty($claims['username'])) {
+            return mb_substr((string)$claims['username'], 0, 50);
+        }
+        // JWT presente pero invalido: NO se cae al nombre suelto. Un token
+        // vencido o manipulado es una señal, no un descuido.
         return '';
     }
-    $claims = jwt_verificar($tok, cfg('JWT_SECRET'));
-    if (!$claims || empty($claims['username'])) {
+
+    $u = mb_substr(trim((string)($body['usuario'] ?? '')), 0, 50);
+    if ($u === '') { return ''; }
+    try {
+        $st = $pdo->prepare("SELECT username FROM usuarios WHERE username = ? LIMIT 1");
+        $st->execute([$u]);
+        $real = $st->fetchColumn();
+        return $real === false ? '' : (string)$real;
+    } catch (Throwable $e) {
+        error_log('juegos: no pude verificar el usuario: ' . $e->getMessage());
         return '';
     }
-    return mb_substr((string)$claims['username'], 0, 50);
 }
 
 /**

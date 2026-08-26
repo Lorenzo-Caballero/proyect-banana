@@ -27,7 +27,7 @@ header('Cache-Control: no-store');
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
 
 $body    = jug_body();
-$usuario = jug_identidad($body);
+$usuario = jug_identidad($pdo, $body);
 $puede   = jug_puede_acreditar();
 
 /** Cuantas tiradas de slot le quedan hoy. */

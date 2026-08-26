@@ -129,7 +129,7 @@ if (!jug_puede_acreditar()) {
     jug_error('no_disponible', 'El juego no está disponible en este momento.', 503);
 }
 
-$usuario = jug_identidad($body);
+$usuario = jug_identidad($pdo, $body);
 if ($usuario === '') {
     jug_error('sin_sesion', 'Iniciá sesión para jugar.', 403);
 }

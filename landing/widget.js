@@ -2119,13 +2119,39 @@
     ".gpj-celda{display:grid;place-items:center;background:#1b1540;border-radius:10px;font-size:27px}" +
     "#gpj-raspa-cv{position:absolute;inset:0;width:100%;height:100%;cursor:pointer;touch-action:none;display:block}" +
 
-    /* ---- slot ---- */
-    ".gpj-reels{display:flex;gap:8px;justify-content:center;margin:6px 0 14px}" +
-    ".gpj-reel{width:74px;height:88px;border-radius:14px;background:#1b1540;border:1px solid #2a2350;" +
-    "display:grid;place-items:center;font-size:38px;overflow:hidden}" +
-    ".gpj-reel.gira{animation:gpjGira .12s linear infinite}" +
-    "@keyframes gpjGira{from{transform:translateY(-6px)}to{transform:translateY(6px)}}" +
-    ".gpj-restantes{font-size:12px;font-weight:600;color:#9aa0c4;margin-bottom:8px;min-height:16px}";
+    /* ---- slot: un gabinete con rodillos de verdad ----
+       Tres emojis quietos con un temblor no se leen como un tragamonedas. Lo
+       que lo hace uno es el TAMBOR: una tira de simbolos que pasa de largo y
+       frena pasandose un poco. Por eso cada rodillo es una ventana con
+       overflow:hidden y adentro una tira que se traslada. */
+    ".gpj-cab{position:relative;max-width:290px;margin:6px auto 12px;padding:12px;border-radius:18px;" +
+    "background:linear-gradient(180deg,#2a1f5e,#181040);border:1px solid #3a2f7a;" +
+    "box-shadow:inset 0 2px 0 rgba(255,255,255,.07),0 10px 26px rgba(0,0,0,.45)}" +
+    ".gpj-cab:before{content:'';position:absolute;inset:0;border-radius:18px;pointer-events:none;" +
+    "box-shadow:inset 0 0 0 2px rgba(227,177,74,.32)}" +
+    ".gpj-reels{display:flex;gap:8px;justify-content:center;position:relative}" +
+    ".gpj-reel{width:74px;height:88px;border-radius:12px;overflow:hidden;position:relative;" +
+    "background:linear-gradient(180deg,#0d0920,#191140 45%,#0d0920);border:1px solid #2a2350}" +
+    /* Sombra arriba y abajo: es lo que da la curva del tambor. Sin esto la
+       tira se ve como una lista que se mueve, no como un cilindro. */
+    ".gpj-reel:after{content:'';position:absolute;inset:0;pointer-events:none;border-radius:12px;" +
+    "background:linear-gradient(180deg,rgba(0,0,0,.6),transparent 30%,transparent 70%,rgba(0,0,0,.6))}" +
+    ".gpj-strip{display:flex;flex-direction:column;will-change:transform}" +
+    ".gpj-sym{height:88px;flex:none;display:grid;place-items:center;font-size:38px;line-height:1}" +
+    ".gpj-reel.gira .gpj-strip{animation:gpjRodar .3s linear infinite}" +
+    "@keyframes gpjRodar{from{transform:translateY(0)}to{transform:translateY(-440px)}}" +
+    /* La linea de pago. Sin ella los tres simbolos son tres dibujos sueltos y
+       no se entiende que lo que paga es la fila. */
+    ".gpj-linea{position:absolute;left:-6px;right:-6px;top:50%;height:2px;margin-top:-1px;pointer-events:none;" +
+    "background:linear-gradient(90deg,transparent,rgba(227,177,74,.9),transparent);border-radius:2px}" +
+    ".gpj-cab.gano .gpj-reel{border-color:#E3B14A;box-shadow:0 0 18px rgba(227,177,74,.5)}" +
+    ".gpj-cab.gano .gpj-linea{animation:gpjLinea .55s ease-in-out 3}" +
+    "@keyframes gpjLinea{50%{box-shadow:0 0 16px 4px rgba(227,177,74,.75)}}" +
+    ".gpj-restantes{font-size:12px;font-weight:600;color:#9aa0c4;margin-bottom:8px;min-height:16px}" +
+    /* La animacion ES el juego, asi que no se apaga: se acorta. Quien pidio
+       menos movimiento igual tiene que poder ver que salio. */
+    "@media (prefers-reduced-motion:reduce){.gpj-reel.gira .gpj-strip{animation-duration:.6s}" +
+    ".gpj-cab.gano .gpj-linea{animation:none}}";
   var stJ = document.createElement("style"); stJ.textContent = cssJ;
   document.head.appendChild(stJ);
 
@@ -2170,10 +2196,16 @@
   /* El texto del chip de cada juego en el hub, y si eso cuenta como
      "disponible". La ruleta no viene con `disponible` de juegos_estado.php a
      proposito: esa regla vive en ruleta.php y la resuelve cargarRuleta(). */
+  /* A quien le acreditamos. El JWT propio es lo mejor, pero casi nadie lo
+     tiene: este widget vive DENTRO de la plataforma, donde el jugador se
+     loguea en ganamos. El nombre que sacamos de su header alcanza -- el server
+     lo verifica contra `usuarios` antes de pagar, igual que en la ruleta. */
+  function jugadorConocido(){ return !!(AUTH || USUARIO); }
+
   function chipDe(clave){
     var j = estadoJuegos && estadoJuegos[clave];
     if (!j || !j.activo) return { txt: "", hay: false };
-    if (j.requiere_login && !AUTH) return { txt: "Ingresá para jugar", hay: false };
+    if (j.requiere_login && !jugadorConocido()) return { txt: "Entrá a tu cuenta", hay: false };
     if (clave === "ruleta") {
       return ruletaDisponible
         ? { txt: "Girá gratis", hay: true }
@@ -2250,7 +2282,7 @@
     '</div>';
   document.body.appendChild(ovR);
 
-  var raspaTok = null, raspaCobrando = false;
+  var raspaTok = null, raspaCobrando = false, raspaEnganchado = false;
   var raspaSimbolos = ["🍋", "🍒", "🔔", "⭐", "💎"];   // respaldo; manda el server
 
   function abrirRaspa(){
@@ -2305,10 +2337,20 @@
     return ctx;
   }
 
+  var raspaCtx = null, raspaRascando = false, raspaUltimo = 0;
+
+  /* Repinta la lamina y -la primera vez- engancha los eventos del dedo.
+     Los listeners se atan UNA sola vez: el modal vive todo el rato en el DOM,
+     asi que llamar a esto en cada apertura los iria apilando y cada movimiento
+     del dedo dispararia el pincel N veces. */
   function armarRascado(){
-    var cv  = $("gpj-raspa-cv");
-    var ctx = prepararLamina();
-    var rascando = false, ultimoChequeo = 0;
+    var cv = $("gpj-raspa-cv");
+    raspaCtx = prepararLamina();
+    raspaRascando = false; raspaUltimo = 0;
+    if (raspaEnganchado) { return; }
+    raspaEnganchado = true;
+
+    var ctx = raspaCtx;
 
     function pos(e){
       var r = cv.getBoundingClientRect();
@@ -2317,28 +2359,30 @@
                y: (p.clientY - r.top)  * (cv.height / r.height) };
     }
     function borrar(e){
-      if (!rascando) return;
+      if (!raspaRascando) return;
       e.preventDefault();
       var p = pos(e);
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 16, 0, Math.PI * 2);
-      ctx.fill();
+      // raspaCtx y no ctx: setear cv.width en cada carton resetea el estado del
+      // contexto, y estos listeners viven mas que el carton que los creo.
+      raspaCtx.beginPath();
+      raspaCtx.arc(p.x, p.y, 16, 0, Math.PI * 2);
+      raspaCtx.fill();
       /* El chequeo va cada 120 ms sobre una muestra, no en cada movimiento y no
          pixel por pixel: getImageData del canvas entero en cada mousemove traba
          el dedo en un celular. */
       var ahora = Date.now();
-      if (ahora - ultimoChequeo > 120){
-        ultimoChequeo = ahora;
-        if (bastante(ctx, cv)) cobrarRaspa();
+      if (ahora - raspaUltimo > 120){
+        raspaUltimo = ahora;
+        if (bastante(raspaCtx, cv)) cobrarRaspa();
       }
     }
 
     ["mousedown", "touchstart"].forEach(function (ev){
-      cv.addEventListener(ev, function (e){ rascando = true; borrar(e); }, { passive: false }); });
+      cv.addEventListener(ev, function (e){ raspaRascando = true; borrar(e); }, { passive: false }); });
     ["mousemove", "touchmove"].forEach(function (ev){
       cv.addEventListener(ev, borrar, { passive: false }); });
     ["mouseup", "mouseleave", "touchend", "touchcancel"].forEach(function (ev){
-      cv.addEventListener(ev, function (){ rascando = false; }); });
+      cv.addEventListener(ev, function (){ raspaRascando = false; }); });
   }
 
   /** ¿Ya rasco lo suficiente como para que el carton se entienda? */
@@ -2360,7 +2404,7 @@
     raspaCobrando = true;                       // guarda: se cobra UNA sola vez
     fetch(API_RASPA, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ accion: "raspar", token: AUTH || undefined, carton: raspaTok })
+      body: JSON.stringify({ accion: "raspar", token: AUTH || undefined, usuario: USUARIO || undefined, carton: raspaTok })
     })
       .then(function (r){ return r.json(); })
       .then(function (d){
@@ -2389,7 +2433,7 @@
     $("gpj-raspa-msg").textContent = "";
     fetch(API_RASPA, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ accion: "crear", token: AUTH || undefined })
+      body: JSON.stringify({ accion: "crear", token: AUTH || undefined, usuario: USUARIO || undefined })
     })
       .then(function (r){ return r.json(); })
       .then(function (d){
@@ -2428,8 +2472,11 @@
     '<button class="gpr-x" id="gpj-slot-x" aria-label="Cerrar">&times;</button>' +
     '<h2>Tragamonedas <span style="color:#E3B14A">777</span></h2>' +
     '<div class="sub">Tres iguales pagan. Tres 7, pagan fuerte.</div>' +
-    '<div class="gpj-reels"><div class="gpj-reel" id="gpj-r0">🍒</div>' +
-    '<div class="gpj-reel" id="gpj-r1">🍋</div><div class="gpj-reel" id="gpj-r2">🔔</div></div>' +
+    '<div class="gpj-cab" id="gpj-cab"><div class="gpj-reels">' +
+    '<div class="gpj-reel" id="gpj-r0"><div class="gpj-strip"></div></div>' +
+    '<div class="gpj-reel" id="gpj-r1"><div class="gpj-strip"></div></div>' +
+    '<div class="gpj-reel" id="gpj-r2"><div class="gpj-strip"></div></div>' +
+    '<div class="gpj-linea"></div></div></div>' +
     '<div class="gpr-res" id="gpj-slot-res"></div>' +
     '<div class="gpj-restantes" id="gpj-slot-rest"></div>' +
     '<div class="gpr-msg" id="gpj-slot-msg"></div>' +
@@ -2440,6 +2487,56 @@
 
   var slotSimbolos = ["🍒", "🍋", "🔔", "⭐", "7️⃣"], slotGirando = false;
 
+  var SLOT_ALTO  = 88;   // tiene que coincidir con .gpj-sym del CSS
+  var SLOT_ANTES = 4;    // cuantos simbolos pasan de largo antes del resultado
+
+  function slotReel(i){ return $("gpj-r" + i); }
+  function slotStrip(i){ return slotReel(i).querySelector(".gpj-strip"); }
+  function slotAzar(){ return slotSimbolos[Math.floor(Math.random() * slotSimbolos.length)]; }
+
+  /** Deja una tira de simbolos dentro de un rodillo, arriba de todo y quieta. */
+  function slotPintarTira(i, simbolos){
+    var st = slotStrip(i);
+    st.style.transition = "none";
+    st.style.transform  = "translateY(0)";
+    st.innerHTML = "";
+    simbolos.forEach(function (sim){
+      var d = document.createElement("div");
+      d.className = "gpj-sym";
+      d.textContent = sim;
+      st.appendChild(d);
+    });
+    return st;
+  }
+
+  /* La tira del giro libre: cinco al azar mas una repeticion de la primera,
+     para que el loop de -440px (5 x 88) cierre sin salto visible. */
+  function slotTiraLoop(i){
+    var t = [];
+    for (var k = 0; k < 5; k++) { t.push(slotAzar()); }
+    t.push(t[0]);
+    slotPintarTira(i, t);
+  }
+
+  /* El frenado de un rodillo. La tira es: unos cuantos al azar, EL RESULTADO,
+     y uno mas abajo. Ese ultimo existe por el rebote -- la curva de salida se
+     pasa unos pixeles del final, y sin un simbolo ahi abajo se veria un hueco
+     negro justo en el instante en que el jugador esta mirando. */
+  function slotFrenar(i, simbolo, ms){
+    var t = [];
+    for (var k = 0; k < SLOT_ANTES; k++) { t.push(slotAzar()); }
+    t.push(simbolo);
+    t.push(slotAzar());
+    var st = slotPintarTira(i, t);
+    slotReel(i).classList.remove("gira");
+    /* Reflow forzado: sin leer una medida en el medio, el navegador junta el
+       translateY(0) de arriba con el de abajo en un solo estilo y no queda
+       nada que animar -- el simbolo aparecería de golpe. */
+    void st.offsetHeight;
+    st.style.transition = "transform " + ms + "ms cubic-bezier(.16,.84,.24,1.06)";
+    st.style.transform  = "translateY(-" + (SLOT_ANTES * SLOT_ALTO) + "px)";
+  }
+
   function pintarRestantesSlot(n){
     $("gpj-slot-rest").textContent = n == null ? ""
       : (n > 0 ? "Te quedan " + n + (n === 1 ? " tirada" : " tiradas") + " hoy"
@@ -2449,9 +2546,15 @@
 
   function abrirSlot(){
     var j = estadoJuegos && estadoJuegos.slot;
+    $("gpj-cab").classList.remove("gano");
     $("gpj-slot-res").className = "gpr-res";
     $("gpj-slot-res").textContent = "";
     $("gpj-slot-msg").textContent = "";
+    // La maquina en reposo muestra algo: tres ventanas negras no invitan.
+    [0, 1, 2].forEach(function (i){
+      slotReel(i).classList.remove("gira");
+      slotPintarTira(i, [slotSimbolos[i % slotSimbolos.length]]);
+    });
     pintarRestantesSlot(j ? j.restantes : null);
     ovS.classList.add("show");
   }
@@ -2464,65 +2567,67 @@
     slotGirando = true;
     var btn = this;
     btn.disabled = true;
+    $("gpj-cab").classList.remove("gano");
     $("gpj-slot-res").className = "gpr-res";
     $("gpj-slot-res").textContent = "";
     $("gpj-slot-msg").textContent = "";
 
-    var reels = [$("gpj-r0"), $("gpj-r1"), $("gpj-r2")];
-    reels.forEach(function (r){ r.classList.add("gira"); });
-    /* Mientras vuelve el server, los rodillos muestran simbolos al azar. Es
-       DECORACION: el resultado ya lo decidio el server y llega en la respuesta;
-       este random no entra en el premio. */
-    var ruido = setInterval(function (){
-      reels.forEach(function (r){
-        r.textContent = slotSimbolos[Math.floor(Math.random() * slotSimbolos.length)];
-      });
-    }, 80);
+    /* Arrancan los tres. Lo que gira es DECORACION: el premio ya lo decidio el
+       server y llega en la respuesta; este azar no entra en el resultado. Es
+       el tiempo de espera convertido en parte del juego. */
+    [0, 1, 2].forEach(function (i){
+      slotTiraLoop(i);
+      slotReel(i).classList.add("gira");
+    });
 
-    function frenarTodo(){
-      clearInterval(ruido);
-      reels.forEach(function (r){ r.classList.remove("gira"); });
+    var PASOS = [800, 1150, 1550];
+
+    function cortarGiro(){
+      [0, 1, 2].forEach(function (i){
+        slotReel(i).classList.remove("gira");
+        slotStrip(i).style.transition = "none";
+      });
       slotGirando = false;
     }
 
     fetch(API_SLOT, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ accion: "tirar", token: AUTH || undefined })
+      body: JSON.stringify({ accion: "tirar", token: AUTH || undefined, usuario: USUARIO || undefined })
     })
       .then(function (r){ return r.json(); })
       .then(function (d){
         if (d && d.simbolos && d.simbolos.length) slotSimbolos = d.simbolos;
 
-        /* Los tres carretes frenan escalonados: si paran juntos no se siente un
-           tragamonedas, y el tercero es el que arma la expectativa. El ruido se
-           corta con el ultimo, si no los ya frenados seguirian cambiando. */
-        [700, 1100, 1500].forEach(function (ms, i){
+        if (!d || !d.ok || !d.rodillos){
+          cortarGiro();
+          $("gpj-slot-msg").textContent = (d && d.error) || "No pude tirar.";
+          if (d && d.restantes != null) pintarRestantesSlot(d.restantes);
+          else btn.disabled = false;
+          return;
+        }
+
+        /* Frenan escalonados. Si paran juntos no se siente un tragamonedas: el
+           tercero es el que arma toda la expectativa. */
+        PASOS.forEach(function (ms, i){
           setTimeout(function (){
-            if (i === 2) clearInterval(ruido);
-            reels[i].classList.remove("gira");
-            if (d && d.ok && d.rodillos) reels[i].textContent = slotSimbolos[d.rodillos[i]];
+            slotFrenar(i, slotSimbolos[d.rodillos[i]] || "❔", 850);
           }, ms);
         });
 
         setTimeout(function (){
-          frenarTodo();
-          if (!d || !d.ok){
-            $("gpj-slot-msg").textContent = (d && d.error) || "No pude tirar.";
-            if (d && d.restantes != null) pintarRestantesSlot(d.restantes);
-            else btn.disabled = false;
-            return;
-          }
+          slotGirando = false;
           var res = $("gpj-slot-res");
           res.className = "gpr-res show" + (d.bonus > 0 ? "" : " nada");
           res.innerHTML = d.bonus > 0
             ? "<b>🎉 +" + d.bonus + " bonos</b>" + d.label + " — acreditados en tu cuenta."
             : "<b>Casi</b>No salió. ¡Probá otra! 🍀";
+          if (d.bonus > 0) $("gpj-cab").classList.add("gano");
           pintarRestantesSlot(d.restantes);
           refrescarJuegos();
-        }, 1700);
+        }, PASOS[2] + 900);
       })
       .catch(function (){
-        frenarTodo();
+        cortarGiro();
         btn.disabled = false;
         $("gpj-slot-msg").textContent = "No pude conectar.";
       });
@@ -2536,7 +2641,7 @@
   function refrescarJuegos(){
     return fetch(API_JUEGOS, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token: AUTH || undefined })
+      body: JSON.stringify({ token: AUTH || undefined, usuario: USUARIO || undefined })
     })
       .then(function (r){ return r.json(); })
       .then(function (d){
