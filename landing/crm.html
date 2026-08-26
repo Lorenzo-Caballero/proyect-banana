@@ -164,7 +164,17 @@
   .sel-bar{display:none;align-items:center;gap:6px;padding:8px 10px;border-radius:12px;
     background:var(--violetSoft);border:1px solid var(--violet);margin-bottom:8px}
   .sel-bar.on{display:flex}
-  .sel-bar b{font-size:12.5px;color:var(--violet2);flex:1;min-width:0;white-space:nowrap}
+  /* El numero en su ficha: es EL dato de la barra y antes era texto chico
+     perdido a la izquierda. El globo late un instante con cada cambio para
+     que el ojo lo encuentre sin buscarlo. */
+  .sel-pill{display:inline-flex;align-items:center;gap:7px;flex:none}
+  .sel-pill b{min-width:24px;height:24px;padding:0 7px;border-radius:20px;background:var(--violet);
+    color:#fff;font-size:12.5px;font-weight:800;display:grid;place-items:center;
+    font-variant-numeric:tabular-nums}
+  .sel-pill b.late{animation:selLate .28s ease-out}
+  @keyframes selLate{50%{transform:scale(1.28)}}
+  .sel-pill span{font-size:11.5px;font-weight:700;color:var(--violet2);white-space:nowrap}
+  .sel-esp{flex:1}
   .sel-bar button{border:0;background:var(--panel);color:var(--txt);border-radius:9px;
     padding:7px 10px;font:600 11.5px inherit;cursor:pointer;display:inline-flex;
     align-items:center;gap:5px;transition:.15s}
@@ -598,7 +608,20 @@
     .app.viewing .col-list{display:none}
     .app:not(.viewing) .col-chat{display:none}
     .lhead{padding:12px 14px} .subhead{padding:10px 14px 0}
-    .thread{padding:16px 14px} .chead{padding:12px 14px}
+    .thread{padding:14px 12px;gap:13px} .chead{padding:12px 14px}
+    /* En un telefono el 76% de ancho de burbuja desperdicia media pantalla:
+       el hilo es angosto de por si, la burbuja puede ocupar casi todo. */
+    .row{max-width:88%}
+    /* Composer al ancho del pulgar: botones un paso mas chicos y el padding
+       de abajo respeta la barra del sistema (gesto de home del telefono). */
+    .composer{padding:10px 10px calc(10px + env(safe-area-inset-bottom))}
+    .composer .att,.composer .send{width:38px;height:38px;border-radius:11px}
+    .composer svg{width:17px;height:17px}
+    .composer textarea{min-height:38px;padding:9px 11px}
+    /* Estado del ticket y pastilla BOT mas compactos: la fila de controles
+       scrollea, pero cuanto menos haya que arrastrar, mejor. */
+    .estbtns button{padding:6px 9px;font-size:11px}
+    .bot-pill{padding:0 9px;gap:6px}
     .col-user{width:min(360px,94vw)}
     .saldos{padding:14px 13px} .sec{padding:4px 14px 18px}
     /* Header del chat en angosto: DOS FILAS claras, nunca una sola apretada.
@@ -649,6 +672,11 @@
     .modal{padding:18px;border-radius:15px;max-height:calc(100vh - 20px)}
     .ag-rol-toggle{grid-template-columns:1fr}
     .ag-modal-head{gap:10px}
+    /* Barra de seleccion en angosto: quedan los iconos (con su title) y el
+       contador; las palabras no entran con cuatro acciones a la vista. */
+    .sel-bar{gap:4px;padding:7px 8px}
+    .sel-bar .btxt{display:none}
+    .sel-bar button{padding:8px 9px}
   }
 
   /* ---- operador logueado (Fase 0.5) ---- */
@@ -1364,10 +1392,14 @@
            .tab-chico solo para el estilo compacto de esta fila. -->
       <!-- Barra del lote: aparece cuando hay conversaciones marcadas. -->
       <div class="sel-bar" id="selBar">
-        <b id="selCuenta">0</b>
-        <button id="selArchivar" type="button" title="Archivar las marcadas"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></svg>Archivar</button>
-        <button id="selDifundir" type="button" title="Mandar un mensaje a todas las marcadas"><svg class="ico" viewBox="0 0 24 24"><path d="m3 11 18-8-8 18-2-8z"/></svg>Difundir</button>
-        <button id="selEliminar" type="button" class="peligro" title="Eliminar las marcadas"><svg class="ico" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6"/></svg>Eliminar</button>
+        <!-- El numero es lo que se mira mientras se marca: va en su propia
+             ficha, grande, y el globo late un instante con cada cambio. -->
+        <span class="sel-pill"><b id="selN">0</b><span id="selTxt">seleccionadas</span></span>
+        <button id="selTodas" type="button" title="Marcar todas las visibles"><svg class="ico" viewBox="0 0 24 24"><path d="m4 13 3.5 3.5L14 10"/><path d="m10 13 3.5 3.5L20 10"/></svg><span class="btxt">Todas</span></button>
+        <span class="sel-esp"></span>
+        <button id="selArchivar" type="button" title="Archivar las marcadas"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></svg><span class="btxt">Archivar</span></button>
+        <button id="selDifundir" type="button" title="Mandar un mensaje a todas las marcadas"><svg class="ico" viewBox="0 0 24 24"><path d="m3 11 18-8-8 18-2-8z"/></svg><span class="btxt">Difundir</span></button>
+        <button id="selEliminar" type="button" class="peligro" title="Eliminar las marcadas"><svg class="ico" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6"/></svg><span class="btxt">Eliminar</span></button>
         <button class="sel-x" id="selLimpiar" type="button" title="Quitar selección"><svg class="ico" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
       </div>
       <!-- Menu contextual de la lista (click derecho). Se llena al abrir. -->
@@ -3376,6 +3408,11 @@
       const id = +el.getAttribute("data-id");
 
       el.addEventListener("click", e=>{
+        /* El click FANTASMA del long-press. Despues de mantener apretado, el
+           navegador dispara igual un click sobre el mismo elemento -- y ese
+           click des-marcaba lo que el apreton acababa de marcar (o abria el
+           chat). Era el "selecciono uno y entra en el chat" del celular. */
+        if (lpConsumir){ lpConsumir = false; e.preventDefault(); return; }
         /* Ctrl/Cmd+click marca sin abrir. Y si YA hay seleccion, el click
            comun tambien marca: es el modo seleccion de WhatsApp -- una vez
            adentro, cada toque suma o resta, y al vaciarse se vuelve a
@@ -3399,8 +3436,25 @@
         lpX = e.clientX; lpY = e.clientY;
         lpTimer = setTimeout(()=>{
           lpTimer = 0;
-          seleccionToggle(id);
-          if (navigator.vibrate) navigator.vibrate(12);  // acuse tactil
+          /* Que el click fantasma que sigue no lo deshaga. La bandera VENCE
+             sola: no todos los navegadores disparan ese click (algunos van a
+             contextmenu), y una bandera que queda prendida se tragaria el
+             proximo toque legitimo. */
+          lpConsumir = true;
+          setTimeout(()=>{ lpConsumir = false; }, 700);
+          if (seleccion.has(id)){
+            /* Apreton sostenido sobre una YA marcada: marcar TODO lo visible.
+               Es el Ctrl+A del celular -- el primer apreton entra al modo
+               seleccion, el segundo dice "todas". La vibracion doble avisa
+               que paso algo mas grande que marcar una. */
+            document.querySelectorAll("#list .conv").forEach(c=>
+              seleccion.add(+c.getAttribute("data-id")));
+            seleccionPintar();
+            if (navigator.vibrate) navigator.vibrate([15, 60, 15]);
+          } else {
+            seleccionToggle(id);
+            if (navigator.vibrate) navigator.vibrate(12);  // acuse tactil
+          }
         }, 500);
       });
       el.addEventListener("pointermove", e=>{
@@ -3432,7 +3486,8 @@
      toda la seleccion; sobre una sin marcar, solo sobre esa -- aunque haya
      otras marcadas. Es lo que hacen el explorador de archivos y Gmail, asi
      que es lo que la mano ya espera. */
-  let tocando = false;   // true mientras hay un dedo apoyado (no mouse)
+  let tocando = false;     // true mientras hay un dedo apoyado (no mouse)
+  let lpConsumir = false;  // el proximo click es el fantasma del long-press
 
   function abrirCtx(e, id){
     const multi = seleccion.size > 1 && seleccion.has(id);
@@ -3523,8 +3578,13 @@
     });
     $("#list").classList.toggle("seleccionando", seleccion.size > 0);
     $("#selBar").classList.toggle("on", seleccion.size > 0);
-    $("#selCuenta").textContent = seleccion.size === 1
-      ? "1 marcada" : seleccion.size + " marcadas";
+    const nEl = $("#selN");
+    if (nEl.textContent !== String(seleccion.size)){
+      nEl.textContent = seleccion.size;
+      // reinicia la animacion aunque dos cambios lleguen seguidos
+      nEl.classList.remove("late"); void nEl.offsetWidth; nEl.classList.add("late");
+    }
+    $("#selTxt").textContent = seleccion.size === 1 ? "seleccionada" : "seleccionadas";
     // Eliminar es solo de admin, igual que en el menu del chat.
     $("#selEliminar").style.display = (ROL === "admin") ? "" : "none";
   }
@@ -3547,6 +3607,12 @@
   });
 
   $("#selLimpiar").addEventListener("click", seleccionLimpiar);
+  // El Ctrl+A de boton: en el celular no hay teclado que lo haga.
+  $("#selTodas").addEventListener("click", ()=>{
+    document.querySelectorAll("#list .conv").forEach(el=>
+      seleccion.add(+el.getAttribute("data-id")));
+    seleccionPintar();
+  });
 
   /* Las tres acciones toman IDS, no leen la seleccion: asi las dispara igual
      la barra del lote (con lo marcado) que el click derecho (con una sola,
