@@ -221,13 +221,22 @@
      Cada una dice QUÉ hace y QUÉ pasa si se apaga, al lado del interruptor.
      Un switch suelto con una etiqueta de dos palabras obliga a probarlo para
      entenderlo, y acá probar significa apagarle la ruleta a los jugadores. */
-  .cfg-card{background:var(--panel2);border:1px solid var(--line);border-radius:13px;overflow:hidden}
+  /* Prendido vs apagado tiene que leerse SIN buscar el interruptor: el que
+     entra a esta pantalla quiere saber de un vistazo qué está activo. El
+     switch verde ya lo dice, pero solo si lo mirás; el ícono en color lo dice
+     desde la otra punta de la tarjeta. */
+  .cfg-card{background:var(--panel2);border:1px solid var(--line);border-radius:13px;
+    overflow:hidden;transition:border-color .18s,background .18s}
+  .cfg-card:hover{border-color:var(--line2)}
+  /* Apagada: el ícono pierde el color y la tarjeta se apaga un poco. */
+  .cfg-card:not(.activa) .cb-ico{background:var(--panel3);color:var(--muted)}
+  .cfg-card:not(.activa) .cfg-card-txt b{color:var(--muted)}
   .cfg-card-head{display:flex;align-items:flex-start;gap:13px;padding:16px 18px}
   .cfg-card-txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
   .cfg-card-txt b{font-size:14.5px;color:var(--txt)}
   .cfg-card-txt span{font-size:12.5px;color:var(--muted);line-height:1.5}
   .cfg-card-head .cb-switch{margin-top:2px;flex:none}
-  .cfg-card-body{padding:0 18px 16px;border-top:1px solid var(--line);padding-top:14px;margin-top:2px}
+  .cfg-card-body{padding:14px 18px 16px;border-top:1px solid var(--line)}
   .cfg-opt{color:var(--muted);font-weight:500}
   .cfg-hint{margin:6px 0 0;font-size:11.5px;color:var(--muted)}
   .cfg-pie{margin:2px 0 0;font-size:12px;color:var(--muted);text-align:center}
@@ -901,8 +910,26 @@
 
   /* ---- Chatbot (IA) — usa las variables reales del tema, no valores propios ---- */
   #viewChatbot{overflow-y:auto}
-  .cb-wrap{max-width:820px;width:100%;margin:0 auto;padding:22px 20px 40px;display:flex;flex-direction:column;gap:16px}
-  .cb-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+  /* .view-panel recorta (overflow:hidden) para que las tablas manejen su
+     propio scroll. Estas vistas son una columna larga, asi que el scroll va
+     ACA: sin esto, todo lo que pasaba del alto de la pantalla quedaba cortado
+     y sin forma de llegar -- le pasaba a Configuracion apenas se sumo Meta. */
+  .cb-wrap{max-width:820px;width:100%;margin:0 auto;padding:22px 20px 40px;
+    display:flex;flex-direction:column;gap:16px;
+    flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain}
+  /* Barra fina y discreta: es una columna de lectura, no un panel de datos. */
+  .cb-wrap::-webkit-scrollbar{width:10px}
+  .cb-wrap::-webkit-scrollbar-thumb{background:var(--line2);border-radius:20px;
+    border:3px solid transparent;background-clip:content-box}
+  .cb-wrap::-webkit-scrollbar-thumb:hover{background:var(--muted2);background-clip:content-box}
+  .cb-wrap::-webkit-scrollbar-track{background:transparent}
+  /* Sticky: con la pagina larga, el boton de guardar se iba de la pantalla y
+     habia que subir a buscarlo despues de tocar el ultimo ajuste. El fondo es
+     opaco a proposito -- si no, las tarjetas se ven pasar por abajo del
+     titulo. */
+  .cb-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;
+    position:sticky;top:0;z-index:3;background:var(--panel);
+    padding:2px 0 14px;margin-bottom:-2px}
   .cb-title{margin:0;font-size:21px;font-weight:750;letter-spacing:-.01em;color:var(--txt)}
   .cb-sub{margin:3px 0 0;color:var(--muted);font-size:13.5px}
   /* toggle */
@@ -2581,9 +2608,22 @@
 
   /* El bloque del mensaje solo aplica con la ruleta APAGADA: mostrarlo con la
      ruleta andando invita a escribir algo que nadie va a leer. */
+  /* Marca cada tarjeta como activa/inactiva para que se lea de un vistazo
+     cuál está prendida, sin tener que mirar el interruptor uno por uno. */
+  function cfgPintarActivas(){
+    Object.values(CFG_CAMPOS).forEach(def=>{
+      if(def.tipo !== "bool") return;
+      const el = $(def.el); if(!el) return;
+      // Solo los switches de cabecera, no los checkboxes de eventos.
+      const tarjeta = el.closest(".cfg-card");
+      if(tarjeta && el.closest(".cfg-card-head")) tarjeta.classList.toggle("activa", el.checked);
+    });
+  }
+
   function cfgPintarRuleta(){
     const tarjeta = $("#cfgRuleta").closest(".cfg-card");
     if(tarjeta) tarjeta.classList.toggle("on", $("#cfgRuleta").checked);
+    cfgPintarActivas();
   }
 
   /* Meta al reves que la ruleta: apagado no hay nada que configurar, asi que
@@ -2591,6 +2631,7 @@
   function cfgPintarMeta(){
     const tarjeta = $("#cfgMeta").closest(".cfg-card");
     if(tarjeta) tarjeta.classList.toggle("on", $("#cfgMeta").checked);
+    cfgPintarActivas();
   }
 
   async function cargarConfig(){
@@ -2618,6 +2659,8 @@
   $("#cfgGuardar").addEventListener("click", guardarConfig);
   $("#cfgRuleta").addEventListener("change", cfgPintarRuleta);
   $("#cfgMeta").addEventListener("change", cfgPintarMeta);
+  ["#cfgChat","#cfgRegistro"].forEach(sel=>
+    $(sel).addEventListener("change", cfgPintarActivas));
 
   async function guardarConfig(){
     const btn = $("#cfgGuardar");
