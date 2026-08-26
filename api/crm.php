@@ -393,6 +393,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 $where[] = 'estado = ?';
                 $params[] = $estado;
             }
+
+            /* Inactividad: MISMA definicion que la tabla de Usuarios y que el
+               push masivo -- sin recarga acreditada en N dias. Que "inactivo"
+               signifique lo mismo en las tres pantallas no es cosmetico: el
+               agente filtra aca, abre el chat y le manda una promo; si cada
+               lista contara distinto, el numero que vio no seria el que
+               atiende.
+
+               OJO: se piden conversaciones CON usuario. Un chat anonimo no
+               tiene recargas, asi que sin este filtro entrarian todos y el
+               listado de "inactivos" seria mayormente ruido de gente que
+               nunca se identifico. */
+            $inact = (int)($_GET['inactivos'] ?? 0);
+            if (in_array($inact, [15, 30, 90], true)) {
+                $where[] = "usuario IS NOT NULL AND usuario <> ''
+                            AND NOT EXISTS (
+                              SELECT 1 FROM recargas r
+                               WHERE r.usuario = conversaciones.usuario
+                                 AND r.estado = 'acreditada'
+                                 AND r.acreditada_en > DATE_SUB(NOW(), INTERVAL ? DAY)
+                            )";
+                $params[] = $inact;
+            }
+
             $wsql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
 
             $st = $pdo->prepare(

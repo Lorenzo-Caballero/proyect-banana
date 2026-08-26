@@ -211,6 +211,11 @@
   /* Separa el grupo "estado de la cuenta" del de "inactividad": son dos
      preguntas distintas y sin la linea se leian como una sola tira de siete. */
   .tabs-sep{width:1px;align-self:stretch;margin:2px 4px;background:var(--line)}
+  /* La fila de inactividad va rotulada: un "15d / 30d / 90d" suelto debajo de
+     los estados no dice de qué son esos días. */
+  .tabs-inact{margin-top:6px;align-items:center}
+  .inact-rot{font-size:10.5px;font-weight:700;letter-spacing:.03em;
+    text-transform:uppercase;color:var(--muted);margin-right:2px;white-space:nowrap}
 
   /* --- Configuración: una tarjeta por ajuste ---------------------------
      Cada una dice QUÉ hace y QUÉ pasa si se apaga, al lado del interruptor.
@@ -1139,6 +1144,17 @@
         <button class="tab tab-chico" data-e="abierta">Abiertas</button>
         <button class="tab tab-chico" data-e="pendiente">Pendientes</button>
         <button class="tab tab-chico" data-e="cerrada">Cerradas</button>
+      </div>
+      <!-- Inactividad: grupo APARTE del estado del ticket. Son dos preguntas
+           independientes ("¿está abierta?" y "¿hace cuánto no recarga?") y se
+           combinan: se puede pedir las abiertas de quien no recarga hace 30
+           días. Mezclarlas en un solo grupo obligaría a elegir una sola. -->
+      <div class="tabs-chat tabs-inact" id="tabsInact">
+        <span class="inact-rot">Sin recargar</span>
+        <button class="tab tab-chico on" data-i="0">Todos</button>
+        <button class="tab tab-chico" data-i="15" title="No recarga hace 15 días o más">15d</button>
+        <button class="tab tab-chico" data-i="30" title="No recarga hace 30 días o más">30d</button>
+        <button class="tab tab-chico" data-i="90" title="No recarga hace 90 días o más">90d</button>
       </div>
     </div>
     <div class="list" id="list"></div>
@@ -2162,7 +2178,7 @@
     pin:'<svg viewBox="0 0 24 24"><path d="M9 3h6l-1 6 3 3v1.5h-4V21h-2v-7.5H7V12l3-3z"/></svg>'
   };
 
-  const st = { q:"", estado:"todas", convId:0, usuario:"", modo:"ficha" };
+  const st = { q:"", estado:"todas", inactivos:0, convId:0, usuario:"", modo:"ficha" };
   let debounce, pollList, pollConv, pollBadgeComp, pollBadgeRet, pollRetirosVista, pollCargasVista;
 
   // ---------- sesion de operador: shell vs. login (Fase 0.5) ----------
@@ -2725,7 +2741,8 @@
   // ---------- lista ----------
   async function cargarLista(){
     let d;
-    try{ d = await jget({accion:"conversaciones", q:st.q, estado:st.estado}); }
+    try{ d = await jget({accion:"conversaciones", q:st.q, estado:st.estado,
+                        inactivos:st.inactivos}); }
     catch(e){ $("#list").innerHTML = `<div class="nouser">Error al cargar.<br><small>${esc(e.message)}</small></div>`; return; }
     if(!d.ok){ $("#list").innerHTML = `<div class="nouser">${esc(d.detalle||d.error||"Error")}</div>`; return; }
 
@@ -2856,6 +2873,13 @@
   $("#tabs").addEventListener("click", e=>{ const b=e.target.closest(".tab"); if(!b)return;
     document.querySelectorAll("#tabs .tab").forEach(x=>x.classList.remove("on")); b.classList.add("on");
     st.estado=b.getAttribute("data-e"); cargarLista(); });
+  $("#tabsInact").addEventListener("click", e=>{
+    const b = e.target.closest(".tab"); if(!b) return;
+    document.querySelectorAll("#tabsInact .tab").forEach(x=>x.classList.remove("on"));
+    b.classList.add("on");
+    st.inactivos = parseInt(b.getAttribute("data-i"), 10) || 0;
+    cargarLista();
+  });
   $("#estbtns").addEventListener("click", async e=>{
     const b=e.target.closest("button"); if(!b||!st.convId)return;
     await jpost({accion:"estado", id:st.convId, estado:b.getAttribute("data-e")});
