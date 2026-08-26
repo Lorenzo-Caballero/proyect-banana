@@ -24,6 +24,7 @@ require __DIR__ . '/db.php';
 require __DIR__ . '/recargas_lib.php';
 require __DIR__ . '/fichas_lib.php';
 require __DIR__ . '/altas_lib.php';
+require __DIR__ . '/config_crm.php';
 // El CRM es opcional: si crm_lib.php no esta subido, el chat sigue funcionando.
 $crmLib = __DIR__ . '/crm_lib.php';
 if (is_file($crmLib)) { require_once $crmLib; }
@@ -203,7 +204,12 @@ if ($tokenCli !== '' && function_exists('jwt_verificar')) {
 // arriba, asi nada se rompe si no se corrio la migracion. `activo`=0 apaga la
 // IA (el chat sigue, pero contesta un agente).
 $cfgBot   = chatbot_config($pdo);
-$botActivo = $cfgBot['activo'];
+// Dos interruptores, y los dos tienen que estar prendidos: el del editor del
+// chatbot (config_chatbot.activo) y el de Configuracion del CRM
+// (config_crm.chat_activo). Son pantallas distintas para dos personas
+// distintas -- el que edita el prompt y el que administra el sitio -- asi que
+// ninguno pisa al otro: cualquiera de los dos apaga la IA.
+$botActivo = $cfgBot['activo'] && cfg_crm_activo($pdo, 'chat_activo');
 // El prompt sale de los CAMPOS editables (nombre/tono/juego/reglas extra)
 // ensamblados con las reglas fijas. Excepción de compatibilidad: si quedó un
 // `contexto` entero cargado (modo viejo, migración 26), ese manda como override.
@@ -706,6 +712,15 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
         if ($usuarioSesion !== '') {
             return ['ok' => false, 'codigo' => 'ya_logueado',
                     'error' => 'Ya tenes una cuenta y estas usando esa sesion.'];
+        }
+
+        // Alta apagada desde el CRM. Se chequea ACA y no solo en la landing:
+        // son dos puertas al mismo lugar y el interruptor tiene que cerrar
+        // las dos, si no el agente apaga el registro y el chat sigue creando.
+        if (!cfg_crm_activo($pdo, 'registro_activo')) {
+            return ['ok' => false, 'codigo' => 'registro_cerrado',
+                    'error' => 'Por ahora no se estan creando cuentas nuevas. '
+                             . 'Decile que un agente lo va a ayudar.'];
         }
 
         $u = trim((string)($args['usuario'] ?? ''));

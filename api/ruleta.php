@@ -20,6 +20,7 @@
 declare(strict_types=1);
 require __DIR__ . '/config.php';
 require __DIR__ . '/db.php';
+require __DIR__ . '/config_crm.php';
 // crm_lib es opcional: si esta, registra el movimiento en el historial.
 $crmLib = __DIR__ . '/crm_lib.php';
 if (is_file($crmLib)) { require_once $crmLib; }
@@ -97,8 +98,18 @@ function giro_disponible(PDO $pdo, string $usuario): bool
 // reclamar hoy. El widget lo usa para decidir si el FAB palpita o queda quieto,
 // en vez de fiarse solo de localStorage (que no cruza dispositivos).
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-    $u   = trim((string)($_GET['usuario'] ?? ''));
-    $out = ['ok' => true, 'premios' => premios_publicos()];
+    $u      = trim((string)($_GET['usuario'] ?? ''));
+    $activa = cfg_crm_activo($pdo, 'ruleta_activa');
+
+    // `activa` viaja SIEMPRE: es lo que mira el widget para dibujar la ruleta
+    // o esconderla. Apagada no se devuelve `disponible` -- que el jugador vea
+    // "tenés un giro" y despues no pueda girarlo es peor que no ofrecerlo.
+    $out = ['ok' => true, 'activa' => $activa, 'premios' => premios_publicos()];
+    if (!$activa) {
+        $msg = trim((string)cfg_crm($pdo, 'ruleta_mensaje'));
+        if ($msg !== '') { $out['mensaje'] = $msg; }
+        salir($out);
+    }
     if ($u !== '') {
         $out['disponible'] = giro_disponible($pdo, $u);
         $out['cortesia_disponible'] = function_exists('crmnotif_cortesia_disponible')
@@ -114,6 +125,20 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $body   = json_decode(file_get_contents('php://input'), true) ?: [];
 $accion = (string)($body['accion'] ?? 'girar');
 $ip     = $_SERVER['REMOTE_ADDR'] ?? null;
+
+/* Ruleta apagada desde el CRM (Configuración -> Ruleta de bonos).
+   Se corta ACA, antes de cualquier accion: esconder el boton en el widget no
+   alcanza, este endpoint es publico y cualquiera puede seguir posteandole.
+   El chequeo va despues de leer $accion para poder dejar pasar 'premios', que
+   es solo lectura y lo usa el widget para saber que dibujar. */
+if ($accion !== 'premios' && !cfg_crm_activo($pdo, 'ruleta_activa')) {
+    $msg = trim((string)cfg_crm($pdo, 'ruleta_mensaje'));
+    salir([
+        'ok'       => false,
+        'codigo'   => 'ruleta_apagada',
+        'error'    => $msg !== '' ? $msg : 'La ruleta no está disponible en este momento.',
+    ], 403);
+}
 
 try {
     // ============================ GIRAR ====================================

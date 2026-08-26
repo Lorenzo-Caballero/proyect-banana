@@ -34,6 +34,7 @@ require __DIR__ . '/crm_lib.php';
 require __DIR__ . '/crm_auth.php';
 require __DIR__ . '/notificaciones_lib.php';
 require __DIR__ . '/crm_notificaciones.php';
+require __DIR__ . '/config_crm.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
@@ -513,6 +514,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
         // ---- quién soy (para recuperar el rol tras un F5, CSRF/ROL no
         //      persisten en localStorage a propósito) ----
+        // ---- ajustes del sitio (vista Configuracion) ----
+        if ($accion === 'config') {
+            salir(['ok' => true, 'config' => cfg_crm_todo($pdo)]);
+        }
+
         if ($accion === 'yo') {
             // El CSRF viaja acá porque el front lo pierde en cada F5 (vive solo
             // en memoria a propósito). Sin esto, después de recargar la página
@@ -895,6 +901,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'reglas_extra' => $body['reglas_extra'] ?? '',
             ], $activo);
             salir(['ok' => true, 'activo' => (bool)$activo]);
+        }
+
+        // ---- ajustes del sitio (vista Configuracion) ----
+        //
+        // Solo admin: apagar la ruleta o el registro cambia lo que ve TODO el
+        // sitio, no una conversacion. Un agente de mostrador no deberia poder
+        // hacerlo sin querer.
+        if ($accion === 'config_guardar') {
+            exigir_admin();
+            $vals = is_array($body['config'] ?? null) ? $body['config'] : [];
+            // cfg_crm_guardar ignora las claves que no conoce, asi que no hace
+            // falta filtrar aca: lo que no este en CFG_CRM_DEFAULTS no entra.
+            $n = cfg_crm_guardar($pdo, $vals, $operador);
+            salir(['ok' => true, 'guardados' => $n, 'config' => cfg_crm_todo($pdo)]);
         }
 
         // ---- crear un agente humano / resetear su clave (solo admin) ----

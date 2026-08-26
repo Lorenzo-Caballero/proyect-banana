@@ -31,6 +31,7 @@ declare(strict_types=1);
 require __DIR__ . '/config.php';
 require __DIR__ . '/db.php';
 require __DIR__ . '/altas_lib.php';
+require __DIR__ . '/config_crm.php';
 
 header('Content-Type: application/json; charset=utf-8');
 // La respuesta depende del pedido y cambia sola cuando el bot avanza: si un
@@ -96,6 +97,15 @@ if ($metodo === 'POST') {
     if ($frenado !== null) {
         http_response_code(429);
         echo json_encode(['ok' => false, 'error' => $frenado], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // Alta apagada desde el CRM (Configuracion -> Alta de cuentas nuevas).
+    if (!cfg_crm_activo($pdo, 'registro_activo')) {
+        http_response_code(403);
+        echo json_encode(['ok' => false, 'codigo' => 'registro_cerrado',
+            'error' => 'Por ahora no estamos creando cuentas nuevas. Escribinos por chat.'],
+            JSON_UNESCAPED_UNICODE);
         exit;
     }
 

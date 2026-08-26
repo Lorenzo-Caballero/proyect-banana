@@ -11,7 +11,10 @@
  *
  * GET  ?accion=listar   (default)
  *      q=texto            -> busca por username (LIKE)
- *      filtro=todos|con_saldo|sin_saldo|baneados|con_coins|registrados
+ *      filtro=todos|con_saldo|sin_saldo|baneados|con_bono_pendiente|con_bonos
+ *             |inactivos_15|inactivos_30|inactivos_90
+ *             (inactivo = sin recarga acreditada en N dias, misma
+ *              definicion que el push masivo)
  *      orden=username|balance|coins|bonus|total_deposits|creation_date|actualizado_en
  *      dir=asc|desc
  *      pagina=1..
@@ -70,6 +73,28 @@ switch ($filtro) {
     case 'baneados':           $where[] = 'u.is_banned = 1'; break;
     case 'con_bono_pendiente': $where[] = 'bp.suma > 0'; break;
     case 'con_bonos':          $where[] = 'u.bonus > 0'; break;
+
+    // Inactivos: MISMA definicion que usa el push masivo
+    // (crmnotif_alcance_inactivos en crm_notificaciones.php) -- "no hizo una
+    // recarga acreditada en los ultimos N dias". Tiene que ser identica en los
+    // dos lados: si el filtro de la tabla y el del push contaran distinto, el
+    // agente ve 40 inactivos y le llega el aviso a 60.
+    //
+    // El COLLATE no es decorativo: `usuarios` quedo en uca1400 y las tablas
+    // del CRM en utf8mb4_unicode_ci, asi que el JOIN sin el tira "Illegal mix
+    // of collations" (ver CLAUDE.md).
+    case 'inactivos_15':
+    case 'inactivos_30':
+    case 'inactivos_90':
+        $diasInact = (int)substr($filtro, strrpos($filtro, '_') + 1);
+        $where[] = "NOT EXISTS (
+                       SELECT 1 FROM recargas r
+                        WHERE r.usuario = u.username COLLATE utf8mb4_unicode_ci
+                          AND r.estado = 'acreditada'
+                          AND r.acreditada_en > DATE_SUB(NOW(), INTERVAL ? DAY)
+                     )";
+        $params[] = $diasInact;
+        break;
 }
 $whereSql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
 

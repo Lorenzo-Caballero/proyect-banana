@@ -2010,6 +2010,14 @@
     fetch(url)
       .then(function (r){ return r.json(); })
       .then(function (d){
+        /* Apagada desde el CRM: se esconde el FAB entero. No alcanza con no
+           dejar girar -- un botón que está ahí y no hace nada es peor que no
+           tenerlo. El server igual rechaza los giros, porque este endpoint es
+           público y esconder el botón no protege nada. */
+        if (d && d.activa === false){
+          fabRWrap.classList.remove("on");
+          return;
+        }
         premios = (d.premios && d.premios.length) ? d.premios : FALLBACK;
         // Si el server sabe del usuario, su 'disponible' manda.
         if (typeof d.disponible === "boolean"){

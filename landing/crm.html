@@ -208,6 +208,27 @@
     .chead-acciones{margin-left:auto}
   }
 
+  /* Separa el grupo "estado de la cuenta" del de "inactividad": son dos
+     preguntas distintas y sin la linea se leian como una sola tira de siete. */
+  .tabs-sep{width:1px;align-self:stretch;margin:2px 4px;background:var(--line)}
+
+  /* --- Configuración: una tarjeta por ajuste ---------------------------
+     Cada una dice QUÉ hace y QUÉ pasa si se apaga, al lado del interruptor.
+     Un switch suelto con una etiqueta de dos palabras obliga a probarlo para
+     entenderlo, y acá probar significa apagarle la ruleta a los jugadores. */
+  .cfg-card{background:var(--panel2);border:1px solid var(--line);border-radius:13px;overflow:hidden}
+  .cfg-card-head{display:flex;align-items:flex-start;gap:13px;padding:16px 18px}
+  .cfg-card-txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+  .cfg-card-txt b{font-size:14.5px;color:var(--txt)}
+  .cfg-card-txt span{font-size:12.5px;color:var(--muted);line-height:1.5}
+  .cfg-card-head .cb-switch{margin-top:2px;flex:none}
+  .cfg-card-body{padding:0 18px 16px;border-top:1px solid var(--line);padding-top:14px;margin-top:2px}
+  .cfg-opt{color:var(--muted);font-weight:500}
+  .cfg-hint{margin:6px 0 0;font-size:11.5px;color:var(--muted)}
+  .cfg-pie{margin:2px 0 0;font-size:12px;color:var(--muted);text-align:center}
+  /* El bloque del mensaje solo tiene sentido con la ruleta apagada. */
+  .cfg-card.on .cfg-card-body{display:none}
+
   .thread{flex:1;overflow-y:auto;padding:24px 24px;display:flex;flex-direction:column;gap:16px}
   .row{display:flex;max-width:76%}
   .row.user{align-self:flex-start} .row.saliente{align-self:flex-end} .row.interno{align-self:center;max-width:92%}
@@ -1389,6 +1410,13 @@
         <button class="tab" data-f="con_bonos">Con bono histórico</button>
         <button class="tab" data-f="baneados">Baneados</button>
         <button class="tab" data-f="sin_saldo">Sin saldo</button>
+        <!-- Inactividad: misma definición que el push masivo -- sin recarga
+             acreditada en N días. Sirve para ver a quién reactivar antes de
+             mandarle una promo. -->
+        <span class="tabs-sep" aria-hidden="true"></span>
+        <button class="tab" data-f="inactivos_15" title="Sin recargas hace 15 días o más">Inactivos 15d</button>
+        <button class="tab" data-f="inactivos_30" title="Sin recargas hace 30 días o más">30d</button>
+        <button class="tab" data-f="inactivos_90" title="Sin recargas hace 90 días o más">90d</button>
       </div>
       <select id="usPorPagina">
         <option value="25">25</option>
@@ -1881,6 +1909,73 @@
     </div>
   </div>
 
+  <div class="card-col view-panel" id="viewConfig" style="display:none">
+    <div class="cb-wrap">
+      <div class="cb-head">
+        <div>
+          <h2 class="cb-title">Configuración</h2>
+          <p class="cb-sub">Lo que el jugador ve y puede hacer en el sitio. Los cambios se aplican al instante.</p>
+        </div>
+        <button class="cb-btn" id="cfgGuardar" type="button">Guardar cambios</button>
+      </div>
+
+      <div id="cfgAviso" class="cb-nota" style="display:none"></div>
+
+      <!-- Ruleta ------------------------------------------------------- -->
+      <div class="cfg-card">
+        <div class="cfg-card-head">
+          <span class="cb-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"/></svg></span>
+          <div class="cfg-card-txt">
+            <b>Ruleta de bonos</b>
+            <span>Un giro por día. Apagada, el jugador deja de verla y no puede girar.</span>
+          </div>
+          <label class="cb-switch">
+            <input type="checkbox" id="cfgRuleta">
+            <span class="cb-slider"></span>
+          </label>
+        </div>
+        <div class="cfg-card-body" id="cfgRuletaMsgWrap">
+          <label class="cb-flabel">Mensaje cuando está apagada <span class="cfg-opt">(opcional)</span></label>
+          <input class="cb-input" id="cfgRuletaMsg" maxlength="160"
+                 placeholder="Ej: La ruleta vuelve el lunes. ¡Gracias por jugar!">
+          <p class="cfg-hint">Si lo dejás vacío se muestra un aviso genérico.</p>
+        </div>
+      </div>
+
+      <!-- Chatbot ------------------------------------------------------ -->
+      <div class="cfg-card">
+        <div class="cfg-card-head">
+          <span class="cb-ico"><svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M12 8V4M9 4h6"/><circle cx="8.5" cy="14" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="14" r="1.3" fill="currentColor" stroke="none"/></svg></span>
+          <div class="cfg-card-txt">
+            <b>Atención automática</b>
+            <span>Con esto apagado el chat sigue funcionando, pero contesta un agente en vez del bot.</span>
+          </div>
+          <label class="cb-switch">
+            <input type="checkbox" id="cfgChat">
+            <span class="cb-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Registro ----------------------------------------------------- -->
+      <div class="cfg-card">
+        <div class="cfg-card-head">
+          <span class="cb-ico"><svg viewBox="0 0 24 24"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/><path d="M17 11h6M20 8v6"/></svg></span>
+          <div class="cfg-card-txt">
+            <b>Alta de cuentas nuevas</b>
+            <span>Permite que un jugador se cree la cuenta solo, por el chat o por la landing.</span>
+          </div>
+          <label class="cb-switch">
+            <input type="checkbox" id="cfgRegistro">
+            <span class="cb-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <p class="cfg-pie">Solo los administradores pueden cambiar estos ajustes.</p>
+    </div>
+  </div>
+
   <!-- Alta / reset de agente -->
   <div class="back" id="backAgente">
     <div class="modal ag-modal">
@@ -2283,7 +2378,7 @@
   // modulos nuevos ocultan esas 3 columnas y muestran su propio contenedor.
   // Se va sumando un nombre a VISTAS + su contenedor a VISTA_CONTENEDOR por
   // cada modulo que se conecte, sin tocar el resto de la funcion.
-  const VISTAS = ["chats", "comprobantes", "retiros", "cargas", "transacciones", "usuarios", "finanzas", "notificaciones", "chatbot", "agentes", "suscripcion"];
+  const VISTAS = ["chats", "comprobantes", "retiros", "cargas", "transacciones", "usuarios", "finanzas", "notificaciones", "chatbot", "agentes", "suscripcion", "config"];
   const VISTA_CONTENEDOR = {
     comprobantes: "#viewComprobantes",
     retiros: "#viewRetiros",
@@ -2295,6 +2390,7 @@
     chatbot: "#viewChatbot",
     agentes: "#viewAgentes",
     suscripcion: "#viewSuscripcion",
+    config: "#viewConfig",
   };
 
   function mostrarVista(nombre){
@@ -2381,9 +2477,80 @@
       if(nav==="chatbot"){ mostrarVista("chatbot"); return; }
       if(nav==="agentes"){ mostrarVista("agentes"); return; }
       if(nav==="suscripcion"){ mostrarVista("suscripcion"); return; }
+      if(nav==="config"){ mostrarVista("config"); cargarConfig(); return; }
       toast("Sección en preparación");
     });
   });
+
+  /* ====================== Configuración del sitio ======================
+     Ajustes que cambian lo que ve el jugador (ruleta, chatbot, registro).
+     Se leen y guardan por crm.php ?accion=config / config_guardar. */
+  const CFG_CAMPOS = {
+    ruleta_activa:   { el: "#cfgRuleta",    tipo: "bool" },
+    ruleta_mensaje:  { el: "#cfgRuletaMsg", tipo: "texto" },
+    chat_activo:     { el: "#cfgChat",      tipo: "bool" },
+    registro_activo: { el: "#cfgRegistro",  tipo: "bool" },
+  };
+
+  /* El bloque del mensaje solo aplica con la ruleta APAGADA: mostrarlo con la
+     ruleta andando invita a escribir algo que nadie va a leer. */
+  function cfgPintarRuleta(){
+    const tarjeta = $("#cfgRuleta").closest(".cfg-card");
+    if(tarjeta) tarjeta.classList.toggle("on", $("#cfgRuleta").checked);
+  }
+
+  async function cargarConfig(){
+    const aviso = $("#cfgAviso");
+    aviso.style.display = "none";
+    try{
+      const d = await jget({ accion: "config" });
+      if(!d || !d.ok) throw new Error();
+      Object.entries(CFG_CAMPOS).forEach(([clave, def])=>{
+        const el = $(def.el); if(!el) return;
+        const v = d.config ? d.config[clave] : undefined;
+        if(def.tipo === "bool") el.checked = String(v) !== "0";
+        else el.value = v == null ? "" : v;
+      });
+      cfgPintarRuleta();
+    }catch(e){
+      aviso.style.display = "";
+      aviso.textContent = "No pude cargar los ajustes. Probá recargar la página.";
+    }
+  }
+
+  // Directo, como el resto del archivo: este script corre con el DOM ya
+  // parseado, y la vista existe desde el principio (solo esta oculta).
+  $("#cfgGuardar").addEventListener("click", guardarConfig);
+  $("#cfgRuleta").addEventListener("change", cfgPintarRuleta);
+
+  async function guardarConfig(){
+    const btn = $("#cfgGuardar");
+    const aviso = $("#cfgAviso");
+    const config = {};
+    Object.entries(CFG_CAMPOS).forEach(([clave, def])=>{
+      const el = $(def.el); if(!el) return;
+      config[clave] = def.tipo === "bool" ? (el.checked ? "1" : "0") : el.value.trim();
+    });
+
+    btn.disabled = true;
+    const txt = btn.textContent;
+    btn.textContent = "Guardando…";
+    try{
+      const d = await jpost({ accion: "config_guardar", config });
+      if(!d || !d.ok) throw new Error(d && d.error);
+      aviso.style.display = "none";
+      toast("Ajustes guardados");
+    }catch(e){
+      aviso.style.display = "";
+      // El caso frecuente y concreto: un agente sin permiso de admin.
+      aviso.textContent = (e && e.message)
+        ? e.message
+        : "No pude guardar. Solo los administradores pueden cambiar esto.";
+    }finally{
+      btn.disabled = false;
+      btn.textContent = txt;
+    }
+  }
 
   /** Hash simple de string -> entero, compartido por colorDe()/agColorDe()
    *  (mismo algoritmo, cada uno lo usa para derivar un color distinto). */
