@@ -29,6 +29,19 @@ const CFG_CRM_DEFAULTS = [
     // Qué se le dice al jugador cuando está apagada. Vacío = mensaje genérico.
     'ruleta_mensaje'  => '',
 
+    // ----- Juegos propios, prendibles por separado desde el CRM -----
+    // Arrancan APAGADOS: un juego recien desplegado no puede aparecersele al
+    // jugador por un default, tiene que ser una decision del agente.
+    // *_tope_dia = maximo de bonos que la casa regala por dia en ese juego.
+    // '0' = sin tope. Es el unico freno que un agente puede accionar solo,
+    // sin esperar a que alguien mire un reporte.
+    'raspa_activo'   => '0',
+    'raspa_mensaje'  => '',
+    'raspa_tope_dia' => '0',
+    'slot_activo'    => '0',
+    'slot_mensaje'   => '',
+    'slot_tope_dia'  => '0',
+
     // El chatbot atiende. Apagado, el jugador puede escribir igual y le
     // contesta un agente (el mismo camino que config_chatbot.activo).
     'chat_activo'     => '1',
