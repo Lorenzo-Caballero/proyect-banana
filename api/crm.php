@@ -407,10 +407,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                nunca se identifico. */
             $inact = (int)($_GET['inactivos'] ?? 0);
             if (in_array($inact, [15, 30, 90], true)) {
+                /* COLLATE explicito y NO es decorativo: `conversaciones`
+                   declara utf8mb4_unicode_ci (migracion 05) y `recargas` no
+                   declara ninguna (migracion 02), asi que cae en el default
+                   del servidor -- uca1400 en esta base. Comparar las dos
+                   columnas sin esto tira "Illegal mix of collations" y se
+                   lleva puesta la lista de conversaciones entera. Es la misma
+                   trampa documentada en CLAUDE.md. */
                 $where[] = "usuario IS NOT NULL AND usuario <> ''
                             AND NOT EXISTS (
                               SELECT 1 FROM recargas r
-                               WHERE r.usuario = conversaciones.usuario
+                               WHERE r.usuario COLLATE utf8mb4_unicode_ci
+                                     = conversaciones.usuario COLLATE utf8mb4_unicode_ci
                                  AND r.estado = 'acreditada'
                                  AND r.acreditada_en > DATE_SUB(NOW(), INTERVAL ? DAY)
                             )";
