@@ -414,10 +414,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             // hay que ir a buscar, y con un solo criterio no aparece.
             $inactTipo = ($_GET['inactivos_tipo'] ?? 'carga') === 'chat' ? 'chat' : 'carga';
 
-            // El orden solo cambia si hay filtro puesto: sin filtro, la lista
-            // sigue siendo "lo ultimo que se movio", que es lo que el agente
-            // espera al abrir el CRM.
-            $ordenInact = ($_GET['orden'] ?? '') === 'inactivos';
+            /* Orden. UNO de tres, excluyentes -- no se combinan:
+                 reciente   el que hablo ultimo, arriba  (default)
+                 antiguo    el que hablo hace mas tiempo, arriba
+                 inactivos  por el criterio de inactividad elegido
+
+               "Quien hablo ultimo" es literalmente c.actualizada_en: crm_lib
+               la pisa con NOW() en cada mensaje, del jugador o del agente. No
+               hace falta salir a mirar `mensajes`. */
+            $orden     = (string)($_GET['orden'] ?? 'reciente');
+            $hayFiltro = in_array($inact, [15, 30, 90], true);
+            // "Mas inactivos" sin filtro puesto ordenaria la lista entera por
+            // algo que el agente no pidio, asi que se ignora.
+            if ($orden === 'inactivos' && !$hayFiltro) { $orden = 'reciente'; }
 
             /* Fecha de la ultima recarga acreditada. Se calcula aparte porque
                la usan el filtro Y el orden: sin esto habria que repetir la
@@ -433,7 +442,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                                     = c.usuario COLLATE utf8mb4_unicode_ci
                                 AND r.estado = 'acreditada')";
 
-            if (in_array($inact, [15, 30, 90], true)) {
+            if ($hayFiltro) {
                 if ($inactTipo === 'chat') {
                     // Sin escribir: la propia conversacion lo dice. Entran los
                     // anonimos tambien -- un chat abandonado es un chat
@@ -453,19 +462,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
             $wsql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
 
-            /* Orden. Con "mas inactivos primero" se ordena por la fecha que
-               corresponde al criterio elegido, ascendente: el que hace mas
-               tiempo que no aparece queda arriba. Las fijadas siguen mandando
-               -- el agente las clavo ahi por algo. */
-            if ($ordenInact) {
+            /* Las fijadas van SIEMPRE arriba, en los tres ordenes: el agente
+               las clavo ahi por algo y un cambio de orden no deshace eso. */
+            if ($orden === 'inactivos') {
+                // Por la fecha del criterio elegido, ascendente: el que hace
+                // mas tiempo que no aparece queda arriba.
                 $ordenSql = $inactTipo === 'chat'
                     ? 'c.fijada DESC, c.actualizada_en ASC'
                     // COALESCE con una fecha imposible: el que NUNCA cargo es
                     // el mas inactivo de todos y tiene que salir primero, no
                     // ultimo por ser NULL.
                     : "c.fijada DESC, COALESCE($ultimaCarga, '1000-01-01') ASC";
+            } elseif ($orden === 'antiguo') {
+                // El que hablo hace mas tiempo, arriba. Sirve para barrer la
+                // cola vieja sin que la tapen los chats de hace un minuto.
+                $ordenSql = 'c.fijada DESC, c.actualizada_en ASC, c.id ASC';
             } else {
-                $ordenSql = 'c.fijada DESC, c.actualizada_en DESC';
+                $ordenSql = 'c.fijada DESC, c.actualizada_en DESC, c.id DESC';
             }
 
             $st = $pdo->prepare(

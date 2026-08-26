@@ -220,12 +220,11 @@
     border:1px solid var(--line);border-radius:9px;padding:3px 3px 3px 8px}
   .inact-rot{font-size:10.5px;font-weight:700;letter-spacing:.03em;
     text-transform:uppercase;color:var(--muted);margin-right:2px;white-space:nowrap}
-  .inact-orden{display:inline-flex;align-items:center;gap:6px;cursor:pointer;
-    background:var(--panel2);border:1px solid var(--line);border-radius:9px;
-    padding:6px 11px;color:var(--muted);font-size:11px;font-weight:600;transition:.15s}
-  .inact-orden:hover{border-color:var(--line2);color:var(--txt)}
-  .inact-orden.on{background:var(--violetSoft);border-color:var(--violet);color:var(--violet2)}
-  .inact-orden svg{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  /* La flecha va DENTRO del botón: "Reciente" y "Antiguo" solos se leen como
+     dos etiquetas cualquiera, con la flecha se ve para qué lado ordena. */
+  #ordenGrupo .tab{display:inline-flex;align-items:center;gap:5px}
+  .orden-ico{flex:none;fill:none;stroke:currentColor;stroke-width:2;
+    stroke-linecap:round;stroke-linejoin:round}
   .hide{display:none!important}
 
   /* --- Configuración: una tarjeta por ajuste ---------------------------
@@ -1292,13 +1291,23 @@
           <button class="tab tab-chico" data-i="30">30d</button>
           <button class="tab tab-chico" data-i="90">90d</button>
         </div>
-        <!-- Solo aparece con un filtro puesto: sin filtro, "más inactivos
-             primero" no ordena nada útil y sobra en la fila. -->
-        <button class="inact-orden hide" id="inactOrden" type="button"
-                title="Ordenar por los que hace más tiempo que no aparecen">
-          <svg viewBox="0 0 24 24" width="13" height="13"><path d="M3 6h13M3 12h9M3 18h5"/><path d="M18 9v9M15 15l3 3 3-3"/></svg>
-          <span>Más inactivos</span>
-        </button>
+        <!-- Los tres órdenes en UN grupo, no en botones sueltos: son
+             excluyentes, y un grupo lo dice solo. "Más inactivos" es el
+             tercero y aparece únicamente con un filtro puesto, porque sin
+             filtro ordenaría la lista entera por algo que nadie pidió. -->
+        <div class="inact-tipo" id="ordenGrupo" role="group" aria-label="Orden de la lista">
+          <span class="inact-rot">Orden</span>
+          <button class="tab tab-chico on" data-o="reciente" type="button"
+                  title="El que habló último, arriba">
+            <svg class="orden-ico" viewBox="0 0 24 24" width="12" height="12"><path d="M3 6h11M3 12h7M3 18h4"/><path d="M18 8v10M15 15l3 3 3-3"/></svg>Reciente
+          </button>
+          <button class="tab tab-chico" data-o="antiguo" type="button"
+                  title="El que habló hace más tiempo, arriba">
+            <svg class="orden-ico" viewBox="0 0 24 24" width="12" height="12"><path d="M3 6h4M3 12h7M3 18h11"/><path d="M18 18V8M15 11l3-3 3 3"/></svg>Antiguo
+          </button>
+          <button class="tab tab-chico hide" data-o="inactivos" id="ordenInact" type="button"
+                  title="Los que hace más tiempo que no aparecen, arriba">Más inactivos</button>
+        </div>
       </div>
     </div>
     <div class="list" id="list"></div>
@@ -2453,7 +2462,7 @@
   };
 
   const st = { q:"", estado:"todas", inactivos:0, inactivosTipo:"carga",
-               ordenInactivos:false, convId:0, usuario:"", modo:"ficha" };
+               orden:"reciente", convId:0, usuario:"", modo:"ficha" };
   let debounce, pollList, pollConv, pollBadgeComp, pollBadgeRet, pollRetirosVista, pollCargasVista;
 
   // ---------- sesion de operador: shell vs. login (Fase 0.5) ----------
@@ -3120,7 +3129,7 @@
     try{ d = await jget({accion:"conversaciones", q:st.q, estado:st.estado,
                         inactivos:st.inactivos,
                         inactivos_tipo:st.inactivosTipo,
-                        orden:st.ordenInactivos ? "inactivos" : ""}); }
+                        orden:st.orden}); }
     catch(e){ $("#list").innerHTML = `<div class="nouser">Error al cargar.<br><small>${esc(e.message)}</small></div>`; return; }
     if(!d.ok){ $("#list").innerHTML = `<div class="nouser">${esc(d.detalle||d.error||"Error")}</div>`; return; }
 
@@ -3251,17 +3260,15 @@
   $("#tabs").addEventListener("click", e=>{ const b=e.target.closest(".tab"); if(!b)return;
     document.querySelectorAll("#tabs .tab").forEach(x=>x.classList.remove("on")); b.classList.add("on");
     st.estado=b.getAttribute("data-e"); cargarLista(); });
-  /* El boton de orden solo tiene sentido con un filtro puesto: sin filtro,
-     "mas inactivos primero" ordenaria toda la lista por algo que el agente no
-     pidio. Al sacar el filtro tambien se apaga el orden, para no dejar la
-     lista ordenada de una forma que ya no se ve por que. */
-  function pintarOrdenInact(){
-    const btn = $("#inactOrden");
-    btn.classList.toggle("hide", !st.inactivos);
-    if(!st.inactivos && st.ordenInactivos){
-      st.ordenInactivos = false;
-    }
-    btn.classList.toggle("on", st.ordenInactivos);
+  /* "Mas inactivos" solo existe con un filtro puesto: sin filtro ordenaria
+     toda la lista por algo que el agente no pidio. Al sacar el filtro, si ese
+     era el orden elegido se vuelve al de siempre -- dejar la lista ordenada
+     por una opcion que ya no se ve en pantalla es peor que reordenarla. */
+  function pintarOrden(){
+    $("#ordenInact").classList.toggle("hide", !st.inactivos);
+    if(!st.inactivos && st.orden === "inactivos") st.orden = "reciente";
+    document.querySelectorAll("#ordenGrupo .tab").forEach(b=>
+      b.classList.toggle("on", b.getAttribute("data-o") === st.orden));
   }
 
   $("#tabsInact").addEventListener("click", e=>{
@@ -3269,7 +3276,7 @@
     document.querySelectorAll("#tabsInact .tab").forEach(x=>x.classList.remove("on"));
     b.classList.add("on");
     st.inactivos = parseInt(b.getAttribute("data-i"), 10) || 0;
-    pintarOrdenInact();
+    pintarOrden();
     cargarLista();
   });
 
@@ -3279,13 +3286,17 @@
     b.classList.add("on");
     st.inactivosTipo = b.getAttribute("data-t");
     // Solo recarga si hay filtro: cambiar el criterio con "Todos" puesto no
-    // cambia nada de lo que se ve.
+    // cambia nada de lo que se ve. Con filtro puesto SI, porque el criterio
+    // tambien define por que fecha ordena "Mas inactivos".
     if(st.inactivos) cargarLista();
   });
 
-  $("#inactOrden").addEventListener("click", ()=>{
-    st.ordenInactivos = !st.ordenInactivos;
-    pintarOrdenInact();
+  $("#ordenGrupo").addEventListener("click", e=>{
+    const b = e.target.closest(".tab"); if(!b) return;
+    const o = b.getAttribute("data-o");
+    if(o === st.orden) return;          // ya estaba: no se recarga de gusto
+    st.orden = o;
+    pintarOrden();
     cargarLista();
   });
   $("#estbtns").addEventListener("click", async e=>{
