@@ -86,7 +86,12 @@
 
   /* ---- columnas ---- */
   .col-list{width:328px;min-width:290px;display:flex;flex-direction:column;overflow:hidden}
-  .col-chat{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden}
+  /* container-type: el header tiene que reaccionar al ancho de ESTA columna,
+     no al de la ventana. Con 4 columnas abiertas el chat mide ~460px aunque la
+     pantalla tenga 1320: las media queries no se activaban y el header se
+     apretaba igual. */
+  .col-chat{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden;
+    container-type:inline-size;container-name:chat}
   .col-user{width:344px;min-width:300px;overflow-y:auto}
 
   /* ---- stats + lista ----
@@ -157,10 +162,15 @@
      propia y clara), el estado del ticket (segmented chico) y por último
      las acciones secundarias (Atender/Info/Fijar) como grupo de íconos. */
   .chead{padding:12px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:18px}
-  .chead .who{display:flex;align-items:center;gap:9px;min-width:0}
-  .chead .who .av{width:34px;height:34px}
-  .chead .who b{font-size:14px}
-  .chead .who .sub{color:var(--muted);font-size:11.5px}
+  .chead .who{display:flex;align-items:center;gap:9px;min-width:0;flex:1 1 auto}
+  .chead .who .av{width:34px;height:34px;flex:none}
+  /* EL arreglo de la superposicion: sin min-width:0 este div no se achica, y
+     el nombre largo se desbordaba por debajo de la pastilla BOT en vez de
+     cortarse. El overlap no era de los controles: era el texto pasandoles por
+     abajo. */
+  .chead .who > div{min-width:0;flex:1 1 auto}
+  .chead .who b{font-size:14px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .chead .who .sub{color:var(--muted);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   /* Tres grupos con roles distintos (IA / estado del ticket / acciones), y
      una línea fina entre ellos: sin separación se leían como una sola tira de
      botones y había que mirar dos veces para encontrar el que se buscaba. */
@@ -184,6 +194,20 @@
   /* gap 16 y no 13: con las burbujas casi tocandose no se distinguia donde
      terminaba un mensaje y empezaba el siguiente, sobre todo entre dos del
      mismo lado. El padding lateral acompaña para que no queden al ras. */
+  /* Cuando la columna del chat baja de ~620px, el header pasa a dos filas:
+     quien es arriba, controles abajo. Es por ANCHO DE COLUMNA, asi que vale
+     igual con la ventana maximizada y los cuatro paneles abiertos. */
+  @container chat (max-width:620px){
+    .chead{flex-wrap:wrap;row-gap:10px}
+    .chead .who{width:100%;flex:none}
+    .chead-grupos{width:100%;flex-wrap:nowrap;overflow-x:auto;justify-content:flex-start;
+      scrollbar-width:none;-ms-overflow-style:none}
+    .chead-grupos::-webkit-scrollbar{display:none}
+    .chead-grupos > *{flex:none}
+    .chead-grupos > * + *::before{display:none}
+    .chead-acciones{margin-left:auto}
+  }
+
   .thread{flex:1;overflow-y:auto;padding:24px 24px;display:flex;flex-direction:column;gap:16px}
   .row{display:flex;max-width:76%}
   .row.user{align-self:flex-start} .row.saliente{align-self:flex-end} .row.interno{align-self:center;max-width:92%}
