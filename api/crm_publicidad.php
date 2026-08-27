@@ -14,8 +14,9 @@
  * sesión, separada del login general. Login general en /verificar_password.
  *
  * POST { accion:"verificar_password", password }              -> { ok, error? }
- * POST { accion:"publicista_guardar", id?, nombre, slug, pixel_id, capi_token,
+ * POST { accion:"publicista_guardar", id?, nombre, pixel_id, capi_token,
  *        insights_token?, insights_ad_account?, activo }      -> { ok, id }
+ *        (el link/slug lo genera el server, nunca se pide ni se edita)
  * POST { accion:"gasto_guardar", publicista_id, fecha, monto } -> { ok }
  *
  * GET ?accion=publicistas                                      -> lista para tabs + admin
@@ -118,7 +119,6 @@ if ($metodo === 'POST') {
         if ($accion === 'publicista_guardar') {
             $id     = isset($body['id']) ? (int)$body['id'] : null;
             $nombre = (string)($body['nombre'] ?? '');
-            $slug   = (string)($body['slug']   ?? '');
             $pixel  = (string)($body['pixel_id']   ?? '');
             $token  = (string)($body['capi_token'] ?? '');
             $activo = !empty($body['activo']);
@@ -128,10 +128,10 @@ if ($metodo === 'POST') {
             if (trim($nombre) === '') {
                 salir(['ok' => false, 'error' => 'Falta el nombre'], 400);
             }
-            $nuevoId = publicidad_guardar($pdo, $id, $nombre, $slug, $pixel, $token, $activo,
+            $nuevoId = publicidad_guardar($pdo, $id, $nombre, $pixel, $token, $activo,
                                            $insightsToken, $insightsAdAccount);
             if (!$nuevoId) {
-                salir(['ok' => false, 'error' => 'No se pudo guardar (¿el link ya está en uso por otro publicista?)'], 409);
+                salir(['ok' => false, 'error' => 'No se pudo guardar'], 500);
             }
             crm_bitacora($pdo, $operador, $id ? 'publicista_editar' : 'publicista_crear', "id=$nuevoId nombre=$nombre");
             salir(['ok' => true, 'id' => $nuevoId]);

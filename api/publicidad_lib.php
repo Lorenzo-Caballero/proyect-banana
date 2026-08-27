@@ -135,31 +135,39 @@ function publicidad_listar(PDO $pdo): array
 
 /**
  * Alta o edicion de un publicista. $id null = nuevo. Devuelve el id, o 0 si
- * fallo (nombre/slug vacio, slug repetido).
+ * fallo (nombre vacio).
  *
- * El slug se sanea acá (no se confía en que el frontend ya lo haya hecho):
- * va en una URL publica, mismo alfabeto que altas.usuario.
+ * El slug del link (?pub=<slug>) SIEMPRE se genera acá como un numero
+ * aleatorio, nunca a partir del nombre: si el link llevara el nombre del
+ * publicista (ej. ?pub=juan-perez), cualquiera que vea un anuncio sabe quien
+ * lo maneja. Tampoco es el id autoincremental de la tabla -- eso revelaria
+ * cuantos publicistas tiene la cuenta. Un alta nueva siempre saca slug
+ * nuevo; una edicion NUNCA lo toca (cambiar el slug rompería un link que ya
+ * esta circulando en anuncios activos).
  */
-function publicidad_guardar(PDO $pdo, ?int $id, string $nombre, string $slugPedido,
+function publicidad_slug_nuevo(PDO $pdo): string
+{
+    // 6 digitos: 900.000 combinaciones, de sobra para que un choque sea
+    // improbable, y el UNIQUE de la tabla lo garantiza igual si pasara.
+    for ($intento = 0; $intento < 20; $intento++) {
+        $slug = (string)random_int(100000, 999999);
+        $st = $pdo->prepare("SELECT 1 FROM publicistas WHERE slug = ? LIMIT 1");
+        $st->execute([$slug]);
+        if (!$st->fetchColumn()) {
+            return $slug;
+        }
+    }
+    // Extremadamente improbable (20 intentos fallando todos): timestamp
+    // como ultimo recurso, unico por definicion.
+    return (string)time();
+}
+
+function publicidad_guardar(PDO $pdo, ?int $id, string $nombre,
                              string $pixelId, string $capiToken, bool $activo,
                              string $insightsToken = '', string $insightsAdAccount = ''): int
 {
     $nombre = trim($nombre);
     if ($nombre === '') {
-        return 0;
-    }
-
-    $slug = strtolower(trim($slugPedido));
-    $slug = preg_replace('/[^a-z0-9-]/', '-', $slug);
-    $slug = trim((string)$slug, '-');
-    if ($slug === '') {
-        // Sin slug pedido (o quedo vacio tras sanear): se deriva del nombre.
-        $slug = strtolower(trim($nombre));
-        $slug = preg_replace('/[^a-z0-9-]/', '-', $slug);
-        $slug = trim((string)$slug, '-');
-    }
-    $slug = mb_substr($slug, 0, 40);
-    if ($slug === '') {
         return 0;
     }
 
@@ -177,16 +185,18 @@ function publicidad_guardar(PDO $pdo, ?int $id, string $nombre, string $slugPedi
 
     try {
         if ($id) {
+            // Sin slug en el SET: editar un publicista NUNCA cambia su link.
             $st = $pdo->prepare(
                 "UPDATE publicistas
-                    SET nombre = ?, slug = ?, pixel_id = ?, capi_token = ?, activo = ?,
+                    SET nombre = ?, pixel_id = ?, capi_token = ?, activo = ?,
                         insights_token = ?, insights_ad_account = ?
                   WHERE id = ?"
             );
-            $st->execute([$nombre, $slug, $pixelId, $capiToken, $activo ? 1 : 0,
+            $st->execute([$nombre, $pixelId, $capiToken, $activo ? 1 : 0,
                            $insightsToken, $insightsAdAccount, $id]);
             return $id;
         }
+        $slug = publicidad_slug_nuevo($pdo);
         $st = $pdo->prepare(
             "INSERT INTO publicistas (nombre, slug, pixel_id, capi_token, activo,
                                        insights_token, insights_ad_account)
@@ -197,7 +207,7 @@ function publicidad_guardar(PDO $pdo, ?int $id, string $nombre, string $slugPedi
         return (int)$pdo->lastInsertId();
     } catch (PDOException $e) {
         if ($e->getCode() === '23000') {
-            return 0;   // slug repetido
+            return 0;   // choque improbable de slug (ver publicidad_slug_nuevo)
         }
         error_log('publicidad_guardar: ' . $e->getMessage());
         return 0;

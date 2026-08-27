@@ -2465,23 +2465,13 @@
       <input type="hidden" id="pbEditId">
 
       <label for="pbNombre">Nombre</label>
-      <input id="pbNombre" type="text" placeholder="Ej: Landing 2 / Juan Pérez">
-
-      <label for="pbSlug">Código para su link (opcional, se genera solo si lo dejás vacío)</label>
-      <input id="pbSlug" type="text" placeholder="Ej: facu, juan, instagram-ads">
-      <p style="color:var(--muted);font-size:11.5px;margin:4px 0 0">
-        No es una landing nueva ni un link para pegar: es la MISMA
-        registro.html, solo que con este código agregado al final
-        (?pub=&lt;código&gt;) para saber de quién vino cada jugador.
-        El link completo para copiar y compartir aparece abajo, en la fila
-        de este publicista, una vez guardado.
-      </p>
+      <input id="pbNombre" type="text" placeholder="Ej: Facu, Juan, Instagram Ads">
 
       <label for="pbPixelId">Pixel ID de Meta (opcional)</label>
-      <input id="pbPixelId" type="text" placeholder="Sin esto, usa el pixel general">
+      <input id="pbPixelId" type="text" placeholder="Dejalo vacío si no tiene pixel propio">
 
       <label for="pbCapiToken">Token CAPI (opcional)</label>
-      <input id="pbCapiToken" type="password" placeholder="Solo si tiene pixel propio" autocomplete="off">
+      <input id="pbCapiToken" type="password" placeholder="Solo si cargaste un pixel propio" autocomplete="off">
 
       <p style="color:var(--muted);font-size:11.5px;margin:14px 0 2px">
         Para ver "Visitas de página" en el embudo (opcional, requiere un token
@@ -2497,6 +2487,11 @@
       <label style="display:flex;align-items:center;gap:8px;margin:14px 0 4px">
         <input type="checkbox" id="pbActivo" checked style="width:auto"> Activo
       </label>
+      <p style="color:var(--muted);font-size:11.5px;margin:0 0 4px">
+        Si lo desactivás, su link sigue funcionando pero deja de trackear a
+        quién trae (los registros ya no se le asocian). Sus datos
+        históricos se conservan igual, y podés reactivarlo cuando quieras.
+      </p>
 
       <div id="pbModalMsg" class="msg"></div>
       <div class="mbtns">
@@ -6170,7 +6165,7 @@
   function pbAbrirModalNuevo(){
     $("#pbModalTitulo").textContent = "Nuevo publicista";
     $("#pbEditId").value = "";
-    $("#pbNombre").value = ""; $("#pbSlug").value = "";
+    $("#pbNombre").value = "";
     $("#pbPixelId").value = ""; $("#pbCapiToken").value = "";
     $("#pbInsightsToken").value = ""; $("#pbInsightsAdAccount").value = "";
     $("#pbActivo").checked = true;
@@ -6180,7 +6175,7 @@
   function pbAbrirModalEditar(p){
     $("#pbModalTitulo").textContent = "Editar publicista";
     $("#pbEditId").value = p.id;
-    $("#pbNombre").value = p.nombre; $("#pbSlug").value = p.slug;
+    $("#pbNombre").value = p.nombre;
     $("#pbPixelId").value = p.pixel_id || ""; $("#pbCapiToken").value = "";
     // Los tokens nunca vuelven del server (solo "tiene_token"/"tiene_insights_token"):
     // se dejan vacíos y solo se pisan si el operador escribe uno nuevo.
@@ -6202,7 +6197,7 @@
       d = await pbPostJson({
         accion: "publicista_guardar",
         id: idTxt ? parseInt(idTxt,10) : undefined,
-        nombre, slug: $("#pbSlug").value.trim(),
+        nombre,
         pixel_id: $("#pbPixelId").value.trim(),
         capi_token: $("#pbCapiToken").value.trim(),
         insights_token: $("#pbInsightsToken").value.trim(),
