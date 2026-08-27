@@ -215,6 +215,36 @@ function publicidad_guardar(PDO $pdo, ?int $id, string $nombre,
 }
 
 /**
+ * Pausa o reactiva un publicista SIN tocar nada mas (nombre, pixel, tokens).
+ * Pausado: su link sigue existiendo y sigue funcionando -- solo deja de
+ * asociarsele el tracking a los registros nuevos (ver publicidad_por_slug(),
+ * que filtra activo=1). Nunca se borra la fila: el historial de ese
+ * publicista (altas, recargas, gasto ya cargado) queda intacto siempre.
+ *
+ * Devuelve el nuevo estado (true=activo) o null si el publicista no existe.
+ */
+function publicidad_activo_toggle(PDO $pdo, int $id): ?bool
+{
+    if ($id <= 0) {
+        return null;
+    }
+    try {
+        $st = $pdo->prepare("SELECT activo FROM publicistas WHERE id = ? LIMIT 1");
+        $st->execute([$id]);
+        $actual = $st->fetchColumn();
+        if ($actual === false) {
+            return null;
+        }
+        $nuevo = ((int)$actual === 1) ? 0 : 1;
+        $pdo->prepare("UPDATE publicistas SET activo = ? WHERE id = ?")->execute([$nuevo, $id]);
+        return $nuevo === 1;
+    } catch (Throwable $e) {
+        error_log('publicidad_activo_toggle: ' . $e->getMessage());
+        return null;
+    }
+}
+
+/**
  * Carga/edita el gasto de UN dia de UN publicista. Upsert: cargar de nuevo el
  * mismo dia corrige el monto, no lo suma (el operador puede haberse
  * equivocado y quiere corregir, no acumular).

@@ -1135,6 +1135,7 @@
     white-space:nowrap}
   .pb-tab:hover{border-color:var(--violet);color:var(--txt)}
   .pb-tab.on{background:var(--violetSoft);border-color:var(--violet);color:var(--violet2)}
+  .pb-tab-pausado{opacity:.55}
   .pb-tab-agregar{background:transparent;border:1px dashed var(--line);color:var(--muted)}
   .pb-tab-agregar:hover{border-color:var(--violet);color:var(--violet2)}
 
@@ -2300,6 +2301,7 @@
         </div>
         <span class="pb-pixel-estado" id="pbPixelEstado">sin pixel</span>
         <button class="btn-mini-accion" id="pbBtnCopiar" type="button">Copiar</button>
+        <button class="btn-mini-accion" id="pbBtnPausar" type="button">Pausar</button>
       </div>
 
       <!-- Filtros de tiempo -- mismo patrón que Finanzas -->
@@ -2467,31 +2469,26 @@
       <label for="pbNombre">Nombre</label>
       <input id="pbNombre" type="text" placeholder="Ej: Facu, Juan, Instagram Ads">
 
-      <label for="pbPixelId">Pixel ID de Meta (opcional)</label>
+      <label for="pbPixelId">Pixel ID de Meta</label>
       <input id="pbPixelId" type="text" placeholder="Dejalo vacío si no tiene pixel propio">
 
-      <label for="pbCapiToken">Token CAPI (opcional)</label>
+      <label for="pbCapiToken">Token CAPI</label>
       <input id="pbCapiToken" type="password" placeholder="Solo si cargaste un pixel propio" autocomplete="off">
 
       <p style="color:var(--muted);font-size:11.5px;margin:14px 0 2px">
-        Para ver "Visitas de página" en el embudo (opcional, requiere un token
-        de Meta Marketing API con permiso <b>ads_read</b> -- distinto del
-        Token CAPI de arriba).
+        Para ver "Visitas de página" en el embudo, requiere un token de Meta
+        Marketing API con permiso <b>ads_read</b> -- distinto del Token CAPI
+        de arriba.
       </p>
-      <label for="pbInsightsToken">Access Token de Insights (opcional)</label>
+      <label for="pbInsightsToken">Access Token de Insights</label>
       <input id="pbInsightsToken" type="password" placeholder="Token con permiso ads_read" autocomplete="off">
-
-      <label for="pbInsightsAdAccount">ID de cuenta publicitaria (opcional)</label>
-      <input id="pbInsightsAdAccount" type="text" placeholder="act_1234567890 (o solo el número)">
-
-      <label style="display:flex;align-items:center;gap:8px;margin:14px 0 4px">
-        <input type="checkbox" id="pbActivo" checked style="width:auto"> Activo
-      </label>
-      <p style="color:var(--muted);font-size:11.5px;margin:0 0 4px">
-        Si lo desactivás, su link sigue funcionando pero deja de trackear a
-        quién trae (los registros ya no se le asocian). Sus datos
-        históricos se conservan igual, y podés reactivarlo cuando quieras.
+      <p style="color:var(--muted);font-size:11px;margin:4px 0 0">
+        Se genera en business.facebook.com → Usuarios del sistema → Generar
+        token (marcando el permiso ads_read).
       </p>
+
+      <label for="pbInsightsAdAccount">ID de cuenta publicitaria</label>
+      <input id="pbInsightsAdAccount" type="text" placeholder="act_1234567890 (o solo el número)">
 
       <div id="pbModalMsg" class="msg"></div>
       <div class="mbtns">
@@ -6117,7 +6114,7 @@
 
   function pbPintarTabs(){
     $("#pbTabs").innerHTML = pbPublicistas.map(p=>
-      `<button class="pb-tab ${p.id===pbActivoId?"on":""}" data-id="${p.id}" type="button">${esc(p.nombre)}</button>`
+      `<button class="pb-tab ${p.id===pbActivoId?"on":""} ${p.activo?"":"pb-tab-pausado"}" data-id="${p.id}" type="button">${esc(p.nombre)}${p.activo?"":" ⏸"}</button>`
     ).join("") + '<button class="pb-tab pb-tab-agregar" id="pbTabAgregar" type="button">+ Agregar</button>';
 
     document.querySelectorAll("#pbTabs .pb-tab[data-id]").forEach(btn=>{
@@ -6140,7 +6137,7 @@
     const p = pbPublicistaActivo();
     if(!p){ $("#pbLandingRow").style.display = "none"; return; }
     $("#pbLandingRow").style.display = "flex";
-    $("#pbLandingNombre").textContent = p.nombre;
+    $("#pbLandingNombre").textContent = p.nombre + (p.activo ? "" : " (pausado)");
     // Mismo prefijo que usa la API (TENANT_PREFIJO): un cliente por-path
     // sirve su landing en /<slug>/registro.html, no en la raíz.
     const url = location.origin + TENANT_PREFIJO + "/registro.html?pub=" + encodeURIComponent(p.slug);
@@ -6149,7 +6146,7 @@
     if(p.pixel_id && p.tiene_token){
       pix.textContent = "pixel propio"; pix.className = "pb-pixel-estado on";
     } else {
-      pix.textContent = "sin pixel (usa el general)"; pix.className = "pb-pixel-estado";
+      pix.textContent = "sin pixel propio"; pix.className = "pb-pixel-estado";
     }
     $("#pbBtnCopiar").onclick = async ()=>{
       try{ await navigator.clipboard.writeText(url); toast("Link copiado"); }
@@ -6160,7 +6157,26 @@
     $("#pbLandingNombre").onclick = ()=>pbAbrirModalEditar(p);
     $("#pbLandingNombre").style.cursor = "pointer";
     $("#pbLandingNombre").title = "Click para editar este publicista";
+
+    const btnPausar = $("#pbBtnPausar");
+    btnPausar.textContent = p.activo ? "Pausar" : "Reactivar";
+    btnPausar.onclick = async ()=>{
+      btnPausar.disabled = true;
+      let d;
+      try{ d = await pbPostJson({accion:"publicista_toggle_activo", id: p.id}); }
+      catch(e){ btnPausar.disabled = false; return; }
+      btnPausar.disabled = false;
+      if(!d.ok){ toast(d.error || "No se pudo cambiar el estado"); return; }
+      toast(d.activo ? "Publicista reactivado" : "Publicista pausado");
+      pbCargarPublicistas();
+    };
   }
+
+  // El modal de alta/edición nunca pide "Activo" -- crear siempre nace
+  // activo, y pausar/reactivar se hace con un botón aparte en la fila (ver
+  // pbPintarLandingRow). Al editar, se guarda el estado actual acá para
+  // reenviarlo tal cual sin que el operador tenga que verlo ni tocarlo.
+  let pbEditandoActivo = true;
 
   function pbAbrirModalNuevo(){
     $("#pbModalTitulo").textContent = "Nuevo publicista";
@@ -6168,7 +6184,7 @@
     $("#pbNombre").value = "";
     $("#pbPixelId").value = ""; $("#pbCapiToken").value = "";
     $("#pbInsightsToken").value = ""; $("#pbInsightsAdAccount").value = "";
-    $("#pbActivo").checked = true;
+    pbEditandoActivo = true;
     $("#pbModalMsg").textContent = ""; $("#pbModalMsg").className = "msg";
     $("#backPublicista").style.display = "grid";
   }
@@ -6181,7 +6197,7 @@
     // se dejan vacíos y solo se pisan si el operador escribe uno nuevo.
     $("#pbInsightsToken").value = "";
     $("#pbInsightsAdAccount").value = p.insights_ad_account || "";
-    $("#pbActivo").checked = !!p.activo;
+    pbEditandoActivo = !!p.activo;
     $("#pbModalMsg").textContent = ""; $("#pbModalMsg").className = "msg";
     $("#backPublicista").style.display = "grid";
   }
@@ -6202,7 +6218,7 @@
         capi_token: $("#pbCapiToken").value.trim(),
         insights_token: $("#pbInsightsToken").value.trim(),
         insights_ad_account: $("#pbInsightsAdAccount").value.trim(),
-        activo: $("#pbActivo").checked,
+        activo: pbEditandoActivo,
       });
     }catch(e){ btn.disabled=false; return; }
     btn.disabled = false;

@@ -15,8 +15,10 @@
  *
  * POST { accion:"verificar_password", password }              -> { ok, error? }
  * POST { accion:"publicista_guardar", id?, nombre, pixel_id, capi_token,
- *        insights_token?, insights_ad_account?, activo }      -> { ok, id }
- *        (el link/slug lo genera el server, nunca se pide ni se edita)
+ *        insights_token?, insights_ad_account? }              -> { ok, id }
+ *        (el link/slug lo genera el server, nunca se pide ni se edita;
+ *        un alta nueva siempre nace activa, ver publicista_toggle_activo)
+ * POST { accion:"publicista_toggle_activo", id }              -> { ok, activo }
  * POST { accion:"gasto_guardar", publicista_id, fecha, monto } -> { ok }
  *
  * GET ?accion=publicistas                                      -> lista para tabs + admin
@@ -135,6 +137,22 @@ if ($metodo === 'POST') {
             }
             crm_bitacora($pdo, $operador, $id ? 'publicista_editar' : 'publicista_crear', "id=$nuevoId nombre=$nombre");
             salir(['ok' => true, 'id' => $nuevoId]);
+        }
+
+        // Pausar/reactivar: no toca nombre/pixel/tokens, y nunca borra la
+        // fila -- el historial de un publicista pausado se conserva igual
+        // (ver publicidad_activo_toggle()).
+        if ($accion === 'publicista_toggle_activo') {
+            $id = (int)($body['id'] ?? 0);
+            if ($id <= 0) {
+                salir(['ok' => false, 'error' => 'Falta el id'], 400);
+            }
+            $nuevoEstado = publicidad_activo_toggle($pdo, $id);
+            if ($nuevoEstado === null) {
+                salir(['ok' => false, 'error' => 'Publicista inexistente'], 404);
+            }
+            crm_bitacora($pdo, $operador, $nuevoEstado ? 'publicista_reactivar' : 'publicista_pausar', "id=$id");
+            salir(['ok' => true, 'activo' => $nuevoEstado]);
         }
 
         if ($accion === 'gasto_guardar') {
