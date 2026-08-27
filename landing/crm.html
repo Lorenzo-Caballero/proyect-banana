@@ -2470,21 +2470,18 @@
       <input id="pbNombre" type="text" placeholder="Ej: Facu, Juan, Instagram Ads">
 
       <label for="pbPixelId">Pixel ID de Meta</label>
-      <input id="pbPixelId" type="text" placeholder="Dejalo vacío si no tiene pixel propio">
+      <input id="pbPixelId" type="text" placeholder="Ej: 1234567890123456">
 
       <label for="pbCapiToken">Token CAPI</label>
-      <input id="pbCapiToken" type="password" placeholder="Solo si cargaste un pixel propio" autocomplete="off">
+      <input id="pbCapiToken" type="password" placeholder="Token de Conversions API" autocomplete="off">
 
-      <p style="color:var(--muted);font-size:11.5px;margin:14px 0 2px">
-        Para ver "Visitas de página" en el embudo, requiere un token de Meta
-        Marketing API con permiso <b>ads_read</b> -- distinto del Token CAPI
-        de arriba.
-      </p>
       <label for="pbInsightsToken">Access Token de Insights</label>
       <input id="pbInsightsToken" type="password" placeholder="Token con permiso ads_read" autocomplete="off">
-      <p style="color:var(--muted);font-size:11px;margin:4px 0 0">
-        Se genera en business.facebook.com → Usuarios del sistema → Generar
-        token (marcando el permiso ads_read).
+      <p style="color:var(--muted);font-size:11.5px;margin:4px 0 0">
+        Para ver el dato "Visitas a la página" requiere un token de Meta
+        Marketing API con permiso <b>ads_read</b> -- distinto del Token CAPI
+        de arriba. Se genera en business.facebook.com → Usuarios del sistema
+        → Generar token (marcando el permiso ads_read).
       </p>
 
       <label for="pbInsightsAdAccount">ID de cuenta publicitaria</label>
@@ -6178,12 +6175,21 @@
   // reenviarlo tal cual sin que el operador tenga que verlo ni tocarlo.
   let pbEditandoActivo = true;
 
+  // Pixel ID + Token CAPI son obligatorios solo al CREAR: sin ellos, el
+  // modulo de Publicidad no tiene nada que reportarle a Meta. Al EDITAR se
+  // dejan opcionales -- el token nunca vuelve al frontend, asi que dejarlo
+  // vacio ahi significa "no lo cambies", no "borralo" (ver
+  // publicidad_guardar() en el backend).
+  function pbEsAlta(){ return $("#pbEditId").value === ""; }
+
   function pbAbrirModalNuevo(){
     $("#pbModalTitulo").textContent = "Nuevo publicista";
     $("#pbEditId").value = "";
     $("#pbNombre").value = "";
     $("#pbPixelId").value = ""; $("#pbCapiToken").value = "";
     $("#pbInsightsToken").value = ""; $("#pbInsightsAdAccount").value = "";
+    $("#pbPixelId").placeholder = "Ej: 1234567890123456";
+    $("#pbCapiToken").placeholder = "Token de Conversions API";
     pbEditandoActivo = true;
     $("#pbModalMsg").textContent = ""; $("#pbModalMsg").className = "msg";
     $("#backPublicista").style.display = "grid";
@@ -6197,6 +6203,8 @@
     // se dejan vacíos y solo se pisan si el operador escribe uno nuevo.
     $("#pbInsightsToken").value = "";
     $("#pbInsightsAdAccount").value = p.insights_ad_account || "";
+    $("#pbPixelId").placeholder = "Ej: 1234567890123456";
+    $("#pbCapiToken").placeholder = p.tiene_token ? "Ya cargado -- dejalo vacío para no cambiarlo" : "Token de Conversions API";
     pbEditandoActivo = !!p.activo;
     $("#pbModalMsg").textContent = ""; $("#pbModalMsg").className = "msg";
     $("#backPublicista").style.display = "grid";
@@ -6204,8 +6212,14 @@
   $("#pbModalCancelar").addEventListener("click", ()=>{ $("#backPublicista").style.display = "none"; });
   $("#pbModalGuardar").addEventListener("click", async ()=>{
     const nombre = $("#pbNombre").value.trim();
+    const pixelId = $("#pbPixelId").value.trim();
+    const capiToken = $("#pbCapiToken").value.trim();
     const msg = $("#pbModalMsg");
     if(!nombre){ msg.className="msg err"; msg.textContent="Falta el nombre"; return; }
+    if(pbEsAlta()){
+      if(!pixelId){ msg.className="msg err"; msg.textContent="Falta el Pixel ID de Meta"; return; }
+      if(!capiToken){ msg.className="msg err"; msg.textContent="Falta el Token CAPI"; return; }
+    }
     const btn = $("#pbModalGuardar"); btn.disabled = true;
     const idTxt = $("#pbEditId").value;
     let d;
@@ -6214,8 +6228,8 @@
         accion: "publicista_guardar",
         id: idTxt ? parseInt(idTxt,10) : undefined,
         nombre,
-        pixel_id: $("#pbPixelId").value.trim(),
-        capi_token: $("#pbCapiToken").value.trim(),
+        pixel_id: pixelId,
+        capi_token: capiToken,
         insights_token: $("#pbInsightsToken").value.trim(),
         insights_ad_account: $("#pbInsightsAdAccount").value.trim(),
         activo: pbEditandoActivo,

@@ -185,15 +185,34 @@ function publicidad_guardar(PDO $pdo, ?int $id, string $nombre,
 
     try {
         if ($id) {
-            // Sin slug en el SET: editar un publicista NUNCA cambia su link.
-            $st = $pdo->prepare(
-                "UPDATE publicistas
-                    SET nombre = ?, pixel_id = ?, capi_token = ?, activo = ?,
-                        insights_token = ?, insights_ad_account = ?
-                  WHERE id = ?"
-            );
-            $st->execute([$nombre, $pixelId, $capiToken, $activo ? 1 : 0,
-                           $insightsToken, $insightsAdAccount, $id]);
+            // Al EDITAR, un campo vacio significa "no tocar" -- se arma el
+            // SET dinamicamente para no pisar con NULL lo que ya estaba
+            // cargado. Necesario porque pixel_id/capi_token/insights_* son
+            // obligatorios solo al CREAR (los exige crm_publicidad.php); en
+            // una edicion el operador puede dejar cualquiera vacio sin
+            // querer borrarlo -- capi_token/insights_token en particular
+            // NUNCA vuelven al frontend por seguridad, asi que vacio ahi es
+            // siempre "no lo cambies", nunca "borralo".
+            //
+            // Sin slug en el SET tampoco: editar un publicista NUNCA cambia
+            // su link.
+            $campos = ['nombre = ?'];
+            $valores = [$nombre];
+            foreach ([
+                'pixel_id' => $pixelId, 'capi_token' => $capiToken,
+                'insights_token' => $insightsToken, 'insights_ad_account' => $insightsAdAccount,
+            ] as $col => $val) {
+                if ($val !== null) {
+                    $campos[] = "$col = ?";
+                    $valores[] = $val;
+                }
+            }
+            $campos[] = 'activo = ?';
+            $valores[] = $activo ? 1 : 0;
+            $valores[] = $id;
+
+            $st = $pdo->prepare("UPDATE publicistas SET " . implode(', ', $campos) . " WHERE id = ?");
+            $st->execute($valores);
             return $id;
         }
         $slug = publicidad_slug_nuevo($pdo);
