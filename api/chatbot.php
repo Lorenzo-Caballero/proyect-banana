@@ -78,11 +78,12 @@ $TOOLS = [
     ]],
     ['type' => 'function', 'function' => [
         'name' => 'crear_recarga',
-        'description' => 'COMPRA de fichas con plata: crea una solicitud de recarga y devuelve el '
-            . 'monto EXACTO (con centavos) que el usuario debe TRANSFERIR, mas los datos de la '
-            . 'cuenta. Usar SOLO si el jugador pide expresamente comprar/recargar con plata, o si '
-            . 'cargar_al_juego devolvio sin_fichas. Para un "cargame fichas" comun va '
-            . 'cargar_al_juego, NO esta.',
+        'description' => 'COMPRA de fichas con plata: crea una solicitud de recarga. Si la '
+            . 'respuesta trae link_pago, ESE LINK es la forma de pagar: pasaselo al jugador '
+            . '(paga ahi con transferencia y se acredita solo). Si no hay link_pago, dale el '
+            . 'monto EXACTO (con centavos) a transferir y los datos de la cuenta. Usar SOLO si '
+            . 'el jugador pide expresamente comprar/recargar con plata, o si cargar_al_juego '
+            . 'devolvio sin_fichas. Para un "cargame fichas" comun va cargar_al_juego, NO esta.',
         'parameters' => [
             'type' => 'object',
             'properties' => [
@@ -130,6 +131,9 @@ $TOOLS = [
             'properties' => [
                 'cantidad' => ['type' => 'integer', 'description' => 'cuánto retirar (omitir si todo=true)'],
                 'todo'     => ['type' => 'boolean', 'description' => 'true si quiere retirar TODO su saldo'],
+                'cbu_o_alias' => ['type' => 'string', 'description'
+                    => 'CBU/CVU de 22 dígitos o alias bancario donde quiere recibir la plata. '
+                     . 'Pedíselo si no lo dio; si la respuesta trae falta_destino=true, volvé a pedirlo.'],
             ],
             'required' => [],
         ],
@@ -714,7 +718,8 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
                     'error' => 'Necesito que inicies sesión en la página para registrar el retiro.'];
         }
         $todo = !empty($args['todo']);
-        return fichas_pedir_retiro($pdo, $usuarioSesion, (int)($args['cantidad'] ?? 0), 'chatbot', $todo);
+        return fichas_pedir_retiro($pdo, $usuarioSesion, (int)($args['cantidad'] ?? 0), 'chatbot',
+                                   $todo, trim((string)($args['cbu_o_alias'] ?? '')));
     }
     if ($nombre === 'identificar_usuario') {
         $u = trim((string)($args['usuario'] ?? ''));

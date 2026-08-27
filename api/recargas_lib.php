@@ -192,17 +192,61 @@ function rl_crear_recarga(PDO $pdo, string $usuario, int $coins): array
 
         $pdo->commit();
 
-        return [
+        /* ---- HG Cash: el pago pasa por la pasarela ----
+           Con HG prendido, en vez de "transferi a NUESTRO alias y que el
+           colector de mails lo matchee", se crea un checkout de HG: el
+           jugador paga en una pagina hosteada (o transfiere al CVU de HG) y
+           HG matchea solo por monto+DNI. La acreditacion llega por webhook.
+
+           FAIL-OPEN a proposito: si HG esta apagado o su API no contesta, la
+           recarga ya quedo creada arriba con el flujo legacy completo
+           (centavos unicos + alias propio). Una caida de la pasarela no
+           puede dejar a los jugadores sin poder cargar. */
+        $rHG = null;
+        if (is_file(__DIR__ . '/hgcash_lib.php')) {
+            require_once __DIR__ . '/hgcash_lib.php';
+            if (function_exists('hg_activo') && hg_activo()) {
+                $chk = hg_checkout_crear($montoPedido, $ref,
+                    ['usuario' => $usuario, 'referencia' => $ref]);
+                if (!empty($chk['ok'])) {
+                    $pdo->prepare(
+                        "UPDATE recargas SET metodo='hgcash', hg_checkout_id=?, hg_url=?
+                          WHERE referencia = ?"
+                    )->execute([$chk['id'], $chk['url'], $ref]);
+                    $cli = hg_cliente_actual();
+                    if ($cli) {
+                        hg_ledger_alta('deposito', $cli, $usuario, $ref,
+                            $chk['id'], (float)$montoPedido, $chk['url']);
+                    }
+                    $rHG = $chk;
+                }
+            }
+        }
+
+        $r = [
             'ok'           => true,
             'referencia'   => $ref,
             'usuario'      => $usuario,
             'coins'        => $coins,
             'monto_pedido' => number_format($montoPedido, 2, '.', ''),
-            'alias'        => RL_ALIAS,
-            'cbu'          => RL_CBU,
-            'titular'      => RL_TITULAR,
             'vence_min'    => RL_VENCIMIENTO_MIN,
         ];
+        if ($rHG) {
+            // Con HG, el link ES la instruccion de pago. El CVU/alias que se
+            // muestra es el de HG (por si prefiere transferir a mano), nunca
+            // el de la casa: la plata tiene que entrar por la pasarela.
+            $r['metodo']    = 'hgcash';
+            $r['link_pago'] = $rHG['url'];
+            $r['alias']     = $rHG['alias'] !== '' ? $rHG['alias'] : RL_ALIAS;
+            $r['cbu']       = $rHG['cvu'] !== '' ? $rHG['cvu'] : RL_CBU;
+            $r['titular']   = $rHG['titular'] !== '' ? $rHG['titular'] : RL_TITULAR;
+        } else {
+            $r['metodo']  = 'transferencia';
+            $r['alias']   = RL_ALIAS;
+            $r['cbu']     = RL_CBU;
+            $r['titular'] = RL_TITULAR;
+        }
+        return $r;
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();

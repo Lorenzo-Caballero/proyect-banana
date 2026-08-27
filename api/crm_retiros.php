@@ -89,9 +89,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 $params[] = (int)(ctype_digit($q) ? $q : 0);
             }
 
+            /* destino/hg_estado con subconsulta condicionada: si la migracion 43
+               no corrio, las columnas no existen y el SELECT plano tumbaria la
+               lista entera. Probar una vez y elegir el SQL es mas barato que
+               capturar la excepcion en cada request. */
+            $hayHg = true;
+            try { $pdo->query("SELECT destino FROM acciones_saldo LIMIT 0"); }
+            catch (Throwable $e) { $hayHg = false; }
+            $colsHg = $hayHg
+                ? ", COALESCE(destino,'') destino, COALESCE(hg_estado,'') hg_estado"
+                : ", '' destino, '' hg_estado";
+
             $st = $pdo->prepare(
                 "SELECT id, usuario, monto, motivo, estado, aprobado, tomada_en, mensaje,
-                        saldo_antes, saldo_despues, creada_en, ejecutada_en
+                        saldo_antes, saldo_despues, creada_en, ejecutada_en $colsHg
                    FROM acciones_saldo
                   WHERE " . implode(' AND ', $where) . "
                   ORDER BY creada_en DESC
@@ -142,7 +153,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                        'error' => 'Ese retiro ya no está esperando aprobación (quizás otro operador lo aprobó o cambió de estado).'], 409);
             }
             crm_bitacora($pdo, $operador, 'aprobar_retiro', "id $id");
-            salir(['ok' => true, 'id' => $id]);
+
+            /* ---- HG Cash: aprobar TAMBIEN dispara el pago de la plata ----
+               El worker de Python sigue haciendo SU mitad (descontar el saldo
+               en el panel de ganamos); esta es la OTRA mitad, la que antes
+               era una transferencia manual del agente: pagarle al jugador.
+
+               Solo si HG esta prendido Y el retiro tiene destino. Sin
+               destino, el flujo queda como siempre (el agente transfiere a
+               mano) -- aprobar nunca falla por culpa de la pasarela. */
+            $hgPago = null;
+            if (is_file(__DIR__ . '/hgcash_lib.php')) {
+                require_once __DIR__ . '/hgcash_lib.php';
+                if (function_exists('hg_activo') && hg_activo()) {
+                    try {
+                        $q = $pdo->prepare(
+                            "SELECT a.usuario, a.monto, a.destino, a.destino_nombre, a.destino_cuit,
+                                    a.hg_request_id
+                               FROM acciones_saldo a WHERE a.id = ? LIMIT 1");
+                        $q->execute([$id]);
+                        $ret = $q->fetch(PDO::FETCH_ASSOC);
+                    } catch (Throwable $e) { $ret = null; /* sin migracion 43 */ }
+
+                    if ($ret && (string)($ret['destino'] ?? '') !== ''
+                             && (string)($ret['hg_request_id'] ?? '') === '') {
+                        $cli = hg_cliente_actual();
+                        $externalId = ($cli ? $cli['db_nombre'] : 'gp') . ':retiro:' . $id;
+                        $r = hg_cashout_crear(
+                            (float)$ret['monto'], (string)$ret['destino'],
+                            (string)($ret['destino_nombre'] ?? ''),
+                            (string)($ret['destino_cuit'] ?? ''),
+                            $externalId,
+                            'Retiro ' . $ret['usuario']
+                        );
+                        if (!empty($r['ok'])) {
+                            $pdo->prepare(
+                                "UPDATE acciones_saldo SET hg_request_id=?, hg_estado=? WHERE id=?"
+                            )->execute([$r['id'], $r['estado'], $id]);
+                            if ($cli) {
+                                hg_ledger_alta('retiro', $cli, (string)$ret['usuario'],
+                                    (string)$id, $r['id'], (float)$ret['monto']);
+                            }
+                            crm_bitacora($pdo, $operador, 'hg_pago_retiro',
+                                "id $id -> {$r['id']} ({$r['estado']})");
+                            $hgPago = ['id' => $r['id'], 'estado' => $r['estado']];
+                        } else {
+                            /* El pago NO salio pero el retiro quedo aprobado:
+                               se anota el motivo para que el agente lo vea y
+                               pague a mano. Nunca se reintenta solo: es plata. */
+                            $pdo->prepare(
+                                "UPDATE acciones_saldo SET hg_estado='ERROR', mensaje=? WHERE id=?"
+                            )->execute(['HG: ' . ($r['error'] ?? 'sin detalle'), $id]);
+                            crm_bitacora($pdo, $operador, 'hg_pago_fallo',
+                                "id $id: " . ($r['error'] ?? ''));
+                            $hgPago = ['error' => $r['error'] ?? 'HG no pudo pagar'];
+                        }
+                    }
+                }
+            }
+            salir(['ok' => true, 'id' => $id, 'hg' => $hgPago]);
         }
 
         // ---- liberar (masivo, acotado a retiros) ----

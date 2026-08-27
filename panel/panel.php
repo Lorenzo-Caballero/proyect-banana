@@ -420,6 +420,113 @@ switch ($accion) {
         )->execute(['MP_ACCESS_TOKEN', $tok]);
         salida(['ok' => true]);
 
+    // ================= HG Cash (pasarela de pagos, un token global) ==========
+
+    case 'hg_config_ver':
+        $claves = ['HG_API_TOKEN','HG_ACTIVO','HG_MODO','HG_ACCOUNT_ID',
+                   'HG_WEBHOOK_SECRET','HG_COMISION_CLIENTE_PCT','HG_COSTO_HG_PCT'];
+        $ph = implode(',', array_fill(0, count($claves), '?'));
+        $st = $pdo->prepare("SELECT clave, valor FROM config_plataforma WHERE clave IN ($ph)");
+        $st->execute($claves);
+        $v = $st->fetchAll(PDO::FETCH_KEY_PAIR);
+        // El token y el secret NUNCA vuelven en claro: solo si estan.
+        salida(['ok' => true,
+            'token_configurado'  => ($v['HG_API_TOKEN'] ?? '') !== '',
+            'secret_configurado' => ($v['HG_WEBHOOK_SECRET'] ?? '') !== '',
+            'activo'      => ($v['HG_ACTIVO'] ?? '0') === '1',
+            'modo'        => $v['HG_MODO'] ?? 'prod',
+            'account_id'  => $v['HG_ACCOUNT_ID'] ?? '',
+            'comision'    => $v['HG_COMISION_CLIENTE_PCT'] ?? '3.5',
+            'costo_hg'    => $v['HG_COSTO_HG_PCT'] ?? '2.0',
+            // Esta URL se pega en el dashboard de HG (Settings -> Webhooks).
+            'webhook_url' => 'https://ganamoscrm.online/gp-api/hg_webhook.php',
+        ]);
+
+    case 'hg_config_guardar':
+        /* Guarda SOLO lo que vino: mandar los porcentajes no pisa el token,
+           asi el dueño ajusta la comision sin re-pegar credenciales. */
+        $mapa = [
+            'token'      => 'HG_API_TOKEN',
+            'secret'     => 'HG_WEBHOOK_SECRET',
+            'activo'     => 'HG_ACTIVO',
+            'modo'       => 'HG_MODO',
+            'account_id' => 'HG_ACCOUNT_ID',
+            'comision'   => 'HG_COMISION_CLIENTE_PCT',
+            'costo_hg'   => 'HG_COSTO_HG_PCT',
+        ];
+        $rep = $pdo->prepare('REPLACE INTO config_plataforma (clave, valor) VALUES (?, ?)');
+        $guardadas = 0;
+        foreach ($mapa as $campo => $clave) {
+            if (!array_key_exists($campo, $in)) { continue; }
+            $val = trim((string)$in[$campo]);
+            if ($campo === 'activo') { $val = ($val === '1' || $val === 'true') ? '1' : '0'; }
+            if ($campo === 'modo' && !in_array($val, ['prod', 'dev'], true)) { $val = 'prod'; }
+            if (in_array($campo, ['comision', 'costo_hg'], true)) {
+                $f = (float)str_replace(',', '.', $val);
+                if ($f < 0 || $f > 50) { salida(['ok' => false, 'error' => "porcentaje inválido en $campo"], 422); }
+                $val = number_format($f, 2, '.', '');
+            }
+            // token/secret vacios NO se guardan (seria borrarlos sin querer).
+            if (in_array($campo, ['token', 'secret'], true) && $val === '') { continue; }
+            $rep->execute([$clave, $val]);
+            $guardadas++;
+        }
+        salida(['ok' => true, 'guardadas' => $guardadas]);
+
+    case 'hg_test':
+        /* Prueba REAL contra la API: lista las cuentas del token. Confirma
+           que el token vive y deja elegir el HG_ACCOUNT_ID de los retiros. */
+        $st = $pdo->prepare("SELECT clave, valor FROM config_plataforma WHERE clave IN ('HG_API_TOKEN','HG_MODO')");
+        $st->execute();
+        $v = $st->fetchAll(PDO::FETCH_KEY_PAIR);
+        $tok = $v['HG_API_TOKEN'] ?? '';
+        if ($tok === '') { salida(['ok' => false, 'error' => 'primero guardá el token'], 422); }
+        $base = ($v['HG_MODO'] ?? 'prod') === 'dev' ? 'http://dev.hg.cash/api/v1' : 'https://hg.cash/api/v1';
+
+        $ch = curl_init($base . '/accounts');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER     => ['Authorization: Bearer ' . $tok],
+            CURLOPT_TIMEOUT        => 10,
+        ]);
+        $raw  = curl_exec($ch);
+        $code = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+        curl_close($ch);
+        if ($raw === false) { salida(['ok' => false, 'error' => 'no pude conectar con hg.cash']); }
+        if ($code === 401)  { salida(['ok' => false, 'error' => 'HG rechazó el token (401)']); }
+        if ($code !== 200)  { salida(['ok' => false, 'error' => "HG contestó HTTP $code"]); }
+        $cuentas = json_decode((string)$raw, true);
+        salida(['ok' => true, 'cuentas' => is_array($cuentas) ? $cuentas : []]);
+
+    case 'hg_resumen':
+        /* La liquidacion: cuanto movio cada cliente y cuanto le toca a cada
+           parte. Todo sale del libro (hg_transacciones); los porcentajes ya
+           estan CONGELADOS por fila, aca solo se suma. */
+        $dias = max(1, min(365, (int)($in['dias'] ?? 30)));
+        try {
+            $st = $pdo->prepare(
+                "SELECT t.cliente_id, c.nombre,
+                        SUM(t.tipo='deposito' AND t.estado='completado')                 depositos,
+                        SUM(IF(t.tipo='deposito' AND t.estado='completado', t.monto, 0)) dep_bruto,
+                        SUM(t.tipo='retiro' AND t.estado='pagado')                       retiros,
+                        SUM(IF(t.tipo='retiro' AND t.estado='pagado', t.monto, 0))       ret_bruto,
+                        SUM(IF(t.estado IN ('completado','pagado'), t.comision, 0))      comision,
+                        SUM(IF(t.estado IN ('completado','pagado'), t.costo_hg, 0))      costo_hg,
+                        SUM(IF(t.estado IN ('completado','pagado'), t.margen, 0))        margen,
+                        SUM(IF(t.tipo='deposito' AND t.estado='completado', t.neto, 0))  neto_liquidar,
+                        SUM(t.estado='pendiente')                                        pendientes
+                   FROM hg_transacciones t
+                   JOIN clientes c ON c.id = t.cliente_id
+                  WHERE t.creado_en >= DATE_SUB(NOW(), INTERVAL ? DAY)
+                  GROUP BY t.cliente_id, c.nombre
+                  ORDER BY dep_bruto DESC"
+            );
+            $st->execute([$dias]);
+            salida(['ok' => true, 'dias' => $dias, 'clientes' => $st->fetchAll(PDO::FETCH_ASSOC)]);
+        } catch (PDOException $e) {
+            salida(['ok' => false, 'error' => 'falta correr panel/sql/05_hgcash.sql'], 409);
+        }
+
     default:
         salida(['ok' => false, 'error' => 'acción desconocida'], 400);
 }

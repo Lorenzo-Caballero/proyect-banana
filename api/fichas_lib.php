@@ -271,9 +271,11 @@ function fichas_consultar(PDO $pdo, string $usuario): array
  * en el panel de agentes. Desde el chat se PIDE; no se ejecuta solo. Los BONOS
  * (usuarios.bonus) NO se retiran y no se miran acá.
  */
-function fichas_pedir_retiro(PDO $pdo, string $usuario, int $monto, string $origen = 'chatbot', bool $todo = false): array
+function fichas_pedir_retiro(PDO $pdo, string $usuario, int $monto, string $origen = 'chatbot',
+                             bool $todo = false, string $destino = ''): array
 {
     $usuario = trim($usuario);
+    $destino = trim($destino);
 
     if ($usuario === '') {
         return ['ok' => false, 'codigo' => 'sin_usuario',
@@ -327,12 +329,46 @@ function fichas_pedir_retiro(PDO $pdo, string $usuario, int $monto, string $orig
                 'error' => 'Ya tenés un retiro pedido. Un agente lo está viendo.'];
     }
 
-    $pdo->prepare(
-        "INSERT INTO acciones_saldo (usuario, tipo, monto, motivo, origen, coins_debitados)
-         VALUES (?, 'retirar', ?, 'Retiro pedido por el jugador', ?, 0)"
-    )->execute([$usuario, $monto, $origen]);
+    /* El destino del pago (CBU/CVU/alias). Prioridad: lo que dijo AHORA >
+       lo que tiene guardado. Si dio uno nuevo se guarda para la proxima --
+       nadie quiere dictar 22 digitos dos veces. Sin destino el retiro entra
+       igual: el agente lo puede completar, y sin HG ni hace falta. */
+    $guardado = '';
+    try {
+        $q = $pdo->prepare("SELECT COALESCE(cobro_destino,'') FROM usuarios WHERE username = ?");
+        $q->execute([$usuario]);
+        $guardado = (string)$q->fetchColumn();
+    } catch (Throwable $e) { /* sin migracion 43: se sigue sin destino */ }
+
+    if ($destino !== '' && !preg_match('/^\d{22}$/', $destino)
+        && !preg_match('/^[a-zA-Z0-9._-]{6,20}$/', $destino)) {
+        return ['ok' => false, 'codigo' => 'destino',
+                'error' => 'Ese CBU/alias no parece válido. Un CBU/CVU tiene 22 dígitos; un alias, entre 6 y 20 letras/números/puntos.'];
+    }
+    if ($destino !== '' && $destino !== $guardado) {
+        try {
+            $pdo->prepare("UPDATE usuarios SET cobro_destino = ? WHERE username = ?")
+                ->execute([$destino, $usuario]);
+        } catch (Throwable $e) { /* best-effort */ }
+    }
+    $destinoFinal = $destino !== '' ? $destino : $guardado;
+
+    try {
+        $pdo->prepare(
+            "INSERT INTO acciones_saldo (usuario, tipo, monto, motivo, origen, coins_debitados, destino)
+             VALUES (?, 'retirar', ?, 'Retiro pedido por el jugador', ?, 0, ?)"
+        )->execute([$usuario, $monto, $origen, $destinoFinal !== '' ? $destinoFinal : null]);
+    } catch (Throwable $e) {
+        // Sin la migracion 43 no existe `destino`: el retiro entra igual.
+        $pdo->prepare(
+            "INSERT INTO acciones_saldo (usuario, tipo, monto, motivo, origen, coins_debitados)
+             VALUES (?, 'retirar', ?, 'Retiro pedido por el jugador', ?, 0)"
+        )->execute([$usuario, $monto, $origen]);
+    }
 
     return ['ok' => true, 'id' => (int)$pdo->lastInsertId(), 'monto' => $monto,
+            'destino' => $destinoFinal,
+            'falta_destino' => $destinoFinal === '',
             'saldo' => $saldo, 'retiro_todo' => $todo,
             'mensaje' => 'Listo, tu pedido de retiro por ' . number_format($monto, 0, ',', '.') .
                          ' quedó registrado. Lo aprueba un agente y te avisamos por el chat. ' .

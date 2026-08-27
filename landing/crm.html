@@ -1890,6 +1890,34 @@
         </div>
       </div>
 
+      <!-- HG Cash: solo aparece si la pasarela esta activa. Es la relacion
+           del cliente con la plataforma: cuanto movio por HG, cuanta comision
+           pago y cuanto se le liquida. Los KPI de abajo no cambian -- las
+           recargas por HG tambien son filas de `recargas`, asi que Ingresos
+           ya las cuenta. Esta tira agrega lo que SOLO el libro de HG sabe. -->
+      <div class="fn-cards" id="fnHg" style="display:none;margin:0 20px 14px">
+        <div class="fn-card">
+          <div class="k">Cobrado por HG Cash</div>
+          <div class="v" id="fnHgBruto">—</div>
+          <div class="fn-kpi-var sin_datos" id="fnHgOps">—</div>
+        </div>
+        <div class="fn-card">
+          <div class="k">Comisión plataforma <span class="fn-info" data-tip="Lo que la plataforma retiene por procesar tus cobros y pagos por HG Cash.">ⓘ<span class="fn-popover"></span></span></div>
+          <div class="v" id="fnHgComision">—</div>
+          <div class="fn-kpi-var sin_datos" id="fnHgPct">—</div>
+        </div>
+        <div class="fn-card">
+          <div class="k">Neto a liquidar</div>
+          <div class="v" id="fnHgNeto">—</div>
+          <div class="fn-kpi-var sin_datos">depósitos − comisión</div>
+        </div>
+        <div class="fn-card">
+          <div class="k">Conversión de links <span class="fn-info" data-tip="De los links de pago creados en el período, qué porcentaje terminó pagado.">ⓘ<span class="fn-popover"></span></span></div>
+          <div class="v" id="fnHgConv">—</div>
+          <div class="fn-kpi-var sin_datos" id="fnHgPend">—</div>
+        </div>
+      </div>
+
       <!-- c) 5 KPI cards -->
       <div class="fn-kpis" id="fnKpis">
         <div class="fn-kpi-card" id="fnKpiCardIngresos">
@@ -4521,10 +4549,19 @@
       const nota = (r.estado==="error" || r.estado==="revisar" || r.estado==="cancelada") && r.mensaje
         ? `<div class="rr-sub" style="color:${notaColor}">${esc(r.mensaje)}</div>` : "";
       const tagTxt = esperaAprob ? "A APROBAR" : (RET_TAG_TXT[r.estado]||r.estado);
+      /* El estado del pago por HG, si lo hay. Es una cosa DISTINTA del estado
+         del retiro: el retiro puede estar 'hecha' (el bot ya desconto el
+         saldo en ganamos) y la plata seguir viajando (PROCESSING). */
+      const HG_TXT = { PENDING:"HG: pendiente", AWAITING_REVIEW:"HG: revisión",
+                       PROCESSING:"HG: pagando…", DONE:"HG: pagado",
+                       ERROR:"HG: falló", CANCELLED:"HG: cancelado" };
+      const hgChip = r.hg_estado
+        ? `<span class="ret-tag ${r.hg_estado==="DONE"?"hecha":(r.hg_estado==="ERROR"?"error":"procesando")}">${esc(HG_TXT[r.hg_estado]||("HG: "+r.hg_estado))}</span>`
+        : "";
       return `<div class="ret-row">
         <div class="rr-mid">
-          <div class="rr-user">@${esc(r.usuario)}<span class="ret-tag ${esc(r.estado)}">${esc(tagTxt)}</span></div>
-          <div class="rr-sub">#${r.id} · ${hace(r.creada_en)}${r.motivo?" · "+esc(r.motivo):""}</div>
+          <div class="rr-user">@${esc(r.usuario)}<span class="ret-tag ${esc(r.estado)}">${esc(tagTxt)}</span>${hgChip}</div>
+          <div class="rr-sub">#${r.id} · ${hace(r.creada_en)}${r.motivo?" · "+esc(r.motivo):""}${r.destino?" · → "+esc(r.destino):""}</div>
           ${nota}
         </div>
         <div class="rr-monto">${money(r.monto)}</div>
@@ -5292,6 +5329,26 @@
     el.className = "fn-kpi-var " + fnClaseVariacion(kpi, v.dir);
   }
 
+  /* La tira de HG Cash. hg===null significa "pasarela apagada o sin
+     configurar": la tira no se muestra y Finanzas queda exactamente como
+     siempre -- nadie ve un bloque en cero de un servicio que no usa. */
+  function fnRenderHg(hg){
+    const caja = $("#fnHg");
+    if(!caja) return;
+    if(!hg){ caja.style.display = "none"; return; }
+    caja.style.display = "";
+    $("#fnHgBruto").textContent    = money(hg.dep_bruto);
+    $("#fnHgOps").textContent      = hg.depositos + " depósito" + (hg.depositos === 1 ? "" : "s")
+                                   + (hg.retiros_pagados ? " · " + hg.retiros_pagados + " retiros pagados" : "");
+    $("#fnHgComision").textContent = money(hg.comision);
+    $("#fnHgPct").textContent      = hg.comision_pct + "% por transacción";
+    $("#fnHgNeto").textContent     = money(hg.neto);
+    $("#fnHgConv").textContent     = hg.conversion === null ? "—" : hg.conversion + "%";
+    $("#fnHgPend").textContent     = hg.dep_pendientes
+      ? hg.dep_pendientes + " link" + (hg.dep_pendientes === 1 ? "" : "s") + " sin pagar"
+      : "sin pendientes";
+  }
+
   function fnRenderKpis(rango, variacion){
     $("#fnKpiIngresos").textContent = money(rango.ingresos.monto);
     $("#fnKpiRetiros").textContent  = money(rango.retiros.monto);
@@ -5495,6 +5552,7 @@
       fnRenderKpis(d.rango, d.variacion);
       fnRenderMasMetricas(d.rango);
       fnRenderAlertas(d.alertas, d.umbrales);
+      fnRenderHg(d.hg);
     } else if(rRango.status === "fulfilled"){
       toast(rRango.value.error || "Error al cargar el período");
     } else if(!["sesion_requerida","finanzas_no_verificado"].includes(rRango.reason && rRango.reason.message)){

@@ -363,6 +363,56 @@ function fn_serie_por_hora(PDO $pdo, string $desde, string $hasta): array
 }
 
 /** Foto del momento: activos/pasivo históricos, sin rango de fecha. */
+/* ---- HG Cash: los numeros de la pasarela para ESTE cliente ----
+   Salen del libro global (goldpaw_control.hg_transacciones), filtrado
+   por la base del tenant. Es lo que el cliente necesita ver de su
+   relacion con la plataforma: cuanto movio, cuanta comision pago y
+   cuanto se le liquida. null si HG no esta configurado o el libro no
+   existe: la vista Finanzas entera no puede caerse por la pasarela. */
+function fn_hg(string $desde, string $hasta): ?array
+{
+    if (!is_file(__DIR__ . '/hgcash_lib.php')) { return null; }
+    require_once __DIR__ . '/hgcash_lib.php';
+    if (!hg_activo()) { return null; }
+    $ctl = hg_control();
+    $cli = hg_cliente_actual();
+    if (!$ctl || !$cli) { return null; }
+    try {
+        $st = $ctl->prepare(
+            "SELECT
+                SUM(tipo='deposito' AND estado='completado')                 depositos,
+                SUM(IF(tipo='deposito' AND estado='completado', monto, 0))   dep_bruto,
+                SUM(tipo='deposito' AND estado='pendiente')                  dep_pendientes,
+                SUM(tipo='retiro' AND estado='pagado')                       retiros_pagados,
+                SUM(IF(tipo='retiro' AND estado='pagado', monto, 0))         ret_bruto,
+                SUM(IF(estado IN ('completado','pagado'), comision, 0))      comision,
+                SUM(IF(tipo='deposito' AND estado='completado', neto, 0))    neto
+               FROM hg_transacciones
+              WHERE cliente_id = ? AND creado_en BETWEEN ? AND ?"
+        );
+        $st->execute([(int)$cli['id'], $desde . ' 00:00:00', $hasta . ' 23:59:59']);
+        $r = $st->fetch(PDO::FETCH_ASSOC) ?: [];
+        $creados = (int)($r['depositos'] ?? 0) + (int)($r['dep_pendientes'] ?? 0);
+        return [
+            'activo'          => true,
+            'depositos'       => (int)($r['depositos'] ?? 0),
+            'dep_bruto'       => (float)($r['dep_bruto'] ?? 0),
+            'dep_pendientes'  => (int)($r['dep_pendientes'] ?? 0),
+            'retiros_pagados' => (int)($r['retiros_pagados'] ?? 0),
+            'ret_bruto'       => (float)($r['ret_bruto'] ?? 0),
+            'comision'        => (float)($r['comision'] ?? 0),
+            'neto'            => (float)($r['neto'] ?? 0),
+            'comision_pct'    => hg_pcts()[0],
+            // De cada 100 links creados, cuantos terminaron en plata.
+            'conversion'      => $creados > 0
+                ? round(100 * (int)($r['depositos'] ?? 0) / $creados, 1)
+                : null,
+        ];
+    } catch (Throwable $e) {
+        return null;    // libro sin migrar: Finanzas sigue andando
+    }
+}
+
 function fn_foto(PDO $pdo): array
 {
     $row = $pdo->query(
@@ -667,6 +717,7 @@ if ($metodo === 'GET') {
                     'retiro_muy_grande'  => $umbralMuyGrande,
                     'jugador_ganador'    => $umbralGanador,
                 ],
+                'hg' => fn_hg($desde, $hasta),
             ]);
         }
 

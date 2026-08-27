@@ -221,6 +221,10 @@
         <p class="sub">Cada cliente = un agente de ganamos con su propia URL, su cobro y sus jugadores.</p>
       </div>
       <div style="display:flex;gap:10px">
+        <button class="btn" id="btnHgConfig" style="background:var(--card2);border:1px solid var(--line);color:var(--tx)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          HG Cash
+        </button>
         <button class="btn" id="btnMpConfig" style="background:var(--card2);border:1px solid var(--line);color:var(--tx)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
           Cobro (MercadoPago)
@@ -495,6 +499,97 @@
 </div>
 
 <!-- MODAL CONFIG DE COBRO (MERCADOPAGO) -->
+<div class="ov" id="ovHg">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-head">
+      <div class="ic">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+      </div>
+      <div>
+        <h3>HG Cash — cobros y pagos</h3>
+        <p class="sub">Un solo token para toda la plataforma. Los depósitos y retiros de TODOS los clientes pasan por tu cuenta de HG; a cada uno se le liquida su neto según el libro.</p>
+      </div>
+    </div>
+
+    <p id="hgEstado" class="sub" style="margin:4px 0 12px"></p>
+
+    <div class="grid" style="grid-template-columns:1fr 160px;gap:10px">
+      <div>
+        <label>API token <span class="sub">(cash_…)</span></label>
+        <input id="hgToken" class="field" type="text" placeholder="cash_…" autocomplete="off">
+      </div>
+      <div>
+        <label>Entorno</label>
+        <select id="hgModo" class="field">
+          <option value="prod">Producción</option>
+          <option value="dev">Sandbox (dev)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="grid" style="grid-template-columns:1fr auto;gap:10px;margin-top:10px;align-items:end">
+      <div>
+        <label>Cuenta para pagar retiros <span class="sub">(HG_ACCOUNT_ID)</span></label>
+        <select id="hgCuenta" class="field"><option value="">— probá la conexión para listarlas —</option></select>
+      </div>
+      <button class="btn ghost" id="hgProbar" type="button">Probar conexión</button>
+    </div>
+
+    <div class="grid" style="grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:10px">
+      <div>
+        <label>Comisión al cliente %</label>
+        <input id="hgComision" class="field" type="number" step="0.1" min="0" max="50" placeholder="3.5">
+      </div>
+      <div>
+        <label>Costo de HG %</label>
+        <input id="hgCosto" class="field" type="number" step="0.1" min="0" max="50" placeholder="2.0">
+      </div>
+      <div>
+        <label>Tu margen</label>
+        <input id="hgMargen" class="field" type="text" disabled value="—">
+      </div>
+    </div>
+
+    <div style="margin-top:10px">
+      <label>Secret del webhook <span class="sub">(opcional, de HG Settings)</span></label>
+      <input id="hgSecret" class="field" type="text" autocomplete="off" placeholder="se usa para verificar la firma">
+    </div>
+
+    <div class="hint" style="margin-top:10px">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+      <span>Pegá esta URL en HG → Settings → Webhooks: <b id="hgWebhookUrl" style="user-select:all">…</b></span>
+    </div>
+
+    <label style="display:flex;align-items:center;gap:8px;margin-top:12px;cursor:pointer">
+      <input type="checkbox" id="hgActivo" style="accent-color:var(--ok,#31c48d)">
+      <span><b>Activar HG Cash</b> — con esto prendido, las recargas nuevas salen con link de pago y los retiros aprobados se pagan solos.</span>
+    </label>
+
+    <div id="hgMsg" class="msg"></div>
+
+    <!-- Liquidación -->
+    <div style="margin-top:16px;border-top:1px solid var(--line);padding-top:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+        <b>Liquidación por cliente</b>
+        <select id="hgDias" class="field" style="width:130px">
+          <option value="7">7 días</option>
+          <option value="30" selected>30 días</option>
+          <option value="90">90 días</option>
+        </select>
+      </div>
+      <div id="hgResumen" class="sub" style="margin-top:8px;overflow-x:auto">Sin datos todavía.</div>
+    </div>
+
+    <div class="row-btns">
+      <button class="btn ghost" id="hgCerrar">Cerrar</button>
+      <button class="btn" id="hgGuardar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+        Guardar
+      </button>
+    </div>
+  </div>
+</div>
+
 <div class="ov" id="ovMp">
   <div class="modal">
     <div class="modal-head">
@@ -965,6 +1060,114 @@
     r.addEventListener("change", pintarModoDel);
   });
   $("btnMpConfig").onclick = abrirMp;
+
+  // ---------- HG Cash ----------
+  function hgPintarMargen(){
+    var c = parseFloat($("hgComision").value || "0");
+    var h = parseFloat($("hgCosto").value || "0");
+    $("hgMargen").value = isNaN(c - h) ? "—" : (c - h).toFixed(2) + " %";
+  }
+  ["hgComision", "hgCosto"].forEach(function (id){
+    $(id).addEventListener("input", hgPintarMargen);
+  });
+
+  function abrirHg(){
+    $("hgToken").value = ""; $("hgSecret").value = "";
+    $("hgMsg").textContent = ""; $("hgMsg").className = "msg";
+    $("hgEstado").textContent = "consultando…";
+    $("ovHg").classList.add("on");
+    api("hg_config_ver", {}).then(function (res){
+      if (res.status === 401){ salir(); return; }
+      var j = res.j || {};
+      $("hgEstado").textContent = j.token_configurado
+        ? "Ya hay un token guardado. Pegá uno nuevo solo si querés reemplazarlo."
+        : "Todavía no configuraste el token de HG.";
+      $("hgModo").value = j.modo || "prod";
+      $("hgComision").value = j.comision || "3.5";
+      $("hgCosto").value = j.costo_hg || "2.0";
+      $("hgActivo").checked = !!j.activo;
+      $("hgWebhookUrl").textContent = j.webhook_url || "";
+      if (j.account_id){
+        $("hgCuenta").innerHTML = '<option value="' + j.account_id + '">' + j.account_id + ' (guardada)</option>';
+      }
+      hgPintarMargen();
+      hgCargarResumen();
+    });
+  }
+  function cerrarHg(){ $("ovHg").classList.remove("on"); }
+
+  function hgProbar(){
+    var m = $("hgMsg"); m.className = "msg"; m.textContent = "probando contra hg.cash…";
+    // Si pegaron un token nuevo, primero se guarda: la prueba usa el guardado.
+    var tok = $("hgToken").value.trim();
+    var prev = tok ? api("hg_config_guardar", { token: tok, modo: $("hgModo").value })
+                   : Promise.resolve({ j: { ok: true } });
+    prev.then(function (){ return api("hg_test", {}); }).then(function (res){
+      if (!res.j.ok){ m.className = "msg err"; m.textContent = res.j.error || "falló"; return; }
+      var cuentas = res.j.cuentas || [];
+      if (tok) $("hgToken").value = "";
+      m.className = "msg ok";
+      m.textContent = "Token OK — " + cuentas.length + " cuenta(s). Elegí la de los retiros y guardá.";
+      var guardada = $("hgCuenta").value;
+      $("hgCuenta").innerHTML = cuentas.map(function (c){
+        var id = c.id || c.accountId || "";
+        var nom = c.name || c.alias || c.cvu || id;
+        return '<option value="' + id + '"' + (id === guardada ? " selected" : "") + '>' + nom + '</option>';
+      }).join("") || '<option value="">(sin cuentas)</option>';
+    }).catch(function (){ m.className = "msg err"; m.textContent = "no pude conectar"; });
+  }
+
+  function hgGuardar(){
+    var m = $("hgMsg"); m.className = "msg"; m.textContent = "guardando…";
+    var datos = {
+      modo:       $("hgModo").value,
+      account_id: $("hgCuenta").value || "",
+      comision:   $("hgComision").value,
+      costo_hg:   $("hgCosto").value,
+      activo:     $("hgActivo").checked ? "1" : "0"
+    };
+    var tok = $("hgToken").value.trim();  if (tok) datos.token = tok;
+    var sec = $("hgSecret").value.trim(); if (sec) datos.secret = sec;
+    api("hg_config_guardar", datos).then(function (res){
+      if (res.j.ok){
+        m.className = "msg ok"; m.textContent = "Guardado.";
+        $("hgToken").value = ""; $("hgSecret").value = "";
+      } else {
+        m.className = "msg err"; m.textContent = res.j.error || "no se pudo";
+      }
+    }).catch(function (){ m.className = "msg err"; m.textContent = "no pude conectar"; });
+  }
+
+  function hgCargarResumen(){
+    var caja = $("hgResumen");
+    caja.textContent = "cargando…";
+    api("hg_resumen", { dias: parseInt($("hgDias").value, 10) || 30 }).then(function (res){
+      if (!res.j.ok){ caja.textContent = res.j.error || "sin datos"; return; }
+      var filas = res.j.clientes || [];
+      if (!filas.length){ caja.textContent = "Sin transacciones en el período."; return; }
+      var f = function (n){ return "$" + Number(n || 0).toLocaleString("es-AR", { maximumFractionDigits: 2 }); };
+      caja.innerHTML =
+        '<table style="width:100%;border-collapse:collapse;font-size:12.5px">' +
+        '<tr style="text-align:right;color:var(--sub)"><th style="text-align:left;padding:4px 6px">Cliente</th>' +
+        '<th>Depósitos</th><th>Retiros</th><th>Comisión</th><th>Costo HG</th><th>Tu margen</th><th>Neto a liquidar</th></tr>' +
+        filas.map(function (r){
+          return '<tr style="text-align:right;border-top:1px solid var(--line)">' +
+            '<td style="text-align:left;padding:5px 6px"><b>' + (r.nombre || r.cliente_id) + '</b></td>' +
+            '<td>' + f(r.dep_bruto) + ' <span style="color:var(--sub)">(' + r.depositos + ')</span></td>' +
+            '<td>' + f(r.ret_bruto) + ' <span style="color:var(--sub)">(' + r.retiros + ')</span></td>' +
+            '<td>' + f(r.comision) + '</td><td>' + f(r.costo_hg) + '</td>' +
+            '<td style="color:var(--ok,#31c48d)"><b>' + f(r.margen) + '</b></td>' +
+            '<td>' + f(r.neto_liquidar) + '</td></tr>';
+        }).join("") + '</table>';
+    });
+  }
+
+  $("btnHgConfig").onclick = abrirHg;
+  $("hgCerrar").onclick = cerrarHg;
+  $("hgProbar").onclick = hgProbar;
+  $("hgGuardar").onclick = hgGuardar;
+  $("hgDias").onchange = hgCargarResumen;
+  $("ovHg").addEventListener("click", function (e){ if (e.target === $("ovHg")) cerrarHg(); });
   $("mpCerrar").onclick = cerrarMp;
   $("mpGuardar").onclick = guardarMp;
   $("ovMp").addEventListener("click", function(e){ if(e.target === $("ovMp")) cerrarMp(); });
