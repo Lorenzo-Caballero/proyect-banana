@@ -268,6 +268,14 @@
   const BASE_API = esPorPath ? '/' + partesRuta[0] + '/gp-api' : '/gp-api';
   const API = BASE_API + "/crear_cuenta.php";
 
+  /* De que publicista vino el jugador (?pub=<slug>, el link que se le dio a
+     cada publicista) y el click id de Meta (?fbclid=...). Se leen UNA vez al
+     cargar -- si el jugador navega adentro de la misma pestaña (por ejemplo
+     al reintentar) no hay que volver a leerlos de la URL. */
+  const params = new URLSearchParams(location.search);
+  const PUB    = (params.get('pub') || '').trim();
+  const FBCLID = (params.get('fbclid') || '').trim();
+
   // La contraseña la genera el SERVER, una por cuenta, y vuelve en la
   // respuesta del alta. Antes era fija para todas ("12345678"): cómodo, pero
   // significaba que cualquiera que supiera un nombre de usuario entraba a esa
@@ -470,18 +478,27 @@
     e.preventDefault();
     const u = usuario.value.trim();
     if (!u)               return error('Escribí tu nombre.');
-    // 4 y no 3: el backend acepta desde 3, pero el panel de agentes rechaza
-    // los muy cortos y ahi el alta muere despues, cuando el jugador ya vio
-    // 'creando tu cuenta'. Mejor frenarlo aca, donde puede corregirlo.
+    // 4 y no 3: el backend acepta desde 3, pero el panel de agentes rechaza
+    // los muy cortos y ahi el alta muere despues, cuando el jugador ya vio
+    // 'creando tu cuenta'. Mejor frenarlo aca, donde puede corregirlo.
     if (u.length < 4)     return error('Mínimo 4 caracteres.');
 
     btn.disabled = true; btn.textContent = 'Creando…';
 
     try {
       const sid = nuevoSid();
+      // fbp/fbc los deja el Pixel (meta-pixel.js, cargado al pie de la
+      // pagina) en cookies -- para el momento del submit ya corrio. Sin
+      // pixel activo metaCookies() no existe: se manda vacio y el backend
+      // igual acredita el Lead, solo que sin esos dos datos de atribucion.
+      const cookies = window.metaCookies ? window.metaCookies() : {};
       const res = await fetch(API, {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ usuario: u, sid: sid })
+        body: JSON.stringify({
+          usuario: u, sid: sid,
+          pub: PUB, fbclid: FBCLID,
+          fbp: cookies.fbp || '', fbc: cookies.fbc || '',
+        })
       });
       const data = await res.json().catch(()=> ({}));
 

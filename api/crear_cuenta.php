@@ -32,6 +32,7 @@ require __DIR__ . '/config.php';
 require __DIR__ . '/db.php';
 require __DIR__ . '/altas_lib.php';
 require __DIR__ . '/config_crm.php';
+require __DIR__ . '/publicidad_lib.php';
 
 header('Content-Type: application/json; charset=utf-8');
 // La respuesta depende del pedido y cambia sola cuando el bot avanza: si un
@@ -135,6 +136,16 @@ if ($metodo === 'POST') {
         // id=1,2,3... se lleva las credenciales de los demas.
         $sid = mb_substr(trim((string)($body['sid'] ?? '')), 0, 64);
 
+        // De que publicista vino el pedido (?pub=<slug> en la landing) y los
+        // identificadores de Meta que agarro en el camino. Todo opcional: un
+        // jugador que entro directo (sin publicista) sigue creando su cuenta
+        // igual, solo que sin datos de campaña para el modulo de Publicidad.
+        $pubSlug    = trim((string)($body['pub']    ?? ''));
+        $publicista = $pubSlug !== '' ? publicidad_por_slug($pdo, $pubSlug) : null;
+        $fbclid     = trim((string)($body['fbclid'] ?? ''));
+        $fbp        = trim((string)($body['fbp']    ?? ''));
+        $fbc        = trim((string)($body['fbc']    ?? ''));
+
         $r = alta_encolar($pdo, [
             'usuario'  => $usuarioFinal,
             'password' => $clave,
@@ -147,7 +158,31 @@ if ($metodo === 'POST') {
             // en el POST, como antes.
             'entrega_clave' => $sid !== '' ? $clave : '',
             'entrega_sid'   => $sid,
+            'publicista_id' => $publicista['id'] ?? null,
+            'fbclid'        => $fbclid !== '' ? $fbclid : null,
+            'fbp'           => $fbp    !== '' ? $fbp    : null,
+            'fbc'           => $fbc    !== '' ? $fbc    : null,
         ]);
+
+        // Lead: el jugador pidio la cuenta (no que se haya creado todavia --
+        // eso es CompleteRegistration, que ya dispara altas_cola.php cuando el
+        // bot confirma). `ref` con el id de la landing hace el event_id
+        // reproducible por si la pestaña reintenta. Nunca puede tumbar el
+        // alta: si Meta esta caido, la cuenta se crea igual.
+        if (($r['cuerpo']['ok'] ?? false) && ($r['cuerpo']['id'] ?? 0)) {
+            try {
+                require_once __DIR__ . '/meta_lib.php';
+                meta_evento($pdo, 'Lead', [
+                    'usuario' => $usuarioFinal,
+                    'ref'     => 'alta:' . $r['cuerpo']['id'],
+                    'fbp'     => $fbp,
+                    'fbc'     => $fbc,
+                    'pixel'   => publicidad_pixel_propio($publicista),
+                ]);
+            } catch (Throwable $e) {
+                error_log('meta Lead: ' . $e->getMessage());
+            }
+        }
     } catch (Throwable $e) {
         // El detalle va al log, nunca a la respuesta: aca contesta cualquiera.
         error_log('crear_cuenta: ' . $e->getMessage());

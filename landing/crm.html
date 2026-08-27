@@ -1126,6 +1126,55 @@
     .fn-kpis{grid-template-columns:1fr}
   }
 
+  /* ---- Publicidad: reusa .fn-gate/.fn-contenido/.fn-filtros-*/.fn-cards/
+     .fn-card/.fn-alerta/.fn-explicacion de Finanzas -- solo lo que no tiene
+     equivalente ahi va con prefijo .pb- ---- */
+  .pb-tabs{display:flex;gap:6px;flex-wrap:wrap;padding:0 20px 14px;align-items:center}
+  .pb-tab{background:var(--panel2);border:1px solid var(--line);color:var(--muted);
+    padding:7px 14px;border-radius:999px;font-size:12.5px;font-weight:600;cursor:pointer;
+    white-space:nowrap}
+  .pb-tab:hover{border-color:var(--violet);color:var(--txt)}
+  .pb-tab.on{background:var(--violetSoft);border-color:var(--violet);color:var(--violet2)}
+  .pb-tab-agregar{background:transparent;border:1px dashed var(--line);color:var(--muted)}
+  .pb-tab-agregar:hover{border-color:var(--violet);color:var(--violet2)}
+
+  .pb-landing-row{display:flex;align-items:center;gap:12px;padding:10px 20px;margin:0 20px 14px;
+    background:var(--panel2);border:1px solid var(--line);border-radius:12px;flex-wrap:wrap}
+  .pb-landing-info{display:flex;flex-direction:column;gap:2px;flex:1;min-width:180px}
+  .pb-landing-nombre{font-weight:700;font-size:13px}
+  .pb-landing-url{color:var(--muted);font-size:12px;word-break:break-all}
+  .pb-pixel-estado{font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;
+    background:var(--panel3);color:var(--muted);white-space:nowrap}
+  .pb-pixel-estado.on{background:rgba(58,196,125,.15);color:var(--green2)}
+
+  .pb-seccion-titulo{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;
+    color:var(--muted);padding:4px 20px;margin-top:6px}
+
+  .pb-funnel{display:flex;align-items:center;gap:6px;padding:16px 20px;margin:0 20px 14px;
+    background:var(--panel2);border:1px solid var(--line);border-radius:14px;overflow-x:auto}
+  .pb-funnel-paso{flex:1;min-width:96px;text-align:center;display:flex;flex-direction:column;gap:4px}
+  .pb-funnel-num{font-size:26px;font-weight:800}
+  .pb-funnel-final .pb-funnel-num{color:var(--violet2)}
+  .pb-funnel-label{color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.03em}
+  .pb-funnel-flecha{display:flex;flex-direction:column;align-items:center;gap:2px;color:var(--muted2);flex:none}
+  .pb-funnel-flecha svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;
+    stroke-linecap:round;stroke-linejoin:round}
+  .pb-funnel-flecha span{font-size:11px;font-weight:700;color:var(--violet2);white-space:nowrap}
+  @media(max-width:640px){
+    .pb-funnel{flex-direction:column;align-items:stretch}
+    .pb-funnel-flecha{flex-direction:row;transform:rotate(90deg);margin:2px 0}
+  }
+
+  .pb-card-destacada{border-color:var(--violet)}
+
+  .pb-tabla-wrap{overflow-x:auto;margin:0 20px 20px;border:1px solid var(--line);border-radius:13px}
+  .pb-tabla{width:100%;border-collapse:collapse;font-size:13px;min-width:520px}
+  .pb-tabla th{text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase;
+    letter-spacing:.03em;padding:10px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
+  .pb-tabla td{padding:10px 14px;border-bottom:1px solid var(--line)}
+  .pb-tabla tr:last-child td{border-bottom:none}
+  .pb-tabla-barra{height:5px;border-radius:999px;background:linear-gradient(90deg,var(--violet2),var(--violet))}
+
   /* ---- Chatbot (IA) — usa las variables reales del tema, no valores propios ---- */
   #viewChatbot{overflow-y:auto}
   /* .view-panel recorta (overflow:hidden) para que las tablas manejen su
@@ -1407,6 +1456,7 @@
       <button class="rail-item" data-nav="retiros" data-tip="Retiros pendientes" data-corto="Retiros"><svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg><span class="rail-badge" id="badgeRetiros"></span></button>
       <button class="rail-item" data-nav="comprobantes" data-tip="Comprobantes" data-corto="Compr."><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg><span class="rail-badge" id="badgeComprobantes"></span></button>
       <button class="rail-item" data-nav="push" data-tip="Push & Notificaciones" data-corto="Push"><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></button>
+      <button class="rail-item" data-nav="publicidad" data-tip="Publicidad" data-corto="Public."><svg viewBox="0 0 24 24"><path d="M3 11v2a1 1 0 0 0 1 1h3l5 4V6L7 10H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 6a9 9 0 0 1 0 12"/></svg></button>
       <button class="rail-item" data-nav="chatbot" data-tip="Chatbot (IA)" data-corto="Chatbot"><svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M12 8V4M9 4h6"/><circle cx="8.5" cy="14" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="14" r="1.3" fill="currentColor" stroke="none"/></svg></button>
       <button class="rail-item" id="railAgentes" data-nav="agentes" data-tip="Agentes" data-corto="Agentes" style="display:none"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></button>
       <button class="rail-item" data-nav="suscripcion" data-tip="Mi suscripción" data-corto="Saldo"><svg viewBox="0 0 24 24"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></button>
@@ -2210,6 +2260,264 @@
     </div>
   </div>
 
+  <!-- ====================== PUBLICIDAD ====================== -->
+  <div class="card-col view-panel" id="viewPublicidad" style="display:none">
+
+    <!-- Gate de reverificación -- mismo patrón que Finanzas: gasto de
+         campaña, CPA y ROAS son información sensible de plata. -->
+    <div id="pbGate" class="fn-gate">
+      <div class="fn-gate-card">
+        <b>Publicidad</b>
+        <p>Reingresá tu contraseña de operador para ver esta sección.</p>
+        <input type="password" id="pbPass" placeholder="Contraseña" autocomplete="current-password">
+        <div class="fn-gate-error" id="pbPassError"></div>
+        <button class="btn-asignar" id="pbPassBtn" type="button" style="width:100%">Ingresar</button>
+      </div>
+    </div>
+
+    <!-- Contenido real, oculto hasta publicidad_ok -->
+    <div id="pbContenido" class="fn-contenido" style="display:none">
+
+      <div class="fn-header">
+        <b>Publicidad</b>
+        <div class="fn-export-mini">
+          <button class="btn-mini-accion" id="pbBtnExportar" type="button">⬇ Exportar JSON</button>
+          <button class="btn-mini-accion" id="pbBtnCargarGasto" type="button">💵 Cargar gasto</button>
+          <button class="btn-mini-accion" id="pbBtnAgregar" type="button">+ Agregar publicista</button>
+        </div>
+      </div>
+
+      <!-- Tabs de publicistas: cada uno es una landing propia con su pixel.
+           Los resultados de abajo son SIEMPRE de UN publicista a la vez, para
+           no mezclar la campaña de uno con la de otro. -->
+      <div class="pb-tabs" id="pbTabs"><div class="ag-vacio">Cargando…</div></div>
+
+      <!-- Link de la landing de este publicista + su estado de pixel -->
+      <div class="pb-landing-row" id="pbLandingRow" style="display:none">
+        <div class="pb-landing-info">
+          <span class="pb-landing-nombre" id="pbLandingNombre">—</span>
+          <span class="pb-landing-url" id="pbLandingUrl">—</span>
+        </div>
+        <span class="pb-pixel-estado" id="pbPixelEstado">sin pixel</span>
+        <button class="btn-mini-accion" id="pbBtnCopiar" type="button">Copiar</button>
+      </div>
+
+      <!-- Filtros de tiempo -- mismo patrón que Finanzas -->
+      <div class="fn-filtros-tiempo">
+        <div class="fn-filtros-rapidos" id="pbFiltrosRapidos">
+          <button class="fn-filtro-btn on" data-f="hoy" type="button">Hoy</button>
+          <button class="fn-filtro-btn" data-f="ayer" type="button">Ayer</button>
+          <button class="fn-filtro-btn" data-f="7d" type="button">7 días</button>
+          <button class="fn-filtro-btn" data-f="mes" type="button">Este mes</button>
+          <button class="fn-filtro-btn" data-f="mes_pasado" type="button">Mes pasado</button>
+        </div>
+        <div class="fn-filtro-custom">
+          <input type="date" id="pbDesde"> <input type="date" id="pbHasta">
+          <button class="btn-mini-accion" id="pbAplicarRango" type="button">Aplicar</button>
+        </div>
+      </div>
+
+      <!-- Resumen visual del embudo: cada paso es JUGADORES (no depósitos),
+           para que la caída de un paso al siguiente se lea de un vistazo. -->
+      <div class="pb-funnel" id="pbFunnel">
+        <!-- Visitas solo aparece si el publicista tiene pixel propio + token
+             de Insights cargado (ver meta_insights_pageviews()). Sin eso,
+             este paso y su flecha se ocultan -- el embudo arranca en
+             Registros, como antes. -->
+        <div class="pb-funnel-paso" id="pfPasoVisitas" style="display:none">
+          <div class="pb-funnel-num" id="pfVisitas">—</div>
+          <div class="pb-funnel-label">Visitas de página</div>
+        </div>
+        <div class="pb-funnel-flecha" id="pfFlechaVisitas" style="display:none">
+          <span id="pfConvVisitasReg">—</span>
+          <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </div>
+        <div class="pb-funnel-paso">
+          <div class="pb-funnel-num" id="pfRegistros">—</div>
+          <div class="pb-funnel-label">Registros</div>
+        </div>
+        <div class="pb-funnel-flecha">
+          <span id="pfConvRegACarga">—</span>
+          <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </div>
+        <div class="pb-funnel-paso">
+          <div class="pb-funnel-num" id="pfPrimerasCargas">—</div>
+          <div class="pb-funnel-label">Primera carga</div>
+        </div>
+        <div class="pb-funnel-flecha">
+          <span id="pfConvCargaVolvio">—</span>
+          <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </div>
+        <div class="pb-funnel-paso pb-funnel-final">
+          <div class="pb-funnel-num" id="pfVolvieron">—</div>
+          <div class="pb-funnel-label">Volvió a cargar</div>
+        </div>
+      </div>
+
+      <!-- Banner: sin gasto cargado, CPA/ROAS no se pueden calcular -->
+      <div class="fn-alerta amarillo" id="pbAvisoGasto" style="display:none;margin:0 20px 14px">
+        <span>⚠ Cargá el gasto del período para ver CPA y ROAS.</span>
+        <button class="btn-mini-accion" id="pbBtnCargarGastoAviso" type="button">Cargar ahora</button>
+      </div>
+
+      <div class="pb-seccion-titulo">Embudo — solo jugadores creados desde la landing</div>
+      <div class="fn-cards" id="pbCardsEmbudo" style="margin:0 20px 6px">
+        <div class="fn-card">
+          <div class="k">Gasto</div>
+          <div class="v" id="pbGasto">—</div>
+          <div class="sub">cargado a mano</div>
+        </div>
+        <div class="fn-card">
+          <div class="k">Registros</div>
+          <div class="v" id="pbRegistros">—</div>
+          <div class="sub">cuentas creadas desde la landing</div>
+        </div>
+        <div class="fn-card">
+          <div class="k">Primeras cargas</div>
+          <div class="v" id="pbPrimerasCargas">—</div>
+          <div class="sub" id="pbConversion">—</div>
+        </div>
+        <div class="fn-card">
+          <div class="k">Cargas totales</div>
+          <div class="v" id="pbCargasTotales">—</div>
+          <div class="sub">depósitos confirmados, no solo el primero</div>
+        </div>
+        <div class="fn-card pb-card-destacada">
+          <div class="k">Cargas x jugador</div>
+          <div class="v" id="pbCargasPorJugador">—</div>
+          <div class="sub">retención</div>
+        </div>
+        <div class="fn-card">
+          <div class="k">Depositado real</div>
+          <div class="v" id="pbDepositado">—</div>
+          <div class="sub">suma de TODAS las cargas</div>
+        </div>
+        <div class="fn-card">
+          <div class="k">Ticket promedio</div>
+          <div class="v" id="pbTicketPromedio">—</div>
+          <div class="sub">por carga</div>
+        </div>
+        <div class="fn-card">
+          <div class="k">Volvió a cargar</div>
+          <div class="v" id="pbVolvioACargar">—</div>
+          <div class="sub" id="pbVolvioDetalle">—</div>
+        </div>
+      </div>
+
+      <div class="fn-explicacion" style="margin:0 20px 14px">
+        <b>Cargas x jugador</b> es la retención: 1.0 significa que cargaron una sola vez y no volvieron;
+        2.5 que en promedio cargaron dos veces y media. Es lo que distingue tráfico que se queda de
+        tráfico que prueba una vez y se va — y decide si el CPA que estás pagando cierra o no.
+      </div>
+
+      <div class="pb-seccion-titulo">Rentabilidad</div>
+      <div class="fn-cards" id="pbCardsRentabilidad" style="margin:0 20px 6px">
+        <div class="fn-card">
+          <div class="k">Costo x registro <span class="fn-info" data-tip="CPR: cuánto gastaste en publicidad dividido la cantidad de cuentas nuevas creadas desde esta landing. Cuánto te cuesta conseguir UN registro, sin importar si después carga o no.">ⓘ<span class="fn-popover"></span></span></div>
+          <div class="v" id="pbCpr">—</div>
+          <div class="sub">CPR</div>
+        </div>
+        <div class="fn-card">
+          <div class="k">Costo x carga <span class="fn-info" data-tip="CPA (costo por adquisición): cuánto gastaste dividido la cantidad de jugadores que hicieron su PRIMER depósito. A diferencia del CPR, sólo cuenta a los que efectivamente pagaron -- es el número real para saber si la pauta se paga sola.">ⓘ<span class="fn-popover"></span></span></div>
+          <div class="v" id="pbCpa">—</div>
+          <div class="sub">CPA</div>
+        </div>
+        <div class="fn-card">
+          <div class="k">Deja cada jugador</div>
+          <div class="v" id="pbDejaJugador">—</div>
+          <div class="sub">depositado / registros</div>
+        </div>
+        <div class="fn-card">
+          <div class="k">ROAS</div>
+          <div class="v" id="pbRoas">—</div>
+          <div class="sub">depositado / gasto</div>
+        </div>
+        <div class="fn-card">
+          <div class="k">Ganancia</div>
+          <div class="v" id="pbGanancia">—</div>
+          <div class="sub">depositado − gasto</div>
+        </div>
+      </div>
+
+      <div class="fn-explicacion" style="margin:0 20px 14px">
+        Si <b>Deja cada jugador</b> es mayor que el <b>CPA</b>, ese peso de pauta vuelve. Es la comparación
+        que decide si escalar o cortar. Ojo: <b>Depositado real</b> cuenta solo las cargas que el casino
+        confirmó — no lo que el jugador dijo que transfirió.
+      </div>
+
+      <div class="pb-seccion-titulo">Día por día</div>
+      <div class="pb-tabla-wrap">
+        <table class="pb-tabla">
+          <thead>
+            <tr><th>Día</th><th>Registros</th><th>1ª cargas</th><th>Depositado real</th><th>Gasto</th><th></th></tr>
+          </thead>
+          <tbody id="pbDiaPorDia"><tr><td colspan="6" class="ag-vacio">Elegí un publicista</td></tr></tbody>
+        </table>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Modal de alta/edición de publicista -->
+  <div class="back" id="backPublicista" style="display:none">
+    <div class="modal">
+      <h3 id="pbModalTitulo">Nuevo publicista</h3>
+      <input type="hidden" id="pbEditId">
+
+      <label for="pbNombre">Nombre</label>
+      <input id="pbNombre" type="text" placeholder="Ej: Landing 2 / Juan Pérez">
+
+      <label for="pbSlug">Link (opcional, se genera solo si lo dejás vacío)</label>
+      <input id="pbSlug" type="text" placeholder="landing2">
+
+      <label for="pbPixelId">Pixel ID de Meta (opcional)</label>
+      <input id="pbPixelId" type="text" placeholder="Sin esto, usa el pixel general">
+
+      <label for="pbCapiToken">Token CAPI (opcional)</label>
+      <input id="pbCapiToken" type="password" placeholder="Solo si tiene pixel propio" autocomplete="off">
+
+      <p style="color:var(--muted);font-size:11.5px;margin:14px 0 2px">
+        Para ver "Visitas de página" en el embudo (opcional, requiere un token
+        de Meta Marketing API con permiso <b>ads_read</b> -- distinto del
+        Token CAPI de arriba).
+      </p>
+      <label for="pbInsightsToken">Access Token de Insights (opcional)</label>
+      <input id="pbInsightsToken" type="password" placeholder="Token con permiso ads_read" autocomplete="off">
+
+      <label for="pbInsightsAdAccount">ID de cuenta publicitaria (opcional)</label>
+      <input id="pbInsightsAdAccount" type="text" placeholder="act_1234567890 (o solo el número)">
+
+      <label style="display:flex;align-items:center;gap:8px;margin:14px 0 4px">
+        <input type="checkbox" id="pbActivo" checked style="width:auto"> Activo
+      </label>
+
+      <div id="pbModalMsg" class="msg"></div>
+      <div class="mbtns">
+        <button class="no" id="pbModalCancelar" type="button">Cancelar</button>
+        <button class="ok" id="pbModalGuardar" type="button">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de gasto diario -->
+  <div class="back" id="backGasto" style="display:none">
+    <div class="modal">
+      <h3>Cargar gasto</h3>
+
+      <label for="pgFecha">Fecha</label>
+      <input id="pgFecha" type="date">
+
+      <label for="pgMonto">Monto gastado ese día</label>
+      <input id="pgMonto" type="number" min="0" step="0.01" placeholder="0">
+
+      <div id="pgMsg" class="msg"></div>
+      <div class="mbtns">
+        <button class="no" id="pgCancelar" type="button">Cancelar</button>
+        <button class="ok" id="pgGuardar" type="button">Guardar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ====================== CHATBOT (IA) ====================== -->
   <div class="card-col view-panel" id="viewSuscripcion" style="display:none">
     <div class="cb-wrap">
@@ -3009,7 +3317,7 @@
   // modulos nuevos ocultan esas 3 columnas y muestran su propio contenedor.
   // Se va sumando un nombre a VISTAS + su contenedor a VISTA_CONTENEDOR por
   // cada modulo que se conecte, sin tocar el resto de la funcion.
-  const VISTAS = ["chats", "comprobantes", "retiros", "cargas", "transacciones", "usuarios", "finanzas", "notificaciones", "chatbot", "agentes", "suscripcion", "config"];
+  const VISTAS = ["chats", "comprobantes", "retiros", "cargas", "transacciones", "usuarios", "finanzas", "notificaciones", "publicidad", "chatbot", "agentes", "suscripcion", "config"];
   const VISTA_CONTENEDOR = {
     comprobantes: "#viewComprobantes",
     retiros: "#viewRetiros",
@@ -3018,6 +3326,7 @@
     usuarios: "#viewUsuarios",
     finanzas: "#viewFinanzas",
     notificaciones: "#viewNotificaciones",
+    publicidad: "#viewPublicidad",
     chatbot: "#viewChatbot",
     agentes: "#viewAgentes",
     suscripcion: "#viewSuscripcion",
@@ -3082,6 +3391,10 @@
     if(nombre==="finanzas"){
       fnAbrir();
     }
+    // Publicidad: mismo criterio de gate propio que Finanzas -- ver pbAbrir().
+    if(nombre==="publicidad"){
+      pbAbrir();
+    }
     if(nombre==="chatbot"){
       cargarChatbotConfig();
     }
@@ -3104,6 +3417,7 @@
     chats:"Conversaciones", usuarios:"Usuarios", cargas:"Cargas",
     transacciones:"Auditoría", finanzas:"Finanzas", retiros:"Retiros",
     comprobantes:"Comprobantes", notificaciones:"Notificaciones",
+    publicidad:"Publicidad",
     chatbot:"Chatbot", agentes:"Agentes", suscripcion:"Mi suscripción",
     config:"Configuración"
   };
@@ -5667,6 +5981,446 @@
       document.querySelectorAll("#viewFinanzas .fn-info.open").forEach(el=>el.classList.remove("open"));
     }
   });
+
+  /* ====================== Publicidad ======================
+     Embudo de Meta Ads por publicista (cada uno con su propia landing y,
+     opcionalmente, su propio pixel). Mismo patron que Finanzas: gate propio
+     de contraseña, filtros de tiempo, cards de KPIs. Backend: crm_publicidad.php. */
+  const API_PB = API_BASE + "/crm_publicidad.php";
+  let pbVerificado = false;
+  let pbFiltroActual = "hoy";
+  let pbRangoActual = null;
+  let pbPublicistas = [];
+  let pbActivoId = null;
+
+  async function pbFetch(url, options){
+    const opts = Object.assign({}, options || {});
+    opts.credentials = opts.credentials || "same-origin";
+    const metodo = (opts.method || "GET").toUpperCase();
+    if(["POST","PUT","PATCH","DELETE"].includes(metodo)){
+      const h = new Headers(opts.headers || {});
+      if(CSRF) h.set("X-CSRF-Token", CSRF);
+      opts.headers = h;
+    }
+    return fetch(url, opts);
+  }
+
+  /** GET con JSON. 401 = sesión de operador vencida (login general).
+   *  403 = falta reverificar Publicidad (gate propio). */
+  async function pbGetJson(params){
+    const r = await pbFetch(API_PB + "?" + new URLSearchParams(params));
+    if(r.status === 401){ mostrarLogin("Tu sesión expiró. Ingresá de nuevo."); throw new Error("sesion_requerida"); }
+    if(r.status === 403){ pbMostrarGate(); throw new Error("publicidad_no_verificado"); }
+    return r.json();
+  }
+  async function pbPostJson(data){
+    const r = await pbFetch(API_PB, {
+      method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(data)
+    });
+    if(r.status === 401){ mostrarLogin("Tu sesión expiró. Ingresá de nuevo."); throw new Error("sesion_requerida"); }
+    if(r.status === 403){ pbMostrarGate(); throw new Error("publicidad_no_verificado"); }
+    return r.json();
+  }
+
+  function pbMostrarGate(){
+    pbVerificado = false;
+    $("#pbGate").style.display = "flex";
+    $("#pbContenido").style.display = "none";
+    $("#pbPass").value = "";
+    $("#pbPassError").textContent = "";
+  }
+  function pbMostrarContenido(){
+    pbVerificado = true;
+    $("#pbGate").style.display = "none";
+    $("#pbContenido").style.display = "block";
+  }
+
+  function pbAbrir(){
+    if(pbVerificado){
+      pbMostrarContenido();
+      pbFixTooltips();
+      pbCargarPublicistas();
+    } else {
+      pbMostrarGate();
+      setTimeout(()=>{ const p=$("#pbPass"); if(p) p.focus(); }, 50);
+    }
+  }
+
+  function pbFmtFecha(d){ return d.toISOString().slice(0, 10); }
+
+  /** Traduce cada botón rápido a {desde,hasta}. "custom" se lee directo de
+   *  los <input type=date>, ver pbAplicarRangoCustom. */
+  function pbCalcularRango(f){
+    const hoy = new Date();
+    const hoyStr = pbFmtFecha(hoy);
+    if(f === "hoy")  return { desde: hoyStr, hasta: hoyStr };
+    if(f === "ayer"){ const d = new Date(hoy.getTime() - 86400000); return { desde: pbFmtFecha(d), hasta: pbFmtFecha(d) }; }
+    if(f === "7d")   { const d = new Date(hoy.getTime() - 6*86400000);  return { desde: pbFmtFecha(d), hasta: hoyStr }; }
+    if(f === "mes")  { const d = new Date(hoy.getFullYear(), hoy.getMonth(), 1); return { desde: pbFmtFecha(d), hasta: hoyStr }; }
+    if(f === "mes_pasado"){
+      const finMesPasado = new Date(hoy.getFullYear(), hoy.getMonth(), 0);
+      const inicioMesPasado = new Date(hoy.getFullYear(), hoy.getMonth()-1, 1);
+      return { desde: pbFmtFecha(inicioMesPasado), hasta: pbFmtFecha(finMesPasado) };
+    }
+    return { desde: hoyStr, hasta: hoyStr };
+  }
+
+  function pbFiltroRapido(f){
+    pbFiltroActual = f;
+    document.querySelectorAll("#pbFiltrosRapidos .fn-filtro-btn").forEach(b=>{
+      b.classList.toggle("on", b.getAttribute("data-f") === f);
+    });
+    pbRangoActual = pbCalcularRango(f);
+    $("#pbDesde").value = pbRangoActual.desde;
+    $("#pbHasta").value = pbRangoActual.hasta;
+    pbCargarEmbudo();
+  }
+
+  function pbAplicarRangoCustom(){
+    const desde = $("#pbDesde").value, hasta = $("#pbHasta").value;
+    if(!desde || !hasta){ toast("Elegí las dos fechas"); return; }
+    if(desde > hasta){ toast("La fecha 'desde' no puede ser posterior a 'hasta'"); return; }
+    pbFiltroActual = "custom";
+    document.querySelectorAll("#pbFiltrosRapidos .fn-filtro-btn").forEach(b=>b.classList.remove("on"));
+    pbRangoActual = { desde, hasta };
+    pbCargarEmbudo();
+  }
+
+  // ---------- publicistas: tabs + link + modal alta/edición ----------
+  async function pbCargarPublicistas(){
+    let d;
+    try{ d = await pbGetJson({accion:"publicistas"}); }
+    catch(e){ return; }
+    if(!d.ok){ toast(d.error || "Error al cargar publicistas"); return; }
+    pbPublicistas = d.publicistas || [];
+
+    if(!pbPublicistas.length){
+      $("#pbTabs").innerHTML = '<span style="color:var(--muted);font-size:13px">Todavía no hay publicistas.</span>'
+        + ' <button class="pb-tab pb-tab-agregar" id="pbTabAgregarVacio" type="button">+ Agregar el primero</button>';
+      $("#pbTabAgregarVacio").addEventListener("click", pbAbrirModalNuevo);
+      $("#pbLandingRow").style.display = "none";
+      pbActivoId = null;
+      pbLimpiarEmbudo();
+      return;
+    }
+
+    if(!pbActivoId || !pbPublicistas.some(p=>p.id===pbActivoId)){
+      pbActivoId = pbPublicistas[0].id;
+    }
+    pbPintarTabs();
+    pbPintarLandingRow();
+    pbFiltroRapido(pbFiltroActual);
+    pbCargarDiaPorDia();
+  }
+
+  function pbPintarTabs(){
+    $("#pbTabs").innerHTML = pbPublicistas.map(p=>
+      `<button class="pb-tab ${p.id===pbActivoId?"on":""}" data-id="${p.id}" type="button">${esc(p.nombre)}</button>`
+    ).join("") + '<button class="pb-tab pb-tab-agregar" id="pbTabAgregar" type="button">+ Agregar</button>';
+
+    document.querySelectorAll("#pbTabs .pb-tab[data-id]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        pbActivoId = parseInt(btn.getAttribute("data-id"), 10);
+        pbPintarTabs();
+        pbPintarLandingRow();
+        pbCargarEmbudo();
+        pbCargarDiaPorDia();
+      });
+    });
+    $("#pbTabAgregar").addEventListener("click", pbAbrirModalNuevo);
+  }
+
+  function pbPublicistaActivo(){
+    return pbPublicistas.find(p=>p.id===pbActivoId) || null;
+  }
+
+  function pbPintarLandingRow(){
+    const p = pbPublicistaActivo();
+    if(!p){ $("#pbLandingRow").style.display = "none"; return; }
+    $("#pbLandingRow").style.display = "flex";
+    $("#pbLandingNombre").textContent = p.nombre;
+    // Mismo prefijo que usa la API (TENANT_PREFIJO): un cliente por-path
+    // sirve su landing en /<slug>/registro.html, no en la raíz.
+    const url = location.origin + TENANT_PREFIJO + "/registro.html?pub=" + encodeURIComponent(p.slug);
+    $("#pbLandingUrl").textContent = url;
+    const pix = $("#pbPixelEstado");
+    if(p.pixel_id && p.tiene_token){
+      pix.textContent = "pixel propio"; pix.className = "pb-pixel-estado on";
+    } else {
+      pix.textContent = "sin pixel (usa el general)"; pix.className = "pb-pixel-estado";
+    }
+    $("#pbBtnCopiar").onclick = async ()=>{
+      try{ await navigator.clipboard.writeText(url); toast("Link copiado"); }
+      catch(e){ toast(url); }
+    };
+    // Doble click en el nombre abre edición -- sin agregar un botón extra
+    // por tab, que con muchos publicistas se vuelve una fila de lapices.
+    $("#pbLandingNombre").onclick = ()=>pbAbrirModalEditar(p);
+    $("#pbLandingNombre").style.cursor = "pointer";
+    $("#pbLandingNombre").title = "Click para editar este publicista";
+  }
+
+  function pbAbrirModalNuevo(){
+    $("#pbModalTitulo").textContent = "Nuevo publicista";
+    $("#pbEditId").value = "";
+    $("#pbNombre").value = ""; $("#pbSlug").value = "";
+    $("#pbPixelId").value = ""; $("#pbCapiToken").value = "";
+    $("#pbInsightsToken").value = ""; $("#pbInsightsAdAccount").value = "";
+    $("#pbActivo").checked = true;
+    $("#pbModalMsg").textContent = ""; $("#pbModalMsg").className = "msg";
+    $("#backPublicista").style.display = "grid";
+  }
+  function pbAbrirModalEditar(p){
+    $("#pbModalTitulo").textContent = "Editar publicista";
+    $("#pbEditId").value = p.id;
+    $("#pbNombre").value = p.nombre; $("#pbSlug").value = p.slug;
+    $("#pbPixelId").value = p.pixel_id || ""; $("#pbCapiToken").value = "";
+    // Los tokens nunca vuelven del server (solo "tiene_token"/"tiene_insights_token"):
+    // se dejan vacíos y solo se pisan si el operador escribe uno nuevo.
+    $("#pbInsightsToken").value = "";
+    $("#pbInsightsAdAccount").value = p.insights_ad_account || "";
+    $("#pbActivo").checked = !!p.activo;
+    $("#pbModalMsg").textContent = ""; $("#pbModalMsg").className = "msg";
+    $("#backPublicista").style.display = "grid";
+  }
+  $("#pbModalCancelar").addEventListener("click", ()=>{ $("#backPublicista").style.display = "none"; });
+  $("#pbModalGuardar").addEventListener("click", async ()=>{
+    const nombre = $("#pbNombre").value.trim();
+    const msg = $("#pbModalMsg");
+    if(!nombre){ msg.className="msg err"; msg.textContent="Falta el nombre"; return; }
+    const btn = $("#pbModalGuardar"); btn.disabled = true;
+    const idTxt = $("#pbEditId").value;
+    let d;
+    try{
+      d = await pbPostJson({
+        accion: "publicista_guardar",
+        id: idTxt ? parseInt(idTxt,10) : undefined,
+        nombre, slug: $("#pbSlug").value.trim(),
+        pixel_id: $("#pbPixelId").value.trim(),
+        capi_token: $("#pbCapiToken").value.trim(),
+        insights_token: $("#pbInsightsToken").value.trim(),
+        insights_ad_account: $("#pbInsightsAdAccount").value.trim(),
+        activo: $("#pbActivo").checked,
+      });
+    }catch(e){ btn.disabled=false; return; }
+    btn.disabled = false;
+    if(!d.ok){ msg.className="msg err"; msg.textContent = d.error || "No se pudo guardar"; return; }
+    $("#backPublicista").style.display = "none";
+    toast("Publicista guardado");
+    if(!idTxt) pbActivoId = d.id;
+    pbCargarPublicistas();
+  });
+
+  // ---------- gasto diario ----------
+  $("#pgCancelar").addEventListener("click", ()=>{ $("#backGasto").style.display = "none"; });
+  function pbAbrirModalGasto(fechaSugerida){
+    if(!pbActivoId){ toast("Elegí un publicista primero"); return; }
+    $("#pgFecha").value = fechaSugerida || pbFmtFecha(new Date());
+    $("#pgMonto").value = "";
+    $("#pgMsg").textContent = ""; $("#pgMsg").className = "msg";
+    $("#backGasto").style.display = "grid";
+  }
+  $("#pgGuardar").addEventListener("click", async ()=>{
+    const fecha = $("#pgFecha").value;
+    const monto = parseFloat($("#pgMonto").value);
+    const msg = $("#pgMsg");
+    if(!fecha){ msg.className="msg err"; msg.textContent="Elegí una fecha"; return; }
+    if(isNaN(monto) || monto < 0){ msg.className="msg err"; msg.textContent="Poné un monto válido"; return; }
+    const btn = $("#pgGuardar"); btn.disabled = true;
+    let d;
+    try{ d = await pbPostJson({accion:"gasto_guardar", publicista_id: pbActivoId, fecha, monto}); }
+    catch(e){ btn.disabled=false; return; }
+    btn.disabled = false;
+    if(!d.ok){ msg.className="msg err"; msg.textContent = d.error || "No se pudo guardar"; return; }
+    $("#backGasto").style.display = "none";
+    toast("Gasto guardado");
+    pbCargarEmbudo();
+    pbCargarDiaPorDia();
+  });
+
+  // ---------- embudo + rentabilidad ----------
+  function pbLimpiarEmbudo(){
+    ["pbGasto","pbRegistros","pbPrimerasCargas","pbCargasTotales","pbCargasPorJugador",
+     "pbDepositado","pbTicketPromedio","pbVolvioACargar","pbCpr","pbCpa","pbDejaJugador",
+     "pbRoas","pbGanancia","pfRegistros","pfPrimerasCargas","pfVolvieron",
+     "pfConvRegACarga","pfConvCargaVolvio","pfVisitas","pfConvVisitasReg"]
+      .forEach(id=>{ const el=$("#"+id); if(el) el.textContent = "—"; });
+    $("#pfPasoVisitas").style.display = "none";
+    $("#pfFlechaVisitas").style.display = "none";
+    $("#pbAvisoGasto").style.display = "none";
+    $("#pbDiaPorDia").innerHTML = '<tr><td colspan="6" class="ag-vacio">Elegí un publicista</td></tr>';
+  }
+
+  // ---------- fix de tooltips (mismo bug/patrón que Finanzas: el popover
+  // interno queda vacío si no se copia data-tip a mano) ----------
+  function pbFixTooltips(){
+    document.querySelectorAll("#viewPublicidad .fn-info[data-tip]").forEach(el=>{
+      const pop = el.querySelector(".fn-popover");
+      if(pop) pop.textContent = el.dataset.tip;
+    });
+  }
+  $("#viewPublicidad").addEventListener("click", e=>{
+    const info = e.target.closest(".fn-info");
+    document.querySelectorAll("#viewPublicidad .fn-info.open").forEach(el=>{
+      if(el !== info) el.classList.remove("open");
+    });
+    if(info){ info.classList.toggle("open"); e.stopPropagation(); }
+  });
+  document.addEventListener("click", e=>{
+    if(!e.target.closest(".fn-info")){
+      document.querySelectorAll("#viewPublicidad .fn-info.open").forEach(el=>el.classList.remove("open"));
+    }
+  });
+
+  async function pbCargarEmbudo(){
+    if(!pbActivoId || !pbRangoActual) return;
+    let d;
+    try{
+      d = await pbGetJson({accion:"embudo", publicista_id: pbActivoId, desde: pbRangoActual.desde, hasta: pbRangoActual.hasta});
+    }catch(e){ return; }
+    if(!d.ok){ toast(d.error || "Error al cargar el embudo"); return; }
+
+    const m = d.embudo, r = d.rentabilidad;
+
+    // Resumen visual: (Visitas ->) Registros -> Primera carga -> Volvió a
+    // cargar. Registros/Primera carga/Volvió son siempre JUGADORES (nunca
+    // depósitos), para que la conversión entre pasos sea real y no la infle
+    // un jugador que cargó varias veces. Visitas solo si Meta lo devolvió
+    // (pixel propio + token de Insights cargados, ver meta_insights_pageviews).
+    const hayVisitas = m.visitas != null;
+    $("#pfPasoVisitas").style.display = hayVisitas ? "" : "none";
+    $("#pfFlechaVisitas").style.display = hayVisitas ? "" : "none";
+    if(hayVisitas){
+      $("#pfVisitas").textContent = nf.format(m.visitas);
+      $("#pfConvVisitasReg").textContent = m.conversion_visitas_pct==null ? "—" : m.conversion_visitas_pct + "%";
+    }
+    $("#pfRegistros").textContent = nf.format(m.registros);
+    $("#pfPrimerasCargas").textContent = nf.format(m.primeras_cargas);
+    $("#pfVolvieron").textContent = nf.format(m.jugadores_volvieron);
+    $("#pfConvRegACarga").textContent = m.conversion_pct==null ? "—" : m.conversion_pct + "%";
+    $("#pfConvCargaVolvio").textContent = m.volvio_a_cargar_pct==null ? "—" : m.volvio_a_cargar_pct + "%";
+
+    $("#pbGasto").textContent = money(m.gasto);
+    $("#pbRegistros").textContent = nf.format(m.registros);
+    $("#pbPrimerasCargas").textContent = nf.format(m.primeras_cargas);
+    $("#pbConversion").textContent = m.conversion_pct==null ? "—" : m.conversion_pct + "% de conversión";
+    $("#pbCargasTotales").textContent = nf.format(m.cargas_totales);
+    $("#pbCargasPorJugador").textContent = m.cargas_por_jugador==null ? "—" : m.cargas_por_jugador.toFixed(2);
+    $("#pbDepositado").textContent = money(m.depositado);
+    $("#pbTicketPromedio").textContent = m.ticket_promedio==null ? "—" : money(m.ticket_promedio);
+    $("#pbVolvioACargar").textContent = m.volvio_a_cargar_pct==null ? "—" : m.volvio_a_cargar_pct + "%";
+    $("#pbVolvioDetalle").textContent = m.jugadores_con_carga
+      ? `${m.jugadores_volvieron} de ${m.jugadores_con_carga}`
+      : "—";
+
+    $("#pbAvisoGasto").style.display = m.gasto > 0 ? "none" : "flex";
+    $("#pbCpr").textContent = r.costo_por_registro==null ? "—" : money(r.costo_por_registro);
+    $("#pbCpa").textContent = r.costo_por_carga==null ? "—" : money(r.costo_por_carga);
+    $("#pbDejaJugador").textContent = r.deja_por_jugador==null ? "—" : money(r.deja_por_jugador);
+    $("#pbRoas").textContent = r.roas==null ? "—" : r.roas.toFixed(2) + "x";
+    $("#pbGanancia").textContent = r.ganancia==null ? "—" : money(r.ganancia);
+  }
+
+  async function pbCargarDiaPorDia(){
+    if(!pbActivoId || !pbRangoActual) return;
+    let d;
+    try{
+      d = await pbGetJson({accion:"dia_por_dia", publicista_id: pbActivoId, desde: pbRangoActual.desde, hasta: pbRangoActual.hasta});
+    }catch(e){ return; }
+    if(!d.ok){ return; }
+    const dias = d.dias || [];
+    if(!dias.length){
+      $("#pbDiaPorDia").innerHTML = '<tr><td colspan="6" class="ag-vacio">Sin datos en este período</td></tr>';
+      return;
+    }
+    const maxRegistros = Math.max(1, ...dias.map(x=>x.registros));
+    $("#pbDiaPorDia").innerHTML = dias.map(x=>{
+      const anchoBarra = Math.round((x.registros / maxRegistros) * 100);
+      return `<tr>
+        <td>${esc(x.fecha)}</td>
+        <td>${nf.format(x.registros)}</td>
+        <td>${nf.format(x.primeras_cargas)}</td>
+        <td>${money(x.depositado)}</td>
+        <td>${x.gasto>0 ? money(x.gasto) : "—"}</td>
+        <td style="width:90px"><div class="pb-tabla-barra" style="width:${anchoBarra}%"></div></td>
+      </tr>`;
+    }).join("");
+    // Click en la celda de gasto: atajo para cargar/editar el gasto de ESE
+    // día sin tener que ir a buscar la fecha en el modal.
+    document.querySelectorAll("#pbDiaPorDia tr").forEach((tr,i)=>{
+      tr.querySelector("td:nth-child(5)").style.cursor = "pointer";
+      tr.querySelector("td:nth-child(5)").addEventListener("click", ()=>pbAbrirModalGasto(dias[i].fecha));
+    });
+  }
+
+  $("#pbPassBtn").addEventListener("click", async ()=>{
+    const password = $("#pbPass").value;
+    if(!password){ $("#pbPassError").textContent = "Ingresá tu contraseña"; return; }
+    const btn = $("#pbPassBtn");
+    btn.disabled = true; btn.textContent = "…";
+    let d;
+    try{
+      const r = await pbFetch(API_PB, {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({accion:"verificar_password", password})
+      });
+      d = await r.json();
+    }catch(e){
+      btn.disabled = false; btn.textContent = "Ingresar";
+      $("#pbPassError").textContent = "Error de conexión. Probá de nuevo.";
+      return;
+    }
+    btn.disabled = false; btn.textContent = "Ingresar";
+    if(d.ok){
+      pbMostrarContenido();
+      pbFixTooltips();
+      pbCargarPublicistas();
+    } else {
+      $("#pbPassError").textContent = d.error || "No se pudo verificar";
+    }
+  });
+  $("#pbPass").addEventListener("keydown", e=>{ if(e.key==="Enter") $("#pbPassBtn").click(); });
+
+  $("#pbFiltrosRapidos").addEventListener("click", e=>{
+    const b = e.target.closest(".fn-filtro-btn"); if(!b) return;
+    pbFiltroRapido(b.getAttribute("data-f"));
+  });
+  $("#pbAplicarRango").addEventListener("click", pbAplicarRangoCustom);
+  $("#pbBtnAgregar").addEventListener("click", pbAbrirModalNuevo);
+  $("#pbBtnCargarGasto").addEventListener("click", ()=>pbAbrirModalGasto());
+  $("#pbBtnCargarGastoAviso").addEventListener("click", ()=>pbAbrirModalGasto());
+
+  // ---------- exportar (todo el reporte del publicista activo, para IA) ----------
+  async function pbExportarJson(){
+    if(!pbActivoId){ toast("Elegí un publicista primero"); return; }
+    if(!pbRangoActual){ toast("Elegí un período primero"); return; }
+    const btn = $("#pbBtnExportar"); const txt = btn.textContent;
+    btn.disabled = true; btn.innerHTML = '<span class="sp"></span> Generando…';
+    let d;
+    try{
+      d = await pbGetJson({
+        accion: "export_json", publicista_id: pbActivoId,
+        desde: pbRangoActual.desde, hasta: pbRangoActual.hasta,
+      });
+    }catch(e){ btn.disabled = false; btn.textContent = txt; return; }
+    btn.disabled = false; btn.textContent = txt;
+    if(!d.ok){ toast(d.error || "No se pudo generar el JSON."); return; }
+    // Sin el "ok" de transporte HTTP -- lo que se descarga es la estructura
+    // pensada para pegar en un LLM, mismo criterio que Finanzas.
+    const { ok, ...limpio } = d;
+    const p = pbPublicistaActivo();
+    const nombreArchivo = "publicidad_" + (p ? p.slug : pbActivoId) + "_" + pbRangoActual.desde + "_" + pbRangoActual.hasta + ".json";
+    const blob = new Blob([JSON.stringify(limpio, null, 2)], {type:"application/json"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = nombreArchivo;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(a.href);
+  }
+  $("#pbBtnExportar").addEventListener("click", pbExportarJson);
+
+  // Fechas por defecto: hoy, igual que Finanzas -- se recalculan recien al
+  // entrar a la vista (pbFiltroRapido las pinta en pbAbrir/pbCargarPublicistas).
 
   // ---------- modal cargar/retirar/bono ----------
   function abrirModal(accion, titulo, ganamos){

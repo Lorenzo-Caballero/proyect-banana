@@ -375,11 +375,27 @@ if ($accion === 'marcar' && $metodo === 'POST') {
     if ($estado === 'ok') {
         try {
             require_once __DIR__ . '/meta_lib.php';
-            $u = $pdo->prepare("SELECT usuario FROM altas WHERE id = ?");
-            $u->execute([$id]);
+            require_once __DIR__ . '/publicidad_lib.php';
+            // publicista_id es de la migracion 44: si no corrio, se cae a
+            // solo `usuario` y el evento se reporta igual, con el pixel
+            // general (sin pixel propio de publicista).
+            $publicista = null;
+            try {
+                $u = $pdo->prepare("SELECT usuario, publicista_id FROM altas WHERE id = ?");
+                $u->execute([$id]);
+                $fila = $u->fetch();
+            } catch (Throwable $e) {
+                $u = $pdo->prepare("SELECT usuario FROM altas WHERE id = ?");
+                $u->execute([$id]);
+                $fila = $u->fetch();
+            }
+            if (!empty($fila['publicista_id'])) {
+                $publicista = publicidad_por_id($pdo, (int)$fila['publicista_id']);
+            }
             meta_evento($pdo, 'CompleteRegistration', [
-                'usuario' => (string)($u->fetchColumn() ?: ''),
+                'usuario' => (string)($fila['usuario'] ?? ''),
                 'ref'     => 'alta:' . $id,
+                'pixel'   => publicidad_pixel_propio($publicista),
             ]);
         } catch (Throwable $e) {
             error_log('meta CompleteRegistration: ' . $e->getMessage());

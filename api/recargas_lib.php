@@ -31,6 +31,15 @@ if (is_file(__DIR__ . '/crm_notificaciones.php')) {
 if (is_file(__DIR__ . '/crm_lib.php')) {
     require_once __DIR__ . '/crm_lib.php';
 }
+// Opcional: si estan, cada recarga acreditada se reporta a Meta Ads (Purchase)
+// para el publicista que trajo a ese jugador (si vino de una landing con
+// ?pub=). Si no estan, la recarga se acredita igual, sin reportar nada.
+if (is_file(__DIR__ . '/meta_lib.php')) {
+    require_once __DIR__ . '/meta_lib.php';
+}
+if (is_file(__DIR__ . '/publicidad_lib.php')) {
+    require_once __DIR__ . '/publicidad_lib.php';
+}
 
 // =====================  EDITA ESTO  =======================================
 const RL_COINS_POR_PESO = 1;        // 1 coin = 1 peso  (5000 coins => $5000)
@@ -357,12 +366,29 @@ function rl_registrar_pago(PDO $pdo, array $p): array
  * que es su valor por default, asi que el camino automatico no cambia nada
  * observable.
  */
-function rl_acreditar(PDO $pdo, array $recarga, string $idUnico, string $conf, ?string $operador = null): void
+function rl_acreditar(PDO $pdo, array &$recarga, string $idUnico, string $conf, ?string $operador = null): void
 {
+    // Se resuelve ANTES del UPDATE de abajo: en ese momento la fila de esta
+    // recarga todavia esta 'pendiente', asi que contar 'acreditada' previas
+    // del mismo usuario da exactamente "cuantas cargas tenia ANTES de esta".
+    // Se guarda en la fila (no se recalcula despues con MIN/subquery) para
+    // que el modulo de Publicidad haga SUM/COUNT simples sobre es_primera en
+    // vez de repetir este calculo cada vez que el operador abre el reporte.
+    $esPrimera = null;
+    try {
+        $st = $pdo->prepare(
+            "SELECT COUNT(*) FROM recargas WHERE usuario = ? AND estado = 'acreditada'"
+        );
+        $st->execute([$recarga['usuario']]);
+        $esPrimera = ((int)$st->fetchColumn() === 0) ? 1 : 0;
+    } catch (Throwable $e) {
+        error_log('rl_acreditar: no pude calcular es_primera: ' . $e->getMessage());
+    }
+
     $pdo->prepare(
-        "UPDATE recargas SET estado='acreditada', pago_id=?, acreditada_en=NOW(), mensaje=?
+        "UPDATE recargas SET estado='acreditada', pago_id=?, acreditada_en=NOW(), mensaje=?, es_primera=?
           WHERE id=?"
-    )->execute([$idUnico, $conf, $recarga['id']]);
+    )->execute([$idUnico, $conf, $esPrimera, $recarga['id']]);
 
     $pdo->prepare(
         "UPDATE usuarios SET coins = coins + ? WHERE username = ?"
@@ -383,6 +409,51 @@ function rl_acreditar(PDO $pdo, array $recarga, string $idUnico, string $conf, ?
     // parezca fallida.
     if (function_exists('crmnotif_bono_aplicar_en_recarga')) {
         crmnotif_bono_aplicar_en_recarga($pdo, (string)$recarga['usuario'], (int)$recarga['id'], (int)$recarga['coins']);
+    }
+
+    // es_primera calculado arriba viaja al caller a traves de $recarga -- lo
+    // necesita rl_reportar_purchase(), que corre DESPUES del commit (ver esa
+    // funcion para el porque).
+    $recarga['es_primera'] = $esPrimera;
+}
+
+/**
+ * Purchase de Meta: EL evento que le importa a la campaña, plata real
+ * acreditada. Separado de rl_acreditar() a proposito -- meta_evento() hace
+ * un curl HTTP a Meta (timeout hasta 5s) y rl_acreditar() corre DENTRO de la
+ * transaccion del caller con filas tomadas por FOR UPDATE; llamar a Meta ahi
+ * retendria esos locks de mas. Se llama despues del commit, mismo momento y
+ * misma razon que rl_notificar_acreditada().
+ *
+ * `ref` con el id de la recarga hace el event_id reproducible (un reintento
+ * del matcher no duplica el evento en Meta). Si el jugador vino de una
+ * landing con ?pub=, se reporta con el pixel DE ESE publicista -- sin eso,
+ * cae al pixel general del cliente (meta_evento() ya resuelve ese fallback).
+ */
+function rl_reportar_purchase(PDO $pdo, array $recarga): void
+{
+    if (!function_exists('meta_evento')) {
+        return;
+    }
+    try {
+        $publicista = null;
+        if (function_exists('publicidad_por_id')) {
+            $pub = $pdo->prepare("SELECT publicista_id FROM altas WHERE usuario = ? LIMIT 1");
+            $pub->execute([$recarga['usuario']]);
+            $pubId = (int)($pub->fetchColumn() ?: 0);
+            if ($pubId > 0) {
+                $publicista = publicidad_por_id($pdo, $pubId);
+            }
+        }
+        meta_evento($pdo, 'Purchase', [
+            'usuario' => (string)$recarga['usuario'],
+            'valor'   => (float)$recarga['monto_base'],
+            'ref'     => 'recarga:' . $recarga['id'],
+            'pixel'   => function_exists('publicidad_pixel_propio')
+                ? publicidad_pixel_propio($publicista) : null,
+        ]);
+    } catch (Throwable $e) {
+        error_log('meta Purchase (recarga): ' . $e->getMessage());
     }
 }
 
@@ -456,8 +527,9 @@ function rl_matchear_y_acreditar(PDO $pdo, string $idUnico, float $monto): array
 
         // Recien despues del commit: si el aviso saliera adentro de la
         // transaccion y esta hiciera rollback, quedaria anunciada una recarga
-        // que nunca se acredito.
+        // que nunca se acredito. Mismo motivo para el Purchase de Meta.
         rl_notificar_acreditada($pdo, $recarga);
+        rl_reportar_purchase($pdo, $recarga);
 
         return [
             'resultado'  => 'acreditada',
@@ -504,6 +576,7 @@ function rl_asignar_manual(PDO $pdo, string $idUnico, int $recargaId, string $op
         $pdo->commit();
 
         rl_notificar_acreditada($pdo, $recarga);
+        rl_reportar_purchase($pdo, $recarga);
 
         return [
             'resultado'  => 'acreditada',

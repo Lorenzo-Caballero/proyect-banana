@@ -64,6 +64,7 @@ const CFG_CRM_DEFAULTS = [
     'meta_pageview_en' => 'registro',
     // Cada evento se prende/apaga por separado.
     'meta_ev_contact'  => '1',
+    'meta_ev_lead'     => '1',
     'meta_ev_registro' => '1',
     'meta_ev_checkout' => '1',
     'meta_ev_purchase' => '1',

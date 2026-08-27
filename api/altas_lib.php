@@ -31,9 +31,9 @@ declare(strict_types=1);
 // Para prenderlo, en api/config.local.php:
 //     'ALTAS_POR_IP_HORA' => 20,
 //     'ALTAS_POR_IP_DIA'  => 100,
-const ALTAS_POR_IP_HORA = 0;
-const ALTAS_POR_IP_DIA  = 0;
-
+const ALTAS_POR_IP_HORA = 0;
+const ALTAS_POR_IP_DIA  = 0;
+
 // Clave con la que se crean TODAS las cuentas nuevas, por chat y por la
 // landing. Decision del producto: que el jugador no tenga que copiar ni
 // guardar nada para entrar la primera vez.
@@ -210,6 +210,12 @@ function alta_encolar(PDO $pdo, array $d): array
     // entregarsela al jugador RECIEN cuando el bot confirme el alta.
     $entSid   = mb_substr(trim((string)($d['entrega_sid'] ?? '')), 0, 64);
     $entCla   = (string)($d['entrega_clave'] ?? '');
+    // De que publicista vino (landing con ?pub=<slug>) y los identificadores
+    // de Meta que agarro en el camino. Solo la landing publica los manda.
+    $pubId    = isset($d['publicista_id']) ? (int)$d['publicista_id'] : 0;
+    $fbclid   = mb_substr(trim((string)($d['fbclid'] ?? '')), 0, 255);
+    $fbp      = mb_substr(trim((string)($d['fbp']    ?? '')), 0, 80);
+    $fbc      = mb_substr(trim((string)($d['fbc']    ?? '')), 0, 120);
 
     $error = alta_validar($usuario, $password, $email);
     if ($error !== null) {
@@ -237,14 +243,20 @@ function alta_encolar(PDO $pdo, array $d): array
 
     try {
         try {
+            // Nivel 1: todas las columnas, incluidas las de publicidad
+            // (migracion 44).
             $ins = $pdo->prepare(
                 "INSERT INTO altas (usuario, password, email, nombre, apellido, origen, ip,
-                                    entrega_clave, entrega_sid)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                                    entrega_clave, entrega_sid, publicista_id, fbclid, fbp, fbc)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             );
             $ins->execute(array_merge($base, [
                 $entCla !== '' ? $entCla : null,
                 $entSid !== '' ? $entSid : null,
+                $pubId  > 0    ? $pubId  : null,
+                $fbclid !== '' ? $fbclid : null,
+                $fbp    !== '' ? $fbp    : null,
+                $fbc    !== '' ? $fbc    : null,
             ]));
         } catch (PDOException $e2) {
             // El duplicado (23000) lo maneja el catch de afuera: es el flujo
@@ -252,33 +264,54 @@ function alta_encolar(PDO $pdo, array $d): array
             if ($e2->getCode() === '23000') {
                 throw $e2;
             }
-            // Cualquier otra cosa es, casi siempre, que no existen
-            // entrega_clave/entrega_sid porque falta la migracion 35. Se
-            // reintenta sin esas columnas.
+            // Cualquier otra cosa es, casi siempre, que faltan columnas de una
+            // migracion (35 o 44) sin correr. Se reintenta en capas, cada vez
+            // con menos columnas nuevas, hasta el INSERT base de siempre.
             //
             // No se filtra por codigo de error a proposito: MySQL dice 42S22 y
             // SQLite HY000 para lo mismo, y atarse a uno hace que el fallback
-            // no dispare justo donde hace falta. Si el reintento tambien falla,
-            // se propaga el error ORIGINAL, que es el que explica que paso.
+            // no dispare justo donde hace falta. Si TODOS los reintentos
+            // fallan, se propaga el error ORIGINAL (nivel 1), que es el que
+            // mejor explica que paso.
             //
             // Degradar es mejor que romper: sin esto, una migracion sin correr
-            // se lleva puesto TODO el chat con un 502. Asi la cuenta se crea
-            // igual; lo unico que se pierde es la entrega automatica de la
-            // clave (queda en `altas.password`, el agente puede leerla).
-            error_log('altas: INSERT con entrega fallo (' . $e2->getMessage()
-                    . '). Reintento sin entrega_clave/entrega_sid: '
-                    . 'revisa que este corrida la migracion 35.');
+            // se lleva puesto TODO el alta con un 502. Asi la cuenta se crea
+            // igual; lo unico que se pierde son los datos de la migracion que
+            // falte (entrega automatica de clave, o el tracking de campaña).
+            error_log('altas: INSERT nivel 1 fallo (' . $e2->getMessage()
+                    . '). Reintento sin publicista_id/fbclid/fbp/fbc: '
+                    . 'revisa que este corrida la migracion 44.');
             try {
+                // Nivel 2: sin las columnas de publicidad, con entrega_clave/sid.
                 $ins = $pdo->prepare(
-                    "INSERT INTO altas (usuario, password, email, nombre, apellido, origen, ip)
-                     VALUES (?, ?, ?, ?, ?, ?, ?)"
+                    "INSERT INTO altas (usuario, password, email, nombre, apellido, origen, ip,
+                                        entrega_clave, entrega_sid)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 );
-                $ins->execute($base);
+                $ins->execute(array_merge($base, [
+                    $entCla !== '' ? $entCla : null,
+                    $entSid !== '' ? $entSid : null,
+                ]));
             } catch (PDOException $e3) {
                 if ($e3->getCode() === '23000') {
                     throw $e3;      // duplicado: lo resuelve el catch de afuera
                 }
-                throw $e2;          // el original explica mejor el problema
+                error_log('altas: INSERT nivel 2 fallo (' . $e3->getMessage()
+                        . '). Reintento sin entrega_clave/entrega_sid: '
+                        . 'revisa que este corrida la migracion 35.');
+                try {
+                    // Nivel 3: el INSERT base de siempre.
+                    $ins = $pdo->prepare(
+                        "INSERT INTO altas (usuario, password, email, nombre, apellido, origen, ip)
+                         VALUES (?, ?, ?, ?, ?, ?, ?)"
+                    );
+                    $ins->execute($base);
+                } catch (PDOException $e4) {
+                    if ($e4->getCode() === '23000') {
+                        throw $e4;  // duplicado: lo resuelve el catch de afuera
+                    }
+                    throw $e2;      // el original (nivel 1) explica mejor el problema
+                }
             }
         }
 

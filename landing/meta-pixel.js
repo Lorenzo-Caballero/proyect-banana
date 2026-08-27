@@ -28,6 +28,14 @@
   var partes    = location.pathname.split("/").filter(Boolean);
   var BASE_API  = esPorPath ? "/" + partes[0] + "/gp-api" : "/gp-api";
 
+  /* Si la landing trae ?pub=<slug> (el link que se le dio a un publicista),
+     se pide el pixel PROPIO de ese publicista en vez del general del
+     cliente -- meta_config.php resuelve el fallback solo si no tiene uno
+     configurado. Sin el parametro, query queda vacio y el comportamiento es
+     exactamente el de siempre. */
+  var pub = new URLSearchParams(location.search).get("pub") || "";
+  var query = pub ? "?pub=" + encodeURIComponent(pub) : "";
+
   /* Dónde estamos, para decidir si corresponde el PageView. El agente elige
      entre "registro", "panel", "ambos" u "off" desde Configuración. */
   function donde() {
@@ -73,7 +81,7 @@
     window.fbq("track", nombre, datos || {}, opts);
   };
 
-  fetch(BASE_API + "/meta_config.php", { credentials: "same-origin" })
+  fetch(BASE_API + "/meta_config.php" + query, { credentials: "same-origin" })
     .then(function (r) { return r.json(); })
     .then(function (c) {
       if (!c || !c.activo || !c.pixel_id) return;

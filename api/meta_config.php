@@ -9,13 +9,18 @@
  *
  * Es público porque lo lee registro.html, que es una página sin sesión.
  *
- * GET -> { activo:false }  |  { activo:true, pixel_id, pageview_en }
+ * GET                 -> { activo:false }  |  { activo:true, pixel_id, pageview_en }
+ * GET ?pub=<slug>      -> lo mismo, pero con el pixel PROPIO del publicista si
+ *                         lo tiene configurado (ver meta_config_publica()).
+ *                         El querystring completo entra en la cache key, asi
+ *                         que dos publicistas no se pisan el cache entre si.
  */
 
 declare(strict_types=1);
 require __DIR__ . '/config.php';
 require __DIR__ . '/db.php';
 require __DIR__ . '/meta_lib.php';
+require __DIR__ . '/publicidad_lib.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
@@ -24,7 +29,9 @@ header('Access-Control-Allow-Origin: *');
 header('Cache-Control: public, max-age=300');
 
 try {
-    echo json_encode(meta_config_publica($pdo), JSON_UNESCAPED_UNICODE);
+    $slug = trim((string)($_GET['pub'] ?? ''));
+    $publicista = $slug !== '' ? publicidad_por_slug($pdo, $slug) : null;
+    echo json_encode(meta_config_publica($pdo, $publicista), JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
     error_log('meta_config: ' . $e->getMessage());
     // Ante la duda, apagado: es mejor perder eventos que romper la página.

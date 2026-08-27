@@ -25,7 +25,9 @@ require __DIR__ . '/recargas_lib.php';
 require __DIR__ . '/fichas_lib.php';
 require __DIR__ . '/altas_lib.php';
 require __DIR__ . '/config_crm.php';
-require __DIR__ . '/meta_lib.php';
+// require_once: recargas_lib.php (arriba) ya lo carga solo si esta -- un
+// require simple aca redeclararia las funciones y tiraria fatal error.
+require_once __DIR__ . '/meta_lib.php';
 // El CRM es opcional: si crm_lib.php no esta subido, el chat sigue funcionando.
 $crmLib = __DIR__ . '/crm_lib.php';
 if (is_file($crmLib)) { require_once $crmLib; }
