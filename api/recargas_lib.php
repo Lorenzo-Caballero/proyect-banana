@@ -55,9 +55,13 @@ const RL_MAX_PENDIENTES_USUARIO = 5;// recargas pendientes simultaneas por usuar
 // cargan desde el panel del dueño) y la lee rl_cuenta_cobro(). Estas
 // constantes solo aparecen si ese lookup falla Y no hay nada cargado --
 // editar este archivo en el VPS no sirve: el deploy lo pisa en cada corrida.
-const RL_ALIAS   = 'tu.alias.aca';
-const RL_CBU     = '0000000000000000000000';
-const RL_TITULAR = 'Titular de la cuenta';
+// Cuenta del dueño (Cencosud). El colector escucha los avisos de esa cuenta
+// en nahuelherrera1997@gmail.com (carpeta "pagos", remitente de Cencosud con
+// DKIM) -- ver colector/config.json. Sin alias por ahora: vacio significa
+// "no compartir alias", nunca inventar uno.
+const RL_ALIAS   = '';
+const RL_CBU     = '0000184305000041593023';
+const RL_TITULAR = 'Herrera Facundo Nahuel';
 // ==========================================================================
 
 /**
@@ -307,6 +311,9 @@ function rl_crear_recarga(PDO $pdo, string $usuario, int $coins): array
             $r['cbu']     = $cta['cbu'];
             $r['titular'] = $cta['titular'];
         }
+        // Un alias vacio no viaja: si viajara, el modelo del chatbot lo
+        // repetiria tal cual ("alias: ") o, peor, inventaria uno.
+        if (($r['alias'] ?? '') === '') { unset($r['alias']); }
         return $r;
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) {
