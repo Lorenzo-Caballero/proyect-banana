@@ -22,6 +22,12 @@ return [
     // 'ALTAS_POR_IP_HORA' => 20,
     // 'ALTAS_POR_IP_DIA'  => 100,
 
+    // --- Carga de fichas al juego -------------------------------------------
+    // POR DEFECTO SE COBRA: cargar al juego exige fichas compradas (pago
+    // verificado por el colector de mails o por HG Cash) y las descuenta.
+    // Ponerlo en false SOLO para probar en una base sin plata real:
+    // 'FICHAS_COBRAR' => false,
+
     // Clave para entrar al panel de administracion (admin.html / admin_usuarios.php).
     // Elegi una que te acuerdes; minimo 6 caracteres. Es lo que escribis al entrar.
     'ADMIN_PASS' => 'poné-una-clave-fuerte',

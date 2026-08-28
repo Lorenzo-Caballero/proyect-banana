@@ -97,10 +97,12 @@ $TOOLS = [
     ]],
     ['type' => 'function', 'function' => [
         'name' => 'cargar_al_juego',
-        'description' => 'LA FORMA NORMAL DE CARGAR FICHAS. Carga fichas al saldo del juego del '
-            . 'jugador que ya inició sesión. Usala apenas pida fichas ("cargame fichas", '
-            . '"quiero 500 fichas"): no hace falta ninguna transferencia ni pedirle el usuario, '
-            . 'solo la cantidad. Si devuelve sin_fichas, recién ahí ofrecer crear_recarga.',
+        'description' => 'LA FORMA NORMAL DE CARGAR FICHAS. Pasa fichas YA COMPRADAS del saldo '
+            . 'del sitio al juego, del jugador que ya inició sesión: no pidas transferencia ni '
+            . 'usuario, solo la cantidad. Si devuelve sin_fichas es que NO tiene fichas '
+            . 'compradas: ahí va crear_recarga (se le dan los datos de pago, paga, el sistema '
+            . 'VERIFICA que la plata llegó y recién entonces tiene fichas para cargar). NUNCA '
+            . 'prometas fichas sin pago verificado.',
         'parameters' => [
             'type' => 'object',
             'properties' => [

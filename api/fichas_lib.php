@@ -27,14 +27,22 @@ const FICHAS_MAX_CARGA = 500000;
 /**
  * SI SE LE COBRA O NO AL JUGADOR. Es EL interruptor de este archivo.
  *
- *   false (default hoy) -> el jugador logueado pide y se le carga, GRATIS.
- *          Fase de prueba: cualquiera con una cuenta puede pedir saldo real
- *          las veces que quiera. Es lo que se pidio mientras no haya pago.
- *   true -> exige `usuarios.coins` suficientes y se los descuenta.
- *          Es el modo para cuando el pago este integrado.
+ *   true (DEFAULT) -> exige `usuarios.coins` suficientes y se los descuenta.
+ *          Las fichas solo se consiguen PAGANDO: transferencia verificada por
+ *          el colector (centavos unicos) o checkout de HG Cash confirmado por
+ *          webhook. Sin pago verificado no hay coins, y sin coins no hay
+ *          carga: la cadena completa es
+ *              pedir fichas -> datos de pago (alias/CBU o link HG)
+ *              -> el jugador transfiere -> colector/HG lo VERIFICA
+ *              -> coins -> recien ahi cargar_al_juego descuenta y encola.
+ *   false -> el jugador logueado pide y se le carga GRATIS. Era el default de
+ *          la fase de prueba, cuando no habia pago integrado. HOY ES UN MODO
+ *          DE PRUEBA y hay que pedirlo EXPLICITAMENTE: un default que regala
+ *          saldo real es una perdida silenciosa desde el primer jugador que
+ *          lo descubre.
  *
- * Se prende SIN tocar codigo, agregando esto a api/config.local.php:
- *     'FICHAS_COBRAR' => true,
+ * Se apaga SIN tocar codigo, agregando esto a api/config.local.php:
+ *     'FICHAS_COBRAR' => false,
  *
  * OJO, no confundir con FICHAS_MODE del .env del bot (DRY_RUN/LIVE): aquel
  * decide si el bot APRIETA el boton en el panel; este, si se cobra.
@@ -70,8 +78,10 @@ function fichas_cobra(): bool
     if (is_bool($v)) {
         return $v;
     }
-    // Por variable de entorno siempre llega como texto.
-    return in_array(strtolower(trim((string)$v)), ['1', 'si', 'true', 'yes'], true);
+    // Por variable de entorno siempre llega como texto. Solo un "no" EXPLICITO
+    // apaga el cobro: vacio, basura o clave ausente cobran igual. El lado
+    // seguro del default es el que no regala plata.
+    return !in_array(strtolower(trim((string)$v)), ['0', 'no', 'false', 'off'], true);
 }
 
 if (!function_exists('gp_trace')) {
