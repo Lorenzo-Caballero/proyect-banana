@@ -12,9 +12,23 @@
  * si la tabla no está.
  *
  * Requiere la migración sql/38_config_crm.sql.
+ *
+ * BLINDADA CONTRA DOBLE INCLUSION (el return de abajo): a este archivo lo
+ * cargan endpoints con `require` plano Y libs con require_once (meta_lib
+ * via recargas_lib). El dia que un endpoint carga una lib de esas ANTES de
+ * su propio require, PHP redeclara cfg_crm_todo() y tira un fatal -- fue
+ * exactamente el 500 de chatbot.php en produccion. Un `const` repetido
+ * tambien es fatal, asi que el guard va antes de TODO, no por funcion.
  */
 
 declare(strict_types=1);
+
+/* Doble inclusion: el `return` corta la re-ejecucion (el const de abajo
+   seria un warning), y cada funcion va ademas en function_exists porque a
+   las funciones PHP las registra AL COMPILAR el include, antes de ejecutar
+   este return -- un guard solo no las salva. Mismo patron que crm_lib. */
+if (defined('CFG_CRM_CARGADO')) { return; }
+define('CFG_CRM_CARGADO', 1);
 
 /**
  * Valor por defecto de cada ajuste. Lo que no esté acá no existe: cfg_crm()
@@ -79,6 +93,7 @@ $GLOBALS['__cfg_crm_cache'] = null;
  * Si la tabla no existe (migración sin correr) devuelve los defaults en vez de
  * lanzar: el sitio tiene que funcionar igual, simplemente sin nada configurado.
  */
+if (!function_exists('cfg_crm_todo')) {
 function cfg_crm_todo(PDO $pdo): array
 {
     if ($GLOBALS['__cfg_crm_cache'] !== null) {
@@ -101,14 +116,17 @@ function cfg_crm_todo(PDO $pdo): array
     $GLOBALS['__cfg_crm_cache'] = $vals;
     return $vals;
 }
+}
 
 /** Un ajuste puntual. Devuelve null si la clave no existe en DEFAULTS. */
+if (!function_exists('cfg_crm')) {
 function cfg_crm(PDO $pdo, string $clave): ?string
 {
     if (!array_key_exists($clave, CFG_CRM_DEFAULTS)) {
         return null;
     }
     return cfg_crm_todo($pdo)[$clave] ?? CFG_CRM_DEFAULTS[$clave];
+}
 }
 
 /**
@@ -118,16 +136,19 @@ function cfg_crm(PDO $pdo, string $clave): ?string
  * valor raro deje algo funcionando a que lo apague sin que nadie entienda por
  * qué.
  */
+if (!function_exists('cfg_crm_activo')) {
 function cfg_crm_activo(PDO $pdo, string $clave): bool
 {
     $v = trim((string)cfg_crm($pdo, $clave));
     return $v !== '0' && $v !== '' && strtolower($v) !== 'false';
+}
 }
 
 /**
  * Guarda varios ajustes de una. Ignora las claves desconocidas.
  * Devuelve cuántos guardó.
  */
+if (!function_exists('cfg_crm_guardar')) {
 function cfg_crm_guardar(PDO $pdo, array $vals, string $operador = ''): int
 {
     // Se filtra ANTES de preparar nada: con un payload vacio o todo invalido
@@ -148,4 +169,5 @@ function cfg_crm_guardar(PDO $pdo, array $vals, string $operador = ''): int
     }
     $GLOBALS['__cfg_crm_cache'] = null;   // el próximo lector ve lo nuevo
     return $n;
+}
 }

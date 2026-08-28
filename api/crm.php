@@ -42,7 +42,7 @@ require __DIR__ . '/crm_lib.php';
 require __DIR__ . '/crm_auth.php';
 require __DIR__ . '/notificaciones_lib.php';
 require __DIR__ . '/crm_notificaciones.php';
-require __DIR__ . '/config_crm.php';
+require_once __DIR__ . '/config_crm.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');

@@ -31,7 +31,7 @@ declare(strict_types=1);
 require __DIR__ . '/config.php';
 require __DIR__ . '/db.php';
 require __DIR__ . '/altas_lib.php';
-require __DIR__ . '/config_crm.php';
+require_once __DIR__ . '/config_crm.php';
 require __DIR__ . '/publicidad_lib.php';
 
 header('Content-Type: application/json; charset=utf-8');

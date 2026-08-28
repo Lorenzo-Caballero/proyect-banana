@@ -24,7 +24,7 @@ require __DIR__ . '/db.php';
 require __DIR__ . '/recargas_lib.php';
 require __DIR__ . '/fichas_lib.php';
 require __DIR__ . '/altas_lib.php';
-require __DIR__ . '/config_crm.php';
+require_once __DIR__ . '/config_crm.php';
 // require_once: recargas_lib.php (arriba) ya lo carga solo si esta -- un
 // require simple aca redeclararia las funciones y tiraria fatal error.
 require_once __DIR__ . '/meta_lib.php';

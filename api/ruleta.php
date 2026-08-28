@@ -20,7 +20,7 @@
 declare(strict_types=1);
 require __DIR__ . '/config.php';
 require __DIR__ . '/db.php';
-require __DIR__ . '/config_crm.php';
+require_once __DIR__ . '/config_crm.php';
 // crm_lib es opcional: si esta, registra el movimiento en el historial.
 $crmLib = __DIR__ . '/crm_lib.php';
 if (is_file($crmLib)) { require_once $crmLib; }
