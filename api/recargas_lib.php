@@ -50,10 +50,58 @@ const RL_VENTANA_MIN     = 120;     // ventana para el match de respaldo (entero
 const RL_MAX_PENDIENTES_USUARIO = 5;// recargas pendientes simultaneas por usuario
 
 // Datos de la cuenta donde el usuario transfiere (los muestra el chatbot).
+// RESPALDO DE ULTIMA INSTANCIA, no la fuente. La cuenta real de cada cliente
+// vive en goldpaw_control.clientes (cobro_alias/cobro_cbu/cobro_titular, se
+// cargan desde el panel del dueño) y la lee rl_cuenta_cobro(). Estas
+// constantes solo aparecen si ese lookup falla Y no hay nada cargado --
+// editar este archivo en el VPS no sirve: el deploy lo pisa en cada corrida.
 const RL_ALIAS   = 'tu.alias.aca';
 const RL_CBU     = '0000000000000000000000';
 const RL_TITULAR = 'Titular de la cuenta';
 // ==========================================================================
+
+/**
+ * La cuenta de cobro de ESTE cliente, desde goldpaw_control.clientes.
+ *
+ * Multi-tenant de verdad: cada cliente cobra en SU cuenta, no en una
+ * constante compartida. El panel ya guardaba estas columnas al crear/editar
+ * el cliente; esta funcion es la que faltaba para que alguien las use.
+ * Fallback a las constantes si el control no responde o no hay nada cargado:
+ * una base maestra caida no puede frenar la creacion de recargas.
+ */
+function rl_cuenta_cobro(): array
+{
+    static $cta = null;
+    if ($cta !== null) { return $cta; }
+    $cta = ['alias' => RL_ALIAS, 'cbu' => RL_CBU, 'titular' => RL_TITULAR];
+    try {
+        if (isset($GLOBALS['HG_CONTROL_OVERRIDE']) && $GLOBALS['HG_CONTROL_OVERRIDE'] instanceof PDO) {
+            $ctl = $GLOBALS['HG_CONTROL_OVERRIDE'];   // tests
+        } else {
+            $ctl = new PDO(
+                'mysql:host=' . cfg('DB_HOST', 'localhost')
+                    . ';dbname=' . cfg('CONTROL_DB_NAME', 'goldpaw_control') . ';charset=utf8mb4',
+                cfg('DB_USER'), cfg('DB_PASS'),
+                [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_TIMEOUT => 3]
+            );
+        }
+        $db = (string)($GLOBALS['TENANT_DB'] ?? cfg('DB_NAME'));
+        if ($db === '') { return $cta; }
+        $st = $ctl->prepare(
+            'SELECT cobro_alias, cobro_cbu, cobro_titular FROM clientes WHERE db_nombre = ? LIMIT 1'
+        );
+        $st->execute([$db]);
+        $c = $st->fetch(PDO::FETCH_ASSOC);
+        if ($c) {
+            if (trim((string)($c['cobro_alias'] ?? ''))   !== '') { $cta['alias']   = trim((string)$c['cobro_alias']); }
+            if (trim((string)($c['cobro_cbu'] ?? ''))     !== '') { $cta['cbu']     = trim((string)$c['cobro_cbu']); }
+            if (trim((string)($c['cobro_titular'] ?? '')) !== '') { $cta['titular'] = trim((string)$c['cobro_titular']); }
+        }
+    } catch (Throwable $e) {
+        error_log('rl_cuenta_cobro: ' . $e->getMessage());
+    }
+    return $cta;
+}
 
 
 /** Centavos libres (1..99) dado el set de ocupados. Devuelve int o null. */
@@ -246,14 +294,18 @@ function rl_crear_recarga(PDO $pdo, string $usuario, int $coins): array
             // el de la casa: la plata tiene que entrar por la pasarela.
             $r['metodo']    = 'hgcash';
             $r['link_pago'] = $rHG['url'];
-            $r['alias']     = $rHG['alias'] !== '' ? $rHG['alias'] : RL_ALIAS;
-            $r['cbu']       = $rHG['cvu'] !== '' ? $rHG['cvu'] : RL_CBU;
-            $r['titular']   = $rHG['titular'] !== '' ? $rHG['titular'] : RL_TITULAR;
+            // Con HG la cuenta que se muestra es la de HG (ahi entra la
+            // plata); la del cliente es solo el ultimo respaldo.
+            $cta = rl_cuenta_cobro();
+            $r['alias']     = $rHG['alias'] !== '' ? $rHG['alias'] : $cta['alias'];
+            $r['cbu']       = $rHG['cvu'] !== '' ? $rHG['cvu'] : $cta['cbu'];
+            $r['titular']   = $rHG['titular'] !== '' ? $rHG['titular'] : $cta['titular'];
         } else {
+            $cta = rl_cuenta_cobro();
             $r['metodo']  = 'transferencia';
-            $r['alias']   = RL_ALIAS;
-            $r['cbu']     = RL_CBU;
-            $r['titular'] = RL_TITULAR;
+            $r['alias']   = $cta['alias'];
+            $r['cbu']     = $cta['cbu'];
+            $r['titular'] = $cta['titular'];
         }
         return $r;
     } catch (Throwable $e) {
