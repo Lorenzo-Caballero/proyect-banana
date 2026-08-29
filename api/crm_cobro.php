@@ -15,8 +15,11 @@
  *
  * GET  ?accion=estado
  *        -> { ok, metodo_cobro, cuenta_principal, cuentas_extra:[...],
+ *              cobro_modo, cobro_fija_id,
  *              hg_propio:{activo,tiene_token,account_id,modo,webhook_url} }
  * POST { accion:"metodo_guardar", metodo_cobro }                     -> { ok }
+ * POST { accion:"modo_seleccion_guardar", modo, fija_id }            -> { ok }
+ *        (fija_id: 0/ausente = la principal; id de cobro_cuentas si no)
  * POST { accion:"hg_propio_guardar", activo, token?, account_id?,
  *        webhook_secret?, modo }                                     -> { ok }
  * POST { accion:"cuenta_agregar", alias?, cbu, titular? }            -> { ok, id }
@@ -68,7 +71,7 @@ try {
 }
 
 $st = $ctl->prepare(
-    'SELECT id, metodo_cobro, cobro_alias, cobro_cbu, cobro_titular,
+    'SELECT id, metodo_cobro, cobro_alias, cobro_cbu, cobro_titular, cobro_modo, cobro_fija_id,
             hg_propio_activo, hg_propio_token, hg_propio_account_id, hg_propio_modo
        FROM clientes WHERE db_nombre = ? LIMIT 1'
 );
@@ -87,12 +90,18 @@ if ($metodo === 'GET' && ($_GET['accion'] ?? '') === 'estado') {
     salir([
         'ok' => true,
         'metodo_cobro' => (string)($cliente['metodo_cobro'] ?? 'transferencia'),
+        // id=0: mismo sentinel que usa recargas_lib.php (rl_cuenta_cobro) para
+        // identificar "la principal" junto a las de cobro_cuentas -- así el
+        // frontend puede tratar a todas las cuentas como una sola lista.
         'cuenta_principal' => [
+            'id'      => 0,
             'alias'   => (string)($cliente['cobro_alias']   ?? ''),
             'cbu'     => (string)($cliente['cobro_cbu']     ?? ''),
             'titular' => (string)($cliente['cobro_titular'] ?? ''),
         ],
         'cuentas_extra' => $st->fetchAll(),
+        'cobro_modo'    => (string)($cliente['cobro_modo'] ?? 'azar'),
+        'cobro_fija_id' => $cliente['cobro_fija_id'] !== null ? (int)$cliente['cobro_fija_id'] : 0,
         'hg_propio' => [
             'activo'     => (int)($cliente['hg_propio_activo'] ?? 0) === 1,
             'tiene_token' => trim((string)($cliente['hg_propio_token'] ?? '')) !== '',
@@ -116,6 +125,20 @@ if ($metodo === 'POST') {
             }
             $ctl->prepare('UPDATE clientes SET metodo_cobro = ? WHERE id = ?')->execute([$nuevo, $clienteId]);
             crm_bitacora($pdo, $operador, 'cobro_metodo', "metodo=$nuevo");
+            salir(['ok' => true]);
+        }
+
+        // Con mas de una cuenta de transferencia: rotar al azar (de siempre)
+        // o fijar siempre la misma. fija_id=0 (o ausente) significa "la
+        // principal" -- mismo sentinel que usa recargas_lib.php. No se valida
+        // que la cuenta exista: si el cliente la pausa o la borra despues,
+        // rl_cuenta_elegida() ya cae sola a azar (fail-safe, ver esa función).
+        if ($accion === 'modo_seleccion_guardar') {
+            $modo   = ((string)($body['modo'] ?? 'azar')) === 'fija' ? 'fija' : 'azar';
+            $fijaId = (int)($body['fija_id'] ?? 0);
+            $ctl->prepare('UPDATE clientes SET cobro_modo = ?, cobro_fija_id = ? WHERE id = ?')
+                ->execute([$modo, $fijaId > 0 ? $fijaId : null, $clienteId]);
+            crm_bitacora($pdo, $operador, 'cobro_modo_seleccion', "modo=$modo fija_id=$fijaId");
             salir(['ok' => true]);
         }
 

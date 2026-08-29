@@ -110,6 +110,7 @@ function rl_cliente_actual(): ?array
     try {
         $st = $ctl->prepare(
             'SELECT id, metodo_cobro, cobro_alias, cobro_cbu, cobro_titular,
+                    cobro_modo, cobro_fija_id,
                     hg_propio_activo, hg_propio_token, hg_propio_account_id,
                     hg_propio_webhook_secret, hg_propio_modo
                FROM clientes WHERE db_nombre = ? LIMIT 1'
@@ -134,7 +135,10 @@ function rl_cliente_actual(): ?array
  */
 function rl_cuenta_cobro(): array
 {
-    $cta = ['alias' => RL_ALIAS, 'cbu' => RL_CBU, 'titular' => RL_TITULAR];
+    // id=0 es el sentinel de "la principal" (nunca choca con un id real de
+    // cobro_cuentas, que es AUTO_INCREMENT desde 1) -- lo usa rl_cuenta_elegida()
+    // para saber si cobro_fija_id=NULL se refiere a esta cuenta.
+    $cta = ['id' => 0, 'alias' => RL_ALIAS, 'cbu' => RL_CBU, 'titular' => RL_TITULAR];
     $c = rl_cliente_actual();
     if ($c) {
         if (trim((string)($c['cobro_alias'] ?? ''))   !== '') { $cta['alias']   = trim((string)$c['cobro_alias']); }
@@ -148,8 +152,9 @@ function rl_cuenta_cobro(): array
  * TODAS las cuentas de cobro activas de este cliente: la principal (arriba)
  * mas las que haya cargado en `cobro_cuentas` (migracion 06, control) --
  * pensada para clientes con varias billeteras virtuales. rl_crear_recarga()
- * elige una al azar por recarga (nunca se le muestran varias opciones a un
- * mismo jugador a la vez, pero reparte la carga entre cuentas con el tiempo).
+ * usa rl_cuenta_elegida() para decidir CUAL de estas usar en cada recarga
+ * (rotar al azar, o siempre la misma, segun cobro_modo -- nunca se le
+ * muestran varias opciones a un mismo jugador a la vez).
  *
  * Siempre devuelve al menos la principal (con fallback a las constantes si
  * ni eso hay), asi el caller nunca tiene que manejar el caso "sin cuentas".
@@ -162,12 +167,13 @@ function rl_cuentas_cobro(): array
     if (!$c || !$ctl) { return $lista; }
     try {
         $st = $ctl->prepare(
-            'SELECT alias, cbu, titular FROM cobro_cuentas WHERE cliente_id = ? AND activa = 1 ORDER BY id'
+            'SELECT id, alias, cbu, titular FROM cobro_cuentas WHERE cliente_id = ? AND activa = 1 ORDER BY id'
         );
         $st->execute([(int)$c['id']]);
         foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $fila) {
             if (trim((string)($fila['cbu'] ?? '')) === '') { continue; }   // CBU es obligatorio
             $lista[] = [
+                'id'      => (int)$fila['id'],
                 'alias'   => trim((string)($fila['alias'] ?? '')),
                 'cbu'     => trim((string)$fila['cbu']),
                 'titular' => trim((string)($fila['titular'] ?? '')),
@@ -177,6 +183,37 @@ function rl_cuentas_cobro(): array
         error_log('rl_cuentas_cobro: ' . $e->getMessage());
     }
     return $lista;
+}
+
+/**
+ * Cual cuenta usar para ESTA recarga, respetando cobro_modo:
+ *
+ *   'azar' (default)  -> una al azar entre las activas, como siempre.
+ *   'fija'             -> siempre la marcada en cobro_fija_id (0/NULL = la
+ *                         principal). Si esa cuenta ya no esta activa (se
+ *                         pauso o se borro), cae a azar SOLA -- fail-safe:
+ *                         una configuracion vieja nunca deja a un jugador
+ *                         sin poder cargar.
+ */
+function rl_cuenta_elegida(): array
+{
+    $cuentas = rl_cuentas_cobro();
+    $c = rl_cliente_actual();
+    $modo = (string)($c['cobro_modo'] ?? 'azar');
+
+    if ($modo === 'fija') {
+        $fijaId = $c['cobro_fija_id'] ?? null;
+        $fijaId = ($fijaId === null || $fijaId === '') ? 0 : (int)$fijaId;
+        foreach ($cuentas as $cta) {
+            if ((int)$cta['id'] === $fijaId) {
+                return $cta;
+            }
+        }
+        // La fija no esta entre las activas (pausada/borrada): sigue de largo
+        // al azar de abajo, a proposito -- nunca frenar una recarga por esto.
+    }
+
+    return $cuentas[array_rand($cuentas)];
 }
 
 /** 'transferencia' (default) o 'hgcash' -- ver metodo_cobro en goldpaw_control.clientes. */
@@ -406,10 +443,10 @@ function rl_crear_recarga(PDO $pdo, string $usuario, int $coins): array
             $r['titular']   = $rHG['titular'] !== '' ? $rHG['titular'] : $cta['titular'];
         } else {
             // Transferencia directa: si el cliente cargo mas de una cuenta,
-            // se elige una al azar por recarga -- reparte entre billeteras
-            // sin mostrarle nunca varias opciones a la vez al jugador.
-            $cuentas = rl_cuentas_cobro();
-            $cta = $cuentas[array_rand($cuentas)];
+            // rl_cuenta_elegida() respeta su cobro_modo (rotar al azar, o
+            // usar siempre la misma) -- nunca se le muestra mas de una
+            // opcion a la vez al jugador, elija lo que elija el cliente.
+            $cta = rl_cuenta_elegida();
             $r['metodo']  = 'transferencia';
             $r['alias']   = $cta['alias'];
             $r['cbu']     = $cta['cbu'];

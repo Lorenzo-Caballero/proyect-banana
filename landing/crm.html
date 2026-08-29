@@ -1317,9 +1317,13 @@
   .cobro-cta-fila .cobro-cta-datos b{color:var(--txt)}
   .cobro-cta-fila .cobro-cta-datos span{color:var(--muted);display:block;font-size:11.5px}
   .cobro-cta-fila.pausada{opacity:.55}
+  .cobro-cta-fila.elegida{border-color:var(--violet);background:var(--violetSoft)}
   .cobro-cta-fila button{background:none;border:1px solid var(--line);color:var(--muted);
     border-radius:8px;padding:4px 9px;font-size:11.5px;cursor:pointer;flex:none}
   .cobro-cta-fila button:hover{border-color:var(--violet);color:var(--txt)}
+  .cobro-cta-fila .cobro-cta-radio{flex:none;width:16px;height:16px;accent-color:var(--violet)}
+  .cobro-cta-fila .cobro-cta-badge{flex:none;font-size:10.5px;font-weight:700;color:var(--muted);
+    background:var(--panel3);border-radius:999px;padding:2px 8px}
 
   /* selector de canal de difusión: 3 tarjetas en vez de 2 */
   .n-canal-toggle{grid-template-columns:repeat(3,1fr);margin-bottom:18px}
@@ -2893,15 +2897,26 @@
             </label>
           </div>
 
-          <!-- Transferencia: cuenta principal (de solo lectura acá -- la
-               carga el dueño de la plataforma) + cuentas adicionales
-               propias, si tenés más de una billetera. -->
+          <!-- Transferencia: la principal (la carga el dueño de la
+               plataforma) + las adicionales propias, todas en UNA lista.
+               Con mas de una, el cliente elige como se reparten. -->
           <div class="cobro-metodo-body" id="cobroBodyTransferencia">
-            <label class="cb-flabel">Cuenta principal</label>
-            <p class="cfg-hint" id="cobroCuentaPrincipal">—</p>
+            <label class="cb-flabel">¿Cómo elegir la cuenta cuando hay más de una?</label>
+            <div class="cobro-metodo-toggle">
+              <label class="cobro-metodo-opt">
+                <input type="radio" name="cobroModoSel" value="azar" id="cobroModoAzar">
+                <b>Rotar al azar</b>
+                <span>Cada recarga sale de una cuenta distinta, elegida sola.</span>
+              </label>
+              <label class="cobro-metodo-opt">
+                <input type="radio" name="cobroModoSel" value="fija" id="cobroModoFija">
+                <b>Usar siempre la misma</b>
+                <span>Elegís vos cuál, abajo, y no cambia hasta que la cambies.</span>
+              </label>
+            </div>
 
-            <label class="cb-flabel" style="margin-top:16px">Cuentas adicionales <span class="cfg-opt">(opcional)</span></label>
-            <p class="cfg-hint">Si cargás más de una, el sistema reparte las recargas entre todas al azar — nunca le muestra dos opciones a un mismo jugador.</p>
+            <label class="cb-flabel" style="margin-top:16px">Cuentas</label>
+            <p class="cfg-hint">La principal la carga el dueño de la plataforma. Las demás son tuyas — agregá una por cada billetera que quieras usar.</p>
             <div id="cobroCuentasLista"></div>
             <div class="cfg-grid" style="margin-top:10px">
               <div>
@@ -3758,32 +3773,58 @@
      de guardar. jget/jpost ya resuelven sesión/CSRF igual que el resto del
      CRM, solo cambia la URL (segundo parámetro). */
   const API_COBRO = API_BASE + "/crm_cobro.php";
-  let cobroCuentas = [];
+  let cobroCuentas = [];   // principal (id=0) + cobro_cuentas, en una sola lista
+  let cobroModo = "azar";
+  let cobroFijaId = 0;
+
+  /* Las tarjetas de "método" y las de "modo de selección" comparten la
+     misma clase visual (.cobro-metodo-opt); se filtran por el name del
+     radio que llevan adentro para no confundir un toggle con el otro. */
+  function cobroPintarToggle(name, valor){
+    document.querySelectorAll(".cobro-metodo-opt").forEach(el=>{
+      const input = el.querySelector('input[name="' + name + '"]');
+      if(input) el.classList.toggle("on", input.value === valor);
+    });
+  }
 
   function cobroPintarMetodo(valor){
-    document.querySelectorAll(".cobro-metodo-opt").forEach(el=>{
-      el.classList.toggle("on", el.querySelector("input").value === valor);
-    });
+    cobroPintarToggle("cobroMetodo", valor);
     $("#cobroBodyTransferencia").style.display = valor === "transferencia" ? "" : "none";
     $("#cobroBodyHgcash").style.display = valor === "hgcash" ? "" : "none";
+  }
+
+  function cobroPintarModo(valor){
+    cobroPintarToggle("cobroModoSel", valor);
+    cobroPintarCuentas();   // el radio "usar esta" solo se ve en modo fija
   }
 
   function cobroPintarCuentas(){
     const cont = $("#cobroCuentasLista");
     if(!cobroCuentas.length){
-      cont.innerHTML = '<p class="cfg-hint">Todavía no cargaste ninguna cuenta adicional.</p>';
+      cont.innerHTML = '<p class="cfg-hint">Todavía no hay ninguna cuenta cargada.</p>';
       return;
     }
-    cont.innerHTML = cobroCuentas.map(c=>`
-      <div class="cobro-cta-fila ${c.activa? "":"pausada"}" data-id="${c.id}">
+    const enModoFija = cobroModo === "fija";
+    cont.innerHTML = cobroCuentas.map(c=>{
+      const esPrincipal = c.id === 0;
+      const elegida = enModoFija && c.id === cobroFijaId;
+      const radio = enModoFija
+        ? `<input type="radio" class="cobro-cta-radio" name="cobroCtaElegida" value="${c.id}" ${elegida?"checked":""} ${!c.activa?"disabled":""}>`
+        : "";
+      const botones = esPrincipal
+        ? `<span class="cobro-cta-badge">principal</span>`
+        : `<button type="button" data-accion="toggle">${c.activa? "Pausar":"Reactivar"}</button>
+           <button type="button" data-accion="borrar">Borrar</button>`;
+      return `
+      <div class="cobro-cta-fila ${c.activa? "":"pausada"} ${elegida?"elegida":""}" data-id="${c.id}">
+        ${radio}
         <div class="cobro-cta-datos">
-          <b>${esc(c.cbu)}</b>${c.activa? "" : " · pausada"}
+          <b>${esc(c.cbu || "sin cargar")}</b>${c.activa? "" : " · pausada"}
           <span>${esc(c.alias || "sin alias")}${c.titular? " · " + esc(c.titular) : ""}</span>
         </div>
-        <button type="button" data-accion="toggle">${c.activa? "Pausar":"Reactivar"}</button>
-        <button type="button" data-accion="borrar">Borrar</button>
-      </div>
-    `).join("");
+        ${botones}
+      </div>`;
+    }).join("");
   }
 
   async function cobroCargar(){
@@ -3803,13 +3844,14 @@
     ($("#cobroMetodo" + (d.metodo_cobro === "hgcash" ? "Hgcash" : "Transferencia"))).checked = true;
     cobroPintarMetodo(d.metodo_cobro);
 
-    const cp = d.cuenta_principal || {};
-    $("#cobroCuentaPrincipal").textContent = cp.cbu
-      ? `${cp.cbu}${cp.alias? " · " + cp.alias : ""}${cp.titular? " · " + cp.titular : ""}`
-      : "Todavía no la cargó el dueño de la plataforma.";
+    cobroModo = d.cobro_modo === "fija" ? "fija" : "azar";
+    cobroFijaId = d.cobro_fija_id || 0;
+    ($("#cobroModo" + (cobroModo === "fija" ? "Fija" : "Azar"))).checked = true;
 
-    cobroCuentas = d.cuentas_extra || [];
-    cobroPintarCuentas();
+    // La principal (id=0) siempre encabeza la lista, junto con las extra --
+    // una sola lista para elegir, no dos fuentes separadas.
+    cobroCuentas = [d.cuenta_principal || {id:0}, ...(d.cuentas_extra || [])];
+    cobroPintarModo(cobroModo);   // ya llama a cobroPintarCuentas() adentro
 
     const hg = d.hg_propio || {};
     $("#cobroHgAccount").value = hg.account_id || "";
@@ -3825,6 +3867,9 @@
 
   document.querySelectorAll('input[name="cobroMetodo"]').forEach(r=>{
     r.addEventListener("change", ()=> cobroPintarMetodo(r.value));
+  });
+  document.querySelectorAll('input[name="cobroModoSel"]').forEach(r=>{
+    r.addEventListener("change", ()=>{ cobroModo = r.value; cobroPintarModo(cobroModo); });
   });
 
   $("#cobroCtaAgregar").addEventListener("click", async ()=>{
@@ -3844,6 +3889,16 @@
     $("#cobroCtaAlias").value = ""; $("#cobroCtaCbu").value = ""; $("#cobroCtaTitular").value = "";
     toast("Cuenta agregada");
     cobroCargar();
+  });
+
+  // El radio "usar esta" solo actualiza el estado local -- se persiste
+  // recién con el botón "Guardar método de cobro" de abajo, junto con todo
+  // lo demás (mismo criterio que el resto de esta pantalla: cambios
+  // pendientes hasta que se guardan a propósito).
+  $("#cobroCuentasLista").addEventListener("change", e=>{
+    const r = e.target.closest('input[name="cobroCtaElegida"]'); if(!r) return;
+    cobroFijaId = parseInt(r.value, 10) || 0;
+    cobroPintarCuentas();
   });
 
   $("#cobroCuentasLista").addEventListener("click", async e=>{
@@ -3883,6 +3938,15 @@
     try{
       let d = await jpost({accion:"metodo_guardar", metodo_cobro: metodo}, API_COBRO);
       if(!d.ok) throw new Error(d.error || "No se pudo guardar el método");
+
+      if(metodo === "transferencia"){
+        d = await jpost({
+          accion: "modo_seleccion_guardar",
+          modo: document.querySelector('input[name="cobroModoSel"]:checked').value,
+          fija_id: cobroFijaId,
+        }, API_COBRO);
+        if(!d.ok) throw new Error(d.error || "No se pudo guardar cómo elegir la cuenta");
+      }
 
       if(metodo === "hgcash"){
         d = await jpost({

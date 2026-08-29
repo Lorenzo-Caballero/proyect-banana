@@ -68,3 +68,22 @@ CREATE TABLE IF NOT EXISTS cobro_cuentas (
   KEY idx_cliente_activa (cliente_id, activa),
   CONSTRAINT fk_cobro_cuentas_cliente FOREIGN KEY (cliente_id) REFERENCES clientes(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- Modo de seleccion cuando hay mas de una cuenta: rotar al azar (de
+-- siempre) o fijar SIEMPRE la misma. Decision del cliente, no algo que el
+-- sistema le imponga -- algunos prefieren repartir, otros usar una sola
+-- billetera hasta que decidan cambiarla a mano.
+--
+-- cobro_fija_id es NULL = "la principal" (clientes.cobro_cbu) cuando
+-- modo='fija'; un id > 0 = esa fila de cobro_cuentas. Sin FK a proposito: si
+-- la cuenta marcada se borra o se pausa, rl_cuenta_elegida() (recargas_lib.php)
+-- cae sola a azar entre las que sigan activas -- mismo criterio de
+-- fail-safe que el resto del modulo, nunca dejar a un jugador sin poder
+-- cargar por una cuenta que ya no existe.
+-- ---------------------------------------------------------------------------
+ALTER TABLE clientes
+  ADD COLUMN IF NOT EXISTS cobro_modo ENUM('azar','fija') NOT NULL DEFAULT 'azar'
+    COMMENT 'Con mas de una cuenta de transferencia: rotar al azar o usar siempre la misma.',
+  ADD COLUMN IF NOT EXISTS cobro_fija_id BIGINT DEFAULT NULL
+    COMMENT 'Cuenta fija elegida (id de cobro_cuentas, o NULL = la principal). Solo aplica con cobro_modo=fija.';
