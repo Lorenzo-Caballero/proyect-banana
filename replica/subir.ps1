@@ -45,8 +45,13 @@ if ($LASTEXITCODE -ne 0) { throw "falló el scp del widget" }
 # db.php resuelve la base por el dominio). Necesitan el `location` de
 # /replica/*.html en nginx (subir.ps1 -Config lo instala). registro.html es
 # la landing pública de auto-alta (crea el pedido en `altas`, lo cumple
-# bot_crear_jugador.py). Si falta alguno, se saltea sin romper.
-foreach ($pagina in @("crm.html", "admin.html", "chat.html", "registro.html", "sw.js")) {
+# bot_crear_jugador.py). meta-pixel.js necesita SU PROPIO `location =`
+# exacto (subir.ps1 -Config también lo instala) -- sin eso caía en el bloque
+# de estáticos genérico y la plataforma real lo servía como si fuera suyo,
+# devolviendo su HTML en vez del script (bug real, detectado con un
+# pixel-detector: HTTP 200 pero el cuerpo no era JavaScript). Si falta
+# alguno, se saltea sin romper.
+foreach ($pagina in @("crm.html", "admin.html", "chat.html", "registro.html", "sw.js", "meta-pixel.js")) {
     if (Test-Path "landing/$pagina") {
         Write-Host "→ $pagina" -ForegroundColor Cyan
         scp "landing/$pagina" "${destino}:/var/www/replica/$pagina"
