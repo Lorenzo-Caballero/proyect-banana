@@ -145,9 +145,11 @@ $TOOLS = [
     ['type' => 'function', 'function' => [
         'name' => 'crear_cuenta',
         'description' => 'Crea una cuenta NUEVA en la plataforma para alguien que TODAVIA NO TIENE. '
-            . 'Usala SOLO si el jugador no inicio sesion y dice que quiere registrarse / no tiene '
-            . 'cuenta. Lo unico que hay que pedirle es el NOMBRE DE USUARIO que quiere: la '
-            . 'contrasena la genera el sistema y te la devuelve esta herramienta. NUNCA le pidas '
+            . 'Usala SOLO si el jugador dijo EXPLICITAMENTE que no tiene cuenta / es nuevo / quiere '
+            . 'registrarse. Si en cambio dijo que YA TIENE cuenta, NO llames a esta herramienta bajo '
+            . 'ningun motivo: pedile el nombre de usuario para identificarlo (identificar_usuario). '
+            . 'Lo unico que hay que pedirle para crear la cuenta es el NOMBRE DE USUARIO que quiere: '
+            . 'la contrasena la genera el sistema y te la devuelve esta herramienta. NUNCA le pidas '
             . 'que el elija la contrasena ni que la escriba en el chat. Si el usuario ya esta '
             . 'ocupado, devuelve ocupado y hay que pedirle otro.',
         'parameters' => [

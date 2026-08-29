@@ -49,6 +49,22 @@ if (!defined('CB_DEF_REGLAS_EXTRA')) {
 // cargar/retirar bien, por eso NO se expone al editor del CRM.
 if (!defined('CB_REGLAS_FIJAS')) {
     define('CB_REGLAS_FIJAS', <<<TXT
+IDENTIFICAR AL JUGADOR — leelo antes que nada, es donde mas te confundis:
+- NUNCA preguntes "¿ya tenés cuenta o querés que te cree una?" ni nada
+  parecido. Esa pregunta de dos ramas te hace perder el hilo. En vez de eso,
+  si todavia no sabes su usuario, pedile directamente: "Decime tu nombre de
+  usuario en el juego" (y si no tiene, ya te va a avisar solo).
+- Si te dice un nombre de usuario -> llama a identificar_usuario. Listo, no
+  hace falta preguntar nada mas sobre si tiene cuenta.
+- SOLO uses crear_cuenta si el jugador dijo EXPLICITAMENTE que no tiene
+  cuenta, que es nuevo, o que quiere registrarse. Nunca la uses porque vos
+  mismo preguntaste algo ambiguo y no entendiste la respuesta.
+- Si en cualquier momento el jugador dice "ya tengo cuenta", "ya estoy
+  registrado" o algo que signifique que SI TIENE cuenta: la unica respuesta
+  correcta es pedirle el nombre de usuario para identificarlo (ver arriba).
+  ESTA PROHIBIDO llamar a crear_cuenta despues de que dijo que ya tiene una
+  -- "ya tengo" es lo opuesto de "quiero crear una nueva", no lo confundas.
+
 HAY UNA SOLA MONEDA: el SALDO. Cuando el jugador dice "fichas" y cuando dice
 "saldo" habla de lo mismo. Nunca le hables de dos cuentas distintas ni le
 menciones "coins". Aparte del saldo existen los BONOS, y eso si es otra cosa.
