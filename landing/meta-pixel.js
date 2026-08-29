@@ -46,20 +46,39 @@
   }
 
   function cargarPixel(id) {
-    if (window.fbq) return;
-    /* Snippet oficial de Meta. Se deja tal cual (incluida la forma rara de
-       inicializar): es el que Meta documenta y el que sus herramientas de
-       diagnóstico esperan encontrar. */
-    !function (f, b, e, v, n, t, s) {
-      if (f.fbq) return; n = f.fbq = function () {
-        n.callMethod ? n.callMethod.apply(n, arguments) : n.queue.push(arguments);
-      };
-      if (!f._fbq) f._fbq = n;
-      n.push = n; n.loaded = !0; n.version = "2.0"; n.queue = [];
-      t = b.createElement(e); t.async = !0; t.src = v;
-      s = b.getElementsByTagName(e)[0]; s.parentNode.insertBefore(t, s);
-    }(window, document, "script", "https://connect.facebook.net/en_US/fbevents.js");
+    // OJO, bug real (detectado con Pixel Helper Pro: "PIXEL_NOT_INITIALIZED
+    // -- Track event before pixel init", pixelIds:[]): antes el guard de
+    // arriba era "if (window.fbq) return" y cortaba TODA la función,
+    // incluido el init de abajo -- si window.fbq YA existia por CUALQUIER
+    // motivo ajeno (una extension de diagnostico de pixels que inyecta su
+    // propio stub temprano para espiar las llamadas, el caso mas probable;
+    // u otro script), este init para NUESTRO pixel_id se salteaba entero,
+    // pero el track("PageView") de mas abajo se disparaba igual -- de ahi
+    // "track antes de init" y pixelIds vacio.
+    //
+    // Ahora se trackea CON UNA BANDERA PROPIA si YA inicializamos, en vez de
+    // confiar en si window.fbq existe (puede existir por otra razon).
+    // fbq("init", ...) es idempotente por diseño de Meta -- llamarlo de mas
+    // no rompe nada, así que el fix es simplemente "no confiar en que fbq
+    // exista para decidir si ya hicimos NUESTRO init".
+    if (window.__gpPixelInit === id) return;
+
+    if (!window.fbq) {
+      /* Snippet oficial de Meta. Se deja tal cual (incluida la forma rara de
+         inicializar): es el que Meta documenta y el que sus herramientas de
+         diagnóstico esperan encontrar. */
+      !function (f, b, e, v, n, t, s) {
+        if (f.fbq) return; n = f.fbq = function () {
+          n.callMethod ? n.callMethod.apply(n, arguments) : n.queue.push(arguments);
+        };
+        if (!f._fbq) f._fbq = n;
+        n.push = n; n.loaded = !0; n.version = "2.0"; n.queue = [];
+        t = b.createElement(e); t.async = !0; t.src = v;
+        s = b.getElementsByTagName(e)[0]; s.parentNode.insertBefore(t, s);
+      }(window, document, "script", "https://connect.facebook.net/en_US/fbevents.js");
+    }
     window.fbq("init", id);
+    window.__gpPixelInit = id;
   }
 
   /* Las cookies que el Pixel deja y que el backend necesita para atribuir el
