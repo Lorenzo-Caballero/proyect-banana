@@ -65,46 +65,126 @@ const RL_TITULAR = 'Herrera Facundo Nahuel';
 // ==========================================================================
 
 /**
- * La cuenta de cobro de ESTE cliente, desde goldpaw_control.clientes.
+ * Conexion a goldpaw_control (la base maestra), cacheada por proceso.
+ * Mismo patron que hg_control() en hgcash_lib.php -- el usuario de la app
+ * tiene grant en todas las bases. Inyectable para tests via
+ * $GLOBALS['HG_CONTROL_OVERRIDE'] (mismo global que ya usaban los tests de
+ * HG Cash, se reutiliza para no sumar un segundo mecanismo de override).
+ */
+function rl_control(): ?PDO
+{
+    if (isset($GLOBALS['HG_CONTROL_OVERRIDE']) && $GLOBALS['HG_CONTROL_OVERRIDE'] instanceof PDO) {
+        return $GLOBALS['HG_CONTROL_OVERRIDE'];
+    }
+    static $ctl = null, $intentado = false;
+    if ($intentado) { return $ctl; }
+    $intentado = true;
+    try {
+        $ctl = new PDO(
+            'mysql:host=' . cfg('DB_HOST', 'localhost')
+                . ';dbname=' . cfg('CONTROL_DB_NAME', 'goldpaw_control') . ';charset=utf8mb4',
+            cfg('DB_USER'), cfg('DB_PASS'),
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_TIMEOUT => 3]
+        );
+    } catch (Throwable $e) {
+        error_log('rl_control: no pude conectar a goldpaw_control: ' . $e->getMessage());
+        $ctl = null;
+    }
+    return $ctl;
+}
+
+/**
+ * La fila de ESTE cliente en goldpaw_control.clientes (id, metodo_cobro,
+ * cobro_*, hg_propio_*), cacheada por proceso. null si no se pudo resolver
+ * (control caido, tenant sin fila) -- todo lo que la consume ya sabe
+ * degradar a un default seguro.
+ */
+function rl_cliente_actual(): ?array
+{
+    static $c = null, $intentado = false;
+    if ($intentado) { return $c; }
+    $intentado = true;
+    $ctl = rl_control();
+    $db  = (string)($GLOBALS['TENANT_DB'] ?? cfg('DB_NAME'));
+    if (!$ctl || $db === '') { return $c = null; }
+    try {
+        $st = $ctl->prepare(
+            'SELECT id, metodo_cobro, cobro_alias, cobro_cbu, cobro_titular,
+                    hg_propio_activo, hg_propio_token, hg_propio_account_id,
+                    hg_propio_webhook_secret, hg_propio_modo
+               FROM clientes WHERE db_nombre = ? LIMIT 1'
+        );
+        $st->execute([$db]);
+        $c = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+    } catch (Throwable $e) {
+        error_log('rl_cliente_actual: ' . $e->getMessage());
+        $c = null;
+    }
+    return $c;
+}
+
+/**
+ * La cuenta de cobro PRINCIPAL de ESTE cliente, desde goldpaw_control.clientes.
  *
  * Multi-tenant de verdad: cada cliente cobra en SU cuenta, no en una
- * constante compartida. El panel ya guardaba estas columnas al crear/editar
- * el cliente; esta funcion es la que faltaba para que alguien las use.
- * Fallback a las constantes si el control no responde o no hay nada cargado:
- * una base maestra caida no puede frenar la creacion de recargas.
+ * constante compartida. Fallback a las constantes si el control no responde
+ * o no hay nada cargado: una base maestra caida no puede frenar la creacion
+ * de recargas. Para TODAS las cuentas activas del cliente (si cargo mas de
+ * una), ver rl_cuentas_cobro().
  */
 function rl_cuenta_cobro(): array
 {
-    static $cta = null;
-    if ($cta !== null) { return $cta; }
     $cta = ['alias' => RL_ALIAS, 'cbu' => RL_CBU, 'titular' => RL_TITULAR];
-    try {
-        if (isset($GLOBALS['HG_CONTROL_OVERRIDE']) && $GLOBALS['HG_CONTROL_OVERRIDE'] instanceof PDO) {
-            $ctl = $GLOBALS['HG_CONTROL_OVERRIDE'];   // tests
-        } else {
-            $ctl = new PDO(
-                'mysql:host=' . cfg('DB_HOST', 'localhost')
-                    . ';dbname=' . cfg('CONTROL_DB_NAME', 'goldpaw_control') . ';charset=utf8mb4',
-                cfg('DB_USER'), cfg('DB_PASS'),
-                [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_TIMEOUT => 3]
-            );
-        }
-        $db = (string)($GLOBALS['TENANT_DB'] ?? cfg('DB_NAME'));
-        if ($db === '') { return $cta; }
-        $st = $ctl->prepare(
-            'SELECT cobro_alias, cobro_cbu, cobro_titular FROM clientes WHERE db_nombre = ? LIMIT 1'
-        );
-        $st->execute([$db]);
-        $c = $st->fetch(PDO::FETCH_ASSOC);
-        if ($c) {
-            if (trim((string)($c['cobro_alias'] ?? ''))   !== '') { $cta['alias']   = trim((string)$c['cobro_alias']); }
-            if (trim((string)($c['cobro_cbu'] ?? ''))     !== '') { $cta['cbu']     = trim((string)$c['cobro_cbu']); }
-            if (trim((string)($c['cobro_titular'] ?? '')) !== '') { $cta['titular'] = trim((string)$c['cobro_titular']); }
-        }
-    } catch (Throwable $e) {
-        error_log('rl_cuenta_cobro: ' . $e->getMessage());
+    $c = rl_cliente_actual();
+    if ($c) {
+        if (trim((string)($c['cobro_alias'] ?? ''))   !== '') { $cta['alias']   = trim((string)$c['cobro_alias']); }
+        if (trim((string)($c['cobro_cbu'] ?? ''))     !== '') { $cta['cbu']     = trim((string)$c['cobro_cbu']); }
+        if (trim((string)($c['cobro_titular'] ?? '')) !== '') { $cta['titular'] = trim((string)$c['cobro_titular']); }
     }
     return $cta;
+}
+
+/**
+ * TODAS las cuentas de cobro activas de este cliente: la principal (arriba)
+ * mas las que haya cargado en `cobro_cuentas` (migracion 06, control) --
+ * pensada para clientes con varias billeteras virtuales. rl_crear_recarga()
+ * elige una al azar por recarga (nunca se le muestran varias opciones a un
+ * mismo jugador a la vez, pero reparte la carga entre cuentas con el tiempo).
+ *
+ * Siempre devuelve al menos la principal (con fallback a las constantes si
+ * ni eso hay), asi el caller nunca tiene que manejar el caso "sin cuentas".
+ */
+function rl_cuentas_cobro(): array
+{
+    $lista = [rl_cuenta_cobro()];
+    $c = rl_cliente_actual();
+    $ctl = rl_control();
+    if (!$c || !$ctl) { return $lista; }
+    try {
+        $st = $ctl->prepare(
+            'SELECT alias, cbu, titular FROM cobro_cuentas WHERE cliente_id = ? AND activa = 1 ORDER BY id'
+        );
+        $st->execute([(int)$c['id']]);
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $fila) {
+            if (trim((string)($fila['cbu'] ?? '')) === '') { continue; }   // CBU es obligatorio
+            $lista[] = [
+                'alias'   => trim((string)($fila['alias'] ?? '')),
+                'cbu'     => trim((string)$fila['cbu']),
+                'titular' => trim((string)($fila['titular'] ?? '')),
+            ];
+        }
+    } catch (Throwable $e) {
+        error_log('rl_cuentas_cobro: ' . $e->getMessage());
+    }
+    return $lista;
+}
+
+/** 'transferencia' (default) o 'hgcash' -- ver metodo_cobro en goldpaw_control.clientes. */
+function rl_metodo_cobro(): string
+{
+    $c = rl_cliente_actual();
+    $m = (string)($c['metodo_cobro'] ?? 'transferencia');
+    return $m === 'hgcash' ? 'hgcash' : 'transferencia';
 }
 
 
@@ -259,21 +339,35 @@ function rl_crear_recarga(PDO $pdo, string $usuario, int $coins): array
            jugador paga en una pagina hosteada (o transfiere al CVU de HG) y
            HG matchea solo por monto+DNI. La acreditacion llega por webhook.
 
-           FAIL-OPEN a proposito: si HG esta apagado o su API no contesta, la
-           recarga ya quedo creada arriba con el flujo legacy completo
-           (centavos unicos + alias propio). Una caida de la pasarela no
-           puede dejar a los jugadores sin poder cargar. */
+           FAIL-OPEN a proposito, en dos niveles: si el cliente eligio HG pero
+           no tiene credenciales propias validas, cae al modo "casa" (viejo,
+           inactivo salvo que alguien lo reactive a mano en panel.html); si
+           ninguno de los dos anda, cae al flujo legacy de transferencia con
+           centavos unicos. Una caida de la pasarela no puede dejar a los
+           jugadores sin poder cargar. */
         $rHG = null;
-        if (is_file(__DIR__ . '/hgcash_lib.php')) {
+        if (is_file(__DIR__ . '/hgcash_lib.php') && rl_metodo_cobro() === 'hgcash') {
             require_once __DIR__ . '/hgcash_lib.php';
-            if (function_exists('hg_activo') && hg_activo()) {
+
+            // Intento 1: HG Cash con las credenciales PROPIAS de este cliente
+            // -- el modo nuevo, el que corresponde cuando eligio 'hgcash'.
+            if (function_exists('hg_propio_activo') && hg_propio_activo()) {
+                $chk = hg_propio_checkout_crear($montoPedido, $ref,
+                    ['usuario' => $usuario, 'referencia' => $ref]);
+                if (!empty($chk['ok'])) {
+                    $rHG = $chk;
+                }
+            }
+
+            // Intento 2 (compatibilidad, modo "casa"): solo si el cliente NO
+            // tiene credenciales propias configuradas. Nadie deberia caer
+            // aca hoy -- el selector del CRM ya no ofrece este modo -- pero
+            // si algun dia se reactiva a mano, sigue funcionando igual que
+            // siempre (con su libro mayor de comision).
+            if (!$rHG && function_exists('hg_activo') && hg_activo()) {
                 $chk = hg_checkout_crear($montoPedido, $ref,
                     ['usuario' => $usuario, 'referencia' => $ref]);
                 if (!empty($chk['ok'])) {
-                    $pdo->prepare(
-                        "UPDATE recargas SET metodo='hgcash', hg_checkout_id=?, hg_url=?
-                          WHERE referencia = ?"
-                    )->execute([$chk['id'], $chk['url'], $ref]);
                     $cli = hg_cliente_actual();
                     if ($cli) {
                         hg_ledger_alta('deposito', $cli, $usuario, $ref,
@@ -281,6 +375,13 @@ function rl_crear_recarga(PDO $pdo, string $usuario, int $coins): array
                     }
                     $rHG = $chk;
                 }
+            }
+
+            if ($rHG) {
+                $pdo->prepare(
+                    "UPDATE recargas SET metodo='hgcash', hg_checkout_id=?, hg_url=?
+                      WHERE referencia = ?"
+                )->execute([$rHG['id'], $rHG['url'], $ref]);
             }
         }
 
@@ -295,17 +396,20 @@ function rl_crear_recarga(PDO $pdo, string $usuario, int $coins): array
         if ($rHG) {
             // Con HG, el link ES la instruccion de pago. El CVU/alias que se
             // muestra es el de HG (por si prefiere transferir a mano), nunca
-            // el de la casa: la plata tiene que entrar por la pasarela.
+            // el de transferencia directa: la plata tiene que entrar por la
+            // pasarela.
             $r['metodo']    = 'hgcash';
             $r['link_pago'] = $rHG['url'];
-            // Con HG la cuenta que se muestra es la de HG (ahi entra la
-            // plata); la del cliente es solo el ultimo respaldo.
             $cta = rl_cuenta_cobro();
             $r['alias']     = $rHG['alias'] !== '' ? $rHG['alias'] : $cta['alias'];
             $r['cbu']       = $rHG['cvu'] !== '' ? $rHG['cvu'] : $cta['cbu'];
             $r['titular']   = $rHG['titular'] !== '' ? $rHG['titular'] : $cta['titular'];
         } else {
-            $cta = rl_cuenta_cobro();
+            // Transferencia directa: si el cliente cargo mas de una cuenta,
+            // se elige una al azar por recarga -- reparte entre billeteras
+            // sin mostrarle nunca varias opciones a la vez al jugador.
+            $cuentas = rl_cuentas_cobro();
+            $cta = $cuentas[array_rand($cuentas)];
             $r['metodo']  = 'transferencia';
             $r['alias']   = $cta['alias'];
             $r['cbu']     = $cta['cbu'];

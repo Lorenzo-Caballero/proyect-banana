@@ -1295,6 +1295,32 @@
   .ag-rol-opt.on{border-color:var(--violet);background:var(--violetSoft)}
   .ag-rol-opt.on b{color:var(--violet2)}
 
+  /* Mismo patron visual que .ag-rol-opt (tarjeta con radio oculto), nombre
+     propio porque "rol" no describe un metodo de cobro. */
+  .cobro-metodo-toggle{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:2px 0 4px}
+  .cobro-metodo-opt{position:relative;border:1px solid var(--line);background:var(--panel2);border-radius:11px;
+              padding:11px 12px;cursor:pointer;transition:.15s}
+  .cobro-metodo-opt:hover{border-color:var(--line2)}
+  .cobro-metodo-opt input{position:absolute;opacity:0;pointer-events:none}
+  .cobro-metodo-opt b{display:block;font-size:13px;font-weight:700;color:var(--txt)}
+  .cobro-metodo-opt span{display:block;font-size:11.5px;color:var(--muted);margin-top:2px;line-height:1.35}
+  .cobro-metodo-opt.on{border-color:var(--violet);background:var(--violetSoft)}
+  .cobro-metodo-opt.on b{color:var(--violet2)}
+  @media(max-width:600px){ .cobro-metodo-toggle{grid-template-columns:1fr} }
+
+  .cobro-webhook-row{display:flex;gap:8px}
+  .cobro-webhook-row .cb-input{font-size:12px}
+
+  .cobro-cta-fila{display:flex;align-items:center;gap:10px;padding:9px 12px;
+    background:var(--panel2);border:1px solid var(--line);border-radius:10px;margin-bottom:6px}
+  .cobro-cta-fila .cobro-cta-datos{flex:1;min-width:0;font-size:12.5px}
+  .cobro-cta-fila .cobro-cta-datos b{color:var(--txt)}
+  .cobro-cta-fila .cobro-cta-datos span{color:var(--muted);display:block;font-size:11.5px}
+  .cobro-cta-fila.pausada{opacity:.55}
+  .cobro-cta-fila button{background:none;border:1px solid var(--line);color:var(--muted);
+    border-radius:8px;padding:4px 9px;font-size:11.5px;cursor:pointer;flex:none}
+  .cobro-cta-fila button:hover{border-color:var(--violet);color:var(--txt)}
+
   /* selector de canal de difusión: 3 tarjetas en vez de 2 */
   .n-canal-toggle{grid-template-columns:repeat(3,1fr);margin-bottom:18px}
   @media(max-width:520px){ .n-canal-toggle{grid-template-columns:1fr} }
@@ -2833,6 +2859,98 @@
         </div>
       </div>
 
+      <div class="cfg-sec">
+        <h3>Cómo cobro</h3>
+        <span class="cfg-sec-linea"></span>
+      </div>
+
+      <!-- Método de recarga automática. Guardado APARTE del resto de esta
+           pantalla (botón propio abajo): vive en goldpaw_control, no en
+           config_crm, así que comparte poco con cfgGuardar/CFG_CAMPOS de
+           arriba -- forzarlo al mismo sistema hubiera sido más frágil que
+           tener su propio guardado chico. -->
+      <div class="cfg-card" id="cobroCard">
+        <div class="cfg-card-head" style="cursor:default">
+          <span class="cb-ico"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M2 10h20"/></svg></span>
+          <div class="cfg-card-txt">
+            <b>Método de recarga automática</b>
+            <span>Cómo tus jugadores transfieren y el sistema detecta el pago solo, sin que vos hagas nada.</span>
+          </div>
+        </div>
+        <div class="cfg-card-body">
+          <div id="cobroAviso" class="cb-nota" style="display:none"></div>
+
+          <div class="cobro-metodo-toggle">
+            <label class="cobro-metodo-opt">
+              <input type="radio" name="cobroMetodo" value="transferencia" id="cobroMetodoTransferencia">
+              <b>Transferencia</b>
+              <span>Con tu cuenta o billetera propia. El sistema lee tu casilla de mail y acredita solo.</span>
+            </label>
+            <label class="cobro-metodo-opt">
+              <input type="radio" name="cobroMetodo" value="hgcash" id="cobroMetodoHgcash">
+              <b>HG Cash</b>
+              <span>Con tu cuenta propia en HG Cash. Cobrás por su pasarela; tu mail no entra en juego.</span>
+            </label>
+          </div>
+
+          <!-- Transferencia: cuenta principal (de solo lectura acá -- la
+               carga el dueño de la plataforma) + cuentas adicionales
+               propias, si tenés más de una billetera. -->
+          <div class="cobro-metodo-body" id="cobroBodyTransferencia">
+            <label class="cb-flabel">Cuenta principal</label>
+            <p class="cfg-hint" id="cobroCuentaPrincipal">—</p>
+
+            <label class="cb-flabel" style="margin-top:16px">Cuentas adicionales <span class="cfg-opt">(opcional)</span></label>
+            <p class="cfg-hint">Si cargás más de una, el sistema reparte las recargas entre todas al azar — nunca le muestra dos opciones a un mismo jugador.</p>
+            <div id="cobroCuentasLista"></div>
+            <div class="cfg-grid" style="margin-top:10px">
+              <div>
+                <label class="cb-flabel">Alias <span class="cfg-opt">(opcional)</span></label>
+                <input class="cb-input" id="cobroCtaAlias" placeholder="mi.alias.mp" autocomplete="off">
+              </div>
+              <div>
+                <label class="cb-flabel">CBU / CVU</label>
+                <input class="cb-input" id="cobroCtaCbu" inputmode="numeric" placeholder="22 dígitos" autocomplete="off">
+              </div>
+              <div>
+                <label class="cb-flabel">Titular <span class="cfg-opt">(opcional)</span></label>
+                <input class="cb-input" id="cobroCtaTitular" placeholder="Nombre Apellido" autocomplete="off">
+              </div>
+            </div>
+            <button class="cb-btn-ghost" id="cobroCtaAgregar" type="button" style="margin-top:10px">+ Agregar cuenta</button>
+          </div>
+
+          <!-- HG Cash: credenciales propias. -->
+          <div class="cobro-metodo-body" id="cobroBodyHgcash" style="display:none">
+            <div class="cfg-grid">
+              <div>
+                <label class="cb-flabel">Access token de HG Cash</label>
+                <input class="cb-input" id="cobroHgToken" type="password" placeholder="Se pega acá una sola vez" autocomplete="off">
+                <p class="cfg-hint" id="cobroHgTokenHint"></p>
+              </div>
+              <div>
+                <label class="cb-flabel">Account ID</label>
+                <input class="cb-input" id="cobroHgAccount" placeholder="El ID de tu cuenta en HG Cash" autocomplete="off">
+              </div>
+            </div>
+            <label class="cb-flabel" style="margin-top:16px">Modo</label>
+            <select class="cb-input" id="cobroHgModo">
+              <option value="prod">Producción</option>
+              <option value="dev">Prueba (sandbox de HG)</option>
+            </select>
+
+            <label class="cb-flabel" style="margin-top:16px">URL de webhook</label>
+            <div class="cobro-webhook-row">
+              <input class="cb-input" id="cobroHgWebhook" readonly>
+              <button class="cb-btn-ghost" id="cobroHgWebhookCopiar" type="button">Copiar</button>
+            </div>
+            <p class="cfg-hint">Pegá esta URL en tu cuenta de HG Cash, donde configura el webhook. Así sabe a cuál de tus clientes avisarle cuando llega un pago.</p>
+          </div>
+
+          <button class="cb-btn" id="cobroGuardar" type="button" style="margin-top:16px">Guardar método de cobro</button>
+        </div>
+      </div>
+
       <p class="cfg-pie">Solo los administradores pueden cambiar estos ajustes.</p>
     </div>
   </div>
@@ -3426,7 +3544,7 @@
     /* Los preparativos que antes vivian en el click del rail van ACA, para
        que llegar por URL o por boton sea EXACTAMENTE lo mismo. */
     if(vista === "notificaciones") abrirNotif();   // desde el rail/URL siempre es masiva
-    if(vista === "config") cargarConfig();
+    if(vista === "config") { cargarConfig(); cobroCargar(); }
     // La pestaña del navegador dice donde estas: con diez CRMs abiertos (un
     // operador multi-cliente los tiene), "CRM" diez veces no dice nada.
     document.title = (RUTA_LABEL[vista] || "CRM") + " · GOLDPAW CRM";
@@ -3633,6 +3751,157 @@
       cfgPintarSucio();
     }
   }
+
+  /* ====================== Cómo cobro (método de recarga) ======================
+     Aparte de CFG_CAMPOS/cfgGuardar a propósito: vive en goldpaw_control via
+     crm_cobro.php, no en config_crm -- otra base, otro endpoint, otro botón
+     de guardar. jget/jpost ya resuelven sesión/CSRF igual que el resto del
+     CRM, solo cambia la URL (segundo parámetro). */
+  const API_COBRO = API_BASE + "/crm_cobro.php";
+  let cobroCuentas = [];
+
+  function cobroPintarMetodo(valor){
+    document.querySelectorAll(".cobro-metodo-opt").forEach(el=>{
+      el.classList.toggle("on", el.querySelector("input").value === valor);
+    });
+    $("#cobroBodyTransferencia").style.display = valor === "transferencia" ? "" : "none";
+    $("#cobroBodyHgcash").style.display = valor === "hgcash" ? "" : "none";
+  }
+
+  function cobroPintarCuentas(){
+    const cont = $("#cobroCuentasLista");
+    if(!cobroCuentas.length){
+      cont.innerHTML = '<p class="cfg-hint">Todavía no cargaste ninguna cuenta adicional.</p>';
+      return;
+    }
+    cont.innerHTML = cobroCuentas.map(c=>`
+      <div class="cobro-cta-fila ${c.activa? "":"pausada"}" data-id="${c.id}">
+        <div class="cobro-cta-datos">
+          <b>${esc(c.cbu)}</b>${c.activa? "" : " · pausada"}
+          <span>${esc(c.alias || "sin alias")}${c.titular? " · " + esc(c.titular) : ""}</span>
+        </div>
+        <button type="button" data-accion="toggle">${c.activa? "Pausar":"Reactivar"}</button>
+        <button type="button" data-accion="borrar">Borrar</button>
+      </div>
+    `).join("");
+  }
+
+  async function cobroCargar(){
+    const aviso = $("#cobroAviso");
+    aviso.style.display = "none";
+    let d;
+    try{ d = await jget({accion:"estado"}, API_COBRO); }
+    catch(e){
+      aviso.style.display = ""; aviso.textContent = "No pude cargar el método de cobro.";
+      return;
+    }
+    if(!d || !d.ok){
+      aviso.style.display = ""; aviso.textContent = (d && d.error) || "No pude cargar el método de cobro.";
+      return;
+    }
+
+    ($("#cobroMetodo" + (d.metodo_cobro === "hgcash" ? "Hgcash" : "Transferencia"))).checked = true;
+    cobroPintarMetodo(d.metodo_cobro);
+
+    const cp = d.cuenta_principal || {};
+    $("#cobroCuentaPrincipal").textContent = cp.cbu
+      ? `${cp.cbu}${cp.alias? " · " + cp.alias : ""}${cp.titular? " · " + cp.titular : ""}`
+      : "Todavía no la cargó el dueño de la plataforma.";
+
+    cobroCuentas = d.cuentas_extra || [];
+    cobroPintarCuentas();
+
+    const hg = d.hg_propio || {};
+    $("#cobroHgAccount").value = hg.account_id || "";
+    $("#cobroHgModo").value = hg.modo === "dev" ? "dev" : "prod";
+    $("#cobroHgToken").value = "";
+    $("#cobroHgToken").placeholder = hg.tiene_token
+      ? "Ya cargado — dejalo vacío para no cambiarlo" : "Se pega acá una sola vez";
+    $("#cobroHgTokenHint").textContent = hg.tiene_token
+      ? "Ya tenés un token cargado. Nunca vuelve a mostrarse acá por seguridad."
+      : "";
+    $("#cobroHgWebhook").value = hg.webhook_url || "";
+  }
+
+  document.querySelectorAll('input[name="cobroMetodo"]').forEach(r=>{
+    r.addEventListener("change", ()=> cobroPintarMetodo(r.value));
+  });
+
+  $("#cobroCtaAgregar").addEventListener("click", async ()=>{
+    const cbu = $("#cobroCtaCbu").value.trim();
+    if(!cbu){ toast("Falta el CBU/CVU"); return; }
+    const btn = $("#cobroCtaAgregar"); btn.disabled = true;
+    let d;
+    try{
+      d = await jpost({
+        accion: "cuenta_agregar",
+        alias: $("#cobroCtaAlias").value.trim(),
+        cbu, titular: $("#cobroCtaTitular").value.trim(),
+      }, API_COBRO);
+    }catch(e){ btn.disabled = false; return; }
+    btn.disabled = false;
+    if(!d.ok){ toast(d.error || "No se pudo agregar la cuenta"); return; }
+    $("#cobroCtaAlias").value = ""; $("#cobroCtaCbu").value = ""; $("#cobroCtaTitular").value = "";
+    toast("Cuenta agregada");
+    cobroCargar();
+  });
+
+  $("#cobroCuentasLista").addEventListener("click", async e=>{
+    const btn = e.target.closest("button[data-accion]"); if(!btn) return;
+    const fila = btn.closest(".cobro-cta-fila");
+    const id = parseInt(fila.getAttribute("data-id"), 10);
+    const cuenta = cobroCuentas.find(c=> c.id === id);
+    if(!cuenta) return;
+    btn.disabled = true;
+    let d;
+    try{
+      if(btn.dataset.accion === "borrar"){
+        d = await jpost({accion:"cuenta_borrar", id}, API_COBRO);
+      } else {
+        d = await jpost({
+          accion: "cuenta_editar", id,
+          alias: cuenta.alias || "", cbu: cuenta.cbu, titular: cuenta.titular || "",
+          activa: !cuenta.activa,
+        }, API_COBRO);
+      }
+    }catch(e){ btn.disabled = false; return; }
+    if(!d.ok){ toast(d.error || "No se pudo actualizar"); btn.disabled = false; return; }
+    cobroCargar();
+  });
+
+  $("#cobroHgWebhookCopiar").addEventListener("click", async ()=>{
+    const url = $("#cobroHgWebhook").value;
+    try{ await navigator.clipboard.writeText(url); toast("URL copiada"); }
+    catch(e){ toast(url); }
+  });
+
+  $("#cobroGuardar").addEventListener("click", async ()=>{
+    const aviso = $("#cobroAviso");
+    aviso.style.display = "none";
+    const metodo = document.querySelector('input[name="cobroMetodo"]:checked').value;
+    const btn = $("#cobroGuardar"); btn.disabled = true; const txt = btn.textContent; btn.textContent = "Guardando…";
+    try{
+      let d = await jpost({accion:"metodo_guardar", metodo_cobro: metodo}, API_COBRO);
+      if(!d.ok) throw new Error(d.error || "No se pudo guardar el método");
+
+      if(metodo === "hgcash"){
+        d = await jpost({
+          accion: "hg_propio_guardar",
+          activo: true,
+          token: $("#cobroHgToken").value.trim(),
+          account_id: $("#cobroHgAccount").value.trim(),
+          modo: $("#cobroHgModo").value,
+        }, API_COBRO);
+        if(!d.ok) throw new Error(d.error || "No se pudo guardar HG Cash");
+      }
+      toast("Método de cobro guardado");
+      cobroCargar();
+    }catch(e){
+      aviso.style.display = ""; aviso.textContent = e.message || "No se pudo guardar.";
+    }finally{
+      btn.disabled = false; btn.textContent = txt;
+    }
+  });
 
   /** Hash simple de string -> entero, compartido por colorDe()/agColorDe()
    *  (mismo algoritmo, cada uno lo usa para derivar un color distinto). */

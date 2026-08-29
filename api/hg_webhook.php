@@ -2,20 +2,34 @@
 /**
  * hg_webhook.php — HG Cash avisa aca cada vez que pasa algo con la plata.
  *
- * UNA URL para TODA la plataforma (todos los clientes cobran con el mismo
- * token): https://ganamoscrm.online/gp-api/hg_webhook.php. El ruteo al
- * cliente correcto NO sale del payload — sale del libro mayor
- * (hg_transacciones.hg_id -> db_nombre), que escribimos NOSOTROS al crear
- * la operacion. Un webhook con un id que no registramos se ignora.
+ * DOS MODOS, distinguidos por el Host al que llego el POST (nunca por el
+ * payload -- HG no manda nada que diga de que cliente es):
  *
- * REGLAS DE ORO
+ *  - MODO CASA (de siempre): una sola URL para toda la plataforma,
+ *    https://ganamoscrm.online/gp-api/hg_webhook.php, con el token
+ *    COMPARTIDO del dueño. El ruteo al cliente correcto sale del libro
+ *    mayor (hg_transacciones.hg_id -> db_nombre), que escribimos NOSOTROS
+ *    al crear la operacion. Hoy INACTIVO (no se ofrece desde el CRM), pero
+ *    sigue funcionando si algun dia se reactiva a mano.
+ *
+ *  - MODO POR-CLIENTE (nuevo): cada cliente con HG Cash propio configura,
+ *    en SU cuenta de HG, la URL de SU PROPIO dominio (o /slug/) como
+ *    webhook. hgw_resolver_tenant_por_host() identifica el tenant por ese
+ *    Host -- exactamente como hace db.php para cualquier otro endpoint --
+ *    asi que no hace falta ningun libro mayor: la firma se verifica con EL
+ *    secret de ESE cliente, y la verificacion de estado (regla de oro #1,
+ *    abajo) usa el token de ESE cliente.
+ *
+ * REGLAS DE ORO (aplican a los dos modos)
  *
  * 1. NUNCA se acredita por lo que dice el POST. El payload solo dice "mira
- *    el checkout X": el estado real se consulta a la API de HG con nuestro
- *    token. Un POST falsificado, como mucho, nos hace hacer un GET.
- * 2. Idempotente en DOS capas: la transicion condicional del libro
- *    (estado='pendiente' + rowCount) y el UPDATE condicional en la tabla
- *    del cliente. HG reintenta hasta 4 veces; acreditar 2 veces es regalar.
+ *    el checkout X": el estado real se consulta a la API de HG con el token
+ *    que corresponda (de la plataforma o del cliente, segun el modo). Un
+ *    POST falsificado, como mucho, nos hace hacer un GET.
+ * 2. Idempotente: en modo casa, dos capas (transicion condicional del libro
+ *    + UPDATE condicional en la tabla del cliente); en modo por-cliente, el
+ *    UPDATE condicional solo ya alcanza (no hay libro que routear). HG
+ *    reintenta hasta 4 veces; acreditar 2 veces es regalar.
  * 3. Se responde 200 rapido incluso ante errores nuestros: un 500 hace que
  *    HG reintente algo que va a volver a fallar igual. Lo irrecuperable se
  *    loguea y se resuelve a mano.
@@ -42,8 +56,68 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     hgw_salir(['ok' => false, 'error' => 'POST only'], 405);
 }
 
+/**
+ * Resuelve el tenant por el DOMINIO al que llegó este request -- mismo
+ * criterio y misma query que db.php, pero sin morir si no hay match (acá un
+ * Host desconocido no es un error, es "no es un webhook por-cliente, seguí
+ * con el modo casa"). Devuelve la fila de clientes (con hg_propio_*) o null.
+ *
+ * Esto es lo que hace posible que CADA cliente tenga su propia URL de
+ * webhook sin ningun libro mayor de por medio: el cliente carga en SU
+ * cuenta de HG Cash la URL de SU dominio (o /slug/), y ese POST llega acá
+ * ya identificado por Host -- ni hg.cash ni el payload dicen de quien es.
+ */
+function hgw_resolver_tenant_por_host(): ?array
+{
+    $host = isset($_SERVER['HTTP_HOST']) ? $_SERVER['HTTP_HOST'] : (string)($_SERVER['SERVER_NAME'] ?? '');
+    $host = strtolower((string)preg_replace('/:\d+$/', '', $host));
+    $slug = trim((string)($_SERVER['HTTP_X_TENANT_SLUG'] ?? ''));
+    if ($host === '') { return null; }
+
+    $ctl = hg_control();
+    if (!$ctl) { return null; }
+    try {
+        if ($slug !== '') {
+            $st = $ctl->prepare(
+                "SELECT id, db_nombre, dominio, slug, hg_propio_activo, hg_propio_token,
+                        hg_propio_account_id, hg_propio_webhook_secret, hg_propio_modo
+                   FROM clientes WHERE dominio = ? AND slug = ? AND path_tenant = 1 AND estado = 'activo' LIMIT 1"
+            );
+            $st->execute([$host, $slug]);
+        } else {
+            $st = $ctl->prepare(
+                "SELECT id, db_nombre, dominio, slug, hg_propio_activo, hg_propio_token,
+                        hg_propio_account_id, hg_propio_webhook_secret, hg_propio_modo
+                   FROM clientes WHERE dominio = ? AND path_tenant = 0 AND estado = 'activo' LIMIT 1"
+            );
+            $st->execute([$host]);
+        }
+        return $st->fetch(PDO::FETCH_ASSOC) ?: null;
+    } catch (Throwable $e) {
+        error_log('hgw_resolver_tenant_por_host: ' . $e->getMessage());
+        return null;
+    }
+}
+
 $raw = (string)file_get_contents('php://input');
-if (!hg_firma_ok($raw, (string)($_SERVER['HTTP_X_HG_WEBHOOK_SIGNATURE'] ?? ''))) {
+
+// Modo por-cliente: SOLO si el Host de este request resolvio a un cliente
+// con HG Cash propio prendido. Cualquier otro caso (Host desconocido,
+// cliente sin hg_propio_activo) sigue el modo "casa" de siempre, sin tocar
+// nada de lo que ya funcionaba.
+$tenantPropio = hgw_resolver_tenant_por_host();
+$esModoPropio = $tenantPropio !== null
+    && (int)($tenantPropio['hg_propio_activo'] ?? 0) === 1
+    && trim((string)($tenantPropio['hg_propio_token'] ?? '')) !== '';
+
+if ($esModoPropio) {
+    $secretPropio = (string)($tenantPropio['hg_propio_webhook_secret'] ?? '');
+    $firmaOk = $secretPropio === ''
+        ? true   // mismo criterio que hg_firma_ok(): sin secret configurado, se acepta (nunca se confia en el payload igual)
+        : (preg_match('/^sha256=([0-9a-f]{64})$/', trim((string)($_SERVER['HTTP_X_HG_WEBHOOK_SIGNATURE'] ?? '')), $m)
+           && hash_equals(hash_hmac('sha256', $raw, $secretPropio), $m[1]));
+    if (!$firmaOk) { hgw_salir(['ok' => false], 401); }
+} elseif (!hg_firma_ok($raw, (string)($_SERVER['HTTP_X_HG_WEBHOOK_SIGNATURE'] ?? ''))) {
     // Firma invalida = alguien que NO es HG. 401 y sin pistas.
     hgw_salir(['ok' => false], 401);
 }
@@ -72,6 +146,53 @@ function hgw_tenant(string $dbNombre): ?PDO
     }
 }
 
+/**
+ * Idempotencia capa 2 + acreditacion + aviso, compartida entre el modo
+ * "casa" y el modo por-cliente -- lo unico que cambia entre los dos es COMO
+ * se llego hasta aca (por libro mayor, o por Host); a partir de este punto
+ * es exactamente la misma operacion sobre la base del tenant. Termina
+ * siempre en hgw_salir() (nunca vuelve).
+ */
+function hgw_acreditar_checkout(PDO $pdo, string $checkoutId, string $dbNombre): void
+{
+    $st = $pdo->prepare("SELECT * FROM recargas WHERE hg_checkout_id = ? LIMIT 1");
+    $st->execute([$checkoutId]);
+    $recarga = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$recarga) {
+        error_log("hg_webhook: checkout $checkoutId sin recarga en $dbNombre");
+        hgw_salir(['ok' => true, 'error' => 'recarga no encontrada']);
+    }
+    $claim = $pdo->prepare(
+        "UPDATE recargas SET estado='acreditada', acreditada_en=NOW(), mensaje='HG Cash'
+          WHERE id = ? AND estado = 'pendiente'"
+    );
+    $claim->execute([(int)$recarga['id']]);
+    if ($claim->rowCount() !== 1) { hgw_salir(['ok' => true, 'ya_procesado' => true]); }
+
+    // Acreditar las fichas — el paso por el que existe todo esto.
+    $pdo->prepare("UPDATE usuarios SET coins = coins + ? WHERE username = ?")
+        ->execute([(int)$recarga['coins'], (string)$recarga['usuario']]);
+
+    // Aviso + bono pendiente, best-effort: nada de esto puede hacer que
+    // una acreditacion ya hecha parezca fallida.
+    foreach (['/recargas_lib.php', '/notificaciones_lib.php', '/crm_lib.php'] as $lib) {
+        if (is_file(__DIR__ . $lib)) { require_once __DIR__ . $lib; }
+    }
+    try {
+        if (function_exists('rl_notificar_acreditada')) {
+            rl_notificar_acreditada($pdo, $recarga);
+        }
+        if (function_exists('crmnotif_bono_aplicar_en_recarga')) {
+            crmnotif_bono_aplicar_en_recarga($pdo, (string)$recarga['usuario'],
+                (int)$recarga['id'], (int)$recarga['coins']);
+        }
+    } catch (Throwable $e) {
+        error_log('hg_webhook aviso: ' . $e->getMessage());
+    }
+
+    hgw_salir(['ok' => true, 'acreditada' => (int)$recarga['coins']]);
+}
+
 // ============================ DEPOSITOS ====================================
 if ($topic === 'CHECKOUT') {
     // El id puede venir en distintos lugares segun el evento; se prueban en
@@ -80,6 +201,25 @@ if ($topic === 'CHECKOUT') {
     if ($checkoutId === '') { hgw_salir(['ok' => true, 'ignorado' => 'sin id']); }
 
     if ($eventType === 'checkout.completed') {
+        if ($esModoPropio) {
+            // Modo por-cliente: no hay libro mayor que resolver -- el Host ya
+            // nos dijo de que tenant es (hgw_resolver_tenant_por_host()), asi
+            // que abrimos ESA base directo. VERIFICAR CONTRA LA API con el
+            // token del CLIENTE (regla de oro #1: nunca confiar en el payload).
+            $GLOBALS['TENANT_DB'] = (string)$tenantPropio['db_nombre'];
+            [$code, $chk] = hg_propio_api('GET', '/checkouts/' . rawurlencode($checkoutId));
+            $estadoReal = strtolower((string)($chk['status'] ?? ''));
+            if ($code !== 200 || $estadoReal !== 'completed') {
+                error_log("hg_webhook (propio {$tenantPropio['db_nombre']}): checkout $checkoutId "
+                    . "dice completed pero la API dice HTTP $code/'$estadoReal' — no se acredita");
+                hgw_salir(['ok' => true, 'verificacion' => 'fallo']);
+            }
+            $pdo = hgw_tenant((string)$tenantPropio['db_nombre']);
+            if (!$pdo) { hgw_salir(['ok' => true, 'error' => 'tenant caido, acreditar a mano']); }
+            hgw_acreditar_checkout($pdo, $checkoutId, (string)$tenantPropio['db_nombre']);
+        }
+
+        // Modo "casa" (de siempre): el ruteo sale del libro mayor de plataforma.
         // VERIFICAR CONTRA LA API, no contra el payload (regla de oro #1).
         [$code, $chk] = hg_api('GET', '/checkouts/' . rawurlencode($checkoutId));
         $estadoReal = strtolower((string)($chk['status'] ?? ''));
@@ -96,47 +236,24 @@ if ($topic === 'CHECKOUT') {
 
         $pdo = hgw_tenant((string)$fila['db_nombre']);
         if (!$pdo) { hgw_salir(['ok' => true, 'error' => 'tenant caido, acreditar a mano']); }
-
-        // Idempotencia capa 2: reclamar la recarga pendiente.
-        $st = $pdo->prepare("SELECT * FROM recargas WHERE hg_checkout_id = ? LIMIT 1");
-        $st->execute([$checkoutId]);
-        $recarga = $st->fetch(PDO::FETCH_ASSOC);
-        if (!$recarga) {
-            error_log("hg_webhook: checkout $checkoutId sin recarga en {$fila['db_nombre']}");
-            hgw_salir(['ok' => true, 'error' => 'recarga no encontrada']);
-        }
-        $claim = $pdo->prepare(
-            "UPDATE recargas SET estado='acreditada', acreditada_en=NOW(), mensaje='HG Cash'
-              WHERE id = ? AND estado = 'pendiente'"
-        );
-        $claim->execute([(int)$recarga['id']]);
-        if ($claim->rowCount() !== 1) { hgw_salir(['ok' => true, 'ya_procesado' => true]); }
-
-        // Acreditar las fichas — el paso por el que existe todo esto.
-        $pdo->prepare("UPDATE usuarios SET coins = coins + ? WHERE username = ?")
-            ->execute([(int)$recarga['coins'], (string)$recarga['usuario']]);
-
-        // Aviso + bono pendiente, best-effort: nada de esto puede hacer que
-        // una acreditacion ya hecha parezca fallida.
-        foreach (['/recargas_lib.php', '/notificaciones_lib.php', '/crm_lib.php'] as $lib) {
-            if (is_file(__DIR__ . $lib)) { require_once __DIR__ . $lib; }
-        }
-        try {
-            if (function_exists('rl_notificar_acreditada')) {
-                rl_notificar_acreditada($pdo, $recarga);
-            }
-            if (function_exists('crmnotif_bono_aplicar_en_recarga')) {
-                crmnotif_bono_aplicar_en_recarga($pdo, (string)$recarga['usuario'],
-                    (int)$recarga['id'], (int)$recarga['coins']);
-            }
-        } catch (Throwable $e) {
-            error_log('hg_webhook aviso: ' . $e->getMessage());
-        }
-
-        hgw_salir(['ok' => true, 'acreditada' => (int)$recarga['coins']]);
+        hgw_acreditar_checkout($pdo, $checkoutId, (string)$fila['db_nombre']);
     }
 
     if (in_array($eventType, ['checkout.rejected', 'checkout.expired', 'checkout.cancelled'], true)) {
+        if ($esModoPropio) {
+            // Mismo efecto que el modo casa, sin libro mayor: directo contra
+            // la base del tenant que ya identificamos por Host. El UPDATE
+            // condicional (estado='pendiente') es idempotencia de sobra --
+            // un reintento de HG no la vuelve a tocar.
+            $pdo = hgw_tenant((string)$tenantPropio['db_nombre']);
+            if ($pdo) {
+                $pdo->prepare(
+                    "UPDATE recargas SET estado='vencida', mensaje=?
+                      WHERE hg_checkout_id = ? AND estado='pendiente'"
+                )->execute(['HG: ' . $eventType, $checkoutId]);
+            }
+            hgw_salir(['ok' => true]);
+        }
         $fila = hg_ledger_transicion($checkoutId, 'caido', $raw, 'pendiente');
         if ($fila && !empty($fila['transiciono'])) {
             $pdo = hgw_tenant((string)$fila['db_nombre']);

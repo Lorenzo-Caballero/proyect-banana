@@ -131,17 +131,21 @@ function hg_cliente_actual(): ?array
 // ============================ HTTP =========================================
 
 /**
- * Una llamada a la API de HG. Devuelve [httpCode, arrayDecodificado|null].
+ * Una llamada a la API de HG contra un token/base puntuales. Devuelve
+ * [httpCode, arrayDecodificado|null]. Separada de hg_api()/hg_cliente_api()
+ * (que solo deciden QUE token/base usar) para no duplicar la parte de
+ * transporte -- la de la plataforma y la de cada cliente pegan exactamente
+ * igual, solo cambia de que cuenta HG sale.
  *
  * El transporte se puede inyectar via $GLOBALS['HG_TRANSPORT'] =
  * fn($metodo,$url,$body,$headers) => [code, jsonString] — es lo que permite
  * simular el flujo entero (deposito, webhook, retiro) en un test sin red.
  */
-function hg_api(string $metodo, string $path, ?array $body = null): array
+function hg_api_con(string $token, string $base, string $metodo, string $path, ?array $body = null): array
 {
-    $url = hg_base() . $path;
+    $url = $base . $path;
     $headers = [
-        'Authorization: Bearer ' . hg_cfg('HG_API_TOKEN'),
+        'Authorization: Bearer ' . $token,
         'Content-Type: application/json',
     ];
 
@@ -164,12 +168,133 @@ function hg_api(string $metodo, string $path, ?array $body = null): array
     $raw  = curl_exec($ch);
     $code = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
     if ($raw === false) {
-        error_log('hg_api ' . $metodo . ' ' . $path . ': ' . curl_error($ch));
+        error_log('hg_api_con ' . $metodo . ' ' . $path . ': ' . curl_error($ch));
         curl_close($ch);
         return [0, null];
     }
     curl_close($ch);
     return [$code, json_decode((string)$raw, true)];
+}
+
+/** Llamada con el token/base DE LA PLATAFORMA (modo "casa", inactivo hoy). */
+function hg_api(string $metodo, string $path, ?array $body = null): array
+{
+    return hg_api_con(hg_cfg('HG_API_TOKEN'), hg_base(), $metodo, $path, $body);
+}
+
+// ============================ HG CASH POR-CLIENTE ("hg_propio_*") ==========
+//
+// Modo NUEVO, distinto del "casa" de arriba: cada cliente carga SU PROPIO
+// token de HG Cash desde su CRM (Configuracion). La plata le entra directo a
+// EL, sin pasar por la cuenta de la plataforma -- no hay libro mayor de
+// comision aca (esa comision es otra cosa, ver crm_publicidad... digo,
+// saldo_comisiones, que se engancha en rl_reportar_purchase/hg_webhook por
+// otro lado, no en esta lib). Las columnas viven en
+// goldpaw_control.clientes.hg_propio_* (migracion 06).
+
+/**
+ * La config hg_propio_* de ESTE cliente (tenant actual, resuelto por
+ * db.php/TENANT_DB). Cacheada por proceso. null si no se pudo resolver.
+ */
+function hg_propio_cfg(): ?array
+{
+    if (array_key_exists('__hg_propio_listo', $GLOBALS)) {
+        return $GLOBALS['__hg_propio_cache'] ?? null;
+    }
+    $GLOBALS['__hg_propio_listo'] = true;
+    $ctl = hg_control();
+    $db  = (string)($GLOBALS['TENANT_DB'] ?? cfg('DB_NAME'));
+    if (!$ctl || $db === '') { return $GLOBALS['__hg_propio_cache'] = null; }
+    try {
+        $st = $ctl->prepare(
+            'SELECT id, dominio, path_tenant, slug, hg_propio_activo, hg_propio_token,
+                    hg_propio_account_id, hg_propio_webhook_secret, hg_propio_modo
+               FROM clientes WHERE db_nombre = ? LIMIT 1'
+        );
+        $st->execute([$db]);
+        $GLOBALS['__hg_propio_cache'] = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+    } catch (Throwable $e) {
+        error_log('hg_propio_cfg: ' . $e->getMessage());
+        $GLOBALS['__hg_propio_cache'] = null;
+    }
+    return $GLOBALS['__hg_propio_cache'];
+}
+
+/** ¿Este cliente tiene HG Cash propio prendido y con token cargado? */
+function hg_propio_activo(): bool
+{
+    $c = hg_propio_cfg();
+    return $c !== null
+        && (int)($c['hg_propio_activo'] ?? 0) === 1
+        && trim((string)($c['hg_propio_token'] ?? '')) !== '';
+}
+
+function hg_propio_base(): string
+{
+    $c = hg_propio_cfg();
+    return (($c['hg_propio_modo'] ?? 'prod') === 'dev')
+        ? 'http://dev.hg.cash/api/v1'
+        : 'https://hg.cash/api/v1';
+}
+
+/** Llamada a la API de HG con el token de ESTE cliente. */
+function hg_propio_api(string $metodo, string $path, ?array $body = null): array
+{
+    $c = hg_propio_cfg();
+    return hg_api_con((string)($c['hg_propio_token'] ?? ''), hg_propio_base(), $metodo, $path, $body);
+}
+
+/**
+ * La URL publica de ESTE cliente para /gp-api/hg_webhook.php -- es lo que
+ * el cliente carga en SU cuenta de HG Cash como webhook URL al configurarla.
+ * Sale de la misma resolucion dominio/slug que ya usa db.php (TENANT_HOST/
+ * TENANT_SLUG), asi que un webhook que llegue a esa URL va a resolver a este
+ * mismo tenant solo, sin necesitar ningun libro mayor de por medio.
+ */
+function hg_propio_webhook_url(): string
+{
+    $host = (string)($GLOBALS['TENANT_HOST'] ?? $_SERVER['HTTP_HOST'] ?? 'ganamoscrm.online');
+    $slug = (string)($GLOBALS['TENANT_SLUG'] ?? '');
+    return 'https://' . $host . ($slug !== '' ? '/' . $slug : '') . '/gp-api/hg_webhook.php';
+}
+
+/**
+ * Crea un checkout de deposito con el token PROPIO del cliente. Misma forma
+ * de respuesta que hg_checkout_crear() (modo casa), para que
+ * rl_crear_recarga() no tenga que distinguir cual de las dos llamo.
+ */
+function hg_propio_checkout_crear(float $monto, string $referencia, array $meta = []): array
+{
+    $host = (string)($GLOBALS['TENANT_HOST'] ?? $_SERVER['HTTP_HOST'] ?? 'ganamoscrm.online');
+    [$code, $r] = hg_propio_api('POST', '/checkouts', [
+        'country'          => 'AR',
+        'amount'           => number_format($monto, 2, '.', ''),
+        'successUrl'       => 'https://' . $host . '/?pago=ok',
+        'webhookUrl'       => hg_propio_webhook_url(),
+        'idempotencyKey'   => $referencia,
+        'expiresInSeconds' => 45 * 60,
+        'metadata'         => $meta,
+        'locale'           => 'es',
+    ]);
+    if ($code !== 201 || !is_array($r) || empty($r['id'])) {
+        error_log('hg_propio_checkout_crear: HTTP ' . $code . ' ' . json_encode($r));
+        return ['ok' => false, 'error' => 'HG no pudo crear el pago (HTTP ' . $code . ')'];
+    }
+    $cuenta = (array)($r['accountDisplay'] ?? []);
+    return [
+        'ok'      => true,
+        'id'      => (string)$r['id'],
+        'url'     => (string)($r['checkoutUrl'] ?? ''),
+        'cvu'     => (string)($cuenta['CVU'] ?? $cuenta['cvu'] ?? ''),
+        'alias'   => (string)($cuenta['alias'] ?? ''),
+        'titular' => (string)($cuenta['holder'] ?? $cuenta['titular'] ?? ''),
+    ];
+}
+
+/** SOLO PARA TESTS: limpia el cache por-proceso de hg_propio_cfg(). */
+function hg_propio_cfg_reset_para_tests(): void
+{
+    unset($GLOBALS['__hg_propio_cache'], $GLOBALS['__hg_propio_listo']);
 }
 
 // ============================ LIBRO MAYOR ==================================
@@ -373,5 +498,8 @@ function hg_firma_ok(string $rawBody, string $header): bool
 /** SOLO PARA TESTS: limpia los caches por-proceso de la lib. */
 function hg_cfg_reset_para_tests(): void
 {
-    unset($GLOBALS['__hg_cfg_cache'], $GLOBALS['__hg_cli_cache'], $GLOBALS['__hg_cli_listo']);
+    unset(
+        $GLOBALS['__hg_cfg_cache'], $GLOBALS['__hg_cli_cache'], $GLOBALS['__hg_cli_listo'],
+        $GLOBALS['__hg_propio_cache'], $GLOBALS['__hg_propio_listo']
+    );
 }
