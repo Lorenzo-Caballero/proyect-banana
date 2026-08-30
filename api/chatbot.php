@@ -28,6 +28,7 @@ require_once __DIR__ . '/config_crm.php';
 // require_once: recargas_lib.php (arriba) ya lo carga solo si esta -- un
 // require simple aca redeclararia las funciones y tiraria fatal error.
 require_once __DIR__ . '/meta_lib.php';
+require_once __DIR__ . '/publicidad_lib.php';
 // El CRM es opcional: si crm_lib.php no esta subido, el chat sigue funcionando.
 $crmLib = __DIR__ . '/crm_lib.php';
 if (is_file($crmLib)) { require_once $crmLib; }
@@ -407,11 +408,21 @@ if (function_exists('crm_registrar_turno')) {
    charla de veinte mensajes reportaria veinte Contact y la campaña
    optimizaria hacia gente que escribe mucho, no hacia gente que juega. */
 try {
+    // El body trae la cookie VIVA del pixel de esta pagina (widget.js la lee
+    // con metaCookies()) -- se prefiere sobre la guardada en `altas`, que es
+    // del momento del alta y puede ser mas vieja. Si el body viene vacio
+    // (chat abierto dias despues, sin cookie fresca) se cae a lo guardado.
+    $atrib = !empty($usuarioDetectado)
+        ? publicidad_atribucion_por_usuario($pdo, $usuarioDetectado)
+        : ['publicista' => null, 'fbp' => '', 'fbc' => ''];
+    $fbp = (string)($body['fbp'] ?? '') !== '' ? (string)$body['fbp'] : $atrib['fbp'];
+    $fbc = (string)($body['fbc'] ?? '') !== '' ? (string)$body['fbc'] : $atrib['fbc'];
     meta_evento($pdo, 'Contact', [
         'usuario' => $usuarioDetectado ?? '',
         'ref'     => 'chat:' . ($sessionId !== '' ? $sessionId : 'anon'),
-        'fbp'     => (string)($body['fbp'] ?? ''),
-        'fbc'     => (string)($body['fbc'] ?? ''),
+        'fbp'     => $fbp,
+        'fbc'     => $fbc,
+        'pixel'   => publicidad_pixel_propio($atrib['publicista']),
     ]);
 } catch (Throwable $e) {
     error_log('meta Contact: ' . $e->getMessage());

@@ -636,21 +636,17 @@ function rl_reportar_purchase(PDO $pdo, array $recarga): void
         return;
     }
     try {
-        $publicista = null;
-        if (function_exists('publicidad_por_id')) {
-            $pub = $pdo->prepare("SELECT publicista_id FROM altas WHERE usuario = ? LIMIT 1");
-            $pub->execute([$recarga['usuario']]);
-            $pubId = (int)($pub->fetchColumn() ?: 0);
-            if ($pubId > 0) {
-                $publicista = publicidad_por_id($pdo, $pubId);
-            }
-        }
+        $atrib = function_exists('publicidad_atribucion_por_usuario')
+            ? publicidad_atribucion_por_usuario($pdo, (string)$recarga['usuario'])
+            : ['publicista' => null, 'fbp' => '', 'fbc' => ''];
         meta_evento($pdo, 'Purchase', [
             'usuario' => (string)$recarga['usuario'],
             'valor'   => (float)$recarga['monto_base'],
             'ref'     => 'recarga:' . $recarga['id'],
+            'fbp'     => $atrib['fbp'],
+            'fbc'     => $atrib['fbc'],
             'pixel'   => function_exists('publicidad_pixel_propio')
-                ? publicidad_pixel_propio($publicista) : null,
+                ? publicidad_pixel_propio($atrib['publicista']) : null,
         ]);
     } catch (Throwable $e) {
         error_log('meta Purchase (recarga): ' . $e->getMessage());

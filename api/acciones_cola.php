@@ -183,10 +183,15 @@ try {
                 if (($a['tipo'] ?? '') === 'cargar') {
                     try {
                         require_once __DIR__ . '/meta_lib.php';
+                        require_once __DIR__ . '/publicidad_lib.php';
+                        $atrib = publicidad_atribucion_por_usuario($pdo, (string)$a['usuario']);
                         meta_evento($pdo, 'Purchase', [
                             'usuario' => (string)$a['usuario'],
                             'valor'   => (float)$a['monto'],
                             'ref'     => 'carga:' . $id,
+                            'fbp'     => $atrib['fbp'],
+                            'fbc'     => $atrib['fbc'],
+                            'pixel'   => publicidad_pixel_propio($atrib['publicista']),
                         ]);
                     } catch (Throwable $e) {
                         error_log('meta Purchase: ' . $e->getMessage());

@@ -208,10 +208,15 @@ function fichas_pedir_carga(PDO $pdo, string $usuario, int $monto, string $orige
            generan el mismo id y Meta lo cuenta UNA vez. */
         try {
             require_once __DIR__ . '/meta_lib.php';
+            require_once __DIR__ . '/publicidad_lib.php';
+            $atrib = publicidad_atribucion_por_usuario($pdo, $usuario);
             meta_evento($pdo, 'InitiateCheckout', [
                 'usuario' => $usuario,
                 'valor'   => $monto,
                 'ref'     => 'carga:' . $id,
+                'fbp'     => $atrib['fbp'],
+                'fbc'     => $atrib['fbc'],
+                'pixel'   => publicidad_pixel_propio($atrib['publicista']),
             ]);
         } catch (Throwable $e) {
             // Que la campaña pierda un evento es molesto; que el jugador no

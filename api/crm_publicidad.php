@@ -130,21 +130,14 @@ if ($metodo === 'POST') {
             if (trim($nombre) === '') {
                 salir(['ok' => false, 'error' => 'Falta el nombre'], 400);
             }
-            // Pixel ID + Token CAPI son obligatorios para dar de alta un
-            // publicista NUEVO -- sin ellos el modulo entero de Publicidad
-            // no tiene nada que reportarle a Meta. Al EDITAR uno existente
-            // no se exigen: publicidad_guardar() ya trata el campo vacio
-            // como "no tocar lo que ya estaba cargado" (el token nunca
-            // vuelve al frontend por seguridad, asi que no se puede pedir
-            // que siempre venga completo).
-            if (!$id) {
-                if (trim($pixel) === '') {
-                    salir(['ok' => false, 'error' => 'Falta el Pixel ID de Meta'], 400);
-                }
-                if (trim($token) === '') {
-                    salir(['ok' => false, 'error' => 'Falta el Token CAPI'], 400);
-                }
-            }
+            // Pixel ID + Token CAPI son OPCIONALES, tanto al crear como al
+            // editar: un publicista sin pixel propio usa el pixel general
+            // del cliente (ver publicidad_pixel_propio(), que ya cae al
+            // general si falta cualquiera de los dos). Sirve para el caso
+            // comun de alguien que solo necesita un link propio para medir
+            // altas/cargas por separado, sin manejar su propia cuenta de
+            // Meta. Al EDITAR, ademas, vacio significa "no tocar lo que ya
+            // estaba cargado" (el token nunca vuelve al frontend).
             $nuevoId = publicidad_guardar($pdo, $id, $nombre, $pixel, $token, $activo,
                                            $insightsToken, $insightsAdAccount);
             if (!$nuevoId) {

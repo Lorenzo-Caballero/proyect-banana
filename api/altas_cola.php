@@ -381,7 +381,7 @@ if ($accion === 'marcar' && $metodo === 'POST') {
             // general (sin pixel propio de publicista).
             $publicista = null;
             try {
-                $u = $pdo->prepare("SELECT usuario, publicista_id FROM altas WHERE id = ?");
+                $u = $pdo->prepare("SELECT usuario, publicista_id, fbp, fbc FROM altas WHERE id = ?");
                 $u->execute([$id]);
                 $fila = $u->fetch();
             } catch (Throwable $e) {
@@ -395,6 +395,8 @@ if ($accion === 'marcar' && $metodo === 'POST') {
             meta_evento($pdo, 'CompleteRegistration', [
                 'usuario' => (string)($fila['usuario'] ?? ''),
                 'ref'     => 'alta:' . $id,
+                'fbp'     => (string)($fila['fbp'] ?? ''),
+                'fbc'     => (string)($fila['fbc'] ?? ''),
                 'pixel'   => publicidad_pixel_propio($publicista),
             ]);
         } catch (Throwable $e) {
