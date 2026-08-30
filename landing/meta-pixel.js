@@ -11,14 +11,19 @@
  * porque son los únicos que saben si la cosa pasó de verdad (ver meta_lib.php).
  *
  * DEDUPLICACIÓN
- * Si un día se disparara el mismo evento por los dos lados, hay que pasarle el
- * mismo eventID acá y en CAPI. Meta los junta y cuenta uno. Hoy no se duplica
- * ninguno a propósito: cada evento sale por un solo camino.
+ * El PageView SÍ se manda por los dos lados a propósito (Pixel del navegador +
+ * Conversions API vía meta_pageview.php), para no perder visitas cuando un
+ * bloqueador de anuncios frena fbevents.js pero deja pasar un fetch propio.
+ * Los dos lados llevan el MISMO eventID (generado acá, ver idEvento()) -- Meta
+ * los junta y cuenta uno solo. El resto de los eventos sigue saliendo por un
+ * solo camino (el backend), sin necesidad de dedup.
  *
  * COOKIES fbp/fbc
  * Las pone el Pixel y son lo que ata el evento al click del anuncio. El backend
  * las necesita para atribuir, así que se leen acá y se mandan en los pedidos
- * (ver metaCookies()).
+ * (ver metaCookies()). Si el Pixel real no llegó a cargar (bloqueado) pero hay
+ * un fbclid en la URL, se arma un fbc a mano (ver fbcSintetico()) para no
+ * mandar el PageView por API sin forma de atribuirlo.
  */
 (function () {
   "use strict";
@@ -92,6 +97,26 @@
     return { fbp: leer("_fbp"), fbc: leer("_fbc") };
   };
 
+  /* Id propio para deduplicar el PageView entre el Pixel del navegador y
+     Conversions API (ver docblock arriba). No hace falta que sea
+     criptográfico, solo que coincida entre las dos llamadas de ESTA carga
+     de página. */
+  function idEvento() {
+    return "pv." + Date.now().toString(36) + "." + Math.random().toString(36).slice(2);
+  }
+
+  /* fbc a mano si la cookie del Pixel real todavía no existe (bloqueado, o
+     esta es la primera visita y fbevents.js no llegó a correr) pero SÍ hay
+     un fbclid en la URL -- formato documentado por Meta, sin hashear:
+     https://developers.facebook.com/docs/marketing-api/conversions-api/parameters/fbp-and-fbc
+     Es una red de contención: si el Pixel real cargó, ya viene la cookie de
+     verdad y esto no se usa. */
+  function fbcSintetico() {
+    var fbclid = new URLSearchParams(location.search).get("fbclid");
+    if (!fbclid) return "";
+    return "fb.1." + Date.now() + "." + fbclid;
+  }
+
   /* Disparar un evento del Pixel. Si no está configurado, no hace nada -- así
      el llamador no tiene que preguntar antes. */
   window.metaEvento = function (nombre, datos, eventID) {
@@ -114,7 +139,27 @@
       var va = modo === "ambos"
             || (modo === "registro" && aca === "registro")
             || (modo === "panel"    && aca === "panel");
-      if (va) window.fbq("track", "PageView");
+      if (!va) return;
+
+      var evId = idEvento();
+      window.fbq("track", "PageView", {}, { eventID: evId });
+
+      // Por Conversions API, con el MISMO event_id -- fire-and-forget, la
+      // página no depende de esta respuesta (ver meta_pageview.php).
+      var cookies = window.metaCookies();
+      try {
+        fetch(BASE_API + "/meta_pageview.php", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            event_id: evId,
+            pub: pub,
+            fbp: cookies.fbp,
+            fbc: cookies.fbc || fbcSintetico()
+          })
+        }).catch(function () { /* sin CAPI, el Pixel del navegador ya salió */ });
+      } catch (e) { /* fetch no disponible: no rompe el resto de la página */ }
     })
     .catch(function () { /* sin pixel, el sitio funciona igual */ });
 })();

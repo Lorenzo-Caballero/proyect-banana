@@ -130,7 +130,13 @@ function meta_evento(PDO $pdo, string $evento, array $datos = []): string
         return '';
     }
 
-    $eventId = meta_event_id($evento, (string)($datos['ref'] ?? ''));
+    // PageView es el unico evento que trae su propio event_id (generado en
+    // el navegador, en meta-pixel.js): la deduplicacion con el Pixel del
+    // browser exige el MISMO id exacto de los dos lados, y acá no hay `ref`
+    // propio del server del que derivarlo -- el navegador manda primero.
+    $eventId = !empty($datos['event_id'])
+        ? (string)$datos['event_id']
+        : meta_event_id($evento, (string)($datos['ref'] ?? ''));
     $valor   = isset($datos['valor']) ? (float)$datos['valor'] : null;
     $moneda  = strtoupper(trim((string)($datos['moneda'] ?? 'ARS')));
 

@@ -65,6 +65,55 @@ function publicidad_por_id(PDO $pdo, int $id): ?array
 }
 
 /**
+ * Toda la atribucion de Meta Ads de UN usuario, en una sola consulta a
+ * `altas` (UNIQUE por usuario -- sql/13_cola_altas.sql -- como mucho una
+ * fila). Junta lo que varios call sites de meta_evento() necesitan por
+ * separado: el publicista que trajo a este jugador y las cookies fbp/fbc
+ * que la landing capturo en el momento del alta (crear_cuenta.php es el
+ * unico punto donde esas cookies llegan frescas del navegador; de ahi en
+ * adelante, para cualquier evento posterior del mismo usuario -- carga,
+ * compra, chat -- se reusan desde aca).
+ *
+ * Sin fila en `altas` (usuario que no vino de la landing -- alta hecha
+ * directo en el panel de agentes y despues espejada, por ejemplo -- o alta
+ * anterior a la migracion 44), o si la migracion 44 no corrio (columnas
+ * ausentes): devuelve el array vacio. El caller sigue con el pixel general
+ * y sin fbp/fbc, nunca con un fatal.
+ *
+ * Devuelve ['publicista' => ?array, 'fbp' => string, 'fbc' => string].
+ */
+function publicidad_atribucion_por_usuario(PDO $pdo, string $usuario): array
+{
+    $vacio = ['publicista' => null, 'fbp' => '', 'fbc' => ''];
+    $usuario = trim($usuario);
+    if ($usuario === '') {
+        return $vacio;
+    }
+    try {
+        $st = $pdo->prepare(
+            "SELECT publicista_id, fbp, fbc FROM altas WHERE usuario = ? LIMIT 1"
+        );
+        $st->execute([$usuario]);
+        $fila = $st->fetch();
+    } catch (Throwable $e) {
+        // Migracion 44 no corrio (columnas/tabla ausentes) u otra falla de
+        // lectura: se sigue sin atribucion, nunca rompe al caller.
+        return $vacio;
+    }
+    if (!$fila) {
+        return $vacio;
+    }
+    $publicista = !empty($fila['publicista_id'])
+        ? publicidad_por_id($pdo, (int)$fila['publicista_id'])
+        : null;
+    return [
+        'publicista' => $publicista,
+        'fbp'        => (string)($fila['fbp'] ?? ''),
+        'fbc'        => (string)($fila['fbc'] ?? ''),
+    ];
+}
+
+/**
  * Un publicista CON sus credenciales de Insights incluidas. Separada de
  * publicidad_por_id() a propósito: esa la usan altas_cola.php/recargas_lib.php
  * (mandan eventos) y no necesitan leer un token que no van a usar; esta la
@@ -187,9 +236,10 @@ function publicidad_guardar(PDO $pdo, ?int $id, string $nombre,
         if ($id) {
             // Al EDITAR, un campo vacio significa "no tocar" -- se arma el
             // SET dinamicamente para no pisar con NULL lo que ya estaba
-            // cargado. Necesario porque pixel_id/capi_token/insights_* son
-            // obligatorios solo al CREAR (los exige crm_publicidad.php); en
-            // una edicion el operador puede dejar cualquiera vacio sin
+            // cargado. pixel_id/capi_token/insights_* son opcionales tanto
+            // al crear como al editar (sin pixel propio, el publicista usa
+            // el pixel general -- ver publicidad_pixel_propio()), pero en
+            // una edicion el operador puede dejar cualquiera vacio SIN
             // querer borrarlo -- capi_token/insights_token en particular
             // NUNCA vuelven al frontend por seguridad, asi que vacio ahi es
             // siempre "no lo cambies", nunca "borralo".

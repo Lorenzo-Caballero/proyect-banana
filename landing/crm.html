@@ -313,6 +313,8 @@
   .cfg-card-body{padding:14px 18px 16px;border-top:1px solid var(--line)}
   .cfg-opt{color:var(--muted);font-weight:500}
   .cfg-hint{margin:6px 0 0;font-size:11.5px;color:var(--muted)}
+  .cfg-link-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:4px}
+  .cfg-link-url{color:var(--muted);font-size:12px;word-break:break-all;flex:1;min-width:160px}
   .cfg-pie{margin:2px 0 0;font-size:12px;color:var(--muted);text-align:center}
   /* Iconos de interfaz. Toman el color del texto donde caen y el tamaño de
      su fuente, así que un mismo ícono sirve en una chip de 11px y en un
@@ -2318,9 +2320,18 @@
         </div>
       </div>
 
-      <!-- Tabs de publicistas: cada uno es una landing propia con su pixel.
-           Los resultados de abajo son SIEMPRE de UN publicista a la vez, para
-           no mezclar la campaña de uno con la de otro. -->
+      <div class="fn-explicacion" style="margin:0 20px 14px">
+        Por defecto, todo tu tráfico ya usa el pixel general que configuraste
+        en <b>Configuración → Meta Ads</b> — no hace falta crear nada acá
+        para empezar. Sumá un publicista solo si necesitás separar una
+        campaña con su propio pixel (por ejemplo, la maneja otra persona).
+        Cada publicista te da un link propio para pegar en sus anuncios.
+      </div>
+
+      <!-- Tabs de publicistas: cada uno es una landing propia, opcionalmente
+           con su propio pixel. Los resultados de abajo son SIEMPRE de UN
+           publicista a la vez, para no mezclar la campaña de uno con la de
+           otro. -->
       <div class="pb-tabs" id="pbTabs"><div class="ag-vacio">Cargando…</div></div>
 
       <!-- Link de la landing de este publicista + su estado de pixel -->
@@ -2329,7 +2340,7 @@
           <span class="pb-landing-nombre" id="pbLandingNombre">—</span>
           <span class="pb-landing-url" id="pbLandingUrl">—</span>
         </div>
-        <span class="pb-pixel-estado" id="pbPixelEstado">sin pixel</span>
+        <span class="pb-pixel-estado" id="pbPixelEstado">usa el pixel general</span>
         <button class="btn-mini-accion" id="pbBtnCopiar" type="button">Copiar</button>
         <button class="btn-mini-accion" id="pbBtnPausar" type="button">Pausar</button>
       </div>
@@ -2499,11 +2510,16 @@
       <label for="pbNombre">Nombre</label>
       <input id="pbNombre" type="text" placeholder="Ej: Facu, Juan, Instagram Ads">
 
-      <label for="pbPixelId">Pixel ID de Meta</label>
+      <label for="pbPixelId">Pixel ID de Meta <span class="cfg-opt">(opcional)</span></label>
       <input id="pbPixelId" type="text" placeholder="Ej: 1234567890123456">
 
-      <label for="pbCapiToken">Token CAPI</label>
+      <label for="pbCapiToken">Token CAPI <span class="cfg-opt">(opcional)</span></label>
       <input id="pbCapiToken" type="password" placeholder="Token de Conversions API" autocomplete="off">
+      <p style="color:var(--muted);font-size:11.5px;margin:4px 0 0">
+        Dejalo vacío para usar el pixel general que configuraste en
+        Configuración → Meta Ads. Cargalo solo si esta campaña la maneja
+        otra persona o agencia, con su propia cuenta de Meta.
+      </p>
 
       <label for="pbInsightsToken">Access Token de Insights (opcional)</label>
       <input id="pbInsightsToken" type="password" placeholder="Token con permiso ads_read" autocomplete="off">
@@ -2840,6 +2856,19 @@
             </div>
           </div>
 
+          <div class="cfg-linkbox" style="margin-top:16px">
+            <label class="cb-flabel">Tu link para compartir</label>
+            <div class="cfg-link-row">
+              <span class="cfg-link-url" id="cfgMetaLinkBase">—</span>
+              <button class="btn-mini-accion" id="cfgMetaLinkCopiar" type="button">Copiar</button>
+            </div>
+            <p class="cfg-hint">
+              Este es tu pixel por defecto: lo usa cualquiera que entre por
+              este link. Publicidad (en el menú) es solo para cuando
+              necesitás un link Y pixel separado para una campaña puntual.
+            </p>
+          </div>
+
           <label class="cb-flabel" style="margin-top:16px">¿Dónde contar las visitas (PageView)?</label>
           <select class="cb-input" id="cfgMetaPageview">
             <option value="registro">Solo en la página de registro</option>
@@ -2851,6 +2880,7 @@
 
           <label class="cb-flabel" style="margin-top:16px">Eventos que se envían</label>
           <div class="cfg-checks">
+            <label><input type="checkbox" id="cfgMetaLead"> <span><b>Lead</b> — dejó sus datos para crear la cuenta</span></label>
             <label><input type="checkbox" id="cfgMetaContact"> <span><b>Contact</b> — escribe por el chat</span></label>
             <label><input type="checkbox" id="cfgMetaRegistro"> <span><b>CompleteRegistration</b> — la cuenta quedó creada</span></label>
             <label><input type="checkbox" id="cfgMetaCheckout"> <span><b>InitiateCheckout</b> — pidió cargar fichas</span></label>
@@ -3617,6 +3647,7 @@
     meta_capi_token:  { el: "#cfgMetaToken",    tipo: "texto" },
     meta_test_code:   { el: "#cfgMetaTest",     tipo: "texto" },
     meta_pageview_en: { el: "#cfgMetaPageview", tipo: "texto" },
+    meta_ev_lead:     { el: "#cfgMetaLead",     tipo: "bool"  },
     meta_ev_contact:  { el: "#cfgMetaContact",  tipo: "bool"  },
     meta_ev_registro: { el: "#cfgMetaRegistro", tipo: "bool"  },
     meta_ev_checkout: { el: "#cfgMetaCheckout", tipo: "bool"  },
@@ -3721,6 +3752,17 @@
       aviso.textContent = "No pude cargar los ajustes. Probá recargar la página.";
     }
   }
+
+  // Link general del cliente: no depende de la config cargada, es fijo por
+  // dominio/tenant (mismo prefijo que arma pbPintarLandingRow() para el link
+  // de cada publicista, solo que sin ?pub=). Responde directo a "¿el sistema
+  // me genera el link cuando cargo el pixel acá?" -- sí, y ahora se ve.
+  $("#cfgMetaLinkBase").textContent = location.origin + TENANT_PREFIJO + "/registro.html";
+  $("#cfgMetaLinkCopiar").addEventListener("click", async ()=>{
+    const url = $("#cfgMetaLinkBase").textContent;
+    try{ await navigator.clipboard.writeText(url); toast("Link copiado"); }
+    catch(e){ toast(url); }
+  });
 
   // Directo, como el resto del archivo: este script corre con el DOM ya
   // parseado, y la vista existe desde el principio (solo esta oculta).
@@ -6476,7 +6518,7 @@
     if(p.pixel_id && p.tiene_token){
       pix.textContent = "pixel propio"; pix.className = "pb-pixel-estado on";
     } else {
-      pix.textContent = "sin pixel propio"; pix.className = "pb-pixel-estado";
+      pix.textContent = "usa el pixel general"; pix.className = "pb-pixel-estado";
     }
     $("#pbBtnCopiar").onclick = async ()=>{
       try{ await navigator.clipboard.writeText(url); toast("Link copiado"); }
@@ -6508,12 +6550,10 @@
   // reenviarlo tal cual sin que el operador tenga que verlo ni tocarlo.
   let pbEditandoActivo = true;
 
-  // Pixel ID + Token CAPI son obligatorios solo al CREAR: sin ellos, el
-  // modulo de Publicidad no tiene nada que reportarle a Meta. Al EDITAR se
-  // dejan opcionales -- el token nunca vuelve al frontend, asi que dejarlo
-  // vacio ahi significa "no lo cambies", no "borralo" (ver
-  // publicidad_guardar() en el backend).
-  function pbEsAlta(){ return $("#pbEditId").value === ""; }
+  // Pixel ID + Token CAPI son opcionales tanto al crear como al editar: sin
+  // ellos, ese publicista usa el pixel general del cliente (ver
+  // publicidad_pixel_propio() en el backend). Al editar, ademas, vacio
+  // significa "no lo cambies" -- el token nunca vuelve al frontend.
 
   function pbAbrirModalNuevo(){
     $("#pbModalTitulo").textContent = "Nuevo publicista";
@@ -6549,10 +6589,6 @@
     const capiToken = $("#pbCapiToken").value.trim();
     const msg = $("#pbModalMsg");
     if(!nombre){ msg.className="msg err"; msg.textContent="Falta el nombre"; return; }
-    if(pbEsAlta()){
-      if(!pixelId){ msg.className="msg err"; msg.textContent="Falta el Pixel ID de Meta"; return; }
-      if(!capiToken){ msg.className="msg err"; msg.textContent="Falta el Token CAPI"; return; }
-    }
     const btn = $("#pbModalGuardar"); btn.disabled = true;
     const idTxt = $("#pbEditId").value;
     let d;
