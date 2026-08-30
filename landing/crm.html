@@ -4512,6 +4512,14 @@
     $("#selTxt").textContent = seleccion.size === 1 ? "seleccionada" : "seleccionadas";
     // Eliminar es solo de admin, igual que en el menu del chat.
     $("#selEliminar").style.display = (ROL === "admin") ? "" : "none";
+    /* "Archivadas" es una pestaña propia: todo lo que se ve ahi YA esta
+       archivado (mismo criterio que usa loteArchivar() para decidir
+       archivar:true/false). El boton tiene que decir lo que en verdad va a
+       hacer -- "Archivar" cuando estan marcadas conversaciones activas no
+       tiene sentido si lo que el click hace es devolverlas a la bandeja. */
+    const enArchivadas = st.estado === "archivadas";
+    $("#selArchivar .btxt").textContent = enArchivadas ? "Desarchivar" : "Archivar";
+    $("#selArchivar").title = enArchivadas ? "Devolver las marcadas a la bandeja" : "Archivar las marcadas";
   }
 
   /* Ctrl+A marca todo lo VISIBLE, solo con el foco fuera de un campo de
@@ -4524,6 +4532,12 @@
     const convs = document.querySelectorAll("#list .conv");
     if (!convs.length) return;
     e.preventDefault();
+    /* Toggle: si YA esta todo lo visible marcado, Ctrl+A vuelve a desmarcar
+       -- como en el explorador de archivos y en Gmail. Sin esto, apretarlo
+       dos veces por costumbre no hace nada (ya estaba todo marcado) y para
+       sacar la seleccion hay que ir a buscar el botón "Quitar selección". */
+    const todoMarcado = [...convs].every(el=> seleccion.has(+el.getAttribute("data-id")));
+    if (todoMarcado){ seleccionLimpiar(); return; }
     convs.forEach(el=> seleccion.add(+el.getAttribute("data-id")));
     seleccionPintar();
   });
