@@ -87,6 +87,40 @@ function aplicar_migraciones($db) {
 }
 
 /**
+ * Huella del CONTENIDO de api/sql/. Cambia solo cuando se agrega o edita una
+ * migracion -- no con cada deploy (por eso el hash del contenido y no el
+ * mtime, que el rsync pisa siempre).
+ */
+function migraciones_huella() {
+    global $SQL_DIR;
+    if (!is_dir($SQL_DIR)) { return ''; }
+    $files = glob(rtrim($SQL_DIR, '/') . '/*.sql');
+    if (!$files) { return ''; }
+    natsort($files);
+    $partes = [];
+    foreach ($files as $f) {
+        if (in_array(basename($f), MIGRACIONES_LEGACY, true)) { continue; }
+        $partes[] = basename($f) . ':' . md5_file($f);
+    }
+    return md5(implode('|', $partes));
+}
+
+/**
+ * Que huella de migraciones tiene aplicada esta base. En un archivo y no en
+ * una columna a proposito: agregar una columna a `clientes` necesitaria una
+ * migracion a mano en goldpaw_control, y esto tiene que funcionar SIN que
+ * nadie corra nada -- es justamente el problema que viene a resolver.
+ */
+function huella_dir() {
+    $d = '/var/lib/goldpaw';
+    if (!is_dir($d)) { @mkdir($d, 0700, true); }
+    return is_dir($d) ? $d : sys_get_temp_dir();
+}
+function huella_leer($db)      { $f = huella_dir() . '/mig-' . $db . '.hash';
+                                 return is_file($f) ? trim((string) @file_get_contents($f)) : ''; }
+function huella_guardar($db, $h) { @file_put_contents(huella_dir() . '/mig-' . $db . '.hash', $h); }
+
+/**
  * Crea (o confirma) el A record del dominio en Cloudflare, proxied. Best-effort.
  * No aplica a clientes por-path (path_tenant=1): comparten el dominio del
  * operador, que ya tiene su propio A record. Ver asegurar_bot() y la pasada 1.
@@ -300,8 +334,11 @@ foreach ($pend as $c) {
     // base, pero las tablas/columnas que se fueron agregando después viven en
     // git como migraciones. Se corren SIEMPRE (son idempotentes:
     // CREATE TABLE IF NOT EXISTS / ADD COLUMN IF NOT EXISTS), así un cliente
-    // nuevo queda al día sin mantener la plantilla a mano, y uno viejo se
-    // actualiza solo en la próxima corrida del cron. git es la fuente de verdad.
+    // nuevo queda al día sin mantener la plantilla a mano. git es la fuente
+    // de verdad.
+    //
+    // A los clientes YA aprovisionados los actualiza la pasada 1.5, no esta
+    // linea: aca adentro solo entran los que tienen aprovisionado = 0.
     $migMsg = aplicar_migraciones($db);
     if ($migMsg !== '') { echo date('c') . " {$c['slug']} migraciones: $migMsg\n"; }
 
@@ -314,6 +351,52 @@ foreach ($pend as $c) {
     }
     marcar($pdo, $c['id'], true, 'base ok; ' . $dnsMsg);
     echo date('c') . " OK {$c['slug']} -> base $db; $dnsMsg\n";
+}
+
+// ---------------------------------------------------------------------------
+// Pasada 1.5: mantener AL DIA las migraciones de los clientes que YA estan
+// aprovisionados.
+//
+// POR QUE EXISTE ESTA PASADA (el bug que arregla)
+//
+// aplicar_migraciones() se llamaba UNICAMENTE dentro de la pasada 1, que
+// selecciona `WHERE aprovisionado = 0`. Un cliente ya aprovisionado no vuelve
+// a entrar ahi NUNCA, asi que las migraciones nuevas llegaban solo a los
+// clientes NUEVOS. El comentario de la pasada 1 decia lo contrario ("uno viejo
+// se actualiza solo en la proxima corrida") y DEPLOY.md lo repetia, asi que
+// todos dabamos por hecho que se aplicaban solas.
+//
+// El resultado se pagaba siempre igual: se desplegaba codigo que usaba una
+// columna nueva, la columna no existia en la base del cliente, y el endpoint
+// tiraba 500 o la vista quedaba vacia -- sin que nada dijera por que. Paso con
+// las migraciones 35, 36, 37 y 40.
+//
+// Las migraciones son idempotentes (CREATE TABLE IF NOT EXISTS / ADD COLUMN IF
+// NOT EXISTS), asi que correrlas de mas no cuesta nada; igual solo se corren
+// cuando la HUELLA del contenido de api/sql/ cambio respecto de lo ya aplicado
+// en esa base, para no gastar 45 statements por cliente por minuto.
+// ---------------------------------------------------------------------------
+$huellaHoy = migraciones_huella();
+if ($huellaHoy !== '') {
+    $puestos = $pdo->query(
+        "SELECT slug, db_nombre FROM clientes
+          WHERE aprovisionado = 1 AND estado = 'activo' AND db_nombre IS NOT NULL"
+    )->fetchAll();
+
+    foreach ($puestos as $c) {
+        $db = (string) $c['db_nombre'];
+        if (!preg_match('/^[a-z0-9_]+$/i', $db)) { continue; }
+        if (huella_leer($db) === $huellaHoy) { continue; }   // ya esta al dia
+
+        $msg = aplicar_migraciones($db);
+        echo date('c') . " migraciones {$c['slug']}: $msg\n";
+        // La huella se guarda SOLO si no hubo errores: si una migracion fallo,
+        // la proxima corrida tiene que volver a intentarlo en vez de dar por
+        // hecho que quedo al dia.
+        if (strpos($msg, 'error') === false) {
+            huella_guardar($db, $huellaHoy);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -340,4 +423,68 @@ foreach ($activos as $c) {
     if (strpos($msgAltas, 'levantado') !== false || strpos($msgAltas, 'NO') !== false) {
         echo date('c') . " bot-altas {$c['slug']}: $msgAltas\n";
     }
+}
+
+// ---------------------------------------------------------------------------
+// Pasada 3: gritar cuando algo se rompio en silencio.
+//
+// El patron que mas caro salio en este proyecto no es que algo falle: es que
+// falle SIN QUE NADIE SE ENTERE. Un cliente sin bot encola altas que nadie
+// atiende y el jugador ve "creando tu cuenta..." para siempre; nos enteramos
+// cuando alguien se queja, no cuando pasa.
+//
+// Esta pasada no arregla nada -- avisa. Corre cada minuto junto con el resto y
+// escribe en el mismo log; `panel.php?accion=salud` lee lo que deja aca para
+// mostrarlo en el panel del dueño sin tener que entrar por SSH.
+// ---------------------------------------------------------------------------
+$ALTA_ATASCADA_MIN = 15;   // una alta sana se resuelve en ~2 min
+$problemas = [];
+
+$todos = $pdo->query(
+    "SELECT slug, db_nombre, agente_usuario FROM clientes
+      WHERE estado = 'activo' AND db_nombre IS NOT NULL"
+)->fetchAll();
+
+foreach ($todos as $c) {
+    $db   = (string) $c['db_nombre'];
+    $slug = (string) $c['slug'];
+    if (!preg_match('/^[a-z0-9_]+$/i', $db)) { continue; }
+
+    // 1. Cliente activo sin credenciales de agente: no puede tener bot, asi
+    //    que sus altas se acumulan sin que nadie las toque.
+    if (trim((string) ($c['agente_usuario'] ?? '')) === '') {
+        $problemas[] = "$slug: sin credenciales de agente (no hay bot de altas)";
+    }
+
+    // 2. Altas encoladas hace rato. Es la señal mas directa de "el bot de ese
+    //    cliente no esta corriendo o esta trabado".
+    try {
+        $q = new PDO("mysql:host={$cfg['DB_HOST']};dbname=$db;charset=utf8mb4",
+                     $cfg['DB_USER'], $cfg['DB_PASS'],
+                     [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_TIMEOUT => 4]);
+        $st = $q->prepare(
+            "SELECT COUNT(*) FROM altas
+              WHERE estado = 'pendiente'
+                AND pedido_en < DATE_SUB(NOW(), INTERVAL ? MINUTE)"
+        );
+        $st->execute([$ALTA_ATASCADA_MIN]);
+        $atascadas = (int) $st->fetchColumn();
+        if ($atascadas > 0) {
+            $problemas[] = "$slug: $atascadas alta(s) sin atender hace mas de {$ALTA_ATASCADA_MIN} min";
+        }
+    } catch (Throwable $e) {
+        // Una base que no abre es en si misma un problema que hay que ver.
+        $problemas[] = "$slug: no pude consultar la base ($db)";
+    }
+}
+
+// El estado se deja SIEMPRE, haya o no problemas: un archivo viejo significa
+// que el cron dejo de correr, y eso tambien hay que poder verlo.
+@file_put_contents(huella_dir() . '/salud.json', json_encode([
+    'revisado_en' => date('c'),
+    'problemas'   => $problemas,
+], JSON_UNESCAPED_UNICODE));
+
+foreach ($problemas as $p) {
+    echo date('c') . " !! SALUD: $p\n";
 }

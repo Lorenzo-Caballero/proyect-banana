@@ -214,7 +214,21 @@
     </div>
   </div>
 
+  <style>
+  .salud{border-radius:12px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.5;
+    border:1px solid var(--line);background:var(--card2)}
+  .salud.hide{display:none}
+  .salud.mal{border-color:#e5484d;background:rgba(229,72,77,.10);color:#ffb4b4}
+  .salud b{display:block;margin-bottom:6px}
+  .salud ul{margin:0;padding-left:18px}
+  .salud li{margin:2px 0}
+  .salud .cuando{opacity:.65;font-size:11.5px;margin-top:7px}
+  </style>
+
   <div class="wrap">
+    <!-- Salud de la plataforma. Oculta cuando esta todo bien: una banda verde
+         permanente se vuelve parte del decorado y deja de mirarse. -->
+    <div id="salud" class="salud hide"></div>
     <div class="head">
       <div>
         <h2>Tus clientes</h2>
@@ -676,7 +690,30 @@
   }
 
   // ---------- listado ----------
+  /* Salud: lo que dejo la pasada 3 de provisionar.php. Se pide junto con la
+     lista de clientes -- si algo se rompio en silencio (un cliente sin bot,
+     altas encoladas que nadie toma, el cron caido) aparece ACA, que es la
+     pantalla que el dueño ya abre, en vez de esperar a que se queje alguien. */
+  function cargarSalud(){
+    var caja = $("salud");
+    api("salud", {}).then(function(res){
+      if (res.status === 401) return;
+      var j = res.j || {};
+      var lineas = (j.problemas || []).slice();
+      if (j.cron_caido) {
+        lineas.unshift("El chequeo no corre hace " + j.hace_min + " min: revisá el cron de provisionar.php");
+      }
+      if (j.sin_datos) lineas = [j.nota];
+      if (!lineas.length){ caja.className = "salud hide"; caja.innerHTML = ""; return; }
+      caja.className = "salud mal";
+      caja.innerHTML = "<b>Hay " + lineas.length + " cosa(s) para revisar</b><ul>" +
+        lineas.map(function(t){ return "<li>" + esc(t) + "</li>"; }).join("") + "</ul>" +
+        (j.revisado_en ? '<div class="cuando">Chequeado hace ' + (j.hace_min || 0) + ' min</div>' : "");
+    }).catch(function(){ /* el panel sigue andando sin esto */ });
+  }
+
   function cargar(){
+    cargarSalud();
     api("listar").then(function(res){
       if (res.status === 401){ salir(); return; }
       var cs = (res.j && res.j.clientes) || [];
