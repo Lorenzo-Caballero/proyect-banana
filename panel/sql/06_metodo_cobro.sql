@@ -56,10 +56,14 @@ ALTER TABLE clientes
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS cobro_cuentas (
   id          INT     AUTO_INCREMENT PRIMARY KEY,
-  -- BIGINT y no INT: clientes.id es BIGINT en la base real (igual que ya
-  -- hizo hg_transacciones.cliente_id en la migracion 05) aunque 01_control.sql
-  -- todavia diga INT -- ese archivo quedo desactualizado, no lo tocamos aca.
-  cliente_id  BIGINT  NOT NULL,
+  -- INT, igual que clientes.id (verificado contra la base de produccion:
+  -- int(11)). Esto ANTES decia BIGINT, "porque hg_transacciones.cliente_id
+  -- de la migracion 05 lo es" -- razonamiento equivocado: esa tabla NO tiene
+  -- clave foranea, asi que nunca tuvo que coincidir con nada. Esta si la
+  -- tiene, y MariaDB rechaza la FK entera (errno 150) si los tipos no son
+  -- identicos. Con BIGINT aca, este CREATE TABLE fallaba y la tabla no se
+  -- creaba nunca -- por eso "agrego una billetera y no se guarda".
+  cliente_id  INT     NOT NULL,
   alias       VARCHAR(120)  DEFAULT NULL,
   cbu         VARCHAR(40)   NOT NULL,
   titular     VARCHAR(120)  DEFAULT NULL,
@@ -85,5 +89,5 @@ CREATE TABLE IF NOT EXISTS cobro_cuentas (
 ALTER TABLE clientes
   ADD COLUMN IF NOT EXISTS cobro_modo ENUM('azar','fija') NOT NULL DEFAULT 'azar'
     COMMENT 'Con mas de una cuenta de transferencia: rotar al azar o usar siempre la misma.',
-  ADD COLUMN IF NOT EXISTS cobro_fija_id BIGINT DEFAULT NULL
+  ADD COLUMN IF NOT EXISTS cobro_fija_id INT DEFAULT NULL
     COMMENT 'Cuenta fija elegida (id de cobro_cuentas, o NULL = la principal). Solo aplica con cobro_modo=fija.';
