@@ -848,7 +848,9 @@
   .btn-mini-accion.exito{background:var(--green);border-color:var(--green);color:#fff}
   .btn-mini-accion.exito:hover{background:var(--green2);border-color:var(--green2)}
   .mbtns .peligro{background:linear-gradient(180deg,#f0716f,var(--red));color:#fff}
-  .btn-mini-accion{background:var(--panel2);border:1px solid var(--line);color:var(--muted);
+  /* Los botones chicos con icono: el icono acompaña al texto, no lo empuja. */
+  .btn-mini-accion{display:inline-flex;align-items:center;gap:6px;
+    background:var(--panel2);border:1px solid var(--line);color:var(--muted);
     padding:7px 12px;border-radius:9px;font-size:12px;font-weight:700;transition:.15s;flex:none}
   .btn-mini-accion:hover{border-color:var(--violet);color:var(--txt)}
   .btn-mini-accion:disabled{opacity:.6;cursor:default}
@@ -866,7 +868,9 @@
   .carga-tag.acreditada{background:var(--greenSoft);color:var(--green2);border:1px solid var(--green)}
   .carga-tag.vencida{background:var(--redSoft);color:var(--red);border:1px solid var(--red)}
   .carga-tag.cancelada{background:var(--panel3);color:var(--muted);border:1px solid var(--line2)}
-  .urg-chip{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:7px;white-space:nowrap}
+  .urg-chip{display:inline-flex;align-items:center;gap:5px;
+    font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:7px;white-space:nowrap}
+  .urg-chip .ico{width:11px;height:11px}
   .urg-chip.warn{background:rgba(245,166,35,.16);color:var(--orange2);border:1px solid var(--orange)}
   .urg-chip.crit{background:var(--redSoft);color:var(--red);border:1px solid var(--red)}
   .carga-row .cg-detalle{display:none;background:var(--panel2);border:1px solid var(--line);
@@ -1041,8 +1045,9 @@
   .fn-bloque h3{margin:0 0 12px;font-size:14px}
 
   /* header + export */
-  .fn-header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px 0}
-  .fn-export-mini{display:flex;gap:8px}
+  .fn-header{display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding:16px 20px 0;flex-wrap:wrap}
+  .fn-export-mini{display:flex;gap:8px;flex-wrap:wrap}
 
   /* filtros de tiempo */
   .fn-filtros-tiempo{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:14px 20px;
@@ -1085,12 +1090,14 @@
   .fn-card{background:var(--panel2);border:1px solid var(--line);border-radius:13px;padding:14px 16px}
   .fn-card .k{color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;
     display:flex;align-items:center;gap:5px}
-  .fn-card .v{font-size:21px;font-weight:800;margin-top:6px}
+  .fn-card .v{font-size:21px;font-weight:800;margin-top:6px;font-variant-numeric:tabular-nums}
   .fn-card .sub{color:var(--muted);font-size:11.5px;margin-top:3px}
 
+  /* Ya no lleva circulo de fondo: el icono TRAE su circulo, asi no hay dos
+     redondeces peleando y no depende de como la fuente dibuje el glifo. */
   .fn-info{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;
-    border-radius:50%;background:var(--panel3);color:var(--muted);font-size:10.5px;cursor:pointer;
-    flex:none;position:relative}
+    color:var(--muted2);cursor:pointer;flex:none;position:relative;transition:color .15s}
+  .fn-info .ico{width:14px;height:14px;stroke-width:1.7}
   .fn-info:hover{color:var(--violet2)}
   .fn-popover{display:none;position:absolute;bottom:calc(100% + 8px);left:0;z-index:5;width:220px;
     background:var(--panel3);border:1px solid var(--line);border-radius:11px;padding:10px 12px;
@@ -1132,43 +1139,81 @@
      .fn-card/.fn-alerta/.fn-explicacion de Finanzas -- solo lo que no tiene
      equivalente ahi va con prefijo .pb- ---- */
   .pb-tabs{display:flex;gap:6px;flex-wrap:wrap;padding:0 20px 14px;align-items:center}
-  .pb-tab{background:var(--panel2);border:1px solid var(--line);color:var(--muted);
+  .pb-tab{display:inline-flex;align-items:center;gap:6px;
+    background:var(--panel2);border:1px solid var(--line);color:var(--muted);
     padding:7px 14px;border-radius:999px;font-size:12.5px;font-weight:600;cursor:pointer;
-    white-space:nowrap}
+    white-space:nowrap;transition:border-color .15s,color .15s,background .15s}
   .pb-tab:hover{border-color:var(--violet);color:var(--txt)}
   .pb-tab.on{background:var(--violetSoft);border-color:var(--violet);color:var(--violet2)}
+  .pb-tab .ico{width:12px;height:12px;opacity:.75}
   .pb-tab-pausado{opacity:.55}
   .pb-tab-agregar{background:transparent;border:1px dashed var(--line);color:var(--muted)}
   .pb-tab-agregar:hover{border-color:var(--violet);color:var(--violet2)}
 
-  .pb-landing-row{display:flex;align-items:center;gap:12px;padding:10px 20px;margin:0 20px 14px;
+  .pb-landing-row{display:flex;align-items:center;gap:12px;padding:12px 16px;margin:0 20px 14px;
     background:var(--panel2);border:1px solid var(--line);border-radius:12px;flex-wrap:wrap}
-  .pb-landing-info{display:flex;flex-direction:column;gap:2px;flex:1;min-width:180px}
-  .pb-landing-nombre{font-weight:700;font-size:13px}
-  .pb-landing-url{color:var(--muted);font-size:12px;word-break:break-all}
-  .pb-pixel-estado{font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;
+  .pb-landing-info{display:flex;flex-direction:column;gap:5px;flex:1;min-width:180px}
+  .pb-landing-nombre{font-weight:700;font-size:13px;align-self:flex-start;
+    border-bottom:1px dashed transparent;transition:border-color .15s}
+  .pb-landing-nombre:hover{border-bottom-color:var(--muted2)}
+  /* La URL es lo que se copia y se pega en el administrador de anuncios:
+     va en monoespaciada y con chapa propia, para que se lea caracter por
+     caracter y se distinga del texto de alrededor. */
+  .pb-landing-url{color:var(--muted);font-size:11.5px;word-break:break-all;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    background:var(--panel);border:1px solid var(--line);border-radius:8px;
+    padding:5px 9px;line-height:1.45}
+  .pb-pixel-estado{display:inline-flex;align-items:center;gap:6px;
+    font-size:11px;font-weight:700;padding:4px 11px;border-radius:999px;
     background:var(--panel3);color:var(--muted);white-space:nowrap}
+  /* Punto de estado: se ve si hay pixel propio sin tener que leer la chapa. */
+  .pb-pixel-estado::before{content:"";width:6px;height:6px;border-radius:50%;
+    background:currentColor;flex:none}
   .pb-pixel-estado.on{background:rgba(58,196,125,.15);color:var(--green2)}
 
-  .pb-seccion-titulo{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;
-    color:var(--muted);padding:4px 20px;margin-top:6px}
+  /* Rotulo de seccion con linea: sin ella, tres titulos sueltos entre
+     bloques de tarjetas no separan nada -- flotan. */
+  .pb-seccion-titulo{display:flex;align-items:center;gap:12px;
+    font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;
+    color:var(--muted);padding:4px 20px;margin-top:10px;margin-bottom:2px}
+  .pb-seccion-titulo::after{content:"";flex:1;height:1px;background:var(--line)}
 
-  .pb-funnel{display:flex;align-items:center;gap:6px;padding:16px 20px;margin:0 20px 14px;
+  .pb-funnel{display:flex;align-items:stretch;gap:6px;padding:14px;margin:0 20px 14px;
     background:var(--panel2);border:1px solid var(--line);border-radius:14px;overflow-x:auto}
-  .pb-funnel-paso{flex:1;min-width:96px;text-align:center;display:flex;flex-direction:column;gap:4px}
-  .pb-funnel-num{font-size:26px;font-weight:800}
+  /* Cada etapa es una tarjeta: sin caja propia, cuatro numeros en fila se
+     leen como una tabla, no como pasos de un recorrido. */
+  .pb-funnel-paso{flex:1;min-width:104px;text-align:center;
+    display:flex;flex-direction:column;justify-content:center;gap:5px;
+    padding:13px 10px;border-radius:12px;
+    background:var(--panel);border:1px solid var(--line)}
+  /* El ultimo paso es el que decide si la pauta sirve: va destacado. */
+  .pb-funnel-final{background:var(--violetSoft);border-color:var(--violet)}
+  .pb-funnel-num{font-size:26px;font-weight:800;line-height:1;
+    font-variant-numeric:tabular-nums}
   .pb-funnel-final .pb-funnel-num{color:var(--violet2)}
-  .pb-funnel-label{color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.03em}
-  .pb-funnel-flecha{display:flex;flex-direction:column;align-items:center;gap:2px;color:var(--muted2);flex:none}
-  .pb-funnel-flecha svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;
+  .pb-funnel-label{color:var(--muted);font-size:11px;text-transform:uppercase;
+    letter-spacing:.03em;line-height:1.3}
+  .pb-funnel-flecha{display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:5px;color:var(--muted2);flex:none;padding:0 2px}
+  .pb-funnel-flecha svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;
     stroke-linecap:round;stroke-linejoin:round}
-  .pb-funnel-flecha span{font-size:11px;font-weight:700;color:var(--violet2);white-space:nowrap}
+  /* El % de conversion es EL dato del embudo: como chapa, no como texto
+     suelto del mismo peso que todo lo demas. */
+  .pb-funnel-flecha span{font-size:10.5px;font-weight:800;color:var(--violet2);
+    white-space:nowrap;background:var(--violetSoft);border-radius:999px;padding:2px 7px}
   @media(max-width:640px){
     .pb-funnel{flex-direction:column;align-items:stretch}
-    .pb-funnel-flecha{flex-direction:row;transform:rotate(90deg);margin:2px 0}
+    /* Se rota SOLO la flecha, no el bloque entero: antes el porcentaje
+       quedaba escrito de costado y habia que ladear la cabeza. */
+    .pb-funnel-flecha{flex-direction:row;margin:2px 0;gap:8px}
+    .pb-funnel-flecha svg{transform:rotate(90deg)}
   }
 
-  .pb-card-destacada{border-color:var(--violet)}
+  /* "Cargas x jugador" es la retencion, el numero que decide si escalar o
+     cortar: se marca con la barra violeta arriba, no solo con el borde. */
+  .pb-card-destacada{border-color:var(--violet);position:relative;overflow:hidden}
+  .pb-card-destacada::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;
+    background:linear-gradient(90deg,var(--violet2),var(--violet))}
 
   .pb-tabla-wrap{overflow-x:auto;margin:0 20px 20px;border:1px solid var(--line);border-radius:13px}
   .pb-tabla{width:100%;border-collapse:collapse;font-size:13px;min-width:520px}
@@ -1176,6 +1221,21 @@
     letter-spacing:.03em;padding:10px 14px;border-bottom:1px solid var(--line);white-space:nowrap}
   .pb-tabla td{padding:10px 14px;border-bottom:1px solid var(--line)}
   .pb-tabla tr:last-child td{border-bottom:none}
+  .pb-tabla tbody tr{transition:background .12s}
+  .pb-tabla tbody tr:hover{background:var(--panel2)}
+  /* Numeros a la derecha y con cifras de ancho fijo: asi las columnas se
+     comparan de un vistazo en vez de quedar escalonadas. */
+  .pb-tabla th:nth-child(2),.pb-tabla th:nth-child(3),
+  .pb-tabla th:nth-child(4),.pb-tabla th:nth-child(5),
+  .pb-tabla td:nth-child(2),.pb-tabla td:nth-child(3),
+  .pb-tabla td:nth-child(4),.pb-tabla td:nth-child(5){text-align:right}
+  .pb-tabla td:nth-child(2),.pb-tabla td:nth-child(3),
+  .pb-tabla td:nth-child(4),.pb-tabla td:nth-child(5){font-variant-numeric:tabular-nums}
+  .pb-tabla td:nth-child(4){font-weight:700}
+  /* La celda de gasto abre el modal de ese dia: que se vea que es clickeable. */
+  .pb-tabla td:nth-child(5){color:var(--muted)}
+  .pb-tabla tbody tr:hover td:nth-child(5){color:var(--violet2);text-decoration:underline}
+  .pb-tabla td.ag-vacio{text-align:center}
   .pb-tabla-barra{height:5px;border-radius:999px;background:linear-gradient(90deg,var(--violet2),var(--violet))}
 
   /* ---- Chatbot (IA) — usa las variables reales del tema, no valores propios ---- */
@@ -1906,7 +1966,7 @@
         <option value="100">100</option>
         <option value="200">200</option>
       </select>
-      <button class="btn-mini-accion" id="usBtnCsv" type="button">⬇ CSV</button>
+      <button class="btn-mini-accion" id="usBtnCsv" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v12M7.2 10.8 12 15.6l4.8-4.8"/><path d="M4.5 20h15"/></svg>CSV</button>
     </div>
     <div class="us-tabla-wrap">
       <table class="us-tabla">
@@ -1951,8 +2011,8 @@
       <div class="fn-header">
         <b>Finanzas</b>
         <div class="fn-export-mini">
-          <button class="btn-mini-accion" id="fnBtnCsvTop" type="button">⬇ CSV</button>
-          <button class="btn-mini-accion" id="fnBtnJsonTop" type="button">⬇ JSON</button>
+          <button class="btn-mini-accion" id="fnBtnCsvTop" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v12M7.2 10.8 12 15.6l4.8-4.8"/><path d="M4.5 20h15"/></svg>CSV</button>
+          <button class="btn-mini-accion" id="fnBtnJsonTop" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v12M7.2 10.8 12 15.6l4.8-4.8"/><path d="M4.5 20h15"/></svg>JSON</button>
         </div>
       </div>
 
@@ -1985,7 +2045,7 @@
           <div class="fn-kpi-var sin_datos" id="fnHgOps">—</div>
         </div>
         <div class="fn-card">
-          <div class="k">Comisión plataforma <span class="fn-info" data-tip="Lo que la plataforma retiene por procesar tus cobros y pagos por HG Cash.">ⓘ<span class="fn-popover"></span></span></div>
+          <div class="k">Comisión plataforma <span class="fn-info" data-tip="Lo que la plataforma retiene por procesar tus cobros y pagos por HG Cash."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
           <div class="v" id="fnHgComision">—</div>
           <div class="fn-kpi-var sin_datos" id="fnHgPct">—</div>
         </div>
@@ -1995,7 +2055,7 @@
           <div class="fn-kpi-var sin_datos">depósitos − comisión</div>
         </div>
         <div class="fn-card">
-          <div class="k">Conversión de links <span class="fn-info" data-tip="De los links de pago creados en el período, qué porcentaje terminó pagado.">ⓘ<span class="fn-popover"></span></span></div>
+          <div class="k">Conversión de links <span class="fn-info" data-tip="De los links de pago creados en el período, qué porcentaje terminó pagado."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
           <div class="v" id="fnHgConv">—</div>
           <div class="fn-kpi-var sin_datos" id="fnHgPend">—</div>
         </div>
@@ -2004,27 +2064,27 @@
       <!-- c) 5 KPI cards -->
       <div class="fn-kpis" id="fnKpis">
         <div class="fn-kpi-card" id="fnKpiCardIngresos">
-          <div class="k">Ingresos <span class="fn-info" data-tip="Suma de recargas acreditadas en el período elegido.">ⓘ<span class="fn-popover"></span></span></div>
+          <div class="k">Ingresos <span class="fn-info" data-tip="Suma de recargas acreditadas en el período elegido."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
           <div class="v" id="fnKpiIngresos">—</div>
           <div class="fn-kpi-var" id="fnKpiIngresosVar">—</div>
         </div>
         <div class="fn-kpi-card" id="fnKpiCardRetiros">
-          <div class="k">Retiros <span class="fn-info" data-tip="Suma de retiros confirmados (plata que efectivamente salió) en el período elegido.">ⓘ<span class="fn-popover"></span></span></div>
+          <div class="k">Retiros <span class="fn-info" data-tip="Suma de retiros confirmados (plata que efectivamente salió) en el período elegido."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
           <div class="v" id="fnKpiRetiros">—</div>
           <div class="fn-kpi-var" id="fnKpiRetirosVar">—</div>
         </div>
         <div class="fn-kpi-card" id="fnKpiCardGanancia">
-          <div class="k">Ganancia bruta <span class="fn-info" data-tip="Ingresos menos retiros menos el costo de las fichas entregadas (recargas + bonos) en el período.">ⓘ<span class="fn-popover"></span></span></div>
+          <div class="k">Ganancia bruta <span class="fn-info" data-tip="Ingresos menos retiros menos el costo de las fichas entregadas (recargas + bonos) en el período."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
           <div class="v" id="fnKpiGanancia">—</div>
           <div class="fn-kpi-var" id="fnKpiGananciaVar">—</div>
         </div>
         <div class="fn-kpi-card" id="fnKpiCardActivos">
-          <div class="k">Jugadores activos <span class="fn-info" data-tip="Jugadores distintos que recargaron al menos una vez en el período.">ⓘ<span class="fn-popover"></span></span></div>
+          <div class="k">Jugadores activos <span class="fn-info" data-tip="Jugadores distintos que recargaron al menos una vez en el período."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
           <div class="v" id="fnKpiActivos">—</div>
           <div class="fn-kpi-var" id="fnKpiActivosVar">—</div>
         </div>
         <div class="fn-kpi-card">
-          <div class="k">Patrimonio neto <span class="fn-info" data-tip="Cuánto vale tu negocio hoy. Suma lo que tenés (efectivo + fichas en stock) y le resta lo que debés (saldo de los jugadores). Si es positivo, ganás; si es negativo, tenés más deuda que activos.">ⓘ<span class="fn-popover"></span></span></div>
+          <div class="k">Patrimonio neto <span class="fn-info" data-tip="Cuánto vale tu negocio hoy. Suma lo que tenés (efectivo + fichas en stock) y le resta lo que debés (saldo de los jugadores). Si es positivo, ganás; si es negativo, tenés más deuda que activos."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
           <div class="v" id="fnKpiPatrimonio">—</div>
           <div class="fn-kpi-var fn-kpi-actual">Actual, no depende del período</div>
         </div>
@@ -2033,23 +2093,23 @@
       <!-- d) 5 gráficos -->
       <div class="fn-graficos" id="fnGraficos">
         <div class="fn-grafico" id="fnGraficoCardFlujo">
-          <div class="fn-grafico-titulo">Ingresos vs Retiros por día <span class="fn-info" data-tip="Compara cuánto entró y cuánto salió cada día del período.">ⓘ<span class="fn-popover"></span></span></div>
+          <div class="fn-grafico-titulo">Ingresos vs Retiros por día <span class="fn-info" data-tip="Compara cuánto entró y cuánto salió cada día del período."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
           <div class="fn-grafico-wrap"><canvas id="fnChartFlujo"></canvas></div>
         </div>
         <div class="fn-grafico" id="fnGraficoCardGanancia">
-          <div class="fn-grafico-titulo">Ganancia por día <span class="fn-info" data-tip="Ganancia bruta de cada día individual (verde = positivo, rojo = negativo).">ⓘ<span class="fn-popover"></span></span></div>
+          <div class="fn-grafico-titulo">Ganancia por día <span class="fn-info" data-tip="Ganancia bruta de cada día individual (verde = positivo, rojo = negativo)."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
           <div class="fn-grafico-wrap"><canvas id="fnChartGanancia"></canvas></div>
         </div>
         <div class="fn-grafico" id="fnGraficoCardHora">
-          <div class="fn-grafico-titulo">Actividad por hora <span class="fn-info" data-tip="Movimientos por hora del día (recargas + retiros combinados).">ⓘ<span class="fn-popover"></span></span></div>
+          <div class="fn-grafico-titulo">Actividad por hora <span class="fn-info" data-tip="Movimientos por hora del día (recargas + retiros combinados)."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
           <div class="fn-grafico-wrap"><canvas id="fnChartHora"></canvas></div>
         </div>
         <div class="fn-grafico" id="fnGraficoCardBonos">
-          <div class="fn-grafico-titulo">Bonos regalados por día <span class="fn-info" data-tip="Fichas de regalo entregadas cada día (ruleta o a mano desde el CRM).">ⓘ<span class="fn-popover"></span></span></div>
+          <div class="fn-grafico-titulo">Bonos regalados por día <span class="fn-info" data-tip="Fichas de regalo entregadas cada día (ruleta o a mano desde el CRM)."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
           <div class="fn-grafico-wrap"><canvas id="fnChartBonos"></canvas></div>
         </div>
         <div class="fn-grafico" id="fnGraficoCardActivos">
-          <div class="fn-grafico-titulo">Jugadores activos por día <span class="fn-info" data-tip="Cuántos jugadores distintos recargaron cada día.">ⓘ<span class="fn-popover"></span></span></div>
+          <div class="fn-grafico-titulo">Jugadores activos por día <span class="fn-info" data-tip="Cuántos jugadores distintos recargaron cada día."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
           <div class="fn-grafico-wrap"><canvas id="fnChartActivos"></canvas></div>
         </div>
       </div>
@@ -2060,31 +2120,31 @@
           <summary>Ver más métricas</summary>
           <div class="fn-cards" id="fnMasMetricas" style="margin-top:10px">
             <div class="fn-card">
-              <div class="k">Costo de fichas del período<span class="fn-info" data-tip="...">ⓘ<span class="fn-popover"></span></span></div>
+              <div class="k">Costo de fichas del período<span class="fn-info" data-tip="..."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
               <div class="v" id="fnMasCostoFichas">—</div>
             </div>
             <div class="fn-card">
-              <div class="k">Recarga promedio<span class="fn-info" data-tip="Monto promedio por recarga acreditada en el período.">ⓘ<span class="fn-popover"></span></span></div>
+              <div class="k">Recarga promedio<span class="fn-info" data-tip="Monto promedio por recarga acreditada en el período."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
               <div class="v" id="fnMasRecargaProm">—</div>
             </div>
             <div class="fn-card">
-              <div class="k">Retiro promedio<span class="fn-info" data-tip="Monto promedio por retiro confirmado en el período.">ⓘ<span class="fn-popover"></span></span></div>
+              <div class="k">Retiro promedio<span class="fn-info" data-tip="Monto promedio por retiro confirmado en el período."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
               <div class="v" id="fnMasRetiroProm">—</div>
             </div>
             <div class="fn-card">
-              <div class="k">Jugadores nuevos<span class="fn-info" data-tip="Altas nuevas en ganamos durante el período.">ⓘ<span class="fn-popover"></span></span></div>
+              <div class="k">Jugadores nuevos<span class="fn-info" data-tip="Altas nuevas en ganamos durante el período."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
               <div class="v" id="fnMasNuevos">—</div>
             </div>
             <div class="fn-card">
-              <div class="k">Retención<span class="fn-info" data-tip="De los jugadores activos en el período anterior de igual duración, qué porcentaje volvió a recargar en este período.">ⓘ<span class="fn-popover"></span></span></div>
+              <div class="k">Retención<span class="fn-info" data-tip="De los jugadores activos en el período anterior de igual duración, qué porcentaje volvió a recargar en este período."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
               <div class="v" id="fnMasRetencion">—</div>
             </div>
             <div class="fn-card">
-              <div class="k">Fichas en poder de jugadores<span class="fn-info" data-tip="Lo que le debés a tus jugadores hoy: la suma de todos los saldos reales en la plataforma.">ⓘ<span class="fn-popover"></span></span></div>
+              <div class="k">Fichas en poder de jugadores<span class="fn-info" data-tip="Lo que le debés a tus jugadores hoy: la suma de todos los saldos reales en la plataforma."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
               <div class="v" id="fnMasPasivo">—</div>
             </div>
             <div class="fn-card">
-              <div class="k">Stock de fichas<span class="fn-info" data-tip="Fichas que tenés en tu panel de ganamos para vender.">ⓘ<span class="fn-popover"></span></span></div>
+              <div class="k">Stock de fichas<span class="fn-info" data-tip="Fichas que tenés en tu panel de ganamos para vender."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
               <div class="v" id="fnMasStock">—</div>
               <div class="sub" id="fnMasStockSub"></div>
             </div>
@@ -2314,8 +2374,8 @@
       <div class="fn-header">
         <b>Publicidad</b>
         <div class="fn-export-mini">
-          <button class="btn-mini-accion" id="pbBtnExportar" type="button">⬇ Exportar JSON</button>
-          <button class="btn-mini-accion" id="pbBtnCargarGasto" type="button">💵 Cargar gasto</button>
+          <button class="btn-mini-accion" id="pbBtnExportar" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v12M7.2 10.8 12 15.6l4.8-4.8"/><path d="M4.5 20h15"/></svg>Exportar JSON</button>
+          <button class="btn-mini-accion" id="pbBtnCargarGasto" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/><path d="M5.6 12h.01M18.4 12h.01"/></svg>Cargar gasto</button>
           <button class="btn-mini-accion" id="pbBtnAgregar" type="button">+ Agregar publicista</button>
         </div>
       </div>
@@ -2399,7 +2459,7 @@
 
       <!-- Banner: sin gasto cargado, CPA/ROAS no se pueden calcular -->
       <div class="fn-alerta amarillo" id="pbAvisoGasto" style="display:none;margin:0 20px 14px">
-        <span>⚠ Cargá el gasto del período para ver CPA y ROAS.</span>
+        <span><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h16.9a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4.5M12 17.2h.01"/></svg>Cargá el gasto del período para ver CPA y ROAS.</span>
         <button class="btn-mini-accion" id="pbBtnCargarGastoAviso" type="button">Cargar ahora</button>
       </div>
 
@@ -2456,12 +2516,12 @@
       <div class="pb-seccion-titulo">Rentabilidad</div>
       <div class="fn-cards" id="pbCardsRentabilidad" style="margin:0 20px 6px">
         <div class="fn-card">
-          <div class="k">Costo x registro <span class="fn-info" data-tip="CPR: cuánto gastaste en publicidad dividido la cantidad de cuentas nuevas creadas desde esta landing. Cuánto te cuesta conseguir UN registro, sin importar si después carga o no.">ⓘ<span class="fn-popover"></span></span></div>
+          <div class="k">Costo x registro <span class="fn-info" data-tip="CPR: cuánto gastaste en publicidad dividido la cantidad de cuentas nuevas creadas desde esta landing. Cuánto te cuesta conseguir UN registro, sin importar si después carga o no."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
           <div class="v" id="pbCpr">—</div>
           <div class="sub">CPR</div>
         </div>
         <div class="fn-card">
-          <div class="k">Costo x carga <span class="fn-info" data-tip="CPA (costo por adquisición): cuánto gastaste dividido la cantidad de jugadores que hicieron su PRIMER depósito. A diferencia del CPR, sólo cuenta a los que efectivamente pagaron -- es el número real para saber si la pauta se paga sola.">ⓘ<span class="fn-popover"></span></span></div>
+          <div class="k">Costo x carga <span class="fn-info" data-tip="CPA (costo por adquisición): cuánto gastaste dividido la cantidad de jugadores que hicieron su PRIMER depósito. A diferencia del CPR, sólo cuenta a los que efectivamente pagaron -- es el número real para saber si la pauta se paga sola."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
           <div class="v" id="pbCpa">—</div>
           <div class="sub">CPA</div>
         </div>
@@ -4097,7 +4157,11 @@
     movil:   '<rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18.5h2"/>',
     globo:   '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
     campana: '<path d="M18 8a6 6 0 0 0-12 0c0 6-3 7-3 7h18s-3-1-3-7"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>',
-    lupa:    '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/>'
+    lupa:    '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/>',
+    pausa:   '<path d="M9.5 4.5v15M14.5 4.5v15"/>',
+    reloj:   '<circle cx="12" cy="13" r="8"/><path d="M12 9v4.3l2.8 1.7"/><path d="M9 2.5h6"/>',
+    billete: '<rect x="2" y="6" width="20" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/><path d="M5.6 12h.01M18.4 12h.01"/>',
+    bajar:   '<path d="M12 3.5v12M7.2 10.8 12 15.6l4.8-4.8"/><path d="M4.5 20h15"/>'
   };
   /** Devuelve el markup de un ícono. `cls` opcional, para tamaño o color. */
   function ico(nombre, cls){
@@ -5354,8 +5418,8 @@
   function chipUrgencia(r){
     if(r.estado_efectivo !== "pendiente" || r.segundos_para_vencer==null || r.segundos_para_vencer<=0) return "";
     const min = Math.ceil(r.segundos_para_vencer/60);
-    if(r.segundos_para_vencer < 900) return `<span class="urg-chip crit">⏱ Vence en ${min} min</span>`;
-    if(r.segundos_para_vencer < 3600) return `<span class="urg-chip warn">⏱ Vence en ${min} min</span>`;
+    if(r.segundos_para_vencer < 900) return `<span class="urg-chip crit">${ico("reloj")}Vence en ${min} min</span>`;
+    if(r.segundos_para_vencer < 3600) return `<span class="urg-chip warn">${ico("reloj")}Vence en ${min} min</span>`;
     return "";
   }
 
@@ -6486,7 +6550,7 @@
 
   function pbPintarTabs(){
     $("#pbTabs").innerHTML = pbPublicistas.map(p=>
-      `<button class="pb-tab ${p.id===pbActivoId?"on":""} ${p.activo?"":"pb-tab-pausado"}" data-id="${p.id}" type="button">${esc(p.nombre)}${p.activo?"":" ⏸"}</button>`
+      `<button class="pb-tab ${p.id===pbActivoId?"on":""} ${p.activo?"":"pb-tab-pausado"}" data-id="${p.id}" type="button">${esc(p.nombre)}${p.activo?"":ico("pausa")}</button>`
     ).join("") + '<button class="pb-tab pb-tab-agregar" id="pbTabAgregar" type="button">+ Agregar</button>';
 
     document.querySelectorAll("#pbTabs .pb-tab[data-id]").forEach(btn=>{
