@@ -73,11 +73,19 @@ cache-busting, solo el widget.
 
 Hay dos carpetas de SQL, y se aplican distinto:
 
-**`api/sql/*.sql`** — esquema de la base de **cada cliente**. Las corre solo
-el provisionador (`panel/provisionar.php`, por cron cada minuto) contra todas
-las bases. Son idempotentes (`CREATE TABLE IF NOT EXISTS` / `ADD COLUMN IF
-NOT EXISTS`), así que se pueden repetir sin romper nada. Normalmente no hay
-que hacer nada a mano: se aplican solas en menos de un minuto.
+**`api/sql/*.sql`** — esquema de la base de **cada cliente**. Las corre el
+provisionador (`panel/provisionar.php`, por cron cada minuto) contra **todas**
+las bases activas: la pasada 1 cubre los clientes nuevos y la **pasada 1.5**
+los que ya estaban. Son idempotentes (`CREATE TABLE IF NOT EXISTS` / `ADD
+COLUMN IF NOT EXISTS`), y solo se re-corren cuando cambia el contenido de
+`api/sql/`. Normalmente no hay que hacer nada a mano.
+
+> Hasta agosto 2026 esto **era mentira**: `aplicar_migraciones()` se llamaba
+> solo dentro de la pasada 1 (`WHERE aprovisionado = 0`), así que las
+> migraciones nuevas llegaban únicamente a los clientes nuevos. Los que ya
+> existían nunca se actualizaban, y el síntoma era siempre el mismo: se
+> desplegaba código que usaba una columna que en esa base no existía. Pasó con
+> las migraciones 35, 36, 37 y 40. La pasada 1.5 lo arregla.
 
 **`panel/sql/*.sql`** — esquema de `goldpaw_control`, la base maestra
 (clientes, facturación, config de la plataforma). **Estas NO las corre nadie

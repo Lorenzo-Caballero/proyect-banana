@@ -527,6 +527,29 @@ switch ($accion) {
             salida(['ok' => false, 'error' => 'falta correr panel/sql/05_hgcash.sql'], 409);
         }
 
+    case 'salud':
+        /* Lo que dejo la pasada 3 de provisionar.php (que corre cada minuto).
+           Se lee el archivo en vez de recalcular: asi el panel no tiene que
+           abrir la base de cada cliente en cada request, y ademas la FECHA del
+           archivo delata si el cron dejo de correr -- que es justamente una de
+           las fallas silenciosas que esto viene a destapar. */
+        $f = '/var/lib/goldpaw/salud.json';
+        if (!is_file($f)) {
+            salida(['ok' => true, 'sin_datos' => true,
+                    'nota' => 'Todavía no corrió el chequeo. Revisá que el cron de provisionar.php esté activo.']);
+        }
+        $j = json_decode((string) file_get_contents($f), true);
+        $revisado = strtotime((string) ($j['revisado_en'] ?? '')) ?: 0;
+        $minutos  = $revisado ? (int) round((time() - $revisado) / 60) : null;
+        salida([
+            'ok'          => true,
+            'revisado_en' => $j['revisado_en'] ?? null,
+            'hace_min'    => $minutos,
+            // Mas de 10 min sin correr con un cron de 1 min = el cron murio.
+            'cron_caido'  => $minutos !== null && $minutos > 10,
+            'problemas'   => $j['problemas'] ?? [],
+        ]);
+
     default:
         salida(['ok' => false, 'error' => 'acción desconocida'], 400);
 }
