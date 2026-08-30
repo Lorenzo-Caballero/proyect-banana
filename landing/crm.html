@@ -3996,21 +3996,40 @@
     r.addEventListener("change", ()=>{ cobroModo = r.value; cobroPintarModo(cobroModo); });
   });
 
-  $("#cobroCtaAgregar").addEventListener("click", async ()=>{
+  /* Alta de una billetera. Compartida por el botón "+ Agregar cuenta" y por
+     "Guardar método de cobro" (el botón grande de abajo).
+
+     BUG REAL que arregla: los campos de la billetera se daban de alta SOLO
+     con "+ Agregar cuenta", pero abajo de todo hay un botón principal que
+     dice "Guardar" -- y es el que cualquiera aprieta después de completar un
+     formulario. Ese guardaba el método y el modo, pero ignoraba lo tipeado
+     acá: la billetera se perdía sin un solo aviso, y al refrescar no estaba.
+     Ahora los dos caminos dan de alta lo mismo.
+
+     Devuelve {ok:true, nada:true} si no hay nada tipeado -- no es un error
+     apretar Guardar sin estar agregando una cuenta. */
+  async function cobroAltaCuentaTipeada(){
     const cbu = $("#cobroCtaCbu").value.trim();
-    if(!cbu){ toast("Falta el CBU/CVU"); return; }
+    if(!cbu) return { ok:true, nada:true };
+    const d = await jpost({
+      accion: "cuenta_agregar",
+      alias: $("#cobroCtaAlias").value.trim(),
+      cbu, titular: $("#cobroCtaTitular").value.trim(),
+    }, API_COBRO);
+    if(d.ok){
+      $("#cobroCtaAlias").value = ""; $("#cobroCtaCbu").value = ""; $("#cobroCtaTitular").value = "";
+    }
+    return d;
+  }
+
+  $("#cobroCtaAgregar").addEventListener("click", async ()=>{
+    if(!$("#cobroCtaCbu").value.trim()){ toast("Falta el CBU/CVU"); return; }
     const btn = $("#cobroCtaAgregar"); btn.disabled = true;
     let d;
-    try{
-      d = await jpost({
-        accion: "cuenta_agregar",
-        alias: $("#cobroCtaAlias").value.trim(),
-        cbu, titular: $("#cobroCtaTitular").value.trim(),
-      }, API_COBRO);
-    }catch(e){ btn.disabled = false; return; }
+    try{ d = await cobroAltaCuentaTipeada(); }
+    catch(e){ btn.disabled = false; return; }
     btn.disabled = false;
     if(!d.ok){ toast(d.error || "No se pudo agregar la cuenta"); return; }
-    $("#cobroCtaAlias").value = ""; $("#cobroCtaCbu").value = ""; $("#cobroCtaTitular").value = "";
     toast("Cuenta agregada");
     cobroCargar();
   });
@@ -4064,6 +4083,12 @@
       if(!d.ok) throw new Error(d.error || "No se pudo guardar el método");
 
       if(metodo === "transferencia"){
+        // Primero la billetera que haya quedado tipeada sin apretar
+        // "+ Agregar cuenta" -- si no, se perdía en silencio (ver
+        // cobroAltaCuentaTipeada).
+        d = await cobroAltaCuentaTipeada();
+        if(!d.ok) throw new Error(d.error || "No se pudo agregar la cuenta");
+
         d = await jpost({
           accion: "modo_seleccion_guardar",
           modo: document.querySelector('input[name="cobroModoSel"]:checked').value,
