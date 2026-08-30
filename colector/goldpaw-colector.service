@@ -1,0 +1,80 @@
+# ---------------------------------------------------------------------------
+# goldpaw-colector.service — el colector de mails del banco, corriendo 24/7.
+#
+# POR QUE EXISTE ESTE ARCHIVO
+# El colector es la unica pieza que convierte "el jugador transfirio" en
+# "el jugador tiene sus fichas". Sin el corriendo, una recarga se crea, el
+# jugador transfiere, y la recarga vence sola sin acreditar nada -- y NADIE
+# se entera, porque no hay error en ningun lado: simplemente no pasa nada.
+#
+# Eso es exactamente lo que estaba pasando (auditoria del 30/8/2026): 15
+# recargas vencidas, 0 acreditadas, tabla `pagos` vacia, y ningun proceso
+# del colector en el VPS. Corria a mano desde algun lado y se dejo de correr.
+#
+# Un servicio de systemd y no un contenedor: el colector no usa NINGUNA
+# dependencia de terceros (todo libreria estandar de Python -- imaplib,
+# email, urllib), asi que meterlo en Docker seria agregar una imagen que
+# construir y mantener a cambio de nada. Los bots si estan en Docker, pero
+# porque necesitan Playwright y un navegador.
+#
+# INSTALACION (una sola vez, en el VPS):
+#   1. Configurar las credenciales -- NO van en el repo:
+#        cp /opt/goldpaw/colector/config.json.example /opt/goldpaw/colector/config.json
+#        nano /opt/goldpaw/colector/config.json
+#      webhook_url  = https://ganamoscrm.online/gp-api/pagos.php
+#      webhook_token = la BOT_API_KEY (la misma que en api/config.local.php)
+#      usuario/clave = la casilla que recibe los avisos del banco
+#                      (en Gmail va una "contraseña de aplicacion", no la
+#                      contraseña normal de la cuenta)
+#
+#   2. Probar ANTES de dejarlo corriendo -- lee los ultimos 10 mails y
+#      muestra que entendio, sin guardar nada:
+#        cd /opt/goldpaw/colector && python3 colector_mail.py --test 10
+#
+#   3. Instalar y arrancar:
+#        cp /opt/goldpaw/colector/goldpaw-colector.service /etc/systemd/system/
+#        systemctl daemon-reload
+#        systemctl enable --now goldpaw-colector
+#
+#   4. Ver que quedo vivo:
+#        systemctl status goldpaw-colector
+#        tail -f /var/log/goldpaw-colector.log
+#
+# MULTI-CLIENTE: este servicio es para UNA casilla (la de ganamoscrm). Cada
+# cliente cobra en SU cuenta y recibe los avisos en SU casilla, asi que
+# cuando haya que sumar otro, va otra copia de este archivo con otro nombre
+# (goldpaw-colector-<cliente>.service), su propio config.json y su propio
+# webhook_url apuntando al dominio de ese cliente. config.json ya soporta
+# varias casillas en "cuentas", pero todas postean al MISMO webhook_url --
+# por eso lo que se duplica es el servicio, no la casilla.
+# ---------------------------------------------------------------------------
+
+[Unit]
+Description=GOLDPAW - colector de mails del banco (acredita recargas por transferencia)
+Documentation=file:/opt/goldpaw/colector/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# WorkingDirectory es obligatorio, no cosmetico: colector_mail.py hace
+# "import api_client", que solo resuelve si el cwd es esta carpeta.
+WorkingDirectory=/opt/goldpaw/colector
+ExecStart=/usr/bin/python3 /opt/goldpaw/colector/colector_mail.py --escuchar
+
+# IMAP se cae solo cada tanto (timeouts, el server cierra la sesion, se
+# reinicia la red). Que el servicio muera y vuelva es el comportamiento
+# correcto -- lo que NO puede pasar es que quede muerto en silencio, que es
+# como llegamos aca.
+Restart=always
+RestartSec=30
+
+# Sin buffer: si no, los print() quedan en el buffer de Python y el log se
+# ve vacio durante minutos, justo cuando lo estas mirando para diagnosticar.
+Environment=PYTHONUNBUFFERED=1
+
+StandardOutput=append:/var/log/goldpaw-colector.log
+StandardError=append:/var/log/goldpaw-colector.log
+
+[Install]
+WantedBy=multi-user.target
