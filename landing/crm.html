@@ -2381,11 +2381,16 @@
       </div>
 
       <div class="fn-explicacion" style="margin:0 20px 14px">
-        Por defecto, todo tu tráfico ya usa el pixel general que configuraste
-        en <b>Configuración → Meta Ads</b> — no hace falta crear nada acá
-        para empezar. Sumá un publicista solo si necesitás separar una
-        campaña con su propio pixel (por ejemplo, la maneja otra persona).
-        Cada publicista te da un link propio para pegar en sus anuncios.
+        <b>¿Qué es un publicista?</b> Por defecto, TODO tu tráfico ya se mide
+        con el pixel general que cargaste en <b>Configuración → Meta Ads</b>
+        — no hace falta tocar nada acá para empezar a hacer publicidad.
+        <br><br>
+        Usá <b>"+ Agregar publicista"</b> solo en un caso puntual: cuando
+        necesitás medir por separado la campaña de OTRA persona (por
+        ejemplo, alguien que te consigue jugadores y tiene su propia cuenta
+        de Meta con su propio pixel). Al crearlo, el sistema te da un link
+        distinto para pasarle a esa persona — así sus resultados no se
+        mezclan con los tuyos ni con los de otro publicista.
       </div>
 
       <!-- Tabs de publicistas: cada uno es una landing propia, opcionalmente
@@ -2566,6 +2571,12 @@
     <div class="modal">
       <h3 id="pbModalTitulo">Nuevo publicista</h3>
       <input type="hidden" id="pbEditId">
+      <p id="pbModalIntro" style="color:var(--muted);font-size:12px;margin:-4px 0 12px">
+        Esto te va a dar un LINK nuevo para pasarle a una persona o campaña
+        puntual. Si esa persona maneja su propia cuenta de Meta, cargale su
+        pixel abajo; si no, dejalo vacío y ese link igual va a funcionar,
+        usando tu pixel general.
+      </p>
 
       <label for="pbNombre">Nombre</label>
       <input id="pbNombre" type="text" placeholder="Ej: Facu, Juan, Instagram Ads">
@@ -2902,6 +2913,11 @@
           </label>
         </div>
         <div class="cfg-card-body" id="cfgMetaBody">
+          <p class="cfg-hint" style="margin:0 0 14px">
+            <b>Este es tu píxel principal</b> — el que mide TODA tu
+            publicidad. No hace falta pegar ningún código en ninguna página:
+            cargás el ID acá y el sistema lo pone solo en tu landing.
+          </p>
           <div class="cfg-grid">
             <div>
               <label class="cb-flabel">ID del píxel</label>
@@ -2923,9 +2939,15 @@
               <button class="btn-mini-accion" id="cfgMetaLinkCopiar" type="button">Copiar</button>
             </div>
             <p class="cfg-hint">
-              Este es tu pixel por defecto: lo usa cualquiera que entre por
-              este link. Publicidad (en el menú) es solo para cuando
-              necesitás un link Y pixel separado para una campaña puntual.
+              Pegá este link en tus anuncios de Meta. Todo el que entre por
+              acá se mide con el píxel de arriba.
+              <br><br>
+              <b>¿Y la sección Publicidad del menú?</b> Es para un caso
+              distinto: si alguien más te consigue jugadores y tiene SU
+              propia cuenta de Meta, ahí le creás un "publicista" y el
+              sistema le genera otro link, con su propio píxel, para que sus
+              resultados no se mezclen con los tuyos. Si hacés vos la
+              publicidad, no necesitás entrar ahí.
             </p>
           </div>
 
@@ -6621,6 +6643,7 @@
 
   function pbAbrirModalNuevo(){
     $("#pbModalTitulo").textContent = "Nuevo publicista";
+    $("#pbModalIntro").textContent = "Esto te va a dar un LINK nuevo para pasarle a una persona o campaña puntual. Si esa persona maneja su propia cuenta de Meta, cargale su pixel abajo; si no, dejalo vacío y ese link igual va a funcionar, usando tu pixel general.";
     $("#pbEditId").value = "";
     $("#pbNombre").value = "";
     $("#pbPixelId").value = ""; $("#pbCapiToken").value = "";
@@ -6633,6 +6656,9 @@
   }
   function pbAbrirModalEditar(p){
     $("#pbModalTitulo").textContent = "Editar publicista";
+    // Al editar, el link ya existe y NUNCA cambia -- el texto del alta
+    // ("esto te va a dar un link nuevo") seria mentira acá.
+    $("#pbModalIntro").textContent = "El link de este publicista no cambia por editarlo. Si dejás el pixel vacío, sigue usando tu pixel general.";
     $("#pbEditId").value = p.id;
     $("#pbNombre").value = p.nombre;
     $("#pbPixelId").value = p.pixel_id || ""; $("#pbCapiToken").value = "";
