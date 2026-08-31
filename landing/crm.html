@@ -883,6 +883,19 @@
      las demas: la decision sigue siendo del operador, esto solo le ahorra
      comparar de memoria. */
   .cand-sugerida{border-color:var(--violet);background:var(--panel3)}
+  /* Vencida: se ofrece igual, pero avisando. Que haya vencido solo dice que el
+     jugador tardo en transferir, no que el pago no sea de ella. */
+  .cd-chip-venc{background:rgba(245,166,35,.16);color:var(--orange2);border-color:var(--orange)}
+
+  /* Acreditar sin recarga: para los comprobantes que no tienen ninguna y nunca
+     la van a tener (los del boton "Depositos" de la plataforma, sobre todo). */
+  .comp-directo{margin-top:14px;padding-top:13px;border-top:1px dashed var(--line)}
+  .cd-directo-head b{display:block;font-size:13px;margin-bottom:2px}
+  .cd-directo-head span{display:block;font-size:11.5px;color:var(--muted);line-height:1.45}
+  .cd-directo-form{display:flex;gap:8px;margin-top:9px;flex-wrap:wrap}
+  .cd-directo-form .cb-input{flex:1 1 130px;min-width:0}
+  .cd-directo-form #cdCoins{flex:0 0 96px}
+  .cd-directo-hint{margin-top:7px;font-size:11.5px;color:var(--muted)}
   .warn-chip{background:rgba(245,166,35,.16);color:var(--orange2);border:1px solid var(--orange);
     font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:7px;margin-left:6px;white-space:nowrap}
   .btn-asignar{background:linear-gradient(180deg,var(--violet2),var(--violet));color:#fff;border:none;
@@ -1878,12 +1891,13 @@
       </div>
       <div id="compDetail" style="display:none">
         <div class="comp-info" id="compInfo"></div>
-        <h4 style="margin:0 0 9px;font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px">Asignar a una recarga pendiente</h4>
+        <h4 style="margin:0 0 9px;font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px">Asignar a una carga pedida</h4>
         <label class="search">
           <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
           <input id="compQ" placeholder="Buscar por usuario, referencia o id…" autocomplete="off">
         </label>
         <div class="comp-cands" id="compCands"></div>
+        <div class="comp-directo" id="compDirecto"></div>
       </div>
     </main>
   </div>
@@ -5618,10 +5632,17 @@
           const tit = c.titular_declarado
             ? `<div class="cd-tit">a nombre de <b>${esc(c.titular_declarado)}</b></div>`
             : `<div class="cd-tit cd-tit-vacio">no declaró titular</div>`;
+          /* Las vencidas ahora también se ofrecen. Antes se escondían, y un
+             comprobante cuyo aviso del banco tardó más de 45 minutos quedaba
+             sin ninguna candidata: imposible de resolver. Que esté vencida no
+             dice que el pago no sea de ella, dice que el jugador tardó en
+             transferir — así que se muestra y decide el operador. */
+          const venc = c.estado === "vencida"
+            ? `<span class="cd-chip cd-chip-venc">venció, pero se puede usar</span>` : "";
           return `<div class="cand${i===0&&c.motivo?" cand-sugerida":""}">
             <div class="cd-mid">
-              <div class="cd-user">@${esc(c.usuario)}${chip}</div>
-              <div class="cd-sub">Ref ${esc(c.referencia)} · ${nf.format(c.coins)} fichas</div>
+              <div class="cd-user">@${esc(c.usuario)}${chip}${venc}</div>
+              <div class="cd-sub">Ref ${esc(c.referencia)} · ${nf.format(c.coins)} fichas · ${hace(c.creada_en)}</div>
               ${tit}
             </div>
             <div class="cd-monto">${money(c.monto_pedido)}</div>
@@ -5631,6 +5652,54 @@
     $("#compCands").querySelectorAll(".btn-asignar").forEach(btn=>{
       btn.addEventListener("click", ()=> asignarComprobante(+btn.getAttribute("data-id"), btn));
     });
+
+    pintarAcreditarDirecto(d);
+  }
+
+  /* Acreditar sin recarga.
+     Hay transferencias que no tienen ninguna y nunca la van a tener: las que el
+     jugador pide con el botón «Depósitos» de la plataforma no crean recarga de
+     este lado, y también está el que transfiere sin avisar por el chat. Para
+     esas, la única salida era cargar fichas desde la ficha del jugador — que
+     acredita, pero deja el comprobante acá para siempre y no aprende de qué
+     cuenta paga esa persona. */
+  function pintarAcreditarDirecto(d){
+    const cont = $("#compDirecto");
+    if(!cont) return;
+    const sug = (d.sugeridos || [])[0] || "";
+    cont.innerHTML = `
+      <div class="cd-directo-head">
+        <b>¿No es de ninguna de estas?</b>
+        <span>Acreditalo directo al jugador. El comprobante queda resuelto y no vuelve a aparecer.</span>
+      </div>
+      <div class="cd-directo-form">
+        <input class="cb-input" id="cdUser" placeholder="usuario del jugador" autocomplete="off" value="${esc(sug)}">
+        <input class="cb-input" id="cdCoins" inputmode="numeric" value="${Math.round(d.pago.monto)}">
+        <button class="btn-asignar" id="cdBtn" type="button">Acreditar</button>
+      </div>
+      ${sug ? `<div class="cd-directo-hint">Sugerido: <b>@${esc(sug)}</b> ya cargó antes desde esta misma cuenta bancaria.</div>` : ""}`;
+    $("#cdBtn").addEventListener("click", acreditarDirecto);
+  }
+
+  async function acreditarDirecto(){
+    if(!compPagoActual) return;
+    const usuario = $("#cdUser").value.trim();
+    const coins   = parseInt($("#cdCoins").value, 10) || 0;
+    if(!usuario || coins<=0){ toast("Poné el jugador y el monto"); return; }
+    if(!confirm(`¿Acreditar ${nf.format(coins)} fichas a @${usuario} por este comprobante de ${money(compPagoActual.monto)}?`)) return;
+
+    const btn = $("#cdBtn");
+    btn.disabled = true; btn.textContent = "…";
+    const d = await jpost({accion:"acreditar_directo", pago_id:compPagoActual.id_unico,
+                           usuario, coins}, API_COMP);
+    if(d.ok){
+      toast(`Acreditado a @${d.usuario} — ${nf.format(d.coins)} fichas`);
+      actualizarBadgeComp();
+      cargarComprobantes();
+    } else {
+      btn.disabled = false; btn.textContent = "Acreditar";
+      toast(d.error || "No se pudo acreditar");
+    }
   }
 
   async function asignarComprobante(recargaId, btn){

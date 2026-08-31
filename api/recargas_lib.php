@@ -1326,12 +1326,28 @@ function rl_asignar_manual(PDO $pdo, string $idUnico, int $recargaId, string $op
             // Sin migracion 48 no hay camino A. Se sigue.
         }
 
-        $rc = $pdo->prepare("SELECT * FROM recargas WHERE id = ? AND estado = 'pendiente' FOR UPDATE");
+        /* Se aceptan las VENCIDAS, no solo las pendientes.
+
+           Una recarga vence a los RL_VENCIMIENTO_MIN (45) minutos, y eso esta
+           bien para el matcher automatico: pasado ese rato ya no puede decidir
+           solo. Pero exigirlo tambien aca dejaba comprobantes IMPOSIBLES de
+           resolver: si el aviso del banco se demoraba mas de 45 minutos --
+           cosa comun-- el pago quedaba en 'revision' sin ninguna candidata que
+           ofrecerle al operador, para siempre. Se acumularon 25 asi.
+
+           Que este vencida no dice nada sobre si el pago es de ella; dice que
+           el jugador tardo en transferir. Quien decide es la persona, y el CRM
+           le muestra el estado y hace cuanto se creo. Las canceladas SI quedan
+           afuera: ahi alguien decidio expresamente anularla. */
+        $rc = $pdo->prepare(
+            "SELECT * FROM recargas WHERE id = ? AND estado IN ('pendiente','vencida') FOR UPDATE"
+        );
         $rc->execute([$recargaId]);
         $recarga = $rc->fetch();
         if (!$recarga) {
             $pdo->rollBack();
-            return ['resultado' => 'error', 'error' => 'Esa recarga ya no está pendiente.'];
+            return ['resultado' => 'error',
+                    'error' => 'Esa recarga ya no se puede usar (ya está acreditada o fue cancelada).'];
         }
 
         rl_acreditar($pdo, $recarga, $idUnico, 'manual: ' . $operador, $operador, 'manual');
@@ -1357,5 +1373,126 @@ function rl_asignar_manual(PDO $pdo, string $idUnico, int $recargaId, string $op
         }
         error_log('rl_asignar_manual: ' . $e->getMessage());
         return ['resultado' => 'error', 'error' => 'No se pudo asignar.'];
+    }
+}
+
+/**
+ * Acredita un comprobante A UN JUGADOR, sin recarga de por medio.
+ *
+ * POR QUE HACE FALTA
+ * rl_asignar_manual() necesita una recarga a la que colgar el pago. Pero hay
+ * transferencias que NO tienen ninguna y nunca la van a tener:
+ *
+ *   - Las del camino A (boton "Depositos" de la plataforma): la solicitud vive
+ *     del lado de ganamos y no crea fila en `recargas`. Por construccion caen
+ *     siempre en 'revision', y son la mayoria de las que se acumularon.
+ *   - El jugador que transfiere sin pedir nada por el chat.
+ *
+ * Para esas, el operador solo podia cargar fichas a mano desde la ficha del
+ * jugador. Eso acredita, pero deja el pago en 'revision' PARA SIEMPRE (sigue
+ * inflando el badge, y se puede volver a acreditar por error) y no aprende la
+ * huella del pagador. Esta funcion hace las dos cosas que faltaban.
+ *
+ * Es la version sin recarga de rl_acreditar(): mismos efectos, misma
+ * transaccion, sin `recargas`. No abre transaccion propia -- la abre el caller,
+ * igual que en el resto de la libreria.
+ *
+ * @return array ['resultado'=>'acreditada'|'error', ...]
+ */
+function rl_acreditar_directo(PDO $pdo, string $idUnico, string $usuario,
+                              int $coins, string $operador): array
+{
+    $usuario = trim($usuario);
+    if ($usuario === '' || $coins <= 0) {
+        return ['resultado' => 'error', 'error' => 'Faltan el jugador o el monto.'];
+    }
+
+    $pdo->beginTransaction();
+    try {
+        // El pago tiene que seguir sin usar. FOR UPDATE: dos operadores
+        // resolviendo el mismo comprobante a la vez lo acreditarian dos veces.
+        $pg = $pdo->prepare(
+            "SELECT * FROM pagos
+              WHERE id_unico = ? AND estado IN ('pendiente','revision') FOR UPDATE"
+        );
+        $pg->execute([$idUnico]);
+        $pago = $pg->fetch();
+        if (!$pago) {
+            $pdo->rollBack();
+            return ['resultado' => 'error',
+                    'error' => 'Ese comprobante ya no está sin resolver (puede que ya se haya acreditado).'];
+        }
+
+        // Misma proteccion que en rl_asignar_manual: si una carga pedida desde
+        // la plataforma ya reservo esta transferencia, acreditarla aca la
+        // pagaria dos veces cuando el worker apruebe la solicitud.
+        try {
+            $pt = $pdo->prepare(
+                "SELECT request_id FROM peticiones_carga
+                  WHERE pago_id_unico = ? AND estado IN ('esperando','revision') FOR UPDATE"
+            );
+            $pt->execute([$idUnico]);
+            if ($req = $pt->fetchColumn()) {
+                $pdo->rollBack();
+                return ['resultado' => 'error', 'error' =>
+                    'Esa transferencia está reservada para la carga #' . $req .
+                    ', que el jugador pidió desde la plataforma. Resolvela en «Cargas del panel».'];
+            }
+        } catch (PDOException $e) {
+            // Sin migracion 48 no hay camino A. Se sigue.
+        }
+
+        $us = $pdo->prepare("SELECT username FROM usuarios WHERE username = ? LIMIT 1");
+        $us->execute([$usuario]);
+        if (!$us->fetchColumn()) {
+            $pdo->rollBack();
+            return ['resultado' => 'error', 'error' => 'No existe el jugador «' . $usuario . '».'];
+        }
+
+        $pdo->prepare("UPDATE usuarios SET coins = coins + ? WHERE username = ?")
+            ->execute([$coins, $usuario]);
+
+        // Lo que faltaba cuando esto se hacia con "cargar fichas": el pago
+        // queda consumido y no puede volver a acreditarse.
+        $pdo->prepare(
+            "UPDATE pagos SET estado='usado', asignado_por=?, asignado_en=NOW()
+              WHERE id_unico = ?"
+        )->execute([$operador, $idUnico]);
+
+        try {
+            $pdo->prepare(
+                "INSERT INTO movimientos (usuario, tipo, monto, motivo, origen)
+                 VALUES (?, 'ficha', ?, ?, 'recarga')"
+            )->execute([
+                mb_substr($usuario, 0, 50), $coins,
+                'Comprobante ' . mb_substr($idUnico, 0, 40) . ' acreditado a mano',
+            ]);
+        } catch (Throwable $e) {
+            error_log('rl_acreditar_directo: no pude registrar el movimiento: ' . $e->getMessage());
+        }
+
+        // Y lo otro que faltaba: aprender de que cuenta paga. Cada comprobante
+        // que el operador resuelve hoy es uno que se resuelve solo la proxima.
+        rl_aprender_huella($pdo, $usuario, $pago);
+
+        if (function_exists('actividad_marcar')) { actividad_marcar($pdo, $usuario); }
+
+        $pdo->commit();
+
+        /* Despues del commit, igual que en los otros caminos: encolar la carga
+           al juego primero y avisar despues. Si el aviso saliera antes y el
+           encolado fallara, le habriamos dicho "ya tenes tus fichas" a alguien
+           que no las va a recibir. */
+        $comoRecarga = ['usuario' => $usuario, 'coins' => $coins,
+                        'referencia' => 'manual', 'id' => 0];
+        rl_cargar_al_juego_auto($pdo, $comoRecarga);
+        rl_notificar_acreditada($pdo, $comoRecarga);
+
+        return ['resultado' => 'acreditada', 'usuario' => $usuario, 'coins' => $coins];
+
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) { $pdo->rollBack(); }
+        error_log('rl_acreditar_directo: ' . $e->getMessage());
+        return ['resultado' => 'error', 'error' => 'No se pudo acreditar.'];
     }
 }

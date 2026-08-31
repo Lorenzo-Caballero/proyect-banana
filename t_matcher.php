@@ -203,6 +203,78 @@ chequear('con el titular, pasa', !empty($r['ok']), json_encode($r));
 $r = rl_crear_recarga($pdo, 'test_ana', 2000, '');
 chequear('otro monto no choca: no pregunta', !empty($r['ok']), json_encode($r));
 
+// ===========================================================================
+echo "\n=== Resolver a mano lo que el matcher no pudo ===\n";
+
+/* Estos comprobantes son los que se venian acumulando sin salida: 25 llegaron
+   a juntarse. Cada caso de aca es una de las dos razones por las que quedaban
+   trabados. */
+
+limpiar($pdo);
+crearUsuario($pdo, 'test_ana');
+
+// --- Caso 1: la recarga existe pero VENCIO ---------------------------------
+// El aviso del banco tardo mas de 45 minutos. Antes desaparecia de la lista de
+// candidatas y el pago quedaba sin nada que ofrecerle al operador.
+$rid = crearRecarga($pdo, 'test_ana', 1000, 'Ana Perez');
+$pdo->exec("UPDATE recargas SET estado='vencida' WHERE id=$rid");
+crearPago($pdo, 'TEST-VENC', 1000, 'ANA PEREZ');
+$pdo->exec("UPDATE pagos SET estado='revision' WHERE id_unico='TEST-VENC'");
+
+$r = rl_asignar_manual($pdo, 'TEST-VENC', $rid, 'test');
+chequear('se puede asignar a una recarga VENCIDA',
+         ($r['resultado'] ?? '') === 'acreditada', json_encode($r));
+chequear('y las fichas llegaron', coinsDe($pdo, 'test_ana') === 1000,
+         (string)coinsDe($pdo, 'test_ana'));
+
+// --- Caso 2: la recarga fue CANCELADA --------------------------------------
+// Distinto de vencida: ahi alguien decidio anularla a proposito.
+$rid2 = crearRecarga($pdo, 'test_ana', 3000, 'Ana Perez');
+$pdo->exec("UPDATE recargas SET estado='cancelada' WHERE id=$rid2");
+crearPago($pdo, 'TEST-CANC', 3000, 'ANA PEREZ');
+$pdo->exec("UPDATE pagos SET estado='revision' WHERE id_unico='TEST-CANC'");
+
+$r = rl_asignar_manual($pdo, 'TEST-CANC', $rid2, 'test');
+chequear('una recarga CANCELADA sigue sin poder usarse',
+         ($r['resultado'] ?? '') === 'error', json_encode($r));
+
+// --- Caso 3: no hay recarga y nunca la va a haber --------------------------
+// Los pagos del camino A (boton "Depositos"): la solicitud vive del lado de
+// ganamos y no crea fila en `recargas`. Sin esto no habia forma de resolverlos.
+$pdo->exec("DELETE FROM huellas_pagador WHERE usuario LIKE 'test\\_%'");
+crearPago($pdo, 'TEST-SINREC', 5000, 'ANA PEREZ', '27305559999', '');
+$pdo->exec("UPDATE pagos SET estado='revision' WHERE id_unico='TEST-SINREC'");
+$antes = coinsDe($pdo, 'test_ana');
+
+$r = rl_acreditar_directo($pdo, 'TEST-SINREC', 'test_ana', 5000, 'test');
+chequear('sin recarga, se puede acreditar directo al jugador',
+         ($r['resultado'] ?? '') === 'acreditada', json_encode($r));
+chequear('sumo las fichas', coinsDe($pdo, 'test_ana') === $antes + 5000,
+         (string)coinsDe($pdo, 'test_ana'));
+
+$st = $pdo->query("SELECT estado FROM pagos WHERE id_unico='TEST-SINREC'");
+chequear('el pago queda USADO y sale de la cola de revision',
+         $st->fetchColumn() === 'usado');
+
+$st = $pdo->query("SELECT COUNT(*) FROM huellas_pagador
+                    WHERE usuario='test_ana' AND cuit='27305559999'");
+chequear('y aprendio la huella del pagador (cargar fichas a mano no lo hacia)',
+         (int)$st->fetchColumn() === 1);
+
+// No se puede acreditar dos veces el mismo comprobante.
+$antes2 = coinsDe($pdo, 'test_ana');
+$r = rl_acreditar_directo($pdo, 'TEST-SINREC', 'test_ana', 5000, 'test');
+chequear('el mismo comprobante NO se acredita dos veces',
+         ($r['resultado'] ?? '') === 'error', json_encode($r));
+chequear('y no toco las fichas', coinsDe($pdo, 'test_ana') === $antes2);
+
+// Un jugador que no existe no puede recibir nada.
+crearPago($pdo, 'TEST-NOUSER', 700, 'QUIEN SEA');
+$pdo->exec("UPDATE pagos SET estado='revision' WHERE id_unico='TEST-NOUSER'");
+$r = rl_acreditar_directo($pdo, 'TEST-NOUSER', 'test_no_existe_nadie', 700, 'test');
+chequear('no se puede acreditar a un jugador inexistente',
+         ($r['resultado'] ?? '') === 'error', json_encode($r));
+
 limpiar($pdo);
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);
 exit($fail > 0 ? 1 : 0);

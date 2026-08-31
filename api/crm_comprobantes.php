@@ -103,14 +103,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             // Sin q: las 20 recargas pendientes mas parecidas en monto (la
             // candidata correcta suele aparecer primero sin escribir nada).
             // Con q: ademas filtra por usuario, referencia exacta o id.
+            /* Se incluyen las VENCIDAS, no solo las pendientes.
+
+               Una recarga vence a los 45 minutos. Ofrecer solo pendientes hacia
+               que un comprobante cuyo aviso del banco tardo mas que eso quedara
+               SIN NINGUNA candidata: imposible de resolver desde el CRM, para
+               siempre. Asi se juntaron 25.
+
+               Que este vencida no dice que el pago no sea de ella; dice que el
+               jugador tardo en transferir. Se manda `estado` para que el CRM lo
+               muestre y el operador decida sabiendo. */
             $q = trim((string)($_GET['q'] ?? ''));
             $st2 = $pdo->prepare(
                 "SELECT id, referencia, usuario, coins, monto_base, monto_pedido, centavos,
-                        titular_declarado, creada_en, vence_en
+                        titular_declarado, creada_en, vence_en, estado
                    FROM recargas
-                  WHERE estado = 'pendiente'
+                  WHERE estado IN ('pendiente','vencida')
                     AND (? = '' OR usuario LIKE ? OR referencia = ? OR id = ?)
-                  ORDER BY ABS(monto_pedido - ?) ASC, creada_en ASC
+                  ORDER BY ABS(monto_pedido - ?) ASC, creada_en DESC
                   LIMIT 20"
             );
             $st2->execute([$q, '%' . $q . '%', strtoupper($q), (int)($q !== '' ? $q : 0), $pago['monto']]);
@@ -157,7 +167,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 return abs($a['monto_pedido'] - $pago['monto']) <=> abs($b['monto_pedido'] - $pago['monto']);
             });
 
-            salir(['ok' => true, 'pago' => $pago, 'candidatas' => $candidatas]);
+            /* Para el caso en que NO haya ninguna candidata: los jugadores que
+               ya cargaron antes desde esta misma cuenta bancaria. Es la mejor
+               pista que tenemos para acreditarlo directo, y sale de cargas
+               anteriores ya confirmadas -- no de adivinar por el nombre.
+
+               Pasa sobre todo con los pagos del camino A (boton "Depositos"),
+               que no crean fila en `recargas` y por eso nunca tienen candidata
+               que ofrecer. */
+            salir(['ok' => true, 'pago' => $pago, 'candidatas' => $candidatas,
+                   'sugeridos' => array_values($conHuella)]);
         }
 
         salir(['ok' => false, 'error' => 'Acción desconocida'], 400);
@@ -182,6 +201,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $r = rl_asignar_manual($pdo, $idUnico, $recargaId, $operador);
         if ($r['resultado'] !== 'acreditada') {
             salir(['ok' => false, 'error' => $r['error'] ?? 'No se pudo asignar'], 409);
+        }
+        salir(array_merge(['ok' => true], $r));
+    }
+
+    /* Acreditar el comprobante DIRECTO a un jugador, sin recarga.
+       Para las transferencias que no tienen ninguna y nunca la van a tener:
+       las del boton "Depositos" de la plataforma (no crean fila en `recargas`)
+       y las de quien transfiere sin pedir nada por el chat.
+
+       Antes de esto la unica salida era cargar fichas desde la ficha del
+       jugador, que acredita pero deja el pago en 'revision' para siempre y no
+       aprende la huella. rl_acreditar_directo() cierra las dos cosas. */
+    if ($accion === 'acreditar_directo') {
+        $idUnico = trim((string)($body['pago_id'] ?? ''));
+        $usuario = trim((string)($body['usuario'] ?? ''));
+        $coins   = (int)($body['coins'] ?? 0);
+        if ($idUnico === '' || $usuario === '' || $coins <= 0) {
+            salir(['ok' => false, 'error' => 'Faltan el comprobante, el jugador o el monto'], 400);
+        }
+
+        $r = rl_acreditar_directo($pdo, $idUnico, $usuario, $coins, $operador);
+        if ($r['resultado'] !== 'acreditada') {
+            salir(['ok' => false, 'error' => $r['error'] ?? 'No se pudo acreditar'], 409);
         }
         salir(array_merge(['ok' => true], $r));
     }
