@@ -2,7 +2,7 @@
 /**
  * t_matcher.php — El matcher de transferencias, probado donde duele.
  *
- * Estos 12 chequeos existen porque acá se decide a QUIEN se le acredita
+ * Estos chequeos existen porque acá se decide a QUIEN se le acredita
  * plata. Un falso positivo no es un bug molesto: es cargarle las fichas al
  * jugador equivocado. Por eso hay tantos casos de "NO tiene que acreditar"
  * como de "sí tiene que acreditar".
@@ -13,7 +13,7 @@
  *     php t_matcher.php
  *     T_DB=otra_base T_USER=root T_PASS=x php t_matcher.php
  *
- * Necesita la migración api/sql/45_match_titular.sql aplicada.
+ * Necesita las migraciones api/sql/45 y 46 aplicadas.
  * Limpia lo suyo al empezar y al terminar (solo filas test_% / TEST-%).
  */
 declare(strict_types=1);
@@ -28,6 +28,10 @@ $pdo = new PDO(
 );
 // recargas_lib.php usa $pdo del scope global en algunas rutas opcionales.
 $GLOBALS['pdo'] = $pdo;
+// Stub de config.php: sin esto, todo lo que llame a cfg() (la carga
+// automatica al juego, los limites) falla en silencio dentro de su try/catch
+// y el test da verde sin haber ejercitado nada.
+if (!function_exists('cfg')) { function cfg($c, $d = '') { return $d; } }
 require __DIR__ . '/api/recargas_lib.php';
 
 $ok = 0; $fail = 0;
@@ -171,6 +175,33 @@ $r = rl_matchear_y_acreditar($pdo, 'TEST-6', 100.87);
 chequear('acredita por monto exacto', ($r['resultado'] ?? '') === 'acreditada',
          json_encode($r, JSON_UNESCAPED_UNICODE));
 chequear('el jugador recibio las fichas', coinsDe($pdo, 'test_ana') === 100);
+
+// ===========================================================================
+echo "\n=== 8. El titular se pide SOLO cuando el monto choca ===\n";
+/* Ya no hay centavos identificadores: el importe alcanza para reconocer el
+   pago mientras sea el unico de ese monto esperando. Si OTRO jugador ya tiene
+   una pendiente por lo mismo, van a entrar dos transferencias iguales y hace
+   falta el titular para distinguirlas.
+   Se pregunta unicamente ahi: en el flujo real el jugador dice "me cargas?" y
+   espera el alias, no un cuestionario. */
+limpiar($pdo);
+crearUsuario($pdo, 'test_ana');
+crearUsuario($pdo, 'test_beto');
+
+$r = rl_crear_recarga($pdo, 'test_ana', 1000, '');
+chequear('primera de 1000: no pide titular', !empty($r['ok']), json_encode($r));
+chequear('y el monto va REDONDO, sin centavos',
+         ($r['monto_pedido'] ?? '') === '1000.00', json_encode($r['monto_pedido'] ?? null));
+
+$r = rl_crear_recarga($pdo, 'test_beto', 1000, '');
+chequear('otro jugador pide 1000: AHI si lo pide',
+         ($r['codigo'] ?? '') === 'falta_titular', json_encode($r));
+
+$r = rl_crear_recarga($pdo, 'test_beto', 1000, 'ROBERTO SUAREZ');
+chequear('con el titular, pasa', !empty($r['ok']), json_encode($r));
+
+$r = rl_crear_recarga($pdo, 'test_ana', 2000, '');
+chequear('otro monto no choca: no pregunta', !empty($r['ok']), json_encode($r));
 
 limpiar($pdo);
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);

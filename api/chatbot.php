@@ -130,7 +130,8 @@ $TOOLS = [
                     . 'transferir, SOLO si el jugador ya lo dijo. NO lo preguntes antes de crear '
                     . 'la recarga: primero dale los datos para transferir, que es lo que vino a '
                     . 'buscar. NUNCA lo inventes ni lo deduzcas del nombre de usuario: si no lo '
-                    . 'dijo, mandalo vacio.'],
+                    . 'dijo, mandalo vacio. Si esta herramienta devuelve el codigo '
+                    . '"falta_titular", ahi si preguntaselo y volve a llamarla con ese dato.'],
             ],
             // titular NO es obligatorio: pedirlo antes de dar el alias es
             // friccion que el empleado humano no hace ("¿me cargas?" -> "te

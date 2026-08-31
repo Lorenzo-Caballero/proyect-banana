@@ -458,6 +458,36 @@ function rl_crear_recarga(PDO $pdo, string $usuario, int $coins, string $titular
         $cent = null;
         $montoPedido = $montoBase;
 
+        /* PEDIR EL TITULAR SOLO CUANDO HACE FALTA.
+           Sin centavos, el importe alcanza para reconocer el pago mientras
+           sea el unico de ese monto esperando. Si OTRO jugador ya tiene una
+           pendiente por lo mismo, van a entrar dos transferencias iguales y
+           el importe deja de distinguirlas: ahi si hace falta el titular.
+
+           Se pregunta solo en ese caso, y no siempre, porque en el flujo real
+           el jugador dice "me cargas?" y espera el alias -- meterle una
+           pregunta antes es friccion que el empleado humano no hace. El
+           sistema sabe de antemano cuando va a haber ambiguedad, asi que
+           pregunta unicamente entonces.
+
+           Se compara contra recargas de OTROS usuarios: dos pedidos del mismo
+           jugador por el mismo monto no son ambiguos para lo que importa
+           (a quien acreditarle). */
+        if (trim($titular) === '') {
+            $choque = $pdo->prepare(
+                "SELECT COUNT(*) FROM recargas
+                  WHERE estado = 'pendiente' AND monto_base = ? AND usuario <> ?"
+            );
+            $choque->execute([$montoBase, $usuario]);
+            if ((int)$choque->fetchColumn() > 0) {
+                $pdo->rollBack();
+                return ['ok' => false, 'codigo' => 'falta_titular',
+                        'error' => 'Justo hay otra carga por el mismo monto esperando. '
+                            . 'Preguntale a nombre de quien esta la cuenta desde la que va a '
+                            . 'transferir y volve a intentarlo con ese dato.'];
+            }
+        }
+
         // Insertar, reintentando si la referencia aleatoria choca (muy raro).
         // titular_declarado es de la migracion 45: si todavia no corrio, se
         // inserta sin esa columna y la recarga funciona igual (solo pierde el
