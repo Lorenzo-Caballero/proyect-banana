@@ -36,6 +36,23 @@ se duplican aca, que fue trabajo caro de hacer andar.
     python sync_bancos.py                 una pasada
     python sync_bancos.py --ver           solo muestra lo que lee, no guarda
 
+COMO DEJARLO CORRIENDO (cron del VPS, una vez por hora):
+
+    0 * * * * docker cp /opt/goldpaw/colector/sync_bancos.py bot-ganamoscrm:/app/ \
+              && docker exec bot-ganamoscrm python /app/sync_bancos.py \
+              >> /var/log/goldpaw-bancos.log 2>&1
+
+El `docker cp` antes de cada corrida NO es paranoia: el script no esta dentro
+de la imagen, asi que si alguien recrea el contenedor desaparece. Copiarlo
+siempre lo mantiene al dia con lo que bajo el ultimo deploy.
+
+UNA VEZ POR HORA, no mas seguido, y por un motivo: en el mismo contenedor
+corre sync_usuarios.py en loop cada 300s, y los dos comparten el
+estado_sesion.json. Normalmente esto ni escribe ahi (reusa la sesion guardada
+y solo hace un GET), pero si justo vencio la sesion los dos podrian intentar
+loguearse a la vez y patearse el login. Cuanto menos seguido corra, menos
+chances. Y una billetera se cambia cada muchos dias: una hora es de sobra.
+
 .env (los mismos que ya usa el bot):
     PANEL_USER, PANEL_PASS      para loguearse al panel
     API_URL, API_KEY            API_KEY = BOT_API_KEY del server
