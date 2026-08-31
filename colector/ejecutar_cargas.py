@@ -183,6 +183,13 @@ def una_pasada(ctx, solo_ver: bool) -> int:
         if solo_ver:
             log.info("  [ver] %s / %s / %s -> POST user/%s/payment/ amount=%s",
                      idA, usr, monto, gid, int(round(monto)))
+            # OJO: la accion YA quedo reclamada ('procesando'), porque la cola
+            # no tiene una forma de mirar sin reclamar. Se avisa en vez de
+            # devolverla: `?accion=liberar` destraba TODAS las procesando, y si
+            # otro worker tiene una en vuelo se la pondria de nuevo pendiente
+            # -- ese si seria un doble deposito.
+            log.warning("        ^ quedo en 'procesando'. Si no la corres de verdad, "
+                        "en unos minutos pasa sola a 'revisar'.")
             continue
 
         log.info("  %s / %s / cargar %s (id ganamos %s)", idA, usr, monto, gid)
