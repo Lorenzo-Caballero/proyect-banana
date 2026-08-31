@@ -203,34 +203,49 @@ function rl_cuentas_cobro(): array
 }
 
 /**
- * Cual cuenta usar para ESTA recarga, respetando cobro_modo:
+ * Cual cuenta usar para ESTA recarga: SIEMPRE la billetera en uso
+ * (cobro_fija_id; 0/NULL = la principal).
  *
- *   'azar' (default)  -> una al azar entre las activas, como siempre.
- *   'fija'             -> siempre la marcada en cobro_fija_id (0/NULL = la
- *                         principal). Si esa cuenta ya no esta activa (se
- *                         pauso o se borro), cae a azar SOLA -- fail-safe:
- *                         una configuracion vieja nunca deja a un jugador
- *                         sin poder cargar.
+ * Es deterministico a proposito. Si la elegida ya no esta activa (se pauso o
+ * se borro) cae a la principal, no a una cualquiera -- el porque esta
+ * explicado adentro de la funcion.
  */
 function rl_cuenta_elegida(): array
 {
     $cuentas = rl_cuentas_cobro();
     $c = rl_cliente_actual();
-    $modo = (string)($c['cobro_modo'] ?? 'azar');
 
-    if ($modo === 'fija') {
-        $fijaId = $c['cobro_fija_id'] ?? null;
-        $fijaId = ($fijaId === null || $fijaId === '') ? 0 : (int)$fijaId;
-        foreach ($cuentas as $cta) {
-            if ((int)$cta['id'] === $fijaId) {
-                return $cta;
-            }
+    // SIEMPRE la billetera EN USO, nunca al azar.
+    //
+    // Habia un modo "rotar al azar" (clientes.cobro_modo) y se saco a
+    // proposito -- no lo re-agregues sin leer esto:
+    //
+    // El jugador puede pedir los datos de dos formas: por el chat (donde
+    // contesta este codigo) o pidiendo un deposito DENTRO de la plataforma,
+    // donde ve el CBU que esta cargado en el panel de agentes de ganamos.
+    // Son dos fuentes distintas para el mismo dato. Si no coinciden, la plata
+    // entra en dos cuentas y el colector escucha los mails de UNA sola: lo
+    // que caiga en la otra no se acredita jamas y el jugador reclama.
+    //
+    // Con una billetera fija, mantener las dos en sincronia es posible. Con
+    // rotacion al azar habria que actualizar el panel de ganamos en CADA
+    // recarga, y cualquier fallo desincroniza el sistema en silencio.
+    //
+    // cobro_modo sigue en la base (no se borro para no romper migraciones)
+    // pero ya no se lee.
+    $fijaId = $c['cobro_fija_id'] ?? null;
+    $fijaId = ($fijaId === null || $fijaId === '') ? 0 : (int)$fijaId;
+    foreach ($cuentas as $cta) {
+        if ((int)$cta['id'] === $fijaId) {
+            return $cta;
         }
-        // La fija no esta entre las activas (pausada/borrada): sigue de largo
-        // al azar de abajo, a proposito -- nunca frenar una recarga por esto.
     }
 
-    return $cuentas[array_rand($cuentas)];
+    // La elegida ya no esta (pausada o borrada): cae a la principal, que
+    // siempre existe. Deterministico a proposito -- si esto devolviera algo
+    // distinto en cada llamada, el CBU del chat dejaria de coincidir con el
+    // del panel de ganamos, que es justo lo que se quiere evitar.
+    return $cuentas[0];
 }
 
 /** 'transferencia' (default) o 'hgcash' -- ver metodo_cobro en goldpaw_control.clientes. */

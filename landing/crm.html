@@ -3033,22 +3033,17 @@
                plataforma) + las adicionales propias, todas en UNA lista.
                Con mas de una, el cliente elige como se reparten. -->
           <div class="cobro-metodo-body" id="cobroBodyTransferencia">
-            <label class="cb-flabel">¿Cómo elegir la cuenta cuando hay más de una?</label>
-            <div class="cobro-metodo-toggle">
-              <label class="cobro-metodo-opt">
-                <input type="radio" name="cobroModoSel" value="azar" id="cobroModoAzar">
-                <b>Rotar al azar</b>
-                <span>Cada recarga sale de una cuenta distinta, elegida sola.</span>
-              </label>
-              <label class="cobro-metodo-opt">
-                <input type="radio" name="cobroModoSel" value="fija" id="cobroModoFija">
-                <b>Usar siempre la misma</b>
-                <span>Elegís vos cuál, abajo, y no cambia hasta que la cambies.</span>
-              </label>
-            </div>
-
-            <label class="cb-flabel" style="margin-top:16px">Cuentas</label>
-            <p class="cfg-hint">La principal la carga el dueño de la plataforma. Las demás son tuyas — agregá una por cada billetera que quieras usar.</p>
+            <label class="cb-flabel">Billetera en uso</label>
+            <p class="cfg-hint">
+              Marcá la que querés usar. A esa le van a transferir todos los
+              jugadores, y no cambia hasta que la cambies vos.
+              <br><br>
+              <b>Importante:</b> cuando la cambies acá, cambiala también en el
+              panel de ganamos (Peticiones de jugadores → Datos Bancarios).
+              Si no coinciden, los que pidan por el chat transfieren a una
+              cuenta y los que pidan dentro de la plataforma a otra — y las de
+              la segunda no se acreditan solas.
+            </p>
             <div id="cobroCuentasLista"></div>
             <div class="cfg-grid" style="margin-top:10px">
               <div>
@@ -3928,12 +3923,14 @@
      CRM, solo cambia la URL (segundo parámetro). */
   const API_COBRO = API_BASE + "/crm_cobro.php";
   let cobroCuentas = [];   // principal (id=0) + cobro_cuentas, en una sola lista
-  let cobroModo = "azar";
+  /* Cual es la billetera EN USO. Antes habia ademas un modo "rotar al azar";
+     se saco porque el CBU tambien vive en el panel de ganamos (lo ve el que
+     pide deposito sin pasar por el chat) y con rotacion las dos fuentes se
+     desincronizan en silencio -- ver rl_cuenta_elegida() en recargas_lib.php. */
   let cobroFijaId = 0;
 
-  /* Las tarjetas de "método" y las de "modo de selección" comparten la
-     misma clase visual (.cobro-metodo-opt); se filtran por el name del
-     radio que llevan adentro para no confundir un toggle con el otro. */
+  /* Las tarjetas de "método" se filtran por el name del radio que llevan
+     adentro. Quedo generico de cuando habia dos toggles distintos. */
   function cobroPintarToggle(name, valor){
     document.querySelectorAll(".cobro-metodo-opt").forEach(el=>{
       const input = el.querySelector('input[name="' + name + '"]');
@@ -3947,24 +3944,18 @@
     $("#cobroBodyHgcash").style.display = valor === "hgcash" ? "" : "none";
   }
 
-  function cobroPintarModo(valor){
-    cobroPintarToggle("cobroModoSel", valor);
-    cobroPintarCuentas();   // el radio "usar esta" solo se ve en modo fija
-  }
-
   function cobroPintarCuentas(){
     const cont = $("#cobroCuentasLista");
     if(!cobroCuentas.length){
       cont.innerHTML = '<p class="cfg-hint">Todavía no hay ninguna cuenta cargada.</p>';
       return;
     }
-    const enModoFija = cobroModo === "fija";
     cont.innerHTML = cobroCuentas.map(c=>{
       const esPrincipal = c.id === 0;
-      const elegida = enModoFija && c.id === cobroFijaId;
-      const radio = enModoFija
-        ? `<input type="radio" class="cobro-cta-radio" name="cobroCtaElegida" value="${c.id}" ${elegida?"checked":""} ${!c.activa?"disabled":""}>`
-        : "";
+      const elegida = c.id === cobroFijaId;
+      // El radio va SIEMPRE: elegir la billetera en uso es la unica decision
+      // que hay que tomar acá.
+      const radio = `<input type="radio" class="cobro-cta-radio" name="cobroCtaElegida" value="${c.id}" ${elegida?"checked":""} ${!c.activa?"disabled":""}>`;
       const botones = esPrincipal
         ? `<span class="cobro-cta-badge">principal</span>`
         : `<button type="button" data-accion="toggle">${c.activa? "Pausar":"Reactivar"}</button>
@@ -3998,14 +3989,12 @@
     ($("#cobroMetodo" + (d.metodo_cobro === "hgcash" ? "Hgcash" : "Transferencia"))).checked = true;
     cobroPintarMetodo(d.metodo_cobro);
 
-    cobroModo = d.cobro_modo === "fija" ? "fija" : "azar";
     cobroFijaId = d.cobro_fija_id || 0;
-    ($("#cobroModo" + (cobroModo === "fija" ? "Fija" : "Azar"))).checked = true;
 
     // La principal (id=0) siempre encabeza la lista, junto con las extra --
     // una sola lista para elegir, no dos fuentes separadas.
     cobroCuentas = [d.cuenta_principal || {id:0}, ...(d.cuentas_extra || [])];
-    cobroPintarModo(cobroModo);   // ya llama a cobroPintarCuentas() adentro
+    cobroPintarCuentas();
 
     const hg = d.hg_propio || {};
     $("#cobroHgAccount").value = hg.account_id || "";
@@ -4021,9 +4010,6 @@
 
   document.querySelectorAll('input[name="cobroMetodo"]').forEach(r=>{
     r.addEventListener("change", ()=> cobroPintarMetodo(r.value));
-  });
-  document.querySelectorAll('input[name="cobroModoSel"]').forEach(r=>{
-    r.addEventListener("change", ()=>{ cobroModo = r.value; cobroPintarModo(cobroModo); });
   });
 
   /* Alta de una billetera. Compartida por el botón "+ Agregar cuenta" y por
@@ -4119,12 +4105,15 @@
         d = await cobroAltaCuentaTipeada();
         if(!d.ok) throw new Error(d.error || "No se pudo agregar la cuenta");
 
+        // Siempre 'fija': la rotacion al azar se saco (ver
+        // rl_cuenta_elegida). El backend mantiene el parametro por
+        // compatibilidad con lo ya guardado.
         d = await jpost({
           accion: "modo_seleccion_guardar",
-          modo: document.querySelector('input[name="cobroModoSel"]:checked').value,
+          modo: "fija",
           fija_id: cobroFijaId,
         }, API_COBRO);
-        if(!d.ok) throw new Error(d.error || "No se pudo guardar cómo elegir la cuenta");
+        if(!d.ok) throw new Error(d.error || "No se pudo guardar la billetera en uso");
       }
 
       if(metodo === "hgcash"){
