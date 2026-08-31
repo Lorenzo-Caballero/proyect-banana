@@ -82,6 +82,13 @@ const CFG_CRM_DEFAULTS = [
     'meta_ev_registro' => '1',
     'meta_ev_checkout' => '1',
     'meta_ev_purchase' => '1',
+
+    // Cuando se leyeron por ultima vez los datos bancarios del panel de
+    // ganamos (lo escribe bancos_sync.php). No lo edita nadie a mano: sirve
+    // para distinguir "el panel no tiene billeteras cargadas" de "hace tres
+    // dias que no lo podemos leer" -- las dos dejan el espejo vacio, pero una
+    // es un problema del cliente y la otra es nuestro.
+    'bancos_sync_en' => '',
 ];
 
 /** Cache por request: estas funciones se llaman varias veces por pedido. */
