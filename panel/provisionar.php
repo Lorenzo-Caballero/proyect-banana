@@ -111,9 +111,25 @@ function migraciones_huella() {
  * migracion a mano en goldpaw_control, y esto tiene que funcionar SIN que
  * nadie corra nada -- es justamente el problema que viene a resolver.
  */
+/* 0755 y no 0700: acá adentro se deja `salud.json`, que lo LEE panel.php --
+   otro proceso y otro usuario. provisionar.php corre como root por cron, asi
+   que con 0700 el directorio quedaba drwx------ root:root y www-data no podia
+   ni entrar. El archivo en si es 0644, pero eso no alcanza: sin permiso de
+   traverse en el directorio, is_file() da false.
+
+   El sintoma era el peor posible para un panel de salud: mostraba "Todavia no
+   corrio el chequeo. Revisa que el cron de provisionar.php este activo" con el
+   cron corriendo cada minuto y el archivo escrito hacia 40 segundos. O sea que
+   justo cuando algo andaba mal, mandaba a revisar el lugar equivocado.
+
+   Acá no hay secretos -- hashes de migraciones y una lista de problemas por
+   slug -- asi que 0755 no expone nada que el archivo 0644 no expusiera ya. */
 function huella_dir() {
     $d = '/var/lib/goldpaw';
-    if (!is_dir($d)) { @mkdir($d, 0700, true); }
+    if (!is_dir($d)) { @mkdir($d, 0755, true); }
+    // Repara el permiso de las instalaciones que ya lo crearon con 0700.
+    // Barato e idempotente: si ya esta bien, chmod no hace nada.
+    if (is_dir($d) && (fileperms($d) & 0077) === 0) { @chmod($d, 0755); }
     return is_dir($d) ? $d : sys_get_temp_dir();
 }
 function huella_leer($db)      { $f = huella_dir() . '/mig-' . $db . '.hash';

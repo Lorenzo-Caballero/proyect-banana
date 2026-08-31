@@ -22,8 +22,25 @@
 -- Correr una sola vez:  mysql -u USUARIO -p BASE < 15_fichas_al_panel.sql
 -- ---------------------------------------------------------------------------
 
+-- 'cancelada' NO estaba en esta lista y tenia que estar: crm_retiros.php lo
+-- escribe al cancelar un retiro desde el CRM. Se habia agregado A MANO en la
+-- base vieja, y su migracion (sql/23_acciones_saldo_cancelada.sql, que
+-- crm_retiros.php menciona en su cabecera) nunca llego al repo.
+--
+-- Eso dejaba dos problemas:
+--
+--   1. En la base que SI lo tenia a mano, cada re-corrida de esta migracion
+--      intentaba sacarlo y fallaba. Esa falla era protectora -- si hubiera
+--      pasado, se llevaba puesto el estado de los retiros cancelados -- pero
+--      como el provisionador solo guarda la huella cuando no hubo errores,
+--      dejaba re-corriendo las 40 migraciones de cada cliente cada minuto.
+--   2. En las bases nuevas, que nunca lo tuvieron, cancelar un retiro
+--      directamente no funciona: el valor no existe en el ENUM.
+--
+-- Declararlo aca arregla los dos: las re-corridas quedan en no-op y los
+-- clientes nuevos nacen con el estado completo.
 ALTER TABLE acciones_saldo
-  MODIFY estado ENUM('pendiente','procesando','hecha','error','revisar')
+  MODIFY estado ENUM('pendiente','procesando','hecha','error','revisar','cancelada')
          NOT NULL DEFAULT 'pendiente';
 
 ALTER TABLE acciones_saldo

@@ -23,5 +23,9 @@ UPDATE conversaciones
  WHERE clave IS NULL OR clave = '';
 
 -- Pasar la unicidad de session_id a clave.
-ALTER TABLE conversaciones DROP INDEX uq_session;
-ALTER TABLE conversaciones ADD UNIQUE KEY uq_clave (clave);
+-- IF EXISTS: en la segunda corrida el indice ya no esta, y sin la guarda esto
+-- falla siempre. Eso impedia que el provisionador guardara la huella de las
+-- migraciones (solo la guarda si no hubo errores), dejandolas re-correr enteras
+-- cada minuto para cada cliente.
+ALTER TABLE conversaciones DROP INDEX IF EXISTS uq_session;
+ALTER TABLE conversaciones ADD UNIQUE KEY IF NOT EXISTS uq_clave (clave);

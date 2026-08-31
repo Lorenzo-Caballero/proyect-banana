@@ -14,11 +14,29 @@
 -- ---------------------------------------------------------------------------
 
 -- --- Fichas de bono y datos del jugador ---
-ALTER TABLE jugadores
-  ADD COLUMN IF NOT EXISTS bonus            BIGINT      NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS tiene_app        TINYINT(1)  NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS notificaciones   TINYINT(1)  NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS ultima_actividad DATETIME    NULL;
+-- Solo si `jugadores` todavia existe. La BORRO la migracion 07, que unifico
+-- todo en `usuarios`, y las bases nuevas nunca la tuvieron (se saltean las
+-- migraciones 01-02). O sea que hoy este ALTER no aplica en ningun lado.
+--
+-- Sin la guarda fallaba SIEMPRE con "table doesn't exist", y como el
+-- provisionador solo guarda la huella de las migraciones cuando no hubo
+-- errores, eso dejaba las 40 migraciones de cada cliente corriendo cada
+-- minuto, para siempre, tapando el log donde aparecen los avisos de salud.
+--
+-- Va con PREPARE y no con `ALTER TABLE IF EXISTS` porque esa forma no la
+-- soporta MariaDB 10.4 (probado); esta anda en cualquier version.
+SET @gp_hay_jugadores := (SELECT COUNT(*) FROM information_schema.TABLES
+                           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'jugadores');
+SET @gp_sql := IF(@gp_hay_jugadores > 0,
+  'ALTER TABLE jugadores
+     ADD COLUMN IF NOT EXISTS bonus            BIGINT      NOT NULL DEFAULT 0,
+     ADD COLUMN IF NOT EXISTS tiene_app        TINYINT(1)  NOT NULL DEFAULT 0,
+     ADD COLUMN IF NOT EXISTS notificaciones   TINYINT(1)  NOT NULL DEFAULT 0,
+     ADD COLUMN IF NOT EXISTS ultima_actividad DATETIME    NULL',
+  'DO 0');
+PREPARE gp_st FROM @gp_sql;
+EXECUTE gp_st;
+DEALLOCATE PREPARE gp_st;
 
 
 -- --- Conversaciones (una por session_id del navegador) ---
