@@ -35,20 +35,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     $accion = (string)($_GET['accion'] ?? 'listar');
 
     try {
+        /* Las transferencias reservadas para una carga del camino A (pedida
+           desde el boton Depositos) NO se ofrecen acá: las resuelve
+           aprobar_cargas.py y asignarlas a mano además haría cobrar dos veces.
+           Se ven en «Cargas del panel». rl_asignar_manual() lo revalida por las
+           dudas, pero mejor no ofrecer lo que después se va a rechazar.
+
+           El LEFT JOIN va sin COLLATE: las dos tablas comparten collation (ver
+           sql/48). Si la migración 48 no corrió, se cae al SELECT de siempre. */
+        $reservadas =
+            " LEFT JOIN peticiones_carga q
+                     ON q.pago_id_unico = p.id_unico
+                    AND q.estado IN ('esperando','revision') ";
+        $noReservada = " AND q.request_id IS NULL ";
+
         if ($accion === 'badge') {
-            $n = (int)$pdo->query("SELECT COUNT(*) FROM pagos WHERE estado='revision'")->fetchColumn();
+            try {
+                $n = (int)$pdo->query(
+                    "SELECT COUNT(*) FROM pagos p $reservadas
+                      WHERE p.estado='revision' $noReservada"
+                )->fetchColumn();
+            } catch (PDOException $e) {
+                $n = (int)$pdo->query("SELECT COUNT(*) FROM pagos WHERE estado='revision'")->fetchColumn();
+            }
             salir(['ok' => true, 'cantidad' => $n]);
         }
 
         if ($accion === 'listar') {
-            $st = $pdo->query(
-                "SELECT id, id_unico, monto, remitente, cuit, cbu_origen, nro_transaccion,
-                        entidad, fecha_operacion, mail_de, capturado_en
-                   FROM pagos
-                  WHERE estado = 'revision'
-                  ORDER BY capturado_en DESC
-                  LIMIT 100"
-            );
+            $cols = "p.id, p.id_unico, p.monto, p.remitente, p.cuit, p.cbu_origen,
+                     p.nro_transaccion, p.entidad, p.fecha_operacion, p.mail_de, p.capturado_en";
+            try {
+                $st = $pdo->query(
+                    "SELECT $cols FROM pagos p $reservadas
+                      WHERE p.estado = 'revision' $noReservada
+                      ORDER BY p.capturado_en DESC
+                      LIMIT 100"
+                );
+            } catch (PDOException $e) {
+                $st = $pdo->query(
+                    "SELECT $cols FROM pagos p
+                      WHERE p.estado = 'revision'
+                      ORDER BY p.capturado_en DESC
+                      LIMIT 100"
+                );
+            }
             $items = array_map(function ($r) {
                 $r['monto'] = (float)$r['monto'];
                 return $r;

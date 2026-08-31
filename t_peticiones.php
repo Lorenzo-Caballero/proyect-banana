@@ -212,6 +212,55 @@ $upd = $pdo->prepare("UPDATE peticiones_carga SET estado='aprobada'
 $upd->execute([90000002]);
 chequear('no se puede cerrar dos veces la misma solicitud', $upd->rowCount() === 0);
 
+// ===========================================================================
+echo "\n=== 8. Que el camino B no pise una transferencia del camino A ===\n";
+
+/* El caso que cuesta plata: el worker reserva una transferencia para una carga
+   pedida desde la plataforma, y mientras tanto un operador la asigna a mano
+   desde Comprobantes. El jugador cobraria DOS veces -- una por la recarga y
+   otra cuando se apruebe la solicitud en el panel. */
+$pdo->prepare("INSERT INTO usuarios (id, username, coins) VALUES (?,?,0)
+               ON DUPLICATE KEY UPDATE coins=0")->execute([crc32('test_dob'), 'test_dob']);
+$pdo->prepare("INSERT INTO pagos (id_unico, monto, remitente, estado)
+               VALUES ('TEST-DOBLE', 1000, 'ANA PEREZ', 'revision')")->execute();
+$pdo->prepare(
+    "INSERT INTO recargas (referencia, usuario, coins, monto_base, monto_pedido,
+                           titular_declarado, estado, creada_en, vence_en)
+     VALUES ('testdob01','test_dob',1000,1000,1000,'Ana Perez','pendiente',
+             NOW(), DATE_ADD(NOW(), INTERVAL 45 MINUTE))"
+)->execute();
+$recargaId = (int)$pdo->lastInsertId();
+
+// Sin reserva, la asignacion manual funciona: eso es el camino B de siempre.
+$r = rl_asignar_manual($pdo, 'TEST-DOBLE', $recargaId, 'test');
+chequear('sin reserva, el operador puede asignar a mano',
+         ($r['resultado'] ?? '') === 'acreditada', json_encode($r));
+
+// Ahora con la transferencia reservada por una solicitud del camino A.
+$pdo->exec("UPDATE pagos SET estado='revision', recarga_id=NULL, asignado_por=NULL
+             WHERE id_unico='TEST-DOBLE'");
+$pdo->exec("UPDATE recargas SET estado='pendiente', pago_id=NULL WHERE id=$recargaId");
+$pdo->prepare("INSERT INTO peticiones_carga (request_id, username, titular, monto, pago_id_unico)
+               VALUES (90000010,'test_dob','Ana Perez',1000,'TEST-DOBLE')")->execute();
+
+$r = rl_asignar_manual($pdo, 'TEST-DOBLE', $recargaId, 'test');
+chequear('reservada por el camino A -> NO se puede asignar a mano',
+         ($r['resultado'] ?? '') === 'error', json_encode($r));
+chequear('y el error dice donde resolverla',
+         str_contains($r['error'] ?? '', 'Cargas del panel'), $r['error'] ?? '');
+
+// Una solicitud ya cerrada NO reserva nada: la transferencia vuelve a estar
+// disponible para el camino B.
+$pdo->exec("UPDATE peticiones_carga SET estado='cerrada' WHERE request_id=90000010");
+$r = rl_asignar_manual($pdo, 'TEST-DOBLE', $recargaId, 'test');
+chequear('si la solicitud se cerro, la transferencia se libera',
+         ($r['resultado'] ?? '') === 'acreditada', json_encode($r));
+
+$pdo->exec("DELETE FROM recargas WHERE usuario = 'test_dob'");
+$pdo->exec("DELETE FROM pagos WHERE id_unico = 'TEST-DOBLE'");
+$pdo->exec("DELETE FROM usuarios WHERE username = 'test_dob'");
+$pdo->exec("DELETE FROM movimientos WHERE usuario = 'test_dob'");
+
 limpiar($pdo);
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);
 exit($fail > 0 ? 1 : 0);

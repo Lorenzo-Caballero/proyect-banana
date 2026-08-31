@@ -1299,6 +1299,33 @@ function rl_asignar_manual(PDO $pdo, string $idUnico, int $recargaId, string $op
             return ['resultado' => 'error', 'error' => 'Ese pago ya no está en revisión (puede que ya se haya asignado).'];
         }
 
+        /* Esa transferencia puede estar reservada para una carga pedida desde
+           el boton Depositos de la plataforma (camino A, migracion 48). Si se
+           asigna igual, el jugador cobra DOS veces: una por esta recarga y otra
+           cuando aprobar_cargas.py apruebe la solicitud en el panel.
+
+           Va adentro de la transaccion y con FOR UPDATE por el mismo motivo que
+           los dos chequeos de arriba: el worker corre cada minuto y la ventana
+           entre mirar y acreditar tiene que ser cero.
+
+           Si la migracion 48 no corrio, la tabla no existe y esto no aplica --
+           no hay camino A que pueda pisar nada. */
+        try {
+            $pt = $pdo->prepare(
+                "SELECT request_id FROM peticiones_carga
+                  WHERE pago_id_unico = ? AND estado IN ('esperando','revision') FOR UPDATE"
+            );
+            $pt->execute([$idUnico]);
+            if ($req = $pt->fetchColumn()) {
+                $pdo->rollBack();
+                return ['resultado' => 'error', 'error' =>
+                    'Esa transferencia está reservada para la carga #' . $req .
+                    ', que el jugador pidió desde la plataforma. Resolvela en «Cargas del panel».'];
+            }
+        } catch (PDOException $e) {
+            // Sin migracion 48 no hay camino A. Se sigue.
+        }
+
         $rc = $pdo->prepare("SELECT * FROM recargas WHERE id = ? AND estado = 'pendiente' FOR UPDATE");
         $rc->execute([$recargaId]);
         $recarga = $rc->fetch();
