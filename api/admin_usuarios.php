@@ -57,6 +57,11 @@ $columnas = [
     'total_deposits' => 'u.total_deposits',
     'creation_date'  => 'u.creation_date',
     'actualizado_en' => 'u.actualizado_en',
+    // Ordenar por esta responde de un vistazo "¿a quien estamos perdiendo?".
+    // Los NULL (jugadores sin ninguna señal registrada) quedan al final en
+    // ASC, que es donde corresponde: no sabemos, no es lo mismo que "hace
+    // mucho".
+    'ultima_actividad' => 'u.ultima_actividad',
 ];
 $ordenSql = $columnas[$orden] ?? 'u.balance';
 
@@ -155,8 +160,12 @@ if ($hayBonosPend) {
     }
 }
 
+// ultima_actividad se agrega en la migracion 46. Hasta entonces la columna
+// existia pero nadie la escribia, asi que el CRM no tenia con que responder
+// "hace cuanto que este jugador no aparece" -- solo se podia FILTRAR por
+// inactivos, nunca ver el dato. Ahora se muestra.
 $SELECT = "SELECT u.id, u.username, u.balance, u.bonus, u.total_deposits, u.role,
-                  u.is_banned, u.creation_date, u.actualizado_en,
+                  u.is_banned, u.creation_date, u.actualizado_en, u.ultima_actividad,
                   $selBono";
 
 /** Castea los tipos de una fila para que el JSON salga prolijo. */
