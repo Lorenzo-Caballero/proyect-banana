@@ -3582,6 +3582,16 @@
     config: "#viewConfig",
   };
 
+  /* La ficha del usuario (columna derecha) SOLO tiene sentido con un chat
+     abierto -- mostrarla vacia ("Sin conversación seleccionada") en desktop
+     reserva 300-344px de nada al lado del hueco central, que es justo lo que
+     se veia feo: dos paneles vacios en vez de uno que aproveche el ancho.
+     En tablet/mobile no aplica: ahi la ficha ya es un cajon que se abre a
+     demanda (position:fixed + transform), no ocupa columna propia. */
+  function pintarUserPane(enChats){
+    $("#userPane").style.display = (enChats && st.convId) ? "" : "none";
+  }
+
   function mostrarVista(nombre){
     if(!VISTAS.includes(nombre)) return;
     document.querySelectorAll(".rail-item[data-nav]").forEach(el=>{
@@ -3598,7 +3608,7 @@
     // elementos) siguen mandando cuando la vista es "chats".
     $(".col-list").style.display = chats ? "" : "none";
     $(".col-chat").style.display = chats ? "" : "none";
-    $("#userPane").style.display = chats ? "" : "none";
+    pintarUserPane(chats);
     Object.entries(VISTA_CONTENEDOR).forEach(([nom, sel])=>{
       $(sel).style.display = nombre===nom ? "flex" : "none";
     });
@@ -4883,6 +4893,7 @@
   // ---------- abrir ----------
   async function abrir(id){
     st.convId = id;
+    pintarUserPane(true);
     $("#app").classList.add("viewing");
     $("#chatEmpty").style.display="none";
     $("#chatView").style.display="flex";
@@ -5080,6 +5091,7 @@
     $("#chatView").style.display = "none";
     $("#chatEmpty").style.display = "";
     $("#app").classList.remove("viewing", "info");
+    pintarUserPane(true);   // sin chat abierto, la ficha no tiene nada que mostrar
   }
 
   $("#miArchivar").addEventListener("click", async ()=>{
