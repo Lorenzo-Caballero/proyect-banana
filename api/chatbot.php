@@ -34,9 +34,15 @@
 declare(strict_types=1);
 require __DIR__ . '/config.php';
 require __DIR__ . '/db.php';
-require __DIR__ . '/recargas_lib.php';
-require __DIR__ . '/fichas_lib.php';
-require __DIR__ . '/altas_lib.php';
+/* TODOS con require_once, y no es cosmetico: recargas_lib.php carga por su
+   cuenta varias de estas libs (fichas_lib, meta_lib, publicidad_lib...). Un
+   `require` pelado despues de el las carga por SEGUNDA vez y PHP muere con
+   "Cannot redeclare function" -- el chat entero deja de responder.
+   Ya paso dos veces en este archivo: primero con meta_lib.php y despues con
+   fichas_lib.php. Si sumas una lib aca, que sea require_once siempre. */
+require_once __DIR__ . '/recargas_lib.php';
+require_once __DIR__ . '/fichas_lib.php';
+require_once __DIR__ . '/altas_lib.php';
 require_once __DIR__ . '/config_crm.php';
 // require_once: recargas_lib.php (arriba) ya lo carga solo si esta -- un
 // require simple aca redeclararia las funciones y tiraria fatal error.
