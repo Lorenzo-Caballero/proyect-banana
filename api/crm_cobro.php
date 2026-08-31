@@ -128,11 +128,17 @@ if ($metodo === 'POST') {
             salir(['ok' => true]);
         }
 
-        // Con mas de una cuenta de transferencia: rotar al azar (de siempre)
-        // o fijar siempre la misma. fija_id=0 (o ausente) significa "la
-        // principal" -- mismo sentinel que usa recargas_lib.php. No se valida
-        // que la cuenta exista: si el cliente la pausa o la borra despues,
-        // rl_cuenta_elegida() ya cae sola a azar (fail-safe, ver esa función).
+        // Cual es la billetera EN USO. fija_id=0 (o ausente) significa "la
+        // principal" -- mismo sentinel que usa recargas_lib.php.
+        //
+        // El modo 'azar' ya no se ofrece (el CRM manda siempre 'fija') pero el
+        // parametro se sigue aceptando para no romper lo ya guardado. La
+        // rotacion se saco porque el CBU tambien vive en el panel de ganamos
+        // y con rotacion las dos fuentes se desincronizan en silencio -- ver
+        // rl_cuenta_elegida() en recargas_lib.php.
+        //
+        // No se valida que la cuenta exista: si el cliente la pausa o la
+        // borra despues, rl_cuenta_elegida() cae sola a la principal.
         if ($accion === 'modo_seleccion_guardar') {
             $modo   = ((string)($body['modo'] ?? 'azar')) === 'fija' ? 'fija' : 'azar';
             $fijaId = (int)($body['fija_id'] ?? 0);
