@@ -42,9 +42,9 @@ este worker los deja en la cola sin tocarlos.
 
 COMO DEJARLO CORRIENDO (cron del VPS, cada minuto)
 
-    * * * * * flock -n /tmp/gp_cargas.lock docker cp \
-              /opt/goldpaw/colector/ejecutar_cargas.py altas-ganamoscrm:/app/ \
-              && docker exec altas-ganamoscrm python /app/ejecutar_cargas.py \
+    * * * * * flock -n /tmp/gp_panel.lock sh -c "docker cp \
+              /opt/goldpaw/colector/ejecutar_cargas.py altas-ganamoscrm:/app/ && \
+              docker exec altas-ganamoscrm python /app/ejecutar_cargas.py" \
               >> /var/log/goldpaw-cargas.log 2>&1
 
 Cada minuto y no menos: el jugador ya transfirio y esta esperando sus fichas.
@@ -52,6 +52,14 @@ El `flock -n` evita que se pisen dos corridas si una tarda (levantar el
 navegador para el login son unos segundos); sin el, dos procesos tomarian
 acciones distintas de la misma cola al mismo tiempo, que funciona pero no
 tiene sentido.
+
+EL LOCK ES COMPARTIDO CON aprobar_cargas.py, Y TIENE QUE SEGUIR SIENDOLO.
+`gp_panel.lock` es el mismo archivo en los dos crons, no uno por script. Los dos
+corren cada minuto en el MISMO contenedor y levantan un navegador con la MISMA
+sesion del panel; con locks separados nada impide que corran a la vez, y ahi
+pasan dos cosas malas: dos logins simultaneos sobre la misma cuenta de agente
+(la plataforma invalida uno) y dos procesos escribiendo el archivo de sesion al
+reloguear, que lo puede dejar corrupto y tirar abajo a los dos.
 
 Corre en `altas-ganamoscrm` a proposito: tiene Playwright y la sesion del
 panel, y NO escucha la cola de fichas, asi que no compite con esto.

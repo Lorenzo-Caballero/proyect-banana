@@ -110,9 +110,20 @@ Los que hay hoy:
 | Cuándo | Qué |
 |---|---|
 | cada minuto | `provisionar.php` — da de alta clientes nuevos y les corre las migraciones |
+| cada minuto | `ejecutar_cargas.py` — deposita en ganamos las fichas ya cobradas (camino B) |
+| cada minuto | `aprobar_cargas.py` — aprueba las cargas pedidas desde «Depósitos» (camino A) |
 | cada 10 min | `difusiones_chat_procesar.php` — manda los mensajes de chat programados |
+| cada hora | `sync_bancos.py` — espeja los datos bancarios del panel |
 | 14:00 | `ruleta_recordatorio.php` |
 | 00:10 | `consumo_diario.php` — descuenta el día de suscripción a cada cliente |
+
+> **Los dos workers del panel comparten `flock /tmp/gp_panel.lock`, y tiene que
+> seguir así.** `ejecutar_cargas.py` y `aprobar_cargas.py` corren cada minuto en
+> el mismo contenedor y abren un navegador con la **misma sesión del panel**.
+> Con un lock por script pueden solaparse, y ahí hay dos logins simultáneos
+> sobre la misma cuenta de agente (la plataforma invalida uno) y dos procesos
+> escribiendo el archivo de sesión al reloguear. Cualquier worker nuevo que
+> toque el panel va con ese mismo lock.
 
 Los tres primeros se disparan por HTTP con `curl` y necesitan el header
 `X-Api-Key` con la `BOT_API_KEY` real (la de `config.local.php`). Si ves

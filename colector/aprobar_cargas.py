@@ -59,7 +59,7 @@ estariamos cancelando una carga que si se pago.
 
 COMO DEJARLO CORRIENDO (cron del VPS, cada minuto)
 
-    * * * * * flock -n /tmp/gp_aprobar.lock sh -c "docker cp \
+    * * * * * flock -n /tmp/gp_panel.lock sh -c "docker cp \
               /opt/goldpaw/colector/aprobar_cargas.py altas-ganamoscrm:/app/ && \
               docker exec -e MODE=LIVE altas-ganamoscrm python /app/aprobar_cargas.py" \
               >> /var/log/goldpaw-aprobar.log 2>&1
@@ -67,6 +67,17 @@ COMO DEJARLO CORRIENDO (cron del VPS, cada minuto)
 El `docker cp` en cada corrida es a proposito: el script no esta dentro de la
 imagen, asi que si alguien recrea el contenedor desaparece. Copiarlo siempre lo
 mantiene al dia con lo que bajo el ultimo deploy.
+
+EL LOCK ES COMPARTIDO CON ejecutar_cargas.py, Y TIENE QUE SEGUIR SIENDOLO.
+`gp_panel.lock` es el mismo archivo en los dos crons, no uno por script. Los dos
+corren cada minuto en el MISMO contenedor y levantan un navegador con la MISMA
+sesion del panel; con locks separados nada impide que corran a la vez, y ahi
+pasan dos cosas malas: dos logins simultaneos sobre la misma cuenta de agente
+(la plataforma invalida uno) y dos procesos escribiendo el archivo de sesion al
+reloguear, que lo puede dejar corrupto y tirar abajo a los dos.
+
+Serializarlos no cuesta nada: cada uno tarda segundos. Si alguna vez se agrega
+otro worker que toque el panel, va con este mismo lock.
 
 .env:
     API_URL, API_KEY          API_KEY = BOT_API_KEY del server
