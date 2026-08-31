@@ -93,8 +93,24 @@
      el overflow y el scroll funcionando de verdad. */
   .rail{width:168px;display:flex;flex-direction:column;align-items:stretch;justify-content:space-between;padding:10px 8px;min-height:0}
   .rail .grp{display:flex;flex-direction:column;align-items:stretch;gap:4px;min-height:0}
-  .rail .grp:first-of-type{overflow-y:auto;overflow-x:hidden;flex:1;scrollbar-width:none}
-  .rail .grp:first-of-type::-webkit-scrollbar{display:none}
+  /* Barra fina y VISIBLE a proposito -- antes se ocultaba del todo
+     (scrollbar-width:none) y el scroll funcionaba pero no se notaba: sin
+     ninguna pista, se leia como "esto no scrollea" aunque tecnicamente si. */
+  .rail .grp:first-of-type{overflow-y:auto;overflow-x:hidden;flex:1;
+    scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+  .rail .grp:first-of-type::-webkit-scrollbar{width:5px}
+  .rail .grp:first-of-type::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+  .rail .grp:first-of-type::-webkit-scrollbar-thumb:hover{background:var(--violet)}
+  /* Degradado arriba/abajo cuando queda contenido tapado -- la señal FUERTE
+     de "hay mas", igual que .mas-izq/.mas-der en el rail horizontal de
+     mobile (28px, mismo tamaño -- ver marcarBordesRailVert() en el JS). */
+  .rail .grp:first-of-type.mas-arriba{-webkit-mask-image:linear-gradient(180deg,transparent,#000 28px);
+    mask-image:linear-gradient(180deg,transparent,#000 28px)}
+  .rail .grp:first-of-type.mas-abajo{-webkit-mask-image:linear-gradient(180deg,#000 calc(100% - 28px),transparent);
+    mask-image:linear-gradient(180deg,#000 calc(100% - 28px),transparent)}
+  .rail .grp:first-of-type.mas-arriba.mas-abajo{
+    -webkit-mask-image:linear-gradient(180deg,transparent,#000 28px,#000 calc(100% - 28px),transparent);
+    mask-image:linear-gradient(180deg,transparent,#000 28px,#000 calc(100% - 28px),transparent)}
   .logo{width:38px;height:38px;border-radius:12px;background:linear-gradient(160deg,var(--violet2),var(--violet));
     color:#fff;display:grid;place-items:center;box-shadow:var(--shadow-sm);margin:0 auto 8px}
   .logo svg{width:20px;height:20px}
@@ -3409,8 +3425,11 @@
     $("#app").style.display = "flex";
     pintarOperador();
     // Recién ahora el rail tiene medidas reales (estaba en display:none):
-    // antes de esto scrollWidth/clientWidth dan 0 y no se marca ningún borde.
+    // antes de esto scrollWidth/clientWidth (o scrollHeight/clientHeight)
+    // dan 0 y no se marca ningún borde. pintarOperador() recién arriba puede
+    // sumar "Agentes" (solo admin) y cambiar si el vertical entra o no.
     marcarBordesRail();
+    marcarBordesRailVert();
   }
 
   function mostrarLogin(msg){
@@ -3606,9 +3625,28 @@
     });
   }
 
+  /* Mismo recurso que marcarBordesRail() pero para el scroll VERTICAL del
+     rail en desktop (.grp:first-of-type, los modulos) -- ahi no hay una tira
+     mas ancha que la pantalla, hay una lista mas alta que el hueco
+     disponible cuando la ventana es baja (notebook con poca altura util). */
+  function marcarBordesRailVert(){
+    const grp = document.querySelector(".rail .grp:first-of-type");
+    if(!grp) return;
+    const resto = grp.scrollHeight - grp.clientHeight;
+    if(resto <= 1){   // entra todo: sin degradados
+      grp.classList.remove("mas-arriba", "mas-abajo");
+      return;
+    }
+    grp.classList.toggle("mas-arriba", grp.scrollTop > 4);
+    grp.classList.toggle("mas-abajo", grp.scrollTop < resto - 4);
+  }
+
   $(".rail")?.addEventListener("scroll", marcarBordesRail, {passive:true});
   window.addEventListener("resize", marcarBordesRail);
   marcarBordesRail();
+  document.querySelector(".rail .grp:first-of-type")?.addEventListener("scroll", marcarBordesRailVert, {passive:true});
+  window.addEventListener("resize", marcarBordesRailVert);
+  marcarBordesRailVert();
 
   // ---------- vistas del rail (Fase A) ----------
   // Dispatcher generico: "chats" es la vista de siempre (3 columnas); los
