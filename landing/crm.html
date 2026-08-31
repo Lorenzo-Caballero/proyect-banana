@@ -1032,6 +1032,9 @@
   .us-money{color:var(--green2);font-weight:700}
   .us-coins{color:var(--orange2);font-weight:700}
   .us-zero{color:var(--muted)}
+  /* Jugador que hace 15 dias o mas no da señales. Naranja y no rojo a
+     proposito: es alguien a quien conviene ir a buscar, no un problema. */
+  .us-frio{color:var(--orange2);font-weight:700}
   .us-tag{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap}
   .us-tag.ban{background:var(--redSoft);color:var(--red);border:1px solid var(--red)}
   .us-tag.ok{background:var(--greenSoft);color:var(--green2);border:1px solid var(--green)}
@@ -1996,6 +1999,7 @@
             <th class="no-sort">Rol</th>
             <th class="no-sort">Estado</th>
             <th data-o="creation_date">Alta <span class="arr"></span></th>
+            <th data-o="ultima_actividad" title="Última vez que el jugador dio señales: jugó, cargó fichas, recargó, escribió por el chat o inició sesión">Última vez <span class="arr"></span></th>
           </tr>
         </thead>
         <tbody id="usFilas"></tbody>
@@ -4163,6 +4167,12 @@
     const hue=((hashStr(nombre)%360)+360)%360;
     return `linear-gradient(160deg, hsl(${hue} 70% 62%), hsl(${(hue+35)%360} 68% 48%))`;
   }
+  /** Días enteros desde una fecha. Para decidir si un jugador se está
+   *  enfriando sin repetir la aritmética en cada vista. */
+  function diasDesde(iso){
+    if(!iso) return 0;
+    return Math.floor((Date.now() - new Date(String(iso).replace(" ","T")).getTime())/86400000);
+  }
   function hace(iso){
     if(!iso) return "";
     const d = new Date(iso.replace(" ","T")); const s = (Date.now()-d.getTime())/1000;
@@ -5892,6 +5902,14 @@
     const bonoPen = u.bono_pendiente>0 ? `<span class="us-coins">${nf.format(u.bono_pendiente)}</span>` : `<span class="us-zero">0</span>`;
     const bonos   = u.bonus>0          ? `<span class="us-coins">${nf.format(u.bonus)}</span>` : `<span class="us-zero">0</span>`;
     const alta   = u.creation_date ? esc(u.creation_date).replace("T"," ").slice(0,10) : "—";
+    /* "Última vez": hace() da "3d", "5h". Sin dato NO se pone "nunca" -- es
+       "—", porque un NULL acá significa que no registramos nada de esa
+       persona (por ejemplo, se dio de alta antes de que empezáramos a
+       anotarlo), no que haya estado ausente desde siempre. Decir "nunca"
+       sería afirmar algo que no sabemos. */
+    const visto = u.ultima_actividad
+      ? `<span class="${diasDesde(u.ultima_actividad)>=15?"us-frio":""}">${hace(u.ultima_actividad)}</span>`
+      : `<span class="us-zero" title="Sin señales registradas todavía">—</span>`;
     return `<tr>
       <td><b>${esc(u.username)}</b></td>
       <td class="num">${saldo}</td>
@@ -5901,6 +5919,7 @@
       <td>${esc(u.role || "—")}</td>
       <td>${estado}</td>
       <td>${alta}</td>
+      <td>${visto}</td>
     </tr>`;
   }
 
@@ -5939,7 +5958,7 @@
   }
 
   async function cargarUsuarios(){
-    $("#usFilas").innerHTML = `<tr><td colspan="8"><div class="nouser">Cargando…</div></td></tr>`;
+    $("#usFilas").innerHTML = `<tr><td colspan="9"><div class="nouser">Cargando…</div></td></tr>`;
     let r;
     try{
       r = await jget({
@@ -5952,20 +5971,20 @@
       // para algo que el propio error explica. Mismo criterio que la lista de
       // conversaciones.
       $("#usFilas").innerHTML =
-        `<tr><td colspan="8"><div class="nouser">No pude cargar los usuarios.` +
+        `<tr><td colspan="9"><div class="nouser">No pude cargar los usuarios.` +
         (e && e.message ? `<br><small>${esc(e.message)}</small>` : "") +
         `</div></td></tr>`;
       return;
     }
     if(!r.ok){
-      $("#usFilas").innerHTML = `<tr><td colspan="8"><div class="nouser">${esc(r.error||"Error")}</div></td></tr>`;
+      $("#usFilas").innerHTML = `<tr><td colspan="9"><div class="nouser">${esc(r.error||"Error")}</div></td></tr>`;
       return;
     }
 
     pintarCardsUs(r.resumen);
     $("#usFilas").innerHTML = r.items.length
       ? r.items.map(filaUsuario).join("")
-      : `<tr><td colspan="8"><div class="nouser">Sin resultados para este filtro.</div></td></tr>`;
+      : `<tr><td colspan="9"><div class="nouser">Sin resultados para este filtro.</div></td></tr>`;
     pintarCabecerasUs();
     pintarPagerUs(r);
     $("#usCap").textContent = nf.format(r.total) + (r.total===1 ? " usuario" : " usuarios");
