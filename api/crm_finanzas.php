@@ -11,6 +11,12 @@
  *
  *   Efectivo neto histórico = SUM(recargas.monto_pedido, acreditada)
  *                              - SUM(acciones_saldo.monto, retirar+hecha)
+ *     -- monto_pedido (no monto_base) porque acá se mide la CAJA: es la plata
+ *     -- exacta que entró al banco, centavos identificadores incluidos.
+ *     -- publicidad_lib.php suma monto_base sobre las MISMAS recargas, y
+ *     -- también está bien: ahí se mide el valor de una campaña, no la caja.
+ *     -- Por eso los dos módulos difieren en centavos. No es un descuadre y
+ *     -- no hay que unificarlos: responden preguntas distintas.
  *   Fichas en poder de jugadores (pasivo) = SUM(usuarios.balance)
  *     -- OJO: usuarios.coins es un contador residual/experimental, NO
  *     -- representa el pasivo real. Nunca sumarlo acá.
