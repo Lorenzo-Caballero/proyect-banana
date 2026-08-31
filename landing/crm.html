@@ -82,26 +82,34 @@
      hover) -- referencia pedida por el usuario. El breakpoint de mobile
      (max-width:760px) reescribe todo esto para la tira horizontal con
      data-corto abajo del ícono; no se toca ese bloque. */
-  .rail{width:168px;display:flex;flex-direction:column;align-items:stretch;justify-content:space-between;padding:14px 10px;min-height:0}
+  /* Achicado a proposito: con Publicidad/Suscripcion/Auditoria sumados, los
+     items ya no entraban en la altura de una laptop comun (1366x768 con
+     barra de tareas y pestañas deja ~600-650px de viewport real) y el rail
+     entraba en scroll SIEMPRE, no solo en pantallas chicas de verdad. Los
+     numeros de abajo (item/icono/gap) estan pensados en conjunto para que
+     los ~14 items entren sin scroll en ese caso comun; scrollea solo si la
+     ventana es mas baja todavia -- eso lo sigue resolviendo el overflow del
+     primer grupo, sin tocarlo. */
+  .rail{width:168px;display:flex;flex-direction:column;align-items:stretch;justify-content:space-between;padding:10px 8px;min-height:0}
   /* El primer grupo (los modulos) es el que crece: si no entran todos en la
      altura de la pantalla, scrollea el SOLO -- sin esto el rail desbordaba y
      los ultimos iconos quedaban cortados fuera de la vista. El segundo grupo
      (config/tema) nunca scrollea: queda siempre fijo abajo. */
-  .rail .grp{display:flex;flex-direction:column;align-items:stretch;gap:3px;min-height:0}
+  .rail .grp{display:flex;flex-direction:column;align-items:stretch;gap:2px;min-height:0}
   .rail .grp:first-of-type{overflow-y:auto;overflow-x:hidden;flex:0 1 auto;scrollbar-width:none}
   .rail .grp:first-of-type::-webkit-scrollbar{display:none}
-  .logo{width:42px;height:42px;border-radius:13px;background:linear-gradient(160deg,var(--violet2),var(--violet));
-    color:#fff;display:grid;place-items:center;box-shadow:var(--shadow-sm);margin:0 auto 10px}
-  .logo svg{width:22px;height:22px}
-  .rail-item{width:100%;height:auto;border-radius:11px;border:1px solid transparent;background:transparent;
-    color:var(--muted);display:flex;align-items:center;gap:10px;padding:9px 11px;transition:.15s;position:relative;
+  .logo{width:34px;height:34px;border-radius:11px;background:linear-gradient(160deg,var(--violet2),var(--violet));
+    color:#fff;display:grid;place-items:center;box-shadow:var(--shadow-sm);margin:0 auto 6px}
+  .logo svg{width:18px;height:18px}
+  .rail-item{width:100%;height:auto;border-radius:10px;border:1px solid transparent;background:transparent;
+    color:var(--muted);display:flex;align-items:center;gap:9px;padding:6px 10px;transition:.15s;position:relative;
     text-align:left}
   .rail-item:hover{background:var(--panel2);color:var(--txt)}
   .rail-item.active{background:var(--violetSoft);color:var(--violet2);border-color:var(--violet)}
   .rail-item svg{transition:transform .18s ease-out}
   .rail-item.active svg{transform:scale(1.12)}
-  .rail-item svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:2;flex:none}
-  .rail-item::after{content:attr(data-tip);font-size:12.5px;font-weight:600;white-space:nowrap;
+  .rail-item svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;flex:none}
+  .rail-item::after{content:attr(data-tip);font-size:12px;font-weight:600;white-space:nowrap;
     overflow:hidden;text-overflow:ellipsis;line-height:1.2}
 
   /* ---- columnas ---- */
