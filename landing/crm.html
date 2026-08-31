@@ -3013,6 +3013,25 @@
         </div>
       </div>
 
+      <!-- Link de la app ----------------------------------------------- -->
+      <div class="cfg-card">
+        <div class="cfg-card-head">
+          <span class="cb-ico"><svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg></span>
+          <div class="cfg-card-txt">
+            <b>Link para bajar la app</b>
+            <span>El chatbot se lo pasa al jugador cuando pregunta por la app o al cerrar una charla.</span>
+          </div>
+        </div>
+        <div class="cfg-card-body">
+          <input class="cb-input" id="cfgAppUrl" placeholder="https://tudominio.com/descargar.html">
+          <p class="cfg-hint">
+            <b>Dejalo vacío si no tenés app.</b> El bot entonces no la ofrece y, sobre todo,
+            <b>no inventa un link</b> — antes mandaba a los jugadores a buscarla a Play Store,
+            donde no está.
+          </p>
+        </div>
+      </div>
+
       <div class="cfg-sec">
         <h3>Límites de carga y retiro</h3>
         <span class="cfg-sec-linea"></span>
@@ -3939,6 +3958,7 @@
     lim_retiro_min:     { el: "#cfgLimRetiroMin", tipo: "texto" },
     lim_retiro_max_dia: { el: "#cfgLimRetiroDia", tipo: "texto" },
     lim_bono_carga_pct: { el: "#cfgLimBonoCarga", tipo: "texto" },
+    app_url:            { el: "#cfgAppUrl",       tipo: "texto" },
 
     meta_activo:      { el: "#cfgMeta",         tipo: "bool"  },
     meta_pixel_id:    { el: "#cfgMetaPixel",    tipo: "texto" },

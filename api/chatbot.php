@@ -273,8 +273,16 @@ $botActivo = $cfgBot['activo'] && cfg_crm_activo($pdo, 'chat_activo');
 // El prompt sale de los CAMPOS editables (nombre/tono/juego/reglas extra)
 // ensamblados con las reglas fijas. Excepción de compatibilidad: si quedó un
 // `contexto` entero cargado (modo viejo, migración 26), ese manda como override.
+/* El `contexto` entero (modo viejo, migracion 26) ya no lo escribe nadie -- el
+   CRM edita los CAMPOS. Pero si quedo cargado en alguna base, antes se usaba
+   como prompt COMPLETO y las REGLAS FIJAS no se aplicaban: una forma silenciosa
+   de desactivar el procedimiento de cobro y la seccion de juego responsable.
+
+   Ahora se respeta lo que haya escrito, pero las reglas fijas se agregan al
+   final igual. Mismo motivo que el orden de chatbot_armar_prompt(): lo ultimo
+   pesa mas, asi que el procedimiento gana pase lo que pase. */
 $contextoBase = ($cfgBot['contexto'] !== '')
-    ? $cfgBot['contexto']
+    ? $cfgBot['contexto'] . "\n\n" . CB_REGLAS_FIJAS
     // Los limites salen de la MISMA funcion que los aplica (fichas_limite),
     // asi el bot nunca le ofrece al jugador algo que el codigo va a rechazar.
     : chatbot_armar_prompt($cfgBot, [
@@ -282,6 +290,9 @@ $contextoBase = ($cfgBot['contexto'] !== '')
         'carga_max'      => fichas_limite($pdo, 'lim_carga_max',  FICHAS_MAX_CARGA),
         'retiro_min'     => fichas_limite($pdo, 'lim_retiro_min', FICHAS_MIN_CARGA),
         'retiro_max_dia' => fichas_limite($pdo, 'lim_retiro_max_dia', 0),
+        // El link de la app sale de la config del cliente, no de las reglas
+        // fijas: esas las comparten todos los casinos.
+        'app_url'        => (string)(cfg_crm($pdo, 'app_url') ?? ''),
       ]);
 
 // Chatbot DESACTIVADO: no se llama a Cohere. El mensaje del jugador igual

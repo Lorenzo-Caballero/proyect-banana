@@ -63,6 +63,18 @@ const CFG_CRM_DEFAULTS = [
     // Alta de cuentas nuevas desde la landing y el chat.
     'registro_activo' => '1',
 
+    // Link para bajar la app de Android. VACIO = el bot explica que se baja
+    // desde la pagina, sin tipear ninguna URL.
+    //
+    // Va acá y no en las reglas fijas del chatbot a proposito: esas reglas las
+    // comparten TODOS los clientes, asi que una URL escrita ahi seria la de un
+    // casino repetida por el bot de otro. Cada agencia pone la suya.
+    //
+    // El bot NO puede inventarla: sin este valor tiene prohibido dar un link
+    // (ver CB_REGLAS_FIJAS). Paso en produccion que mandaba a buscar la app a
+    // Play Store, donde no esta.
+    'app_url'         => '',
+
     // ----- Limites de carga y retiro, por cliente -----
     // Cada agencia tiene los suyos ("no cargo menos de 500", "no pago mas de
     // 100.000 por dia"). Antes eran constantes en fichas_lib.php, iguales
