@@ -403,6 +403,17 @@ function publicidad_metricas(PDO $pdo, int $publicistaId, string $desde, string 
         // explicito, asi que las dos caen al default del server (el mismo con
         // el que nacio usuarios.username, ver comentario en 13_cola_altas.sql)
         // y se comparan directo. Forzar utf8mb4_unicode_ci aca las desalinea.
+        // monto_base y NO monto_pedido, a proposito y NO es un bug:
+        // monto_pedido = monto_base + los centavos que identifican la
+        // transferencia (100.47). Esos centavos son un identificador, no
+        // plata que el jugador quiso gastar, asi que para medir una campaña
+        // corresponde el valor redondo.
+        //
+        // crm_finanzas.php suma monto_pedido, y tambien esta bien: ahi
+        // interesa la CAJA, la plata exacta que entro al banco. Por eso los
+        // dos modulos dan unos centavos de diferencia sobre lo mismo. Si
+        // algun dia parecen "descuadrados", es esto -- no unifiques uno con
+        // el otro sin entender cual pregunta responde cada pantalla.
         $st = $pdo->prepare(
             "SELECT
                 SUM(r.es_primera = 1)               AS primeras,

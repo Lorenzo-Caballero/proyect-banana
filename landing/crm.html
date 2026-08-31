@@ -1995,7 +1995,7 @@
             <th data-o="balance" class="num-h">Saldo <span class="arr"></span></th>
             <th data-o="bono_pendiente" class="num-h" title="Bonos prometidos, aún no acreditados">Bono pendiente <span class="arr"></span></th>
             <th data-o="bonus" class="num-h" title="Total histórico acreditado (nunca se resta)">Bono histórico <span class="arr"></span></th>
-            <th data-o="total_deposits" class="num-h">Depósitos <span class="arr"></span></th>
+            <th data-o="total_deposits" class="num-h" title="Lo que informa la plataforma ganamos, no lo que te pagó a vos. Incluye las cargas que le hiciste vos desde el panel de agentes. Para ver lo que cobraste por transferencia, mirá Finanzas.">Depósitos en ganamos <span class="arr"></span></th>
             <th class="no-sort">Rol</th>
             <th class="no-sort">Estado</th>
             <th data-o="creation_date">Alta <span class="arr"></span></th>
@@ -2084,7 +2084,7 @@
       <!-- c) 5 KPI cards -->
       <div class="fn-kpis" id="fnKpis">
         <div class="fn-kpi-card" id="fnKpiCardIngresos">
-          <div class="k">Ingresos <span class="fn-info" data-tip="Suma de recargas acreditadas en el período elegido."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+          <div class="k">Ingresos <span class="fn-info" data-tip="Suma de recargas acreditadas en el período elegido. Es la plata EXACTA que entró al banco, con los centavos que identifican cada transferencia. Por eso da unos centavos más que «Depositado» en Publicidad, que cuenta el valor comercial redondo de la recarga."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
           <div class="v" id="fnKpiIngresos">—</div>
           <div class="fn-kpi-var" id="fnKpiIngresosVar">—</div>
         </div>
@@ -2551,7 +2551,7 @@
           <div class="sub">CPA</div>
         </div>
         <div class="fn-card">
-          <div class="k">Deja cada jugador</div>
+          <div class="k">Deja cada jugador <span class="fn-info" data-tip="Cuánto deposita en promedio cada jugador que vino de esta landing. Usa el valor comercial redondo de la recarga, sin los centavos que identifican la transferencia -- por eso da unos centavos menos que «Ingresos» en Finanzas, que cuenta la plata exacta que entró al banco. Las dos están bien: acá interesa el valor, allá la caja."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
           <div class="v" id="pbDejaJugador">—</div>
           <div class="sub">depositado / registros</div>
         </div>
