@@ -45,6 +45,13 @@ if (is_file(__DIR__ . '/publicidad_lib.php')) {
 if (is_file(__DIR__ . '/actividad_lib.php')) {
     require_once __DIR__ . '/actividad_lib.php';
 }
+// Para encolar la carga al juego apenas se acredita la transferencia (ver
+// rl_cargar_al_juego_auto). Va con require_once y no al reves: fichas_lib.php
+// NO carga este archivo, asi que no hay ciclo. Hace falta porque pagos.php --
+// por donde entra el colector -- solo requiere recargas_lib.
+if (is_file(__DIR__ . '/fichas_lib.php')) {
+    require_once __DIR__ . '/fichas_lib.php';
+}
 
 // =====================  EDITA ESTO  =======================================
 const RL_COINS_POR_PESO = 1;        // 1 coin = 1 peso  (5000 coins => $5000)
@@ -831,6 +838,51 @@ function rl_reportar_purchase(PDO $pdo, array $recarga): void
     }
 }
 
+/**
+ * Encola la carga al juego apenas se acredita la transferencia.
+ *
+ * POR QUE ESTO EXISTE
+ * El negocio tiene UN solo paso: el jugador transfiere y le aparecen las
+ * fichas en la plataforma. No existe un "saldo comprado esperando a que lo
+ * carguen" -- eso era un invento del codigo, y traia dos problemas:
+ *
+ *   1. El jugador transferia y no le pasaba nada hasta que ADEMAS pedia
+ *      "cargame las fichas". Nadie hace eso: ya pago, espera sus fichas.
+ *   2. Al chatbot le dabamos dos herramientas parecidas (cargar_al_juego y
+ *      crear_recarga) y elegia mal. Un modelo con dos caminos casi iguales se
+ *      equivoca; con uno solo, no puede.
+ *
+ * fichas_pedir_carga() ya hace todo lo delicado y se reusa tal cual: valida
+ * que el jugador exista en el panel, corta si ya hay una carga en curso (que
+ * es lo que evita depositar dos veces), descuenta y encola en acciones_saldo.
+ * Despues el bot entra al panel de agentes, busca al jugador y aprieta
+ * DEPOSITAR -- lo mismo que haria un empleado a mano.
+ *
+ * Best-effort y DESPUES del commit: la recarga ya esta acreditada. Si esto
+ * falla, los coins le quedan al jugador y se pueden cargar a mano desde el
+ * CRM; lo que no puede pasar es que un problema para encolar deshaga un pago
+ * que ya entro.
+ */
+function rl_cargar_al_juego_auto(PDO $pdo, array $recarga): void
+{
+    if (!function_exists('fichas_pedir_carga')) {
+        return;
+    }
+    try {
+        $r = fichas_pedir_carga($pdo, (string)$recarga['usuario'], (int)$recarga['coins'], 'recarga');
+        if (empty($r['ok'])) {
+            // 'en_curso' no es un problema: ya hay una carga en camino para
+            // ese jugador y el bot la esta por hacer. El resto si conviene
+            // mirarlo -- queda saldo sin cargar.
+            error_log('rl_cargar_al_juego_auto: recarga ' . ($recarga['referencia'] ?? '?')
+                . ' acreditada pero no se encolo la carga: ' . ($r['codigo'] ?? '?')
+                . ' ' . ($r['error'] ?? ''));
+        }
+    } catch (Throwable $e) {
+        error_log('rl_cargar_al_juego_auto: ' . $e->getMessage());
+    }
+}
+
 /** Aviso de recarga acreditada. Mismo texto para el camino automatico y el
  *  manual: para el jugador es el mismo evento, no hay por que distinguirlo. */
 function rl_notificar_acreditada(PDO $pdo, array $recarga): void
@@ -1169,6 +1221,10 @@ function rl_matchear_y_acreditar(PDO $pdo, string $idUnico, float $monto): array
         // Recien despues del commit: si el aviso saliera adentro de la
         // transaccion y esta hiciera rollback, quedaria anunciada una recarga
         // que nunca se acredito. Mismo motivo para el Purchase de Meta.
+        // Primero encolar la carga, despues avisar: si el aviso saliera
+        // antes y el encolado fallara, le habriamos dicho "ya tenes tus
+        // fichas" a alguien que no las va a recibir.
+        rl_cargar_al_juego_auto($pdo, $recarga);
         rl_notificar_acreditada($pdo, $recarga);
         rl_reportar_purchase($pdo, $recarga);
 
@@ -1216,6 +1272,10 @@ function rl_asignar_manual(PDO $pdo, string $idUnico, int $recargaId, string $op
         rl_acreditar($pdo, $recarga, $idUnico, 'manual: ' . $operador, $operador, 'manual');
         $pdo->commit();
 
+        // Primero encolar la carga, despues avisar: si el aviso saliera
+        // antes y el encolado fallara, le habriamos dicho "ya tenes tus
+        // fichas" a alguien que no las va a recibir.
+        rl_cargar_al_juego_auto($pdo, $recarga);
         rl_notificar_acreditada($pdo, $recarga);
         rl_reportar_purchase($pdo, $recarga);
 
