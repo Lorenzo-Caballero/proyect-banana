@@ -138,6 +138,96 @@ chequear('el prompt dice el tope diario',    strpos($p, '100.000') !== false);
 chequear('no inventa un maximo si es 0',     strpos($p, 'Carga MAXIMA') === false);
 
 // ===========================================================================
+echo "\n=== Ventana horaria de retiros ===\n";
+
+/* Es logica con dos trampas: cruza la medianoche, y se evalua en hora
+   ARGENTINA aunque el server corra en UTC. Las dos se prueban usando la hora
+   actual como referencia, asi el test vale corra a la hora que corra. */
+$ahoraAr = fichas_ahora_ar();
+$hh      = (int)$ahoraAr->format('G');
+$hm      = (string)$ahoraAr->format('i');
+$hora    = static fn(int $h) => sprintf('%02d:%s', ($h + 24) % 24, $hm);
+
+// Sin configurar: se retira siempre, como venia funcionando.
+cfg_crm_guardar($pdo, ['lim_retiro_hora_desde' => '', 'lim_retiro_hora_hasta' => ''], 'test');
+$v = fichas_ventana_retiro($pdo);
+chequear('sin horario configurado, siempre abierto', $v['abierta'] === true);
+
+// Una sola de las dos no alcanza para definir una franja.
+cfg_crm_guardar($pdo, ['lim_retiro_hora_desde' => '03:00', 'lim_retiro_hora_hasta' => ''], 'test');
+chequear('con una sola punta cargada, no aplica',
+         fichas_ventana_retiro($pdo)['abierta'] === true);
+
+// Franja que CONTIENE la hora actual -> cerrado.
+cfg_crm_guardar($pdo, ['lim_retiro_hora_desde' => $hora($hh - 1),
+                       'lim_retiro_hora_hasta' => $hora($hh + 2)], 'test');
+chequear('dentro de la franja, cerrado',
+         fichas_ventana_retiro($pdo)['abierta'] === false,
+         'ahora AR=' . $ahoraAr->format('H:i'));
+
+// Y el retiro se rechaza con el codigo que el bot sabe explicar. Se limpia
+// primero: las secciones de arriba dejaron pedidos suyos y lo que se mide aca
+// es que ESTE no encole nada.
+$pdo->exec("DELETE FROM acciones_saldo WHERE usuario='test_lim'");
+$r = fichas_pedir_retiro($pdo, 'test_lim', 500, 'test');
+chequear('el retiro devuelve fuera_de_horario',
+         ($r['codigo'] ?? '') === 'fuera_de_horario', json_encode($r));
+$n = (int)$pdo->query("SELECT COUNT(*) FROM acciones_saldo
+                        WHERE usuario='test_lim' AND tipo='retirar'")->fetchColumn();
+chequear('y NO deja el pedido encolado', $n === 0, "encolados=$n");
+
+// Franja que NO contiene la hora actual -> abierto.
+cfg_crm_guardar($pdo, ['lim_retiro_hora_desde' => $hora($hh + 2),
+                       'lim_retiro_hora_hasta' => $hora($hh + 4)], 'test');
+chequear('fuera de la franja, abierto',
+         fichas_ventana_retiro($pdo)['abierta'] === true);
+
+/* La franja que cruza la medianoche es el caso REAL (nadie aprueba de
+   madrugada) y el que un `if` ingenuo rompe: con desde > hasta, comparar
+   "entre los dos" da siempre falso. */
+cfg_crm_guardar($pdo, ['lim_retiro_hora_desde' => $hora($hh - 1),
+                       'lim_retiro_hora_hasta' => $hora($hh + 1)], 'test');
+$cruza = fichas_ventana_retiro($pdo);
+chequear('franja que cruza la medianoche: cerrado si estoy adentro',
+         $cruza['abierta'] === false, 'desde=' . $cruza['desde'] . ' hasta=' . $cruza['hasta']);
+
+// Un horario mal cargado NO bloquea: un typo del operador no puede dejar a
+// todos sin poder cobrar.
+cfg_crm_guardar($pdo, ['lim_retiro_hora_desde' => '25:00',
+                       'lim_retiro_hora_hasta' => 'ocho'], 'test');
+chequear('un horario invalido se ignora en vez de bloquear',
+         fichas_ventana_retiro($pdo)['abierta'] === true);
+
+cfg_crm_guardar($pdo, ['lim_retiro_hora_desde' => '', 'lim_retiro_hora_hasta' => ''], 'test');
+
+// ===========================================================================
+echo "\n=== El tope diario usa el dia ARGENTINO ===\n";
+
+/* Antes se comparaba con CURDATE(), y con la base en UTC el tope se reseteaba
+   a las 21:00 hora argentina. Un retiro hecho a las 22:00 AR de hoy quedaba en
+   "manana" para el conteo y liberaba el cupo entero. */
+$pdo->exec("DELETE FROM acciones_saldo WHERE usuario='test_lim'");
+ponerLimite($pdo, 'lim_retiro_max_dia', '1000');
+
+// Se inserta un retiro fechado HOY en hora argentina pero que, pasado a UTC,
+// cae en la fecha de MAÑANA: exactamente el caso que el bug dejaba escapar.
+// Va como 'hecha' y no 'pendiente' a proposito: un retiro pendiente dispara
+// primero la guarda de "ya tenes uno en curso", que corre ANTES del tope, y el
+// test nunca llegaria a medir lo que quiere medir.
+$tarde = fichas_ahora_ar()->setTime(22, 30, 0);
+$tardeUtc = (clone $tarde)->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+$pdo->prepare("INSERT INTO acciones_saldo (usuario, tipo, monto, estado, creada_en)
+               VALUES ('test_lim','retirar',900,'hecha',?)")->execute([$tardeUtc]);
+
+$r = fichas_pedir_retiro($pdo, 'test_lim', 500, 'test');
+chequear('un retiro de las 22:30 AR cuenta para el tope de HOY',
+         ($r['codigo'] ?? '') === 'tope_diario',
+         'utc=' . $tardeUtc . ' -> ' . json_encode($r));
+
+$pdo->exec("DELETE FROM acciones_saldo WHERE usuario='test_lim'");
+ponerLimite($pdo, 'lim_retiro_max_dia', '0');
+
+// ===========================================================================
 limpiarLimites($pdo);
 $pdo->exec("DELETE FROM usuarios WHERE id=$ID");
 $pdo->exec("DELETE FROM acciones_saldo WHERE usuario='test_lim'");

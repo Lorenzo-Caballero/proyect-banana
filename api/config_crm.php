@@ -96,6 +96,16 @@ const CFG_CRM_DEFAULTS = [
     // Tope de lo que un jugador puede pedir por dia. '0' = sin tope, que es
     // como venia funcionando (no existia este limite).
     'lim_retiro_max_dia' => '0',
+    // Franja horaria en la que NO se puede retirar, en hora ARGENTINA y
+    // formato HH:MM. Tipicamente la madrugada, cuando no hay nadie para
+    // aprobar. Puede cruzar la medianoche ('23:00' a '06:00').
+    //
+    // VACIAS = sin restriccion, y hacen falta las DOS para que aplique. Es
+    // vacio y no '0' porque 0 es una hora legitima (medianoche): la convencion
+    // "0 = desactivado" que usan los topes no sirve para un horario.
+    'lim_retiro_hora_desde' => '',
+    'lim_retiro_hora_hasta' => '',
+
     // Bono que se le suma a una carga pedida desde el boton Depositos de la
     // plataforma, en % del monto. '0' = sin bono, la carga entra por el importe
     // exacto que transfirio el jugador.

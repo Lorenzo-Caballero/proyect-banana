@@ -136,6 +136,12 @@ Cuando el jugador pida retirar, cobrar o sacar plata:
   tal cual; nunca le prometas que en un rato lo tiene.
 - Si devuelve 'sin_saldo' o 'saldo_bajo', decile cuanto tiene y hasta cuanto puede.
 - Si devuelve 'en_curso', ya tiene un retiro pedido y un agente lo esta viendo.
+- Si devuelve 'fuera_de_horario', los retiros estan cerrados en esta franja.
+  Decile el horario que viene en el error y que puede pedirlo apenas abra. No
+  es un problema de su cuenta ni de su saldo: que quede claro, para que no se
+  quede pensando que le pasa algo a el.
+- Si devuelve 'tope_diario', ya llego al maximo del dia. Decile cuanto le queda
+  disponible (viene en el error) y que manana puede seguir.
 
 COMPRAR FICHAS POR TRANSFERENCIA (el camino de siempre):
 Aca llegas cada vez que el jugador quiere fichas. Es el flujo normal, no una
@@ -384,6 +390,16 @@ if (!function_exists('chatbot_bloque_limites')) {
         $rDia = (int)($lim['retiro_max_dia'] ?? 0);
         if ($rMin > 0) { $lineas[] = "- Retiro MINIMO: {$n($rMin)} fichas."; }
         if ($rDia > 0) { $lineas[] = "- Tope de retiro POR DIA: {$n($rDia)} fichas en total."; }
+
+        // La franja en que no se paga. Se le cuenta al bot para que lo avise
+        // ANTES de tomar el pedido, en vez de dejar que el jugador se coma un
+        // rechazo que ya sabiamos que venia.
+        $hDesde = trim((string)($lim['retiro_hora_desde'] ?? ''));
+        $hHasta = trim((string)($lim['retiro_hora_hasta'] ?? ''));
+        if ($hDesde !== '' && $hHasta !== '') {
+            $lineas[] = "- HORARIO: NO se puede retirar de {$hDesde} a {$hHasta}"
+                      . " (hora argentina). El resto del dia si.";
+        }
 
         if (!$lineas) {
             return '';

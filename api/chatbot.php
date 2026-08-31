@@ -290,6 +290,10 @@ $contextoBase = ($cfgBot['contexto'] !== '')
         'carga_max'      => fichas_limite($pdo, 'lim_carga_max',  FICHAS_MAX_CARGA),
         'retiro_min'     => fichas_limite($pdo, 'lim_retiro_min', FICHAS_MIN_CARGA),
         'retiro_max_dia' => fichas_limite($pdo, 'lim_retiro_max_dia', 0),
+        // La franja horaria NO pasa por fichas_limite(): esa acepta 0 como
+        // valor valido, y 0 es una hora legitima. Vacio = sin restriccion.
+        'retiro_hora_desde' => (string)(cfg_crm($pdo, 'lim_retiro_hora_desde') ?? ''),
+        'retiro_hora_hasta' => (string)(cfg_crm($pdo, 'lim_retiro_hora_hasta') ?? ''),
         // El link de la app sale de la config del cliente, no de las reglas
         // fijas: esas las comparten todos los casinos.
         'app_url'        => (string)(cfg_crm($pdo, 'app_url') ?? ''),

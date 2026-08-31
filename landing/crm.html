@@ -3072,6 +3072,16 @@
               <input class="cb-input" id="cfgLimBonoCarga" inputmode="numeric" placeholder="0">
               <p class="cfg-hint">Extra que se le suma al jugador cuando carga desde el botón <b>Depósitos</b> de la plataforma. <b>0 = sin bono</b>, entra el importe exacto que transfirió.</p>
             </div>
+            <div>
+              <label class="cb-flabel">No se retira desde</label>
+              <input class="cb-input" id="cfgLimRetiroDesde" placeholder="03:00">
+              <p class="cfg-hint">Hora en que <b>cierran</b> los retiros.</p>
+            </div>
+            <div>
+              <label class="cb-flabel">…hasta</label>
+              <input class="cb-input" id="cfgLimRetiroHasta" placeholder="08:00">
+              <p class="cfg-hint">Hora en que <b>vuelven a abrir</b>. Dejá los dos vacíos para permitir retiros las 24 hs. Es hora argentina, y puede cruzar la medianoche (23:00 → 06:00).</p>
+            </div>
           </div>
         </div>
       </div>
@@ -3959,6 +3969,8 @@
     lim_retiro_max_dia: { el: "#cfgLimRetiroDia", tipo: "texto" },
     lim_bono_carga_pct: { el: "#cfgLimBonoCarga", tipo: "texto" },
     app_url:            { el: "#cfgAppUrl",       tipo: "texto" },
+    lim_retiro_hora_desde: { el: "#cfgLimRetiroDesde", tipo: "texto" },
+    lim_retiro_hora_hasta: { el: "#cfgLimRetiroHasta", tipo: "texto" },
 
     meta_activo:      { el: "#cfgMeta",         tipo: "bool"  },
     meta_pixel_id:    { el: "#cfgMetaPixel",    tipo: "texto" },

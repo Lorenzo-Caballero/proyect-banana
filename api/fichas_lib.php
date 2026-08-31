@@ -319,6 +319,81 @@ function fichas_consultar(PDO $pdo, string $usuario): array
 }
 
 
+if (!function_exists('fichas_ahora_ar')) {
+    /**
+     * El momento actual en hora ARGENTINA.
+     *
+     * El PHP de este server corre en UTC (no hay date_default_timezone_set en
+     * ningun lado, y DEPLOY.md lo dice). Asi que date('H') devuelve la hora de
+     * Greenwich: una ventana "de 3 a 8 AM" configurada por el cliente se le
+     * aplicaria al jugador de 00 a 05, tres horas corridas antes.
+     *
+     * Mismo patron que chatbot_fecha_ar() en chatbot.php, que es el unico lugar
+     * del proyecto que ya lo hacia bien.
+     */
+    function fichas_ahora_ar(): DateTime
+    {
+        try {
+            return new DateTime('now', new DateTimeZone('America/Argentina/Buenos_Aires'));
+        } catch (Throwable $e) {
+            // Sin la base de datos de husos horarios, mejor la hora del server
+            // que un fatal. Se avisa, porque los limites van a correrse.
+            error_log('fichas_ahora_ar: no pude usar la zona horaria AR: ' . $e->getMessage());
+            return new DateTime('now');
+        }
+    }
+}
+
+if (!function_exists('fichas_ventana_retiro')) {
+    /**
+     * ¿Se puede retirar en este momento?
+     *
+     * El cliente configura una franja en la que NO se paga -- tipicamente la de
+     * madrugada, cuando no hay nadie para aprobar. Dos claves de config_crm,
+     * formato HH:MM:
+     *
+     *     lim_retiro_hora_desde / lim_retiro_hora_hasta
+     *
+     * VACIO = sin restriccion, y por eso NO se usa fichas_limite() aca: esa
+     * funcion acepta 0 como valor valido (y 0 es una hora legitima, medianoche),
+     * asi que la convencion "0 = desactivado" de los topes no sirve.
+     *
+     * La franja puede cruzar la medianoche (23:00 a 06:00) y ese es justamente
+     * el caso comun, asi que se contempla.
+     *
+     * @return array ['abierta'=>bool, 'desde'=>string, 'hasta'=>string]
+     */
+    function fichas_ventana_retiro(PDO $pdo): array
+    {
+        $abierta = ['abierta' => true, 'desde' => '', 'hasta' => ''];
+        if (!function_exists('cfg_crm')) { return $abierta; }
+
+        $desde = trim((string)(cfg_crm($pdo, 'lim_retiro_hora_desde') ?? ''));
+        $hasta = trim((string)(cfg_crm($pdo, 'lim_retiro_hora_hasta') ?? ''));
+        // Hacen falta las DOS: una sola no define ninguna franja.
+        if ($desde === '' || $hasta === '') { return $abierta; }
+        if (!preg_match('/^([01]?\d|2[0-3]):([0-5]\d)$/', $desde, $d)
+            || !preg_match('/^([01]?\d|2[0-3]):([0-5]\d)$/', $hasta, $h)) {
+            // Mal cargado: se ignora en vez de bloquear. Un retiro frenado por
+            // un typo del operador es peor que uno de mas en horario raro.
+            error_log('fichas_ventana_retiro: horario invalido (' . $desde . ' - ' . $hasta . ')');
+            return $abierta;
+        }
+
+        $ahora = (int)fichas_ahora_ar()->format('G') * 60 + (int)fichas_ahora_ar()->format('i');
+        $ini   = (int)$d[1] * 60 + (int)$d[2];
+        $fin   = (int)$h[1] * 60 + (int)$h[2];
+
+        // Franja que cruza la medianoche (23:00 -> 06:00): esta bloqueado si
+        // esta DESPUES del inicio o ANTES del fin. Sin cruzar: entre los dos.
+        $bloqueado = ($ini <= $fin)
+            ? ($ahora >= $ini && $ahora < $fin)
+            : ($ahora >= $ini || $ahora < $fin);
+
+        return ['abierta' => !$bloqueado, 'desde' => $desde, 'hasta' => $hasta];
+    }
+}
+
 /**
  * Encola un RETIRO: sacar saldo del juego.
  *
@@ -336,6 +411,19 @@ function fichas_pedir_retiro(PDO $pdo, string $usuario, int $monto, string $orig
     if ($usuario === '') {
         return ['ok' => false, 'codigo' => 'sin_usuario',
                 'error' => 'No sé de qué cuenta retirar. Primero hay que iniciar sesión.'];
+    }
+
+    /* Ventana horaria: si el cliente cerró los retiros a esta hora, se corta acá
+       y no se toca la base. Mismo criterio que las validaciones baratas de
+       fichas_pedir_carga(): primero lo que no necesita consultar nada.
+       Va ANTES de resolver "todo", así un "retirá todo" también queda frenado
+       sin haber calculado nada. */
+    $ventana = fichas_ventana_retiro($pdo);
+    if (!$ventana['abierta']) {
+        return ['ok' => false, 'codigo' => 'fuera_de_horario',
+                'desde' => $ventana['desde'], 'hasta' => $ventana['hasta'],
+                'error' => 'Los retiros están cerrados de ' . $ventana['desde'] .
+                           ' a ' . $ventana['hasta'] . '. Podés pedirlo apenas vuelva a abrir.'];
     }
 
     // El saldo se lee PRIMERO: hace falta para validar y, si pidió "todo", para
@@ -396,13 +484,26 @@ function fichas_pedir_retiro(PDO $pdo, string $usuario, int $monto, string $orig
     $topeDia = fichas_limite($pdo, 'lim_retiro_max_dia', 0);
     if ($topeDia > 0) {
         try {
+            /* El "día" es el día ARGENTINO, calculado acá y pasado como rango.
+               Antes decía `DATE(creada_en) = CURDATE()`, y con la base en UTC
+               eso hacía que el tope se reseteara a las 21:00 hora argentina:
+               un jugador que llegaba al tope a las 22:00 tenía el cupo entero
+               otra vez, tres horas antes de que le correspondiera.
+               Se compara contra `creada_en`, que está en UTC, así que el rango
+               se convierte a UTC antes de consultar. */
+            $hoyAr  = fichas_ahora_ar();
+            $desde  = (clone $hoyAr)->setTime(0, 0, 0);
+            $hasta  = (clone $desde)->modify('+1 day');
+            $utc    = new DateTimeZone('UTC');
             $q = $pdo->prepare(
                 "SELECT COALESCE(SUM(monto),0) FROM acciones_saldo
                   WHERE usuario = ? AND tipo = 'retirar'
                     AND estado IN ('pendiente','procesando','revisar','hecha')
-                    AND DATE(creada_en) = CURDATE()"
+                    AND creada_en >= ? AND creada_en < ?"
             );
-            $q->execute([$usuario]);
+            $q->execute([$usuario,
+                         $desde->setTimezone($utc)->format('Y-m-d H:i:s'),
+                         $hasta->setTimezone($utc)->format('Y-m-d H:i:s')]);
             $yaHoy = (float)$q->fetchColumn();
         } catch (Throwable $e) {
             // Sin poder contar, no se bloquea: el tope es una politica
