@@ -76,7 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $q = trim((string)($_GET['q'] ?? ''));
             $st2 = $pdo->prepare(
                 "SELECT id, referencia, usuario, coins, monto_base, monto_pedido, centavos,
-                        creada_en, vence_en
+                        titular_declarado, creada_en, vence_en
                    FROM recargas
                   WHERE estado = 'pendiente'
                     AND (? = '' OR usuario LIKE ? OR referencia = ? OR id = ?)
@@ -91,6 +91,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 $r['monto_pedido'] = (float)$r['monto_pedido'];
                 return $r;
             }, $st2->fetchAll(PDO::FETCH_ASSOC));
+
+            /* Por que este pago PODRIA ser de cada candidata.
+               Si el matcher automatico no la eligio es porque algo no le
+               alcanzo -- dos titulares parecidos, o ninguno declarado. Pero
+               las mismas señales que el uso sirven igual para ordenarle la
+               lista al operador y que no tenga que compararlas de memoria.
+               ACA NO SE ACREDITA NADA: es solo el orden y la explicacion, la
+               decision sigue siendo de la persona. */
+            $conHuella = function_exists('rl_usuarios_por_huella')
+                ? rl_usuarios_por_huella($pdo, $pago) : [];
+            foreach ($candidatas as &$c) {
+                $c['huella']  = in_array((string)$c['usuario'], $conHuella, true);
+                $c['parecido'] = (function_exists('rl_similitud_nombres') && trim((string)$c['titular_declarado']) !== '')
+                    ? rl_similitud_nombres((string)$pago['remitente'], (string)$c['titular_declarado'])
+                    : 0.0;
+                if ($c['huella']) {
+                    $c['motivo'] = 'ya cargó antes desde esta cuenta';
+                } elseif ($c['parecido'] >= RL_UMBRAL_NOMBRE) {
+                    $c['motivo'] = sprintf('el titular coincide (%.0f%%)', $c['parecido'] * 100);
+                } elseif (abs($c['monto_pedido'] - $pago['monto']) < 0.005) {
+                    $c['motivo'] = 'el monto es exacto';
+                } else {
+                    $c['motivo'] = '';
+                }
+            }
+            unset($c);
+
+            // Primero la huella (señal exacta), despues el parecido de
+            // nombre, y a igualdad el monto mas cercano -- el mismo orden de
+            // confianza que usa el matcher automatico.
+            usort($candidatas, function ($a, $b) use ($pago) {
+                if ($a['huella'] !== $b['huella'])       { return $b['huella'] <=> $a['huella']; }
+                if ($a['parecido'] !== $b['parecido'])   { return $b['parecido'] <=> $a['parecido']; }
+                return abs($a['monto_pedido'] - $pago['monto']) <=> abs($b['monto_pedido'] - $pago['monto']);
+            });
 
             salir(['ok' => true, 'pago' => $pago, 'candidatas' => $candidatas]);
         }

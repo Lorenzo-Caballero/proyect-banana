@@ -812,6 +812,19 @@
   .cand .cd-user{font-weight:700}
   .cand .cd-sub{color:var(--muted);font-size:12px;margin-top:2px}
   .cand .cd-monto{font-weight:800;color:var(--green2);white-space:nowrap}
+  /* El titular declarado: es LO QUE HAY QUE COMPARAR contra el remitente de
+     arriba, asi que va en el color del texto y no en el gris de los detalles. */
+  .cand .cd-tit{font-size:12px;margin-top:3px;color:var(--txt)}
+  .cand .cd-tit-vacio{color:var(--muted2);font-style:italic}
+  /* Por que el sistema cree que es esta. Verde solo para la huella, que es la
+     unica señal exacta -- el parecido de nombre es fuerte pero no es prueba. */
+  .cd-chip{background:var(--violetSoft);color:var(--violet2);border:1px solid var(--violet);
+    font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:7px;margin-left:6px;white-space:nowrap}
+  .cd-chip.fuerte{background:rgba(58,196,125,.15);color:var(--green2);border-color:var(--green)}
+  /* La primera con señal va destacada, pero se asigna con el mismo boton que
+     las demas: la decision sigue siendo del operador, esto solo le ahorra
+     comparar de memoria. */
+  .cand-sugerida{border-color:var(--violet);background:var(--panel3)}
   .warn-chip{background:rgba(245,166,35,.16);color:var(--orange2);border:1px solid var(--orange);
     font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:7px;margin-left:6px;white-space:nowrap}
   .btn-asignar{background:linear-gradient(180deg,var(--violet2),var(--violet));color:#fff;border:none;
@@ -5220,27 +5233,13 @@
   const API_COMP = API_BASE + "/crm_comprobantes.php";
   let compPagoActual = null;
 
-  /** Advertencia visual, no bloqueo: compara tokens del remitente del pago
-   *  contra el username de la recarga candidata, normalizando acentos y
-   *  mayusculas. Sin match de ningun token => probablemente no es la misma
-   *  persona. Simple a proposito (no hay LEVENSHTEIN disponible en el
-   *  MySQL de Hostinger ni conviene sumarlo por esto). */
-  function normalizarNombre(s){
-    // normalize("NFD") separa cada letra acentuada en base + marca de acento
-    // (ej: "é" -> "e" + acento como caracter aparte); el filtro de abajo ya
-    // se encarga de sacar esa marca junto con cualquier otro simbolo, sin
-    // necesidad de un regex de rango Unicode aparte.
-    return String(s||"").toLowerCase().normalize("NFD")
-      .replace(/[^a-z0-9\s]/g," ").replace(/\s+/g," ").trim();
-  }
-  function pareceMismaPersona(remitente, usuario){
-    const r = normalizarNombre(remitente), u = normalizarNombre(usuario);
-    if(!r || !u) return true; // sin dato de un lado, no es una señal real
-    const tr = r.split(" ").filter(t=>t.length>=3);
-    const tu = u.split(" ").filter(t=>t.length>=3);
-    if(!tr.length || !tu.length) return true;
-    return tr.some(a=>tu.some(b=>a.includes(b)||b.includes(a))) || tr.some(a=>u.includes(a)) || tu.some(b=>r.includes(b));
-  }
+  /* Acá vivían normalizarNombre() y pareceMismaPersona(), que comparaban el
+     titular del banco contra el NOMBRE DE USUARIO de la recarga. Se fueron con
+     la migración 45: ahora el jugador declara a nombre de quién está la cuenta
+     al pedir la carga, y el server compara contra ESO con
+     rl_similitud_nombres() -- que además tolera erratas, cosa que esta no
+     hacía. Contra un apodo ("elkakas") la comparación daba "no coincide" casi
+     siempre: era ruido que el operador aprendía a ignorar, no una señal. */
 
   async function actualizarBadgeComp(){
     try{
@@ -5291,12 +5290,26 @@
 
     $("#compCands").innerHTML = !d.candidatas.length
       ? `<div class="nouser">No hay recargas pendientes${q?" para esa búsqueda":""}.</div>`
-      : d.candidatas.map(c=>{
-          const warn = pareceMismaPersona(d.pago.remitente, c.usuario) ? "" : `<span class="warn-chip">${ico("alerta")} nombre no coincide</span>`;
-          return `<div class="cand">
+      : d.candidatas.map((c,i)=>{
+          /* El server ya ordenó por confianza (huella > titular > monto) y
+             mandó el porqué en c.motivo. Se muestra tal cual en vez de
+             recalcular una heurística acá: la del CRM comparaba el titular
+             del banco contra el NOMBRE DE USUARIO, que suele ser un apodo
+             ("elkakas") y no se parece a nada -- avisaba "nombre no coincide"
+             casi siempre, así que se volvió ruido que nadie miraba. */
+          const chip = c.motivo
+            ? `<span class="cd-chip${c.huella?" fuerte":""}">${esc(c.motivo)}</span>`
+            : "";
+          // El titular declarado es lo que el operador tiene que comparar
+          // contra el remitente de arriba, así que va a la vista siempre.
+          const tit = c.titular_declarado
+            ? `<div class="cd-tit">a nombre de <b>${esc(c.titular_declarado)}</b></div>`
+            : `<div class="cd-tit cd-tit-vacio">no declaró titular</div>`;
+          return `<div class="cand${i===0&&c.motivo?" cand-sugerida":""}">
             <div class="cd-mid">
-              <div class="cd-user">@${esc(c.usuario)}${warn}</div>
+              <div class="cd-user">@${esc(c.usuario)}${chip}</div>
               <div class="cd-sub">Ref ${esc(c.referencia)} · ${nf.format(c.coins)} fichas</div>
+              ${tit}
             </div>
             <div class="cd-monto">${money(c.monto_pedido)}</div>
             <button class="btn-asignar" data-id="${c.id}" type="button">Asignar</button>
