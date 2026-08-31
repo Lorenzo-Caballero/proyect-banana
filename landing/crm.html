@@ -106,6 +106,25 @@
   .rail-item svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:2;flex:none}
   .rail-item::after{content:attr(data-tip);font-size:13px;font-weight:600;white-space:nowrap;
     overflow:hidden;text-overflow:ellipsis;line-height:1.2}
+  /* Tooltip propio con el nombre completo (::before -- el ::after ya lo usa
+     el label visible de arriba). Mismo look que .fn-popover (fondo panel3,
+     borde, sombra) para no inventar un segundo estilo de globo en la misma
+     pantalla. Solo con hover de mouse de verdad: en celular/tablet no hay
+     hover que lo cierre solo, y ahi ya se ve la etiqueta corta sin recortar. */
+  @media (hover:hover){
+    .rail-item[data-tip]::before{
+      content:attr(data-tip);position:absolute;left:calc(100% + 10px);top:50%;
+      transform:translateY(-50%) translateX(-4px);z-index:60;
+      background:var(--panel3);border:1px solid var(--line);border-radius:9px;
+      padding:6px 11px;font-size:12.5px;font-weight:600;color:var(--txt);
+      white-space:nowrap;box-shadow:var(--shadow-sm);
+      opacity:0;visibility:hidden;pointer-events:none;
+      transition:opacity .14s ease, transform .14s ease, visibility .14s;
+    }
+    .rail-item[data-tip]:hover::before,
+    .rail-item[data-tip]:focus-visible::before{
+      opacity:1;visibility:visible;transform:translateY(-50%) translateX(0)}
+  }
 
   /* ---- columnas ---- */
   .col-list{width:328px;min-width:290px;display:flex;flex-direction:column;overflow:hidden}
@@ -3754,15 +3773,11 @@
     });
   });
 
-  /* Tooltip nativo con el nombre completo. El label visible del rail sale de
-     data-tip via CSS (::after) y en desktop se corta con "..." cuando no
-     entra ("Push & Notifi...", "Compro..."); un solo title por item, con el
-     mismo texto de data-tip como unica fuente de verdad, alcanza para que el
-     navegador muestre el nombre entero al pasar el mouse -- sin duplicar el
-     string a mano en cada boton. */
-  document.querySelectorAll(".rail-item[data-tip]").forEach(el=>{
-    if (!el.title) el.title = el.getAttribute("data-tip");
-  });
+  /* El tooltip con el nombre completo es 100% CSS (ver .rail-item[data-tip]
+     ::before/::after) -- lee data-tip directo, no hace falta JS ni duplicar
+     el texto en un title (que ademas se veia con el globo feo del navegador,
+     sin estilo y con delay). Si el mouse no soporta hover (celular/tablet),
+     la regla ni se activa -- ver el media(hover:hover) en el CSS. */
 
   /* ====================== Configuración del sitio ======================
      Ajustes que cambian lo que ve el jugador (ruleta, chatbot, registro).
