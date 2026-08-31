@@ -1544,7 +1544,7 @@
   <nav class="rail card-col">
     <div class="grp">
       <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
-      <button class="rail-item active" data-nav="chats" data-tip="Conversaciones" data-corto="Chats"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>
+      <button class="rail-item active" data-nav="chats" data-tip="Conversaciones" data-corto="Chats"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="rail-badge" id="badgeChats"></span></button>
       <button class="rail-item" data-nav="usuarios" data-tip="Usuarios" data-corto="Usuarios"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></button>
       <button class="rail-item" data-nav="cargas" data-tip="Cargas / Recargas" data-corto="Cargas"><svg viewBox="0 0 24 24"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></button>
       <button class="rail-item" data-nav="transacciones" data-tip="Auditoría" data-corto="Auditoría"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></button>
@@ -3721,6 +3721,16 @@
     });
   });
 
+  /* Tooltip nativo con el nombre completo. El label visible del rail sale de
+     data-tip via CSS (::after) y en desktop se corta con "..." cuando no
+     entra ("Push & Notifi...", "Compro..."); un solo title por item, con el
+     mismo texto de data-tip como unica fuente de verdad, alcanza para que el
+     navegador muestre el nombre entero al pasar el mouse -- sin duplicar el
+     string a mano en cada boton. */
+  document.querySelectorAll(".rail-item[data-tip]").forEach(el=>{
+    if (!el.title) el.title = el.getAttribute("data-tip");
+  });
+
   /* ====================== Configuración del sitio ======================
      Ajustes que cambian lo que ve el jugador (ruleta, chatbot, registro).
      Se leen y guardan por crm.php ?accion=config / config_guardar. */
@@ -4303,6 +4313,18 @@
     // r.bonos_total) ya no se pintan acá -- se sacaron del rail (ver
     // módulo Usuarios / Finanzas para esos mismos números). #saldoInt es
     // otra cosa: los créditos del CRM, pintados en pintarCreditosCrm().
+
+    /* Badge de "Conversaciones" en el rail, mismo patron que Comprobantes y
+       Retiros. con_no_leidos ya viene calculado en el resumen (global, sin
+       importar la pestaña/filtro que este mirando el agente) -- no hace
+       falta un endpoint aparte ni sumar a mano c.no_leidos de los items,
+       que solo traerian lo que entra en el filtro actual. */
+    const bc = $("#badgeChats");
+    if (bc) {
+      const n = r.con_no_leidos || 0;
+      if (n > 0) { bc.textContent = n > 99 ? "99+" : n; bc.classList.add("on"); }
+      else { bc.classList.remove("on"); }
+    }
   }
 
   /**
