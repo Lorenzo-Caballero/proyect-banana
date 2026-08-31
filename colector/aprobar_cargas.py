@@ -209,7 +209,7 @@ def evaluar(ctx, solicitudes: list, dias: int) -> list:
         log.error("faltan API_URL o API_KEY en el .env")
         return []
     try:
-        r = ctx.request.post(dest, headers={"X-API-Key": key},
+        r = ctx.request.post(dest + "?accion=evaluar", headers={"X-API-Key": key},
                              data={"peticiones": solicitudes, "dias_ventana": dias})
         res = r.json()
     except Exception as e:

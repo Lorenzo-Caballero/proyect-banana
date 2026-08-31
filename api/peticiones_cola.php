@@ -399,8 +399,15 @@ try {
         exit;
     }
 
+    /* Decir CUALES son las acciones validas, no solo que esta mal. La primera
+       corrida del worker fallo justo aca -- posteaba sin `?accion=evaluar` -- y
+       "accion desconocida" a secas no daba ninguna pista de si el problema era
+       el nombre, el metodo o la URL. */
     http_response_code(400);
-    echo json_encode(['ok' => false, 'error' => 'accion desconocida']);
+    echo json_encode(['ok' => false,
+                      'error' => $accion === ''
+                          ? 'falta ?accion= en la URL (esperaba evaluar o confirmar)'
+                          : "accion desconocida: '$accion' (esperaba evaluar o confirmar)"]);
 
 } catch (Throwable $e) {
     if ($pdo->inTransaction()) { $pdo->rollBack(); }
