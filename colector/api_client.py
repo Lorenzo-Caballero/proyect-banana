@@ -62,6 +62,15 @@ def _post(payload: dict, timeout=20) -> dict:
     req.add_header("Content-Type", "application/json")
     # pagos.php acepta X-API-Key o X-Api-Token: mandamos el segundo
     req.add_header("X-Api-Token", API_TOKEN)
+    # User-Agent de navegador. Sin esto llega un 403 ANTES de tocar el PHP:
+    # hay filtros (WAF/ModSecurity) que cortan lo que no parece un navegador,
+    # y el "Python-urllib/3.x" por defecto cae justo ahi. Mismo motivo por el
+    # que el SondeoWorker del APK manda UA de navegador -- ya nos habia
+    # mordido antes en Hostinger, y volvio a pasar en el VPS (31/8/2026).
+    # El sintoma es confuso porque la MISMA peticion con curl da 200.
+    req.add_header("User-Agent",
+                   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                   "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
     with urllib.request.urlopen(req, timeout=timeout) as r:
         raw = r.read().decode()
     try:
