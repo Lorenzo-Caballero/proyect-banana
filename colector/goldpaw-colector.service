@@ -18,9 +18,15 @@
 # nada.
 #
 # INSTALACION (una sola vez, en el VPS):
-#   0. La dependencia. OJO: en Ubuntu 24.04 `pip install` esta bloqueado
-#      (PEP 668, entorno gestionado por el sistema), asi que va por apt:
-#        apt install -y python3-imapclient
+#   0. La dependencia:
+#        pip install --break-system-packages imapclient
+#      Las dos vueltas que da eso, para que nadie las repita: en Ubuntu
+#      24.04 `pip install` a secas esta bloqueado (PEP 668, entorno
+#      gestionado por el sistema), y `apt install python3-imapclient` NO
+#      sirve porque ese paquete no esta en los repos de esta version. De ahi
+#      la bandera. Es segura aca justamente porque no existe como paquete
+#      del sistema: no hay nada que pueda pisar.
+#
 #      El import vive DENTRO de una funcion (colector_mail.py:389), no
 #      arriba del archivo, asi que el script arranca igual sin la libreria
 #      y recien falla al conectarse a la casilla -- si ves "Falta
