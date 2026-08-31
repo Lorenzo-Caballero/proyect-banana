@@ -49,6 +49,18 @@ const RL_VENCIMIENTO_MIN = 45;      // minutos que vive una recarga sin pagar
 const RL_VENTANA_MIN     = 120;     // ventana para el match de respaldo (entero)
 const RL_MAX_PENDIENTES_USUARIO = 5;// recargas pendientes simultaneas por usuario
 
+// Cruce por nombre del titular (migracion 45). Dos numeros, y conviene
+// entender que hace cada uno antes de tocarlos:
+//   UMBRAL  -- cuanto se tienen que parecer los nombres para siquiera
+//              considerarlo. 0.72 tolera una errata o un apellido faltante,
+//              y rechaza dos personas distintas.
+//   MARGEN  -- cuanto le tiene que sacar el primero al segundo. Esta es la
+//              proteccion que importa: con dos candidatas parecidas (dos
+//              hermanos, "JUAN PEREZ" y "JUAN PEREZ GOMEZ"), acertar por
+//              poquito es adivinar. Si no hay margen, va a revision.
+const RL_UMBRAL_NOMBRE = 0.72;
+const RL_MARGEN_NOMBRE = 0.15;
+
 // Datos de la cuenta donde el usuario transfiere (los muestra el chatbot).
 // RESPALDO DE ULTIMA INSTANCIA, no la fuente. La cuenta real de cada cliente
 // vive en goldpaw_control.clientes (cobro_alias/cobro_cbu/cobro_titular, se
@@ -298,7 +310,17 @@ function rl_estado_efectivo(string $estado, $venceEn): string
  * Crea una recarga pendiente y devuelve el monto exacto a transferir.
  * Lo llama el chatbot (herramienta crear_recarga).
  */
-function rl_crear_recarga(PDO $pdo, string $usuario, int $coins): array
+/**
+ * Crea el pedido de recarga y devuelve el monto exacto a transferir.
+ *
+ * $titular: a nombre de quien esta la cuenta desde la que el jugador va a
+ * transferir. Lo declara el mismo al pedir la carga, y es lo que despues
+ * permite identificar su comprobante aunque el monto choque con el de otro
+ * (ver rl_elegir_recarga). Puede NO ser el jugador -- le puede transferir un
+ * familiar. Opcional para no romper a ningun llamador viejo: sin el, esa
+ * recarga simplemente no participa del desempate por nombre.
+ */
+function rl_crear_recarga(PDO $pdo, string $usuario, int $coins, string $titular = ''): array
 {
     $usuario = trim($usuario);
     if ($usuario === '') {
@@ -349,20 +371,42 @@ function rl_crear_recarga(PDO $pdo, string $usuario, int $coins): array
         $montoPedido = $montoBase + $cent / 100;
 
         // Insertar, reintentando si la referencia aleatoria choca (muy raro).
+        // titular_declarado es de la migracion 45: si todavia no corrio, se
+        // inserta sin esa columna y la recarga funciona igual (solo pierde el
+        // desempate por nombre). Mismo criterio de degradado que alta_encolar().
+        $titular = mb_substr(trim($titular), 0, 120);
+        $conTitular = true;
         $ins = $pdo->prepare(
             "INSERT INTO recargas (referencia, usuario, coins, monto_base, monto_pedido, centavos,
-                                   estado, creada_en, vence_en)
-             VALUES (?,?,?,?,?,?, 'pendiente', NOW(), DATE_ADD(NOW(), INTERVAL " . RL_VENCIMIENTO_MIN . " MINUTE))"
+                                   titular_declarado, estado, creada_en, vence_en)
+             VALUES (?,?,?,?,?,?,?, 'pendiente', NOW(), DATE_ADD(NOW(), INTERVAL " . RL_VENCIMIENTO_MIN . " MINUTE))"
         );
+        $insViejo = null;
         $ref = '';
         for ($intento = 0; $intento < 5; $intento++) {
             $ref = rl_referencia();
             try {
-                $ins->execute([$ref, $usuario, $coins, $montoBase, $montoPedido, $cent]);
+                if ($conTitular) {
+                    $ins->execute([$ref, $usuario, $coins, $montoBase, $montoPedido, $cent,
+                                   $titular !== '' ? $titular : null]);
+                } else {
+                    $insViejo->execute([$ref, $usuario, $coins, $montoBase, $montoPedido, $cent]);
+                }
                 break;
             } catch (PDOException $e) {
                 if (($e->errorInfo[1] ?? 0) == 1062 && $intento < 4) {
                     continue;   // referencia repetida, probamos otra
+                }
+                if ($conTitular && ($e->errorInfo[1] ?? 0) == 1054) {
+                    // "Unknown column": falta la migracion 45.
+                    $conTitular = false;
+                    $insViejo = $pdo->prepare(
+                        "INSERT INTO recargas (referencia, usuario, coins, monto_base, monto_pedido,
+                                               centavos, estado, creada_en, vence_en)
+                         VALUES (?,?,?,?,?,?, 'pendiente', NOW(), DATE_ADD(NOW(), INTERVAL " . RL_VENCIMIENTO_MIN . " MINUTE))"
+                    );
+                    $intento--;   // este intento no cuenta: se reintenta con la query vieja
+                    continue;
                 }
                 throw $e;
             }
@@ -585,10 +629,33 @@ function rl_acreditar(PDO $pdo, array &$recarga, string $idUnico, string $conf, 
         error_log('rl_acreditar: no pude calcular es_primera: ' . $e->getMessage());
     }
 
-    $pdo->prepare(
-        "UPDATE recargas SET estado='acreditada', pago_id=?, acreditada_en=NOW(), mensaje=?, es_primera=?
-          WHERE id=?"
-    )->execute([$idUnico, $conf, $esPrimera, $recarga['id']]);
+    // La confianza sale del propio $conf: las capas la escriben adelante
+    // ("alta: ...", "media: ..."), y la asignacion desde el CRM empieza con
+    // "manual: <operador>". Queda en su columna para poder filtrar despues
+    // (por ejemplo, revisar a mano todo lo que entro como 'media').
+    $confianza = null;
+    foreach (['alta', 'media', 'manual'] as $nivel) {
+        if (strpos($conf, $nivel) === 0) {
+            $confianza = $nivel;
+            break;
+        }
+    }
+    // Migracion 45: si todavia no corrio, se acredita igual sin la
+    // trazabilidad -- una recarga no puede quedar sin acreditar por una
+    // columna que falta.
+    try {
+        $pdo->prepare(
+            "UPDATE recargas SET estado='acreditada', pago_id=?, acreditada_en=NOW(), mensaje=?,
+                    es_primera=?, match_confianza=?, match_motivo=?
+              WHERE id=?"
+        )->execute([$idUnico, $conf, $esPrimera, $confianza,
+                    mb_substr($conf, 0, 200), $recarga['id']]);
+    } catch (Throwable $e) {
+        $pdo->prepare(
+            "UPDATE recargas SET estado='acreditada', pago_id=?, acreditada_en=NOW(), mensaje=?, es_primera=?
+              WHERE id=?"
+        )->execute([$idUnico, $conf, $esPrimera, $recarga['id']]);
+    }
 
     $pdo->prepare(
         "UPDATE usuarios SET coins = coins + ? WHERE username = ?"
@@ -600,6 +667,20 @@ function rl_acreditar(PDO $pdo, array &$recarga, string $idUnico, string $conf, 
                 asignado_en=IF(? IS NOT NULL, NOW(), NULL)
           WHERE id_unico=?"
     )->execute([$recarga['id'], $operador, $operador, $idUnico]);
+
+    // Aprender desde que cuenta paga este jugador. Va DESPUES de acreditar y
+    // en el mismo lugar para los dos caminos (automatico y manual desde el
+    // CRM). El manual es el que mas rinde: cada comprobante que el operador
+    // resuelve a mano hoy es uno que se resuelve solo la proxima vez.
+    try {
+        $pg = $pdo->prepare("SELECT cuit, cbu_origen, remitente FROM pagos WHERE id_unico = ? LIMIT 1");
+        $pg->execute([$idUnico]);
+        if ($datosPago = $pg->fetch()) {
+            rl_aprender_huella($pdo, (string)$recarga['usuario'], $datosPago);
+        }
+    } catch (Throwable $e) {
+        error_log('rl_acreditar: no pude aprender la huella: ' . $e->getMessage());
+    }
 
     // Si el jugador tiene un bono de fichas/porcentaje pendiente (prometido
     // por notificacion), se aplica ahora. crm_cargar() adentro abre y comitea
@@ -672,6 +753,243 @@ function rl_notificar_acreditada(PDO $pdo, array $recarga): void
     );
 }
 
+/**
+ * Nombre listo para comparar: sin tildes, en mayusculas, solo letras.
+ * "José  Ñuñez-Pérez" -> "JOSE NUNEZ PEREZ"
+ */
+function rl_normalizar_nombre(string $s): string
+{
+    $s = (string)@iconv('UTF-8', 'ASCII//TRANSLIT', $s);
+    $s = strtoupper($s);
+    $s = preg_replace('/[^A-Z\s]/', ' ', $s);
+    return trim(preg_replace('/\s+/', ' ', $s));
+}
+
+/** Palabras utiles de un nombre. Descarta particulas y letras sueltas. */
+function rl_tokens_nombre(string $s): array
+{
+    $basura = ['DE', 'DEL', 'LA', 'LAS', 'LOS', 'Y', 'DA', 'DOS'];
+    $out = [];
+    foreach (explode(' ', rl_normalizar_nombre($s)) as $t) {
+        if ($t !== '' && mb_strlen($t) > 1 && !in_array($t, $basura, true)) {
+            $out[] = $t;
+        }
+    }
+    return $out;
+}
+
+/**
+ * Cuanto se parecen dos palabras de un nombre (0..1).
+ *
+ * Los tres casos reales, en orden de confianza:
+ *   iguales                          -> 1.00
+ *   una es prefijo de la otra        -> 0.92   CABALLER / CABALLERO
+ *   distancia de edicion chica       -> 1-d/n  NAHUER / NAHUEL
+ *
+ * El tramo de distancia de edicion es un agregado sobre el matcher.py
+ * original, que solo tenia los dos primeros. Con eso, "NAHUER HERRRA",
+ * "NAHUL" o "EHERRERA" daban CERO contra "NAHUEL HERRERA" -- justo las
+ * erratas mas comunes, porque el prefijo solo agarra cuando el error esta al
+ * final. Se exige d<=2 y que no pase de un tercio del largo: sin ese tope,
+ * palabras cortas y distintas ("ANA"/"ANO") empezarian a puntuar.
+ */
+function rl_similitud_palabra(string $x, string $y): float
+{
+    if ($x === $y) {
+        return 1.0;
+    }
+    $lx = strlen($x);
+    $ly = strlen($y);
+    $corto = min($lx, $ly);
+    if ($corto >= 4 && (strpos($x, $y) === 0 || strpos($y, $x) === 0)) {
+        return 0.92;
+    }
+    $largo = max($lx, $ly);
+    if ($largo < 4) {
+        return 0.0;
+    }
+    $d = levenshtein($x, $y);
+    if ($d <= 2 && $d / $largo <= 1 / 3) {
+        return round(1 - $d / $largo, 3);
+    }
+    return 0.0;
+}
+
+/**
+ * Cuanto se parecen dos nombres completos (0..1).
+ *
+ * Compara el titular que el jugador DECLARO al pedir la carga contra el que
+ * informa el banco en el comprobante. Los dos son nombres reales, asi que
+ * tolera lo que pasa de verdad:
+ *   · orden distinto      HERRERA FACUNDO  vs  FACUNDO HERRERA
+ *   · apellidos faltantes NAHUEL HERRERA   vs  FACUNDO NAHUEL HERRERA
+ *   · truncamiento        CABALLER         vs  CABALLERO
+ *   · erratas             NAHUER HERRRA    vs  NAHUEL HERRERA
+ *
+ * Cada palabra se aparea con la que MEJOR le pegue del otro lado, y una vez
+ * usada no se reutiliza (si no, "JUAN JUAN" contra "JUAN PEREZ" daria 1.0).
+ * Se divide por la lista mas corta a proposito: que a uno le falte un
+ * apellido no tiene que penalizar, es lo normal cuando alguien escribe su
+ * nombre a las apuradas en un chat.
+ */
+function rl_similitud_nombres(string $a, string $b): float
+{
+    $ta = rl_tokens_nombre($a);
+    $tb = rl_tokens_nombre($b);
+    if (!$ta || !$tb) {
+        return 0.0;
+    }
+    $usados  = [];
+    $aciertos = 0.0;
+    foreach ($ta as $x) {
+        $mejor = 0.0;
+        $idx   = null;
+        foreach ($tb as $i => $y) {
+            if (isset($usados[$i])) {
+                continue;
+            }
+            $p = rl_similitud_palabra($x, $y);
+            if ($p > $mejor) {
+                $mejor = $p;
+                $idx   = $i;
+            }
+        }
+        if ($idx !== null) {
+            $usados[$idx] = true;
+            $aciertos += $mejor;
+        }
+    }
+    return round($aciertos / min(count($ta), count($tb)), 3);
+}
+
+/**
+ * Que usuarios ya pagaron alguna vez desde esta cuenta (CUIT o CBU).
+ *
+ * Devuelve [] si el comprobante no trae ninguno de los dos, si nadie pago
+ * nunca desde ahi, o si la migracion 45 no corrio. Ese [] significa "no se",
+ * NUNCA "ninguno": el que llama tiene que seguir de largo sin descartar
+ * candidatas. Es la diferencia entre una pista y un requisito.
+ */
+function rl_usuarios_por_huella(PDO $pdo, array $pago): array
+{
+    $cuit = trim((string)($pago['cuit'] ?? ''));
+    $cbu  = trim((string)($pago['cbu_origen'] ?? ''));
+    if ($cuit === '' && $cbu === '') {
+        return [];
+    }
+    try {
+        $st = $pdo->prepare(
+            "SELECT usuario FROM huellas_pagador
+              WHERE (cuit <> '' AND cuit = ?) OR (cbu <> '' AND cbu = ?)
+              GROUP BY usuario"
+        );
+        $st->execute([$cuit, $cbu]);
+        return $st->fetchAll(PDO::FETCH_COLUMN) ?: [];
+    } catch (Throwable $e) {
+        return [];
+    }
+}
+
+/**
+ * Aprende que este usuario paga desde esta cuenta. Se llama en CADA
+ * acreditacion, automatica o manual -- y la manual es la que mas vale: un
+ * pago que el operador resolvio a mano hoy es uno que se resuelve solo
+ * manana.
+ *
+ * Best-effort a proposito: si esto falla, la recarga YA se acredito. Nunca
+ * puede tumbar una acreditacion por no poder guardar una pista.
+ */
+function rl_aprender_huella(PDO $pdo, string $usuario, array $pago): void
+{
+    $cuit = trim((string)($pago['cuit'] ?? ''));
+    $cbu  = trim((string)($pago['cbu_origen'] ?? ''));
+    if ($usuario === '' || ($cuit === '' && $cbu === '')) {
+        return;
+    }
+    try {
+        $pdo->prepare(
+            "INSERT INTO huellas_pagador (usuario, cuit, cbu, nombre)
+             VALUES (?,?,?,?)
+             ON DUPLICATE KEY UPDATE usos = usos + 1, nombre = VALUES(nombre)"
+        )->execute([$usuario, $cuit, $cbu, mb_substr((string)($pago['remitente'] ?? ''), 0, 160)]);
+    } catch (Throwable $e) {
+        error_log('rl_aprender_huella: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Elige a QUE recarga corresponde un pago, entre las que ya coincidieron en
+ * monto y ventana de tiempo. Devuelve [recarga|null, confianza, motivo].
+ *
+ * Las capas van de mas fuerte a mas debil, y ninguna adivina:
+ *
+ *   1. HUELLA (CUIT/CBU)  exacta. Si este pagador ya cargo antes para UNA de
+ *      las candidatas, es esa. Con varias, solo acota y sigue. Sin huella no
+ *      descarta nada -- en la primera transferencia de cualquiera no existe.
+ *   2. TITULAR DECLARADO  el nombre que el jugador dijo al pedir la carga
+ *      contra el que informa el banco. Exige umbral Y margen sobre la
+ *      segunda: acertar por poquito entre dos parecidas es adivinar.
+ *   3. UNICA CANDIDATA    si quedo una sola, es esa aunque no se pueda
+ *      verificar el nombre (comportamiento historico, se conserva).
+ *   4. Nada de lo anterior -> revision manual, con el motivo escrito.
+ */
+function rl_elegir_recarga(PDO $pdo, array $cands, array $pago): array
+{
+    if (!$cands) {
+        return [null, '', 'no hay recarga pendiente que coincida en monto'];
+    }
+
+    // ---- Capa 1: huella del pagador ----
+    $conocidos = rl_usuarios_por_huella($pdo, $pago);
+    if ($conocidos) {
+        $porHuella = array_values(array_filter(
+            $cands,
+            static fn($c) => in_array((string)$c['usuario'], $conocidos, true)
+        ));
+        if (count($porHuella) === 1) {
+            $ident = trim((string)($pago['cuit'] ?? '')) ?: trim((string)($pago['cbu_origen'] ?? ''));
+            return [$porHuella[0], 'alta',
+                    'ya habia cargado desde esta cuenta (' . $ident . ')'];
+        }
+        if (count($porHuella) > 1) {
+            $cands = $porHuella;   // no decide, pero descarta al resto
+        }
+    }
+
+    // ---- Capa 2: titular declarado vs titular del comprobante ----
+    $remitente = (string)($pago['remitente'] ?? '');
+    if ($remitente !== '') {
+        $puntajes = [];
+        foreach ($cands as $c) {
+            $decl = (string)($c['titular_declarado'] ?? '');
+            $puntajes[] = [$decl !== '' ? rl_similitud_nombres($remitente, $decl) : 0.0, $c];
+        }
+        usort($puntajes, static fn($a, $b) => $b[0] <=> $a[0]);
+
+        if ($puntajes[0][0] >= RL_UMBRAL_NOMBRE) {
+            $segundo = isset($puntajes[1]) ? $puntajes[1][0] : 0.0;
+            if (($puntajes[0][0] - $segundo) >= RL_MARGEN_NOMBRE) {
+                return [$puntajes[0][1], 'alta', sprintf(
+                    'titular coincide: "%s" ~ "%s" (%.2f)',
+                    $remitente, $puntajes[0][1]['titular_declarado'], $puntajes[0][0]
+                )];
+            }
+            return [null, '', sprintf(
+                'dos titulares parecidos (%s %.2f vs %s %.2f): lo resuelve un operador',
+                $puntajes[0][1]['usuario'], $puntajes[0][0],
+                $puntajes[1][1]['usuario'], $segundo
+            )];
+        }
+    }
+
+    // ---- Capa 3: quedo una sola ----
+    if (count($cands) === 1) {
+        return [$cands[0], 'media', 'unica recarga en monto y ventana (el titular no verifica)'];
+    }
+
+    return [null, '', count($cands) . ' recargas posibles, ninguna distinguible'];
+}
+
 /** Casa el pago con una recarga pendiente y acredita, todo atomico. */
 function rl_matchear_y_acreditar(PDO $pdo, string $idUnico, float $monto): array
 {
@@ -680,11 +998,17 @@ function rl_matchear_y_acreditar(PDO $pdo, string $idUnico, float $monto): array
         rl_vencer($pdo);
         $centTarget = (int)round($monto * 100);
 
+        // El comprobante entero: hace falta el titular, el CUIT y el CBU para
+        // desempatar, no solo el monto (ver rl_elegir_recarga).
+        $pg = $pdo->prepare("SELECT * FROM pagos WHERE id_unico = ? LIMIT 1");
+        $pg->execute([$idUnico]);
+        $pago = $pg->fetch() ?: [];
+
         // Capa 1: monto EXACTO (centavos unicos). Es el camino normal.
         $q = $pdo->prepare(
             "SELECT * FROM recargas
               WHERE estado='pendiente' AND ROUND(monto_pedido*100)=?
-              ORDER BY creada_en LIMIT 2 FOR UPDATE"
+              ORDER BY creada_en FOR UPDATE"
         );
         $q->execute([$centTarget]);
         $cands = $q->fetchAll();
@@ -694,20 +1018,40 @@ function rl_matchear_y_acreditar(PDO $pdo, string $idUnico, float $monto): array
         if (count($cands) === 1) {
             $recarga = $cands[0];
             $conf = 'monto exacto';
+        } elseif (count($cands) > 1) {
+            // Mismo importe exacto pedido por dos jugadores a la vez. Antes
+            // esto iba derecho a revision; ahora se desempata por huella o
+            // por titular declarado.
+            [$recarga, $confCapa, $motivo] = rl_elegir_recarga($pdo, $cands, $pago);
+            $conf = $recarga ? $confCapa . ': ' . $motivo : '';
+            if (!$recarga) {
+                $pdo->prepare("UPDATE pagos SET estado='revision' WHERE id_unico=?")->execute([$idUnico]);
+                $pdo->commit();
+                return ['resultado' => 'revision', 'mensaje' => $motivo];
+            }
         } elseif (count($cands) === 0) {
-            // Capa 2 (respaldo): la billetera trunco decimales. Match por parte
-            // entera dentro de la ventana, SOLO si hay una sola candidata.
+            // Capa 2 (respaldo): el jugador transfirio redondo, o la billetera
+            // trunco los decimales. Se busca por parte entera dentro de la
+            // ventana. Antes esto exigia UNA sola candidata y si no, a
+            // revision -- que es lo que pasaba seguido, porque muchos piden el
+            // mismo monto "lindo" ($1000) al mismo tiempo. Ahora las varias
+            // candidatas se desempatan por huella o titular.
             $q2 = $pdo->prepare(
                 "SELECT * FROM recargas
                   WHERE estado='pendiente' AND FLOOR(monto_pedido)=?
                     AND creada_en >= DATE_SUB(NOW(), INTERVAL " . RL_VENTANA_MIN . " MINUTE)
-                  ORDER BY creada_en LIMIT 2 FOR UPDATE"
+                  ORDER BY creada_en FOR UPDATE"
             );
             $q2->execute([(int)floor($monto)]);
             $c2 = $q2->fetchAll();
-            if (count($c2) === 1) {
-                $recarga = $c2[0];
-                $conf = 'monto entero unico';
+            if ($c2) {
+                [$recarga, $confCapa, $motivo] = rl_elegir_recarga($pdo, $c2, $pago);
+                $conf = $recarga ? $confCapa . ' (monto entero): ' . $motivo : '';
+                if (!$recarga) {
+                    $pdo->prepare("UPDATE pagos SET estado='revision' WHERE id_unico=?")->execute([$idUnico]);
+                    $pdo->commit();
+                    return ['resultado' => 'revision', 'mensaje' => $motivo];
+                }
             }
         }
 

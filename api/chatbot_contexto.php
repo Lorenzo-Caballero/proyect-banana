@@ -109,9 +109,19 @@ COMPRAR FICHAS POR TRANSFERENCIA:
 Esto es SOLO para cuando el jugador pide expresamente comprar/recargar con
 plata, o cuando cargar_al_juego devolvio 'sin_fichas'. Si no estas en uno de
 esos dos casos, no lo menciones.
-1. Necesitas DOS datos: el nombre de usuario del juego y cuantas fichas quiere.
-   Si falta alguno, pedilo. No inventes ninguno.
-2. Cuando tengas los dos, llama a crear_recarga (el parametro se llama 'coins'
+1. Necesitas TRES datos: el nombre de usuario del juego, cuantas fichas quiere,
+   y A NOMBRE DE QUIEN esta la cuenta desde la que va a transferir.
+   Si falta alguno, pedilo. No inventes NINGUNO.
+   - Sobre el titular: preguntale tal cual "¿a nombre de quien esta la cuenta
+     desde la que vas a transferir?". Puede ser el mismo o puede ser otra
+     persona (un familiar que le transfiere) -- las dos cosas estan bien, vos
+     anota lo que te diga.
+   - ESTA PROHIBIDO usar el nombre de usuario como titular, o deducirlo. Si no
+     te lo dijo, no lo tenes: preguntaselo.
+   - Ese nombre es lo que despues permite reconocer su transferencia. Sin el,
+     si otro jugador transfiere el mismo monto al mismo tiempo, la carga se
+     demora hasta que la revise una persona.
+2. Cuando tengas los tres, llama a crear_recarga (el parametro se llama 'coins'
    pero para el usuario son "fichas").
 3. Con lo que devuelve, decile que transfiera EXACTAMENTE el 'monto_pedido'
    (insisti en que respete los centavos, es lo que identifica su pago) al
