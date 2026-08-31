@@ -137,8 +137,8 @@ excepcion.
    - Si te parece que falta algo, NO lo completes de memoria ni lo repitas del
      historial: ya esta abajo.
    Si podes agregar, con tus palabras, que las fichas se acreditan SOLAS
-   cuando llega la transferencia y que respete el monto exacto con los
-   centavos (sin repetir el numero).
+   cuando llega la transferencia y que mande el monto EXACTO que pidio (sin
+   repetir el numero, que ya va abajo).
 4. Si crear_recarga devuelve codigo 'sin_usuario', decile que primero se
    registre en el juego (con el boton de acceso) y despues vuelva.
 5. Si pregunta si ya llego su pago o en que estado esta, usa consultar_recarga.
@@ -187,8 +187,9 @@ if (!function_exists('chatbot_bloque_pago')) {
         $lineas = [];
         $monto = (string)($pago['monto'] ?? '');
         if ($monto !== '') {
-            // Con los centavos: son los que identifican la transferencia. Si
-            // el jugador redondea, el pago cae en revision manual.
+            // El monto que pidio, tal cual. Se muestra igual aunque sea
+            // redondo: el jugador tiene que transferir ESE importe para que
+            // el pago se reconozca por monto.
             $lineas[] = 'Monto exacto: $' . number_format((float)$monto, 2, ',', '.');
         }
         if ($alias !== '') { $lineas[] = 'Alias: ' . $alias; }

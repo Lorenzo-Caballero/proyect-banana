@@ -8,7 +8,7 @@
  *
  * Flujo:
  *   1. rl_crear_recarga()  -> el chatbot crea el pedido y devuelve el monto
- *                             EXACTO (con centavos unicos) a transferir.
+ *                             a transferir (el monto redondo que pidio).
  *   2. el usuario transfiere ese importe.
  *   3. el colector lee el mail y pagos.php llama rl_registrar_pago().
  *   4. rl_registrar_pago() casa el monto con la recarga y acredita los coins.
@@ -317,15 +317,13 @@ function rl_metodo_cobro(): string
 }
 
 
-/** Centavos libres (1..99) dado el set de ocupados. Devuelve int o null. */
-function rl_elegir_centavo(array $ocupados): ?int
-{
-    $libres = array_values(array_diff(range(1, 99), array_map('intval', $ocupados)));
-    if (!$libres) {
-        return null;
-    }
-    return $libres[random_int(0, count($libres) - 1)];
-}
+/* Aca vivia rl_elegir_centavo(), que repartia centavos unicos (1..99) para
+   que el importe identificara la recarga. Se saco junto con esa logica: le
+   pedia al jugador un numero raro, mucha gente redondeaba igual (y entonces
+   no servia), y hoy el pago se reconoce por titular declarado y huella de
+   CUIT/CBU -- que funcionan aunque transfiera de mas o de menos.
+   La columna `recargas.centavos` sigue existiendo, con NULL en las nuevas,
+   para no romper las viejas que si los tienen. */
 
 /** Codigo de referencia corto, legible (sin caracteres ambiguos). */
 function rl_referencia(): string
@@ -436,7 +434,8 @@ function rl_crear_recarga(PDO $pdo, string $usuario, int $coins, string $titular
     try {
         rl_vencer($pdo);
 
-        // Tope de pendientes por usuario, para que uno no acapare centavos.
+        // Tope de pendientes por usuario: un jugador con veinte recargas
+        // abiertas del mismo monto hace imposible saber cual pago.
         $c = $pdo->prepare("SELECT COUNT(*) FROM recargas WHERE usuario=? AND estado='pendiente'");
         $c->execute([$usuario]);
         if ((int)$c->fetchColumn() >= RL_MAX_PENDIENTES_USUARIO) {
@@ -445,21 +444,19 @@ function rl_crear_recarga(PDO $pdo, string $usuario, int $coins, string $titular
                 'Ya tenes varias recargas pendientes. Termina o espera que venzan antes de crear otra.'];
         }
 
-        // Centavos ocupados entre las pendientes del MISMO monto base.
-        $q = $pdo->prepare(
-            "SELECT centavos FROM recargas
-              WHERE estado='pendiente' AND FLOOR(monto_base)=? AND centavos IS NOT NULL
-              FOR UPDATE"
-        );
-        $q->execute([$montoBase]);
-        $cent = rl_elegir_centavo($q->fetchAll(PDO::FETCH_COLUMN));
-        if ($cent === null) {
-            $pdo->rollBack();
-            return ['ok' => false, 'error' =>
-                'Hay demasiadas recargas pendientes de ese monto. Proba con otra cantidad o espera unos minutos.'];
-        }
-
-        $montoPedido = $montoBase + $cent / 100;
+        /* SE PIDE EL MONTO REDONDO, el que el jugador dijo. Nada de centavos.
+           Antes se le sumaban centavos unicos (1000 -> 1000.47) para poder
+           reconocer el pago por el importe. Se saco por dos motivos:
+             1. Le pedia al jugador un numero raro. Mucha gente redondea igual,
+                y entonces el identificador no servia y encima sembraba dudas
+                ("¿por que 47 centavos de mas?").
+             2. Ya hay con que reconocer el pago sin eso: el titular declarado
+                y la huella de CUIT/CBU (ver rl_elegir_recarga), que ademas
+                funcionan aunque el jugador transfiera de mas o de menos.
+           `centavos` queda en NULL: la columna sigue existiendo para no
+           romper las recargas viejas que si los tienen. */
+        $cent = null;
+        $montoPedido = $montoBase;
 
         // Insertar, reintentando si la referencia aleatoria choca (muy raro).
         // titular_declarado es de la migracion 45: si todavia no corrio, se

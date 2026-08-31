@@ -117,7 +117,7 @@ $TOOLS = [
         'description' => 'COMPRA de fichas con plata: crea una solicitud de recarga. Si la '
             . 'respuesta trae link_pago, ESE LINK es la forma de pagar: pasaselo al jugador '
             . '(paga ahi con transferencia y se acredita solo). Si no hay link_pago, dale el '
-            . 'monto EXACTO (con centavos) a transferir y los datos de la cuenta. Usar SOLO si '
+            . 'monto EXACTO a transferir y los datos de la cuenta. Usar SOLO si '
             . 'el jugador pide expresamente comprar/recargar con plata, o si cargar_al_juego '
             . 'devolvio sin_fichas. Para un "cargame fichas" comun va cargar_al_juego, NO esta.',
         'parameters' => [
