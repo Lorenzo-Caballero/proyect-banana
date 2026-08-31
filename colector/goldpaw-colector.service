@@ -32,14 +32,29 @@
 #      y recien falla al conectarse a la casilla -- si ves "Falta
 #      imapclient", es esto.
 #
-#   1. Configurar las credenciales -- NO van en el repo:
+#   1. LA CASILLA, en config.json -- NO va en el repo:
 #        cp /opt/goldpaw/colector/config.json.example /opt/goldpaw/colector/config.json
 #        nano /opt/goldpaw/colector/config.json
-#      webhook_url  = https://ganamoscrm.online/gp-api/pagos.php
-#      webhook_token = la BOT_API_KEY (la misma que en api/config.local.php)
 #      usuario/clave = la casilla que recibe los avisos del banco
 #                      (en Gmail va una "contraseña de aplicacion", no la
 #                      contraseña normal de la cuenta)
+#      carpeta       = la etiqueta de Gmail donde caen esos mails
+#
+#   1b. A DONDE SE MANDAN LOS PAGOS, en colector.env -- tampoco va en el repo:
+#        printf 'API_URL=https://ganamoscrm.online/gp-api/pagos.php\nAPI_TOKEN=LA_BOT_API_KEY\n' \
+#          > /opt/goldpaw/colector/colector.env
+#        chmod 600 /opt/goldpaw/colector/colector.env
+#
+#      ESTE PASO ES EL QUE SE OLVIDA. config.json tiene un `webhook_url` y un
+#      `webhook_token` que NO son estos: esos los usa disparar_webhook(), otro
+#      mecanismo. Los pagos los manda api_client.py, y api_client.py lee
+#      SOLO estas dos variables de entorno.
+#
+#      Configurar config.json y creer que ya esta es exactamente lo que paso
+#      el 31/8/2026: el colector leia bien los mails pero los mandaba al
+#      hosting viejo con un token de relleno (eran sus valores por defecto),
+#      devolvia 401, y las recargas reales vencian sin acreditar. Los valores
+#      por defecto ya no existen -- ahora falla con un mensaje claro.
 #
 #   2. Probar ANTES de dejarlo corriendo -- lee los ultimos 10 mails y
 #      muestra que entendio, sin guardar nada:
@@ -74,6 +89,12 @@ Type=simple
 # WorkingDirectory es obligatorio, no cosmetico: colector_mail.py hace
 # "import api_client", que solo resuelve si el cwd es esta carpeta.
 WorkingDirectory=/opt/goldpaw/colector
+
+# A donde manda los pagos y con que token (ver paso 1b de la cabecera).
+# Archivo aparte y no Environment= aca: el token es secreto y este .service
+# SI esta en el repo. colector.env esta en .gitignore.
+EnvironmentFile=/opt/goldpaw/colector/colector.env
+
 ExecStart=/usr/bin/python3 /opt/goldpaw/colector/colector_mail.py --escuchar
 
 # IMAP se cae solo cada tanto (timeouts, el server cierra la sesion, se

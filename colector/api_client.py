@@ -10,23 +10,53 @@ Copialo dentro de la carpeta del colector (al lado de colector_mail.py),
 pisando el api_client.py que trae. colector_mail.py lo importa como `A` y
 llama A.guardar_pago(payload); no hay que tocar colector_mail.py.
 
-Config por variables de entorno (o edita los valores por defecto):
-    API_URL    ej: https://orange-crab-483661.hostingersite.com/api/pagos.php
+Config por variables de entorno (OBLIGATORIAS, no hay valores por defecto):
+    API_URL    ej: https://ganamoscrm.online/gp-api/pagos.php
     API_TOKEN  la MISMA BOT_API_KEY del server (config.local.php)
+
+OJO: estas NO son las mismas que `webhook_url`/`webhook_token` de
+config.json. Esas las usa disparar_webhook() de colector_mail.py, que es
+otro mecanismo. Los pagos los manda ESTE archivo, con estas variables. Es
+facil configurar una y creer que configuraste la otra -- paso, ver abajo.
 """
 
 import os
 import json
 import urllib.request
 
-API_URL = os.getenv(
-    "API_URL",
-    "https://orange-crab-483661.hostingersite.com/api/pagos.php",
-).rstrip("/")
-API_TOKEN = os.getenv("API_TOKEN", "una-clave-larga-y-random")
+# Sin valores por defecto, a proposito. Antes API_URL apuntaba por defecto al
+# hosting viejo de Hostinger y API_TOKEN a la cadena "una-clave-larga-y-random".
+# Con eso, un colector mal configurado no fallaba: mandaba las transferencias
+# a OTRO servidor, con un token de relleno, y solo se veia un 401 suelto en el
+# log -- que ademas colector_mail.py logueaba como "repetido (ya estaba)".
+# Perdimos una noche de diagnostico con recargas reales sin acreditar por esto
+# (31/8/2026). Es preferible que ni arranque a que mande la plata a otro lado.
+API_URL = (os.getenv("API_URL") or "").rstrip("/")
+API_TOKEN = os.getenv("API_TOKEN") or ""
+
+
+def _falta_config() -> str:
+    """Que falta configurar, o '' si esta todo. Se chequea en cada envio y no
+    al importar: colector_mail.py importa este modulo si o si, y un ImportError
+    dejaria al colector sin arrancar ni siquiera para los modos de prueba
+    (--test, --cuentas) que no necesitan la API."""
+    faltan = []
+    if not API_URL:
+        faltan.append("API_URL")
+    if len(API_TOKEN) < 16:
+        faltan.append("API_TOKEN (minimo 16 caracteres)")
+    if not faltan:
+        return ""
+    return ("falta configurar " + " y ".join(faltan) + ". Van como variables de "
+            "entorno del servicio, en /opt/goldpaw/colector/colector.env "
+            "(ver goldpaw-colector.service). NO son webhook_url/webhook_token "
+            "de config.json, esas son de otra cosa.")
 
 
 def _post(payload: dict, timeout=20) -> dict:
+    problema = _falta_config()
+    if problema:
+        raise RuntimeError(problema)
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(API_URL, data=body, method="POST")
     req.add_header("Content-Type", "application/json")

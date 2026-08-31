@@ -14,3 +14,6 @@ colector/config.json
 *.log
 *.rar
 
+
+# El colector manda los pagos con estas (ver colector/goldpaw-colector.service)
+colector/colector.env

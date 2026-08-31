@@ -532,7 +532,14 @@ def escuchar_una(cfg, cuenta, con, parar):
                                         f"trx {c['nro_transaccion']}")
                             disparar_webhook(cfg, c)
                         else:
-                            log(nombre, "repetido (ya estaba)")
+                            # guardar() devuelve False por DOS motivos muy
+                            # distintos: el pago ya estaba, o fallo el envio a
+                            # la API. Antes los dos decian "repetido (ya
+                            # estaba)", asi que un colector que no lograba
+                            # guardar NADA se leia como si estuviera todo al
+                            # dia -- costo una noche de diagnostico. El error
+                            # real ya sale en su propia linea desde guardar().
+                            log(nombre, "no se guardo (ver si hay error arriba)")
                         ultimo = max(ultimo, uid)
                         escribir_uid(con, nombre, ultimo, uidv)
 
