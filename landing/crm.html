@@ -516,6 +516,27 @@
   .att-pdf{display:inline-flex;align-items:center;gap:8px;margin-top:5px;padding:9px 12px;border-radius:10px;background:rgba(0,0,0,.16);color:inherit;text-decoration:none;font-size:13px;border:1px solid rgba(255,255,255,.14)}
   .row.user .att-pdf{background:var(--panel3);border-color:var(--line)}
   .att-pdf svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;flex:none}
+  /* ---- lectura del comprobante con IA ---- */
+  .att-leer{display:inline-flex;align-items:center;gap:6px;margin-top:6px;padding:5px 10px;
+    border-radius:8px;background:rgba(0,0,0,.18);color:inherit;font-size:11.5px;font-weight:700;
+    border:1px solid rgba(255,255,255,.16)}
+  .row.user .att-leer{background:var(--panel3);border-color:var(--line)}
+  .att-leer:hover{border-color:var(--violet)}
+  .att-leer:disabled{opacity:.6}
+  .att-leer .ico{width:13px;height:13px}
+  .cl-caja{margin-top:7px;padding:10px 12px;border-radius:11px;background:var(--panel);
+    border:1px solid var(--line);font-size:12px;max-width:260px}
+  .cl-resumen{margin:0 0 8px;line-height:1.45}
+  .cl-fila{display:flex;justify-content:space-between;gap:10px;padding:3px 0;
+    border-top:1px solid var(--line)}
+  .cl-fila span{color:var(--muted);flex:none}
+  .cl-fila b{text-align:right;word-break:break-all;font-variant-numeric:tabular-nums}
+  .cl-alertas{margin-bottom:8px;color:var(--orange2);font-size:11.5px;line-height:1.5}
+  .cl-alertas .ico{width:12px;height:12px;vertical-align:-1px}
+  /* Que se lea SIEMPRE: acá se decide sobre plata, y confiar en que una IA
+     leyó bien una imagen es justo el error que este aviso previene. */
+  .cl-aviso{margin:8px 0 0;padding-top:7px;border-top:1px solid var(--line);
+    color:var(--muted2);font-size:10.5px;line-height:1.45}
 
   /* ---- anclar ---- */
   /* Dentro de .chead-acciones el fondo/borde ya lo pone el contenedor: cada
@@ -4937,9 +4958,14 @@
       const cls = m.interno ? "interno" : (m.rol==="user" ? "user" : "saliente");
       let inner;
       if(m.adjunto && m.adjunto.url){
-        inner = m.adjunto.tipo==="imagen"
+        // "Leer con IA" solo en imágenes: el modelo de visión no abre PDFs.
+        // Le ahorra al agente copiar a mano monto, titular, CUIT y número de
+        // operación para ir a buscar la recarga.
+        const leer = m.adjunto.tipo==="imagen"
+          ? `<button class="att-leer" type="button" data-url="${esc(m.adjunto.url)}">${ico("lupa")} Leer con IA</button>` : "";
+        inner = (m.adjunto.tipo==="imagen"
           ? `<a href="${esc(m.adjunto.url)}" target="_blank"><img class="att-img" src="${esc(m.adjunto.url)}" alt=""></a>`
-          : `<a class="att-pdf" href="${esc(m.adjunto.url)}" target="_blank">${SVG.pdf}${esc(m.adjunto.nombre||"Comprobante.pdf")}</a>`;
+          : `<a class="att-pdf" href="${esc(m.adjunto.url)}" target="_blank">${SVG.pdf}${esc(m.adjunto.nombre||"Comprobante.pdf")}</a>`) + leer;
       } else {
         inner = (m.interno ? SVG.gift : "") + esc(m.texto);
       }
@@ -4950,7 +4976,63 @@
     }).join("") || `<div class="nouser">Conversación vacía.</div>`;
     const th=$("#thread"); th.scrollTop = th.scrollHeight;
 
+    // Un solo listener delegado en el hilo: los botones se repintan en cada
+    // carga, así que engancharlos uno por uno se perdería al refrescar.
+    th.querySelectorAll(".att-leer").forEach(b=>{
+      b.addEventListener("click", ()=>leerComprobante(b));
+    });
+
     pintarUsuario(d.usuario, d.movimientos, c.notas);
+  }
+
+  /**
+   * Lee un comprobante con la IA y muestra los datos abajo de la imagen.
+   *
+   * Es una AYUDA para no copiar a mano monto, titular, CUIT y número de
+   * operación. NO acredita nada: la plata se acredita cuando el colector
+   * captura el mail del banco. Una imagen se edita en dos minutos, así que
+   * lo que diga acá nunca alcanza para dar una carga por buena.
+   */
+  async function leerComprobante(btn){
+    const url = btn.getAttribute("data-url");
+    const prev = btn.innerHTML;
+    btn.disabled = true; btn.textContent = "Leyendo…";
+    let d;
+    try{
+      d = await jpost({url}, API_BASE + "/comprobante_leer.php");
+    }catch(e){
+      btn.disabled = false; btn.innerHTML = prev;
+      if(e.message !== "sesion_requerida") toast("No pude leer el comprobante");
+      return;
+    }
+    btn.disabled = false; btn.innerHTML = prev;
+    if(!d.ok){ toast(d.error || "No pude leer el comprobante"); return; }
+
+    const x = d.datos || {};
+    const rem = x.remitente || {}, des = x.destinatario || {};
+    const fila = (k,v)=> v && v!=="No disponible"
+      ? `<div class="cl-fila"><span>${esc(k)}</span><b>${esc(v)}</b></div>` : "";
+    const alertas = (d.alertas||[]).length
+      ? `<div class="cl-alertas">${(d.alertas||[]).map(a=>`<div>${ico("alerta")} ${esc(a)}</div>`).join("")}</div>` : "";
+
+    const caja = document.createElement("div");
+    caja.className = "cl-caja";
+    caja.innerHTML =
+      (d.resumen ? `<p class="cl-resumen">${esc(d.resumen)}</p>` : "") +
+      alertas +
+      fila("Monto",       x.monto ? (x.monto + " " + (x.moneda||"")).trim() : "") +
+      fila("Fecha",       x.fecha) +
+      fila("De",          rem.nombre) +
+      fila("CUIT",        rem.cuit) +
+      fila("CBU/CVU",     rem.cbu_cvu) +
+      fila("Para",        des.nombre) +
+      fila("N° operación", x.numero_operacion) +
+      `<p class="cl-aviso">Lo leyó una IA de una imagen: sirve para buscar más rápido, no como prueba del pago.</p>`;
+
+    // Reemplaza una lectura anterior en vez de apilar cajas.
+    const yaHabia = btn.parentElement.querySelector(".cl-caja");
+    if(yaHabia) yaHabia.remove();
+    btn.insertAdjacentElement("afterend", caja);
   }
 
   // ---------- ficha ----------
