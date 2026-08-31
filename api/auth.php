@@ -108,6 +108,12 @@ try {
             echo json_encode(['ok' => false, 'error' => 'Usuario o contraseña incorrectos.']); exit;
         }
         $pdo->prepare("UPDATE accesos SET ultimo_login = NOW() WHERE usuario = ?")->execute([$usuario]);
+        // Iniciar sesion es actividad. accesos.ultimo_login ya lo guardaba,
+        // pero solo lo ve este archivo: ultima_actividad es la que mira el CRM.
+        if (is_file(__DIR__ . '/actividad_lib.php')) {
+            require_once __DIR__ . '/actividad_lib.php';
+            actividad_marcar($pdo, $usuario);
+        }
         echo json_encode(['ok' => true, 'usuario' => $usuario, 'token' => token_de($usuario, $secret)],
             JSON_UNESCAPED_UNICODE);
         exit;

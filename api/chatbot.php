@@ -408,6 +408,13 @@ if (function_exists('crm_registrar_turno')) {
     crm_registrar_turno($pdo, $sessionId, $ultimoUser, $texto, $usuarioDetectado);
 }
 
+// Escribir por el chat cuenta como actividad -- solo si sabemos quien es
+// (un chat anonimo no se le puede atribuir a nadie).
+if (!empty($usuarioDetectado) && is_file(__DIR__ . '/actividad_lib.php')) {
+    require_once __DIR__ . '/actividad_lib.php';
+    actividad_marcar($pdo, (string)$usuarioDetectado);
+}
+
 /* Contact: el jugador esta hablando con nosotros. Se manda UNA vez por
    conversacion, no por mensaje -- el `ref` es el session_id, asi que el
    event_id sale igual en cada turno y Meta lo deduplica solo. Sin eso, una

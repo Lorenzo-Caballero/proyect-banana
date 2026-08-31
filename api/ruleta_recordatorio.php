@@ -46,19 +46,33 @@ try {
     // NOT EXISTS (reclamo de hoy) = giro disponible.
     // EXISTS (reclamo anterior)   = no es un jugador que nunca la tocó.
     // LEFT JOIN a ruleta_recordatorios = no le avisamos ya hoy.
+    // Los tres COLLATE no son adorno: `usuarios` quedo en la collation por
+    // defecto del servidor (uca1400) y las tablas del CRM en
+    // utf8mb4_unicode_ci, asi que comparar u.username contra
+    // ruleta_giros.usuario sin esto tira "Illegal mix of collations" y la
+    // query entera falla.
+    //
+    // Y fallaba: el catch de mas abajo se tragaba el error y devolvia 500,
+    // asi que este recordatorio NUNCA se mando desde que existe. El unico
+    // rastro quedaba en error_log, que nadie mira. Es el mismo choque que ya
+    // esta resuelto en crm.php, admin_usuarios.php y crm_notificaciones.php
+    // -- este archivo se quedo afuera.
     $sql =
         "SELECT u.username
            FROM usuarios u
            JOIN ruleta_giros gh
-                ON gh.usuario = u.username AND gh.reclamado = 1 AND gh.dia < CURDATE()
+                ON gh.usuario = u.username COLLATE utf8mb4_unicode_ci
+               AND gh.reclamado = 1 AND gh.dia < CURDATE()
            LEFT JOIN ruleta_recordatorios rr
-                ON rr.usuario = u.username AND rr.dia = CURDATE()
+                ON rr.usuario = u.username COLLATE utf8mb4_unicode_ci
+               AND rr.dia = CURDATE()
           WHERE u.tiene_app = 1
             AND u.notificaciones = 1
             AND rr.usuario IS NULL
             AND NOT EXISTS (
                   SELECT 1 FROM ruleta_giros gt
-                   WHERE gt.usuario = u.username AND gt.dia = CURDATE() AND gt.reclamado = 1
+                   WHERE gt.usuario = u.username COLLATE utf8mb4_unicode_ci
+                     AND gt.dia = CURDATE() AND gt.reclamado = 1
                 )
           GROUP BY u.username";
     $usuarios = $pdo->query($sql)->fetchAll(PDO::FETCH_COLUMN);
