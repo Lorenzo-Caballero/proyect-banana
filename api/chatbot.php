@@ -355,7 +355,17 @@ $cargaInfo = null;
 // Igual que $cargaInfo pero para el alta: el front sondea con este id hasta
 // que el bot la crea, y recien ahi muestra usuario y contrasena.
 $altaInfo = null;
-$ejecutarTool = function (string $nombre, array $args) use ($pdo, &$usuarioDetectado, $usuarioCliente, $sesionVerificada, &$cargaInfo, &$altaInfo, $sessionId): array {
+/* Los datos de pago de la recarga recien creada (monto exacto, alias, CBU,
+   titular). Se guardan aca para ESCRIBIRLOS DESDE EL CODIGO al final del
+   turno, en vez de confiar en que el modelo los transcriba.
+   El motivo es concreto: el modelo recibia el CBU en el resultado de la
+   herramienta y tenia que copiarlo en su respuesta. A veces se lo olvidaba
+   entero ("te paso el monto" y ningun CBU), que es el bug reportado. Y el
+   riesgo peor no es que lo omita: un CBU de 22 digitos copiado a mano por un
+   modelo se puede truncar o cambiar un digito, y ahi la plata del jugador se
+   va a la cuenta de otro. Un dato bancario no lo puede tipear una IA. */
+$pagoInfo = null;
+$ejecutarTool = function (string $nombre, array $args) use ($pdo, &$usuarioDetectado, $usuarioCliente, $sesionVerificada, &$cargaInfo, &$altaInfo, &$pagoInfo, $sessionId): array {
     if (!empty($args['usuario'])) { $usuarioDetectado = (string)$args['usuario']; }
     // $usuarioCliente sale de la sesion (token o header), NUNCA de lo que el
     // modelo haya sacado de la charla: si el jugador escribe "soy fulano", eso
@@ -366,6 +376,18 @@ $ejecutarTool = function (string $nombre, array $args) use ($pdo, &$usuarioDetec
     }
     if ($nombre === 'crear_cuenta' && !empty($res['ok']) && !empty($res['id'])) {
         $altaInfo = ['id' => (int)$res['id'], 'usuario' => (string)($res['usuario'] ?? '')];
+    }
+    // Solo transferencia: con HG Cash la recarga trae un link de pago y no
+    // hay CBU que pasar (el jugador paga en la pasarela).
+    if ($nombre === 'crear_recarga' && !empty($res['ok']) && empty($res['link_pago'])
+        && (($res['metodo'] ?? '') === 'transferencia')) {
+        $pagoInfo = [
+            'monto'     => (string)($res['monto_pedido'] ?? ''),
+            'alias'     => (string)($res['alias'] ?? ''),
+            'cbu'       => (string)($res['cbu'] ?? ''),
+            'titular'   => (string)($res['titular'] ?? ''),
+            'vence_min' => (int)($res['vence_min'] ?? 0),
+        ];
     }
     return $res;
 };
@@ -391,6 +413,24 @@ try {
 // contrasena es porque el modelo se la invento, y eso le da al jugador una
 // cuenta que no existe -- el error mas caro de todo este flujo.
 $texto = chatbot_sin_credenciales($texto);
+
+/* Los datos de pago los escribe el CODIGO, no el modelo (ver $pagoInfo).
+   Va ACA, antes de partir el texto y de guardarlo: asi el bloque queda
+   tambien en lo que el CRM archiva y en la notificacion, y el agente ve
+   EXACTAMENTE lo que se le dijo al jugador. Si se agregara al final, la
+   conversacion guardada mostraria un pedido de plata sin los datos de pago.
+
+   Se agrega solo si el modelo no los puso ya -- el CBU se compara por sus
+   digitos, porque el modelo lo puede haber escrito con puntos o espacios.
+   Asi el jugador recibe el dato siempre, exactamente una vez, y exacto. */
+if ($pagoInfo) {
+    $bloque = chatbot_bloque_pago($pagoInfo, $texto);
+    if ($bloque !== '') {
+        // En su propio globo ([[MSG]]), mismo criterio que las credenciales
+        // de una cuenta nueva: se copia y pega sin arrastrar la charla.
+        $texto = rtrim($texto) . "\n[[MSG]]\n" . $bloque;
+    }
+}
 
 $partes = chatbot_partir($texto);
 $texto  = implode("

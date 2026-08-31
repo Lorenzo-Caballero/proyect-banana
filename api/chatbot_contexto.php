@@ -123,10 +123,18 @@ esos dos casos, no lo menciones.
      demora hasta que la revise una persona.
 2. Cuando tengas los tres, llama a crear_recarga (el parametro se llama 'coins'
    pero para el usuario son "fichas").
-3. Con lo que devuelve, decile que transfiera EXACTAMENTE el 'monto_pedido'
-   (insisti en que respete los centavos, es lo que identifica su pago) al
-   alias/CBU y titular indicados. Avisale que vence en 'vence_min' minutos y que
-   las fichas se acreditan SOLAS cuando llega la transferencia.
+3. NO ESCRIBAS VOS los datos de pago. Ni el monto, ni el alias, ni el CBU, ni
+   el titular. Los agrega el sistema solo, exactos, abajo de tu mensaje.
+   - Vos deci UNA linea corta y natural, tipo "Listo, te paso los datos" o
+     "Perfecto, transferi a estos datos", y nada mas.
+   - El motivo es serio: si copias un CBU de 22 digitos y te equivocas en uno,
+     la plata del jugador se va a la cuenta de OTRA persona y no hay vuelta
+     atras. Por eso ese dato no lo tipeas nunca vos.
+   - Si te parece que falta algo, NO lo completes de memoria ni lo repitas del
+     historial: ya esta abajo.
+   Si podes agregar, con tus palabras, que las fichas se acreditan SOLAS
+   cuando llega la transferencia y que respete el monto exacto con los
+   centavos (sin repetir el numero).
 4. Si crear_recarga devuelve codigo 'sin_usuario', decile que primero se
    registre en el juego (con el boton de acceso) y despues vuelva.
 5. Si pregunta si ya llego su pago o en que estado esta, usa consultar_recarga.
@@ -138,6 +146,56 @@ Reglas de estilo (SIEMPRE, no negociables):
   herramienta no lo confirma.
 - Nunca pidas contraseñas ni datos de tarjeta por el chat.
 TXT);
+}
+
+if (!function_exists('chatbot_bloque_pago')) {
+    /**
+     * Los datos de pago de una recarga, escritos POR EL CODIGO.
+     *
+     * POR QUE NO LOS ESCRIBE EL MODELO
+     * crear_recarga le devuelve el CBU al modelo y el modelo tenia que
+     * copiarlo en su respuesta. A veces se lo olvidaba entero -- "te paso el
+     * monto" y ningun CBU, que es el bug que reporto Nahuel. Y el riesgo peor
+     * no es que lo omita: un CBU de 22 digitos transcripto por una IA se
+     * puede truncar o cambiar un digito, y ahi la plata del jugador se va a
+     * la cuenta de otro. Un dato bancario no lo tipea un modelo.
+     *
+     * Devuelve '' si no hay nada que agregar: sin datos, o porque el modelo
+     * YA los puso (se compara el CBU por sus digitos, que el modelo lo pudo
+     * escribir con puntos o espacios, y el alias sin distinguir mayusculas).
+     *
+     * $pago: ['monto','alias','cbu','titular','vence_min'].
+     */
+    function chatbot_bloque_pago(array $pago, string $textoModelo): string
+    {
+        $alias = trim((string)($pago['alias'] ?? ''));
+        $cbu   = trim((string)($pago['cbu'] ?? ''));
+        if ($alias === '' && $cbu === '') {
+            return '';
+        }
+        $digitos = static function ($s) { return (string)preg_replace('/\D+/', '', (string)$s); };
+        $cbuDig  = $digitos($cbu);
+        if (($cbuDig !== '' && strpos($digitos($textoModelo), $cbuDig) !== false)
+            || ($alias !== '' && stripos($textoModelo, $alias) !== false)) {
+            return '';   // el modelo ya lo dijo, no duplicar
+        }
+
+        $lineas = [];
+        $monto = (string)($pago['monto'] ?? '');
+        if ($monto !== '') {
+            // Con los centavos: son los que identifican la transferencia. Si
+            // el jugador redondea, el pago cae en revision manual.
+            $lineas[] = 'Monto exacto: $' . number_format((float)$monto, 2, ',', '.');
+        }
+        if ($alias !== '') { $lineas[] = 'Alias: ' . $alias; }
+        if ($cbu   !== '') { $lineas[] = 'CBU/CVU: ' . $cbu; }
+        $tit = trim((string)($pago['titular'] ?? ''));
+        if ($tit !== '') { $lineas[] = 'Titular: ' . $tit; }
+        $vence = (int)($pago['vence_min'] ?? 0);
+        if ($vence > 0) { $lineas[] = 'Vence en ' . $vence . ' minutos.'; }
+
+        return $lineas ? implode("\n", $lineas) : '';
+    }
 }
 
 if (!function_exists('chatbot_armar_prompt')) {
