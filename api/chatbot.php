@@ -1,21 +1,34 @@
 <?php
 /**
- * Proxy del chatbot -> Cohere, CON herramientas (tool use).
+ * Proxy del chatbot -> Qwen, CON herramientas (tool use).
  *
- * El bot no solo conversa: puede EJECUTAR acciones contra nuestra API.
- * Hoy tiene dos herramientas:
- *   - crear_recarga(usuario, coins)      crea el pedido y da el monto a transferir
- *   - consultar_recarga(referencia_o_usuario)  dice en que estado esta
+ * El bot no solo conversa: puede EJECUTAR acciones contra nuestra API
+ * (identificar al jugador, crear una recarga, cargar fichas, pedir un retiro,
+ * consultar saldo, crear una cuenta). Cada una esta declarada en $TOOLS.
  *
  * La key vive en el server (nunca en el HTML). El navegador le pega a este
- * archivo y este habla con Cohere.
+ * archivo y este habla con el modelo.
  *
  * POST { "mensajes": [ {"role":"user","content":"..."} ] } -> { ok, respuesta }
  *
- * CONFIG:
- *   1) COHERE_API_KEY en api/config.local.php
- *   2) El contexto del juego -> constante CONTEXTO de aca abajo
- *   3) Datos de la cuenta a transferir -> en recargas_lib.php (RL_ALIAS, etc.)
+ * QUE MODELO Y POR QUE
+ * Se uso Cohere (command-r-08-2024) hasta agosto 2026 y se cambio porque se
+ * le perdia el hilo en dialogos con ramas -- el caso testigo: preguntaba "¿ya
+ * tenes cuenta?", el jugador respondia "si" y contestaba "ok, te creo una".
+ *
+ * Ahora va Qwen por su modo COMPATIBLE CON OPENAI, que es otro formato de
+ * mensajes: la respuesta viene en choices[0].message (Cohere la ponia en
+ * message) y los errores en error.message (Cohere, en message). Si algun dia
+ * se vuelve a cambiar de proveedor, eso es lo que hay que mirar -- esta todo
+ * en ia_chat(), ia_texto() y procesar_chat().
+ *
+ * CONFIG (config.local.php o entorno):
+ *   1) QWEN_API_KEY   la clave. Obligatoria.
+ *   2) QWEN_BASE_URL  opcional, default en QWEN_BASE_DEF.
+ *   3) QWEN_MODEL     opcional, default en QWEN_MODEL_DEF.
+ *   4) El contexto del juego -> chatbot_contexto.php (editable desde el CRM)
+ *   5) Datos de la cuenta a transferir -> los trae recargas_lib.php desde el
+ *      panel de ganamos (ver rl_banco_panel).
  */
 
 declare(strict_types=1);
@@ -57,7 +70,21 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 // abajo (chatbot_config); si está vacío, se cae a esta constante.
 require __DIR__ . '/chatbot_contexto.php';
 
-const MODELO       = 'command-r-08-2024';
+/* Qwen (Alibaba Model Studio) por su modo COMPATIBLE CON OPENAI. Se dejo
+   Cohere (command-r-08-2024) porque se le perdia el hilo en dialogos con
+   ramas: preguntaba "¿ya tenes cuenta?", el jugador decia "si" y contestaba
+   "ok, te creo una".
+
+   Los tres valores se pueden pisar desde config.local.php o el entorno, sin
+   tocar codigo: si un modelo resulta flojo con las herramientas, se cambia
+   QWEN_MODEL y listo. qwen-vl-max ademas VE imagenes, que es lo que permite
+   analizar comprobantes (ver comprobante_leer.php).
+
+   OJO si cambias de modelo: el chatbot depende de tool calling. Un modelo
+   que no lo soporte deja de poder cargar fichas o crear recargas -- va a
+   conversar igual, que es peor, porque parece que anda. */
+const QWEN_BASE_DEF  = 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1';
+const QWEN_MODEL_DEF = 'qwen-vl-max';
 const MAX_MENSAJES = 12;
 const MAX_CARACT   = 1500;
 const MAX_TOKENS   = 600;
@@ -182,10 +209,14 @@ $TOOLS = [
 ];
 
 // --- La key vive en el server ---
-$key = cfg('COHERE_API_KEY');
+// Se acepta COHERE_API_KEY como nombre viejo para no dejar el chat mudo entre
+// que se despliega esto y alguien edita config.local.php. Cuando este cargada
+// QWEN_API_KEY, la vieja se puede borrar.
+$key = cfg('QWEN_API_KEY');
+if ($key === '') { $key = cfg('COHERE_API_KEY'); }
 if ($key === '' || strlen($key) < 20) {
     http_response_code(500);
-    error_log('chatbot: falta COHERE_API_KEY en api/config.local.php');
+    error_log('chatbot: falta QWEN_API_KEY en api/config.local.php');
     echo json_encode(['ok' => false, 'error' => 'El chatbot no esta configurado']);
     exit;
 }
@@ -343,8 +374,8 @@ if (count($mensajes) < 2) {
 }
 
 // --- Como hablar con Cohere y como ejecutar cada herramienta ---
-$llamarCohere = function (array $mensajes) use ($key, $TOOLS): array {
-    return cohere_chat($key, $mensajes, $TOOLS);
+$llamarModelo = function (array $mensajes) use ($key, $TOOLS): array {
+    return ia_chat($key, $mensajes, $TOOLS);
 };
 // Vinculamos la conversacion al jugador: arrancamos con el usuario logueado
 // (del token) y lo pisamos si el bot llama una herramienta con otro 'usuario'.
@@ -393,7 +424,7 @@ $ejecutarTool = function (string $nombre, array $args) use ($pdo, &$usuarioDetec
 };
 
 try {
-    $texto = procesar_chat($mensajes, $llamarCohere, $ejecutarTool, MAX_RONDAS);
+    $texto = procesar_chat($mensajes, $llamarModelo, $ejecutarTool, MAX_RONDAS);
 } catch (Throwable $e) {
     error_log('chatbot: ' . $e->getMessage());
     http_response_code(502);
@@ -664,7 +695,7 @@ function chatbot_ia_del_chat(PDO $pdo, string $sessionId, string $usuario): bool
 
 /**
  * Corre la conversacion resolviendo las herramientas que pida el modelo.
- * $llamarCohere(array $mensajes): array  -> ['http'=>int,'data'=>array,'raw'=>string]
+ * $llamarModelo(array $mensajes): array  -> ['http'=>int,'data'=>array,'raw'=>string]
  * $ejecutarTool(string $nombre, array $args): array
  * Devuelve el texto final. Lanza excepcion con mensaje util si Cohere falla.
  */
@@ -697,27 +728,37 @@ function tool_salida_limpia($v, int $prof = 0)
     return $limpio;
 }
 
-function procesar_chat(array $mensajes, callable $llamarCohere, callable $ejecutarTool, int $maxRondas): string
+function procesar_chat(array $mensajes, callable $llamarModelo, callable $ejecutarTool, int $maxRondas): string
 {
     for ($ronda = 0; $ronda < $maxRondas; $ronda++) {
-        $r = $llamarCohere($mensajes);
+        $r = $llamarModelo($mensajes);
         if (($r['http'] ?? 0) !== 200) {
             $data = $r['data'] ?? [];
-            $detalle = is_string($data['message'] ?? null) ? $data['message'] : ('HTTP ' . ($r['http'] ?? '?'));
-            throw new RuntimeException('Cohere: ' . $detalle);
+            // Formato OpenAI: {"error":{"message":"..."}}. Se deja el de
+            // Cohere ({"message":"..."}) de respaldo por si alguna vez se
+            // vuelve a apuntar a otra API.
+            $detalle = $data['error']['message']
+                    ?? (is_string($data['message'] ?? null) ? $data['message'] : null)
+                    ?? ('HTTP ' . ($r['http'] ?? '?'));
+            throw new RuntimeException('IA: ' . $detalle);
         }
-        $msg = $r['data']['message'] ?? [];
+        // OpenAI-compatible: el turno viene en choices[0].message (Cohere lo
+        // ponia directo en message).
+        $msg = $r['data']['choices'][0]['message'] ?? [];
         $toolCalls = $msg['tool_calls'] ?? [];
 
         if (!$toolCalls) {
-            return cohere_texto($msg);
+            return ia_texto($msg);
         }
 
-        // Eco del turno del asistente (Cohere exige devolverle sus tool_calls)
+        // Eco del turno del asistente: hay que devolverle sus tool_calls tal
+        // cual, o el modelo no sabe a que pedido corresponde cada resultado.
+        // `content` va aunque sea null: algunos modelos rechazan el mensaje
+        // si falta la clave.
         $mensajes[] = [
             'role'       => 'assistant',
+            'content'    => $msg['content'] ?? '',
             'tool_calls' => $toolCalls,
-            'tool_plan'  => $msg['tool_plan'] ?? '',
         ];
 
         // Ejecutar cada herramienta y devolver el resultado
@@ -737,13 +778,28 @@ function procesar_chat(array $mensajes, callable $llamarCohere, callable $ejecut
     return 'Estoy teniendo un problema para completar tu pedido. ¿Podés repetirlo?';
 }
 
-/** Extrae el texto de un message de Cohere v2 (content = array de bloques). */
-function cohere_texto(array $msg): string
+/**
+ * El texto de la respuesta del modelo.
+ *
+ * Se contemplan las DOS formas a proposito: en la API compatible con OpenAI
+ * `content` es un string, pero los modelos con vision (qwen-vl-*) a veces lo
+ * devuelven como array de bloques [{type:"text", text:"..."}] -- que era
+ * ademas el formato de Cohere. Aceptar las dos evita que un cambio de modelo
+ * desde config deje al chat mudo.
+ */
+function ia_texto(array $msg): string
 {
+    $c = $msg['content'] ?? '';
     $texto = '';
-    foreach (($msg['content'] ?? []) as $b) {
-        if (($b['type'] ?? '') === 'text' && isset($b['text'])) {
-            $texto .= $b['text'];
+    if (is_string($c)) {
+        $texto = $c;
+    } elseif (is_array($c)) {
+        foreach ($c as $b) {
+            if (is_string($b)) {
+                $texto .= $b;
+            } elseif (is_array($b) && isset($b['text'])) {
+                $texto .= (string)$b['text'];
+            }
         }
     }
     return trim($texto) !== '' ? trim($texto) : 'No pude generar una respuesta, intenta de nuevo.';
@@ -882,27 +938,40 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
 // ===========================================================================
 
 /** POST a Cohere v2 /chat. Devuelve ['http'=>int,'data'=>array,'raw'=>string]. */
-function cohere_chat(string $key, array $mensajes, array $tools): array
+/**
+ * Una vuelta contra Qwen, por su modo compatible con OpenAI.
+ *
+ * Es el MISMO formato que usa OpenAI: POST {base}/chat/completions, la
+ * respuesta viene en choices[0].message, y los errores en error.message
+ * (Cohere los ponia en message, a secas -- de ahi que el manejo de errores
+ * tambien cambie).
+ */
+function ia_chat(string $key, array $mensajes, array $tools): array
 {
-    $payload = json_encode([
-        'model'       => MODELO,
+    $base   = rtrim((string)cfg('QWEN_BASE_URL', QWEN_BASE_DEF), '/');
+    $modelo = (string)cfg('QWEN_MODEL', QWEN_MODEL_DEF);
+
+    $cuerpo = [
+        'model'       => $modelo,
         'messages'    => $mensajes,
-        'tools'       => $tools,
         'temperature' => 0.3,
         'max_tokens'  => MAX_TOKENS,
-    ]);
+    ];
+    // Sin herramientas no se manda la clave: algunos modelos rechazan un
+    // `tools` vacio en vez de ignorarlo.
+    if ($tools) { $cuerpo['tools'] = $tools; }
 
-    $ch = curl_init('https://api.cohere.com/v2/chat');
+    $ch = curl_init($base . '/chat/completions');
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST           => true,
-        CURLOPT_POSTFIELDS     => $payload,
+        CURLOPT_POSTFIELDS     => json_encode($cuerpo, JSON_UNESCAPED_UNICODE),
         CURLOPT_HTTPHEADER     => [
             'Content-Type: application/json',
             'Accept: application/json',
             'Authorization: Bearer ' . $key,
         ],
-        CURLOPT_TIMEOUT        => 40,
+        CURLOPT_TIMEOUT        => 60,   // los modelos con vision tardan mas
     ]);
     $raw  = curl_exec($ch);
     $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -910,7 +979,7 @@ function cohere_chat(string $key, array $mensajes, array $tools): array
     curl_close($ch);
 
     if ($raw === false) {
-        throw new RuntimeException('No se pudo contactar a Cohere: ' . $err);
+        throw new RuntimeException('No se pudo contactar al modelo: ' . $err);
     }
     $data = json_decode($raw, true);
     return ['http' => $http, 'data' => is_array($data) ? $data : [], 'raw' => $raw];
