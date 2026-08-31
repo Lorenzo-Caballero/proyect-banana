@@ -1,4 +1,15 @@
 {
+  "_LEEME": [
+    "webhook_url y webhook_token: DEJALOS VACIOS en este proyecto.",
+    "Son de disparar_webhook(), un aviso extra heredado del colector",
+    "original, que manda el pago UNA SEGUNDA VEZ con el header X-Token --",
+    "un header que pagos.php ni siquiera acepta.",
+    "Los pagos de verdad los manda api_client.py, y lee SOLO las variables",
+    "de entorno API_URL y API_TOKEN (van en colector.env, ver",
+    "goldpaw-colector.service). Poner pagos.php aca no sirve de nada y",
+    "ademas hace creer que el colector ya quedo configurado cuando no.",
+    "Paso el 31/8/2026 y costo una noche de diagnostico."
+  ],
   "webhook_url": "",
   "webhook_token": "",
   "cuentas": [

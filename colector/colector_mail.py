@@ -554,7 +554,8 @@ def escuchar_una(cfg, cuenta, con, parar):
                             # reintenta todo -- si en cambio seguiamos y un
                             # mail POSTERIOR guardaba bien, el `ultimo` hubiera
                             # saltado por encima de este fallo y el pago se
-                            # perdia para siempre (el bug original).
+                            # perdia para siempre. El error real ya salio en
+                            # su propia linea desde guardar().
                             log(nombre, "sin guardar -- se reintenta este lote en el proximo poll")
                             break
                         ultimo = max(ultimo, uid)

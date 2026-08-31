@@ -92,8 +92,14 @@ $TOOLS = [
             'properties' => [
                 'usuario' => ['type' => 'string', 'description' => 'nombre de usuario del juego (el del registro)'],
                 'coins'   => ['type' => 'integer', 'description' => 'cantidad de coins a cargar'],
+                'titular' => ['type' => 'string', 'description' =>
+                    'Nombre y apellido del TITULAR de la cuenta bancaria desde la que el jugador '
+                    . 'va a transferir, tal cual se lo dijo el jugador. NO es el nombre de usuario '
+                    . 'y puede no ser el jugador (le puede transferir un familiar). Es lo que '
+                    . 'permite reconocer su pago. NUNCA lo inventes ni lo deduzcas del usuario: '
+                    . 'si el jugador no lo dijo, preguntaselo antes de llamar esta herramienta.'],
             ],
-            'required' => ['usuario', 'coins'],
+            'required' => ['usuario', 'coins', 'titular'],
         ],
     ]],
     ['type' => 'function', 'function' => [
@@ -813,7 +819,8 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
                 'error' => (string)($r['cuerpo']['error'] ?? 'No se pudo crear la cuenta.')];
     }
     if ($nombre === 'crear_recarga') {
-        return rl_crear_recarga($pdo, (string)($args['usuario'] ?? ''), (int)($args['coins'] ?? 0));
+        return rl_crear_recarga($pdo, (string)($args['usuario'] ?? ''), (int)($args['coins'] ?? 0),
+                                 (string)($args['titular'] ?? ''));
     }
     if ($nombre === 'consultar_recarga') {
         $ref = (string)($args['referencia_o_usuario'] ?? $args['referencia'] ?? $args['usuario'] ?? '');
