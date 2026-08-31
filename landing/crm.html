@@ -82,16 +82,18 @@
      hover) -- referencia pedida por el usuario. El breakpoint de mobile
      (max-width:760px) reescribe todo esto para la tira horizontal con
      data-corto abajo del ícono; no se toca ese bloque. */
-  /* El primer grupo (los modulos) ocupa TODO el alto libre (flex:1) y reparte
-     ese espacio entre sus items (space-evenly) -- si sobra alto, los iconos
-     se ven repartidos en vez de dejar un solo bloque de aire antes de
-     Configuracion/Tema, que es lo que pasaba antes con flex:0 1 auto. Si no
-     entran ni al minimo, space-evenly no tiene efecto sobre el sobrante y el
-     overflow-y:auto sigue resolviendo el scroll -- misma red de seguridad de
-     siempre para pantallas realmente bajas. */
+  /* El primer grupo (los modulos) ocupa el alto libre (flex:1) y scrollea
+     SOLO si no entran todos -- Configuracion/Tema (segundo grupo) nunca
+     scrollea, queda fijo abajo por el justify-content:space-between del
+     .rail. OJO con justify-content:space-evenly/center/space-between ACA: en
+     un flex que desborda, esas alineaciones recortan el contenido que
+     quedaria en scroll "negativo" (bug conocido de flexbox) -- con eso
+     puesto, el overflow-y:auto no alcanzaba a mostrar los primeros items
+     aunque el scroll existiera. flex-start (el default) es el unico que deja
+     el overflow y el scroll funcionando de verdad. */
   .rail{width:168px;display:flex;flex-direction:column;align-items:stretch;justify-content:space-between;padding:10px 8px;min-height:0}
   .rail .grp{display:flex;flex-direction:column;align-items:stretch;gap:4px;min-height:0}
-  .rail .grp:first-of-type{overflow-y:auto;overflow-x:hidden;flex:1;justify-content:space-evenly;scrollbar-width:none}
+  .rail .grp:first-of-type{overflow-y:auto;overflow-x:hidden;flex:1;scrollbar-width:none}
   .rail .grp:first-of-type::-webkit-scrollbar{display:none}
   .logo{width:38px;height:38px;border-radius:12px;background:linear-gradient(160deg,var(--violet2),var(--violet));
     color:#fff;display:grid;place-items:center;box-shadow:var(--shadow-sm);margin:0 auto 8px}
