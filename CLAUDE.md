@@ -42,9 +42,10 @@ necesite un subdominio de la plataforma.
 api/          PHP en Hostinger. Todo el backend propio.
 landing/      HTML estático (sin build): landing, login, app, chat, CRM, admin.
 apk/          App Android (Kotlin): WebView + asistente inyectado. Es la solución real al iframe.
-colector/     Python: lee mails del banco y ejecuta acciones de saldo en ganamos.
+colector/     Python: lee mails del banco, deposita fichas y aprueba las cargas
+              pedidas desde la plataforma. Ver aprobar_cargas.py y ejecutar_cargas.py.
 vps/          Reverse proxy Nginx + widget inyectable (armado, SIN desplegar).
-api/sql/      Migraciones 01→12, en orden. Son la historia real del proyecto.
+api/sql/      Migraciones 01→48, en orden. Son la historia real del proyecto.
 herramientas/ generar_logo.py: todos los iconos del APK y la landing desde una imagen.
 bot_crear_jugador.py, sync_usuarios.py   Playwright contra el panel de agentes.
 ```
@@ -88,41 +89,93 @@ espejo con `sync_usuarios.py`, que se loguea con Playwright y pagina
 
 ## Cargar fichas, bonos y saldo
 
-Tres caminos distintos, con permisos distintos:
+Cuatro caminos distintos, con permisos distintos:
 
 1. **Fichas y bonos (contadores propios)** — directo desde el CRM:
    `crm.php` con `accion: cargar_fichas` / `cargar_bono` → suma en `usuarios` y
    deja registro en `movimientos`. Es plata "de la casa", no toca ganamos.
 
 2. **Saldo real de ganamos** — no se puede escribir desde PHP. El CRM encola en
-   `acciones_saldo` y `colector/ejecutar_acciones.py` (que tiene la
-   `SESSION_COOKIE` del agente) la ejecuta contra el panel. La cola existe
-   porque **el MySQL de Hostinger no acepta conexiones remotas**.
-   > **Restricción de la plataforma:** ganamos **no permite acreditar saldo
-   > arbitrario**. Solo se pueden **aprobar pedidos de depósito que el jugador
-   > ya hizo**. El retiro todavía no está implementado (se marca error y se
-   > aprueba a mano). El worker arranca en `MODE=DRY_RUN`.
+   `acciones_saldo` y `colector/ejecutar_cargas.py` la ejecuta contra el panel.
+   La cola existe porque **el MySQL de Hostinger no acepta conexiones remotas**.
 
-3. **Recarga por transferencia (automática, la joya del sistema):**
+   El depósito es **una sola llamada**, no un navegador:
+   `POST /api/agent_admin/user/{id}/payment/` con `{"operation":0,"amount":N}`.
+   Y el id ya lo tenemos: `usuarios.id` **es** el id de ganamos. Antes esto lo
+   hacía `bot_cargar_fichas.py` con Playwright y venía fallando (13 cargas
+   contra 28 errores) por buscar al jugador en el listado.
+
+   > Se creía que ganamos "no permitía acreditar saldo arbitrario" y que solo
+   > se podían aprobar pedidos ya hechos. **Es falso**: ese POST acredita lo
+   > que se le pida. El retiro sigue sin implementarse (se marca error y lo
+   > aprueba un agente).
+
+3. **Recarga por transferencia (el camino B, el nuestro):**
 
    ```
-   chatbot → crear_recarga → monto EXACTO con centavos únicos (01–99)
-        → el jugador transfiere ese importe exacto
+   chatbot → crear_recarga → el monto REDONDO que pidió el jugador
+        → el jugador transfiere ese importe
         → mail del banco → colector_mail.py → pagos.php → matcher → +coins
    ```
 
-   Los centavos únicos son la clave: identifican la recarga sin ambigüedad
-   entre pendientes del mismo monto. Respaldo por monto entero si el banco
-   trunca decimales; si nada es único el pago queda en `revision` — **nunca
-   adivina**. `pagos.id_unico` es UNIQUE: un pago no se acredita dos veces.
-   El chatbot solo *crea* recargas; el único que suma coins es `pagos.php`,
-   detrás de la API key.
+   > Antes cada recarga llevaba **centavos únicos** (01–99) para identificarla
+   > sin ambigüedad. Se sacaron: pedir "$1000,37" confundía a la gente. El
+   > precio es que dos jugadores transfiriendo $1000 a la vez ya no se
+   > distinguen por el importe, y por eso el matcher pasó a apoyarse en el
+   > **titular declarado** y en la **huella CUIT/CBU aprendida**.
+
+   Capas del matcher (`rl_elegir_recarga`): huella CUIT/CBU aprendida → titular
+   declarado (con tolerancia a erratas) → única candidata → `revision`.
+   **Nunca adivina.** `pagos.id_unico` es UNIQUE: un pago no se acredita dos
+   veces. El chatbot solo *crea* recargas; el único que suma coins es
+   `pagos.php`, detrás de la API key.
+
+4. **Camino A: el botón «Depósitos» de la plataforma.**
+
+   ```
+   el jugador pide la carga DENTRO del juego → la solicitud queda en el panel
+        → transfiere → aprobar_cargas.py cruza contra `pagos` → PATCH aprobar
+   ```
+
+   Es el otro camino, y **no comparte nada con el B**: la solicitud vive del
+   lado de ganamos y no crea ninguna fila en `recargas`. Por eso sus pagos
+   **no pueden casar nunca** con el matcher del camino B y caían todos en
+   `revision` (había 25 acumulados).
+
+   - `colector/aprobar_cargas.py` lee `GET /api/agent_admin/payment/requests/`
+     y aprueba con `PATCH /api/payment/deposit/{id}` body `{"status":1}`.
+     El bono, si hay, va **antes** con
+     `PATCH /api/agent_admin/payment/requests/{id}/ {"bonus_percent":N}`.
+   - **La decisión no está en el worker**: manda la lista a
+     `api/peticiones_cola.php`, que cruza con el mismo matcher del camino B.
+     Cuando esto se decidía en Python había dos matchers que se separaron.
+   - **La regla que lo sostiene:** una transferencia solo respalda una
+     solicitud si entró **después** de que la solicitud apareció (10 min de
+     gracia). Sin eso, una solicitud nueva se lleva plata vieja de otra
+     operación. El ancla es `peticiones_carga.primera_vez`.
+   - Acá **no se tocan los `coins`**: la plata la acredita la plataforma sobre
+     el saldo real, que espeja `sync_usuarios.py`. Solo queda el `movimientos`.
+   - **Nunca rechaza.** Si pasan 15 min sin plata, lo deja marcado para que lo
+     mire una persona. El endpoint de rechazo no está capturado.
+
+   `ganamos_bot.py` y `ganamos_conciliador.py` son la versión vieja de esto y
+   **quedaron muertos a propósito**: el primero aprueba sin verificar nada.
 
 ## Chatbot y CRM
 
-- `api/chatbot.php` — proxy a **Cohere** (`command-r-08-2024`) con *tool use*.
-  Herramientas: `identificar_usuario`, `crear_recarga`, `consultar_recarga`.
+- `api/chatbot.php` — proxy a **Qwen** (`qwen-vl-max`, endpoint internacional de
+  DashScope, en modo compatible con OpenAI) con *tool use*. Herramientas:
+  `identificar_usuario`, `crear_recarga`, `consultar_recarga`.
   Si llega un JWT propio válido, ese usuario **manda** sobre el `usuario` suelto.
+  > Venía de Cohere (`command-r-08-2024`). Al leer la respuesta, ojo: Qwen la
+  > devuelve en `choices[0].message` y los errores en `error.message`; Cohere
+  > usaba `message` en los dos casos.
+- **El procedimiento del bot no es editable.** Las reglas fijas van **últimas**
+  en el prompt (`chatbot_armar_prompt`) para que ganen sobre las indicaciones
+  del operador. Es por un incidente real: alguien escribió *"si te dijo el
+  número, cargáselo directo"* en el campo libre y el bot ofrecía cargar fichas
+  sin cobrar. Lo editable son los números del negocio (mínimos, topes, bono),
+  no el flujo.
 - Cada turno se guarda vía `crm_lib.php`. **Una conversación por nombre de
   usuario** (migración 08): la `clave` es el usuario, o `anon:<session_id>`
   mientras no se identifique. Si dice ser otro, cae en otro chat.

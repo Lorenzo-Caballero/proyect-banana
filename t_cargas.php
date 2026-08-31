@@ -26,6 +26,10 @@ $grupos = [
                         'chatbot_contexto.php'],
     'pagos.php'     => ['recargas_lib.php'],
     'crm_comprobantes.php' => ['recargas_lib.php'],
+    // Camino A: peticiones_lib trae recargas_lib por su cuenta, asi que el
+    // orden importa igual que en chatbot.php.
+    'peticiones_cola.php' => ['peticiones_lib.php', 'fichas_lib.php',
+                              'actividad_lib.php', 'notificaciones_lib.php'],
 ];
 
 foreach ($grupos as $endpoint => $libs) {
@@ -45,7 +49,9 @@ printf("  OK    %d librerias cargadas sin redeclare\n", $ok);
 
 // Las funciones que el chat necesita para no quedar a medias.
 foreach (['rl_crear_recarga', 'rl_cargar_al_juego_auto', 'fichas_pedir_carga',
-          'chatbot_bloque_pago', 'rl_similitud_nombres', 'alta_encolar'] as $f) {
+          'chatbot_bloque_pago', 'rl_similitud_nombres', 'alta_encolar',
+          'pc_elegir_pago', 'pc_es_ambiguo', 'rl_usuarios_por_huella',
+          'rl_aprender_huella', 'fichas_limite'] as $f) {
     if (function_exists($f)) { $ok++; }
     else { $fail++; printf("  FALLA falta la funcion %s\n", $f); }
 }

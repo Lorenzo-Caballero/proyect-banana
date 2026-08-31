@@ -2,6 +2,23 @@
 """
 ganamos_conciliador.py — Une el panel de Ganamos con pagos.db.
 
+╔══════════════════════════════════════════════════════════════════════╗
+║  REEMPLAZADO POR colector/aprobar_cargas.py — YA NO FUNCIONA          ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+No corre: consume endpoints (A.buscar_pagos, A.marcar_pago_usado,
+A.upsert_peticion, A.get_peticion, A.cerrar_afuera) que vivían en
+colector/panel.py sobre SQLite y que no existen en la API actual.
+
+Las reglas de este archivo SÍ sobrevivieron y están en aprobar_cargas.py +
+api/peticiones_cola.php: la transferencia tiene que haber entrado DESPUÉS de la
+solicitud, el desempate por CUIT cuando dos nombres empatan, y no aprobar nunca
+lo ambiguo. Lo que se descartó fue su matcher propio (más abajo), que era el
+viejo sin distancia de edición: ahora el cruce lo hace el server con el mismo
+matcher que usa el camino B, para no tener dos que se vayan separando.
+
+Se conserva como referencia de esas reglas.
+
 Ciclo:
   1. Lee las peticiones de carga pendientes en Ganamos (API del bot).
   2. Por cada una, busca en pagos.db una transferencia REAL sin usar que

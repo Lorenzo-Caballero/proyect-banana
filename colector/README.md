@@ -49,12 +49,18 @@ const RL_TITULAR = 'Titular de la cuenta';
 - Corré el colector apuntando a nuestra API:
 
 ```bash
-set API_URL=https://orange-crab-483661.hostingersite.com/api/pagos.php
-set API_TOKEN=fdvkCNZb_N1gFImfIQO1fPx_tSZ34WnjhHQMNUSLOf0
+set API_URL=https://ganamoscrm.online/gp-api/pagos.php
+set API_TOKEN=<la BOT_API_KEY del server>
 python colector_mail.py --escuchar
 ```
 
-(`API_TOKEN` es la misma `BOT_API_KEY` del server. En Linux/Mac usá `export`.)
+(`API_TOKEN` es la misma `BOT_API_KEY` de `api/config.local.php`. En Linux/Mac
+usá `export`.)
+
+> **Nunca pegues la clave acá.** Este README se commitea y el repo es público.
+> Hasta agosto de 2026 esta sección tuvo la `BOT_API_KEY` de producción escrita
+> en claro; sigue en el historial de git, así que la única solución de verdad
+> es **rotar la clave**, no borrar la línea.
 
 ## Cómo se casa un pago (matcher, en `recargas_lib.php`)
 

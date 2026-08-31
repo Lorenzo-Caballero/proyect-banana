@@ -3,6 +3,22 @@
 ganamos_bot.py — Bot de aprobación automática de peticiones de carga
                  en el panel de agente de ganamosnet.
 
+╔══════════════════════════════════════════════════════════════════════╗
+║  REEMPLAZADO POR colector/aprobar_cargas.py — NO CORRER ESTE EN LIVE  ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+Este bot aprueba peticiones SIN VERIFICAR que el jugador haya transferido
+(lo dice el comentario del modo LIVE, más abajo). Esperaba una "fase 2" de
+verificación por mail que en su momento no existía.
+
+Esa fase 2 ya existe: colector de mails -> tabla `pagos` -> el matcher de
+api/recargas_lib.php. Y quien la usa es `aprobar_cargas.py`, que sí cruza cada
+solicitud contra una transferencia real antes de aprobar nada.
+
+Se conserva porque `ejecutar_acciones.py` todavía le importa la clase
+GanamosAPI, y porque acá quedaron documentados los endpoints del panel. Pero
+correr `python ganamos_bot.py` con MODE=LIVE regala fichas.
+
 MODOS DE OPERACIÓN
 ------------------
 - DRY_RUN (default): SOLO lee peticiones y loguea lo que HARÍA.

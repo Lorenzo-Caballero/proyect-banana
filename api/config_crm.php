@@ -84,6 +84,14 @@ const CFG_CRM_DEFAULTS = [
     // Tope de lo que un jugador puede pedir por dia. '0' = sin tope, que es
     // como venia funcionando (no existia este limite).
     'lim_retiro_max_dia' => '0',
+    // Bono que se le suma a una carga pedida desde el boton Depositos de la
+    // plataforma, en % del monto. '0' = sin bono, la carga entra por el importe
+    // exacto que transfirio el jugador.
+    //
+    // Lo aplica colector/aprobar_cargas.py con el campo `bonus_percent` que la
+    // plataforma ya trae, y hay que fijarlo ANTES de aprobar: el bono se
+    // calcula en el momento de la aprobacion y despues no se puede cargar.
+    'lim_bono_carga_pct' => '0',
 
     // ----- Meta Ads (Pixel + Conversions API) -----
     // Apagado por defecto: sin pixel cargado no hay nada que mandar, y un
