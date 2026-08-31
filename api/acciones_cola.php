@@ -89,17 +89,35 @@ try {
               WHERE id IN ($marcas)"
         )->execute($ids);
 
+        /* `usuario_id` es el id del jugador EN GANAMOS (usuarios.id, que es
+           justamente ese id, no uno nuestro). Se manda para que el worker
+           pueda depositar por API --
+             POST /api/agent_admin/user/{usuario_id}/payment/
+           -- en vez de tener que buscar al jugador en el panel con un
+           navegador. Esa busqueda es la que venia fallando: el listado no
+           terminaba de cargar y la carga moria con "no encontre al usuario".
+
+           LEFT JOIN y no JOIN: si el jugador no esta espejado todavia, la
+           accion se entrega igual con usuario_id en null y el worker decide
+           que hacer -- perder la accion seria peor.
+
+           El COLLATE es obligatorio: `usuarios` esta en la collation por
+           defecto del servidor y `acciones_saldo` en utf8mb4_unicode_ci. */
         $get = $pdo->prepare(
-            "SELECT id, usuario, tipo, monto, motivo, origen, creada_en
-               FROM acciones_saldo
-              WHERE id IN ($marcas)
-              ORDER BY id ASC"
+            "SELECT a.id, a.usuario, a.tipo, a.monto, a.motivo, a.origen, a.creada_en,
+                    u.id AS usuario_id
+               FROM acciones_saldo a
+               LEFT JOIN usuarios u
+                      ON u.username = a.usuario COLLATE utf8mb4_unicode_ci
+              WHERE a.id IN ($marcas)
+              ORDER BY a.id ASC"
         );
         $get->execute($ids);
 
         $datos = array_map(function ($r) {
             $r['id']    = (int)$r['id'];
             $r['monto'] = (float)$r['monto'];
+            $r['usuario_id'] = $r['usuario_id'] !== null ? (int)$r['usuario_id'] : null;
             return $r;
         }, $get->fetchAll(PDO::FETCH_ASSOC));
 
