@@ -126,13 +126,18 @@ $TOOLS = [
                 'usuario' => ['type' => 'string', 'description' => 'nombre de usuario del juego (el del registro)'],
                 'coins'   => ['type' => 'integer', 'description' => 'cantidad de coins a cargar'],
                 'titular' => ['type' => 'string', 'description' =>
-                    'Nombre y apellido del TITULAR de la cuenta bancaria desde la que el jugador '
-                    . 'va a transferir, tal cual se lo dijo el jugador. NO es el nombre de usuario '
-                    . 'y puede no ser el jugador (le puede transferir un familiar). Es lo que '
-                    . 'permite reconocer su pago. NUNCA lo inventes ni lo deduzcas del usuario: '
-                    . 'si el jugador no lo dijo, preguntaselo antes de llamar esta herramienta.'],
+                    'OPCIONAL. Nombre y apellido del titular de la cuenta desde la que va a '
+                    . 'transferir, SOLO si el jugador ya lo dijo. NO lo preguntes antes de crear '
+                    . 'la recarga: primero dale los datos para transferir, que es lo que vino a '
+                    . 'buscar. NUNCA lo inventes ni lo deduzcas del nombre de usuario: si no lo '
+                    . 'dijo, mandalo vacio.'],
             ],
-            'required' => ['usuario', 'coins', 'titular'],
+            // titular NO es obligatorio: pedirlo antes de dar el alias es
+            // friccion que el empleado humano no hace ("¿me cargas?" -> "te
+            // paso el alias"). Sin el, el pago se identifica igual por los
+            // centavos unicos; el titular es el desempate para cuando dos
+            // jugadores piden el mismo monto a la vez.
+            'required' => ['usuario', 'coins'],
         ],
     ]],
     ['type' => 'function', 'function' => [
