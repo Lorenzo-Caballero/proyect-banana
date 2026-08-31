@@ -315,8 +315,18 @@ def una_pasada(ctx, solo_ver: bool, dias: int) -> int:
         usr    = (d.get("usuario") or "").strip()
 
         if que != "aprobar":
-            nivel = log.warning if que == "nada" else log.debug
-            nivel("  #%s %s: %s", rid, "A REVISION" if que == "nada" else "espera", motivo)
+            if que == "nada":
+                # Ambiguo: necesita una persona. Siempre visible.
+                log.warning("  #%s A REVISION: %s", rid, motivo)
+            elif solo_ver or MODE == "DRY_RUN":
+                # Mirando: se quiere ver POR QUE no se aprueba cada una. Es el
+                # unico momento en que se puede confirmar que el freno funciona
+                # -- que no aprueba antes de que entre la plata.
+                log.info("  #%s espera: %s", rid, motivo)
+            else:
+                # Corriendo de verdad, cada minuto: seria una linea por
+                # solicitud por minuto. Queda en debug.
+                log.debug("  #%s espera: %s", rid, motivo)
             continue
 
         monto = float(d.get("monto") or 0)
