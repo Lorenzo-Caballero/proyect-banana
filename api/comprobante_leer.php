@@ -138,7 +138,11 @@ $mensajes = [[
 ]];
 
 $base   = rtrim((string)cfg('QWEN_BASE_URL', 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1'), '/');
-$modelo = (string)cfg('QWEN_MODEL_VISION', cfg('QWEN_MODEL', 'qwen-vl-max'));
+/* Su propio default, y NO hereda de QWEN_MODEL a proposito: el chat puede
+   estar en un modelo de TEXTO (qwen-plus, qwen-max, que son mejores siguiendo
+   procedimientos con herramientas) y ese no ve imagenes. Heredarlo dejaria
+   este endpoint mandandole una foto a un modelo ciego. */
+$modelo = (string)cfg('QWEN_MODEL_VISION', 'qwen-vl-max');
 
 $ch = curl_init($base . '/chat/completions');
 curl_setopt_array($ch, [
