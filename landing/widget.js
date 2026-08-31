@@ -1471,12 +1471,34 @@
   function saludar(){
     saludado = true;
     pintarSistema("Conectado. Escribinos y te respondemos.");
+
     /* Sin sesión no le pedimos el usuario de entrada: puede no tener cuenta
        todavía, y arrancar pidiéndole un dato que no tiene es la forma más
-       rápida de que cierre el chat. Primero averiguamos si ya es jugador. */
-    pintar("b", USUARIO
-      ? "¡Hola " + USUARIO + "! Soy Camila, del equipo de atención. ¿En qué te puedo ayudar con tu cuenta o tus fichas?"
-      : "¡Hola! Soy Camila, del equipo de atención. ¿Ya tenés cuenta en la plataforma o querés que te cree una?");
+       rápida de que cierre el chat. Se deja ABIERTO para que diga qué necesita.
+
+       ACÁ DECÍA "¿Ya tenés cuenta o querés que te cree una?" Y ERA UN BUG DOBLE:
+
+       1. Es exactamente la pregunta que las reglas fijas del bot prohíben
+          ("esa pregunta de dos ramas te hace perder el hilo",
+          api/chatbot_contexto.php). El saludo del widget contradecía al
+          procedimiento del server.
+       2. Peor: este saludo NO llegaba al modelo. pintar() solo empuja a
+          `charla`, que es el transcript visual; el modelo ve `historial`, que
+          hasta ahora solo recibía el mensaje del jugador y la respuesta del
+          server. Así que el jugador leía la pregunta, contestaba "sí", y al
+          modelo le llegaba un "sí" suelto SIN la pregunta que lo originó.
+
+       De ahí el sintoma reportado: le decís "ya tengo cuenta" y contesta
+       "decime tu nombre y te creo una". No era el modelo: le faltaba la mitad
+       de la conversación. */
+    var saludo = USUARIO
+      ? "¡Hola " + USUARIO + "! Soy Camila, del equipo de atención. ¿En qué te doy una mano?"
+      : "¡Hola! Soy Camila, del equipo de atención. Contame en qué te puedo ayudar.";
+
+    // Al historial ANTES de pintar: pintar() llama a guardar(), así que con un
+    // solo guardado quedan persistidos el globo y el turno del modelo.
+    historial.push({ role: "assistant", content: saludo });
+    pintar("b", saludo);
   }
 
   function reiniciarCharla(){

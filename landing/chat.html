@@ -278,8 +278,15 @@
   // ---------- arranque ----------
   $('form').style.display='flex';
   pintarSistema('Conectado. Escribinos y te respondemos.');
-  pintar('bot', USUARIO ? `¡Hola ${USUARIO}! ¿En qué te ayudo con tu cuenta o tus fichas?`
-                        : '¡Hola! Te ayudo con tu cuenta, tus fichas y las recargas. ¿Me decís tu nombre de usuario del juego?');
+  /* Abierto a propósito, sin pedirle un dato de entrada: puede no tener cuenta
+     todavía. Igual que en widget.js, el saludo va también al historial que ve
+     el modelo — si solo se pinta, el jugador contesta a una pregunta que el
+     bot nunca vio. */
+  const SALUDO = USUARIO
+    ? `¡Hola ${USUARIO}! Soy Camila, del equipo de atención. ¿En qué te doy una mano?`
+    : '¡Hola! Soy Camila, del equipo de atención. Contame en qué te puedo ayudar.';
+  historial.push({ role: 'assistant', content: SALUDO });
+  pintar('bot', SALUDO);
 
   text.addEventListener('input', ()=>{
     send.disabled = text.value.trim()==='';

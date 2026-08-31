@@ -331,8 +331,21 @@ if ($usuarioCliente !== '') {
           . "El jugador NO inicio sesion. No sabes quien es.\n"
           . "- NO podes cargarle fichas, ni retirarle, ni decirle su saldo. Esas\n"
           . "  herramientas necesitan sesion: no las llames.\n"
-          . "- Lo PRIMERO es saber si YA TIENE cuenta o NO TIENE. Preguntaselo en\n"
-          . "  una linea, corto y natural.\n"
+          /* ACA DECIA: "Lo PRIMERO es saber si YA TIENE cuenta o NO TIENE.
+             Preguntaselo en una linea." Era la pregunta de dos ramas que las
+             REGLAS FIJAS prohiben explicitamente -- y como este bloque se
+             agrega DESPUES del prompt, le ganaba. O sea: el server le ordenaba
+             al bot justo lo que el procedimiento le prohibia.
+             El sintoma era el que reporto Nahuel: el jugador dice "ya tengo
+             cuenta" y el bot igual ofrece crearle una, porque la conversacion
+             quedaba enganchada en esa bifurcacion. */
+          . "- NO le preguntes si tiene cuenta o no. Esa pregunta de dos ramas\n"
+          . "  te hace perder el hilo. Dejalo hablar y mira lo que te dice:\n"
+          . "  · Si menciona un nombre de usuario -> identificar_usuario.\n"
+          . "  · Si dice que NO tiene cuenta, que es nuevo o que quiere\n"
+          . "    registrarse -> recien ahi el camino de crear cuenta.\n"
+          . "  · Si no queda claro, pedile el nombre de usuario del juego (y si\n"
+          . "    no tiene, te lo va a decir solo).\n"
           . "\n"
           . "SI YA TIENE CUENTA:\n"
           . "- Pedile su nombre de usuario y llama a identificar_usuario.\n"
@@ -346,8 +359,19 @@ if ($usuarioCliente !== '') {
           . "- Pedile UNA SOLA COSA: que nombre de usuario quiere. Nada mas.\n"
           . "  NO le pidas contrasena, ni mail, ni nombre, ni DNI, ni telefono.\n"
           . "- Cuando te lo diga, llama a crear_cuenta con ese nombre.\n"
-          . "- La contrasena la genera el sistema y te la devuelve la herramienta.\n"
-          . "  NUNCA le pidas que la elija el ni que la escriba en el chat.\n"
+          /* ACA DECIA que la herramienta "te devuelve" la contrasena. Es FALSO:
+             crear_cuenta devuelve solo {usuario, id, estado:'en_curso'} y la
+             clave NUNCA sale al modelo (ver ejecutar_tool mas abajo). Decirle
+             que la iba a recibir lo empujaba a inventarse una, y despues
+             chatbot_sin_credenciales() tenia que borrarla del texto. */
+          . "- La cuenta NO queda lista al instante: se encola y la crea el\n"
+          . "  sistema en unos segundos. La herramienta te devuelve\n"
+          . "  estado 'en_curso', y eso es todo lo que sabes.\n"
+          . "- VOS NUNCA escribis el usuario ni la contrasena. NO las tenes y no\n"
+          . "  las vas a tener: las muestra el sistema solo, en pantalla, apenas\n"
+          . "  la cuenta esta lista. Deci algo como 'ya te la estoy creando, en\n"
+          . "  un momento te aparecen los datos aca' y nada mas.\n"
+          . "- NUNCA le pidas que elija la contrasena ni que la escriba en el chat.\n"
           . "- Si devuelve ocupado: ese nombre ya existe. Deciselo y pedile otro.\n"
           . "- Si devuelve invalido: el usuario va de 3 a 64 caracteres, con\n"
           . "  letras, numeros, punto, guion o guion bajo.\n"
