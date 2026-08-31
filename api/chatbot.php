@@ -34,9 +34,15 @@
 declare(strict_types=1);
 require __DIR__ . '/config.php';
 require __DIR__ . '/db.php';
-require __DIR__ . '/recargas_lib.php';
-require __DIR__ . '/fichas_lib.php';
-require __DIR__ . '/altas_lib.php';
+/* TODOS con require_once, y no es cosmetico: recargas_lib.php carga por su
+   cuenta varias de estas libs (fichas_lib, meta_lib, publicidad_lib...). Un
+   `require` pelado despues de el las carga por SEGUNDA vez y PHP muere con
+   "Cannot redeclare function" -- el chat entero deja de responder.
+   Ya paso dos veces en este archivo: primero con meta_lib.php y despues con
+   fichas_lib.php. Si sumas una lib aca, que sea require_once siempre. */
+require_once __DIR__ . '/recargas_lib.php';
+require_once __DIR__ . '/fichas_lib.php';
+require_once __DIR__ . '/altas_lib.php';
 require_once __DIR__ . '/config_crm.php';
 // require_once: recargas_lib.php (arriba) ya lo carga solo si esta -- un
 // require simple aca redeclararia las funciones y tiraria fatal error.
@@ -131,12 +137,11 @@ $TOOLS = [
     ]],
     ['type' => 'function', 'function' => [
         'name' => 'cargar_al_juego',
-        'description' => 'LA FORMA NORMAL DE CARGAR FICHAS. Pasa fichas YA COMPRADAS del saldo '
-            . 'del sitio al juego, del jugador que ya inició sesión: no pidas transferencia ni '
-            . 'usuario, solo la cantidad. Si devuelve sin_fichas es que NO tiene fichas '
-            . 'compradas: ahí va crear_recarga (se le dan los datos de pago, paga, el sistema '
-            . 'VERIFICA que la plata llegó y recién entonces tiene fichas para cargar). NUNCA '
-            . 'prometas fichas sin pago verificado.',
+        'description' => 'CASI NUNCA SE USA. Solo sirve si a un jugador le quedo saldo suelto '
+            . 'comprado de antes, cosa que ya no pasa: hoy la transferencia acreditada carga '
+            . 'las fichas sola. Cuando alguien dice "cargame fichas" NO es esto: quiere '
+            . 'transferir, y va crear_recarga. Usala unicamente si el jugador dice que le quedo '
+            . 'saldo sin cargar y quiere pasarlo al juego.',
         'parameters' => [
             'type' => 'object',
             'properties' => [
