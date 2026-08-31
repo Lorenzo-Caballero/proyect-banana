@@ -281,8 +281,17 @@ def db_init():
 _uid_mem = {}
 
 
-def guardar(con, c: dict) -> bool:
-    """Guarda la transferencia via API. Devuelve True si era nueva."""
+def guardar(con, c: dict):
+    """Guarda la transferencia via API.
+
+    Devuelve True si era nueva, False si el server dice que ya estaba
+    guardada, None si la llamada en si fallo (401, timeout, DNS, etc). La
+    distincion importa: True/False son resultados legitimos de la API que
+    no ameritan reintentar; None es un fallo nuestro (de config o de red) y
+    el llamador NO debe marcar ese mail como procesado, para que el proximo
+    poll lo reintente en vez de perderlo en silencio -- que es exactamente
+    lo que pasaba antes con un simple "return False" para ambos casos.
+    """
     try:
         payload = dict(c)
         payload["dkim_pass"] = 1 if c.get("dkim_pass") else 0
@@ -291,7 +300,7 @@ def guardar(con, c: dict) -> bool:
         return A.guardar_pago(payload)
     except Exception as e:
         log(c.get("cuenta", "?"), f"! error guardando en API: {e}")
-        return False
+        return None
 
 
 def leer_uid(con, cuenta, uidvalidity):
@@ -527,12 +536,27 @@ def escuchar_una(cfg, cuenta, con, parar):
                         ok, motivo = es_valido(c, cuenta)
                         if not ok:
                             log(nombre, f"descartado: {motivo}")
-                        elif guardar(con, c):
+                            ultimo = max(ultimo, uid)
+                            escribir_uid(con, nombre, ultimo, uidv)
+                            continue
+                        res = guardar(con, c)
+                        if res is True:
                             log(nombre, f"PAGO  ${c['monto']}  {c['remitente']}  "
                                         f"trx {c['nro_transaccion']}")
                             disparar_webhook(cfg, c)
-                        else:
+                        elif res is False:
                             log(nombre, "repetido (ya estaba)")
+                        else:
+                            # guardar() fallo de verdad (401, timeout, DNS...):
+                            # cortamos el lote ACA, sin avanzar el UID de este
+                            # mail ni de los que quedan atras en el mismo lote.
+                            # El proximo poll vuelve a buscar desde aca y
+                            # reintenta todo -- si en cambio seguiamos y un
+                            # mail POSTERIOR guardaba bien, el `ultimo` hubiera
+                            # saltado por encima de este fallo y el pago se
+                            # perdia para siempre (el bug original).
+                            log(nombre, "sin guardar -- se reintenta este lote en el proximo poll")
+                            break
                         ultimo = max(ultimo, uid)
                         escribir_uid(con, nombre, ultimo, uidv)
 
