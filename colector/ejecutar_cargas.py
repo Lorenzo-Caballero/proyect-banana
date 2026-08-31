@@ -183,6 +183,12 @@ def depositar(ctx, id_ganamos: int, monto: float) -> tuple[str, str]:
 
 def una_pasada(ctx, solo_ver: bool) -> int:
     acciones = pendientes(ctx)
+
+    # Se informa SIEMPRE, aunque la cola venga vacia. Sin esta linea una corrida
+    # sana no escribe nada, y el log queda en 0 bytes: indistinguible de un cron
+    # que no esta corriendo. Paso el 31/8/2026 -- siete horas mirando un archivo
+    # vacio sin poder saber si el worker que acredita fichas estaba vivo.
+    log.info("%d accion(es) en la cola", len(acciones))
     if not acciones:
         return 0
 
