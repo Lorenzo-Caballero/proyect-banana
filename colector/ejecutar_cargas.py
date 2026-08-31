@@ -40,6 +40,28 @@ este worker los deja en la cola sin tocarlos.
     python ejecutar_cargas.py --loop 60    cada 60 segundos
     python ejecutar_cargas.py --ver        muestra que haria, sin depositar
 
+COMO DEJARLO CORRIENDO (cron del VPS, cada minuto)
+
+    * * * * * flock -n /tmp/gp_cargas.lock docker cp \
+              /opt/goldpaw/colector/ejecutar_cargas.py altas-ganamoscrm:/app/ \
+              && docker exec altas-ganamoscrm python /app/ejecutar_cargas.py \
+              >> /var/log/goldpaw-cargas.log 2>&1
+
+Cada minuto y no menos: el jugador ya transfirio y esta esperando sus fichas.
+El `flock -n` evita que se pisen dos corridas si una tarda (levantar el
+navegador para el login son unos segundos); sin el, dos procesos tomarian
+acciones distintas de la misma cola al mismo tiempo, que funciona pero no
+tiene sentido.
+
+Corre en `altas-ganamoscrm` a proposito: tiene Playwright y la sesion del
+panel, y NO escucha la cola de fichas, asi que no compite con esto.
+
+OJO ANTES DE PRENDERLO: hay que dejar apagado `ganamos-bot-creador`, que
+corre bot_crear_jugador.py --con-fichas y escucha la MISMA cola. Con los dos
+prendidos, el viejo se lleva las acciones primero y las hace fallar (paso el
+31/8: tomo la prueba y la marco "No encontre al usuario"). Las altas no se
+pierden: las hace igual `altas-ganamoscrm`.
+
 .env (los mismos que ya usa el bot):
     PANEL_USER, PANEL_PASS   para loguearse al panel
     API_URL, API_KEY         API_KEY = BOT_API_KEY del server
