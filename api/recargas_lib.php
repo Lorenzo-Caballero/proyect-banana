@@ -150,8 +150,61 @@ function rl_cliente_actual(): ?array
  * de recargas. Para TODAS las cuentas activas del cliente (si cargo mas de
  * una), ver rl_cuentas_cobro().
  */
+/**
+ * La billetera que tiene cargada el cliente en el PANEL DE GANAMOS, espejada
+ * por colector/sync_bancos.py (tabla bancos_ganamos, migracion 47).
+ *
+ * ES LA FUENTE DE VERDAD. El jugador que pide un deposito DENTRO de la
+ * plataforma ve esto mismo, asi que el chat tiene que decir lo mismo o la
+ * plata entra en dos cuentas y el colector solo escucha los mails de una.
+ *
+ * Se toma la de `posicion` 0: segun las pruebas contra el panel, cuando hay
+ * varias cargadas la plataforma le muestra al jugador la primera. Lo sano es
+ * tener UNA sola (sync_bancos.py avisa si hay mas).
+ *
+ * Devuelve null si no hay espejo todavia (el sync nunca corrio, o el cliente
+ * no cargo ninguna) -- ahi manda lo configurado a mano, como antes.
+ */
+function rl_banco_panel(): ?array
+{
+    $pdo = $GLOBALS['pdo'] ?? null;
+    if (!$pdo instanceof PDO) {
+        return null;
+    }
+    try {
+        $st = $pdo->query(
+            "SELECT titular, details, tipo FROM bancos_ganamos ORDER BY posicion, id_ganamos LIMIT 1"
+        );
+        $fila = $st->fetch(PDO::FETCH_ASSOC);
+    } catch (Throwable $e) {
+        return null;   // falta la migracion 47: se sigue con lo de antes
+    }
+    if (!$fila || trim((string)$fila['details']) === '') {
+        return null;
+    }
+    // El panel guarda UN campo (`details`) y aparte el tipo. Se reparte en
+    // alias/cbu segun lo que sea, que es como lo espera el resto del sistema.
+    $esAlias = stripos((string)$fila['tipo'], 'alias') !== false;
+    $dato    = trim((string)$fila['details']);
+    return [
+        'id'      => 0,
+        'alias'   => $esAlias ? $dato : '',
+        'cbu'     => $esAlias ? ''    : $dato,
+        'titular' => trim((string)($fila['titular'] ?? '')),
+    ];
+}
+
 function rl_cuenta_cobro(): array
 {
+    // Primero el panel de ganamos: si el cliente cargo su billetera ahi, esa
+    // es la que ve el jugador cuando pide deposito en la plataforma, y el
+    // chat tiene que coincidir. Lo de goldpaw_control queda de respaldo para
+    // cuando el espejo todavia no corrio.
+    $delPanel = rl_banco_panel();
+    if ($delPanel) {
+        return $delPanel;
+    }
+
     // id=0 es el sentinel de "la principal" (nunca choca con un id real de
     // cobro_cuentas, que es AUTO_INCREMENT desde 1) -- lo usa rl_cuenta_elegida()
     // para saber si cobro_fija_id=NULL se refiere a esta cuenta.
@@ -516,9 +569,12 @@ function rl_crear_recarga(PDO $pdo, string $usuario, int $coins, string $titular
             $r['cbu']     = $cta['cbu'];
             $r['titular'] = $cta['titular'];
         }
-        // Un alias vacio no viaja: si viajara, el modelo del chatbot lo
-        // repetiria tal cual ("alias: ") o, peor, inventaria uno.
+        // Un dato vacio no viaja: si viajara, el modelo del chatbot lo
+        // repetiria tal cual ("alias: ") o, peor, inventaria uno. Aplica a
+        // los dos, porque la billetera del panel de ganamos puede ser SOLO
+        // alias (lo normal en Mercado Pago) o SOLO CBU.
         if (($r['alias'] ?? '') === '') { unset($r['alias']); }
+        if (($r['cbu']   ?? '') === '') { unset($r['cbu']); }
         return $r;
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) {
