@@ -11,13 +11,21 @@
 # recargas vencidas, 0 acreditadas, tabla `pagos` vacia, y ningun proceso
 # del colector en el VPS. Corria a mano desde algun lado y se dejo de correr.
 #
-# Un servicio de systemd y no un contenedor: el colector no usa NINGUNA
-# dependencia de terceros (todo libreria estandar de Python -- imaplib,
-# email, urllib), asi que meterlo en Docker seria agregar una imagen que
-# construir y mantener a cambio de nada. Los bots si estan en Docker, pero
-# porque necesitan Playwright y un navegador.
+# Un servicio de systemd y no un contenedor: el colector necesita UNA sola
+# dependencia (imapclient), contra los bots que necesitan Playwright y un
+# navegador entero -- por eso esos si van en Docker y este no. Armar una
+# imagen para un `apt install` seria trabajo de mantenimiento a cambio de
+# nada.
 #
 # INSTALACION (una sola vez, en el VPS):
+#   0. La dependencia. OJO: en Ubuntu 24.04 `pip install` esta bloqueado
+#      (PEP 668, entorno gestionado por el sistema), asi que va por apt:
+#        apt install -y python3-imapclient
+#      El import vive DENTRO de una funcion (colector_mail.py:389), no
+#      arriba del archivo, asi que el script arranca igual sin la libreria
+#      y recien falla al conectarse a la casilla -- si ves "Falta
+#      imapclient", es esto.
+#
 #   1. Configurar las credenciales -- NO van en el repo:
 #        cp /opt/goldpaw/colector/config.json.example /opt/goldpaw/colector/config.json
 #        nano /opt/goldpaw/colector/config.json
