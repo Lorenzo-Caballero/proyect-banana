@@ -996,6 +996,14 @@
   ".gp-r.b .gp-bub{background:#fff;border-top-left-radius:2px}"+
   ".gp-bub img{max-width:170px;border-radius:7px;display:block;margin-top:2px}"+
   ".gp-bub a{color:#0a7cff}"+
+  /* Botones para copiar alias/CBU/monto. Van sueltos (sin burbuja) para que
+     se lean como una accion y no como otro mensaje del bot. */
+  ".gp-cp{display:flex;flex-wrap:wrap;gap:6px;margin-top:-2px}"+
+  ".gp-cp-b{background:#fff;border:1px solid #cfd8dc;color:#0a7cff;border-radius:999px;"+
+  "padding:7px 14px;font-size:12.5px;font-weight:700;cursor:pointer;line-height:1;"+
+  "box-shadow:0 1px 1px rgba(11,20,26,.10);transition:.15s}"+
+  ".gp-cp-b:active{transform:scale(.97)}"+
+  ".gp-cp-b.ok{background:#d9fdd3;border-color:#25d366;color:#0b6b2f}"+
   /* hora + tildes flotadas abajo a la derecha, como WhatsApp: el texto las envuelve */
   ".gp-meta{float:right;margin:6px -3px -2px 9px;font-size:10.5px;color:#667781;line-height:1;white-space:nowrap;user-select:none}"+
   ".gp-r.u .gp-meta{color:#5c8a72}"+
@@ -1347,6 +1355,81 @@
     return r;
   }
 
+  /**
+   * Botones para copiar el alias / CBU / monto de una recarga recien creada.
+   *
+   * Un CBU son 22 digitos: copiarlos a mano es donde el jugador se equivoca, y
+   * un digito cambiado manda la plata a la cuenta de otra persona. El monto
+   * tambien va con boton porque tiene que coincidir exacto para que el pago se
+   * reconozca solo.
+   *
+   * No se guarda en `charla`: es interfaz, no conversacion. Al recargar el
+   * chat quedan los datos en texto (que si estan en el mensaje) y estos
+   * botones no se repintan -- es lo correcto, porque para entonces la recarga
+   * pudo haber vencido.
+   */
+  function pintarCopiables(pago){
+    if (!pago) return;
+    var items = [];
+    if (pago.monto){
+      // "1000.00" -> "1000": el server manda dos decimales siempre, pero
+      // pegar eso en la app del banco es incomodo. Si tuviera centavos de
+      // verdad (recargas viejas) se conservan: el importe tiene que coincidir.
+      var m = String(pago.monto).replace(/\.00$/, "");
+      items.push({ rot: "Copiar monto", val: m });
+    }
+    if (pago.alias) items.push({ rot: "Copiar alias", val: pago.alias });
+    if (pago.cbu)   items.push({ rot: "Copiar CBU",   val: pago.cbu });
+    if (!items.length) return;
+
+    var r = document.createElement("div"); r.className = "gp-r b";
+    var caja = document.createElement("div"); caja.className = "gp-cp";
+    items.forEach(function (it){
+      var b = document.createElement("button");
+      b.type = "button"; b.className = "gp-cp-b";
+      b.appendChild(document.createTextNode(it.rot));
+      b.addEventListener("click", function (){
+        copiar(it.val, b, it.rot);
+      });
+      caja.appendChild(b);
+    });
+    r.appendChild(caja); body.appendChild(r); body.scrollTop = body.scrollHeight;
+  }
+
+  /** Copia al portapapeles con respaldo: en WebView viejo o sin permiso,
+   *  navigator.clipboard no existe o tira, y sin el respaldo el boton no
+   *  haria nada sin decir por que. */
+  function copiar(texto, boton, rotuloOriginal){
+    function ok(){
+      boton.textContent = "¡Copiado!";
+      boton.classList.add("ok");
+      setTimeout(function (){
+        boton.textContent = rotuloOriginal;
+        boton.classList.remove("ok");
+      }, 1600);
+    }
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(texto).then(ok, function (){ copiarViejo(texto, ok); });
+        return;
+      }
+    } catch (e) { /* sigue por el respaldo */ }
+    copiarViejo(texto, ok);
+  }
+  function copiarViejo(texto, ok){
+    try {
+      var ta = document.createElement("textarea");
+      ta.value = texto;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      ok();
+    } catch (e) { /* no se pudo: el dato sigue visible en el mensaje */ }
+  }
+
   function pintarAdj(quien, adj, mudo){
     var r = document.createElement("div"); r.className = "gp-r " + (quien === "u" ? "u" : "b");
     var b = document.createElement("div"); b.className = "gp-bub";
@@ -1492,11 +1575,15 @@
            arrastrar el texto de al lado. Si no viene, es un mensaje y listo. */
         if (d.mensajes && d.mensajes.length > 1){
           pintarVarios(d.mensajes, function (){
+            // Los botones de copiar van DESPUES del último globo: si se
+            // pintaran antes, quedarían en el medio de la conversación.
+            pintarCopiables(d.pago);
             if (d.carga) narrarCarga(d.carga);
             if (d.alta)  narrarAlta(d.alta);
           });
         } else {
           pintar("b", d.respuesta);
+          pintarCopiables(d.pago);
           if (d.carga) narrarCarga(d.carga);   // narrar el proceso de la carga
           if (d.alta)  narrarAlta(d.alta);     // esperar a que el bot la cree
         }

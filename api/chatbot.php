@@ -545,6 +545,12 @@ $salida = ['ok' => true, 'respuesta' => $texto];
 if (count($partes) > 1) { $salida['mensajes'] = $partes; }
 if ($cargaInfo) { $salida['carga'] = $cargaInfo; }
 if ($altaInfo)  { $salida['alta']  = $altaInfo; }
+/* Los datos de pago tambien en estructurado, ademas del texto: el widget
+   dibuja botones de "copiar" con ellos. Un CBU de 22 digitos tipeado a mano
+   es justo donde el jugador se equivoca, y un digito cambiado manda la plata
+   a otra cuenta. Va siempre que haya recarga nueva, incluso si el modelo ya
+   escribio los datos en su mensaje: el boton sirve igual. */
+if ($pagoInfo) { $salida['pago'] = $pagoInfo; }
 echo json_encode($salida, JSON_UNESCAPED_UNICODE);
 
 
