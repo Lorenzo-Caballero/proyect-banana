@@ -63,6 +63,28 @@ const CFG_CRM_DEFAULTS = [
     // Alta de cuentas nuevas desde la landing y el chat.
     'registro_activo' => '1',
 
+    // ----- Limites de carga y retiro, por cliente -----
+    // Cada agencia tiene los suyos ("no cargo menos de 500", "no pago mas de
+    // 100.000 por dia"). Antes eran constantes en fichas_lib.php, iguales
+    // para todos.
+    //
+    // Los defaults reproducen EXACTAMENTE la conducta anterior, asi que
+    // desplegar esto no le cambia el comportamiento a ningun cliente que ya
+    // este andando.
+    //
+    // Se aplican en el AUTOSERVICIO del jugador (chat y widget), no cuando un
+    // agente carga a mano desde el CRM: si alguien necesita hacer una
+    // excepcion, tiene que poder.
+    'lim_carga_min'      => '100',
+    'lim_carga_max'      => '500000',
+    // El minimo de retiro es OTRO numero que el de carga: antes se reusaba el
+    // de carga y son negocios distintos (se suele dejar cargar poco y exigir
+    // mas para pagar).
+    'lim_retiro_min'     => '100',
+    // Tope de lo que un jugador puede pedir por dia. '0' = sin tope, que es
+    // como venia funcionando (no existia este limite).
+    'lim_retiro_max_dia' => '0',
+
     // ----- Meta Ads (Pixel + Conversions API) -----
     // Apagado por defecto: sin pixel cargado no hay nada que mandar, y un
     // pixel a medio configurar ensucia las metricas de la campaña.

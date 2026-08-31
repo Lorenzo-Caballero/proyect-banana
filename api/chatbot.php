@@ -274,7 +274,14 @@ $botActivo = $cfgBot['activo'] && cfg_crm_activo($pdo, 'chat_activo');
 // `contexto` entero cargado (modo viejo, migración 26), ese manda como override.
 $contextoBase = ($cfgBot['contexto'] !== '')
     ? $cfgBot['contexto']
-    : chatbot_armar_prompt($cfgBot);
+    // Los limites salen de la MISMA funcion que los aplica (fichas_limite),
+    // asi el bot nunca le ofrece al jugador algo que el codigo va a rechazar.
+    : chatbot_armar_prompt($cfgBot, [
+        'carga_min'      => fichas_limite($pdo, 'lim_carga_min',  FICHAS_MIN_CARGA),
+        'carga_max'      => fichas_limite($pdo, 'lim_carga_max',  FICHAS_MAX_CARGA),
+        'retiro_min'     => fichas_limite($pdo, 'lim_retiro_min', FICHAS_MIN_CARGA),
+        'retiro_max_dia' => fichas_limite($pdo, 'lim_retiro_max_dia', 0),
+      ]);
 
 // Chatbot DESACTIVADO: no se llama a Cohere. El mensaje del jugador igual
 // queda en el CRM (para que lo vea y conteste un agente) y al jugador se le

@@ -2811,8 +2811,15 @@
         <div class="cb-field-head">
           <span class="cb-ico"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg></span>
           <div>
-            <label class="cb-flabel" for="cbReglas">Indicaciones extra <span class="cb-opt">(opcional)</span></label>
-            <p class="cb-help">Reglas propias que quieras sumar. Ej: promos vigentes, horarios de atención, algo que el bot deba aclarar siempre.</p>
+            <label class="cb-flabel" for="cbReglas">Información extra <span class="cb-opt">(opcional)</span></label>
+            <p class="cb-help">
+              Datos que quieras que el bot sepa: promos vigentes, horarios de atención,
+              avisos puntuales.
+              <br>
+              <b>No escribas acá cómo cargar o retirar.</b> Ese procedimiento lo maneja
+              el sistema y no se cambia desde acá — si lo escribís, se ignora.
+              Los mínimos y máximos van en <b>Configuración → Límites de carga y retiro</b>.
+            </p>
           </div>
         </div>
         <textarea id="cbReglas" class="cb-area" rows="4"
@@ -2969,6 +2976,45 @@
             <input type="checkbox" id="cfgRegistro">
             <span class="cb-slider"></span>
           </label>
+        </div>
+      </div>
+
+      <div class="cfg-sec">
+        <h3>Límites de carga y retiro</h3>
+        <span class="cfg-sec-linea"></span>
+      </div>
+
+      <div class="cfg-card">
+        <div class="cfg-card-head">
+          <span class="cb-ico"><svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span>
+          <div class="cfg-card-txt">
+            <b>Tus reglas de negocio</b>
+            <span>Los aplica el sistema y el chatbot los respeta: no ofrece nada fuera de estos números.</span>
+          </div>
+        </div>
+        <div class="cfg-card-body">
+          <div class="cfg-grid">
+            <div>
+              <label class="cb-flabel">Carga mínima</label>
+              <input class="cb-input" id="cfgLimCargaMin" inputmode="numeric" placeholder="100">
+              <p class="cfg-hint">Por debajo de esto el bot no toma el pedido.</p>
+            </div>
+            <div>
+              <label class="cb-flabel">Carga máxima</label>
+              <input class="cb-input" id="cfgLimCargaMax" inputmode="numeric" placeholder="500000">
+              <p class="cfg-hint">Freno de daño. Más que esto lo hace un agente a mano.</p>
+            </div>
+            <div>
+              <label class="cb-flabel">Retiro mínimo</label>
+              <input class="cb-input" id="cfgLimRetiroMin" inputmode="numeric" placeholder="100">
+              <p class="cfg-hint">Es un número aparte del de carga: podés dejar cargar poco y exigir más para pagar.</p>
+            </div>
+            <div>
+              <label class="cb-flabel">Tope de retiro por día</label>
+              <input class="cb-input" id="cfgLimRetiroDia" inputmode="numeric" placeholder="0">
+              <p class="cfg-hint">Total que un jugador puede pedir en el día. <b>0 = sin tope.</b> Cuenta lo que ya cobró hoy.</p>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -3834,6 +3880,11 @@
     ruleta_mensaje:  { el: "#cfgRuletaMsg", tipo: "texto" },
     chat_activo:     { el: "#cfgChat",      tipo: "bool" },
     registro_activo: { el: "#cfgRegistro",  tipo: "bool" },
+
+    lim_carga_min:      { el: "#cfgLimCargaMin",  tipo: "texto" },
+    lim_carga_max:      { el: "#cfgLimCargaMax",  tipo: "texto" },
+    lim_retiro_min:     { el: "#cfgLimRetiroMin", tipo: "texto" },
+    lim_retiro_max_dia: { el: "#cfgLimRetiroDia", tipo: "texto" },
 
     meta_activo:      { el: "#cfgMeta",         tipo: "bool"  },
     meta_pixel_id:    { el: "#cfgMetaPixel",    tipo: "texto" },

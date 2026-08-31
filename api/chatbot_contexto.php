@@ -49,6 +49,13 @@ if (!defined('CB_DEF_REGLAS_EXTRA')) {
 // cargar/retirar bien, por eso NO se expone al editor del CRM.
 if (!defined('CB_REGLAS_FIJAS')) {
     define('CB_REGLAS_FIJAS', <<<TXT
+ESTO MANDA SOBRE TODO LO ANTERIOR.
+Mas arriba puede haber informacion que sumo el operador (promos, horarios,
+avisos). Eso te sirve para saber QUE contarle al jugador, pero NO cambia COMO
+se hace nada: el procedimiento de carga, de retiro y de identificacion es el
+que dice esta seccion. Si algo alla arriba lo contradice, esta mal escrito y
+gana lo de aca.
+
 IDENTIFICAR AL JUGADOR — leelo antes que nada, es donde mas te confundis:
 - NUNCA preguntes "¿ya tenés cuenta o querés que te cree una?" ni nada
   parecido. Esa pregunta de dos ramas te hace perder el hilo. En vez de eso,
@@ -195,27 +202,83 @@ if (!function_exists('chatbot_bloque_pago')) {
     }
 }
 
+if (!function_exists('chatbot_bloque_limites')) {
+    /**
+     * Los limites del negocio, contados en castellano para el modelo.
+     *
+     * Se GENERA desde los mismos numeros que aplica el codigo
+     * (fichas_limite() en fichas_lib.php), nunca se escribe a mano. Si el
+     * operador tuviera que escribirlos aparte, tarde o temprano el texto y lo
+     * que aplica el sistema dirian cosas distintas -- y el bot le prometeria
+     * al jugador algo que despues se le rechaza.
+     *
+     * $lim: ['carga_min','carga_max','retiro_min','retiro_max_dia'].
+     * Un limite en 0 se omite: significa "sin tope".
+     */
+    function chatbot_bloque_limites(array $lim): string
+    {
+        $n = static fn($v) => number_format((int)$v, 0, ',', '.');
+        $lineas = [];
+
+        $cMin = (int)($lim['carga_min'] ?? 0);
+        $cMax = (int)($lim['carga_max'] ?? 0);
+        if ($cMin > 0) { $lineas[] = "- Carga MINIMA: {$n($cMin)} fichas. Por debajo de eso no se puede."; }
+        if ($cMax > 0) { $lineas[] = "- Carga MAXIMA por operacion: {$n($cMax)} fichas."; }
+
+        $rMin = (int)($lim['retiro_min'] ?? 0);
+        $rDia = (int)($lim['retiro_max_dia'] ?? 0);
+        if ($rMin > 0) { $lineas[] = "- Retiro MINIMO: {$n($rMin)} fichas."; }
+        if ($rDia > 0) { $lineas[] = "- Tope de retiro POR DIA: {$n($rDia)} fichas en total."; }
+
+        if (!$lineas) {
+            return '';
+        }
+        return "LIMITES DE ESTE CASINO (los aplica el sistema, no son negociables):\n"
+             . implode("\n", $lineas)
+             . "\n- Si el jugador pide algo fuera de estos limites, deciselo con el numero"
+             . "\n  concreto ANTES de intentar la operacion. No lo hagas pasar por un"
+             . "\n  rechazo que ya sabias que iba a venir."
+             . "\n- Nunca ofrezcas una excepcion ni digas que 'lo consultas': si necesita"
+             . "\n  algo distinto, lo ve un agente.";
+    }
+}
+
 if (!function_exists('chatbot_armar_prompt')) {
     /**
      * Arma el system prompt final combinando los CAMPOS del agente (o sus
      * defaults) con las REGLAS FIJAS. $campos: ['bot_nombre','bot_tono',
      * 'juego_desc','reglas_extra'] — cualquiera vacío usa su default.
      */
-    function chatbot_armar_prompt(array $campos): string
+    function chatbot_armar_prompt(array $campos, array $limites = []): string
     {
         $nombre = trim((string)($campos['bot_nombre'] ?? '')) ?: CB_DEF_NOMBRE;
         $tono   = trim((string)($campos['bot_tono'] ?? '')) ?: CB_DEF_TONO;
         $juego  = trim((string)($campos['juego_desc'] ?? '')) ?: CB_DEF_JUEGO;
         $extra  = trim((string)($campos['reglas_extra'] ?? ''));
 
+        /* EL ORDEN NO ES CASUAL Y NO SE CAMBIA.
+           Las REGLAS FIJAS van ULTIMAS, despues de lo que escribio el
+           operador. En estos modelos lo que va mas abajo pesa mas, y antes
+           era al reves: las indicaciones del operador quedaban al final y le
+           ganaban al procedimiento.
+           Eso rompio el cobro en produccion: alguien escribio "cargame fichas
+           -> cargaselo directo" en ese campo y el bot empezo a decirle a los
+           jugadores "listo, te cargo 200 fichas" sin haber cobrado nada.
+           Con este orden, lo que se escriba ahi puede sumar informacion pero
+           no puede cambiar como se cobra. */
         $p  = "Sos {$nombre}, del equipo de atención al cliente. Ayudás a los "
             . "jugadores con dudas y con la carga de fichas.\n\n";
         $p .= "TU TONO:\n{$tono}\n\n";
         $p .= "SOBRE EL JUEGO:\n{$juego}\n\n";
-        $p .= CB_REGLAS_FIJAS;
         if ($extra !== '') {
-            $p .= "\n\nINDICACIONES ADICIONALES DEL OPERADOR:\n{$extra}";
+            $p .= "INFORMACIÓN QUE SUMÓ EL OPERADOR (promos, horarios, avisos):\n"
+                . "{$extra}\n\n";
         }
+        $bloqueLim = chatbot_bloque_limites($limites);
+        if ($bloqueLim !== '') {
+            $p .= $bloqueLim . "\n\n";
+        }
+        $p .= CB_REGLAS_FIJAS;
         return $p;
     }
 }

@@ -406,9 +406,20 @@ function rl_crear_recarga(PDO $pdo, string $usuario, int $coins, string $titular
     if ($usuario === '') {
         return ['ok' => false, 'error' => 'Falta el nombre de usuario del juego.'];
     }
-    if ($coins < RL_MIN_COINS || $coins > RL_MAX_COINS) {
-        return ['ok' => false, 'error' =>
-            'La cantidad debe estar entre ' . RL_MIN_COINS . ' y ' . RL_MAX_COINS . ' coins.'];
+    // Los MISMOS limites que fichas_pedir_carga(), leidos del mismo lugar: si
+    // el chat aceptara un monto que despues la carga rechaza, el jugador
+    // transferiria plata por una recarga que no se puede completar.
+    $minCarga = function_exists('fichas_limite')
+        ? fichas_limite($pdo, 'lim_carga_min', RL_MIN_COINS) : RL_MIN_COINS;
+    $maxCarga = function_exists('fichas_limite')
+        ? fichas_limite($pdo, 'lim_carga_max', RL_MAX_COINS) : RL_MAX_COINS;
+    if ($maxCarga <= 0) { $maxCarga = RL_MAX_COINS; }
+    if ($coins < $minCarga || $coins > $maxCarga) {
+        return ['ok' => false, 'codigo' => 'monto_fuera_de_rango',
+                'minimo' => $minCarga, 'maximo' => $maxCarga,
+                'error' => 'La cantidad tiene que estar entre '
+                    . number_format($minCarga, 0, ',', '.') . ' y '
+                    . number_format($maxCarga, 0, ',', '.') . ' fichas.'];
     }
 
     // El usuario tiene que existir en el panel de ganamos (tabla usuarios).

@@ -19,10 +19,41 @@
 
 declare(strict_types=1);
 
-/** Minimo y maximo por operacion. El techo es un freno de daño, no una regla
- *  de negocio: si algo se descontrola (bug, cuenta robada), acota la perdida. */
+/** RESPALDO de los limites, no la fuente. Los de verdad los pone cada cliente
+ *  desde Configuracion (config_crm: lim_carga_min, lim_carga_max,
+ *  lim_retiro_min, lim_retiro_max_dia) y se leen con fichas_limite(). Estas
+ *  constantes solo aparecen si config_crm no responde -- y son los valores que
+ *  regian antes de que los limites fueran configurables, asi que un fallo de
+ *  lectura deja el sistema como estaba, nunca sin freno. */
 const FICHAS_MIN_CARGA = 100;
 const FICHAS_MAX_CARGA = 500000;
+
+if (!function_exists('fichas_limite')) {
+    /**
+     * Un limite del negocio, para ESTE cliente.
+     *
+     * Los limites viven en un solo lugar y se usan en dos: los aplica el
+     * codigo (que es lo que manda) y se los cuenta al modelo del chatbot
+     * (para que no le ofrezca al jugador algo que despues se le va a
+     * rechazar). Ver chatbot_bloque_limites() en chatbot_contexto.php.
+     *
+     * Devuelve $porDefecto si config_crm no esta disponible o el valor
+     * guardado no es un numero -- un limite ilegible no puede convertirse en
+     * "sin limite".
+     */
+    function fichas_limite(PDO $pdo, string $clave, int $porDefecto): int
+    {
+        if (!function_exists('cfg_crm')) {
+            return $porDefecto;
+        }
+        $v = cfg_crm($pdo, $clave);
+        if ($v === null || trim((string)$v) === '' || !is_numeric($v)) {
+            return $porDefecto;
+        }
+        $n = (int)$v;
+        return $n >= 0 ? $n : $porDefecto;
+    }
+}
 
 /**
  * SI SE LE COBRA O NO AL JUGADOR. Es EL interruptor de este archivo.
@@ -115,12 +146,14 @@ function fichas_pedir_carga(PDO $pdo, string $usuario, int $monto, string $orige
         return ['ok' => false, 'codigo' => 'sin_usuario',
                 'error' => 'No sé a qué usuario cargarle. Primero hay que iniciar sesión.'];
     }
-    if ($monto < FICHAS_MIN_CARGA) {
-        return ['ok' => false, 'codigo' => 'monto_bajo',
-                'error' => 'El mínimo para cargar es ' . FICHAS_MIN_CARGA . ' fichas.'];
+    $minCarga = fichas_limite($pdo, 'lim_carga_min', FICHAS_MIN_CARGA);
+    $maxCarga = fichas_limite($pdo, 'lim_carga_max', FICHAS_MAX_CARGA);
+    if ($monto < $minCarga) {
+        return ['ok' => false, 'codigo' => 'monto_bajo', 'minimo' => $minCarga,
+                'error' => 'El mínimo para cargar es ' . number_format($minCarga, 0, ',', '.') . ' fichas.'];
     }
-    if ($monto > FICHAS_MAX_CARGA) {
-        return ['ok' => false, 'codigo' => 'monto_alto',
+    if ($maxCarga > 0 && $monto > $maxCarga) {
+        return ['ok' => false, 'codigo' => 'monto_alto', 'maximo' => $maxCarga,
                 'error' => 'Ese monto es muy alto para cargar solo. Te lo hace un agente por chat.'];
     }
 
@@ -325,15 +358,18 @@ function fichas_pedir_retiro(PDO $pdo, string $usuario, int $monto, string $orig
         $monto = (int)floor($saldo);
     }
 
-    // Coherencia monto vs saldo.
-    if ($saldo < FICHAS_MIN_CARGA) {
+    // Coherencia monto vs saldo. El minimo de RETIRO es su propio numero: antes
+    // reusaba el de carga, y son negocios distintos -- se suele dejar cargar
+    // poco y exigir mas para pagar.
+    $minRetiro = fichas_limite($pdo, 'lim_retiro_min', FICHAS_MIN_CARGA);
+    if ($saldo < $minRetiro) {
         return ['ok' => false, 'codigo' => 'saldo_bajo', 'saldo' => $saldo,
                 'error' => 'Tu saldo es de ' . number_format($saldo, 0, ',', '.') .
-                           ', menos del mínimo para retirar (' . FICHAS_MIN_CARGA . ').'];
+                           ', menos del mínimo para retirar (' . number_format($minRetiro, 0, ',', '.') . ').'];
     }
-    if ($monto < FICHAS_MIN_CARGA) {
-        return ['ok' => false, 'codigo' => 'monto_bajo', 'saldo' => $saldo,
-                'error' => 'El mínimo para retirar es ' . FICHAS_MIN_CARGA . ' fichas.'];
+    if ($monto < $minRetiro) {
+        return ['ok' => false, 'codigo' => 'monto_bajo', 'saldo' => $saldo, 'minimo' => $minRetiro,
+                'error' => 'El mínimo para retirar es ' . number_format($minRetiro, 0, ',', '.') . ' fichas.'];
     }
     if ($saldo + 0.01 < $monto) {
         return ['ok' => false, 'codigo' => 'sin_saldo', 'saldo' => $saldo,
@@ -350,6 +386,41 @@ function fichas_pedir_retiro(PDO $pdo, string $usuario, int $monto, string $orig
     if ($idPrevio = $enCurso->fetchColumn()) {
         return ['ok' => false, 'codigo' => 'en_curso', 'id' => (int)$idPrevio,
                 'error' => 'Ya tenés un retiro pedido. Un agente lo está viendo.'];
+    }
+
+    /* Tope de retiro POR DIA (config_crm.lim_retiro_max_dia, 0 = sin tope).
+       Se cuentan los pedidos de hoy incluyendo los que todavia no se pagaron:
+       si solo se sumaran los ya pagados, alcanzaria con encolar varios juntos
+       para saltear el tope. Los rechazados y cancelados no cuentan, que seria
+       castigar al jugador por un pedido que no le pagamos. */
+    $topeDia = fichas_limite($pdo, 'lim_retiro_max_dia', 0);
+    if ($topeDia > 0) {
+        try {
+            $q = $pdo->prepare(
+                "SELECT COALESCE(SUM(monto),0) FROM acciones_saldo
+                  WHERE usuario = ? AND tipo = 'retirar'
+                    AND estado IN ('pendiente','procesando','revisar','hecha')
+                    AND DATE(creada_en) = CURDATE()"
+            );
+            $q->execute([$usuario]);
+            $yaHoy = (float)$q->fetchColumn();
+        } catch (Throwable $e) {
+            // Sin poder contar, no se bloquea: el tope es una politica
+            // comercial, no un control de fraude. Frenar un retiro legitimo
+            // por un error de lectura es peor que dejar pasar uno de mas.
+            error_log('fichas_pedir_retiro: no pude sumar el tope diario: ' . $e->getMessage());
+            $yaHoy = 0.0;
+        }
+        if ($yaHoy + $monto > $topeDia) {
+            $resta = max(0, $topeDia - (int)$yaHoy);
+            return ['ok' => false, 'codigo' => 'tope_diario', 'saldo' => $saldo,
+                    'tope_dia' => $topeDia, 'ya_hoy' => (int)$yaHoy, 'disponible' => $resta,
+                    'error' => $resta > 0
+                        ? 'Por hoy podés retirar hasta ' . number_format($resta, 0, ',', '.') .
+                          ' (el tope diario es ' . number_format($topeDia, 0, ',', '.') . ').'
+                        : 'Ya llegaste al tope de retiro de hoy (' .
+                          number_format($topeDia, 0, ',', '.') . '). Mañana podés seguir.'];
+        }
     }
 
     /* El destino del pago (CBU/CVU/alias). Prioridad: lo que dijo AHORA >
