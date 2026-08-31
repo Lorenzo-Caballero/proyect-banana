@@ -298,10 +298,14 @@ def una_pasada(ctx, solo_ver: bool, dias: int) -> int:
     solicitudes = traer_solicitudes(ctx, dias)
     if solicitudes is None:
         return 0          # fallo la lectura: no se evalua nada
-    if not solicitudes:
-        log.debug("sin solicitudes de deposito pendientes")
 
     decisiones = evaluar(ctx, solicitudes, dias)
+
+    # Se informa SIEMPRE, aunque no haya nada que hacer. Sin esta linea una
+    # corrida sana termina en silencio y no se distingue de una que murio a la
+    # mitad -- justo lo que hay que poder mirar de un vistazo en el log.
+    log.info("%d solicitud(es) pendientes en el panel, %d evaluada(s)",
+             len(solicitudes), len(decisiones))
     hechas = 0
 
     for d in decisiones:
