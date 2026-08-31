@@ -194,6 +194,14 @@ function fichas_pedir_carga(PDO $pdo, string $usuario, int $monto, string $orige
         $id = (int)$pdo->lastInsertId();
         $pdo->commit();
 
+        // Pedir una carga es actividad del jugador: hasta ahora un jugador
+        // que cargaba fichas al juego todas las semanas pero no recargaba
+        // plata figuraba como inactivo en las tres pantallas del CRM.
+        if (is_file(__DIR__ . '/actividad_lib.php')) {
+            require_once __DIR__ . '/actividad_lib.php';
+            actividad_marcar($pdo, $usuario);
+        }
+
         /* InitiateCheckout: el jugador PIDIO la carga. Todavia no es una
            compra -- el bot la deposita despues en el panel y puede fallar. El
            Purchase se dispara cuando la accion pasa a 'hecha' (ver

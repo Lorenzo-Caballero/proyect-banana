@@ -40,6 +40,11 @@ if (is_file(__DIR__ . '/meta_lib.php')) {
 if (is_file(__DIR__ . '/publicidad_lib.php')) {
     require_once __DIR__ . '/publicidad_lib.php';
 }
+// "Hace cuanto que este jugador no aparece". Opcional como los de arriba: si
+// el archivo no esta, la recarga se acredita igual.
+if (is_file(__DIR__ . '/actividad_lib.php')) {
+    require_once __DIR__ . '/actividad_lib.php';
+}
 
 // =====================  EDITA ESTO  =======================================
 const RL_COINS_POR_PESO = 1;        // 1 coin = 1 peso  (5000 coins => $5000)
@@ -610,7 +615,8 @@ function rl_registrar_pago(PDO $pdo, array $p): array
  * que es su valor por default, asi que el camino automatico no cambia nada
  * observable.
  */
-function rl_acreditar(PDO $pdo, array &$recarga, string $idUnico, string $conf, ?string $operador = null): void
+function rl_acreditar(PDO $pdo, array &$recarga, string $idUnico, string $conf,
+                       ?string $operador = null, ?string $confianza = null): void
 {
     // Se resuelve ANTES del UPDATE de abajo: en ese momento la fila de esta
     // recarga todavia esta 'pendiente', asi que contar 'acreditada' previas
@@ -629,17 +635,11 @@ function rl_acreditar(PDO $pdo, array &$recarga, string $idUnico, string $conf, 
         error_log('rl_acreditar: no pude calcular es_primera: ' . $e->getMessage());
     }
 
-    // La confianza sale del propio $conf: las capas la escriben adelante
-    // ("alta: ...", "media: ..."), y la asignacion desde el CRM empieza con
-    // "manual: <operador>". Queda en su columna para poder filtrar despues
-    // (por ejemplo, revisar a mano todo lo que entro como 'media').
-    $confianza = null;
-    foreach (['alta', 'media', 'manual'] as $nivel) {
-        if (strpos($conf, $nivel) === 0) {
-            $confianza = $nivel;
-            break;
-        }
-    }
+    // $confianza viene explicito del que llama, no deducido de $conf. Se
+    // intento parsear el prefijo del texto y quedaba NULL justo en el camino
+    // mas comun ("monto exacto", que no lleva prefijo): deducir semantica de
+    // un mensaje pensado para leer es fragil, y esto despues se filtra.
+    $confianza = in_array($confianza, ['alta', 'media', 'manual'], true) ? $confianza : null;
     // Migracion 45: si todavia no corrio, se acredita igual sin la
     // trazabilidad -- una recarga no puede quedar sin acreditar por una
     // columna que falta.
@@ -660,6 +660,32 @@ function rl_acreditar(PDO $pdo, array &$recarga, string $idUnico, string $conf, 
     $pdo->prepare(
         "UPDATE usuarios SET coins = coins + ? WHERE username = ?"
     )->execute([(int)$recarga['coins'], $recarga['usuario']]);
+
+    /* Fila en `movimientos`: sin esto, la ficha del jugador en el CRM MIENTE.
+       El agente abre un chat y ve el historial vacio de alguien que viene
+       depositando hace meses, porque `movimientos` solo tenia las cargas
+       hechas a mano desde el CRM, la ruleta y el debito al pasar fichas al
+       juego -- todo menos el evento mas importante, que es este.
+       Va con el mismo signo y unidad que el resto (fichas acreditadas). */
+    try {
+        $pdo->prepare(
+            "INSERT INTO movimientos (usuario, tipo, monto, motivo, origen)
+             VALUES (?, 'ficha', ?, ?, 'recarga')"
+        )->execute([
+            mb_substr((string)$recarga['usuario'], 0, 50),
+            (int)$recarga['coins'],
+            'Recarga ' . (string)$recarga['referencia'] . ' acreditada',
+        ]);
+    } catch (Throwable $e) {
+        // La recarga YA se acredito arriba. Que falte la linea del historial
+        // es molesto; que se caiga la acreditacion por eso, inaceptable.
+        error_log('rl_acreditar: no pude registrar el movimiento: ' . $e->getMessage());
+    }
+
+    // El jugador acaba de aparecer: cuenta como actividad (ver actividad_lib).
+    if (function_exists('actividad_marcar')) {
+        actividad_marcar($pdo, (string)$recarga['usuario']);
+    }
 
     $pdo->prepare(
         "UPDATE pagos
@@ -1015,15 +1041,18 @@ function rl_matchear_y_acreditar(PDO $pdo, string $idUnico, float $monto): array
 
         $recarga = null;
         $conf = '';
+        $confianza = null;
         if (count($cands) === 1) {
             $recarga = $cands[0];
             $conf = 'monto exacto';
+            $confianza = 'alta';
         } elseif (count($cands) > 1) {
             // Mismo importe exacto pedido por dos jugadores a la vez. Antes
             // esto iba derecho a revision; ahora se desempata por huella o
             // por titular declarado.
             [$recarga, $confCapa, $motivo] = rl_elegir_recarga($pdo, $cands, $pago);
             $conf = $recarga ? $confCapa . ': ' . $motivo : '';
+            $confianza = $recarga ? $confCapa : null;
             if (!$recarga) {
                 $pdo->prepare("UPDATE pagos SET estado='revision' WHERE id_unico=?")->execute([$idUnico]);
                 $pdo->commit();
@@ -1047,6 +1076,7 @@ function rl_matchear_y_acreditar(PDO $pdo, string $idUnico, float $monto): array
             if ($c2) {
                 [$recarga, $confCapa, $motivo] = rl_elegir_recarga($pdo, $c2, $pago);
                 $conf = $recarga ? $confCapa . ' (monto entero): ' . $motivo : '';
+                $confianza = $recarga ? $confCapa : null;
                 if (!$recarga) {
                     $pdo->prepare("UPDATE pagos SET estado='revision' WHERE id_unico=?")->execute([$idUnico]);
                     $pdo->commit();
@@ -1062,7 +1092,7 @@ function rl_matchear_y_acreditar(PDO $pdo, string $idUnico, float $monto): array
             return ['resultado' => 'revision', 'mensaje' => 'sin recarga unica que coincida'];
         }
 
-        rl_acreditar($pdo, $recarga, $idUnico, $conf);
+        rl_acreditar($pdo, $recarga, $idUnico, $conf, null, $confianza);
         $pdo->commit();
 
         // Recien despues del commit: si el aviso saliera adentro de la
@@ -1112,7 +1142,7 @@ function rl_asignar_manual(PDO $pdo, string $idUnico, int $recargaId, string $op
             return ['resultado' => 'error', 'error' => 'Esa recarga ya no está pendiente.'];
         }
 
-        rl_acreditar($pdo, $recarga, $idUnico, 'manual: ' . $operador, $operador);
+        rl_acreditar($pdo, $recarga, $idUnico, 'manual: ' . $operador, $operador, 'manual');
         $pdo->commit();
 
         rl_notificar_acreditada($pdo, $recarga);

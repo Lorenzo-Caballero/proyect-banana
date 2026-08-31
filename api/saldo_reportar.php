@@ -66,9 +66,13 @@ try {
     // cualquier jugador, porque `usuario` es un parametro libre -- y pedir el
     // retiro acto seguido. `balance` lo escribe unicamente sync_usuarios.py
     // desde el panel de agentes.
+    // ultima_actividad va en el MISMO update: este endpoint lo llama
+    // widget.js desde adentro de la pagina del juego, asi que es la señal
+    // mas directa que tenemos de "el jugador esta jugando ahora". Sale
+    // gratis, ya estabamos escribiendo la fila (ver actividad_lib.php).
     $upd = $pdo->prepare(
         "UPDATE usuarios
-            SET balance_web = ?, balance_web_en = NOW()
+            SET balance_web = ?, balance_web_en = NOW(), ultima_actividad = NOW()
           WHERE username = ?"
     );
     $upd->execute([$saldo, $usuario]);
