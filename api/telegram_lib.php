@@ -59,6 +59,92 @@ if (!function_exists('tg_configurado')) {
     }
 }
 
+if (!function_exists('tg_llamar')) {
+    /**
+     * Una llamada cruda a la API de Telegram. Devuelve el JSON decodificado, o
+     * ['ok'=>false,'error'=>...] si ni siquiera se pudo llegar.
+     *
+     * Existe aparte de tg_avisar() porque el asistente de configuracion del CRM
+     * necesita getMe y getUpdates, no solo sendMessage.
+     */
+    function tg_llamar(string $token, string $metodo, array $params = []): array
+    {
+        $token = trim($token);
+        if ($token === '') { return ['ok' => false, 'error' => 'Falta el token.']; }
+        try {
+            $ch = curl_init('https://api.telegram.org/bot' . $token . '/' . $metodo);
+            curl_setopt_array($ch, [
+                CURLOPT_POST           => true,
+                CURLOPT_POSTFIELDS     => http_build_query($params),
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_CONNECTTIMEOUT => 4,
+                CURLOPT_TIMEOUT        => 8,
+            ]);
+            $resp = curl_exec($ch);
+            $err  = curl_error($ch);
+            curl_close($ch);
+            if ($resp === false) {
+                return ['ok' => false, 'error' => 'No se pudo contactar a Telegram: ' . $err];
+            }
+            $j = json_decode((string)$resp, true);
+            if (!is_array($j)) {
+                return ['ok' => false, 'error' => 'Telegram respondio algo inesperado.'];
+            }
+            return $j;
+        } catch (Throwable $e) {
+            return ['ok' => false, 'error' => $e->getMessage()];
+        }
+    }
+}
+
+if (!function_exists('tg_detectar_chat')) {
+    /**
+     * Busca solo el chat_id, mirando quien le hablo al bot ultimamente.
+     *
+     * Es LA parte que traba a cualquiera que configura esto por primera vez: el
+     * chat_id no se ve en ningun lado de la app de Telegram, y la unica forma
+     * documentada es abrir a mano una URL con el token adentro y buscar un
+     * numero en un JSON. Aca se resuelve solo: la persona le escribe algo al
+     * bot (o lo agrega a un grupo) y el CRM lo encuentra.
+     *
+     * Se queda con el MAS RECIENTE. Si hay varios, el ultimo que escribio es
+     * casi siempre el que esta configurandolo en ese momento.
+     */
+    function tg_detectar_chat(string $token): array
+    {
+        $r = tg_llamar($token, 'getUpdates', ['limit' => 50, 'timeout' => 0]);
+        if (empty($r['ok'])) {
+            return ['ok' => false, 'error' => (string)($r['description'] ?? $r['error'] ?? 'No se pudo consultar.')];
+        }
+        $encontrados = [];
+        foreach ((array)($r['result'] ?? []) as $up) {
+            // Un update puede venir como message, channel_post, my_chat_member
+            // (cuando lo AGREGAN a un grupo, que es el caso mas util y el unico
+            // que no genera un "message"), etc.
+            foreach (['message', 'channel_post', 'edited_message', 'my_chat_member'] as $k) {
+                $chat = $up[$k]['chat'] ?? null;
+                if (!is_array($chat) || !isset($chat['id'])) { continue; }
+                $id = (string)$chat['id'];
+                $encontrados[$id] = [
+                    'id'     => $id,
+                    'tipo'   => (string)($chat['type'] ?? ''),
+                    'nombre' => trim((string)($chat['title'] ?? ''))
+                              ?: trim(((string)($chat['first_name'] ?? '')) . ' ' . ((string)($chat['last_name'] ?? '')))
+                              ?: (string)($chat['username'] ?? ''),
+                ];
+            }
+        }
+        if (!$encontrados) {
+            return ['ok' => false, 'codigo' => 'sin_mensajes', 'error' =>
+                'Todavia nadie le escribio al bot. Abri Telegram, buscalo por su '
+                . 'nombre de usuario y mandale /start (o agregalo al grupo). Despues '
+                . 'volve a tocar este boton.'];
+        }
+        $lista = array_values($encontrados);
+        return ['ok' => true, 'chats' => $lista, 'sugerido' => end($lista)];
+    }
+}
+
 if (!function_exists('tg_avisar')) {
     /**
      * Manda un mensaje. Devuelve true si Telegram lo acepto.

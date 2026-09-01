@@ -43,6 +43,10 @@ require __DIR__ . '/crm_auth.php';
 require __DIR__ . '/notificaciones_lib.php';
 require __DIR__ . '/crm_notificaciones.php';
 require_once __DIR__ . '/config_crm.php';
+// Telegram: opcional. Sin el archivo, la accion tg_probar avisa y el resto del
+// CRM sigue funcionando igual.
+$tgLibCrm = __DIR__ . '/telegram_lib.php';
+if (is_file($tgLibCrm)) { require_once $tgLibCrm; }
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
@@ -1282,6 +1286,71 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // falta filtrar aca: lo que no este en CFG_CRM_DEFAULTS no entra.
             $n = cfg_crm_guardar($pdo, $vals, $operador);
             salir(['ok' => true, 'guardados' => $n, 'config' => cfg_crm_todo($pdo)]);
+        }
+
+        /* ---- asistente de Telegram: validar, detectar el chat y probar ----
+           Existe para que configurar esto no sea "abri esta URL con el token
+           adentro y busca un numero en un JSON", que es la unica forma que
+           documenta Telegram y donde se traba todo el mundo. Un boton.
+
+           Es solo-admin y manda un mensaje real: no lo dejes sin exigir_admin,
+           porque con el token de otro serviria para spamear su grupo. */
+        if ($accion === 'tg_probar') {
+            exigir_admin();
+            if (!function_exists('tg_llamar')) {
+                salir(['ok' => false, 'error' => 'Falta api/telegram_lib.php en el server.'], 500);
+            }
+            // Token del formulario si lo mandaron (asi se puede probar ANTES de
+            // guardar); si no, el que ya este configurado.
+            $token = trim((string)($body['token'] ?? ''));
+            $chat  = trim((string)($body['chat_id'] ?? ''));
+            if ($token === '') {
+                $cred  = tg_credenciales($pdo);
+                $token = (string)($cred['token'] ?? '');
+                if ($chat === '') { $chat = (string)($cred['chat'] ?? ''); }
+            }
+            if ($token === '') {
+                salir(['ok' => false, 'error' => 'Falta el token del bot. Pedíselo a @BotFather.'], 422);
+            }
+
+            // 1) ¿El token sirve? getMe es la forma barata de saberlo, y de
+            //    paso devuelve el @usuario del bot para mostrarlo.
+            $yo = tg_llamar($token, 'getMe');
+            if (empty($yo['ok'])) {
+                salir(['ok' => false, 'paso' => 'token', 'error' =>
+                    'El token no sirve: ' . (string)($yo['description'] ?? $yo['error'] ?? 'Telegram lo rechazo.')], 422);
+            }
+            $bot = (string)($yo['result']['username'] ?? '');
+
+            // 2) Si no sabemos a quien avisarle, lo averiguamos.
+            $detectado = null;
+            if ($chat === '') {
+                $d = tg_detectar_chat($token);
+                if (empty($d['ok'])) {
+                    salir(['ok' => false, 'paso' => 'chat', 'bot' => $bot,
+                           'error' => (string)$d['error']], 422);
+                }
+                $detectado = $d['sugerido'];
+                $chat = (string)$detectado['id'];
+            }
+
+            // 3) El mensaje de prueba. Es la unica confirmacion que vale: que
+            //    le SUENE el celular, no que la API conteste 200.
+            $env = tg_llamar($token, 'sendMessage', [
+                'chat_id'    => $chat,
+                'text'       => "✅ <b>Listo</b>\nDesde ahora te aviso acá cuando el bot "
+                              . "derive una conversación a un agente.",
+                'parse_mode' => 'HTML',
+            ]);
+            if (empty($env['ok'])) {
+                salir(['ok' => false, 'paso' => 'envio', 'bot' => $bot, 'chat_id' => $chat,
+                       'error' => 'No pude mandarle el mensaje: '
+                                . (string)($env['description'] ?? $env['error'] ?? '')
+                                . '. Si es un grupo, agregá el bot al grupo primero.'], 422);
+            }
+
+            salir(['ok' => true, 'bot' => $bot, 'chat_id' => $chat,
+                   'detectado' => $detectado]);
         }
 
         // ---- crear un agente humano / resetear su clave (solo admin) ----

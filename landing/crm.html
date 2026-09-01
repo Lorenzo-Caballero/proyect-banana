@@ -268,6 +268,14 @@
   .chip-derivada{display:inline-block;margin-top:4px;padding:1px 7px;border-radius:7px;
     background:rgba(239,68,68,.14);color:var(--red);font-size:10.5px;font-weight:800;
     letter-spacing:.2px;cursor:help}
+
+  /* Alta del bot de Telegram: los pasos que hay que hacer EN Telegram, que no
+     los puede hacer el CRM (el token sale de @BotFather con la cuenta del
+     dueño). Lo que sigue —encontrar el chat id— sí lo resuelve el botón. */
+  .tg-pasos{margin:0 0 14px;padding-left:20px;display:flex;flex-direction:column;gap:5px}
+  .tg-pasos li{font-size:12.5px;color:var(--muted);line-height:1.5}
+  .tg-pasos b{color:var(--txt)}
+  .tg-probar{display:flex;align-items:center;gap:11px;flex-wrap:wrap;margin-top:11px}
   .conv .marca{position:absolute;top:6px;right:6px;width:18px;height:18px;border-radius:50%;
     display:none;place-items:center;background:var(--violet);color:#fff}
   .conv .marca svg{width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:3;
@@ -3146,22 +3154,30 @@
           </div>
         </div>
         <div class="cfg-card-body">
+          <ol class="tg-pasos">
+            <li>En Telegram buscá <b>@BotFather</b> y mandale <b>/newbot</b>.</li>
+            <li>Te pide un nombre y un usuario (el usuario tiene que terminar en <b>bot</b>,
+                por ejemplo <i>ganamos_avisos_bot</i>).</li>
+            <li>Te devuelve un <b>token</b> largo. Pegalo acá abajo.</li>
+            <li>Mandale <b>/start</b> a tu bot recién creado — o agregalo a un grupo de
+                agentes, así se enteran todos. Después tocá <b>Probar</b>: el chat lo
+                detecto solo.</li>
+          </ol>
           <div class="cfg-grid">
             <div>
               <label class="cb-flabel">Token del bot</label>
               <input class="cb-input" id="cfgTgToken" placeholder="123456789:AAE…" autocomplete="off">
-              <p class="cfg-hint">Te lo da <b>@BotFather</b> en Telegram: escribile <b>/newbot</b> y seguí los pasos.</p>
+              <p class="cfg-hint">El que te dio @BotFather, entero.</p>
             </div>
             <div>
-              <label class="cb-flabel">A quién avisarle</label>
-              <input class="cb-input" id="cfgTgChat" placeholder="-1001234567890" autocomplete="off">
-              <p class="cfg-hint">
-                El <b>chat id</b>. Si ponés el de un <b>grupo</b> (empieza con <b>-</b>) se enteran
-                todos los agentes a la vez. Para obtenerlo, agregá el bot al grupo y escribile
-                <b>/start</b>; después abrí
-                <b>api.telegram.org/bot&lt;token&gt;/getUpdates</b> y copiá el <b>chat.id</b>.
-              </p>
+              <label class="cb-flabel">A quién avisarle <span class="cb-opt">(se completa solo)</span></label>
+              <input class="cb-input" id="cfgTgChat" placeholder="lo detecta el botón Probar" autocomplete="off">
+              <p class="cfg-hint">Si empieza con <b>-</b> es un grupo: avisa a todos los agentes.</p>
             </div>
+          </div>
+          <div class="tg-probar">
+            <button class="cb-btn-ghost" id="cfgTgProbar" type="button">Probar y detectar el chat</button>
+            <span class="cb-msg" id="cfgTgMsg"></span>
           </div>
           <p class="cfg-hint">
             <b>Dejalos vacíos si no querés Telegram.</b> La derivación igual se marca en
@@ -4396,6 +4412,38 @@
      quince campos y cada uno nuevo se olvidaria de engancharse. */
   ["input","change"].forEach(ev=>
     $("#viewConfig").addEventListener(ev, cfgPintarSucio));
+
+  /* Telegram: valida el token, encuentra el chat id y manda un mensaje real.
+     Lo del chat id es lo que justifica el boton -- ese numero no se ve en
+     ningun lado de la app y la unica via documentada es abrir a mano una URL
+     con el token adentro y buscarlo en un JSON.
+     Se manda el token del FORMULARIO, no el guardado: asi se prueba antes de
+     guardar y no queda un token roto configurado. */
+  $("#cfgTgProbar").addEventListener("click", async ()=>{
+    const btn = $("#cfgTgProbar"), msg = $("#cfgTgMsg");
+    const token = $("#cfgTgToken").value.trim();
+    if(!token){ msg.className="cb-msg err"; msg.textContent="Pegá primero el token de @BotFather."; return; }
+    btn.disabled = true; msg.className="cb-msg"; msg.textContent="Probando…";
+    let d;
+    try{
+      d = await jpost({ accion:"tg_probar", token, chat_id: $("#cfgTgChat").value.trim() });
+    }catch(e){ msg.className="cb-msg err"; msg.textContent="No se pudo probar."; btn.disabled=false; return; }
+    btn.disabled = false;
+    if(!d.ok){
+      msg.className="cb-msg err";
+      msg.textContent = d.error || "No anduvo.";
+      return;
+    }
+    // El chat detectado se escribe en el campo, pero NO se guarda solo: que lo
+    // vea y toque Guardar, como cualquier otro cambio de esta pantalla.
+    if(d.chat_id) $("#cfgTgChat").value = d.chat_id;
+    const dest = d.detectado
+      ? ` (${d.detectado.tipo==="private" ? "chat con" : "grupo"} ${d.detectado.nombre||d.chat_id})`
+      : "";
+    msg.className = "cb-msg ok";
+    msg.textContent = `Te mandé un mensaje desde @${d.bot}${dest}. Si te llegó, tocá Guardar.`;
+    cfgPintarSucio();
+  });
 
   async function guardarConfig(){
     const btn = $("#cfgGuardar");
