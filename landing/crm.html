@@ -122,8 +122,16 @@
   .rail-item svg{transition:transform .18s ease-out}
   .rail-item.active svg{transform:scale(1.12)}
   .rail-item svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:2;flex:none}
+  /* La etiqueta es un flex-item más (el ::after de un flex container lo es), y
+     va con order:1 para quedar ENTRE el ícono y el badge: en el HTML el badge
+     viene antes que el ::after, así que sin esto "Comprobantes" se dibujaba
+     como "ícono · 24 · Comprobantes" con el texto colgado a la derecha,
+     desalineado del resto de las etiquetas.
+     flex:1 + min-width:0 son los que hacen que la etiqueta se coma el espacio
+     libre (así el badge queda pegado al borde derecho) y que el
+     text-overflow:ellipsis funcione cuando el rail se angosta. */
   .rail-item::after{content:attr(data-tip);font-size:13px;font-weight:600;white-space:nowrap;
-    overflow:hidden;text-overflow:ellipsis;line-height:1.2}
+    overflow:hidden;text-overflow:ellipsis;line-height:1.2;order:1;flex:1;min-width:0}
   /* Tooltip propio con el nombre completo (::before -- el ::after ya lo usa
      el label visible de arriba). Mismo look que .fn-popover (fondo panel3,
      borde, sombra) para no inventar un segundo estilo de globo en la misma
@@ -185,6 +193,14 @@
   .app.rail-min .rail-item .rail-badge{position:absolute;top:2px;right:4px;margin-left:0;
     box-shadow:0 0 0 2px var(--panel)}
   .app.rail-min .logo{margin-bottom:6px}
+  /* Sin la barra de scroll, que acá desalineaba los íconos: solo el PRIMER
+     grupo scrollea, así que se comía ~5px de ancho y centraba sus íconos
+     corridos respecto de los de abajo (Configuración y Tema), que no
+     scrollean. Se ve en cuanto el rail se angosta. Ocultarla no deja a nadie
+     sin pistas: los degradados de .mas-arriba/.mas-abajo siguen avisando que
+     hay más, y en 84px de ancho una barra de 5px era casi el 6% del rail. */
+  .app.rail-min .rail .grp:first-of-type{scrollbar-width:none}
+  .app.rail-min .rail .grp:first-of-type::-webkit-scrollbar{width:0;display:none}
 
   /* ---- stats + lista ----
      Prioridad 1 del rediseño: que la lista de chats empiece lo más arriba
@@ -756,6 +772,9 @@
       background:none;border:0;padding:0;box-shadow:none;color:inherit;
       font-size:9.5px;font-weight:600;letter-spacing:.1px;line-height:1;
       white-space:nowrap;
+      /* Acá el item es una COLUMNA: el flex:1 del desktop estiraría la
+         etiqueta a lo alto, y el order no pinta nada (el badge es absolute). */
+      flex:none;order:0;
     }
     /* Mobile: el item vuelve a ser un cuadrado compacto (ícono arriba, texto
        abajo) -- el badge se ancla de nuevo como chip superpuesto arriba a la
@@ -877,7 +896,9 @@
   /* Desktop: chip al final de la fila (ícono + texto + badge), no superpuesto.
      El breakpoint mobile (max-width:760px) lo reposiciona sobre el ícono,
      donde el item vuelve a ser compacto -- ver ahí. */
-  .rail-badge{position:static;margin-left:auto;background:var(--red);color:#fff;
+  /* order:2 -> siempre el ÚLTIMO de la fila, detrás de la etiqueta (que es el
+     ::after, y en el HTML va después del badge). Ver .rail-item::after. */
+  .rail-badge{position:static;order:2;background:var(--red);color:#fff;
     font-size:9.5px;font-weight:800;min-width:16px;height:16px;border-radius:8px;
     display:none;place-items:center;padding:0 4px;flex:none}
   .rail-badge.on{display:grid}
