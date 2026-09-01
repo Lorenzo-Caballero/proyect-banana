@@ -53,22 +53,21 @@ Si preferís Android Studio: `File → Open` sobre la carpeta `apk/` y
 
 ## Publicar la app
 
-1. Renombrá el APK a `goldpaw.apk`.
-2. Subilo a Hostinger, a la **misma carpeta** que `descargar.html` (la raíz del sitio).
-3. Subí también `landing/descargar.html` y `landing/widget.js`.
-4. Pasales a tus clientes el link: `https://TU-DOMINIO/descargar.html`
+Se sirve desde el VPS (réplica), no desde Hostinger: `ganamoscrm.online` ya
+tiene los `location` de nginx para `/descargar.html` y `/ganamos.apk` (ver
+`replica/nginx-replica.conf`).
+
+1. Renombrá el APK a `ganamos.apk` y pisá `landing/ganamos.apk`.
+2. Subí todo con `.\replica\subir.ps1` (renombra sola `descargar.html` y
+   `ganamos.apk` al VPS; si es la primera vez que corrés esto en el server,
+   sumale `-Config` para instalar los `location` nuevos).
+3. Pasales a tus clientes el link: `https://ganamoscrm.online/descargar.html`
 
 Esa página ya explica el paso a paso de la instalación, incluido el aviso de
 «fuente desconocida» y el de Play Protect, que es lo que más consultas genera.
 
-### El tipo MIME en Hostinger
-
-Si al tocar «Descargar» el navegador abre basura en vez de bajar el archivo, es
-que el server no reconoce `.apk`. Agregá esto al `.htaccess` de la raíz:
-
-```apache
-AddType application/vnd.android.package-archive .apk
-```
+El tipo MIME del `.apk` y el `Content-Disposition` para forzar la descarga los
+pone el propio `location = /ganamos.apk` de nginx, no un `.htaccess`.
 
 ## Actualizar el asistente sin rehacer el APK
 

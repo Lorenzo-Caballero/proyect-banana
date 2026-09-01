@@ -156,11 +156,12 @@ cd apk
 ./gradlew assembleRelease      # en Windows: .\gradlew.bat assembleRelease
 ```
 
-Sale en `apk/app/build/outputs/apk/release/app-release.apk`. Se sube
-renombrada a `goldpaw.apk`, a la misma carpeta que `descargar.html` en
-Hostinger. Va firmada con `goldpaw.jks` — **ese archivo y su contraseña no
-se pueden perder**: sin él, los jugadores tendrían que desinstalar y
-reinstalar (perdiendo la sesión) para actualizar.
+Sale en `apk/app/build/outputs/apk/release/app-release.apk`. Se renombra a
+`ganamos.apk`, se pisa en `landing/ganamos.apk` y se sube al VPS con
+`.\replica\subir.ps1` — se sirve en `https://ganamoscrm.online/descargar.html`
+(ver `apk/README.md`). Va firmada con `goldpaw.jks` — **ese archivo y su
+contraseña no se pueden perder**: sin él, los jugadores tendrían que
+desinstalar y reinstalar (perdiendo la sesión) para actualizar.
 
 ---
 

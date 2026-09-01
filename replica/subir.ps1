@@ -51,12 +51,22 @@ if ($LASTEXITCODE -ne 0) { throw "falló el scp del widget" }
 # devolviendo su HTML en vez del script (bug real, detectado con un
 # pixel-detector: HTTP 200 pero el cuerpo no era JavaScript). Si falta
 # alguno, se saltea sin romper.
-foreach ($pagina in @("crm.html", "admin.html", "chat.html", "registro.html", "sw.js", "meta-pixel.js")) {
+foreach ($pagina in @("crm.html", "admin.html", "chat.html", "registro.html", "descargar.html", "sw.js", "meta-pixel.js")) {
     if (Test-Path "landing/$pagina") {
         Write-Host "→ $pagina" -ForegroundColor Cyan
         scp "landing/$pagina" "${destino}:/var/www/replica/$pagina"
         if ($LASTEXITCODE -ne 0) { throw "falló el scp de $pagina" }
     }
+}
+
+# El instalador Android. Pesa MB (no KB como el resto), así que va aparte y
+# solo si cambió tiene sentido pagar la subida.
+if (Test-Path "landing/ganamos.apk") {
+    Write-Host "→ ganamos.apk (instalador Android)" -ForegroundColor Cyan
+    scp landing/ganamos.apk "${destino}:/var/www/replica/ganamos.apk"
+    if ($LASTEXITCODE -ne 0) { throw "falló el scp del apk" }
+} else {
+    Write-Host "  (sin landing/ganamos.apk: no se actualiza el instalador)" -ForegroundColor Yellow
 }
 
 # El avatar se sirve desde el VPS: pedírselo a Hostinger lo deja a merced del
