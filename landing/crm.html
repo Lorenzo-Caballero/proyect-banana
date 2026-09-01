@@ -127,11 +127,14 @@
      viene antes que el ::after, así que sin esto "Comprobantes" se dibujaba
      como "ícono · 24 · Comprobantes" con el texto colgado a la derecha,
      desalineado del resto de las etiquetas.
-     flex:1 + min-width:0 son los que hacen que la etiqueta se coma el espacio
-     libre (así el badge queda pegado al borde derecho) y que el
-     text-overflow:ellipsis funcione cuando el rail se angosta. */
+     flex:0 1 auto -> la etiqueta mide lo que mide su TEXTO: no se estira para
+     llenar la fila, así el badge queda pegado al nombre y no flotando contra
+     el borde derecho (que es lo que hacía con flex:1: al cambiar el ancho del
+     rail, el número se despegaba cada vez más del nombre).
+     Puede encoger (shrink 1 + min-width:0), que es lo que deja funcionar al
+     text-overflow:ellipsis cuando el rail se angosta. */
   .rail-item::after{content:attr(data-tip);font-size:13px;font-weight:600;white-space:nowrap;
-    overflow:hidden;text-overflow:ellipsis;line-height:1.2;order:1;flex:1;min-width:0}
+    overflow:hidden;text-overflow:ellipsis;line-height:1.2;order:1;flex:0 1 auto;min-width:0}
   /* Tooltip propio con el nombre completo (::before -- el ::after ya lo usa
      el label visible de arriba). Mismo look que .fn-popover (fondo panel3,
      borde, sombra) para no inventar un segundo estilo de globo en la misma
