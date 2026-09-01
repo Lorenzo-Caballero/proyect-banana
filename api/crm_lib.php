@@ -159,6 +159,30 @@ if (!function_exists('crm_conversacion_id')) {
         return $porConexion[$k];
     }
 
+    /**
+     * ¿Esta base ya tiene `conversaciones.derivada_en` (migracion 49)?
+     *
+     * Mismo cuidado y mismo motivo que crm_hay_archivada(): si la migracion no
+     * corrio, meter la columna en el SELECT de la lista tira y el agente se
+     * queda SIN bandeja. Cache por conexion, no por proceso (multi-tenant: un
+     * script que recorre varias bases no puede llevarse la respuesta de la
+     * primera).
+     */
+    function crm_hay_derivada(PDO $pdo): bool
+    {
+        static $porConexion = [];
+        $k = spl_object_id($pdo);
+        if (!array_key_exists($k, $porConexion)) {
+            try {
+                $pdo->query("SELECT derivada_en FROM conversaciones LIMIT 0");
+                $porConexion[$k] = true;
+            } catch (Throwable $e) {
+                $porConexion[$k] = false;
+            }
+        }
+        return $porConexion[$k];
+    }
+
     /** Guarda un turno del chatbot. Nunca rompe el chat: si falla, solo loguea. */
     function crm_registrar_turno(PDO $pdo, string $sessionId, string $textoUser,
                                  string $textoBot, ?string $usuario = null): void

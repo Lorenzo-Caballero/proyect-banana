@@ -510,9 +510,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 $ordenSql = 'c.fijada DESC, c.actualizada_en DESC, c.id DESC';
             }
 
+            // Las columnas de la derivacion (migracion 49) solo se piden si
+            // estan: sin este guard, una base sin migrar se queda sin bandeja.
+            $hayDeriv  = crm_hay_derivada($pdo);
+            $selDeriv  = $hayDeriv ? 'c.derivada_en, c.derivada_motivo,' : '';
+
+            /* Las derivadas suben, arriba de todo menos de las fijadas.
+               Esto es lo que hace que la derivacion sea un AVISO y no una
+               marquita: en una bandeja de 53 conversaciones, un jugador al que
+               el bot le prometio un agente no puede quedar en la posicion 40
+               porque hablo hace rato. Se respeta `fijada` por encima: eso lo
+               clavo el agente a mano y no se lo pisamos.
+               Vale para los tres ordenes, igual que fijada. */
+            if ($hayDeriv) {
+                $ordenSql = preg_replace(
+                    '/^c\.fijada DESC, /',
+                    'c.fijada DESC, (c.derivada_en IS NOT NULL) DESC, ',
+                    $ordenSql, 1
+                );
+            }
+
             $st = $pdo->prepare(
                 "SELECT c.id, c.session_id, c.usuario, c.estado, c.preview,
-                        c.no_leidos, c.fijada, c.actualizada_en,
+                        c.no_leidos, c.fijada, c.actualizada_en, $selDeriv
                         $ultimaCarga AS ultima_carga
                  FROM conversaciones c $wsql
                  ORDER BY $ordenSql LIMIT 200"
@@ -524,6 +544,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 $it['no_leidos'] = (int)$it['no_leidos'];
                 $it['fijada'] = (bool)$it['fijada'];
                 $it['agentes'] = [];
+                // Booleano para el front: le alcanza con "el bot pidio ayuda".
+                $it['derivada'] = !empty($it['derivada_en']);
             }
             unset($it);
 
@@ -553,10 +575,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                atender, y si contara, el numero de "abiertas" nunca bajaria por
                archivar y el agente no vería el efecto de haber ordenado. */
             $vivas   = crm_hay_archivada($pdo) ? 'WHERE archivada = 0' : '';
+            // Cuantas espera un agente porque las derivo el bot. Es el numero
+            // del badge del rail: mide gente esperando, no mensajes sin leer.
+            $sumDeriv = $hayDeriv ? "SUM(derivada_en IS NOT NULL) derivadas," : '0 derivadas,';
             $res = $pdo->query(
                 "SELECT COUNT(*) total,
                         SUM(estado='abierta')   abiertas,
                         SUM(estado='pendiente') pendientes,
+                        $sumDeriv
                         SUM(no_leidos>0)        con_no_leidos
                  FROM conversaciones $vivas"
             )->fetch(PDO::FETCH_ASSOC);
@@ -579,6 +605,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 'total'         => (int)$res['total'],
                 'abiertas'      => (int)$res['abiertas'],
                 'pendientes'    => (int)$res['pendientes'],
+                'derivadas'     => (int)$res['derivadas'],
                 'con_no_leidos' => (int)$res['con_no_leidos'],
                 'archivadas'    => $archivadas,
                 'usuarios'      => (int)$g['usuarios'],
@@ -1009,6 +1036,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             crm_agente_tomar($pdo, $id, $operador);
             $pdo->prepare("UPDATE conversaciones SET preview = ?, actualizada_en = NOW() WHERE id = ?")
                 ->execute([mb_substr($texto, 0, 280), $id]);
+
+            /* Atendida: se apaga la marca de derivada (migracion 49).
+               Es lo que cierra el circuito -- si no se limpiara, la
+               conversacion quedaria destacada arriba de la bandeja para
+               siempre y el badge del rail nunca bajaria de ahi, o sea que en
+               dos dias nadie le daria bola a ese numero.
+               Solo la marca: `ia_activa` NO se vuelve a prender sola. El bot se
+               corrio porque habia un problema que el no podia resolver; que
+               vuelva a hablar es una decision del agente, con su switch. */
+            if (crm_hay_derivada($pdo)) {
+                $pdo->prepare(
+                    "UPDATE conversaciones SET derivada_en = NULL, derivada_motivo = NULL
+                      WHERE id = ? AND derivada_en IS NOT NULL"
+                )->execute([$id]);
+            }
 
             /* La respuesta del agente llega cuando llega: es el caso donde mas
                falta hace el aviso, porque el jugador casi nunca sigue mirando.

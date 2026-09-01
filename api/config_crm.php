@@ -75,6 +75,20 @@ const CFG_CRM_DEFAULTS = [
     // Play Store, donde no esta.
     'app_url'         => '',
 
+    // ----- Aviso por Telegram cuando el bot deriva a un agente -----
+    // Vacios = sin Telegram, y no pasa nada: la derivacion igual queda marcada
+    // en el CRM. Esto es el aviso que suena en el celular cuando nadie tiene
+    // la pestaña abierta, que es justo cuando mas falta hace.
+    //
+    // Van por CLIENTE y no en config.local.php porque cada agencia avisa a su
+    // propia gente; si estuvieran en el server, todas compartirian el mismo
+    // grupo de Telegram. El config.local.php queda igual como respaldo (ver
+    // tg_credenciales en telegram_lib.php).
+    'tg_bot_token'    => '',
+    // Puede ser una persona o un GRUPO (ahi el id arranca con "-"), que es lo
+    // util cuando hay varios agentes: se enteran todos.
+    'tg_chat_id'      => '',
+
     // ----- Limites de carga y retiro, por cliente -----
     // Cada agencia tiene los suyos ("no cargo menos de 500", "no pago mas de
     // 100.000 por dia"). Antes eran constantes en fichas_lib.php, iguales

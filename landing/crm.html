@@ -260,6 +260,14 @@
      marca vive en el borde izquierdo + tilde, para no pelearle el color al
      resaltado de la conversacion abierta. */
   .conv.marcada{background:var(--violetSoft);box-shadow:inset 3px 0 0 var(--violet)}
+  /* El bot pidió un agente y todavía no fue nadie. Barra roja a la izquierda +
+     chip: en una bandeja de 50 chats iguales, el color es lo único que se ve
+     sin leer. Se apaga sola al responder (crm.php, acción "responder"). */
+  .conv.derivada{box-shadow:inset 3px 0 0 var(--red)}
+  .conv.derivada.sel{box-shadow:inset 3px 0 0 var(--red), inset 0 0 0 1px var(--violet)}
+  .chip-derivada{display:inline-block;margin-top:4px;padding:1px 7px;border-radius:7px;
+    background:rgba(239,68,68,.14);color:var(--red);font-size:10.5px;font-weight:800;
+    letter-spacing:.2px;cursor:help}
   .conv .marca{position:absolute;top:6px;right:6px;width:18px;height:18px;border-radius:50%;
     display:none;place-items:center;background:var(--violet);color:#fff}
   .conv .marca svg{width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:3;
@@ -905,6 +913,11 @@
     font-size:9.5px;font-weight:800;min-width:16px;height:16px;border-radius:8px;
     display:none;place-items:center;padding:0 4px;flex:none}
   .rail-badge.on{display:grid}
+  /* Hay alguien esperando a un agente. Late para separarlo del badge normal de
+     "mensajes sin leer", que es el mismo rojo y quiere decir otra cosa. */
+  .rail-badge.urgente{animation:badgeLate 1.6s ease-in-out infinite}
+  @keyframes badgeLate{0%,100%{transform:scale(1)}50%{transform:scale(1.14)}}
+  @media(prefers-reduced-motion:reduce){ .rail-badge.urgente{animation:none} }
 
   /* ---- Comprobantes sin resolver (Fase A, Módulo 1) ---- */
   .view-row{flex:1;display:flex;gap:12px;min-width:0}
@@ -3123,6 +3136,41 @@
         </div>
       </div>
 
+      <!-- Aviso por Telegram --------------------------------------------- -->
+      <div class="cfg-card">
+        <div class="cfg-card-head">
+          <span class="cb-ico"><svg viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/></svg></span>
+          <div class="cfg-card-txt">
+            <b>Avisarme por Telegram</b>
+            <span>Cuando el bot deriva una conversación a un agente, te suena en el celular.</span>
+          </div>
+        </div>
+        <div class="cfg-card-body">
+          <div class="cfg-grid">
+            <div>
+              <label class="cb-flabel">Token del bot</label>
+              <input class="cb-input" id="cfgTgToken" placeholder="123456789:AAE…" autocomplete="off">
+              <p class="cfg-hint">Te lo da <b>@BotFather</b> en Telegram: escribile <b>/newbot</b> y seguí los pasos.</p>
+            </div>
+            <div>
+              <label class="cb-flabel">A quién avisarle</label>
+              <input class="cb-input" id="cfgTgChat" placeholder="-1001234567890" autocomplete="off">
+              <p class="cfg-hint">
+                El <b>chat id</b>. Si ponés el de un <b>grupo</b> (empieza con <b>-</b>) se enteran
+                todos los agentes a la vez. Para obtenerlo, agregá el bot al grupo y escribile
+                <b>/start</b>; después abrí
+                <b>api.telegram.org/bot&lt;token&gt;/getUpdates</b> y copiá el <b>chat.id</b>.
+              </p>
+            </div>
+          </div>
+          <p class="cfg-hint">
+            <b>Dejalos vacíos si no querés Telegram.</b> La derivación igual se marca en
+            Conversaciones y aparece arriba de todo con el cartel <b>«Te necesita»</b> —
+            Telegram es el aviso para cuando nadie tiene el CRM abierto.
+          </p>
+        </div>
+      </div>
+
       <div class="cfg-sec">
         <h3>Límites de carga y retiro</h3>
         <span class="cfg-sec-linea"></span>
@@ -4208,6 +4256,8 @@
     lim_retiro_max_dia: { el: "#cfgLimRetiroDia", tipo: "texto" },
     lim_bono_carga_pct: { el: "#cfgLimBonoCarga", tipo: "texto" },
     app_url:            { el: "#cfgAppUrl",       tipo: "texto" },
+    tg_bot_token:       { el: "#cfgTgToken",      tipo: "texto" },
+    tg_chat_id:         { el: "#cfgTgChat",       tipo: "texto" },
     lim_retiro_hora_desde: { el: "#cfgLimRetiroDesde", tipo: "texto" },
     lim_retiro_hora_hasta: { el: "#cfgLimRetiroHasta", tipo: "texto" },
 
@@ -4785,7 +4835,14 @@
        que solo traerian lo que entra en el filtro actual. */
     const bc = $("#badgeChats");
     if (bc) {
-      const n = r.con_no_leidos || 0;
+      /* Las DERIVADAS mandan sobre los no leidos. No es lo mismo: un no leido
+         puede ser un "gracias", mientras que una derivada es alguien a quien
+         el bot ya le prometio un agente y esta esperando. Si se sumaran, el
+         numero urgente quedaria escondido adentro del otro. */
+      const der = r.derivadas || 0;
+      const n   = der > 0 ? der : (r.con_no_leidos || 0);
+      bc.classList.toggle("urgente", der > 0);
+      bc.title = der > 0 ? `${der} esperando a un agente` : "";
       if (n > 0) { bc.textContent = n > 99 ? "99+" : n; bc.classList.add("on"); }
       else { bc.classList.remove("on"); }
     }
@@ -4841,15 +4898,20 @@
       const bg = c.usuario ? `style="background:${colorDe(c.usuario)}"` : "";
       const nl = c.no_leidos>0 ? `<span class="badge">${c.no_leidos}</span>` : "";
       const pin = c.fijada ? `<span class="pin-mini">${SVG.pin}</span>` : "";
+      /* El bot pidió ayuda y todavía no la atendió nadie. Va con el motivo en
+         el title: el agente sabe qué pasa antes de abrir el chat. */
+      const der = c.derivada
+        ? `<span class="chip-derivada" title="${esc(c.derivada_motivo||"El bot derivó esta conversación")}">Te necesita</span>`
+        : "";
       const ags = (c.agentes && c.agentes.length)
         ? `<div class="agentes-chat">${c.agentes.map(a=>`<span class="ag-chip${st.yo&&a===st.yo?" yo":""}"><span class="dot"></span>${esc(a)}</span>`).join("")}</div>`
         : "";
-      return `<div class="conv ${c.id===st.convId?"sel":""}${seleccion.has(c.id)?" marcada":""}" data-id="${c.id}">
+      return `<div class="conv ${c.id===st.convId?"sel":""}${seleccion.has(c.id)?" marcada":""}${c.derivada?" derivada":""}" data-id="${c.id}">
         <span class="marca"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span>
         <div class="av ${anon}" ${bg}>${esc(inic(c.usuario||"?"))}</div>
         <div class="mid">
           <div class="n"><b>${pin}<span class="est-dot est-${esc(c.estado)}"></span>${esc(nombre)}</b><span class="t">${hace(c.actualizada_en)}</span></div>
-          <div class="pv">${esc(c.preview||"—")}</div>${ags}
+          <div class="pv">${esc(c.preview||"—")}</div>${der}${ags}
         </div>${nl}
       </div>`;
     }).join("");
