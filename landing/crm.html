@@ -91,7 +91,7 @@
      puesto, el overflow-y:auto no alcanzaba a mostrar los primeros items
      aunque el scroll existiera. flex-start (el default) es el unico que deja
      el overflow y el scroll funcionando de verdad. */
-  .rail{width:168px;display:flex;flex-direction:column;align-items:stretch;justify-content:space-between;padding:10px 8px;min-height:0}
+  .rail{width:var(--w-rail,168px);display:flex;flex-direction:column;align-items:stretch;justify-content:space-between;padding:10px 8px;min-height:0}
   .rail .grp{display:flex;flex-direction:column;align-items:stretch;gap:4px;min-height:0}
   /* Barra fina y VISIBLE a proposito -- antes se ocultaba del todo
      (scrollbar-width:none) y el scroll funcionaba pero no se notaba: sin
@@ -144,15 +144,47 @@
       opacity:1;visibility:visible;transform:translateY(-50%) translateX(0)}
   }
 
-  /* ---- columnas ---- */
-  .col-list{width:328px;min-width:290px;display:flex;flex-direction:column;overflow:hidden}
+  /* ---- columnas ----
+     El ancho sale de una variable para que los divisores (.sep, más abajo) lo
+     puedan mover en vivo. El valor de respaldo es el ancho de siempre, así que
+     sin nada guardado se ve exactamente igual que antes. */
+  .col-list{width:var(--w-list,328px);min-width:230px;display:flex;flex-direction:column;overflow:hidden}
   /* container-type: el header tiene que reaccionar al ancho de ESTA columna,
      no al de la ventana. Con 4 columnas abiertas el chat mide ~460px aunque la
      pantalla tenga 1320: las media queries no se activaban y el header se
      apretaba igual. */
   .col-chat{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden;
     container-type:inline-size;container-name:chat}
-  .col-user{width:344px;min-width:300px;overflow-y:auto}
+  .col-user{width:var(--w-user,344px);min-width:280px;overflow-y:auto}
+
+  /* ---- divisores: el ancho de cada columna, a gusto del agente ----
+     Cada .sep es el borde derecho de UNA columna (data-col) y ocupa EXACTO el
+     hueco que ya separaba las tarjetas, sin agrandarlo: mide lo mismo que el
+     gap y un margen negativo cancela los dos gaps que suma de más al entrar
+     como flex-item (12 + -12 + 12 + -12 + 12 = 12, el hueco de siempre). Así
+     el layout queda idéntico al anterior mientras nadie arrastre nada, pero
+     el divisor es un elemento con caja real de 12px: se puede agarrar sin
+     apuntar fino y existe para el teclado y los lectores de pantalla. */
+  .sep{flex:none;width:12px;margin:0 -12px;position:relative;z-index:5;align-self:stretch;
+    cursor:col-resize;touch-action:none}
+  /* La línea violeta aparece al pasar por encima: sin eso el divisor es
+     invisible y nadie descubre que se puede arrastrar. */
+  .sep::after{content:"";position:absolute;top:16px;bottom:16px;left:50%;margin-left:-1.5px;width:3px;
+    border-radius:3px;background:var(--violet);opacity:0;transition:opacity .15s}
+  .sep:hover::after,.sep:focus-visible::after,.sep.arrastrando::after{opacity:1}
+  .sep:focus-visible{outline:none}
+  /* Mientras se arrastra: el cursor no parpadea al cruzar otras zonas y no se
+     selecciona texto de las tarjetas sin querer. */
+  body.redim{cursor:col-resize;user-select:none;-webkit-user-select:none}
+
+  /* Rail angosto: por debajo de ~118px la etiqueta no entra y quedaría cortada
+     con puntos suspensivos, que se lee peor que no tenerla. Se colapsa a solo
+     íconos (el tooltip de hover sigue diciendo el nombre completo). */
+  .app.rail-min .rail-item{justify-content:center;padding:9px 6px;gap:0}
+  .app.rail-min .rail-item::after{display:none}
+  .app.rail-min .rail-item .rail-badge{position:absolute;top:2px;right:4px;margin-left:0;
+    box-shadow:0 0 0 2px var(--panel)}
+  .app.rail-min .logo{margin-bottom:6px}
 
   /* ---- stats + lista ----
      Prioridad 1 del rediseño: que la lista de chats empiece lo más arriba
@@ -666,6 +698,9 @@
   /* ===== Tablet/mobile: la ficha del usuario pasa a cajón lateral ===== */
   @media(max-width:1040px){
     .col-list{width:46%;min-width:0}
+    /* La ficha del usuario deja de ser columna (pasa a cajón fixed), así que
+       su divisor no tiene nada que redimensionar. */
+    .sep-user{display:none!important}
     .btn-info{display:grid!important}
     .col-user{
       position:fixed;top:0;right:0;bottom:0;width:min(360px,92vw);z-index:70;
@@ -684,6 +719,9 @@
      contenedor marca con un degradado que la tira sigue. */
   @media(max-width:760px){
     .app{flex-direction:column;padding:8px;gap:8px}
+    /* Una sola columna: no hay anchos que repartir. Los divisores además
+       apilarían como filas horizontales, que es peor que no estar. */
+    .sep{display:none!important}
     .rail{width:auto;flex-direction:row;align-items:center;justify-content:flex-start;
       padding:7px 9px;gap:6px;overflow-x:auto;overflow-y:hidden;min-height:0;
       scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch;position:relative}
@@ -846,7 +884,7 @@
 
   /* ---- Comprobantes sin resolver (Fase A, Módulo 1) ---- */
   .view-row{flex:1;display:flex;gap:12px;min-width:0}
-  .comp-list-col{width:360px;min-width:300px;display:flex;flex-direction:column;overflow:hidden}
+  .comp-list-col{width:var(--w-comp,360px);min-width:260px;display:flex;flex-direction:column;overflow:hidden}
   .comp-head{padding:16px 18px 14px;border-bottom:1px solid var(--line);display:flex;
     justify-content:space-between;align-items:center;gap:12px}
   /* Mismo peso que .cb-title (Configuracion/Chatbot): navegar entre
@@ -905,6 +943,8 @@
   @media(max-width:1040px){
     .view-row{flex-direction:column}
     .comp-list-col{width:100%;max-height:38vh}
+    /* Apiladas una arriba de la otra: no hay ancho que repartir. */
+    .sep-comp{display:none!important}
   }
 
   /* ---- Retiros pendientes (Fase A, Módulo 2) ---- */
@@ -1651,6 +1691,14 @@
     </div>
   </nav>
 
+  <!-- Divisores: arrastrar para repartir el ancho. Cada uno es el borde
+       derecho de data-col; data-dir dice para qué lado crece esa columna
+       (el de la ficha del usuario está a su IZQUIERDA, por eso va en -1).
+       Ver "columnas a gusto" en el JS. -->
+  <div class="sep sep-rail" data-col=".rail" data-dir="1" data-var="--w-rail"
+       role="separator" aria-orientation="vertical" aria-label="Ancho del menú"
+       tabindex="0" title="Arrastrá para cambiar el ancho (doble clic: volver al original)"></div>
+
   <!-- ===== Lista + stats ===== -->
   <aside class="col-list card-col">
     <div class="lhead">
@@ -1753,6 +1801,10 @@
     <div class="list" id="list"></div>
   </aside>
 
+  <div class="sep sep-list" data-col=".col-list" data-dir="1" data-var="--w-list"
+       role="separator" aria-orientation="vertical" aria-label="Ancho de la lista de conversaciones"
+       tabindex="0" title="Arrastrá para cambiar el ancho (doble clic: volver al original)"></div>
+
   <!-- ===== Hilo ===== -->
   <main class="col-chat card-col">
     <div id="chatEmpty" class="empty">
@@ -1828,6 +1880,10 @@
     </div>
   </main>
 
+  <div class="sep sep-user" data-col=".col-user" data-dir="-1" data-var="--w-user"
+       role="separator" aria-orientation="vertical" aria-label="Ancho de la ficha del usuario"
+       tabindex="0" title="Arrastrá para cambiar el ancho (doble clic: volver al original)"></div>
+
   <!-- ===== Ficha ===== -->
   <aside class="col-user card-col" id="userPane">
     <button class="cerrar-drawer" id="cerrarDrawer" aria-label="Cerrar"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
@@ -1882,6 +1938,10 @@
       </div>
       <div class="list" id="compList"></div>
     </aside>
+    <div class="sep sep-comp" data-col=".comp-list-col" data-dir="1" data-var="--w-comp"
+         data-flex=".comp-detail-col"
+         role="separator" aria-orientation="vertical" aria-label="Ancho de la lista de comprobantes"
+         tabindex="0" title="Arrastrá para cambiar el ancho (doble clic: volver al original)"></div>
     <main class="card-col comp-detail-col">
       <div class="empty" id="compEmpty">
         <div>
@@ -3545,6 +3605,9 @@
     // sumar "Agentes" (solo admin) y cambiar si el vertical entra o no.
     marcarBordesRail();
     marcarBordesRailVert();
+    // Mismo motivo: con la app oculta, offsetParent da null en TODAS las
+    // columnas y los divisores se habrían escondido todos.
+    sincronizarSeps();
   }
 
   function mostrarLogin(msg){
@@ -3767,6 +3830,149 @@
   window.addEventListener("resize", marcarBordesRailVert);
   marcarBordesRailVert();
 
+  /* ---------- columnas a gusto: arrastrar los divisores ----------
+     Cada .sep mueve UNA columna (la de data-col) escribiendo su variable CSS
+     en #app. El hilo del chat es el que absorbe la diferencia (flex:1), asi
+     que no hace falta tocar dos anchos a la vez.
+
+     El tope de arriba NO es fijo: se calcula contra lo que le queda a la
+     columna elastica de esa seccion (data-flex, el hilo del chat salvo que se
+     diga otra cosa), para que nunca se la pueda aplastar hasta desaparecer.
+     Sin eso, con la ventana chica se podia arrastrar la lista hasta tapar el
+     hilo y despues no habia de donde agarrar para volver. */
+  const ANCHOS_MIN_FLEX = 320;
+  const ANCHOS = {
+    "--w-rail": {min: 84,  max: 340, def: 168},
+    "--w-list": {min: 230, max: 640, def: 328},
+    "--w-user": {min: 280, max: 560, def: 344},
+    "--w-comp": {min: 260, max: 640, def: 360},
+  };
+  const ANCHOS_KEY = "goldpaw_crm_anchos";
+
+  function anchosGuardados(){
+    try{ return JSON.parse(localStorage.getItem(ANCHOS_KEY)) || {}; }catch(e){ return {}; }
+  }
+  function guardarAncho(nombre, px){
+    const todos = anchosGuardados();
+    if(px == null) delete todos[nombre]; else todos[nombre] = Math.round(px);
+    try{ localStorage.setItem(ANCHOS_KEY, JSON.stringify(todos)); }catch(e){}
+  }
+  function aplicarAncho(nombre, px){
+    const app = $("#app");
+    if(px == null) app.style.removeProperty(nombre);
+    else app.style.setProperty(nombre, Math.round(px) + "px");
+    // El rail se colapsa a iconos cuando la etiqueta ya no entra (ver CSS).
+    if(nombre === "--w-rail"){
+      const ancho = px == null ? ANCHOS["--w-rail"].def : px;
+      app.classList.toggle("rail-min", ancho < 118);
+    }
+  }
+  // Lo guardado se aplica antes de mostrar la app, para que no se vea saltar.
+  Object.entries(anchosGuardados()).forEach(([nombre, px])=>{
+    if(ANCHOS[nombre]) aplicarAncho(nombre, px);
+  });
+
+  /* Un divisor solo tiene sentido si SU columna esta a la vista. La del rail
+     esta siempre (en cualquier vista); la lista solo en "chats"; la ficha solo
+     con una conversacion abierta -- y en tablet ni eso, porque ahi es un cajon
+     fixed (offsetParent en null tambien lo cubre). */
+  function sincronizarSeps(){
+    document.querySelectorAll(".sep").forEach(sep=>{
+      const col = document.querySelector(sep.dataset.col);
+      sep.style.display = (col && col.offsetParent) ? "" : "none";
+    });
+  }
+
+  function limitesDe(sep){
+    const lim = ANCHOS[sep.dataset.var];
+    const flex = document.querySelector(sep.dataset.flex || ".col-chat");
+    const col = document.querySelector(sep.dataset.col);
+    let max = lim.max;
+    // Solo si esa columna esta en pantalla: en las otras vistas no compite nadie.
+    if(flex && flex.offsetParent && col){
+      const libre = flex.getBoundingClientRect().width - ANCHOS_MIN_FLEX;
+      max = Math.min(max, col.getBoundingClientRect().width + libre);
+    }
+    return {min: lim.min, max: Math.max(lim.min, max)};
+  }
+
+  function moverSep(sep, px){
+    const {min, max} = limitesDe(sep);
+    const w = Math.max(min, Math.min(max, px));
+    aplicarAncho(sep.dataset.var, w);
+    return w;
+  }
+
+  document.querySelectorAll(".sep").forEach(sep=>{
+    sep.addEventListener("pointerdown", ev=>{
+      if(ev.button !== 0) return;
+      const col = document.querySelector(sep.dataset.col);
+      if(!col) return;
+      ev.preventDefault();
+      const dir = Number(sep.dataset.dir) || 1;
+      const x0 = ev.clientX;
+      const w0 = col.getBoundingClientRect().width;
+      let ultimo = w0;
+
+      sep.setPointerCapture(ev.pointerId);
+      sep.classList.add("arrastrando");
+      document.body.classList.add("redim");
+
+      const mover = e => { ultimo = moverSep(sep, w0 + (e.clientX - x0) * dir); };
+      const soltar = ()=>{
+        sep.removeEventListener("pointermove", mover);
+        sep.removeEventListener("pointerup", soltar);
+        sep.removeEventListener("pointercancel", soltar);
+        sep.classList.remove("arrastrando");
+        document.body.classList.remove("redim");
+        // Solo si de verdad se movio: un clic suelto no tiene por que dejar
+        // clavado como "elegido" el ancho que ya venia por defecto.
+        if(Math.abs(ultimo - w0) > 0.5) guardarAncho(sep.dataset.var, ultimo);
+        // El rail mira su propio ancho para los degradados: hay que avisarle.
+        marcarBordesRailVert();
+      };
+      sep.addEventListener("pointermove", mover);
+      sep.addEventListener("pointerup", soltar);
+      sep.addEventListener("pointercancel", soltar);
+    });
+
+    // Doble clic: vuelve al ancho de fabrica. Es la salida rapida cuando se
+    // arrastro de mas y no se acuerda cual era el original.
+    sep.addEventListener("dblclick", ()=>{
+      aplicarAncho(sep.dataset.var, null);
+      guardarAncho(sep.dataset.var, null);
+      marcarBordesRailVert();
+    });
+
+    // Con el teclado, para no dejar afuera a quien navega con Tab.
+    sep.addEventListener("keydown", ev=>{
+      const paso = ev.shiftKey ? 40 : 12;
+      const dir = Number(sep.dataset.dir) || 1;
+      const col = document.querySelector(sep.dataset.col);
+      if(!col) return;
+      let delta = 0;
+      if(ev.key === "ArrowLeft") delta = -paso * dir;
+      else if(ev.key === "ArrowRight") delta = paso * dir;
+      else if(ev.key === "Home"){ aplicarAncho(sep.dataset.var, null); guardarAncho(sep.dataset.var, null); ev.preventDefault(); return; }
+      else return;
+      ev.preventDefault();
+      guardarAncho(sep.dataset.var, moverSep(sep, col.getBoundingClientRect().width + delta));
+    });
+  });
+
+  /* Al achicar la ventana, un ancho guardado en una pantalla grande puede
+     dejar al chat sin lugar. Se reencuadra dentro de los limites de ahora,
+     sin pisar lo guardado: si vuelve a agrandar, recupera su ancho. */
+  window.addEventListener("resize", ()=>{
+    sincronizarSeps();
+    document.querySelectorAll(".sep").forEach(sep=>{
+      const guardado = anchosGuardados()[sep.dataset.var];
+      if(guardado == null) return;
+      const {min, max} = limitesDe(sep);
+      aplicarAncho(sep.dataset.var, Math.max(min, Math.min(max, guardado)));
+    });
+  });
+
   // ---------- vistas del rail (Fase A) ----------
   // Dispatcher generico: "chats" es la vista de siempre (3 columnas); los
   // modulos nuevos ocultan esas 3 columnas y muestran su propio contenedor.
@@ -3797,6 +4003,7 @@
      demanda (position:fixed + transform), no ocupa columna propia. */
   function pintarUserPane(enChats){
     $("#userPane").style.display = (enChats && st.convId) ? "" : "none";
+    sincronizarSeps();   // el divisor de la ficha va y viene con ella
   }
 
   function mostrarVista(nombre){
@@ -3819,6 +4026,7 @@
     Object.entries(VISTA_CONTENEDOR).forEach(([nom, sel])=>{
       $(sel).style.display = nombre===nom ? "flex" : "none";
     });
+    sincronizarSeps();   // la lista solo existe en "chats"
 
     // El auto-refresh del listado de retiros/cargas corre SOLO mientras esa
     // vista esta abierta (a diferencia del badge, que corre siempre en
