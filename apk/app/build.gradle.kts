@@ -30,8 +30,10 @@ android {
         //   1.3  respuesta del chatbot como notificacion del sistema + icono de la app
         //   1.4  apunta a la replica del VPS (multi-cliente): chat, mensajes del
         //        CRM y notificaciones ahora salen de /gp-api del dominio propio
-        versionCode = 5
-        versionName = "1.4"
+        //   1.5  icono nuevo (el perrito) + el User-Agent ya no queda pegado en
+        //        "GOLDPAW/1.0": ahora coincide con versionName
+        versionCode = 6
+        versionName = "1.5"
     }
 
     signingConfigs {
@@ -55,6 +57,12 @@ android {
             }
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
+    }
+
+    // AGP 8+ no genera BuildConfig si no se pide: lo necesita MainActivity
+    // para mandar la version real en el User-Agent (antes quedaba hardcodeada).
+    buildFeatures {
+        buildConfig = true
     }
 
     compileOptions {

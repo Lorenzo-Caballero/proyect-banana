@@ -213,7 +213,11 @@ class MainActivity : AppCompatActivity() {
             displayZoomControls = false
 
             cacheMode = WebSettings.LOAD_DEFAULT
-            userAgentString = "$userAgentString GOLDPAW/1.0"
+            // La version va de BuildConfig, no hardcodeada: quedaba pegada en
+            // "1.0" desde el primer release aunque versionName ya iba por 1.4.
+            // nginx solo mira que contenga "GOLDPAW" (ver nginx-replica.conf),
+            // asi que esto no cambia el enrutamiento, solo deja de mentir.
+            userAgentString = "$userAgentString GOLDPAW/${BuildConfig.VERSION_NAME}"
         }
 
         CookieManager.getInstance().apply {
