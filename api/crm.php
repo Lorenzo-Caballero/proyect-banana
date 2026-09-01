@@ -318,15 +318,17 @@ function crm_chatbot_lib(): void
     if (is_file($f)) { require_once $f; }
 }
 
-/** Defaults de cada campo editable (para mostrar en el editor y para el botón
- *  "restaurar"). Vacíos si la lib no está (no rompe el CRM). */
+/** Defaults del CONTEXTO DINÁMICO (para mostrar en el editor y para el botón
+ *  "restaurar"). Vacíos si la lib no está (no rompe el CRM).
+ *
+ *  `juego_desc` ya NO está acá: de qué trata el juego pasó al contexto FIJO,
+ *  que no se edita ni se muestra. Ver api/chatbot_contexto.php. */
 function crm_chatbot_defaults(): array
 {
     crm_chatbot_lib();
     return [
         'bot_nombre'   => defined('CB_DEF_NOMBRE')       ? CB_DEF_NOMBRE       : '',
         'bot_tono'     => defined('CB_DEF_TONO')         ? CB_DEF_TONO         : '',
-        'juego_desc'   => defined('CB_DEF_JUEGO')        ? CB_DEF_JUEGO        : '',
         'reglas_extra' => defined('CB_DEF_REGLAS_EXTRA') ? CB_DEF_REGLAS_EXTRA : '',
     ];
 }
@@ -350,7 +352,6 @@ function crm_chatbot_leer(PDO $pdo): array
     return [
         'bot_nombre'   => $val('bot_nombre'),
         'bot_tono'     => $val('bot_tono'),
-        'juego_desc'   => $val('juego_desc'),
         // reglas_extra NO cae al default: es opcional y su default es vacío.
         'reglas_extra' => $row ? trim((string)($row['reglas_extra'] ?? '')) : '',
         'activo'       => $row ? ((int)($row['activo'] ?? 1) === 1) : true,
@@ -368,15 +369,21 @@ function crm_chatbot_guardar(PDO $pdo, array $campos, int $activo): void
         // Vacío o igual al default -> NULL (sigue el default del código).
         return ($v === '' || $v === trim((string)($def[$k] ?? ''))) ? null : $v;
     };
+    /* `juego_desc` queda FUERA del UPDATE a proposito, no es un olvido.
+       Dejo de ser un campo del CRM (paso al contexto fijo), asi que el editor
+       ya no lo manda; si siguiera en la lista, el primer "Guardar" lo pisaria
+       con NULL y ese cliente perderia en silencio el texto que habia escrito.
+       chatbot.php lo sigue leyendo y, si esta personalizado, lo suma como
+       informacion del operador. Ver chatbot_contexto_dinamico(). */
     $pdo->prepare(
-        "INSERT INTO config_chatbot (id, bot_nombre, bot_tono, juego_desc, reglas_extra, activo)
-         VALUES (1, ?, ?, ?, ?, ?)
+        "INSERT INTO config_chatbot (id, bot_nombre, bot_tono, reglas_extra, activo)
+         VALUES (1, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE
            bot_nombre = VALUES(bot_nombre), bot_tono = VALUES(bot_tono),
-           juego_desc = VALUES(juego_desc), reglas_extra = VALUES(reglas_extra),
+           reglas_extra = VALUES(reglas_extra),
            activo = VALUES(activo)"
     )->execute([
-        $norm('bot_nombre'), $norm('bot_tono'), $norm('juego_desc'),
+        $norm('bot_nombre'), $norm('bot_tono'),
         $norm('reglas_extra'), $activo ? 1 : 0,
     ]);
 }
@@ -1210,13 +1217,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             salir(['ok' => true, 'ia_activa' => (bool)$activa]);
         }
 
-        // ---- guardar config del chatbot (campos + on/off) ----
+        // ---- guardar el contexto DINAMICO del chatbot (+ on/off) ----
         if ($accion === 'chatbot_guardar') {
             $activo = !empty($body['activo']) ? 1 : 0;
             crm_chatbot_guardar($pdo, [
                 'bot_nombre'   => $body['bot_nombre']   ?? '',
                 'bot_tono'     => $body['bot_tono']     ?? '',
-                'juego_desc'   => $body['juego_desc']   ?? '',
                 'reglas_extra' => $body['reglas_extra'] ?? '',
             ], $activo);
             salir(['ok' => true, 'activo' => (bool)$activo]);

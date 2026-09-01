@@ -2,26 +2,36 @@
 /**
  * chatbot_contexto.php — Ensamblado del system prompt de Camila.
  *
- * El prompt se arma en dos capas:
+ * El prompt son DOS CONTEXTOS, y la diferencia entre ellos es quién manda:
  *
- *   1) CAMPOS EDITABLES por el agente desde el CRM (nombre, tono, de qué trata
- *      el juego, reglas propias extra). Tienen un DEFAULT acá; si el agente no
- *      cargó nada, se usa el default.
+ *   1) CONTEXTO DINÁMICO (chatbot_contexto_dinamico) — corto y puntual, y es
+ *      lo ÚNICO que se ve y se edita desde el CRM:
+ *        · el nombre del asistente
+ *        · el tono con el que responde
+ *        · los límites del negocio (carga mínima, tope de retiro por día,
+ *          horario) — NO se escriben a mano: se generan desde los mismos
+ *          números que aplica el código, así el bot nunca promete algo que
+ *          después el sistema rechaza
+ *        · información suelta que sume el operador (promos, avisos)
  *
- *   2) REGLAS FIJAS de las herramientas (cargar / retirar / comprar / estilo).
- *      Viven acá, en el código, y NO se pueden editar desde el CRM: son la
- *      lógica delicada que, si se rompe, deja al bot funcionando mal. El agente
- *      personaliza la personalidad y la info del juego; la mecánica no se toca.
+ *   2) CONTEXTO FIJO (CB_CONTEXTO_FIJO) — la dinámica del juego, la estructura
+ *      de las respuestas y el flujo de cada operación (cargar / retirar /
+ *      identificar / crear cuenta). Vive acá, en el código, NO se edita y NO
+ *      se muestra en el CRM. Es la parte que, si se toca, deja al bot cobrando
+ *      mal.
  *
- * chatbot_armar_prompt($campos) devuelve el prompt final combinando ambas.
- * crm.php ofrece los defaults en el editor; chatbot.php arma el prompt vivo.
+ * El fijo va ÚLTIMO en el prompt, y eso no es un detalle: ver el comentario
+ * dentro de chatbot_armar_prompt().
+ *
+ * chatbot_armar_prompt($campos, $limites) devuelve el prompt final.
+ * crm.php ofrece los defaults del contexto dinámico; chatbot.php arma el vivo.
  *
  * Compatibilidad: si config_chatbot.contexto trae un prompt entero (modo viejo
  * de la migración 26), chatbot.php lo respeta como override total y no llama
  * a esta función. Solo define constantes/función, no ejecuta nada.
  */
 
-// ----- Defaults de los CAMPOS EDITABLES -----
+// ----- CONTEXTO DINÁMICO: defaults de lo que SÍ se edita desde el CRM -----
 if (!defined('CB_DEF_NOMBRE')) {
     define('CB_DEF_NOMBRE', 'Camila');
 }
@@ -33,6 +43,14 @@ emojis (como mucho uno, y no siempre). La PRIMERA vez que hablás con alguien
 presentate, pero NO repitas tu nombre en cada mensaje.
 TXT);
 }
+if (!defined('CB_DEF_REGLAS_EXTRA')) {
+    define('CB_DEF_REGLAS_EXTRA', '');
+}
+
+/* De qué trata el juego. PASÓ AL CONTEXTO FIJO: es la dinámica del juego, o
+   sea justo lo que no queremos que cambie por cliente. La constante sigue
+   definida porque la usa CB_CONTEXTO_FIJO (y para no romper código viejo que
+   todavía la referencie), pero ya NO es un campo del CRM. */
 if (!defined('CB_DEF_JUEGO')) {
     define('CB_DEF_JUEGO', <<<TXT
 Es un videojuego online. Las "fichas" son la moneda con la que se juega. Además
@@ -40,11 +58,8 @@ existen los "bonos" (fichas de regalo). Explicá con naturalidad de qué se trat
 si te preguntan.
 TXT);
 }
-if (!defined('CB_DEF_REGLAS_EXTRA')) {
-    define('CB_DEF_REGLAS_EXTRA', '');
-}
 
-// ----- REGLAS FIJAS (no editables desde el CRM) -----
+// ----- CONTEXTO FIJO: la mecánica (no editable, no visible en el CRM) -----
 // Toda la mecánica de las herramientas. Si esto se rompe, el bot deja de
 // cargar/retirar bien, por eso NO se expone al editor del CRM.
 if (!defined('CB_REGLAS_FIJAS')) {
@@ -471,33 +486,43 @@ if (!function_exists('chatbot_bloque_app')) {
     }
 }
 
-if (!function_exists('chatbot_armar_prompt')) {
+/* ----- CONTEXTO FIJO, ya armado -----
+   La dinámica del juego + toda la mecánica. Es una constante: no depende del
+   cliente, no se edita y no se muestra en el CRM. Se define acá (y no dentro
+   de la función) para que se pueda pedir sola, por ejemplo desde el modo viejo
+   de chatbot.php, que la pega debajo de un prompt entero del operador. */
+if (!defined('CB_CONTEXTO_FIJO')) {
+    define('CB_CONTEXTO_FIJO', "SOBRE EL JUEGO:\n" . CB_DEF_JUEGO . "\n\n" . CB_REGLAS_FIJAS);
+}
+
+if (!function_exists('chatbot_contexto_dinamico')) {
     /**
-     * Arma el system prompt final combinando los CAMPOS del agente (o sus
-     * defaults) con las REGLAS FIJAS. $campos: ['bot_nombre','bot_tono',
-     * 'juego_desc','reglas_extra'] — cualquiera vacío usa su default.
+     * El contexto DINÁMICO: lo corto y puntual que cambia por cliente.
+     *
+     * Nombre del asistente, tono, los límites del negocio y lo que haya sumado
+     * el operador. Es lo único que se ve y se edita desde el CRM.
+     *
+     * $campos:  ['bot_nombre','bot_tono','reglas_extra']  (vacío = default)
+     * $limites: los números que aplica el sistema, más 'app_url'.
      */
-    function chatbot_armar_prompt(array $campos, array $limites = []): string
+    function chatbot_contexto_dinamico(array $campos, array $limites = []): string
     {
         $nombre = trim((string)($campos['bot_nombre'] ?? '')) ?: CB_DEF_NOMBRE;
         $tono   = trim((string)($campos['bot_tono'] ?? '')) ?: CB_DEF_TONO;
-        $juego  = trim((string)($campos['juego_desc'] ?? '')) ?: CB_DEF_JUEGO;
         $extra  = trim((string)($campos['reglas_extra'] ?? ''));
 
-        /* EL ORDEN NO ES CASUAL Y NO SE CAMBIA.
-           Las REGLAS FIJAS van ULTIMAS, despues de lo que escribio el
-           operador. En estos modelos lo que va mas abajo pesa mas, y antes
-           era al reves: las indicaciones del operador quedaban al final y le
-           ganaban al procedimiento.
-           Eso rompio el cobro en produccion: alguien escribio "cargame fichas
-           -> cargaselo directo" en ese campo y el bot empezo a decirle a los
-           jugadores "listo, te cargo 200 fichas" sin haber cobrado nada.
-           Con este orden, lo que se escriba ahi puede sumar informacion pero
-           no puede cambiar como se cobra. */
+        /* juego_desc dejó de ser un campo del CRM (pasó al contexto fijo). Si
+           un operador lo había personalizado, ese texto NO se tira: se suma
+           acá como información suya. Sin esto, al desplegar el cambio el bot
+           perdería en silencio lo que ese cliente había escrito. */
+        $juego = trim((string)($campos['juego_desc'] ?? ''));
+        if ($juego !== '' && $juego !== trim(CB_DEF_JUEGO)) {
+            $extra = $extra === '' ? $juego : $extra . "\n" . $juego;
+        }
+
         $p  = "Sos {$nombre}, del equipo de atención al cliente. Ayudás a los "
             . "jugadores con dudas y con la carga de fichas.\n\n";
         $p .= "TU TONO:\n{$tono}\n\n";
-        $p .= "SOBRE EL JUEGO:\n{$juego}\n\n";
         if ($extra !== '') {
             $p .= "INFORMACIÓN QUE SUMÓ EL OPERADOR (promos, horarios, avisos):\n"
                 . "{$extra}\n\n";
@@ -510,8 +535,27 @@ if (!function_exists('chatbot_armar_prompt')) {
         if ($bloqueApp !== '') {
             $p .= $bloqueApp . "\n\n";
         }
-        $p .= CB_REGLAS_FIJAS;
         return $p;
+    }
+}
+
+if (!function_exists('chatbot_armar_prompt')) {
+    /**
+     * El prompt final = contexto DINÁMICO + contexto FIJO, en ese orden.
+     */
+    function chatbot_armar_prompt(array $campos, array $limites = []): string
+    {
+        /* EL ORDEN NO ES CASUAL Y NO SE CAMBIA.
+           El contexto FIJO va ULTIMO, despues de lo que escribio el operador.
+           En estos modelos lo que va mas abajo pesa mas, y antes era al reves:
+           las indicaciones del operador quedaban al final y le ganaban al
+           procedimiento.
+           Eso rompio el cobro en produccion: alguien escribio "cargame fichas
+           -> cargaselo directo" en ese campo y el bot empezo a decirle a los
+           jugadores "listo, te cargo 200 fichas" sin haber cobrado nada.
+           Con este orden, el contexto dinamico puede sumar informacion pero no
+           puede cambiar como se cobra. */
+        return chatbot_contexto_dinamico($campos, $limites) . CB_CONTEXTO_FIJO;
     }
 }
 

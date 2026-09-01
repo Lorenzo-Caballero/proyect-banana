@@ -2871,7 +2871,8 @@
       <div class="cb-head">
         <div>
           <h2 class="cb-title">Chatbot</h2>
-          <p class="cb-sub">Editá cómo responde el asistente y prendé o apagá la IA.</p>
+          <p class="cb-sub">Quién es el asistente y con qué datos trabaja. Cómo hace
+          cada operación ya viene resuelto y no se toca desde acá.</p>
         </div>
         <label class="cb-switch" title="Prender / apagar la IA">
           <input type="checkbox" id="cbActivo">
@@ -2911,17 +2912,21 @@
           placeholder="Ej: Argentino, profesional y cordial. Habla de vos, sin exagerar ni gritar."></textarea>
       </div>
 
-      <!-- Info del juego -->
+      <!-- Límites: no se editan acá (los aplica el sistema), pero forman parte
+           del contexto dinámico, así que se dice dónde se tocan. -->
       <div class="cb-field">
         <div class="cb-field-head">
-          <span class="cb-ico"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="4"/><path d="M7 12h4M9 10v4"/><circle cx="16" cy="11" r="1" fill="currentColor" stroke="none"/><circle cx="18.5" cy="14" r="1" fill="currentColor" stroke="none"/></svg></span>
+          <span class="cb-ico"><svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span>
           <div>
-            <label class="cb-flabel" for="cbJuego">¿De qué trata el juego?</label>
-            <p class="cb-help">Contale al bot qué es el juego, cómo se juega y para qué sirven fichas y bonos, así le responde bien a los jugadores.</p>
+            <label class="cb-flabel">Límites de carga y retiro</label>
+            <p class="cb-help">
+              La carga mínima, el tope de retiro por día y el horario se le pasan
+              al bot solos, con los mismos números que aplica el sistema — por eso
+              nunca ofrece algo que después se rechaza.
+              Se editan en <b>Configuración → Límites de carga y retiro</b>.
+            </p>
           </div>
         </div>
-        <textarea id="cbJuego" class="cb-area" rows="5"
-          placeholder="Ej: Es un juego de tragamonedas online. Las fichas son la moneda para jugar; los bonos son fichas de regalo que…"></textarea>
       </div>
 
       <!-- Reglas extra -->
@@ -2946,8 +2951,10 @@
 
       <div class="cb-locked">
         <svg viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
-        <span>La mecánica de <b>cargar</b>, <b>retirar</b> y <b>comprar fichas</b> ya viene
-        configurada y protegida — no hace falta que la toques.</span>
+        <span>De qué trata el juego y cómo se hace cada operación —<b>cargar</b>,
+        <b>retirar</b>, <b>identificar al jugador</b>, <b>crear cuenta</b>— viene
+        resuelto y protegido, igual para todos los clientes. No se edita ni se
+        muestra acá: es la parte que, si se toca, deja al bot cobrando mal.</span>
       </div>
 
       <div class="cb-acciones">
@@ -8121,7 +8128,6 @@
     cbDefaults = d.default || {};
     $("#cbNombre").value = d.bot_nombre || "";
     $("#cbTono").value   = d.bot_tono || "";
-    $("#cbJuego").value  = d.juego_desc || "";
     $("#cbReglas").value = d.reglas_extra || "";
     cbSetActivo(!!d.activo);
     msg.textContent = "";
@@ -8135,7 +8141,6 @@
       d = await jpost({ accion:"chatbot_guardar",
                         bot_nombre:   $("#cbNombre").value,
                         bot_tono:     $("#cbTono").value,
-                        juego_desc:   $("#cbJuego").value,
                         reglas_extra: $("#cbReglas").value,
                         activo:       $("#cbActivo").checked });
     }catch(e){ msg.className="cb-msg err"; msg.textContent="No se pudo guardar."; btn.disabled=false; return; }
@@ -8150,7 +8155,6 @@
     if(confirm("¿Volver a los valores por defecto? Se reemplaza lo que hayas escrito (no se guarda hasta que toques Guardar).")){
       $("#cbNombre").value = cbDefaults.bot_nombre || "";
       $("#cbTono").value   = cbDefaults.bot_tono || "";
-      $("#cbJuego").value  = cbDefaults.juego_desc || "";
       $("#cbReglas").value = cbDefaults.reglas_extra || "";
     }
   });
