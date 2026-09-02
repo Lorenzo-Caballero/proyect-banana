@@ -1322,16 +1322,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $bot = (string)($yo['result']['username'] ?? '');
 
-            // 2) Si no sabemos a quien avisarle, lo averiguamos.
+            /* 2) A quien avisarle. Se detecta si no hay nada cargado, o si lo
+                  piden expresamente con `redetectar`.
+
+                  Ese segundo caso hacia falta: al pasar de un chat personal a un
+                  GRUPO, el campo ya tenia el id viejo, asi que "Probar" mandaba
+                  el mensaje al chat de siempre y no buscaba nunca el nuevo. El
+                  sintoma era exactamente "funciona, pero me sigue escribiendo
+                  solo a mi" y no habia forma de salir de ahi sin vaciar el campo
+                  a mano y guardar. */
             $detectado = null;
-            if ($chat === '') {
+            $chats     = [];
+            if ($chat === '' || !empty($body['redetectar'])) {
                 $d = tg_detectar_chat($token);
                 if (empty($d['ok'])) {
                     salir(['ok' => false, 'paso' => 'chat', 'bot' => $bot,
                            'error' => (string)$d['error']], 422);
                 }
-                $detectado = $d['sugerido'];
-                $chat = (string)$detectado['id'];
+                $chats     = (array)($d['chats'] ?? []);
+                /* Con varios detectados se prefiere un GRUPO (id negativo): si
+                   alguien acaba de agregar el bot a un grupo, es a donde quiere
+                   que vaya el aviso -- su chat personal ya estaba de antes, de
+                   cuando probo. Igual se devuelve la lista entera para elegir. */
+                $grupos    = array_values(array_filter($chats,
+                    static fn($c) => str_starts_with((string)($c['id'] ?? ''), '-')));
+                $detectado = $grupos ? end($grupos) : ($d['sugerido'] ?? null);
+                $chat      = (string)($detectado['id'] ?? '');
+            }
+            if ($chat === '') {
+                salir(['ok' => false, 'paso' => 'chat', 'bot' => $bot,
+                       'error' => 'No encontré a quién avisarle.'], 422);
             }
 
             // 3) El mensaje de prueba. Es la unica confirmacion que vale: que
@@ -1350,7 +1370,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             salir(['ok' => true, 'bot' => $bot, 'chat_id' => $chat,
-                   'detectado' => $detectado]);
+                   'detectado' => $detectado, 'chats' => $chats]);
         }
 
         // ---- crear un agente humano / resetear su clave (solo admin) ----

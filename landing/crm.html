@@ -3185,8 +3185,15 @@
           </div>
           <div class="tg-probar">
             <button class="cb-btn-ghost" id="cfgTgProbar" type="button">Probar y detectar el chat</button>
+            <button class="cb-btn-ghost" id="cfgTgOtro" type="button">Cambiar a un grupo</button>
             <span class="cb-msg" id="cfgTgMsg"></span>
           </div>
+          <p class="cfg-hint">
+            <b>Para que avise a todo el equipo:</b> creá un grupo, agregá al bot, y escribí
+            <b>/start@tubot</b> ahí adentro (con el @, si no el bot no lo ve — los bots no
+            leen los mensajes normales de un grupo). Después tocá <b>Cambiar a un grupo</b>.
+            El id de un grupo arranca con <b>−</b>.
+          </p>
           <p class="cfg-hint">
             <b>Dejalos vacíos si no querés Telegram.</b> La derivación igual se marca en
             Conversaciones y aparece arriba de todo con el cartel <b>«Te necesita»</b> —
@@ -4452,14 +4459,18 @@
      con el token adentro y buscarlo en un JSON.
      Se manda el token del FORMULARIO, no el guardado: asi se prueba antes de
      guardar y no queda un token roto configurado. */
-  $("#cfgTgProbar").addEventListener("click", async ()=>{
+  async function tgProbar(redetectar){
     const btn = $("#cfgTgProbar"), msg = $("#cfgTgMsg");
     const token = $("#cfgTgToken").value.trim();
     if(!token){ msg.className="cb-msg err"; msg.textContent="Pegá primero el token de @BotFather."; return; }
     btn.disabled = true; msg.className="cb-msg"; msg.textContent="Probando…";
     let d;
     try{
-      d = await jpost({ accion:"tg_probar", token, chat_id: $("#cfgTgChat").value.trim() });
+      /* Con `redetectar` se ignora el chat guardado y se busca de nuevo. Sin
+         eso, al pasar de un chat personal a un GRUPO el botón mandaba siempre
+         al id viejo y no había forma de cambiarlo sin vaciar el campo a mano. */
+      d = await jpost({ accion:"tg_probar", token, redetectar: !!redetectar,
+                        chat_id: redetectar ? "" : $("#cfgTgChat").value.trim() });
     }catch(e){ msg.className="cb-msg err"; msg.textContent="No se pudo probar."; btn.disabled=false; return; }
     btn.disabled = false;
     if(!d.ok){
@@ -4475,8 +4486,19 @@
       : "";
     msg.className = "cb-msg ok";
     msg.textContent = `Te mandé un mensaje desde @${d.bot}${dest}. Si te llegó, tocá Guardar.`;
+    // Si detectó más de un chat, se dicen los otros: sin esto, quien tiene el
+    // bot en un grupo Y en su chat personal no sabe por qué le llegó al lugar
+    // equivocado ni cuál es el id del otro.
+    if(Array.isArray(d.chats) && d.chats.length > 1){
+      const otros = d.chats.filter(c => String(c.id) !== String(d.chat_id))
+                           .map(c => `${c.nombre||c.id} (${c.id})`).join(", ");
+      if(otros) msg.textContent += ` También encontré: ${otros}. Si querés otro, pegá su id a mano.`;
+    }
     cfgPintarSucio();
-  });
+  }
+
+  $("#cfgTgProbar").addEventListener("click", ()=> tgProbar(false));
+  $("#cfgTgOtro").addEventListener("click", ()=> tgProbar(true));
 
   async function guardarConfig(){
     const btn = $("#cfgGuardar");
