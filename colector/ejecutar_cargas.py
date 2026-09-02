@@ -103,8 +103,17 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
                     datefmt="%d/%m %H:%M:%S")
 log = logging.getLogger("cargas")
 
-PANEL_API = "https://agents.ganamos7.com/api"
-USERS_URL = "https://agents.ganamos7.com/users/all"
+# Del MISMO lugar que el login: bot_crear_jugador lo saca de PANEL_URL.
+#
+# Estaban hardcodeadas en agents.ganamos7.com mientras el login sale de
+# LOGIN_URL. Si el .env apunta a otro panel -- y agents.ganamosonline.com es
+# OTRA instalacion, con otro servidor y otra sesion -- el POST del deposito
+# salia a un dominio donde este navegador no esta logueado. El 401 que vuelve
+# cae en la rama "el panel rechazo el deposito" (4xx -> 'error'), asi que la
+# accion se cierra devolviendole las fichas al jugador: no pierde nada, pero
+# NUNCA se le acredita en el juego y el log dice que rechazo el panel.
+PANEL_API = bot.PANEL_API
+USERS_URL = bot.URL_LISTADO
 
 # operation=0 es DEPOSITO (visto en la pantalla de deposito del panel). El
 # retiro tendra otro valor, pero no se usa aca: los retiros los aprueba un
