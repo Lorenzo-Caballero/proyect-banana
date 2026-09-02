@@ -9,7 +9,21 @@
  *   3. config.local.php                -> archivo suelto, el que casi seguro
  *                                         vas a usar en Hostinger
  *
- * config.local.php NO se sube al repo. Copia config.local.php.example.
+ * config.local.php NO se sube al repo, y ya no hay un .example que copiar (se
+ * saco: un archivo de ejemplo con nombres de claves reales al lado del que
+ * lleva los valores es una invitacion a subir el equivocado). Las claves que
+ * espera son estas, y arranca sin ninguna:
+ *
+ *   DB_HOST, DB_NAME, DB_USER, DB_PASS     la base del cliente
+ *   BOT_API_KEY                            identica al API_KEY del .env del bot
+ *   ADMIN_PASS                             entrada a admin_usuarios.php
+ *   JWT_SECRET                             firma del login propio (auth.php)
+ *   COHERE_API_KEY                         el chatbot (hoy lee tambien la de Qwen)
+ *   ANTHROPIC_API_KEY                      opcional: leer comprobantes con vision
+ *   FINANZAS_COSTO_POR_FICHA               opcionales, umbrales del panel de
+ *   FINANZAS_UMBRAL_RETIRO_GRANDE          finanzas; sin ellas se usan los
+ *   FINANZAS_UMBRAL_RETIRO_MUY_GRANDE      defaults del codigo
+ *   FINANZAS_UMBRAL_ALERTA_JUGADOR_GANADOR
  *
  * OJO: este archivo se escribe a proposito en PHP viejo, sin declare(strict_types),
  * sin tipos en los parametros y sin ": void". Es el primer archivo que carga todo

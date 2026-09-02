@@ -28,8 +28,13 @@ Backend del bot. Subí esta carpeta a tu server (por ejemplo a `/api/`).
    funciona seguro en hosting compartido:
 
    ```bash
-   cp config.local.php.example config.local.php   # y completalo
+   touch config.local.php   # y completalo: ver la lista de claves en config.php
    ```
+
+   Ya no hay un `.example` para copiar: tener un archivo de ejemplo con los
+   nombres de las claves reales al lado del que lleva los valores es la forma
+   mas facil de subir el equivocado. El inventario vive en el docblock de
+   `config.php`, que es donde se leen.
 
    `BOT_API_KEY` tiene que ser **idéntica** al `API_KEY` del `.env` del bot, y
    tener al menos 16 caracteres. Generala así:

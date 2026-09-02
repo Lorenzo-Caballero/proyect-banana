@@ -111,8 +111,9 @@ para todos (sale de una plantilla). Las migraciones históricas están en
 
 1. **Secretos NO vienen en el zip.** Cada archivo `*.local.php` / `.env` tiene su
    `*.example`. Copiá y completá con tus datos:
-   - `api/config.local.php.example` → `api/config.local.php`
-     (DB_HOST, DB_USER, DB_PASS, CONTROL_DB_NAME, BOT_API_KEY, COHERE_API_KEY).
+   - `api/config.local.php` (no hay `.example`: el inventario de claves esta en
+     el docblock de `api/config.php`) — DB_HOST, DB_USER, DB_PASS,
+     CONTROL_DB_NAME, BOT_API_KEY, COHERE_API_KEY.
    - `panel/panel_config.example.php` → `panel/panel_config.php` (si tocás el panel).
 2. **Base:** necesitás MySQL/MariaDB (11.x). Creá la base maestra
    (`panel/sql/01_control.sql`, `02_...`, `03_...`) y al menos una base de cliente
