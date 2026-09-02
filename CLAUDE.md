@@ -11,8 +11,8 @@ ruleta de bonos y recargas automáticas por transferencia.
 |---|---|---|
 | `orange-crab-483661.hostingersite.com` | Hosting **viejo** (Hostinger). Ya no se usa: `landing/` y `api/` se sirven desde el VPS en `ganamoscrm.online` (la API, bajo `/gp-api/`) | Propio |
 | `ganamos7.com` | Front de la plataforma (React SPA) donde juega el usuario | De la plataforma |
-| `agents.ganamos7.com` | **Panel de agentes en uso.** Alta de jugadores, saldo, depósitos | Cuenta de agente propia |
-| `agents.ganamosonline.com` | Panel viejo. Responde, pero **ya no se usa** (ver la nota de abajo) | — |
+| `agents.ganamosonline.com` | **Panel de agentes en uso.** Alta de jugadores, saldo, depósitos | Cuenta de agente propia |
+| `agents.ganamos7.com` | El **mismo** panel, pero detrás del WAF. No apuntar nada acá (ver la nota) | — |
 | `ganamoscrm.online` | **Dominio en uso.** Sirve la plataforma vía `replica/` y la API en `/gp-api/` | Propio (VPS) |
 | `ganamos.faunotattoo.com` | Dominio viejo. nginx todavía lo acepta, pero **ya no se usa** | Propio (VPS) |
 
@@ -24,25 +24,32 @@ necesite un subdominio de la plataforma.
 > no apuntes nada nuevo ahí. Todo lo que se configure —el `.env` del bot, los
 > crons, las URLs de retorno— va contra `ganamoscrm.online`.
 
-> **El panel de agentes en uso es `agents.ganamos7.com`** (verificado el
-> 2/9/2026 contra el `.env` del contenedor y contra el camino A, que aprueba
-> cargas ahí y funciona).
+> **El panel de agentes en uso es `agents.ganamosonline.com`.**
 >
-> Hasta agosto de 2026 este bloque decía que el panel de esta cuenta seguía
-> siendo `agents.ganamosonline.com`. **Ya no es así**, y la confusión es cara:
-> los dos dominios **responden**, así que apuntar al equivocado no falla de
-> entrada. Crea los jugadores en un panel, el jugador intenta entrar en el
-> otro, y el síntoma es "la cuenta se creó pero la contraseña no sirve". Del
-> lado del depósito es peor: vuelve un 401 que el worker lee como "el panel
-> rechazó", le devuelve las fichas al jugador y nunca se las acredita.
+>     PANEL_URL=https://agents.ganamosonline.com/user/create-player
+>     LOGIN_URL=https://agents.ganamosonline.com/
 >
-> En el `.env` del bot va el panel de agentes, no el front:
->     PANEL_URL=https://agents.ganamos7.com/user/create-player
->     LOGIN_URL=https://agents.ganamos7.com/
+> **Los dos son el mismo panel.** `agents.ganamosonline.com` es un envoltorio
+> de `agents.ganamos7.com`: mismo backend, mismos datos, mismos endpoints. La
+> diferencia es que **`ganamos7` está detrás del WAF** (ServicePipe) y
+> `ganamosonline` no. Por eso se usa este: automatizarlo no choca contra el
+> challenge anti-bot.
 >
-> Los workers de `colector/` ya NO lo tienen hardcodeado: sale de ese mismo
-> `.env` vía `panel_url.resolver()`, para que el login y las llamadas a la API
-> no puedan apuntar a lugares distintos.
+> **Este bloque se dio vuelta dos veces, y las dos por la misma razón: los dos
+> dominios responden.** Apuntar al equivocado no falla de entrada — devuelve
+> 200, o un 401 que parece un problema de credenciales— así que la evidencia
+> superficial siempre alcanza para "corregirlo" en cualquier dirección. En
+> septiembre de 2026 lo cambié yo a `ganamos7` leyendo el `.env` de un
+> contenedor que estaba desactualizado, y estaba mal.
+>
+> **Antes de volver a tocar esto, mirá lo único que prueba algo: si las altas
+> están saliendo.** Un `.env`, un comentario o un default en el código son lo
+> que alguien creyó, no lo que funciona. La referencia buena es
+> `scripts/arreglar-bot-altas.sh`, que es lo que efectivamente se corre.
+>
+> Los workers de `colector/` ya NO lo tienen hardcodeado: sale del `.env` vía
+> `panel_url.resolver()`, para que el login y las llamadas a la API no puedan
+> apuntar a lugares distintos.
 
 ## Estructura
 
@@ -93,7 +100,7 @@ contraseña y `contrasena` era un hash, se guardaba la clave en claro en
 
 **Ahora:** los jugadores se crean **en ganamos** (panel de agentes) y bajan por
 espejo con `sync_usuarios.py`, que se loguea con Playwright y pagina
-`agents.ganamos7.com/api` → `usuarios_sync.php` → tabla `usuarios`.
+`agents.ganamosonline.com/api` → `usuarios_sync.php` → tabla `usuarios`.
 
 ## Cargar fichas, bonos y saldo
 
