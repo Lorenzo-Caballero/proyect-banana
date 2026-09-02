@@ -344,6 +344,57 @@ if (!function_exists('fichas_ahora_ar')) {
     }
 }
 
+if (!function_exists('fichas_rango_dia_ar')) {
+    /**
+     * El dia de HOY en Argentina, expresado en el reloj de la BASE.
+     *
+     * Devuelve ['desde','hasta') listos para comparar contra una columna
+     * DATETIME, en el mismo huso en que la base las escribe.
+     *
+     * POR QUE NO ALCANZA CON CURDATE()
+     * `DATE(creada_en) = CURDATE()` parece obvio y es el bug: en produccion la
+     * base corre en UTC, asi que el "dia" terminaba a las 21:00 hora argentina.
+     * Un jugador que llegaba al tope de retiro a las 22:00 tenia el cupo entero
+     * otra vez, tres horas antes de que le tocara.
+     *
+     * POR QUE NO SE ASUME QUE LA BASE ESTA EN UTC
+     * Ese fue el segundo intento y tambien estaba mal: en produccion la base va
+     * en UTC, pero en el MySQL local va en hora argentina, y una conversion fija
+     * desplazaba tres horas al reves. En vez de creerle a una suposicion, se le
+     * PREGUNTA a la base cuanto se corre de UTC (TIMESTAMPDIFF contra
+     * UTC_TIMESTAMP) y se ajusta con eso. Asi da igual como este configurada.
+     *
+     * Se devuelve un rango y no una funcion sobre la columna a proposito: asi
+     * el indice de `creada_en` sigue sirviendo.
+     */
+    function fichas_rango_dia_ar(PDO $pdo): array
+    {
+        // Cuanto se corre el reloj de la base respecto de UTC, en segundos.
+        // 0 si la base va en UTC, -10800 si va en hora argentina.
+        try {
+            $off = (int)$pdo->query(
+                "SELECT TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), NOW())"
+            )->fetchColumn();
+        } catch (Throwable $e) {
+            error_log('fichas_rango_dia_ar: no pude leer el huso de la base: ' . $e->getMessage());
+            $off = 0;
+        }
+
+        $ar    = fichas_ahora_ar();
+        $desde = (clone $ar)->setTime(0, 0, 0);
+        $hasta = (clone $desde)->modify('+1 day');
+        $utc   = new DateTimeZone('UTC');
+
+        // Medianoche argentina -> UTC -> y de ahi al reloj de la base.
+        $aBase = static function (DateTime $d) use ($utc, $off): string {
+            return (clone $d)->setTimezone($utc)
+                             ->modify(($off >= 0 ? '+' : '-') . abs($off) . ' seconds')
+                             ->format('Y-m-d H:i:s');
+        };
+        return ['desde' => $aBase($desde), 'hasta' => $aBase($hasta)];
+    }
+}
+
 if (!function_exists('fichas_ventana_retiro')) {
     /**
      * ¿Se puede retirar en este momento?
@@ -484,26 +535,17 @@ function fichas_pedir_retiro(PDO $pdo, string $usuario, int $monto, string $orig
     $topeDia = fichas_limite($pdo, 'lim_retiro_max_dia', 0);
     if ($topeDia > 0) {
         try {
-            /* El "día" es el día ARGENTINO, calculado acá y pasado como rango.
-               Antes decía `DATE(creada_en) = CURDATE()`, y con la base en UTC
-               eso hacía que el tope se reseteara a las 21:00 hora argentina:
-               un jugador que llegaba al tope a las 22:00 tenía el cupo entero
-               otra vez, tres horas antes de que le correspondiera.
-               Se compara contra `creada_en`, que está en UTC, así que el rango
-               se convierte a UTC antes de consultar. */
-            $hoyAr  = fichas_ahora_ar();
-            $desde  = (clone $hoyAr)->setTime(0, 0, 0);
-            $hasta  = (clone $desde)->modify('+1 day');
-            $utc    = new DateTimeZone('UTC');
+            /* El "dia" es el dia ARGENTINO, no el del reloj de la base. Antes
+               decia `DATE(creada_en) = CURDATE()` y con la base en UTC el tope
+               se reseteaba a las 21:00 hora argentina. Ver fichas_rango_dia_ar(). */
+            $dia = fichas_rango_dia_ar($pdo);
             $q = $pdo->prepare(
                 "SELECT COALESCE(SUM(monto),0) FROM acciones_saldo
                   WHERE usuario = ? AND tipo = 'retirar'
                     AND estado IN ('pendiente','procesando','revisar','hecha')
                     AND creada_en >= ? AND creada_en < ?"
             );
-            $q->execute([$usuario,
-                         $desde->setTimezone($utc)->format('Y-m-d H:i:s'),
-                         $hasta->setTimezone($utc)->format('Y-m-d H:i:s')]);
+            $q->execute([$usuario, $dia['desde'], $dia['hasta']]);
             $yaHoy = (float)$q->fetchColumn();
         } catch (Throwable $e) {
             // Sin poder contar, no se bloquea: el tope es una politica

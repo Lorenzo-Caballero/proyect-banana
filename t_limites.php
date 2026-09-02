@@ -211,18 +211,33 @@ ponerLimite($pdo, 'lim_retiro_max_dia', '1000');
 
 // Se inserta un retiro fechado HOY en hora argentina pero que, pasado a UTC,
 // cae en la fecha de MAÑANA: exactamente el caso que el bug dejaba escapar.
-// Va como 'hecha' y no 'pendiente' a proposito: un retiro pendiente dispara
-// primero la guarda de "ya tenes uno en curso", que corre ANTES del tope, y el
-// test nunca llegaria a medir lo que quiere medir.
-$tarde = fichas_ahora_ar()->setTime(22, 30, 0);
-$tardeUtc = (clone $tarde)->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+/* Se inserta un retiro en la ULTIMA hora del dia argentino -- justo la franja
+   que el bug dejaba escapar, porque en UTC ya es el dia siguiente. La fila se
+   fecha con el mismo criterio que usa el codigo (fichas_rango_dia_ar), asi el
+   test vale tanto con la base en UTC (produccion) como en hora argentina
+   (el MySQL local). Esa diferencia entre entornos fue justamente la que hizo
+   fallar el primer intento de este arreglo.
+
+   Va como 'hecha' y no 'pendiente': un retiro pendiente dispara antes la
+   guarda de "ya tenes uno en curso" y el test no llegaria a medir el tope. */
+$dia = fichas_rango_dia_ar($pdo);
+$ultimaHora = (new DateTime($dia['hasta']))->modify('-30 minutes')->format('Y-m-d H:i:s');
 $pdo->prepare("INSERT INTO acciones_saldo (usuario, tipo, monto, estado, creada_en)
-               VALUES ('test_lim','retirar',900,'hecha',?)")->execute([$tardeUtc]);
+               VALUES ('test_lim','retirar',900,'hecha',?)")->execute([$ultimaHora]);
 
 $r = fichas_pedir_retiro($pdo, 'test_lim', 500, 'test');
-chequear('un retiro de las 22:30 AR cuenta para el tope de HOY',
+chequear('un retiro del final del dia AR cuenta para el tope de HOY',
          ($r['codigo'] ?? '') === 'tope_diario',
-         'utc=' . $tardeUtc . ' -> ' . json_encode($r));
+         'fila=' . $ultimaHora . ' rango=' . $dia['desde'] . '..' . $dia['hasta']
+         . ' -> ' . json_encode($r));
+
+// Y el borde de al lado: media hora DESPUES ya es manana y no debe contar.
+$pdo->exec("DELETE FROM acciones_saldo WHERE usuario='test_lim'");
+$manana = (new DateTime($dia['hasta']))->modify('+30 minutes')->format('Y-m-d H:i:s');
+$pdo->prepare("INSERT INTO acciones_saldo (usuario, tipo, monto, estado, creada_en)
+               VALUES ('test_lim','retirar',900,'hecha',?)")->execute([$manana]);
+$r = fichas_pedir_retiro($pdo, 'test_lim', 500, 'test');
+chequear('y uno ya pasado el corte NO cuenta', !empty($r['ok']), json_encode($r));
 
 $pdo->exec("DELETE FROM acciones_saldo WHERE usuario='test_lim'");
 ponerLimite($pdo, 'lim_retiro_max_dia', '0');
