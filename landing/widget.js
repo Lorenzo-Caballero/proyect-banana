@@ -1754,8 +1754,19 @@
     /* Los primeros ~15 s se pregunta cada 1,2 s (la mayoria de las altas
        entran ahi); despues cada 4, que alcanza para las lentas sin dejar el
        navegador preguntando cada segundo durante dos minutos. */
-    function proxima(){ return intentos < 12 ? 1200 : 4000; }
+    function proxima(){ return intentos < 20 ? 600 : 4000; }
 
+    /* El efecto de "escribiendo" era de 1200ms POR GLOBO, y acá son cuatro
+       (aviso, usuario, contraseña, "guardala bien"): casi 5 segundos de espera
+       decorativa DESPUÉS de que la cuenta ya existe.
+
+       En una charla ese ritmo está bien, le da naturalidad. Pero esto no es
+       charla: es entregar unas credenciales que la persona está esperando,
+       recién llegada de un anuncio y mirando la pantalla. Ahí cada segundo es
+       fricción y gente que se va.
+
+       350ms alcanza para que no aparezcan los cuatro globos de golpe (que se
+       lee peor) sin que la espera se sienta. */
     function decir(txt, cb){
       setEstado("escribiendo…", true);
       var esp = escribiendo();
@@ -1764,14 +1775,16 @@
         setEstado(AGENTE_ESTADO, false);
         pintar("b", txt);
         if (cb) cb();
-      }, 1200);
+      }, 350);
     }
 
     /* Sondeo escalonado: rapido al principio, mas espaciado despues.
        El alta tarda entre pocos segundos y un par de minutos; con un intervalo
        fijo de 4s se perdian hasta 4 segundos DESPUES de que la cuenta ya
        estaba lista, que es justo cuando el jugador esta mirando la pantalla. */
-    setTimeout(sondear, 1200);
+    // 400ms y no 1200: con el alta por API la cuenta suele estar lista antes
+    // del primer sondeo, asi que esperar mas era regalar tiempo.
+    setTimeout(sondear, 400);
 
     function sondear(){
       if (intentos++ > 60){          // ~4 minutos

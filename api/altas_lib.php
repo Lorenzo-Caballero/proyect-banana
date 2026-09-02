@@ -163,8 +163,24 @@ function alta_usuario_disponible(PDO $pdo, string $nombreCrudo): string
         $base = 'jugador' . $base;
     }
 
+    /* SIEMPRE con sufijo, ya desde el primer candidato.
+
+       Antes se probaba el nombre pelado primero ("Martin") y solo se le
+       agregaba un numero si lo veiamos tomado. Pero nosotros solo vemos NUESTRO
+       espejo, y en ganamos el nombre es unico en TODA la plataforma: un nombre
+       comun esta tomado por otro agente casi seguro. O sea que ese primer
+       intento estaba condenado, y costaba un viaje entero -- crear, que el
+       panel lo rechace, renombrar, reintentar.
+
+       Del otro lado hay una persona recien llegada de un anuncio mirando
+       "creando tu cuenta". Cada segundo ahi es friccion, y el primer intento
+       era el mas caro de todos porque no tenia ninguna chance.
+
+       Tres digitos y no dos: 900 variantes en vez de 90. Con dos, un "Juan25"
+       tambien puede estar tomado y volvemos al viaje perdido; con tres el
+       choque es raro. El nombre sigue siendo corto y facil de dictar. */
     for ($intento = 0; $intento < 50; $intento++) {
-        $candidato = $intento === 0 ? $base : $base . random_int(2, 999);
+        $candidato = $base . random_int(100, 999);
 
         // Un solo viaje a la base por candidato: existe en `usuarios` O hay
         // un pedido no fallido en `altas` con ese nombre. 'error' no cuenta

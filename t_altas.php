@@ -80,8 +80,22 @@ echo "\n=== 2. Elegir un nombre libre ===\n";
 $pdo->prepare("INSERT INTO usuarios (id, username, coins) VALUES (?,?,0)
                ON DUPLICATE KEY UPDATE coins=0")->execute([crc32('tstlibre'), 'tstlibre']);
 
-chequear('un nombre libre se devuelve tal cual',
-         alta_usuario_disponible($pdo, 'tstnuevo') === 'tstnuevo');
+/* SIEMPRE con sufijo, incluso si el nombre parece libre. Nosotros solo vemos
+   NUESTRO espejo, y en ganamos el nombre es unico en toda la plataforma: un
+   nombre comun esta tomado por otro agente casi seguro. Probar el pelado
+   primero era un viaje condenado -- crear, que lo rechacen, renombrar,
+   reintentar -- con el jugador esperando en pantalla. */
+$libre = alta_usuario_disponible($pdo, 'tstnuevo');
+chequear('aunque parezca libre, sale con sufijo', $libre !== 'tstnuevo', $libre);
+chequear('y el sufijo son 3 digitos',
+         (bool)preg_match('/^tstnuevo[1-9][0-9]{2}$/', $libre), $libre);
+/* El sufijo tiene que ser AL AZAR de verdad. Si fuera un contador o algo
+   predecible, dos personas registrandose a la vez con el mismo nombre pedirian
+   el mismo usuario y una de las dos se llevaria el rechazo. */
+$vistos = [];
+for ($i = 0; $i < 20; $i++) { $vistos[alta_usuario_disponible($pdo, 'tstnuevo')] = true; }
+chequear('el sufijo varia entre llamadas (20 intentos, >5 distintos)',
+         count($vistos) > 5, 'salieron ' . count($vistos) . ' nombres distintos');
 
 $n = alta_usuario_disponible($pdo, 'tstlibre');
 chequear('uno tomado devuelve otro distinto', $n !== 'tstlibre', $n);
