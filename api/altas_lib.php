@@ -143,7 +143,20 @@ function alta_parece_nombre_ocupado(string $mensaje): bool
     return false;
 }
 
-function alta_usuario_disponible(PDO $pdo, string $nombreCrudo): string
+/** Prefijo de los usuarios que genera la landing.
+ *
+ *  "holaJuan" en vez de "Juan427". Dos motivos, y el segundo es el importante:
+ *
+ *  1. Se dicta y se recuerda. Un jugador que llama por telefono puede decir su
+ *     usuario; "Juan427" se olvida apenas cierra la pantalla.
+ *  2. NO CHOCA. En ganamos el nombre es unico en TODA la plataforma y esta
+ *     saturada: el 2/9/2026 fallaron Juan676, Juan565, Juan557 y Martin109,
+ *     cuatro de cuatro. El patron "Nombre + numeros" lo usa todo el mundo hace
+ *     años; "hola + Nombre" no lo usa casi nadie.
+ */
+const ALTA_PREFIJO = 'hola';
+
+function alta_usuario_disponible(PDO $pdo, string $nombreCrudo, int $ronda = 0): string
 {
     // Mismo alfabeto que exige alta_validar(): letras, números, punto,
     // guion, guion bajo. Se sanea ACA (no se confía en que el frontend ya
@@ -163,24 +176,34 @@ function alta_usuario_disponible(PDO $pdo, string $nombreCrudo): string
         $base = 'jugador' . $base;
     }
 
-    /* SIEMPRE con sufijo, ya desde el primer candidato.
+    /* El prefijo va SIEMPRE, y los numeros SOLO si hacen falta.
 
-       Antes se probaba el nombre pelado primero ("Martin") y solo se le
-       agregaba un numero si lo veiamos tomado. Pero nosotros solo vemos NUESTRO
-       espejo, y en ganamos el nombre es unico en TODA la plataforma: un nombre
-       comun esta tomado por otro agente casi seguro. O sea que ese primer
-       intento estaba condenado, y costaba un viaje entero -- crear, que el
-       panel lo rechace, renombrar, reintentar.
+       `$ronda` es cuantas veces ya nos rechazaron este alta, y sube la entropia
+       de a poco: se empieza por el nombre mas lindo posible y solo se ensucia
+       cuando la plataforma obliga. Asi el caso normal -- que es el 99% -- se
+       lleva "holaJuan" y no "holaJuan8471".
 
-       Del otro lado hay una persona recien llegada de un anuncio mirando
-       "creando tu cuenta". Cada segundo ahi es friccion, y el primer intento
-       era el mas caro de todos porque no tenia ninguna chance.
+           ronda 0     holaJuan
+           ronda 1-2   holaJuan + 2 digitos
+           ronda 3+    holaJuan + 4 digitos
 
-       Tres digitos y no dos: 900 variantes en vez de 90. Con dos, un "Juan25"
-       tambien puede estar tomado y volvemos al viaje perdido; con tres el
-       choque es raro. El nombre sigue siendo corto y facil de dictar. */
+       Idempotente con el prefijo: si el nombre YA empieza con el, no se vuelve
+       a agregar. Sin esto, cada renombre lo apilaba ("holaholaJuan"), porque el
+       que renombra parte del nombre anterior. */
+    $pre = ALTA_PREFIJO;
+    if (stripos($base, $pre) !== 0) {
+        $base = $pre . ucfirst($base);
+    }
+
     for ($intento = 0; $intento < 50; $intento++) {
-        $candidato = $base . random_int(100, 999);
+        $vuelta = $ronda + $intento;
+        if ($vuelta === 0) {
+            $candidato = $base;                          // holaJuan
+        } elseif ($vuelta <= 2) {
+            $candidato = $base . random_int(10, 99);      // holaJuan47
+        } else {
+            $candidato = $base . random_int(1000, 9999);  // holaJuan8471
+        }
 
         // Un solo viaje a la base por candidato: existe en `usuarios` O hay
         // un pedido no fallido en `altas` con ese nombre. 'error' no cuenta

@@ -36,8 +36,10 @@ function chequear(string $q, bool $c, string $d = ''): void {
     else     { $fail++; printf("  FALLA %s   %s\n", $q, $d); }
 }
 function limpiar(PDO $pdo): void {
-    $pdo->exec("DELETE FROM altas    WHERE usuario LIKE 'tst%'");
-    $pdo->exec("DELETE FROM usuarios WHERE username LIKE 'tst%'");
+    foreach (['tst%', 'holaTst%'] as $pat) {
+        $pdo->prepare("DELETE FROM altas    WHERE usuario  LIKE ?")->execute([$pat]);
+        $pdo->prepare("DELETE FROM usuarios WHERE username LIKE ?")->execute([$pat]);
+    }
 }
 limpiar($pdo);
 
@@ -77,29 +79,44 @@ foreach ([
 // ===========================================================================
 echo "\n=== 2. Elegir un nombre libre ===\n";
 
+/* Se siembra ocupado el nombre QUE SE VA A GENERAR (con prefijo), no el crudo:
+   si no, el test no prueba nada -- 'tstlibre' y 'holaTstlibre' son distintos. */
 $pdo->prepare("INSERT INTO usuarios (id, username, coins) VALUES (?,?,0)
-               ON DUPLICATE KEY UPDATE coins=0")->execute([crc32('tstlibre'), 'tstlibre']);
+               ON DUPLICATE KEY UPDATE coins=0")->execute([crc32('holaTstlibre'), 'holaTstlibre']);
 
-/* SIEMPRE con sufijo, incluso si el nombre parece libre. Nosotros solo vemos
-   NUESTRO espejo, y en ganamos el nombre es unico en toda la plataforma: un
-   nombre comun esta tomado por otro agente casi seguro. Probar el pelado
-   primero era un viaje condenado -- crear, que lo rechacen, renombrar,
-   reintentar -- con el jugador esperando en pantalla. */
-$libre = alta_usuario_disponible($pdo, 'tstnuevo');
-chequear('aunque parezca libre, sale con sufijo', $libre !== 'tstnuevo', $libre);
-chequear('y el sufijo son 3 digitos',
-         (bool)preg_match('/^tstnuevo[1-9][0-9]{2}$/', $libre), $libre);
-/* El sufijo tiene que ser AL AZAR de verdad. Si fuera un contador o algo
-   predecible, dos personas registrandose a la vez con el mismo nombre pedirian
-   el mismo usuario y una de las dos se llevaria el rechazo. */
+/* El nombre sale con PREFIJO y sin numeros: "holaJuan", no "Juan427".
+   Se dicta y se recuerda -- un jugador que llama por telefono puede decir su
+   usuario -- y sobre todo NO CHOCA: en ganamos el nombre es unico en toda la
+   plataforma y el patron "Nombre + numeros" esta agotado. El 2/9/2026
+   fallaron Juan676, Juan565, Juan557 y Martin109, cuatro de cuatro. */
+$libre = alta_usuario_disponible($pdo, 'tstnuevo', 0);
+chequear('lleva prefijo y NO numeros en la primera ronda',
+         $libre === 'holaTstnuevo', $libre);
+
+/* Los numeros aparecen solo cuando la plataforma ya nos rechazo, y suben de a
+   poco: primero dos digitos, y recien despues cuatro. Asi el caso normal --
+   que es casi siempre -- se lleva el nombre lindo. */
+chequear('ronda 1: dos digitos',
+         (bool)preg_match('/^holaTstnuevo[0-9]{2}$/', alta_usuario_disponible($pdo, 'tstnuevo', 1)));
+chequear('ronda 3: cuatro digitos',
+         (bool)preg_match('/^holaTstnuevo[0-9]{4}$/', alta_usuario_disponible($pdo, 'tstnuevo', 3)));
+
+/* El prefijo NO se apila. El que renombra parte del nombre anterior, que ya lo
+   tiene: sin esta guarda cada reintento daba "holaholaJuan". */
+chequear('no apila el prefijo si ya estaba',
+         !str_contains(alta_usuario_disponible($pdo, 'holaTstnuevo', 1), 'holahola'));
+
+/* El sufijo tiene que ser AL AZAR de verdad. Si fuera un contador, dos
+   personas registrandose a la vez con el mismo nombre pedirian el mismo
+   usuario y una de las dos se llevaria el rechazo. */
 $vistos = [];
-for ($i = 0; $i < 20; $i++) { $vistos[alta_usuario_disponible($pdo, 'tstnuevo')] = true; }
+for ($i = 0; $i < 20; $i++) { $vistos[alta_usuario_disponible($pdo, 'tstnuevo', 3)] = true; }
 chequear('el sufijo varia entre llamadas (20 intentos, >5 distintos)',
          count($vistos) > 5, 'salieron ' . count($vistos) . ' nombres distintos');
 
 $n = alta_usuario_disponible($pdo, 'tstlibre');
-chequear('uno tomado devuelve otro distinto', $n !== 'tstlibre', $n);
-chequear('y conserva el nombre como base', str_starts_with($n, 'tstlibre'), $n);
+chequear('uno tomado devuelve otro distinto', $n !== 'holaTstlibre', $n);
+chequear('y conserva el nombre como base', str_contains($n, 'Tstlibre'), $n);
 
 /* Los nombres muy cortos los rechaza el PANEL, y ahi el alta muere recien
    cuando el bot llena el formulario -- con el jugador ya esperando. */
@@ -110,7 +127,7 @@ chequear('un nombre muy corto se alarga antes de encolar',
    bytes, "María" perderia la "i" entera. */
 $m = alta_usuario_disponible($pdo, 'Mar' . chr(0xC3) . chr(0xAD) . 'a');
 chequear('translitera los acentos en vez de comerse la letra',
-         $m === 'Maria' || str_starts_with($m, 'Maria'), $m);
+         str_contains($m, 'Maria'), $m);
 
 // ===========================================================================
 echo "\n=== 3. El renombre no se come el nombre del jugador ===\n";

@@ -32,7 +32,16 @@ require __DIR__ . '/altas_lib.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
-const MAX_INTENTOS   = 3;
+/* 10 y no 3. Ese tope venia de cuando cada intento era un navegador llenando
+   un formulario -- 6 segundos -- y un fallo casi siempre significaba sesion
+   caida o panel roto, donde insistir no servia de nada.
+   Hoy el alta es una llamada de un segundo, y el fallo tipico es otro: el
+   nombre ya existe en la plataforma. Ese SI se arregla insistiendo, porque
+   cada intento va con un nombre nuevo. Rendirse a los 3 dejaba al jugador con
+   un "no pudimos crear tu cuenta" cuando bastaba con probar una vez mas.
+   Los fallos de verdad siguen frenados por el backoff (5, 20, 60 minutos): 10
+   intentos ahi son horas, no una tormenta de pedidos. */
+const MAX_INTENTOS   = 10;
 const MINUTOS_ZOMBIE = 15;   // reintentar los que quedaron colgados en 'procesando'
 
 // Backoff entre reintentos (ver sql/36_altas_backoff.sql): el WAF de
@@ -384,7 +393,15 @@ if ($accion === 'marcar' && $metodo === 'POST') {
                    parecido y valido -- prefiero eso a una cuenta que no existe. */
                 $base  = rtrim($actual, '0123456789');
                 if (mb_strlen($base) < 3) { $base = $actual; }
-                $nuevo = alta_usuario_disponible($pdo, $base);
+                /* La RONDA sube la entropia del nombre a medida que la
+                   plataforma nos rechaza. Sin esto se quedaba en 2 digitos
+                   para siempre y, con el patron agotado, cada reintento tenia
+                   la misma probabilidad de chocar que el anterior: el 2/9/2026
+                   fallaron Juan676, Juan565 y Juan557 seguidos. */
+                $q2 = $pdo->prepare("SELECT intentos FROM altas WHERE id = ?");
+                $q2->execute([$id]);
+                $ronda = (int)$q2->fetchColumn();
+                $nuevo = alta_usuario_disponible($pdo, $base, $ronda);
                 if ($nuevo !== '' && $nuevo !== $actual) {
                     $pdo->prepare("UPDATE altas SET usuario = ? WHERE id = ? AND estado <> 'ok'")
                         ->execute([$nuevo, $id]);
