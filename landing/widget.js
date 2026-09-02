@@ -1323,6 +1323,38 @@
     else { tk.innerHTML = gpIco("tilde"); tk.className = "gp-tk"; }
   }
 
+  /* Texto del mensaje -> nodos, con las URLs convertidas en links.
+
+     Nace de un caso real: el bot manda la direccion para bajar la app y el
+     jugador la veia como texto plano, asi que tenia que copiarla a mano.
+
+     Se arma con createTextNode + createElement, NUNCA con innerHTML: el texto
+     lo escribe el bot o un agente y no se interpreta como HTML. Lo unico que
+     sale de la regex es el href, y solo si empieza con http:// o https://
+     (nada de javascript: ni data:). */
+  var GP_RE_URL = /https?:\/\/[^\s<>"']+/g;
+  function conLinks(txt){
+    var frag = document.createDocumentFragment();
+    var s = String(txt == null ? "" : txt), i = 0, m;
+    GP_RE_URL.lastIndex = 0;
+    while ((m = GP_RE_URL.exec(s))){
+      var url = m[0];
+      /* Puntuacion pegada al final: "entra a https://x.com/a." o "(https://x)".
+         Va afuera del link, si no el href se lleva el punto y da 404. */
+      var recorte = url.match(/[.,;:!?)\]]+$/);
+      if (recorte){ url = url.slice(0, url.length - recorte[0].length); }
+      if (!url){ continue; }
+      if (m.index > i){ frag.appendChild(document.createTextNode(s.slice(i, m.index))); }
+      var a = document.createElement("a");
+      a.href = url; a.target = "_blank"; a.rel = "noopener noreferrer";
+      a.appendChild(document.createTextNode(url));
+      frag.appendChild(a);
+      i = m.index + url.length;
+    }
+    if (i < s.length){ frag.appendChild(document.createTextNode(s.slice(i))); }
+    return frag;
+  }
+
   /* `icono` es opcional y es el nombre de un gpIco(): lo usan los avisos
      del sistema (sin conexion, archivo muy grande). Va como nodo aparte y
      el texto sigue entrando por createTextNode, asi que nada de lo que
@@ -1348,7 +1380,7 @@
       ic.innerHTML = gpIco(icono);
       b.appendChild(ic);
     }
-    b.appendChild(document.createTextNode(txt));
+    b.appendChild(conLinks(txt));
 
     r.appendChild(b); body.appendChild(r); body.scrollTop = body.scrollHeight;
     if (!mudo){ charla.push({ q: quien, t: txt }); guardar(); }
