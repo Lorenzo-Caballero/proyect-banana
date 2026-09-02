@@ -370,6 +370,7 @@ if ($accion === 'marcar' && $metodo === 'POST') {
        IMPORTANTE: la fila es la MISMA, solo cambia `usuario`. El navegador del
        jugador sondea por el id del alta, asi que sigue esperando sin enterarse
        y al final recibe las credenciales con el nombre que SI se pudo crear. */
+    $renombrada = false;
     if ($estado === 'error' && alta_parece_nombre_ocupado($mensaje)) {
         try {
             $q = $pdo->prepare("SELECT usuario FROM altas WHERE id = ?");
@@ -387,6 +388,7 @@ if ($accion === 'marcar' && $metodo === 'POST') {
                 if ($nuevo !== '' && $nuevo !== $actual) {
                     $pdo->prepare("UPDATE altas SET usuario = ? WHERE id = ? AND estado <> 'ok'")
                         ->execute([$nuevo, $id]);
+                    $renombrada = true;
                     $mensaje = mb_substr("'$actual' estaba ocupado en la plataforma; "
                                        . "se reintenta como '$nuevo'. " . $mensaje, 0, 500);
                     error_log("altas: alta $id renombrada de '$actual' a '$nuevo' (nombre ocupado)");
@@ -401,6 +403,21 @@ if ($accion === 'marcar' && $metodo === 'POST') {
 
     try {
         $pdo->prepare($sql)->execute([$mensaje, $id]);
+
+        /* SIN ESPERA cuando se renombro. El backoff (5, 20, 60 minutos) esta
+           pensado para fallas pasajeras -- sesion caida, red, panel lento --
+           donde esperar es lo correcto. Pero un nombre ocupado no se destraba
+           con el tiempo: ya tenemos otro nombre y hay que probarlo YA.
+
+           Y el jugador esta esperando del otro lado: su navegador se rinde a
+           los 4 minutos, asi que un reintento a los 5 llega cuando ya no hay
+           nadie mirando. Con esto el bot lo toma en su proxima vuelta, que es
+           cada 3 segundos, y el alta se resuelve mientras el jugador sigue en
+           la pantalla de "creando tu cuenta". */
+        if ($renombrada) {
+            $pdo->prepare("UPDATE altas SET proximo_intento_en = NULL
+                            WHERE id = ? AND estado = 'pendiente'")->execute([$id]);
+        }
     } catch (PDOException $e) {
         // La rama de error escribe proximo_intento_en (migracion 37). Sin esa
         // columna el bot no podia marcar NADA y la cola quedaba trabada: los
