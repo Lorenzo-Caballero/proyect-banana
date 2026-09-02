@@ -3919,7 +3919,14 @@
   function iniciarPolling(){
     detenerPolling();
     pollList = setInterval(cargarLista, 12000);
-    pollConv = setInterval(()=>{ if(st.convId && !$("#back").classList.contains("on")) abrir(st.convId); }, 9000);
+    /* Refresco de la conversación abierta. Solo corre EN Conversaciones: fuera
+       de ahí el chat ni se ve, así que traerlo del server cada 9 segundos era
+       trabajo tirado -- y encima reabría la ficha del jugador sobre la sección
+       en la que estuvieras. */
+    pollConv = setInterval(()=>{
+      if(vistaActual !== "chats") return;
+      if(st.convId && !$("#back").classList.contains("on")) abrir(st.convId);
+    }, 9000);
     // Los badges corren siempre, sin importar que modulo este abierto -- asi
     // el numero del rail se actualiza aunque el operador este mirando otra
     // cosa. El de retiros solo se prende si hay algo REALMENTE trabado
@@ -5592,7 +5599,13 @@
   // ---------- abrir ----------
   async function abrir(id){
     st.convId = id;
-    pintarUserPane(true);
+    /* La ficha se muestra solo si estamos EN Conversaciones.
+       Antes iba `true` fijo, y eso la dejaba colgada en las otras secciones:
+       abrias un chat, te ibas a Usuarios -- mostrarVista la ocultaba bien -- y
+       nueve segundos despues el sondeo llamaba a abrir() para refrescar la
+       conversacion, que la volvia a mostrar. El sintoma era ver la ficha de un
+       jugador encima de una pantalla que no tiene nada que ver con el. */
+    pintarUserPane(vistaActual === "chats");
     $("#app").classList.add("viewing");
     $("#chatEmpty").style.display="none";
     $("#chatView").style.display="flex";
