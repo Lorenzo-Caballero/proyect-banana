@@ -20,29 +20,58 @@
      === "undefined") y no dibuja nada, sin romper el resto del panel. -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <style>
+  /* PALETA — GRAFITO NEUTRO
+     Toda la estetica del CRM sale de estas dos listas. Fuera de aca casi no
+     hay color escrito a mano, asi que cambiar el look es cambiar estos valores
+     y nada mas.
+
+     Los nombres `--violet*` quedaron del tema anterior y HOY SON GRISES. Se
+     conservan a proposito: se usan 156 veces en este archivo, y renombrarlos
+     seria mucho toqueteo con riesgo de romper algo, a cambio de nada visible.
+     Leelos como "color de accion", no como violeta.
+
+     LA IDEA: sacar el color de marca de la interfaz para que el UNICO color
+     fuerte de la pantalla sea el que SIGNIFICA algo -- verde plata que entro,
+     rojo problema, amarillo revisar. Sobre gris esos saltan solos; sobre un
+     violeta saturado competian con el y habia que mirar dos veces.
+
+     Esta paleta NO la comparte ninguna otra pagina: cada una tiene su :root.
+     Cambiar esto no toca la landing de los anuncios ni la app del jugador. */
   :root{
-    --bg1:#0a0f1e; --bg2:#0c1225; --glow:rgba(124,108,240,.16);
-    --panel:#121a30; --panel2:#182241; --panel3:#1d284a;
-    --line:#243052; --line2:#2d3a63;
-    --txt:#e7ecf9; --muted:#8890b2; --muted2:#6b7398;
-    --violet:#7c6cf0; --violet2:#9a8cff; --violetSoft:rgba(124,108,240,.16);
+    /* Grises frios y muy poco saturados. No se usa negro puro (#000): sobre
+       pantallas OLED produce bandas en los degrades y cansa mas la vista en
+       sesiones largas, que es como se usa un CRM. */
+    --bg1:#0d0d0f; --bg2:#0f0f12; --glow:rgba(255,255,255,.05);
+    --panel:#16161a; --panel2:#1c1c21; --panel3:#232329;
+    --line:#26262c; --line2:#33333b;
+    --txt:#e8e8ea; --muted:#8a8a94; --muted2:#63636d;
+    /* Color de accion: gris claro. Sobre el panel oscuro tiene contraste de
+       sobra para un boton, y al no ser un color no compite con los semanticos. */
+    --violet:#c8c8ce; --violet2:#e8e8ea; --violetSoft:rgba(255,255,255,.07);
+    /* Texto SOBRE el acento. Antes todo eso era #fff fijo, que funcionaba
+       porque el acento era violeta oscuro. Con el acento gris claro, blanco
+       sobre blanco no se lee: por eso es un token y no un literal. */
+    --onAccent:#16161a;
     --green:#2fd07a; --green2:#3ee08a; --greenSoft:rgba(47,208,122,.14);
     --orange:#f5a623; --orange2:#ffb84d;
     --red:#e5595d; --redSoft:rgba(229,89,93,.15);
-    --blue:#4aa3f0;
-    --shadow:0 18px 50px rgba(0,0,0,.5); --shadow-sm:0 6px 20px rgba(0,0,0,.35);
+    --blue:#5b9dd9;
+    --shadow:0 18px 50px rgba(0,0,0,.6); --shadow-sm:0 6px 20px rgba(0,0,0,.45);
   }
   :root[data-theme="light"]{
-    --bg1:#eef1f8; --bg2:#e8edf7; --glow:rgba(124,108,240,.10);
-    --panel:#ffffff; --panel2:#f5f7fd; --panel3:#eef1fa;
-    --line:#e4e9f4; --line2:#d7deed;
-    --txt:#182036; --muted:#6b7490; --muted2:#939db8;
-    --violet:#6a5af0; --violet2:#7c6cf0; --violetSoft:rgba(106,90,240,.10);
+    /* Mismo criterio invertido: grises neutros, sin tinte de color. El acento
+       pasa a ser gris OSCURO -- en claro, un gris claro no se veria. */
+    --bg1:#f4f4f6; --bg2:#eeeef1; --glow:rgba(0,0,0,.04);
+    --panel:#ffffff; --panel2:#f7f7f9; --panel3:#eeeef1;
+    --line:#e3e3e8; --line2:#d3d3da;
+    --txt:#17171a; --muted:#6b6b75; --muted2:#9a9aa4;
+    --violet:#3a3a42; --violet2:#17171a; --violetSoft:rgba(0,0,0,.06);
+    --onAccent:#ffffff;
     --green:#12b063; --green2:#17c06e; --greenSoft:rgba(18,176,99,.12);
-    --orange:#e0900d; --orange2:#f5a623;
-    --red:#e5484d; --redSoft:rgba(229,72,77,.12);
-    --blue:#2f8fe6;
-    --shadow:0 16px 40px rgba(40,54,90,.14); --shadow-sm:0 6px 18px rgba(40,54,90,.10);
+    --orange:#c47f0b; --orange2:#e0900d;
+    --red:#d93b40; --redSoft:rgba(217,59,64,.10);
+    --blue:#2f7fc4;
+    --shadow:0 16px 40px rgba(0,0,0,.10); --shadow-sm:0 6px 18px rgba(0,0,0,.07);
   }
   *{box-sizing:border-box}
   /* --- barras de scroll de TODO el CRM, en un solo lugar ---------------
@@ -112,7 +141,7 @@
     -webkit-mask-image:linear-gradient(180deg,transparent,#000 28px,#000 calc(100% - 28px),transparent);
     mask-image:linear-gradient(180deg,transparent,#000 28px,#000 calc(100% - 28px),transparent)}
   .logo{width:38px;height:38px;border-radius:12px;background:linear-gradient(160deg,var(--violet2),var(--violet));
-    color:#fff;display:grid;place-items:center;box-shadow:var(--shadow-sm);margin:0 auto 8px}
+    color:var(--onAccent);display:grid;place-items:center;box-shadow:var(--shadow-sm);margin:0 auto 8px}
   .logo svg{width:20px;height:20px}
   .rail-item{width:100%;height:auto;border-radius:10px;border:1px solid transparent;background:transparent;
     color:var(--muted);display:flex;align-items:center;gap:11px;padding:9px 11px;transition:.15s;position:relative;
@@ -277,7 +306,7 @@
   .tg-pasos b{color:var(--txt)}
   .tg-probar{display:flex;align-items:center;gap:11px;flex-wrap:wrap;margin-top:11px}
   .conv .marca{position:absolute;top:6px;right:6px;width:18px;height:18px;border-radius:50%;
-    display:none;place-items:center;background:var(--violet);color:#fff}
+    display:none;place-items:center;background:var(--violet);color:var(--onAccent)}
   .conv .marca svg{width:11px;height:11px;fill:none;stroke:currentColor;stroke-width:3;
     stroke-linecap:round;stroke-linejoin:round}
   .conv.marcada .marca{display:grid}
@@ -296,7 +325,7 @@
      que el ojo lo encuentre sin buscarlo. */
   .sel-pill{display:inline-flex;align-items:center;gap:7px;flex:none}
   .sel-pill b{min-width:24px;height:24px;padding:0 7px;border-radius:20px;background:var(--violet);
-    color:#fff;font-size:12.5px;font-weight:800;display:grid;place-items:center;
+    color:var(--onAccent);font-size:12.5px;font-weight:800;display:grid;place-items:center;
     font-variant-numeric:tabular-nums}
   .sel-pill b.late{animation:selLate .28s ease-out}
   @keyframes selLate{50%{transform:scale(1.28)}}
@@ -323,7 +352,7 @@
   .conv .n b{font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center}
   .conv .n .t{color:var(--muted);font-size:11px;white-space:nowrap}
   .conv .pv{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
-  .badge{background:var(--violet);color:#fff;font-size:11px;font-weight:800;min-width:19px;height:19px;border-radius:10px;display:grid;place-items:center;padding:0 5px}
+  .badge{background:var(--violet);color:var(--onAccent);font-size:11px;font-weight:800;min-width:19px;height:19px;border-radius:10px;display:grid;place-items:center;padding:0 5px}
   .est-dot{width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:6px;flex:none}
   .est-abierta{background:var(--green);box-shadow:0 0 6px var(--green)} .est-pendiente{background:var(--orange)} .est-cerrada{background:var(--muted2)}
 
@@ -479,7 +508,7 @@
   .row.user{align-self:flex-start} .row.saliente{align-self:flex-end} .row.interno{align-self:center;max-width:92%}
   .bub{padding:12px 16px;border-radius:16px;font-size:14px;line-height:1.5;white-space:pre-wrap;word-break:break-word;box-shadow:var(--shadow-sm)}
   .row.user .bub{background:var(--panel2);border:1px solid var(--line);border-bottom-left-radius:5px}
-  .row.saliente .bub{background:linear-gradient(180deg,var(--violet),#6a5be8);color:#fff;border-bottom-right-radius:5px}
+  .row.saliente .bub{background:linear-gradient(180deg,var(--violet2),var(--violet));color:var(--onAccent);border-bottom-right-radius:5px}
   .row.interno .bub{background:var(--greenSoft);border:1px solid var(--green);color:var(--green2);font-size:13px;text-align:center;font-weight:600;display:flex;align-items:center;gap:7px}
   .row.interno .bub svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;flex:none}
   /* La hora, discreta y pegada a su burbuja: antes quedaba muy separada y
@@ -573,7 +602,7 @@
   .modal input:disabled{opacity:.6;cursor:not-allowed}
   .mbtns{display:flex;gap:9px;margin-top:20px}
   .mbtns button{flex:1;padding:12px;border-radius:11px;border:none;font-weight:700;font-size:14px}
-  .mbtns .ok{background:linear-gradient(180deg,var(--violet2),var(--violet));color:#fff}
+  .mbtns .ok{background:linear-gradient(180deg,var(--violet2),var(--violet));color:var(--onAccent)}
   .mbtns .no{background:transparent;border:1px solid var(--line);color:var(--muted)}
   .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--panel);border:1px solid var(--violet);color:var(--txt);padding:12px 20px;border-radius:12px;z-index:60;opacity:0;transition:.25s;pointer-events:none;box-shadow:var(--shadow)}
   .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
@@ -619,7 +648,7 @@
   .composer .att,.composer .send{width:42px;height:42px;flex:none;border-radius:12px;display:grid;place-items:center;transition:.15s}
   .composer .att{border:1px solid var(--line);background:var(--panel2);color:var(--muted)}
   .composer .att:hover{border-color:var(--violet);color:var(--txt)}
-  .composer .send{border:none;background:linear-gradient(180deg,var(--violet2),var(--violet));color:#fff}
+  .composer .send{border:none;background:linear-gradient(180deg,var(--violet2),var(--violet));color:var(--onAccent)}
   .composer .send:hover{filter:brightness(1.07)}
   .composer svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:2}
   /* overflow-y oculto por defecto: el alto lo maneja autoGrow(), que recien
@@ -728,7 +757,7 @@
         display:inline-flex;align-items:center;gap:6px}
   .chip .ico{width:13px;height:13px}
   .chip:hover{color:var(--txt);border-color:var(--violet)}
-  .chip.on{color:#fff;border-color:var(--violet);background:var(--violet)}
+  .chip.on{color:var(--onAccent);border-color:var(--violet);background:var(--violet)}
   .modal textarea{min-height:78px}
   .todos{display:flex;align-items:center;gap:9px;margin-top:14px;padding:11px 12px;border-radius:11px;
          background:var(--panel2);border:1px solid var(--line);cursor:pointer}
@@ -920,7 +949,7 @@
   .login-card input:focus{border-color:var(--violet);box-shadow:0 0 0 3px var(--violetSoft)}
   .login-error{color:var(--red);font-size:12.5px;min-height:16px;margin:-4px 0 14px;line-height:1.4}
   .login-btn{width:100%;padding:13px;border:none;border-radius:11px;font-weight:700;font-size:14.5px;
-    color:#fff;background:linear-gradient(180deg,var(--violet2),var(--violet));
+    color:var(--onAccent);background:linear-gradient(180deg,var(--violet2),var(--violet));
     display:flex;align-items:center;justify-content:center;gap:8px;transition:.15s}
   .login-btn:hover{filter:brightness(1.07)}
   .login-btn:disabled{opacity:.7;cursor:default}
@@ -995,7 +1024,7 @@
   .cd-directo-hint{margin-top:7px;font-size:11.5px;color:var(--muted)}
   .warn-chip{background:rgba(245,166,35,.16);color:var(--orange2);border:1px solid var(--orange);
     font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:7px;margin-left:6px;white-space:nowrap}
-  .btn-asignar{background:linear-gradient(180deg,var(--violet2),var(--violet));color:#fff;border:none;
+  .btn-asignar{background:linear-gradient(180deg,var(--violet2),var(--violet));color:var(--onAccent);border:none;
     border-radius:9px;padding:8px 13px;font-size:12.5px;font-weight:700;transition:.15s;flex:none}
   .btn-asignar:hover{filter:brightness(1.07)}
   .btn-asignar:disabled{opacity:.6;cursor:default}
@@ -1215,7 +1244,7 @@
     min-width:32px;height:32px;padding:0 8px;border-radius:8px;font-size:13px}
   .us-pgbtns button:hover:not(:disabled){border-color:var(--violet)}
   .us-pgbtns button:disabled{opacity:.35;cursor:default}
-  .us-pgbtns button.cur{background:linear-gradient(180deg,var(--violet2),var(--violet));color:#fff;border-color:var(--violet);font-weight:700}
+  .us-pgbtns button.cur{background:linear-gradient(180deg,var(--violet2),var(--violet));color:var(--onAccent);border-color:var(--violet);font-weight:700}
 
   /* ---- Finanzas (Fase A, Módulo 6.A) ---- */
   .fn-gate{display:flex;align-items:center;justify-content:center;min-height:320px;padding:20px}
@@ -1488,7 +1517,7 @@
   .cb-acciones{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
   .cb-acciones-der{display:flex;align-items:center;gap:14px;margin-left:auto}
   .cb-msg{font-size:13px}.cb-msg.ok{color:var(--green2)}.cb-msg.err{color:var(--red)}
-  .cb-btn{background:linear-gradient(155deg,var(--violet2),var(--violet));color:#fff;border:0;border-radius:11px;
+  .cb-btn{background:linear-gradient(155deg,var(--violet2),var(--violet));color:var(--onAccent);border:0;border-radius:11px;
           padding:11px 20px;font-size:14px;font-weight:700;cursor:pointer;transition:.15s;box-shadow:var(--shadow-sm)}
   .cb-btn:hover{filter:brightness(1.08)}
   .cb-btn:disabled{opacity:.55;cursor:default;filter:none}
@@ -1664,7 +1693,7 @@
   .nv-prev{display:flex;gap:11px;background:var(--panel3);border:1px solid var(--line2);
     border-radius:14px;padding:12px 14px;box-shadow:var(--shadow-sm)}
   .nv-prev-ico{width:34px;height:34px;border-radius:9px;flex:none;display:grid;place-items:center;
-    background:linear-gradient(180deg,var(--violet2),var(--violet));color:#fff}
+    background:linear-gradient(180deg,var(--violet2),var(--violet));color:var(--onAccent)}
   .nv-prev-ico svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:2;
     stroke-linecap:round;stroke-linejoin:round}
   .nv-prev-txt{flex:1;min-width:0}
@@ -1686,7 +1715,7 @@
     border-radius:13px;flex-wrap:wrap}
   .nv-resumen{font-size:12.5px;color:var(--muted)}
   .nv-resumen b{color:var(--txt)}
-  .nv-cta{background:linear-gradient(180deg,var(--violet2),var(--violet));color:#fff;border:none;
+  .nv-cta{background:linear-gradient(180deg,var(--violet2),var(--violet));color:var(--onAccent);border:none;
     border-radius:11px;padding:12px 32px;font-size:14px;font-weight:800;cursor:pointer;
     box-shadow:0 6px 18px -8px var(--violet);transition:.16s}
   .nv-cta:hover{transform:translateY(-1px);box-shadow:0 9px 22px -8px var(--violet)}
@@ -5960,11 +5989,11 @@
   const API_PET = API_BASE + "/crm_peticiones.php";
 
   const PET_ESTADO = {
-    esperando: {t:"Esperando la transferencia", c:"#9aa4b2"},
+    esperando: {t:"Esperando la transferencia", c:"var(--muted)"},
     aprobada:  {t:"Aprobada",                   c:"#2ecc71"},
     revision:  {t:"Necesita que la mires",      c:"#f1c40f"},
     error:     {t:"El panel la rechazó",        c:"#e74c3c"},
-    cerrada:   {t:"Resuelta fuera del CRM",     c:"#9aa4b2"},
+    cerrada:   {t:"Resuelta fuera del CRM",     c:"var(--muted)"},
   };
 
   async function actualizarBadgePeticiones(){
@@ -5997,14 +6026,14 @@
       return;
     }
     cont.innerHTML = d.items.map(p=>{
-      const e = PET_ESTADO[p.estado] || {t:p.estado, c:"#9aa4b2"};
+      const e = PET_ESTADO[p.estado] || {t:p.estado, c:"var(--muted)"};
       // "Demorada" no es un estado aparte: sigue esperando y el worker la
       // sigue intentando. Solo se avisa que hace rato que no llega la plata.
       const dem = p.demorada ? ` · <b style="color:#f1c40f">hace ${p.minutos} min que espera</b>` : "";
       return `
       <div class="comp-row">
         <div class="cr-top">
-          <span>${esc(p.username)} <span style="color:#9aa4b2">#${p.request_id}</span></span>
+          <span>${esc(p.username)} <span style="color:var(--muted)">#${p.request_id}</span></span>
           <span>${money(p.monto)}</span>
         </div>
         <div class="cr-sub">
