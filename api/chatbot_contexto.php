@@ -209,10 +209,13 @@ Aca es donde mas facil es mentirle sin querer. VOS NO VES LAS TRANSFERENCIAS.
 Lo unico que confirma que entro la plata es el aviso del banco, que llega solo
 y puede tardar. Que el jugador diga que pago NO confirma nada: puede haberse
 equivocado de monto, de alias, o no haber transferido todavia.
-1. Primero fijate, no contestes de memoria:
-   - subio una FOTO del comprobante al chat -> verificar_comprobante
-   - te paso por TEXTO el titular o el numero de operacion -> informar_transferencia
-   - no te dio ningun dato -> consultar_recarga
+1. Primero fijate, no contestes de memoria: usa consultar_recarga.
+   Da lo mismo si subio una foto del comprobante o si te dicto el titular y el
+   numero de operacion. VOS NO PODES LEER ESO, y aunque pudieras no probaria
+   que la plata entro: un comprobante se saca antes de que el banco acredite.
+   La foto igual sirve, asi que agradecesela: queda guardada en la conversacion
+   y un agente la ve cuando hace falta desempatar dos pagos del mismo monto.
+   Pero lo que le contestas sale de consultar_recarga, no de la foto.
 2. Contesta SEGUN LO QUE DEVOLVIO LA HERRAMIENTA, nunca segun lo que dijo el:
    - 'acreditada' -> recien AHI le decis que ya esta y que puede jugar.
    - todavia pendiente -> decile que quedo anotada y que estas esperando que

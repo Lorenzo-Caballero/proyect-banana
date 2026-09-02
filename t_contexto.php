@@ -122,5 +122,52 @@ chequear('y el minimo de retiro tambien',    str_contains($conLim, '2.000'));
 chequear('sin limites, no se inventa ninguna linea de limites',
          !str_contains($vacio, 'LIMITES DE ESTE CASINO'));
 
+// ===========================================================================
+echo "\n=== 6. El prompt no puede pedir herramientas que no existen ===\n";
+
+/* EL BUG QUE ESTO ATAJA, encontrado el 2/9/2026: el prompt le ordenaba al bot
+   usar `verificar_comprobante` e `informar_transferencia`, dos herramientas que
+   nunca se implementaron ni se declaran en chatbot.php.
+
+   Y caia en el peor momento posible: el jugador acaba de transferir, sube la
+   foto del comprobante, y ahi el bot se queda sin la accion que le indicamos.
+   Como no puede llamarla contesta de memoria -- que es exactamente lo que todo
+   el resto de esa seccion trata de evitar, porque la respuesta de memoria es
+   "listo, ya te cargue" sobre plata que todavia no llego.
+
+   El chequeo es mecanico a proposito. Que el prompt y la lista de herramientas
+   vivan en archivos distintos es lo que dejo que se separaran sin que nadie se
+   diera cuenta; asi se comparan solos. */
+$src        = file_get_contents(__DIR__ . '/api/chatbot.php');
+$declaradas = [];
+preg_match_all("/'name'\s*=>\s*'([a-z_]+)'/", $src, $m);
+foreach ($m[1] as $t) { $declaradas[$t] = true; }
+
+chequear('se pudo leer la lista de herramientas de chatbot.php',
+         count($declaradas) >= 5, count($declaradas) . ' encontradas');
+
+/* Se buscan los nombres CON FORMA de herramienta -- verbo_algo -- y no
+   cualquier snake_case: el prompt tambien menciona codigos de error
+   ('sin_saldo', 'fuera_de_horario') que no son herramientas. */
+$prompt = chatbot_armar_prompt(
+    ['bot_nombre' => '', 'bot_tono' => '', 'juego_desc' => '', 'reglas_extra' => ''],
+    []
+);
+preg_match_all(
+    '/\b(?:verificar|informar|consultar|crear|cargar|retirar|identificar|pasar)_[a-z_]+/',
+    $prompt, $mp
+);
+$mencionadas = array_values(array_unique($mp[0]));
+chequear('el prompt menciona herramientas (si no, la regex quedo obsoleta)',
+         count($mencionadas) >= 4, implode(', ', $mencionadas));
+
+$huerfanas = [];
+foreach ($mencionadas as $t) {
+    if (!isset($declaradas[$t])) { $huerfanas[] = $t; }
+}
+chequear('todas las que nombra el prompt existen en chatbot.php',
+         $huerfanas === [],
+         'el prompt pide herramientas inexistentes: ' . implode(', ', $huerfanas));
+
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);
 exit($fail > 0 ? 1 : 0);
