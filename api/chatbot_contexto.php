@@ -490,7 +490,17 @@ if (!function_exists('chatbot_bloque_app')) {
     {
         $url = trim($url);
         if ($url === '') { return ''; }
-        return "LINK DE DESCARGA DE LA APP (usa este, tal cual, no lo cambies):\n"
+        /* El operador lo escribe a mano en el CRM y muchas veces lo pega sin
+           esquema ("ganamoscrm.online/descargar.html"). Asi el chat lo muestra
+           como texto plano -- solo se vuelve link lo que arranca con http o
+           https -- y el jugador tiene que copiarlo a mano. Se completa aca, que
+           es por donde pasan todos los clientes, y no al guardar en el CRM: de
+           esta forma los que ya lo tienen cargado sin esquema tambien quedan
+           arreglados. */
+        if (!preg_match('~^https?://~i', $url)) { $url = 'https://' . $url; }
+        return "LINK DE DESCARGA DE LA APP (usa este, tal cual, no lo cambies,\n"
+             . "y siempre entero con el https:// adelante, que es lo que lo\n"
+             . "vuelve tocable en el chat):\n"
              . $url;
     }
 }

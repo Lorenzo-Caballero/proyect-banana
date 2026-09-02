@@ -97,9 +97,9 @@ else
 
   PU="$(grep -E '^PANEL_URL=' "$BOT_ENV" | head -1 | cut -d= -f2-)"
   case "$PU" in
-    *ganamos7.com*)      ok "PANEL_URL en ganamos7.com" ;;
-    *ganamosonline.com*) mal "PANEL_URL en el panel VIEJO: crea las cuentas donde no van" ;;
-    *)                   info "PANEL_URL: $PU" ;;
+    *agents.ganamosonline.com*) ok "PANEL_URL en agents.ganamosonline.com" ;;
+    *agents.ganamos7.com*)      mal "PANEL_URL en el panel VIEJO: crea las cuentas donde no van" ;;
+    *)                          info "PANEL_URL: $PU" ;;
   esac
 fi
 

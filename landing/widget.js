@@ -4,7 +4,7 @@
  * Corre en el origen de ganamos7.com, asi que ve su sesion directamente:
  * cuando el jugador entra, el asistente adopta su usuario sin preguntarselo.
  *
- * La IA es la misma que en landing/chat.html: la API propia en Hostinger
+ * La IA es la misma que en landing/chat.html: la API propia en el VPS
  * (chatbot.php -> Cohere command-r-08-2024, con tool use). Las herramientas
  * que el modelo puede llamar son identificar_usuario, crear_recarga y
  * consultar_recarga; de eso se encarga el server, aca solo se conversa.
@@ -69,13 +69,18 @@
    * Este MISMO archivo se sirve desde dos lugares y no puede usar la misma URL
    * en los dos:
    *
-   *   - En la replica (dominio propio, nginx proxea /api/ a Hostinger) las
-   *     llamadas van al mismo origen. Es la unica forma que funciona: cruzado,
-   *     el WAF de Hostinger devuelve 403 y como su pagina de error no lleva las
-   *     cabeceras CORS que si pone el PHP, el navegador lo reporta como "CORS
-   *     policy" y manda a buscar el problema al lugar equivocado.
-   *   - En la plataforma directa y en el APK no hay proxy: hay que ir a
-   *     Hostinger por URL absoluta.
+   *   - En la replica (dominio propio) las llamadas van al MISMO ORIGEN, a
+   *     /gp-api, que nginx manda al php-fpm del VPS. Es la unica forma que
+   *     funciona.
+   *   - Fuera de una replica no hay a donde ir. Antes se caia a Hostinger por
+   *     URL absoluta, pero ese hosting ya no atiende nada: se retiro hasta el
+   *     proxy de respaldo de nginx. En produccion MISMO_ORIGEN es siempre true.
+   *
+   *   Se deja escrito por que el cruzado nunca fue una opcion, que es lo que
+   *   hacia perder el tiempo: cuando el WAF cortaba un pedido cross-origin
+   *   devolvia un 403 cuya pagina de error NO lleva las cabeceras CORS que si
+   *   pone el PHP, y el navegador lo reportaba como "CORS policy" -- mandando a
+   *   buscar el problema al lugar equivocado.
    *
    * Cuando agregues otro dominio con proxy propio, sumalo a REPLICAS.
    * ------------------------------------------------------------------- */
@@ -174,11 +179,13 @@
   var AGENTE_NOMBRE = "Camila";
   var AGENTE_ESTADO = "en línea";
   // Foto del agente. Si no carga, queda el ícono de abajo y no se rompe nada.
-  // En la réplica la sirve el VPS: pedírsela a Hostinger la deja a merced del
-  // WAF y quedaría siempre el ícono de respaldo. subir.ps1 la copia al VPS.
+  // Las dos ramas la piden al VPS, lo que cambia es el cómo: en la réplica es
+  // mismo origen y va relativa (subir.ps1 la copia como /replica/logo.png);
+  // desde la plataforma hace falta el host, y ahí /img/ lo sirve nginx desde
+  // el disco del VPS (location ^~ /img/), no la plataforma.
   var AGENTE_FOTO   = MISMO_ORIGEN
     ? "/replica/logo.png"
-    : "https://orange-crab-483661.hostingersite.com/img/logo-192.png";
+    : "https://ganamoscrm.online/img/logo-192.png";
 
   // Botones rápidos. El texto se manda al bot tal cual, así que tienen que
   // decir lo que el CONTEXTO de chatbot.php espera para disparar su herramienta.
@@ -1323,6 +1330,38 @@
     else { tk.innerHTML = gpIco("tilde"); tk.className = "gp-tk"; }
   }
 
+  /* Texto del mensaje -> nodos, con las URLs convertidas en links.
+
+     Nace de un caso real: el bot manda la direccion para bajar la app y el
+     jugador la veia como texto plano, asi que tenia que copiarla a mano.
+
+     Se arma con createTextNode + createElement, NUNCA con innerHTML: el texto
+     lo escribe el bot o un agente y no se interpreta como HTML. Lo unico que
+     sale de la regex es el href, y solo si empieza con http:// o https://
+     (nada de javascript: ni data:). */
+  var GP_RE_URL = /https?:\/\/[^\s<>"']+/g;
+  function conLinks(txt){
+    var frag = document.createDocumentFragment();
+    var s = String(txt == null ? "" : txt), i = 0, m;
+    GP_RE_URL.lastIndex = 0;
+    while ((m = GP_RE_URL.exec(s))){
+      var url = m[0];
+      /* Puntuacion pegada al final: "entra a https://x.com/a." o "(https://x)".
+         Va afuera del link, si no el href se lleva el punto y da 404. */
+      var recorte = url.match(/[.,;:!?)\]]+$/);
+      if (recorte){ url = url.slice(0, url.length - recorte[0].length); }
+      if (!url){ continue; }
+      if (m.index > i){ frag.appendChild(document.createTextNode(s.slice(i, m.index))); }
+      var a = document.createElement("a");
+      a.href = url; a.target = "_blank"; a.rel = "noopener noreferrer";
+      a.appendChild(document.createTextNode(url));
+      frag.appendChild(a);
+      i = m.index + url.length;
+    }
+    if (i < s.length){ frag.appendChild(document.createTextNode(s.slice(i))); }
+    return frag;
+  }
+
   /* `icono` es opcional y es el nombre de un gpIco(): lo usan los avisos
      del sistema (sin conexion, archivo muy grande). Va como nodo aparte y
      el texto sigue entrando por createTextNode, asi que nada de lo que
@@ -1348,7 +1387,7 @@
       ic.innerHTML = gpIco(icono);
       b.appendChild(ic);
     }
-    b.appendChild(document.createTextNode(txt));
+    b.appendChild(conLinks(txt));
 
     r.appendChild(b); body.appendChild(r); body.scrollTop = body.scrollHeight;
     if (!mudo){ charla.push({ q: quien, t: txt }); guardar(); }

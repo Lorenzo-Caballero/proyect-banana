@@ -9,7 +9,7 @@ ruleta de bonos y recargas automáticas por transferencia.
 
 | Dominio | Qué es | Control |
 |---|---|---|
-| `orange-crab-483661.hostingersite.com` | Hosting propio (Hostinger): `landing/` + `api/` | Propio |
+| `orange-crab-483661.hostingersite.com` | Hosting **viejo** (Hostinger). Ya no se usa: `landing/` y `api/` se sirven desde el VPS en `ganamoscrm.online` (la API, bajo `/gp-api/`) | Propio |
 | `ganamos7.com` | Front de la plataforma (React SPA) donde juega el usuario | De la plataforma |
 | `agents.ganamosonline.com` | **Panel de agentes en uso.** Alta de jugadores, saldo, depósitos | Cuenta de agente propia |
 | `ganamoscrm.online` | **Dominio en uso.** Sirve la plataforma vía `replica/` y la API en `/gp-api/` | Propio (VPS) |
@@ -39,7 +39,7 @@ necesite un subdominio de la plataforma.
 ## Estructura
 
 ```
-api/          PHP en Hostinger. Todo el backend propio.
+api/          PHP en el VPS, servido bajo /gp-api/. Todo el backend propio.
 landing/      HTML estático (sin build): landing, login, app, chat, CRM, admin.
 apk/          App Android (Kotlin): WebView + asistente inyectado. Es la solución real al iframe.
 colector/     Python: lee mails del banco, deposita fichas y aprueba las cargas
@@ -85,7 +85,7 @@ contraseña y `contrasena` era un hash, se guardaba la clave en claro en
 
 **Ahora:** los jugadores se crean **en ganamos** (panel de agentes) y bajan por
 espejo con `sync_usuarios.py`, que se loguea con Playwright y pagina
-`agents.ganamos7.com/api` → `usuarios_sync.php` → tabla `usuarios`.
+`agents.ganamosonline.com/api` → `usuarios_sync.php` → tabla `usuarios`.
 
 ## Cargar fichas, bonos y saldo
 
@@ -130,6 +130,22 @@ Cuatro caminos distintos, con permisos distintos:
    veces. El chatbot solo *crea* recargas; el único que suma coins es
    `pagos.php`, detrás de la API key.
 
+   **Los datos que aporta el jugador después de pagar** son lo que desempata
+   dos recargas del mismo monto. Los da por el chat: sube la **foto del
+   comprobante** (herramienta `verificar_comprobante`, que la lee con
+   `api/vision_lib.php` → **Claude Haiku**, `ANTHROPIC_API_KEY` en
+   `config.local.php`, opcional) o los dicta por texto
+   (`informar_transferencia`: titular y número de operación). **Regla de oro:
+   la foto solo DECLARA; el único que confirma plata es el mail del banco.**
+
+   > **Esta mitad está a medio aterrizar (sept 2026).** Las dos herramientas
+   > llaman a `rl_declarar_pago()`, que **todavía no existe en
+   > `recargas_lib.php`**: las dos preguntan con `function_exists` y devuelven
+   > *"falta actualizar recargas_lib.php"*. `titular_declarado` sí se usa (lo
+   > escribe `rl_crear_recarga`, degradando si la migración 45 no corrió);
+   > `trx_declarada` y la Capa 0 por número de operación no están. Si el bot
+   > pide el comprobante y después no hace nada con él, es esto.
+
 4. **Camino A: el botón «Depósitos» de la plataforma.**
 
    ```
@@ -165,7 +181,10 @@ Cuatro caminos distintos, con permisos distintos:
 
 - `api/chatbot.php` — proxy a **Qwen** (`qwen-vl-max`, endpoint internacional de
   DashScope, en modo compatible con OpenAI) con *tool use*. Herramientas:
-  `identificar_usuario`, `crear_recarga`, `consultar_recarga`.
+  `identificar_usuario`, `crear_recarga`, `consultar_recarga`, `consultar_saldo`,
+  `cargar_al_juego`, `retirar_del_juego`, `crear_cuenta`, `pasar_a_agente`,
+  `verificar_comprobante` (lee con visión la última imagen subida al chat) e
+  `informar_transferencia` (titular / nro. de operación por texto).
   Si llega un JWT propio válido, ese usuario **manda** sobre el `usuario` suelto.
   > Venía de Cohere (`command-r-08-2024`). Al leer la respuesta, ojo: Qwen la
   > devuelve en `choices[0].message` y los errores en `error.message`; Cohere
@@ -186,8 +205,8 @@ Cuatro caminos distintos, con permisos distintos:
 ## Notificaciones push
 
 **No hay Firebase, y es a propósito.** Nada de `google-services.json`, ninguna
-cuenta de Google en el medio, todo vive en el mismo Hostinger que el resto de la
-API. El modelo es **cola + sondeo**:
+cuenta de Google en el medio, todo vive en el mismo servidor propio (el VPS)
+que el resto de la API. El modelo es **cola + sondeo**:
 
 ```
 crm.php / recargas_lib  --notif_crear()-->  tabla `notificaciones`
@@ -303,8 +322,9 @@ jugadores.
 
 ## Restricciones no obvias (te van a morder)
 
-- **WAF de Hostinger:** bloquea `curl`/POST sin navegador. Para escribir contra
-  la API propia hay que ir desde el navegador o mandar UA de navegador.
+- **WAF de Hostinger (solo contra la API vieja de Hostinger):** bloquea
+  `curl`/POST sin navegador; hay que ir desde el navegador o mandar UA de
+  navegador. En el VPS (`ganamoscrm.online`, API bajo `/gp-api/`) no hay WAF.
 - **Choque de collations:** `usuarios` quedó en `uca1400`, las tablas del CRM en
   `utf8mb4_unicode_ci`. Todo JOIN entre ellas necesita `COLLATE` explícito.
 - **`crm.php` y `admin_usuarios.php` no tienen login.** Están abiertos a propósito

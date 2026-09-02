@@ -13,11 +13,13 @@
  */
 header('Content-Type: application/json; charset=utf-8');
 
-// CORS: panel.html puede vivir en OTRO dominio (Hostinger) mientras panel.php
-// se queda acá en el VPS (necesita Docker + MySQL local). Nunca "*": este
-// endpoint crea clientes y devuelve credenciales/API keys, así que el origen
-// permitido está fijo a mano, no reflejado desde el request.
-$__origenesPermitidos = ['https://orange-crab-483661.hostingersite.com'];
+// CORS: panel.html puede vivir en OTRO dominio mientras panel.php se queda
+// acá en el VPS (necesita Docker + MySQL local). Hoy los dos salen de
+// ganamoscrm.online, o sea mismo origen y este header ni hace falta; la lista
+// queda por si panel.html vuelve a servirse aparte. Nunca "*": este endpoint
+// crea clientes y devuelve credenciales/API keys, así que el origen permitido
+// está fijo a mano, no reflejado desde el request.
+$__origenesPermitidos = ['https://ganamoscrm.online'];
 $__origen = $_SERVER['HTTP_ORIGIN'] ?? '';
 if (in_array($__origen, $__origenesPermitidos, true)) {
     header('Access-Control-Allow-Origin: ' . $__origen);

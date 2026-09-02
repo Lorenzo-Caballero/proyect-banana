@@ -19,7 +19,7 @@
 -- escritura, mandariamos jugadores a una cuenta equivocada.
 --
 -- Lo llena colector/sync_bancos.py desde
---   GET https://agents.ganamos7.com/api/agent_admin/banks/
+--   GET https://agents.ganamosonline.com/api/agent_admin/banks/
 -- que devuelve, por entrada: id, titular, details (el alias o CBU) y bank
 -- (el tipo: "Alias", "CBU", ...).
 -- ---------------------------------------------------------------------------

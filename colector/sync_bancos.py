@@ -19,7 +19,7 @@ falla deja el ultimo valor conocido y se nota; una escritura que falla a
 medias manda jugadores a una cuenta equivocada.
 
 DE DONDE SALE
-    GET https://agents.ganamos7.com/api/agent_admin/banks/
+    GET https://agents.ganamosonline.com/api/agent_admin/banks/
     {"result": [{"id":8901, "titular":"nahuel cencopay",
                  "details":"ganamos1010", "bank":"Alias"}, ...]}
 
@@ -87,15 +87,23 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
                     datefmt="%H:%M:%S")
 log = logging.getLogger("bancos")
 
-PANEL_API  = "https://agents.ganamos7.com/api"
+# Salen de PANEL_URL (el .env del bot) en vez de ir hardcodeados: mover el
+# panel tiene que ser UN cambio, no seis. Hardcodeados se quedaron apuntando a
+# la instalacion vieja, donde esta sesion no vale: el GET volvia Unauthorized y
+# el espejo de billeteras dejaba de actualizarse sin que nadie lo notara.
+PANEL_API  = bot.PANEL_API
 BANCOS_URL = f"{PANEL_API}/agent_admin/banks/"
 # Cualquier pagina del panel sirve para levantar la sesion; se usa la misma
 # que sync_usuarios.py para no depender de una ruta distinta.
-USERS_URL  = "https://agents.ganamos7.com/users/all"
+USERS_URL  = bot.URL_LISTADO
 
 
 def url_guardado() -> str:
-    """De API_URL (.../api/cola_panel.php) sacamos .../api/bancos_sync.php"""
+    """De API_URL (.../gp-api/altas_cola.php) sacamos .../gp-api/bancos_sync.php.
+
+    La rama "/api/" quedo del hosting viejo; el prefijo /gp-api/ del VPS cae en
+    el rsplit generico, que cambia solo el nombre del archivo y da lo mismo.
+    """
     base = os.environ.get("API_URL", "")
     if "/api/" in base:
         return base.rsplit("/api/", 1)[0] + "/api/bancos_sync.php"

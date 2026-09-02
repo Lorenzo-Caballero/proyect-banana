@@ -4,7 +4,7 @@
  * Corre en el origen de ganamos7.com, asi que ve su sesion directamente:
  * cuando el jugador entra, el asistente adopta su usuario sin preguntarselo.
  *
- * La IA es la misma que en landing/chat.html: la API propia en Hostinger
+ * La IA es la misma que en landing/chat.html: la API propia en el VPS
  * (chatbot.php -> Cohere command-r-08-2024, con tool use). Las herramientas
  * que el modelo puede llamar son identificar_usuario, crear_recarga y
  * consultar_recarga; de eso se encarga el server, aca solo se conversa.
@@ -173,11 +173,13 @@
   var AGENTE_NOMBRE = "Camila";
   var AGENTE_ESTADO = "en línea";
   // Foto del agente. Si no carga, queda el ícono de abajo y no se rompe nada.
-  // En la réplica la sirve el VPS: pedírsela a Hostinger la deja a merced del
-  // WAF y quedaría siempre el ícono de respaldo. subir.ps1 la copia al VPS.
+  // Las dos ramas la piden al VPS, lo que cambia es el cómo: en la réplica es
+  // mismo origen y va relativa (subir.ps1 la copia como /replica/logo.png);
+  // desde la plataforma hace falta el host, y ahí /img/ lo sirve nginx desde
+  // el disco del VPS (location ^~ /img/), no la plataforma.
   var AGENTE_FOTO   = MISMO_ORIGEN
     ? "/replica/logo.png"
-    : "https://orange-crab-483661.hostingersite.com/img/logo-192.png";
+    : "https://ganamoscrm.online/img/logo-192.png";
 
   // Botones rápidos. El texto se manda al bot tal cual, así que tienen que
   // decir lo que el CONTEXTO de chatbot.php espera para disparar su herramienta.

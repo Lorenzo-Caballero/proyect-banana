@@ -124,11 +124,10 @@ alcance de cada paso. Cuando se retomen, sacarlos de acá.
 
 ## Contexto de deploy (post-Fase A)
 
-- **Dos entornos activos.** El proyecto corre en Hostinger
-  (`orange-crab-483661.hostingersite.com`, entorno original) y en un
-  VPS con dominio `ganamoscrm.online` (nueva producción). Confirmar con
-  Fauno cuál es la fuente de verdad y si Hostinger se apaga o queda como
-  archivo.
+- **Un solo entorno: el VPS.** La fuente de verdad es el VPS con dominio
+  `ganamoscrm.online` (API bajo `/gp-api/`). El Hostinger original
+  (`orange-crab-483661.hostingersite.com`) quedó como archivo y ya no se
+  usa: no apuntes nada nuevo ahí.
 
 - **Multi-tenant en el VPS.** El VPS sirve varios clientes: cada dominio
   mapea a una base distinta vía la tabla `clientes` en `goldpaw_control`

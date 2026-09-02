@@ -52,6 +52,7 @@
   /* La hora flota abajo a la derecha y el texto la envuelve, como en WhatsApp. */
   .bub .hora{float:right;margin:7px -2px -2px 9px;font-size:11px;color:var(--muted);line-height:1}
   .bub img.att{max-width:200px;max-height:220px;border-radius:7px;display:block;cursor:pointer;margin-top:2px}
+  .bub a{color:#0a7cff;word-break:break-all}
   .bub a.att-pdf{display:inline-flex;align-items:center;gap:7px;color:#0a7cff;text-decoration:none}
 
   /* Aviso del sistema: centrado y sin remitente. */
@@ -194,6 +195,34 @@
     return b;
   }
 
+  /* Texto -> nodos, con las URLs convertidas en links (mismo criterio que
+     widget.js). Se arma con createTextNode/createElement, nunca con innerHTML:
+     el texto lo escribe el bot o un agente y no se interpreta como HTML, y el
+     href solo puede salir http:// o https://. */
+  const RE_URL = /https?:\/\/[^\s<>"']+/g;
+  function conLinks(txt){
+    const frag = document.createDocumentFragment();
+    const s = String(txt == null ? '' : txt);
+    let i = 0, m;
+    RE_URL.lastIndex = 0;
+    while ((m = RE_URL.exec(s))){
+      let url = m[0];
+      /* La puntuacion pegada al final ("...descargar.html.") queda afuera del
+         link: si entra, el href se lleva el punto y da 404. */
+      const recorte = url.match(/[.,;:!?)\]]+$/);
+      if (recorte) url = url.slice(0, url.length - recorte[0].length);
+      if (!url) continue;
+      if (m.index > i) frag.appendChild(document.createTextNode(s.slice(i, m.index)));
+      const a = document.createElement('a');
+      a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer';
+      a.appendChild(document.createTextNode(url));
+      frag.appendChild(a);
+      i = m.index + url.length;
+    }
+    if (i < s.length) frag.appendChild(document.createTextNode(s.slice(i)));
+    return frag;
+  }
+
   /* Un aviso del sistema: la misma burbuja del bot, con el icono de alerta
      adelante. El texto sigue entrando como nodo de texto -- lo unico que se
      interpreta como HTML es el icono, que lo pone este archivo. */
@@ -209,7 +238,7 @@
 
   function pintar(quien, txt){
     const b = burbuja(quien);
-    b.appendChild(document.createTextNode(txt));
+    b.appendChild(conLinks(txt));
     body.scrollTop = body.scrollHeight;
   }
 

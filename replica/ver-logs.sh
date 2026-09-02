@@ -10,8 +10,8 @@
 #   [widget] lo que el asistente detecta en el navegador del jugador. Llega acá
 #            porque el widget le pega a /gp-diag y nginx lo anota; sin eso, esto
 #            se quedaría en la consola del jugador y nadie lo vería.
-#   [nginx ] los pedidos de verdad: el widget servido y las llamadas a /api/.
-#            Acá se ve si el WAF de Hostinger corta al VPS (403).
+#   [nginx ] los pedidos de verdad: el widget servido y las llamadas a la API.
+#            Acá se ve si algún pedido a /gp-api/ vuelve 403 o 5xx.
 #   [bot   ] el espejo de usuarios contra el panel de agentes.
 #
 # Instalar en el VPS:  scp replica/ver-logs.sh root@<vps>:~/
@@ -34,7 +34,7 @@ tail -f "$DIAG"   | sed -u 's/^/[widget] /' &
 # --line-buffered: sin eso grep junta 4 KB antes de escribir y el "vivo" se
 # convierte en tandas cada varios minutos.
 tail -f "$ACCESO" \
-  | grep --line-buffered -E '/api/|widget\.js' \
+  | grep --line-buffered -E '/gp-api/|/api/|widget\.js' \
   | sed -u 's/^/[nginx ] /' &
 
 if [ -d "$BOT" ]; then
