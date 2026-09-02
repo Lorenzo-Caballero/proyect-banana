@@ -404,6 +404,54 @@ if ($accion === 'marcar' && $metodo === 'POST') {
         }
     }
 
+    /* Aviso por Telegram: se registro un jugador nuevo.
+
+       ACA y no cuando se encola, por el mismo criterio que el resto: recien en
+       este punto la cuenta EXISTE en el panel y el jugador puede entrar. Avisar
+       al encolar seria anunciar algo que todavia puede fallar.
+
+       Tambien se avisa el fracaso definitivo ('error'): un alta que se rindio
+       es un jugador que se quiso registrar y no pudo -- probablemente vino de un
+       anuncio, asi que es plata puesta que se pierde si nadie lo atiende.
+
+       Con clave por id: el bot reintenta los POST y un 'marcar' repetido no
+       tiene que volver a avisar. */
+    if (in_array($estado, ['ok', 'error'], true)) {
+        try {
+            require_once __DIR__ . '/telegram_lib.php';
+            if (function_exists('tg_evento')) {
+                /* Se lee el estado REAL de la base, no el que reporto el bot.
+                   Un 'error' del bot puede ser transitorio: la cola lo devuelve
+                   a 'pendiente' para reintentar (hasta MAX_INTENTOS). Avisar
+                   por cada intento serian tres mensajes del mismo registro, y
+                   dos de ellos por algo que despues se resolvio solo.
+                   Solo interesa el final: creado, o rendido. */
+                $q = $pdo->prepare("SELECT usuario, origen, estado FROM altas WHERE id = ?");
+                $q->execute([$id]);
+                $a = $q->fetch() ?: [];
+                $final = (string)($a['estado'] ?? '');
+                $desde = ['landing' => 'la landing', 'chatbot' => 'el chat',
+                          'crm' => 'el CRM'][$a['origen'] ?? ''] ?? (string)($a['origen'] ?? '');
+
+                if ($final === 'ok') {
+                    tg_evento($pdo, 'alta', '🎉 Se registró un jugador', [
+                        'Usuario' => (string)($a['usuario'] ?? ''),
+                        'Vino de' => $desde,
+                    ], 'alta_ok:' . $id);
+                } elseif ($final === 'error') {
+                    tg_evento($pdo, 'alta', '🚫 No se pudo crear una cuenta', [
+                        'Usuario' => (string)($a['usuario'] ?? ''),
+                        'Vino de' => $desde,
+                        'Motivo'  => mb_substr($mensaje, 0, 200),
+                        'Qué hacer' => 'El jugador se quedó sin cuenta. Crearla a mano.',
+                    ], 'alta_error:' . $id);
+                }
+            }
+        } catch (Throwable $e) {
+            error_log('telegram alta: ' . $e->getMessage());
+        }
+    }
+
     echo json_encode(['ok' => true]);
     exit;
 }

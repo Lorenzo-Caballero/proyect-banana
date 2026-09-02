@@ -722,25 +722,45 @@ function rl_registrar_pago(PDO $pdo, array $p): array
 
     $res = rl_matchear_y_acreditar($pdo, $idUnico, $monto);
 
-    /* Plata que entro y que el sistema NO pudo asignar sola. Es el caso que mas
-       urge: el jugador ya transfirio y esta esperando, pero nadie se entera
-       hasta que alguien abre el CRM. Por eso se avisa por Telegram.
+    /* Aviso por Telegram de la transferencia que acaba de entrar.
 
-       Va aca y no en las tres salidas a 'revision' de rl_matchear_y_acreditar:
-       ese es el unico lugar por donde pasan todas, asi que no se puede olvidar
-       una. Y va DESPUES del commit, con lo cual el comprobante ya esta guardado
-       cuando suena el aviso.
+       UN SOLO MENSAJE POR PAGO. Cual de los dos interruptores lo gobierna
+       depende de COMO TERMINO, no de que haya entrado plata:
 
-       Se pasa clave: un mismo comprobante no puede avisar dos veces si el
-       colector reintenta el POST. */
-    if (($res['resultado'] ?? '') === 'revision' && function_exists('tg_evento')) {
-        $tit = trim((string)($p['remitente'] ?? ''));
-        tg_evento($pdo, 'revision', '⚠️ Entró una transferencia sin resolver', [
-            'Monto'   => '$' . number_format((float)$monto, 2, ',', '.'),
-            'De'      => $tit !== '' ? $tit : '(el banco no informó el titular)',
-            'Motivo'  => (string)($res['mensaje'] ?? ''),
-            'Qué hacer' => 'CRM → Comprobantes, para asignarla al jugador.',
-        ], 'pago_revision:' . $idUnico);
+         - quedo sin resolver -> 'revision'. Es urgente y pide accion: el
+           jugador ya transfirio y espera, y nadie se entera hasta que alguien
+           abra el CRM.
+         - se acredito sola   -> 'pago'. Es informativo, para mirar el negocio
+           de reojo sin entrar al CRM.
+
+       Con los dos prendidos igual llega uno solo: si se prendieran por separado
+       sobre el mismo hecho, cada transferencia problematica avisaria dos veces
+       -- y el aviso que importa se perderia entre los repetidos.
+
+       Va DESPUES del commit (el comprobante ya esta guardado cuando suena) y
+       con clave, para que un reintento del colector no vuelva a avisar. */
+    if (function_exists('tg_evento')) {
+        $tit  = trim((string)($p['remitente'] ?? ''));
+        $quien = $tit !== '' ? $tit : '(el banco no informó el titular)';
+        $plata = '$' . number_format((float)$monto, 2, ',', '.');
+
+        if (($res['resultado'] ?? '') === 'revision') {
+            tg_evento($pdo, 'revision', '⚠️ Entró una transferencia sin resolver', [
+                'Monto'   => $plata,
+                'De'      => $quien,
+                'Motivo'  => (string)($res['mensaje'] ?? ''),
+                'Qué hacer' => 'CRM → Comprobantes, para asignarla al jugador.',
+            ], 'pago_revision:' . $idUnico);
+        } elseif (($res['resultado'] ?? '') === 'acreditada') {
+            tg_evento($pdo, 'pago', '💰 Entró una transferencia', [
+                'Monto'    => $plata,
+                'De'       => $quien,
+                'Jugador'  => (string)($res['usuario'] ?? ''),
+                'Fichas'   => isset($res['coins'])
+                              ? number_format((int)$res['coins'], 0, ',', '.') . ' acreditadas solas'
+                              : '',
+            ], 'pago_ok:' . $idUnico);
+        }
     }
 
     return array_merge(['ok' => true, 'nuevo' => true], $res);

@@ -147,8 +147,21 @@ echo "\n=== 4. Los ajustes están en la lista blanca ===\n";
    CFG_CRM_DEFAULTS. Una clave nueva que se olvide de agregar ahí se guarda sin
    error y no aparece nunca: es el modo de fallar más molesto que tiene el CRM. */
 foreach (['tg_bot_token', 'tg_chat_id', 'tg_repetir_min', 'tg_sin_actividad_hs',
-          'tg_ev_derivacion', 'tg_ev_revision', 'tg_ev_retiro', 'tg_ev_salud'] as $k) {
+          'tg_ev_derivacion', 'tg_ev_revision', 'tg_ev_retiro', 'tg_ev_salud',
+          'tg_ev_alta', 'tg_ev_pago'] as $k) {
     chequear("'$k' se puede guardar", array_key_exists($k, CFG_CRM_DEFAULTS));
+}
+
+/* Los dos informativos arrancan APAGADOS. Si nacieran prendidos, el primer
+   deploy le empezaria a mandar un mensaje por cada registro y cada pago a todo
+   cliente que ya tenga Telegram configurado, sin que nadie lo haya pedido. */
+chequear("'tg_ev_alta' arranca apagado", CFG_CRM_DEFAULTS['tg_ev_alta'] === '0');
+chequear("'tg_ev_pago' arranca apagado", CFG_CRM_DEFAULTS['tg_ev_pago'] === '0');
+
+/* Y los que SI piden accion arrancan prendidos: son los que no conviene que
+   alguien tenga que descubrir para enterarse de que existen. */
+foreach (['tg_ev_derivacion', 'tg_ev_revision', 'tg_ev_retiro', 'tg_ev_salud'] as $k) {
+    chequear("'$k' arranca prendido", CFG_CRM_DEFAULTS[$k] === '1');
 }
 
 $pdo->exec("DELETE FROM tg_avisos WHERE clave LIKE 'test\\_%'");

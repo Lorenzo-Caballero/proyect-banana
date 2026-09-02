@@ -3241,6 +3241,15 @@
           <label class="cb-check"><input type="checkbox" id="cfgTgRetiro"><span>Un jugador pidió retirar</span></label>
           <label class="cb-check"><input type="checkbox" id="cfgTgSalud"><span>Algo está roto o no hay actividad hace rato</span></label>
 
+          <div class="cfg-sub">Para mirar el negocio de reojo</div>
+          <label class="cb-check"><input type="checkbox" id="cfgTgAlta"><span>Se registró un jugador nuevo</span></label>
+          <label class="cb-check"><input type="checkbox" id="cfgTgPago"><span>Entró una transferencia y se acreditó sola</span></label>
+          <p class="cfg-hint">
+            Estos dos no piden que hagas nada: son para seguir el movimiento sin entrar al CRM.
+            <b>Con mucho volumen son muchos mensajes por día</b> — si te satura, apagalos y
+            dejá solo los de arriba, que sí piden acción.
+          </p>
+
           <div class="cfg-grid" style="margin-top:12px">
             <div>
               <label class="cb-flabel">No repetir el mismo aviso antes de (minutos)</label>
@@ -4362,6 +4371,8 @@
     tg_ev_revision:     { el: "#cfgTgRevision",   tipo: "bool"  },
     tg_ev_retiro:       { el: "#cfgTgRetiro",     tipo: "bool"  },
     tg_ev_salud:        { el: "#cfgTgSalud",      tipo: "bool"  },
+    tg_ev_alta:         { el: "#cfgTgAlta",       tipo: "bool"  },
+    tg_ev_pago:         { el: "#cfgTgPago",       tipo: "bool"  },
     tg_repetir_min:     { el: "#cfgTgRepetir",    tipo: "texto" },
     tg_sin_actividad_hs:{ el: "#cfgTgSinAct",     tipo: "texto" },
     lim_retiro_hora_desde: { el: "#cfgLimRetiroDesde", tipo: "texto" },

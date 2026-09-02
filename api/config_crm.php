@@ -105,6 +105,11 @@ const CFG_CRM_DEFAULTS = [
     'tg_ev_revision'   => '1',   // entro una transferencia que no se pudo casar
     'tg_ev_retiro'     => '1',   // un jugador pidio retirar
     'tg_ev_salud'      => '1',   // algo esta roto / sin actividad
+    // Estos dos son informativos, no piden accion: sirven para mirar el
+    // negocio de reojo sin entrar al CRM. Arrancan APAGADOS a proposito --
+    // con volumen son muchos mensajes por dia, y quien los quiera los prende.
+    'tg_ev_alta'       => '0',   // se registro un jugador (o no se pudo)
+    'tg_ev_pago'       => '0',   // entro una transferencia y se acredito sola
 
     // ----- Limites de carga y retiro, por cliente -----
     // Cada agencia tiene los suyos ("no cargo menos de 500", "no pago mas de
