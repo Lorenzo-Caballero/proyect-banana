@@ -62,6 +62,14 @@ if (is_file($authLib)) { require_once $authLib; }
 // Notificaciones: avisarle al que ya cerro la app que le contestamos (opcional).
 $notifLib = __DIR__ . '/notificaciones_lib.php';
 if (is_file($notifLib)) { require_once $notifLib; }
+// Vision: leer la foto del comprobante con IA (opcional). Sin el archivo o
+// sin ANTHROPIC_API_KEY, el bot pide los datos por texto y todo sigue igual.
+$visionLib = __DIR__ . '/vision_lib.php';
+if (is_file($visionLib)) { require_once $visionLib; }
+// Telegram: avisarle al agente cuando el bot deriva una conversacion (opcional).
+// Sin el archivo o sin credenciales, la derivacion igual queda marcada en el CRM.
+$tgLib = __DIR__ . '/telegram_lib.php';
+if (is_file($tgLib)) { require_once $tgLib; }
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
@@ -242,6 +250,43 @@ $TOOLS = [
             'required' => ['motivo'],
         ],
     ]],
+    ['type' => 'function', 'function' => [
+        'name' => 'verificar_comprobante',
+        'description' => 'El jugador SUBIO la foto del comprobante de su transferencia al chat '
+            . '(boton del clip). Lee esa imagen con IA, saca monto/titular/nro de operacion y '
+            . 'los matchea con su recarga: si el pago real ya llego, la acredita al instante. '
+            . 'Llamala apenas diga que subio/mando/adjunto el comprobante ("listo", "ahi va", '
+            . '"te lo mande"). No le pidas los datos por texto si ya subio la foto.',
+        'parameters' => [
+            'type' => 'object',
+            'properties' => [
+                'usuario' => ['type' => 'string', 'description'
+                    => 'nombre de usuario del juego. Solo si NO inicio sesion; con sesion el server ya sabe quien es.'],
+            ],
+            'required' => [],
+        ],
+    ]],
+    ['type' => 'function', 'function' => [
+        'name' => 'informar_transferencia',
+        'description' => 'El jugador dice que YA transfirio su recarga y pasa datos por TEXTO: '
+            . 'el nombre del TITULAR de la cuenta desde la que transfirio y/o el numero de '
+            . 'operacion/transaccion del comprobante. Registra esos datos y, si el pago real '
+            . 'ya llego, acredita al instante. Llamala con lo que haya dado, aunque sea un '
+            . 'solo dato. Si tiene el comprobante en imagen, mejor que lo suba al chat con el '
+            . 'clip y usa verificar_comprobante.',
+        'parameters' => [
+            'type' => 'object',
+            'properties' => [
+                'titular' => ['type' => 'string', 'description'
+                    => 'nombre y apellido del titular de la cuenta DESDE la que transfirio'],
+                'nro_transaccion' => ['type' => 'string', 'description'
+                    => 'numero de operacion / transaccion / comprobante'],
+                'usuario' => ['type' => 'string', 'description'
+                    => 'nombre de usuario del juego. Solo si NO inicio sesion; con sesion el server ya sabe quien es.'],
+            ],
+            'required' => [],
+        ],
+    ]],
 ];
 
 // --- La key vive en el server ---
@@ -295,19 +340,20 @@ $cfgBot   = chatbot_config($pdo);
 // distintas -- el que edita el prompt y el que administra el sitio -- asi que
 // ninguno pisa al otro: cualquiera de los dos apaga la IA.
 $botActivo = $cfgBot['activo'] && cfg_crm_activo($pdo, 'chat_activo');
-// El prompt sale de los CAMPOS editables (nombre/tono/juego/reglas extra)
-// ensamblados con las reglas fijas. Excepción de compatibilidad: si quedó un
-// `contexto` entero cargado (modo viejo, migración 26), ese manda como override.
+// El prompt son los dos contextos: el DINAMICO (nombre/tono/limites/info del
+// operador, lo unico editable desde el CRM) y el FIJO (la dinamica del juego y
+// la mecanica). Ver api/chatbot_contexto.php.
 /* El `contexto` entero (modo viejo, migracion 26) ya no lo escribe nadie -- el
-   CRM edita los CAMPOS. Pero si quedo cargado en alguna base, antes se usaba
-   como prompt COMPLETO y las REGLAS FIJAS no se aplicaban: una forma silenciosa
-   de desactivar el procedimiento de cobro y la seccion de juego responsable.
+   CRM edita el contexto dinamico. Pero si quedo cargado en alguna base, antes
+   se usaba como prompt COMPLETO y el contexto FIJO no se aplicaba: una forma
+   silenciosa de desactivar el procedimiento de cobro y la seccion de juego
+   responsable.
 
-   Ahora se respeta lo que haya escrito, pero las reglas fijas se agregan al
+   Ahora se respeta lo que haya escrito, pero el contexto fijo se agrega al
    final igual. Mismo motivo que el orden de chatbot_armar_prompt(): lo ultimo
    pesa mas, asi que el procedimiento gana pase lo que pase. */
 $contextoBase = ($cfgBot['contexto'] !== '')
-    ? $cfgBot['contexto'] . "\n\n" . CB_REGLAS_FIJAS
+    ? $cfgBot['contexto'] . "\n\n" . CB_CONTEXTO_FIJO
     // Los limites salen de la MISMA funcion que los aplica (fichas_limite),
     // asi el bot nunca le ofrece al jugador algo que el codigo va a rechazar.
     : chatbot_armar_prompt($cfgBot, [
@@ -777,6 +823,91 @@ function chatbot_ia_del_chat(PDO $pdo, string $sessionId, string $usuario): bool
     }
 }
 
+/**
+ * Deriva la conversacion a una persona: la marca en el CRM y avisa por Telegram.
+ *
+ * Las tres cosas que hace, y por que cada una:
+ *
+ *  1. apaga la IA de ESTE chat (ia_activa = 0). Es la mas importante y la mas
+ *     facil de olvidar: sin esto el bot le sigue contestando al jugador por
+ *     encima del agente, los dos escriben a la vez y el jugador ve dos voces
+ *     distintas. Derivar significa "yo me corro".
+ *  2. deja la marca de derivada (migracion 49) + estado 'pendiente', que es lo
+ *     que el CRM destaca y cuenta en el badge del rail.
+ *  3. avisa por Telegram, si esta configurado.
+ *
+ * NUNCA tira: si la base o Telegram fallan, el jugador igual tiene que recibir
+ * su "ya se lo paso". Un error tecnico aca no puede convertirse en un mensaje
+ * de error en la cara del jugador que ya venia con un problema.
+ */
+function chatbot_derivar(PDO $pdo, string $usuario, string $sid, string $motivo): array
+{
+    $clave = $usuario !== ''
+        ? mb_substr($usuario, 0, 50)
+        : ($sid !== '' ? 'anon:' . substr($sid, 0, 64) : '');
+    if ($clave === '') {
+        // Sin conversacion no hay a quien derivar ni donde marcarlo. Igual se
+        // devuelve ok: que el modelo le diga que lo pasa, y el chat queda en el
+        // CRM como cualquier otro.
+        return ['ok' => true, 'aviso' => false];
+    }
+
+    $motivo = trim($motivo);
+    if (mb_strlen($motivo) > 255) { $motivo = mb_substr($motivo, 0, 255); }
+
+    $marcada = false;
+    try {
+        // Se derivan las dos cosas en un solo UPDATE. `derivada_en` solo se pisa
+        // si estaba NULL (COALESCE): si el jugador insiste y el bot deriva dos
+        // veces, la hora que le importa al agente es la de la PRIMERA vez que
+        // se pidio ayuda, no la ultima.
+        $st = $pdo->prepare(
+            "UPDATE conversaciones
+                SET ia_activa = 0,
+                    estado = 'pendiente',
+                    derivada_en = COALESCE(derivada_en, NOW()),
+                    derivada_motivo = ?
+              WHERE clave = ?"
+        );
+        $st->execute([$motivo !== '' ? $motivo : null, $clave]);
+        $marcada = $st->rowCount() > 0;
+    } catch (Throwable $e) {
+        // Falta la migracion 49: se apaga la IA igual, que es lo critico.
+        error_log('chatbot_derivar: ' . $e->getMessage());
+        try {
+            $pdo->prepare("UPDATE conversaciones SET ia_activa = 0, estado = 'pendiente' WHERE clave = ?")
+                ->execute([$clave]);
+            $marcada = true;
+        } catch (Throwable $e2) {
+            error_log('chatbot_derivar (respaldo): ' . $e2->getMessage());
+        }
+    }
+
+    $aviso = false;
+    try {
+        if (function_exists('tg_avisar')) {
+            // htmlspecialchars obligatorio: el motivo lo escribe el modelo y el
+            // nombre lo eligio el jugador. Un "<" suelto y Telegram rechaza el
+            // mensaje entero con 400 (parse_mode=HTML). Ver telegram_lib.php.
+            $esc  = static fn(string $s) => htmlspecialchars($s, ENT_QUOTES, 'UTF-8');
+            $quien = $usuario !== '' ? '@' . $esc($usuario) : 'Jugador sin identificar';
+            $txt  = "🔔 <b>El bot pidió ayuda</b>\n"
+                  . $quien . "\n"
+                  . ($motivo !== '' ? "\n" . $esc($motivo) . "\n" : '')
+                  . "\nAbrilo en el CRM → Conversaciones (Pendientes).";
+            $aviso = tg_avisar($txt, $pdo);
+        }
+    } catch (Throwable $e) {
+        error_log('chatbot_derivar/telegram: ' . $e->getMessage());
+    }
+
+    // Lo que ve el MODELO. Se le dice que ya esta hecho para que no lo intente
+    // de nuevo ni le prometa al jugador un tiempo de respuesta.
+    return ['ok' => true, 'derivada' => $marcada, 'aviso_enviado' => $aviso,
+            'mensaje' => 'Listo, la conversacion quedo marcada para un agente. '
+                       . 'Decile que ya se la pasaste, sin prometer cuanto va a tardar.'];
+}
+
 // ===========================================================================
 //  NUCLEO (testeable: no toca red ni DB por si mismo, recibe closures)
 // ===========================================================================
@@ -1066,7 +1197,129 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
         $ref = (string)($args['referencia_o_usuario'] ?? $args['referencia'] ?? $args['usuario'] ?? '');
         return rl_consultar($pdo, $ref);
     }
+    if ($nombre === 'informar_transferencia') {
+        // La sesion manda; el parametro 'usuario' es solo para el flujo anonimo
+        // (igual que crear_recarga). La plata SIEMPRE va a la recarga de ESE
+        // usuario, nunca a otro: declarar datos ajenos no desvia nada.
+        $u = $usuarioSesion !== '' ? $usuarioSesion : trim((string)($args['usuario'] ?? ''));
+        if ($u === '') {
+            return ['ok' => false, 'codigo' => 'falta_usuario', 'error' =>
+                'Falta el nombre de usuario del juego para buscar su recarga. Pedilo.'];
+        }
+        if (!function_exists('rl_declarar_pago')) {
+            return ['ok' => false, 'error' => 'Funcion no disponible (falta actualizar recargas_lib.php).'];
+        }
+        return rl_declarar_pago($pdo, $u,
+            (string)($args['titular'] ?? ''), (string)($args['nro_transaccion'] ?? ''),
+            null, 'chat');
+    }
+    if ($nombre === 'verificar_comprobante') {
+        $u = $usuarioSesion !== '' ? $usuarioSesion : trim((string)($args['usuario'] ?? ''));
+        $adj = chatbot_ultimo_adjunto($pdo, $u, $sid);
+        if ($adj === null) {
+            return ['ok' => false, 'codigo' => 'sin_adjunto', 'error' =>
+                'No hay ningun comprobante subido en este chat. Que lo suba con el '
+                . 'boton del clip (abajo a la izquierda del chat).'];
+        }
+        if (($adj['tipo'] ?? '') === 'pdf') {
+            return ['ok' => false, 'codigo' => 'pdf', 'error' =>
+                'El comprobante llego en PDF y no lo puedo leer. Pedile una FOTO o '
+                . 'captura de pantalla del comprobante.'];
+        }
+        if (!function_exists('vision_extraer_comprobante') || !vision_disponible()) {
+            return ['ok' => false, 'codigo' => 'sin_vision', 'error' =>
+                'La lectura automatica de comprobantes no esta disponible. Pedile '
+                . 'por texto el titular de SU cuenta y el numero de operacion, y usa '
+                . 'informar_transferencia.'];
+        }
+        $v = vision_extraer_comprobante($adj['ruta']);
+        if (empty($v['ok'])) {
+            return $v;
+        }
+        $d = $v['datos'];
+        if (empty($d['es_comprobante'])) {
+            return ['ok' => false, 'codigo' => 'no_parece_comprobante', 'error' =>
+                'La imagen subida no parece un comprobante de transferencia. Pedile '
+                . 'una captura clara del comprobante.'];
+        }
+        if ($u === '') {
+            return ['ok' => false, 'codigo' => 'falta_usuario', 'extraido' => $d, 'error' =>
+                'Lei el comprobante, pero falta el nombre de usuario del juego para '
+                . 'saber de quien es la recarga. Pedilo.'];
+        }
+        if (!function_exists('rl_declarar_pago')) {
+            return ['ok' => false, 'error' => 'Funcion no disponible (falta actualizar recargas_lib.php).'];
+        }
+        $r = rl_declarar_pago($pdo, $u, (string)$d['remitente'], (string)$d['nro_transaccion'],
+                              $d['monto'] !== null ? (float)$d['monto'] : null, 'imagen');
+        // Lo leido viaja al modelo para que se lo confirme al jugador
+        // ("veo tu transferencia de $500 desde la cuenta de Juan Perez...").
+        $r['comprobante_leido'] = [
+            'monto'           => $d['monto'],
+            'remitente'       => $d['remitente'],
+            'nro_transaccion' => $d['nro_transaccion'],
+            'entidad'         => $d['entidad'],
+        ];
+        return $r;
+    }
     return ['ok' => false, 'error' => 'herramienta desconocida'];
+}
+
+/**
+ * Ultima imagen/PDF que el jugador subio a ESTE chat (subir.php la guardo en
+ * api/uploads/ y la registro en mensajes.meta). La conversacion se busca igual
+ * que en el resto del CRM: por clave = usuario, clave = anon:<sid> o por el
+ * session_id enganchado a la conversacion. Devuelve
+ * ['ruta'=>archivo local, 'tipo'=>'imagen'|'pdf'] o null si no hay nada
+ * (se miran solo las ultimas 24 h: un comprobante de la semana pasada ya no
+ * es "el comprobante que te acabo de mandar").
+ */
+function chatbot_ultimo_adjunto(PDO $pdo, string $usuario, string $sid): ?array
+{
+    try {
+        $cond = [];
+        $par  = [];
+        if ($usuario !== '') {
+            $cond[] = 'c.clave = ?';
+            $par[]  = mb_substr($usuario, 0, 50);
+        }
+        if ($sid !== '') {
+            $cond[] = 'c.clave = ?';
+            $par[]  = 'anon:' . substr($sid, 0, 64);
+            $cond[] = 'c.session_id = ?';
+            $par[]  = substr($sid, 0, 64);
+        }
+        if (!$cond) {
+            return null;
+        }
+        $st = $pdo->prepare(
+            "SELECT m.meta FROM mensajes m
+              JOIN conversaciones c ON c.id = m.conversacion_id
+             WHERE (" . implode(' OR ', $cond) . ")
+               AND m.rol='user' AND m.meta IS NOT NULL
+               AND m.creado_en >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+             ORDER BY m.id DESC LIMIT 8"
+        );
+        $st->execute($par);
+        foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $meta) {
+            $a = json_decode((string)$meta, true);
+            if (!is_array($a) || empty($a['url'])) {
+                continue;
+            }
+            $tipo = (string)($a['tipo'] ?? '');
+            if ($tipo !== 'imagen' && $tipo !== 'pdf') {
+                continue;
+            }
+            // basename() corta cualquier ruta rara: solo archivos DE uploads.
+            $ruta = __DIR__ . '/uploads/' . basename((string)$a['url']);
+            if (is_file($ruta)) {
+                return ['ruta' => $ruta, 'tipo' => $tipo];
+            }
+        }
+    } catch (Throwable $e) {
+        error_log('chatbot_ultimo_adjunto: ' . $e->getMessage());
+    }
+    return null;
 }
 
 

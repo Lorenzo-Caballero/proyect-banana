@@ -1919,7 +1919,16 @@
       .then(function (r){ return r.json(); })
       .then(function (d){
         aviso.remove();
-        if (d.ok && d.adjunto) pintarAdj("u", d.adjunto);
+        if (d.ok && d.adjunto){
+          pintarAdj("u", d.adjunto);
+          /* El bot no ve las subidas por sí solo: se entera cuando el jugador
+             escribe. Este mensaje automático dispara la verificación del
+             comprobante (herramienta verificar_comprobante del server) sin
+             que el jugador tenga que tipear nada. Solo para imágenes: los PDF
+             no se leen con visión y el bot pediría una captura. */
+          if (d.adjunto.tipo === "imagen")
+            enviarMensaje("Ya subí el comprobante de mi transferencia, ¿me lo verificás?");
+        }
         else pintar("b", d.error || "No pude subir el archivo.", false, "alerta");
       })
       .catch(function (){ aviso.remove(); pintar("b", "No pude subir el archivo.", false, "alerta"); });
