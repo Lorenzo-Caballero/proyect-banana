@@ -38,7 +38,7 @@ se duplican aca, que fue trabajo caro de hacer andar.
 
 COMO DEJARLO CORRIENDO (cron del VPS, una vez por hora):
 
-    0 * * * * docker cp /opt/goldpaw/colector/sync_bancos.py bot-ganamoscrm:/app/ \
+    0 * * * * docker cp /opt/goldpaw/colector/. bot-ganamoscrm:/app/ \
               && docker exec bot-ganamoscrm python /app/sync_bancos.py \
               >> /var/log/goldpaw-bancos.log 2>&1
 
@@ -91,11 +91,16 @@ log = logging.getLogger("bancos")
 # panel tiene que ser UN cambio, no seis. Hardcodeados se quedaron apuntando a
 # la instalacion vieja, donde esta sesion no vale: el GET volvia Unauthorized y
 # el espejo de billeteras dejaba de actualizarse sin que nadie lo notara.
-PANEL_API  = bot.PANEL_API
+# La URL del panel sale de panel_url.resolver(): prefiere lo que exporte el bot
+# y, si no lo exporta, la deduce del MISMO .env con el que se loguea. Ver el
+# docblock de panel_url.py -- depender de `bot.PANEL_API` a secas tumbaba este
+# worker con un AttributeError cuando la copia dentro del contenedor no tenia
+# esa constante, y con el los dos caminos de carga.
+from panel_url import resolver as _resolver_panel
+PANEL_API, USERS_URL = _resolver_panel(bot)
 BANCOS_URL = f"{PANEL_API}/agent_admin/banks/"
 # Cualquier pagina del panel sirve para levantar la sesion; se usa la misma
 # que sync_usuarios.py para no depender de una ruta distinta.
-USERS_URL  = bot.URL_LISTADO
 
 
 def url_guardado() -> str:

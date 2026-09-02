@@ -43,7 +43,7 @@ este worker los deja en la cola sin tocarlos.
 COMO DEJARLO CORRIENDO (cron del VPS, cada minuto)
 
     * * * * * flock -n /tmp/gp_panel.lock sh -c "docker cp \
-              /opt/goldpaw/colector/ejecutar_cargas.py altas-ganamoscrm:/app/ && \
+              /opt/goldpaw/colector/. altas-ganamoscrm:/app/ && \
               docker exec altas-ganamoscrm python /app/ejecutar_cargas.py" \
               >> /var/log/goldpaw-cargas.log 2>&1
 
@@ -112,8 +112,13 @@ log = logging.getLogger("cargas")
 # cae en la rama "el panel rechazo el deposito" (4xx -> 'error'), asi que la
 # accion se cierra devolviendole las fichas al jugador: no pierde nada, pero
 # NUNCA se le acredita en el juego y el log dice que rechazo el panel.
-PANEL_API = bot.PANEL_API
-USERS_URL = bot.URL_LISTADO
+# La URL del panel sale de panel_url.resolver(): prefiere lo que exporte el bot
+# y, si no lo exporta, la deduce del MISMO .env con el que se loguea. Ver el
+# docblock de panel_url.py -- depender de `bot.PANEL_API` a secas tumbaba este
+# worker con un AttributeError cuando la copia dentro del contenedor no tenia
+# esa constante, y con el los dos caminos de carga.
+from panel_url import resolver as _resolver_panel
+PANEL_API, USERS_URL = _resolver_panel(bot)
 
 # operation=0 es DEPOSITO (visto en la pantalla de deposito del panel). El
 # retiro tendra otro valor, pero no se usa aca: los retiros los aprueba un

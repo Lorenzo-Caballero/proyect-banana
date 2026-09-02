@@ -60,13 +60,18 @@ estariamos cancelando una carga que si se pago.
 COMO DEJARLO CORRIENDO (cron del VPS, cada minuto)
 
     * * * * * flock -n /tmp/gp_panel.lock sh -c "docker cp \
-              /opt/goldpaw/colector/aprobar_cargas.py altas-ganamoscrm:/app/ && \
+              /opt/goldpaw/colector/. altas-ganamoscrm:/app/ && \
               docker exec -e MODE=LIVE altas-ganamoscrm python /app/aprobar_cargas.py" \
               >> /var/log/goldpaw-aprobar.log 2>&1
 
-El `docker cp` en cada corrida es a proposito: el script no esta dentro de la
-imagen, asi que si alguien recrea el contenedor desaparece. Copiarlo siempre lo
-mantiene al dia con lo que bajo el ultimo deploy.
+El `docker cp` en cada corrida es a proposito: estos scripts no estan dentro de
+la imagen, asi que si alguien recrea el contenedor desaparecen. Copiarlos
+siempre los mantiene al dia con lo que bajo el ultimo deploy.
+
+Y se copia la CARPETA (`colector/.`), no el archivo suelto: estos workers ya
+comparten un modulo (panel_url.py) y con el copiado archivo por archivo el
+primero que agregue otro lo va a olvidar, dejando un ImportError que solo se ve
+cuando el cron ya corrio.
 
 EL LOCK ES COMPARTIDO CON ejecutar_cargas.py, Y TIENE QUE SEGUIR SIENDOLO.
 `gp_panel.lock` es el mismo archivo en los dos crons, no uno por script. Los dos
@@ -117,9 +122,14 @@ log = logging.getLogger("aprobar")
 # Salen de PANEL_URL (el .env del bot), que ya viene por `bot`: mover el panel
 # tiene que ser UN cambio. Hardcodeados apuntaban a la instalacion vieja, donde
 # esta sesion no vale, y no se aprobaba ninguna carga del camino A.
-PANEL_API    = bot.PANEL_API
+# La URL del panel sale de panel_url.resolver(): prefiere lo que exporte el bot
+# y, si no lo exporta, la deduce del MISMO .env con el que se loguea. Ver el
+# docblock de panel_url.py -- depender de `bot.PANEL_API` a secas tumbaba este
+# worker con un AttributeError cuando la copia dentro del contenedor no tenia
+# esa constante, y con el los dos caminos de carga.
+from panel_url import resolver as _resolver_panel
+PANEL_API, USERS_URL = _resolver_panel(bot)
 SOLICITUDES  = f"{PANEL_API}/agent_admin/payment/requests/"
-USERS_URL    = bot.URL_LISTADO
 
 MODE = os.environ.get("MODE", "DRY_RUN").upper()
 WHITELIST = [u.strip() for u in os.environ.get("TEST_USERS_WHITELIST", "").split(",") if u.strip()]
