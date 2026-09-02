@@ -4,7 +4,7 @@
  * Corre en el origen de ganamos7.com, asi que ve su sesion directamente:
  * cuando el jugador entra, el asistente adopta su usuario sin preguntarselo.
  *
- * La IA es la misma que en landing/chat.html: la API propia en Hostinger
+ * La IA es la misma que en landing/chat.html: la API propia en el VPS
  * (chatbot.php -> Cohere command-r-08-2024, con tool use). Las herramientas
  * que el modelo puede llamar son identificar_usuario, crear_recarga y
  * consultar_recarga; de eso se encarga el server, aca solo se conversa.
@@ -69,13 +69,18 @@
    * Este MISMO archivo se sirve desde dos lugares y no puede usar la misma URL
    * en los dos:
    *
-   *   - En la replica (dominio propio, nginx proxea /api/ a Hostinger) las
-   *     llamadas van al mismo origen. Es la unica forma que funciona: cruzado,
-   *     el WAF de Hostinger devuelve 403 y como su pagina de error no lleva las
-   *     cabeceras CORS que si pone el PHP, el navegador lo reporta como "CORS
-   *     policy" y manda a buscar el problema al lugar equivocado.
-   *   - En la plataforma directa y en el APK no hay proxy: hay que ir a
-   *     Hostinger por URL absoluta.
+   *   - En la replica (dominio propio) las llamadas van al MISMO ORIGEN, a
+   *     /gp-api, que nginx manda al php-fpm del VPS. Es la unica forma que
+   *     funciona.
+   *   - Fuera de una replica no hay a donde ir. Antes se caia a Hostinger por
+   *     URL absoluta, pero ese hosting ya no atiende nada: se retiro hasta el
+   *     proxy de respaldo de nginx. En produccion MISMO_ORIGEN es siempre true.
+   *
+   *   Se deja escrito por que el cruzado nunca fue una opcion, que es lo que
+   *   hacia perder el tiempo: cuando el WAF cortaba un pedido cross-origin
+   *   devolvia un 403 cuya pagina de error NO lleva las cabeceras CORS que si
+   *   pone el PHP, y el navegador lo reportaba como "CORS policy" -- mandando a
+   *   buscar el problema al lugar equivocado.
    *
    * Cuando agregues otro dominio con proxy propio, sumalo a REPLICAS.
    * ------------------------------------------------------------------- */
@@ -174,11 +179,13 @@
   var AGENTE_NOMBRE = "Camila";
   var AGENTE_ESTADO = "en línea";
   // Foto del agente. Si no carga, queda el ícono de abajo y no se rompe nada.
-  // En la réplica la sirve el VPS: pedírsela a Hostinger la deja a merced del
-  // WAF y quedaría siempre el ícono de respaldo. subir.ps1 la copia al VPS.
+  // Las dos ramas la piden al VPS, lo que cambia es el cómo: en la réplica es
+  // mismo origen y va relativa (subir.ps1 la copia como /replica/logo.png);
+  // desde la plataforma hace falta el host, y ahí /img/ lo sirve nginx desde
+  // el disco del VPS (location ^~ /img/), no la plataforma.
   var AGENTE_FOTO   = MISMO_ORIGEN
     ? "/replica/logo.png"
-    : "https://orange-crab-483661.hostingersite.com/img/logo-192.png";
+    : "https://ganamoscrm.online/img/logo-192.png";
 
   // Botones rápidos. El texto se manda al bot tal cual, así que tienen que
   // decir lo que el CONTEXTO de chatbot.php espera para disparar su herramienta.

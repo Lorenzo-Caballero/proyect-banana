@@ -6,6 +6,15 @@
 # chatbot -que viven en la base del VPS- no las veia nadie, y las que si
 # procesaba iban a la plataforma equivocada.
 #
+# CORRECCION (sept 2026): el panel en uso es agents.ganamosonline.com. El
+# parrafo de arriba queda tal cual -- es lo que se creia el dia que se escribio
+# esto -- pero estaba al reves, y por eso los valores de abajo apuntaban a
+# agents.ganamos7.com. Ya corregidos.
+#
+# OJO SI ESTE SCRIPT SE CORRIO ANTES DE HOY: dejo el .env del bot apuntando al
+# panel que no es. Revisalo (o volve a correrlo, que recrea el contenedor) y
+# fijate si quedaron jugadores creados del otro lado.
+#
 # Arregla las tres URLs del .env, verifica que la API conteste con la clave
 # que tiene el bot, y reinicia el contenedor.
 #
@@ -22,8 +31,8 @@ CFG="${CFG:-/var/www/api/config.local.php}"
 DOMINIO="${DOMINIO:-ganamoscrm.online}"
 
 API_URL_NUEVA="https://$DOMINIO/gp-api/altas_cola.php"
-PANEL_URL_NUEVA="https://agents.ganamos7.com/user/create-player"
-LOGIN_URL_NUEVA="https://agents.ganamos7.com/"
+PANEL_URL_NUEVA="https://agents.ganamosonline.com/user/create-player"
+LOGIN_URL_NUEVA="https://agents.ganamosonline.com/"
 
 echo "==> Bot en:  $BOT_DIR"
 [ -f "$ENV" ] || { echo "!! No existe $ENV — pasá BOT_DIR=/ruta/al/bot" >&2; exit 1; }

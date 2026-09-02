@@ -35,7 +35,7 @@ data class Aviso(
  * El server deja los avisos en una cola (tabla `notificaciones`) y el celular
  * los va a buscar. No hay push de verdad y es a proposito: no depende de una
  * cuenta de Google, no hay google-services.json que mantener y todo el sistema
- * vive en el mismo Hostinger que el resto de la API. El precio es la demora:
+ * vive en el mismo servidor que el resto de la API. El precio es la demora:
  * con la app cerrada, el aviso puede tardar hasta ~15 minutos (lo que Android
  * permite como minimo para trabajo periodico, y Doze puede estirarlo mas).
  *

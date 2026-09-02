@@ -66,7 +66,7 @@ TEST_USERS_WHITELIST = [
 DB_PATH = os.getenv("DB_PATH", "ganamos_bot.db")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 
-BASE_URL = "https://agents.ganamos7.com/api"
+BASE_URL = "https://agents.ganamosonline.com/api"
 
 # El endpoint de listado devuelve depósitos y retiros mezclados.
 # type == 0 es el valor confirmado para depósito (ver README).
@@ -153,13 +153,13 @@ class GanamosAPI:
 
         self.http = requests.Session()
         self.http.cookies.set(
-            "session", session_cookie, domain="agents.ganamos7.com"
+            "session", session_cookie, domain="agents.ganamosonline.com"
         )
         self.http.headers.update({
             "Accept": "application/json, text/plain, */*",
             "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
             "Referer": (
-                "https://agents.ganamos7.com/reports/"
+                "https://agents.ganamosonline.com/reports/"
                 "financial-reports/player-deposits"
             ),
             "User-Agent": (

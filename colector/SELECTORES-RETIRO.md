@@ -4,7 +4,13 @@ El chat ya PIDE el retiro (`fichas_pedir_retiro` → cola `acciones_saldo` con
 `tipo='retirar'`). Lo que **todavía NO está automatizado** es que el worker
 (`colector/ejecutar_acciones.py`, Playwright) lo EJECUTE en el panel de agentes,
 igual que hace con la carga. Cuando se implemente, estos son los selectores del
-panel (`agents.ganamos7.com`), tal como los pasó el dueño:
+panel (`agents.ganamosonline.com`), tal como los pasó el dueño.
+
+> **Re-verificalos antes de usarlos.** Los dos paneles no tienen el mismo
+> markup — ver la nota de `FORM_SELS` en `bot/bot_crear_jugador.py`: el
+> mismo formulario lleva clase en uno y viene pelado en el otro. Si estos
+> selectores salieron del panel viejo, hay que confirmarlos contra
+> `agents.ganamosonline.com` antes de darlos por buenos.
 
 ## Flujo de retiro en el panel
 

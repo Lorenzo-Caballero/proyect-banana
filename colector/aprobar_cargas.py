@@ -114,9 +114,12 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
                     datefmt="%d/%m %H:%M:%S")
 log = logging.getLogger("aprobar")
 
-PANEL_API    = "https://agents.ganamos7.com/api"
+# Salen de PANEL_URL (el .env del bot), que ya viene por `bot`: mover el panel
+# tiene que ser UN cambio. Hardcodeados apuntaban a la instalacion vieja, donde
+# esta sesion no vale, y no se aprobaba ninguna carga del camino A.
+PANEL_API    = bot.PANEL_API
 SOLICITUDES  = f"{PANEL_API}/agent_admin/payment/requests/"
-USERS_URL    = "https://agents.ganamos7.com/users/all"
+USERS_URL    = bot.URL_LISTADO
 
 MODE = os.environ.get("MODE", "DRY_RUN").upper()
 WHITELIST = [u.strip() for u in os.environ.get("TEST_USERS_WHITELIST", "").split(",") if u.strip()]
@@ -132,7 +135,11 @@ class DesafioWAF(RuntimeError):
 
 
 def url_cola() -> str:
-    """De API_URL (.../api/cola_panel.php) sacamos .../api/peticiones_cola.php"""
+    """De API_URL (.../gp-api/altas_cola.php) sacamos .../gp-api/peticiones_cola.php.
+
+    La rama "/api/" quedo del hosting viejo; el prefijo /gp-api/ del VPS cae en
+    el rsplit generico, que cambia solo el nombre del archivo y da lo mismo.
+    """
     base = os.environ.get("API_URL", "")
     if "/api/" in base:
         return base.rsplit("/api/", 1)[0] + "/api/peticiones_cola.php"

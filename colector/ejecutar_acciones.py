@@ -17,7 +17,7 @@ MODOS (env MODE):
 
 .env (en la carpeta colector/):
   SESSION_COOKIE=...        cookie de sesion del agente en ganamos
-  ACCIONES_URL=https://TU-DOMINIO/api/acciones_cola.php
+  ACCIONES_URL=https://ganamoscrm.online/gp-api/acciones_cola.php
   API_KEY=...               = BOT_API_KEY del server
   MODE=DRY_RUN
   BONO_PERCENTAGE=0         % de bono al aprobar (0 = sin bono)
