@@ -47,6 +47,12 @@ echo "\n=== 1. Reconocer que el nombre estaba ocupado ===\n";
 /* El bot no devuelve codigos: informa lo que vio, y lo ve de varias formas.
    Estos son los textos reales que produce. */
 foreach ([
+    /* EL MENSAJE TEXTUAL DE LA PLATAFORMA. Va primero porque es el que llega
+       por el camino rapido (la API) y el que se nos escapo: dice "already
+       exist" SIN la s final. El detector buscaba "already exists" y no
+       matcheaba, asi que el alta reintentaba con el mismo nombre las tres
+       veces y se rendia -- con el jugador esperando en la pantalla. */
+    'el panel rechazo la creacion: User with username: Juan - already exist',
     'el panel respondio 200 pero el jugador NO figura: lo mas probable es que el nombre ya este tomado por otro agente',
     'sin señal y el jugador no aparece en el listado filtrado',
     'El panel rechazo el formulario: El usuario ya existe',

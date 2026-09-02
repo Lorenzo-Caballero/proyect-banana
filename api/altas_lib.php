@@ -130,8 +130,14 @@ function alta_validar(string $usuario, string $password, string $email): ?string
 function alta_parece_nombre_ocupado(string $mensaje): bool
 {
     $m = mb_strtolower($mensaje);
+    /* 'already exist' SIN la s final, a proposito: el mensaje textual de la
+       plataforma es "User with username: juan - already exist" (verificado el
+       2/9/2026 en la respuesta de la API). Buscar "already exists" no matcheaba
+       y el renombre no se disparaba nunca -- el alta reintentaba con el MISMO
+       nombre las tres veces y se rendia. Como se busca por substring, esta
+       forma cubre tambien el plural. */
     foreach (['no figura', 'ya este tomado', 'ya está tomado', 'ya existe',
-              'already exists', 'ocupado', 'no aparece en el listado'] as $pista) {
+              'already exist', 'ocupado', 'no aparece en el listado'] as $pista) {
         if (mb_strpos($m, $pista) !== false) { return true; }
     }
     return false;
