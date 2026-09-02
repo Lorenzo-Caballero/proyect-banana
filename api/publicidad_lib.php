@@ -84,21 +84,38 @@ function publicidad_por_id(PDO $pdo, int $id): ?array
  */
 function publicidad_atribucion_por_usuario(PDO $pdo, string $usuario): array
 {
-    $vacio = ['publicista' => null, 'fbp' => '', 'fbc' => ''];
+    $vacio = ['publicista' => null, 'fbp' => '', 'fbc' => '',
+              'ip' => '', 'ua' => '', 'url' => ''];
     $usuario = trim($usuario);
     if ($usuario === '') {
         return $vacio;
     }
+    $fila = null;
     try {
+        /* ip/ua/url_landing son de la migracion 51: son los del JUGADOR,
+           guardados cuando se registro desde su telefono. Hacen falta porque
+           los eventos que mas valen (Purchase, CompleteRegistration) los
+           dispara el bot del VPS o un operador del CRM, y ahi el REMOTE_ADDR
+           del server no tiene nada que ver con la persona. */
         $st = $pdo->prepare(
-            "SELECT publicista_id, fbp, fbc FROM altas WHERE usuario = ? LIMIT 1"
+            "SELECT publicista_id, fbp, fbc, fbclid, ip, ua, url_landing, pedido_en
+               FROM altas WHERE usuario = ? LIMIT 1"
         );
         $st->execute([$usuario]);
         $fila = $st->fetch();
     } catch (Throwable $e) {
-        // Migracion 44 no corrio (columnas/tabla ausentes) u otra falla de
-        // lectura: se sigue sin atribucion, nunca rompe al caller.
-        return $vacio;
+        // Sin la migracion 51 esas columnas no existen todavia: se reintenta
+        // con las de siempre en vez de perder la atribucion entera.
+        try {
+            $st = $pdo->prepare(
+                "SELECT publicista_id, fbp, fbc FROM altas WHERE usuario = ? LIMIT 1"
+            );
+            $st->execute([$usuario]);
+            $fila = $st->fetch();
+        } catch (Throwable $e2) {
+            // Migracion 44 tampoco: se sigue sin atribucion, nunca rompe.
+            return $vacio;
+        }
     }
     if (!$fila) {
         return $vacio;
@@ -106,10 +123,29 @@ function publicidad_atribucion_por_usuario(PDO $pdo, string $usuario): array
     $publicista = !empty($fila['publicista_id'])
         ? publicidad_por_id($pdo, (int)$fila['publicista_id'])
         : null;
+
+    /* Si no hay cookie `fbc` pero SI quedo el fbclid, se reconstruye.
+       Meta define ese valor como `fb.1.<timestamp>.<fbclid>`, asi que se puede
+       armar sin la cookie -- y sin esto la conversion viaja sin nada que Meta
+       pueda atar al click del anuncio.
+       Pasa cuando fbevents.js no llego a cargar (bloqueador, red lenta) o
+       cuando el navegador ya borro la cookie: la landing guarda el fbclid
+       igual, porque viene en la URL. Hasta ahora esa columna se escribia y no
+       la leia nadie. */
+    $fbc = (string)($fila['fbc'] ?? '');
+    $fbclid = trim((string)($fila['fbclid'] ?? ''));
+    if ($fbc === '' && $fbclid !== '') {
+        $ts  = strtotime((string)($fila['pedido_en'] ?? '')) ?: time();
+        $fbc = 'fb.1.' . ($ts * 1000) . '.' . $fbclid;
+    }
+
     return [
         'publicista' => $publicista,
         'fbp'        => (string)($fila['fbp'] ?? ''),
-        'fbc'        => (string)($fila['fbc'] ?? ''),
+        'fbc'        => $fbc,
+        'ip'         => (string)($fila['ip'] ?? ''),
+        'ua'         => (string)($fila['ua'] ?? ''),
+        'url'        => (string)($fila['url_landing'] ?? ''),
     ];
 }
 

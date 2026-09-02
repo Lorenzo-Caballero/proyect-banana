@@ -467,6 +467,12 @@
   .cfg-checks input{margin-top:2px;accent-color:var(--violet);flex:none}
   .cfg-checks b{color:var(--txt);font-weight:600}
   .cfg-warn{color:var(--orange2)}
+  /* Cartel que no se puede pasar por alto. Se reserva para estados que se ven
+     sanos pero no lo son -- como el modo prueba de Meta, donde los eventos
+     entran y no cuentan para nada. */
+  .cfg-alerta{margin-top:10px;padding:10px 12px;border-radius:9px;font-size:12.5px;
+    line-height:1.5;background:rgba(245,166,35,.14);border:1px solid var(--orange);
+    color:var(--orange2)}
 
   .thread{flex:1;overflow-y:auto;padding:24px 24px;display:flex;flex-direction:column;gap:16px}
   .row{display:flex;max-width:76%}
@@ -3353,6 +3359,14 @@
           <label class="cb-flabel" style="margin-top:16px">Código de prueba <span class="cfg-opt">(opcional)</span></label>
           <input class="cb-input" id="cfgMetaTest" placeholder="TEST12345" autocomplete="off">
           <p class="cfg-hint cfg-warn">Con esto cargado los eventos van a «Eventos de prueba» y <b>no cuentan</b> para la campaña. Vaciálo al terminar.</p>
+          <!-- Cartel imposible de no ver mientras haya un código cargado. El
+               texto de ayuda de arriba ya lo decía, pero se lee una vez al
+               configurar y después nadie vuelve a mirarlo: el error clásico es
+               dejarlo puesto semanas y ver "eventos" que no optimizan nada. -->
+          <div id="cfgMetaTestAviso" class="cfg-alerta" style="display:none">
+            ⚠️ <b>Estás en modo prueba.</b> Ningún evento cuenta para la campaña
+            mientras haya un código acá. Si ya terminaste de probar, borralo.
+          </div>
         </div>
       </div>
 
@@ -4401,7 +4415,16 @@
   function cfgPintarMeta(){
     const tarjeta = $("#cfgMeta").closest(".cfg-card");
     if(tarjeta) tarjeta.classList.toggle("on", $("#cfgMeta").checked);
+    cfgPintarTestCode();
     cfgPintarActivas();
+  }
+
+  /* El aviso de modo prueba. Se repinta con cada tecla, no solo al cargar: el
+     momento en que hay que verlo es cuando lo estás escribiendo, para que
+     quede claro qué acabás de activar. */
+  function cfgPintarTestCode(){
+    const av = $("#cfgMetaTestAviso");
+    if(av) av.style.display = $("#cfgMetaTest").value.trim() ? "" : "none";
   }
 
   async function cargarConfig(){
@@ -4444,6 +4467,7 @@
   $("#cfgGuardar").addEventListener("click", guardarConfig);
   $("#cfgRuleta").addEventListener("change", cfgPintarRuleta);
   $("#cfgMeta").addEventListener("change", cfgPintarMeta);
+  $("#cfgMetaTest").addEventListener("input", cfgPintarTestCode);
   ["#cfgChat","#cfgRegistro"].forEach(sel=>
     $(sel).addEventListener("change", cfgPintarActivas));
   CFG_JUEGOS.forEach(sel=>

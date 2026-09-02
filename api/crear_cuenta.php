@@ -162,6 +162,14 @@ if ($metodo === 'POST') {
             'fbclid'        => $fbclid !== '' ? $fbclid : null,
             'fbp'           => $fbp    !== '' ? $fbp    : null,
             'fbc'           => $fbc    !== '' ? $fbc    : null,
+            /* El navegador y la URL DEL JUGADOR, que es el unico momento en que
+               los tenemos: este endpoint corre dentro de su pedido, desde su
+               telefono. Los eventos que valen (Purchase) los dispara despues el
+               bot del VPS, donde $_SERVER es del servidor.
+               Sin esto, a Meta le llegaban todas las conversiones con la misma
+               IP de datacenter y un User-Agent de Python. Ver migracion 51. */
+            'ua'            => mb_substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 400) ?: null,
+            'url_landing'   => mb_substr((string)($_SERVER['HTTP_REFERER'] ?? ''), 0, 255) ?: null,
         ]);
 
         // Lead: el jugador pidio la cuenta (no que se haya creado todavia --

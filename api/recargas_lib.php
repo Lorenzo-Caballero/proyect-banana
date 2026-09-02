@@ -897,6 +897,10 @@ function rl_reportar_purchase(PDO $pdo, array $recarga): void
             'ref'     => 'recarga:' . $recarga['id'],
             'fbp'     => $atrib['fbp'],
             'fbc'     => $atrib['fbc'],
+            // Del jugador, no de quien dispara este evento.
+            'ip'      => $atrib['ip'] ?? '',
+            'ua'      => $atrib['ua'] ?? '',
+            'url'     => $atrib['url'] ?? '',
             'pixel'   => function_exists('publicidad_pixel_propio')
                 ? publicidad_pixel_propio($atrib['publicista']) : null,
         ]);

@@ -175,8 +175,17 @@ function meta_evento(PDO $pdo, string $evento, array $datos = []): string
     if (!empty($datos['fbp'])) { $userData['fbp'] = (string)$datos['fbp']; }
     if (!empty($datos['fbc'])) { $userData['fbc'] = (string)$datos['fbc']; }
 
-    $ip = $_SERVER['REMOTE_ADDR'] ?? '';
-    $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
+    /* IP y navegador DEL JUGADOR. Si el caller los pasa, mandan sobre los del
+       request: los eventos que mas valen (Purchase, CompleteRegistration) los
+       dispara el bot del VPS o un operador del CRM, y ahi $_SERVER es del
+       servidor o del operador, no de la persona que compro.
+       Antes se usaba siempre $_SERVER, con lo cual TODAS las conversiones le
+       llegaban a Meta con la misma IP de datacenter y un User-Agent de Python.
+       Meta usa esos campos para reconocer y ubicar a la persona: mandarlos mal
+       hunde el Event Match Quality y le dice que todo pasa en un servidor.
+       Se guardan en el alta (migracion 51) y se releen, igual que fbp/fbc. */
+    $ip = trim((string)($datos['ip'] ?? '')) ?: (string)($_SERVER['REMOTE_ADDR'] ?? '');
+    $ua = trim((string)($datos['ua'] ?? '')) ?: (string)($_SERVER['HTTP_USER_AGENT'] ?? '');
     if ($ip !== '') { $userData['client_ip_address']  = $ip; }
     if ($ua !== '') { $userData['client_user_agent']  = $ua; }
 

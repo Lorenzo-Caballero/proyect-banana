@@ -247,22 +247,35 @@ function fichas_pedir_carga(PDO $pdo, string $usuario, int $monto, string $orige
 
            `ref` hace el event_id reproducible: un reintento o un doble click
            generan el mismo id y Meta lo cuenta UNA vez. */
-        try {
-            require_once __DIR__ . '/meta_lib.php';
-            require_once __DIR__ . '/publicidad_lib.php';
-            $atrib = publicidad_atribucion_por_usuario($pdo, $usuario);
-            meta_evento($pdo, 'InitiateCheckout', [
-                'usuario' => $usuario,
-                'valor'   => $monto,
-                'ref'     => 'carga:' . $id,
-                'fbp'     => $atrib['fbp'],
-                'fbc'     => $atrib['fbc'],
-                'pixel'   => publicidad_pixel_propio($atrib['publicista']),
-            ]);
-        } catch (Throwable $e) {
-            // Que la campaña pierda un evento es molesto; que el jugador no
-            // pueda cargar porque Facebook esta caido, no.
-            error_log('meta InitiateCheckout: ' . $e->getMessage());
+        /* PERO NO cuando la carga viene de una recarga por transferencia
+           (origen='recarga'). Ahi el jugador YA transfirio y la plata ya entro:
+           esta accion es el segundo tramo interno, pasar las fichas al juego.
+           Reportar un "inicio de compra" en ese momento le mostraba a Meta un
+           embudo al reves -- Purchase primero, InitiateCheckout despues -- que
+           es imposible y ensucia el modelo. El inicio real de esa compra fue
+           cuando el jugador pidio la recarga por el chat. */
+        if ($origen !== 'recarga') {
+            try {
+                require_once __DIR__ . '/meta_lib.php';
+                require_once __DIR__ . '/publicidad_lib.php';
+                $atrib = publicidad_atribucion_por_usuario($pdo, $usuario);
+                meta_evento($pdo, 'InitiateCheckout', [
+                    'usuario' => $usuario,
+                    'valor'   => $monto,
+                    'ref'     => 'carga:' . $id,
+                    'fbp'     => $atrib['fbp'],
+                    'fbc'     => $atrib['fbc'],
+                    // Del jugador, no de quien dispara este evento.
+                    'ip'      => $atrib['ip'] ?? '',
+                    'ua'      => $atrib['ua'] ?? '',
+                    'url'     => $atrib['url'] ?? '',
+                    'pixel'   => publicidad_pixel_propio($atrib['publicista']),
+                ]);
+            } catch (Throwable $e) {
+                // Que la campaña pierda un evento es molesto; que el jugador no
+                // pueda cargar porque Facebook esta caido, no.
+                error_log('meta InitiateCheckout: ' . $e->getMessage());
+            }
         }
         if (function_exists('gp_trace')) { gp_trace("carga: ENCOLADA id=$id usuario='$usuario' monto=$monto (espera al bot)"); }  // TRACE TEMPORAL
 

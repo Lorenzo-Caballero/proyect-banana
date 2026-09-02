@@ -28,6 +28,23 @@ $pdo = new PDO(
 );
 // recargas_lib.php usa $pdo del scope global en algunas rutas opcionales.
 $GLOBALS['pdo'] = $pdo;
+
+/* APAGAR META ANTES DE TOCAR NADA.
+   Este test acredita recargas de verdad, y acreditar dispara Purchase hacia la
+   API de Conversiones. Si la base que se le pasa tuviera `meta_activo=1` con un
+   token real -- por ejemplo si alguien corre esto contra produccion por error,
+   o clona la base para probar -- cada corrida le meteria compras FALSAS al
+   pixel, inflando las conversiones y envenenando la optimizacion de la campaña
+   con datos inventados. Y no se veria: los eventos entran como cualquier otro.
+   Se apaga en la fila, no con un mock, porque lo que hay que garantizar es que
+   NO SALGA UN PAQUETE A INTERNET pase por donde pase el codigo. */
+try {
+    $pdo->prepare("INSERT INTO config_crm (clave, valor) VALUES ('meta_activo','0')
+                   ON DUPLICATE KEY UPDATE valor='0'")->execute();
+} catch (Throwable $e) {
+    fwrite(STDERR, "AVISO: no pude apagar meta_activo. Si esta base tiene un pixel\n"
+                 . "real configurado, este test le va a mandar Purchases falsos.\n");
+}
 // Stub de config.php: sin esto, todo lo que llame a cfg() (la carga
 // automatica al juego, los limites) falla en silencio dentro de su try/catch
 // y el test da verde sin haber ejercitado nada.

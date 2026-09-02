@@ -216,6 +216,11 @@ function alta_encolar(PDO $pdo, array $d): array
     $fbclid   = mb_substr(trim((string)($d['fbclid'] ?? '')), 0, 255);
     $fbp      = mb_substr(trim((string)($d['fbp']    ?? '')), 0, 80);
     $fbc      = mb_substr(trim((string)($d['fbc']    ?? '')), 0, 120);
+    // Navegador y URL del jugador (migracion 51). Se guardan para poder mandarle
+    // a Meta los datos de LA PERSONA en los eventos que dispara despues el bot,
+    // donde $_SERVER es del servidor. Ver el docblock de la migracion.
+    $uaJug    = mb_substr(trim((string)($d['ua']          ?? '')), 0, 400);
+    $urlJug   = mb_substr(trim((string)($d['url_landing'] ?? '')), 0, 255);
 
     $error = alta_validar($usuario, $password, $email);
     if ($error !== null) {
@@ -242,6 +247,29 @@ function alta_encolar(PDO $pdo, array $d): array
     ];
 
     try {
+        try {
+            // Nivel 0: todo, incluidos el navegador y la URL del jugador
+            // (migracion 51). Si esas dos columnas no existen todavia, cae al
+            // nivel 1 y el alta entra igual -- solo pierde calidad de match en
+            // los eventos de Meta, no la atribucion.
+            $ins = $pdo->prepare(
+                "INSERT INTO altas (usuario, password, email, nombre, apellido, origen, ip,
+                                    entrega_clave, entrega_sid, publicista_id, fbclid, fbp, fbc,
+                                    ua, url_landing)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            );
+            $ins->execute(array_merge($base, [
+                $entCla !== '' ? $entCla : null,
+                $entSid !== '' ? $entSid : null,
+                $pubId  > 0    ? $pubId  : null,
+                $fbclid !== '' ? $fbclid : null,
+                $fbp    !== '' ? $fbp    : null,
+                $fbc    !== '' ? $fbc    : null,
+                $uaJug  !== '' ? $uaJug  : null,
+                $urlJug !== '' ? $urlJug : null,
+            ]));
+        } catch (PDOException $e0) {
+            if ($e0->getCode() === '23000') { throw $e0; }
         try {
             // Nivel 1: todas las columnas, incluidas las de publicidad
             // (migracion 44).
@@ -314,6 +342,7 @@ function alta_encolar(PDO $pdo, array $d): array
                 }
             }
         }
+        }   // cierra el nivel 0 (migracion 51: ua / url_landing)
 
         return ['http' => 200, 'cuerpo' => [
             'ok'     => true,

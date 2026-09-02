@@ -188,7 +188,7 @@ try {
         // aprieta el boton: cuando el saldo del panel se movio de verdad. Es el
         // unico momento en que decirle "ya lo tenes" no puede ser mentira.
         if ($estado === 'hecha' && function_exists('notif_crear')) {
-            $acc = $pdo->prepare("SELECT usuario, tipo, monto FROM acciones_saldo WHERE id = ?");
+            $acc = $pdo->prepare("SELECT usuario, tipo, monto, origen FROM acciones_saldo WHERE id = ?");
             $acc->execute([$id]);
             if ($a = $acc->fetch()) {
                 /* Purchase para Meta: ACA, no cuando el chatbot encolo. Este
@@ -197,8 +197,21 @@ try {
                    antes haria que la campaña optimice contra pedidos y no
                    contra plata acreditada.
 
-                   Solo las cargas: un retiro no es una compra. */
-                if (($a['tipo'] ?? '') === 'cargar') {
+                   Solo las cargas: un retiro no es una compra.
+
+                   Y NO las que vienen de una recarga por transferencia. Esa
+                   plata YA la reporto rl_reportar_purchase() cuando se acredito
+                   el pago; esta accion es solo el segundo tramo interno (pasar
+                   las fichas al juego), no una compra nueva.
+
+                   Sin este filtro, cada transferencia generaba DOS Purchase con
+                   refs distintas -- 'recarga:M' y 'carga:N' -- que Meta contaba
+                   por separado: los ingresos reportados salian al doble y la
+                   optimizacion por valor aprendia sobre numeros falsos. Con el
+                   bono de carga activo ni siquiera coincidian los importes, asi
+                   que el error era irregular y mas dificil de ver. */
+                $deRecarga = ($a['origen'] ?? '') === 'recarga';
+                if (($a['tipo'] ?? '') === 'cargar' && !$deRecarga) {
                     try {
                         require_once __DIR__ . '/meta_lib.php';
                         require_once __DIR__ . '/publicidad_lib.php';
@@ -209,6 +222,10 @@ try {
                             'ref'     => 'carga:' . $id,
                             'fbp'     => $atrib['fbp'],
                             'fbc'     => $atrib['fbc'],
+                            // Del jugador, no del bot que dispara esto.
+                            'ip'      => $atrib['ip'] ?? '',
+                            'ua'      => $atrib['ua'] ?? '',
+                            'url'     => $atrib['url'] ?? '',
                             'pixel'   => publicidad_pixel_propio($atrib['publicista']),
                         ]);
                     } catch (Throwable $e) {

@@ -389,6 +389,10 @@ try {
                 'ref'     => 'peticion:' . $rid,
                 'fbp'     => $atrib['fbp'],
                 'fbc'     => $atrib['fbc'],
+                // Del jugador, no de quien dispara este evento.
+                'ip'      => $atrib['ip'] ?? '',
+                'ua'      => $atrib['ua'] ?? '',
+                'url'     => $atrib['url'] ?? '',
                 'pixel'   => publicidad_pixel_propio($atrib['publicista']),
             ]);
         } catch (Throwable $e) {
