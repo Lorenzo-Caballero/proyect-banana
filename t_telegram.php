@@ -128,6 +128,54 @@ chequear('otra clave no queda frenada por la primera', $intentos() === $i4 + 1);
 ini_restore('error_log');
 
 // ===========================================================================
+echo "\n=== 2b. Que avisa SIEMPRE y que se frena ===\n";
+
+/* Hay dos clases de aviso y no se comportan igual:
+
+     SIN espera  -- hechos puntuales: entro una transferencia, se registro
+                    alguien, pidieron un retiro, derivaron una charla. Cada uno
+                    es distinto y hay que enterarse de todos.
+     CON espera  -- "algo SIGUE roto". Lo detecta un cron cada minuto, asi que
+                    sin freno serian 1.440 mensajes por dia del mismo problema.
+
+   La diferencia la hace pasar (o no) una CLAVE a tg_evento(). Este chequeo
+   existe porque el dia que alguien le ponga clave a los de arriba "para que no
+   spameen", con volumen te vas a enterar de una transferencia cada tres horas
+   y va a parecer que el sistema dejo de avisar. */
+cfg_crm_guardar($pdo, ['tg_ev_pago' => '1', 'tg_ev_alta' => '1'], 'test');
+$logTmp2 = sys_get_temp_dir() . '/t_tg2_' . getmypid() . '.log';
+@unlink($logTmp2); ini_set('error_log', $logTmp2);
+$cuenta = static function () use ($logTmp2): int {
+    return is_file($logTmp2) ? substr_count((string)@file_get_contents($logTmp2), 'telegram: HTTP') : 0;
+};
+
+$i = $cuenta();
+tg_evento($pdo, 'pago', 'Entró una transferencia', ['Monto' => '$1.000']);
+tg_evento($pdo, 'pago', 'Entró una transferencia', ['Monto' => '$1.000']);
+chequear('dos transferencias IGUALES avisan las dos', $cuenta() === $i + 2,
+         'salieron ' . ($cuenta() - $i) . ' de 2; con clave se frenaria la segunda');
+
+$i = $cuenta();
+tg_evento($pdo, 'alta', 'Se registró', ['Usuario' => 'uno']);
+tg_evento($pdo, 'alta', 'Se registró', ['Usuario' => 'uno']);
+chequear('dos registros seguidos avisan los dos', $cuenta() === $i + 2,
+         'salieron ' . ($cuenta() - $i) . ' de 2');
+
+/* Y el de salud SI se frena, que es para lo que existe el mecanismo. */
+$pdo->exec("DELETE FROM tg_avisos WHERE clave = 'salud'");
+$txtSalud = '<b>Hay algo para revisar</b>' . "\nProblemas: el colector esta caido";
+$pdo->prepare("INSERT INTO tg_avisos (clave, huella, ultimo_en) VALUES ('salud',?,NOW())")
+    ->execute([md5($txtSalud)]);
+$i = $cuenta();
+tg_evento($pdo, 'salud', 'Hay algo para revisar', ['Problemas' => 'el colector esta caido'], 'salud');
+chequear('el aviso de "algo roto" SI espera antes de repetirse', $cuenta() === $i,
+         'sin este freno serian 1.440 mensajes por dia');
+
+@unlink($logTmp2); ini_restore('error_log');
+$pdo->exec("DELETE FROM tg_avisos WHERE clave = 'salud'");
+cfg_crm_guardar($pdo, ['tg_ev_pago' => '0', 'tg_ev_alta' => '0'], 'test');
+
+// ===========================================================================
 echo "\n=== 3. Cada tipo de aviso se apaga por separado ===\n";
 
 /* No todos los clientes quieren las mismas interrupciones: el de retiros le

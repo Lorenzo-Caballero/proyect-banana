@@ -433,18 +433,22 @@ if ($accion === 'marcar' && $metodo === 'POST') {
                 $desde = ['landing' => 'la landing', 'chatbot' => 'el chat',
                           'crm' => 'el CRM'][$a['origen'] ?? ''] ?? (string)($a['origen'] ?? '');
 
+                /* SIN clave: estos salen SIEMPRE, sin tiempo de espera. Cada
+                   registro es un hecho distinto y hay que enterarse de todos.
+                   El freno esta pensado para los avisos de "algo SIGUE roto",
+                   que un cron vuelve a detectar cada minuto. */
                 if ($final === 'ok') {
                     tg_evento($pdo, 'alta', '🎉 Se registró un jugador', [
                         'Usuario' => (string)($a['usuario'] ?? ''),
                         'Vino de' => $desde,
-                    ], 'alta_ok:' . $id);
+                    ]);
                 } elseif ($final === 'error') {
                     tg_evento($pdo, 'alta', '🚫 No se pudo crear una cuenta', [
                         'Usuario' => (string)($a['usuario'] ?? ''),
                         'Vino de' => $desde,
                         'Motivo'  => mb_substr($mensaje, 0, 200),
                         'Qué hacer' => 'El jugador se quedó sin cuenta. Crearla a mano.',
-                    ], 'alta_error:' . $id);
+                    ]);
                 }
             }
         } catch (Throwable $e) {

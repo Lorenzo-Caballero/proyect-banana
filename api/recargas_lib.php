@@ -752,6 +752,13 @@ function rl_registrar_pago(PDO $pdo, array $p): array
                 'Qué hacer' => 'CRM → Comprobantes, para asignarla al jugador.',
             ], 'pago_revision:' . $idUnico);
         } elseif (($res['resultado'] ?? '') === 'acreditada') {
+            /* SIN clave: este aviso sale SIEMPRE, sin tiempo de espera. Es un
+               hecho puntual y cada transferencia es una distinta -- el freno
+               esta pensado para los avisos de "algo sigue roto", que un cron
+               vuelve a detectar cada minuto.
+               No hay riesgo de repetido: si el colector reintenta el POST del
+               mismo comprobante, rl_registrar_pago corta antes por 'ya_visto'
+               (el UNIQUE de id_unico) y nunca llega hasta aca. */
             tg_evento($pdo, 'pago', '💰 Entró una transferencia', [
                 'Monto'    => $plata,
                 'De'       => $quien,
@@ -759,7 +766,7 @@ function rl_registrar_pago(PDO $pdo, array $p): array
                 'Fichas'   => isset($res['coins'])
                               ? number_format((int)$res['coins'], 0, ',', '.') . ' acreditadas solas'
                               : '',
-            ], 'pago_ok:' . $idUnico);
+            ]);
         }
     }
 
