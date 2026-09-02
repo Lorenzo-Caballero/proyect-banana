@@ -114,6 +114,29 @@ function alta_validar(string $usuario, string $password, string $email): ?string
  * hasta encontrar uno libre. Nunca vuelve null: si el saneo deja un string
  * vacío/muy corto, cae a un prefijo genérico.
  */
+/**
+ * ¿El mensaje del bot dice que el nombre de usuario estaba ocupado?
+ *
+ * POR QUE ES UNA HEURISTICA SOBRE TEXTO Y NO UN CODIGO
+ * El bot no devuelve codigos: informa lo que vio. Y lo que ve es de varias
+ * formas -- el panel a veces responde un error de validacion en pantalla, y
+ * otras un HTTP 200 con el jugador ausente del listado (que es como se
+ * manifiesta el nombre tomado por OTRO agente, el caso mas comun).
+ *
+ * Se prefiere pecar de conservador: si no reconoce el motivo, NO renombra y el
+ * alta reintenta como siempre. Un renombre de mas le cambia el nombre a un
+ * jugador sin necesidad; uno de menos solo deja las cosas como estaban.
+ */
+function alta_parece_nombre_ocupado(string $mensaje): bool
+{
+    $m = mb_strtolower($mensaje);
+    foreach (['no figura', 'ya este tomado', 'ya está tomado', 'ya existe',
+              'already exists', 'ocupado', 'no aparece en el listado'] as $pista) {
+        if (mb_strpos($m, $pista) !== false) { return true; }
+    }
+    return false;
+}
+
 function alta_usuario_disponible(PDO $pdo, string $nombreCrudo): string
 {
     // Mismo alfabeto que exige alta_validar(): letras, números, punto,

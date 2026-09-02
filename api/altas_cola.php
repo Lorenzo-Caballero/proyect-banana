@@ -353,6 +353,52 @@ if ($accion === 'marcar' && $metodo === 'POST') {
                  WHERE id = ? AND estado <> 'ok'";
     }
 
+    /* NOMBRE OCUPADO: se reintenta con OTRO nombre, no con el mismo.
+
+       En ganamos el nombre de usuario es unico en TODA la plataforma, entre
+       todos los agentes. Nosotros solo podemos mirar nuestro espejo -- los
+       jugadores de esta agencia -- asi que un nombre comun ("Juan", "Pepon")
+       nos parece libre y el panel lo rechaza porque lo tiene otro agente.
+
+       Sin esto, el reintento usaba el MISMO nombre y volvia a fallar las tres
+       veces, hasta rendirse. El jugador esperaba y se quedaba sin cuenta.
+
+       Se cambia el nombre ANTES del UPDATE que decide el reintento, asi la
+       maquinaria de siempre (backoff, MAX_INTENTOS) sigue funcionando igual y
+       el proximo intento sale con un nombre nuevo.
+
+       IMPORTANTE: la fila es la MISMA, solo cambia `usuario`. El navegador del
+       jugador sondea por el id del alta, asi que sigue esperando sin enterarse
+       y al final recibe las credenciales con el nombre que SI se pudo crear. */
+    if ($estado === 'error' && alta_parece_nombre_ocupado($mensaje)) {
+        try {
+            $q = $pdo->prepare("SELECT usuario FROM altas WHERE id = ?");
+            $q->execute([$id]);
+            $actual = (string)$q->fetchColumn();
+            if ($actual !== '') {
+                /* Se parte del nombre SIN el sufijo numerico que podamos
+                   haberle puesto antes: si no, cada reintento lo alarga
+                   ("Juan" -> "Juan123" -> "Juan123456"). Si el jugador eligio
+                   un nombre que termina en numeros, el resultado igual es uno
+                   parecido y valido -- prefiero eso a una cuenta que no existe. */
+                $base  = rtrim($actual, '0123456789');
+                if (mb_strlen($base) < 3) { $base = $actual; }
+                $nuevo = alta_usuario_disponible($pdo, $base);
+                if ($nuevo !== '' && $nuevo !== $actual) {
+                    $pdo->prepare("UPDATE altas SET usuario = ? WHERE id = ? AND estado <> 'ok'")
+                        ->execute([$nuevo, $id]);
+                    $mensaje = mb_substr("'$actual' estaba ocupado en la plataforma; "
+                                       . "se reintenta como '$nuevo'. " . $mensaje, 0, 500);
+                    error_log("altas: alta $id renombrada de '$actual' a '$nuevo' (nombre ocupado)");
+                }
+            }
+        } catch (Throwable $e) {
+            // Renombrar es una mejora, no un requisito: si falla, el alta
+            // reintenta con el nombre de siempre como hacia antes.
+            error_log('altas: no pude renombrar el alta ' . $id . ': ' . $e->getMessage());
+        }
+    }
+
     try {
         $pdo->prepare($sql)->execute([$mensaje, $id]);
     } catch (PDOException $e) {
