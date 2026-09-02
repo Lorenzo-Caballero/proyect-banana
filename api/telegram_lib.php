@@ -145,6 +145,134 @@ if (!function_exists('tg_detectar_chat')) {
     }
 }
 
+if (!function_exists('tg_evento')) {
+    /**
+     * Avisa por Telegram UN evento del negocio, si ese tipo esta prendido.
+     *
+     * Todos los avisos pasan por aca en vez de llamar a tg_avisar() sueltos,
+     * por tres motivos:
+     *  - cada tipo se puede apagar por separado desde el CRM (no todos los
+     *    clientes quieren las mismas interrupciones);
+     *  - el escapado de HTML se hace en UN solo lugar. El texto lleva nombres
+     *    de jugador y motivos escritos por el modelo: un "<" suelto hace que
+     *    Telegram rechace el mensaje entero con 400, y eso se descubre tarde;
+     *  - NUNCA puede romper lo que lo llamo. Un aviso es un extra: si falla,
+     *    la carga, el retiro o la derivacion ya pasaron igual.
+     *
+     * @param string $tipo   derivacion | revision | retiro | salud
+     * @param array  $lineas pares [etiqueta => valor]; el valor se escapa
+     * @param string $clave  si viene, se usa tg_avisar_una_vez con esa clave
+     */
+    function tg_evento(?PDO $pdo, string $tipo, string $titulo,
+                       array $lineas = [], string $clave = ''): bool
+    {
+        try {
+            if (function_exists('cfg_crm_activo')
+                && !cfg_crm_activo($pdo, 'tg_ev_' . $tipo)) {
+                return false;
+            }
+            $esc = static fn($v) => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
+            $txt = '<b>' . $esc($titulo) . '</b>';
+            foreach ($lineas as $k => $v) {
+                if ($v === null || $v === '') { continue; }
+                $txt .= "\n" . $esc($k) . ': ' . $esc($v);
+            }
+            return $clave !== ''
+                ? tg_avisar_una_vez($clave, $txt, $pdo)
+                : tg_avisar($txt, $pdo);
+        } catch (Throwable $e) {
+            error_log('tg_evento: ' . $e->getMessage());
+            return false;
+        }
+    }
+}
+
+if (!function_exists('tg_avisar_una_vez')) {
+    /**
+     * Como tg_avisar(), pero calla si el MISMO aviso ya salio hace poco.
+     *
+     * POR QUE HACE FALTA
+     * Los avisos de "algo esta roto" los detecta un cron que corre cada minuto,
+     * asi que mientras el problema siga ahi se detecta en cada corrida. Sin
+     * esto serian 1.440 mensajes por dia por problema, y el final de esa
+     * historia se sabe: el agente silencia el bot y despues no se entera de lo
+     * que si importaba. Un aviso que satura es peor que ninguno, porque da la
+     * sensacion de estar cubierto.
+     *
+     * DOS COSAS LO DESTRABAN, y la segunda importa tanto como la primera:
+     *  - que hayan pasado $minutos desde el ultimo;
+     *  - o que el CONTENIDO haya cambiado. Pasar de "1 comprobante sin
+     *    resolver" a "5" es informacion nueva, no una repeticion, y esperar
+     *    tres horas para contarla seria perder justo la parte util.
+     *
+     * @param string $clave  identifica el PROBLEMA, no el momento
+     *                       ('salud', 'sin_actividad', 'pago_revision:AB12')
+     * @param int    $minutos  0 = usar el default configurado
+     * @return bool  true solo si se mando de verdad
+     */
+    function tg_avisar_una_vez(string $clave, string $texto, ?PDO $pdo = null,
+                               int $minutos = 0): bool
+    {
+        $clave = trim($clave);
+        if ($clave === '' || !($pdo instanceof PDO)) {
+            // Sin base no hay memoria posible: se manda, que es el lado seguro
+            // (perder un aviso es peor que repetirlo).
+            return tg_avisar($texto, $pdo);
+        }
+        if (!tg_configurado($pdo)) { return false; }
+
+        if ($minutos <= 0 && function_exists('cfg_crm')) {
+            $minutos = (int)(cfg_crm($pdo, 'tg_repetir_min') ?? 0);
+        }
+        if ($minutos <= 0) { $minutos = 180; }
+
+        $huella = md5($texto);
+        try {
+            /* La edad del aviso se calcula EN SQL, no restando contra time().
+               Los dos relojes no son el mismo: la base puede estar en UTC y el
+               PHP en otra zona (o al reves), y ahi la resta da cualquier cosa.
+               Este mismo error hacia que el dedupe no frenara NUNCA -- una fila
+               recien insertada con NOW() se leia como "hace 300 minutos" -- o
+               sea que el anti-spam no existia, justo la parte que evita mandar
+               1.440 mensajes por dia. Un solo reloj: el de la base. */
+            $st = $pdo->prepare(
+                "SELECT huella, TIMESTAMPDIFF(MINUTE, ultimo_en, NOW()) AS hace
+                   FROM tg_avisos WHERE clave = ?"
+            );
+            $st->execute([$clave]);
+            $prev = $st->fetch(PDO::FETCH_ASSOC);
+
+            if ($prev) {
+                $mismoTexto = ((string)($prev['huella'] ?? '')) === $huella;
+                $hace = (int)($prev['hace'] ?? 0);
+                if ($mismoTexto && $hace < $minutos) {
+                    return false;   // ya lo dijimos, y no cambio nada
+                }
+            }
+        } catch (Throwable $e) {
+            // Sin la migracion 50 la tabla no existe. Se avisa igual: el
+            // objetivo es no perder el aviso, y la repeticion se arregla sola
+            // cuando la migracion corra.
+            return tg_avisar($texto, $pdo);
+        }
+
+        if (!tg_avisar($texto, $pdo)) { return false; }
+
+        // Solo se anota lo que SALIO. Si Telegram fallo, el proximo intento
+        // tiene que poder reintentar en vez de creer que ya aviso.
+        try {
+            $pdo->prepare(
+                "INSERT INTO tg_avisos (clave, huella) VALUES (?, ?)
+                 ON DUPLICATE KEY UPDATE huella = VALUES(huella),
+                                         ultimo_en = NOW(), veces = veces + 1"
+            )->execute([mb_substr($clave, 0, 120), $huella]);
+        } catch (Throwable $e) {
+            error_log('tg_avisar_una_vez: no pude anotar el aviso: ' . $e->getMessage());
+        }
+        return true;
+    }
+}
+
 if (!function_exists('tg_avisar')) {
     /**
      * Manda un mensaje. Devuelve true si Telegram lo acepto.

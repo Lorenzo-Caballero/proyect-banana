@@ -420,6 +420,14 @@
   .cfg-card-body{padding:14px 18px 16px;border-top:1px solid var(--line)}
   .cfg-opt{color:var(--muted);font-weight:500}
   .cfg-hint{margin:6px 0 0;font-size:11.5px;color:var(--muted)}
+  /* Sub-titulo dentro de una tarjeta, para agrupar una lista de opciones. */
+  .cfg-sub{margin:16px 0 8px;font-size:11.5px;font-weight:700;color:var(--muted);
+    text-transform:uppercase;letter-spacing:.6px}
+  /* Casilla simple. Los switches (.cb-switch) son para prender un modulo
+     entero; para una lista de "que avisar" un check comun se lee mejor y
+     ocupa menos. */
+  .cb-check{display:flex;align-items:center;gap:9px;padding:6px 0;cursor:pointer;font-size:13px}
+  .cb-check input{width:16px;height:16px;accent-color:var(--violet);cursor:pointer;flex:0 0 auto}
   .cfg-link-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:4px}
   .cfg-link-url{color:var(--muted);font-size:12px;word-break:break-all;flex:1;min-width:160px}
   .cfg-pie{margin:2px 0 0;font-size:12px;color:var(--muted);text-align:center}
@@ -3184,6 +3192,25 @@
             Conversaciones y aparece arriba de todo con el cartel <b>«Te necesita»</b> —
             Telegram es el aviso para cuando nadie tiene el CRM abierto.
           </p>
+
+          <div class="cfg-sub">Qué te avisamos</div>
+          <label class="cb-check"><input type="checkbox" id="cfgTgDeriv"><span>El bot pasó una charla a un humano</span></label>
+          <label class="cb-check"><input type="checkbox" id="cfgTgRevision"><span>Entró una transferencia que no se pudo asignar sola</span></label>
+          <label class="cb-check"><input type="checkbox" id="cfgTgRetiro"><span>Un jugador pidió retirar</span></label>
+          <label class="cb-check"><input type="checkbox" id="cfgTgSalud"><span>Algo está roto o no hay actividad hace rato</span></label>
+
+          <div class="cfg-grid" style="margin-top:12px">
+            <div>
+              <label class="cb-flabel">No repetir el mismo aviso antes de (minutos)</label>
+              <input class="cb-input" id="cfgTgRepetir" inputmode="numeric" placeholder="180">
+              <p class="cfg-hint">Los problemas se detectan cada minuto. Sin este freno, algo roto te mandaría <b>1.440 mensajes por día</b>. Si el problema cambia, te avisa igual aunque no haya pasado el tiempo.</p>
+            </div>
+            <div>
+              <label class="cb-flabel">Avisar si no hay actividad por (horas)</label>
+              <input class="cb-input" id="cfgTgSinAct" inputmode="numeric" placeholder="6">
+              <p class="cfg-hint">Ni mensajes ni recargas: la señal de que se cayó todo. <b>0 = no avisar.</b> No lo bajes mucho — de madrugada no hay nadie jugando y eso es normal.</p>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -4274,6 +4301,12 @@
     app_url:            { el: "#cfgAppUrl",       tipo: "texto" },
     tg_bot_token:       { el: "#cfgTgToken",      tipo: "texto" },
     tg_chat_id:         { el: "#cfgTgChat",       tipo: "texto" },
+    tg_ev_derivacion:   { el: "#cfgTgDeriv",      tipo: "bool"  },
+    tg_ev_revision:     { el: "#cfgTgRevision",   tipo: "bool"  },
+    tg_ev_retiro:       { el: "#cfgTgRetiro",     tipo: "bool"  },
+    tg_ev_salud:        { el: "#cfgTgSalud",      tipo: "bool"  },
+    tg_repetir_min:     { el: "#cfgTgRepetir",    tipo: "texto" },
+    tg_sin_actividad_hs:{ el: "#cfgTgSinAct",     tipo: "texto" },
     lim_retiro_hora_desde: { el: "#cfgLimRetiroDesde", tipo: "texto" },
     lim_retiro_hora_hasta: { el: "#cfgLimRetiroHasta", tipo: "texto" },
 

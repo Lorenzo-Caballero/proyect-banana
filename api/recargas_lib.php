@@ -52,6 +52,13 @@ if (is_file(__DIR__ . '/actividad_lib.php')) {
 if (is_file(__DIR__ . '/fichas_lib.php')) {
     require_once __DIR__ . '/fichas_lib.php';
 }
+// Aviso al agente cuando una transferencia entra y no se puede casar sola. Va
+// aca por el mismo motivo que fichas_lib: pagos.php -- por donde entra el
+// colector de mails -- solo requiere recargas_lib, y sin esto el aviso no
+// saldria justo en el caso que mas urge (plata que llego y nadie sabe).
+if (is_file(__DIR__ . '/telegram_lib.php')) {
+    require_once __DIR__ . '/telegram_lib.php';
+}
 
 // =====================  EDITA ESTO  =======================================
 const RL_COINS_POR_PESO = 1;        // 1 coin = 1 peso  (5000 coins => $5000)
@@ -713,8 +720,30 @@ function rl_registrar_pago(PDO $pdo, array $p): array
         return ['ok' => true, 'nuevo' => true, 'resultado' => 'sin_monto'];
     }
 
-    return array_merge(['ok' => true, 'nuevo' => true],
-                       rl_matchear_y_acreditar($pdo, $idUnico, $monto));
+    $res = rl_matchear_y_acreditar($pdo, $idUnico, $monto);
+
+    /* Plata que entro y que el sistema NO pudo asignar sola. Es el caso que mas
+       urge: el jugador ya transfirio y esta esperando, pero nadie se entera
+       hasta que alguien abre el CRM. Por eso se avisa por Telegram.
+
+       Va aca y no en las tres salidas a 'revision' de rl_matchear_y_acreditar:
+       ese es el unico lugar por donde pasan todas, asi que no se puede olvidar
+       una. Y va DESPUES del commit, con lo cual el comprobante ya esta guardado
+       cuando suena el aviso.
+
+       Se pasa clave: un mismo comprobante no puede avisar dos veces si el
+       colector reintenta el POST. */
+    if (($res['resultado'] ?? '') === 'revision' && function_exists('tg_evento')) {
+        $tit = trim((string)($p['remitente'] ?? ''));
+        tg_evento($pdo, 'revision', '⚠️ Entró una transferencia sin resolver', [
+            'Monto'   => '$' . number_format((float)$monto, 2, ',', '.'),
+            'De'      => $tit !== '' ? $tit : '(el banco no informó el titular)',
+            'Motivo'  => (string)($res['mensaje'] ?? ''),
+            'Qué hacer' => 'CRM → Comprobantes, para asignarla al jugador.',
+        ], 'pago_revision:' . $idUnico);
+    }
+
+    return array_merge(['ok' => true, 'nuevo' => true], $res);
 }
 
 

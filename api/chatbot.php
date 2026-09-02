@@ -48,6 +48,11 @@ require_once __DIR__ . '/config_crm.php';
 // require simple aca redeclararia las funciones y tiraria fatal error.
 require_once __DIR__ . '/meta_lib.php';
 require_once __DIR__ . '/publicidad_lib.php';
+// Avisos al agente. require_once como todo lo demas: recargas_lib carga varias
+// de estas por su cuenta y un require pelado tira "Cannot redeclare", que ya
+// dejo el chat muerto en produccion dos veces.
+require_once __DIR__ . '/crm_lib.php';
+require_once __DIR__ . '/telegram_lib.php';
 // El CRM es opcional: si crm_lib.php no esta subido, el chat sigue funcionando.
 $crmLib = __DIR__ . '/crm_lib.php';
 if (is_file($crmLib)) { require_once $crmLib; }
@@ -215,6 +220,26 @@ $TOOLS = [
                 'referencia_o_usuario' => ['type' => 'string', 'description' => 'la referencia o el nombre de usuario'],
             ],
             'required' => ['referencia_o_usuario'],
+        ],
+    ]],
+    /* Derivar a un humano. Es una HERRAMIENTA y no solo una frase del modelo a
+       proposito: decir "ya se lo paso a un agente" y no dejar rastro en ningun
+       lado es la peor combinacion posible -- el jugador se queda esperando algo
+       que nadie sabe que tiene que atender.
+       Al llamarla pasan dos cosas: la conversacion queda marcada en el CRM (se
+       ordena primero) y le suena el Telegram al agente. */
+    ['type' => 'function', 'function' => [
+        'name' => 'pasar_a_agente',
+        'description' => 'Deriva la conversacion a un agente humano y le avisa. Usar SIEMPRE que '
+            . 'le digas al jugador que lo vas a pasar con una persona: por un reclamo de pago, '
+            . 'porque no podes resolver algo, o porque el jugador lo pide.',
+        'parameters' => [
+            'type' => 'object',
+            'properties' => [
+                'motivo' => ['type' => 'string',
+                             'description' => 'en una linea, que necesita el jugador'],
+            ],
+            'required' => ['motivo'],
         ],
     ]],
 ];
@@ -878,6 +903,55 @@ function ia_texto(array $msg): string
 function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSesion = '', bool $sesionVerificada = false, string $sid = ''): array
 {
     if (function_exists('gp_trace')) { gp_trace("señal: tool=$nombre usuario_sesion='$usuarioSesion' verif=" . (int)$sesionVerificada . " args=" . json_encode($args, JSON_UNESCAPED_UNICODE)); }  // TRACE TEMPORAL
+
+    /* Derivar a un humano. Marca la conversacion en el CRM y le avisa al
+       agente por Telegram.
+
+       El orden importa: PRIMERO se marca en la base y DESPUES se avisa. Si
+       fuera al reves y el marcado fallara, el agente recibiria un Telegram
+       apuntando a una conversacion que en el CRM no aparece como pendiente --
+       la buscaria y no la encontraria. Asi, en el peor caso queda marcada sin
+       aviso, que es visible igual al abrir el CRM. */
+    if ($nombre === 'pasar_a_agente') {
+        $motivo = trim((string)($args['motivo'] ?? ''));
+        $quien  = $usuarioSesion !== '' ? $usuarioSesion : 'un visitante sin cuenta';
+
+        $marcada = false;
+        try {
+            if (function_exists('crm_conversacion_id') && $sid !== '') {
+                $convId = crm_conversacion_id($pdo, $sid, $usuarioSesion !== '' ? $usuarioSesion : null);
+                if ($convId) {
+                    // Solo si NO estaba ya derivada: si el jugador insiste, no
+                    // se pisa la hora original ni se vuelve a avisar.
+                    $upd = $pdo->prepare(
+                        "UPDATE conversaciones SET derivada_en = NOW(), derivada_motivo = ?
+                          WHERE id = ? AND derivada_en IS NULL"
+                    );
+                    $upd->execute([mb_substr($motivo, 0, 255), $convId]);
+                    $marcada = $upd->rowCount() > 0;
+                }
+            }
+        } catch (Throwable $e) {
+            // Sin la migracion 49 las columnas no existen. La derivacion sigue
+            // siendo util: el agente ve el chat igual, solo que sin destacar.
+            error_log('pasar_a_agente: no pude marcar la conversacion: ' . $e->getMessage());
+        }
+
+        if ($marcada && function_exists('tg_evento')) {
+            tg_evento($pdo, 'derivacion', '🙋 Te derivaron una conversación', [
+                'Jugador' => $quien,
+                'Motivo'  => $motivo !== '' ? $motivo : '(no lo dijo)',
+            ]);
+        }
+
+        /* Al modelo se le confirma SIEMPRE, aunque el marcado haya fallado: lo
+           que tiene que hacer despues es lo mismo (avisarle al jugador y no
+           seguir intentando resolverlo solo), y decirle que fallo lo empujaria
+           a improvisar otra cosa. */
+        return ['ok' => true, 'derivada' => true,
+                'mensaje' => 'Listo, un agente lo va a ver. Deciselo al jugador y no sigas '
+                           . 'intentando resolverlo vos.'];
+    }
 
     if ($nombre === 'cargar_al_juego') {
         if ($usuarioSesion === '') {

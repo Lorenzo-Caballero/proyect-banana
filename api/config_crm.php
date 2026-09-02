@@ -89,6 +89,23 @@ const CFG_CRM_DEFAULTS = [
     // util cuando hay varios agentes: se enteran todos.
     'tg_chat_id'      => '',
 
+    // Cada cuantos MINUTOS se repite un aviso de algo que SIGUE roto. Los
+    // detecta un cron que corre cada minuto, asi que sin este freno serian
+    // 1.440 mensajes por dia por problema -- y el agente termina silenciando
+    // el bot justo antes de que pase algo importante.
+    'tg_repetir_min'  => '180',
+    // Horas sin NINGUNA actividad tras las cuales se avisa. '0' = no avisar.
+    // 6 y no menos: de madrugada no hay nadie jugando y eso es normal.
+    'tg_sin_actividad_hs' => '6',
+
+    // Que avisar. Cada uno por separado, porque no todos los clientes quieren
+    // las mismas interrupciones: el de retiros le suena a quien paga, el de
+    // derivaciones a quien atiende.
+    'tg_ev_derivacion' => '1',   // el bot paso una charla a un humano
+    'tg_ev_revision'   => '1',   // entro una transferencia que no se pudo casar
+    'tg_ev_retiro'     => '1',   // un jugador pidio retirar
+    'tg_ev_salud'      => '1',   // algo esta roto / sin actividad
+
     // ----- Limites de carga y retiro, por cliente -----
     // Cada agencia tiene los suyos ("no cargo menos de 500", "no pago mas de
     // 100.000 por dia"). Antes eran constantes en fichas_lib.php, iguales

@@ -474,6 +474,15 @@ foreach ($todos as $c) {
 
     // 2. Altas encoladas hace rato. Es la señal mas directa de "el bot de ese
     //    cliente no esta corriendo o esta trabado".
+    //
+    // Los problemas se juntan TAMBIEN por cliente ($suyos) y no solo en la
+    // lista global: el Telegram se manda con las credenciales de cada agencia,
+    // asi que a cada una hay que contarle lo suyo y nada mas.
+    $suyos = [];
+    if (trim((string) ($c['agente_usuario'] ?? '')) === '') {
+        $suyos[] = 'No hay credenciales de agente cargadas, asi que las altas de '
+                 . 'jugadores nuevos no se procesan.';
+    }
     try {
         $q = new PDO("mysql:host={$cfg['DB_HOST']};dbname=$db;charset=utf8mb4",
                      $cfg['DB_USER'], $cfg['DB_PASS'],
@@ -487,6 +496,51 @@ foreach ($todos as $c) {
         $atascadas = (int) $st->fetchColumn();
         if ($atascadas > 0) {
             $problemas[] = "$slug: $atascadas alta(s) sin atender hace mas de {$ALTA_ATASCADA_MIN} min";
+            $suyos[] = "$atascadas alta(s) de jugadores sin resolver hace mas de "
+                     . "{$ALTA_ATASCADA_MIN} minutos.";
+        }
+
+        // 3. Comprobantes que entraron y nadie resolvio.
+        try {
+            $rev = (int) $q->query("SELECT COUNT(*) FROM pagos WHERE estado='revision'")->fetchColumn();
+            if ($rev > 0) {
+                $suyos[] = "$rev transferencia(s) sin asignar en Comprobantes.";
+            }
+        } catch (Throwable $e) { /* sin tabla pagos: nada que mirar */ }
+
+        // 4. NADIE dio señales de vida hace rato. Es la unica alarma que
+        //    detecta "se cayo todo": si el sitio no responde o el chat esta
+        //    roto, no hay mensajes NI recargas, y ningun otro chequeo lo ve.
+        //    El umbral es generoso a proposito -- de madrugada no hay nadie
+        //    jugando y eso es normal, no una falla.
+        try {
+            $hs = (int) ($q->query(
+                "SELECT valor FROM config_crm WHERE clave='tg_sin_actividad_hs'"
+            )->fetchColumn() ?: 6);
+            if ($hs > 0) {
+                $ult = $q->query(
+                    "SELECT GREATEST(
+                        COALESCE((SELECT MAX(creado_en) FROM mensajes), '2000-01-01'),
+                        COALESCE((SELECT MAX(creada_en) FROM recargas), '2000-01-01'))"
+                )->fetchColumn();
+                $horas = $ult ? (time() - strtotime((string) $ult)) / 3600 : 0;
+                if ($ult && $horas >= $hs) {
+                    $suyos[] = sprintf('Hace %d horas que no hay NINGUNA actividad '
+                        . '(ni mensajes ni recargas). Puede que el sitio o el chat esten caidos.',
+                        (int) $horas);
+                }
+            }
+        } catch (Throwable $e) { /* tablas distintas: se saltea */ }
+
+        // El aviso va con la clave 'salud': si el problema sigue igual, no se
+        // repite hasta que pase el tiempo configurado. Sin eso serian 1.440
+        // mensajes por dia y el agente terminaria silenciando el bot.
+        if ($suyos && is_file(__DIR__ . '/../api/telegram_lib.php')) {
+            require_once __DIR__ . '/../api/telegram_lib.php';
+            if (function_exists('tg_evento')) {
+                tg_evento($q, 'salud', '🔧 Hay algo para revisar',
+                          ['Problemas' => "\n· " . implode("\n· ", $suyos)], 'salud');
+            }
         }
     } catch (Throwable $e) {
         // Una base que no abre es en si misma un problema que hay que ver.

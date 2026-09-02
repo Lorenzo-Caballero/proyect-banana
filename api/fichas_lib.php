@@ -603,7 +603,26 @@ function fichas_pedir_retiro(PDO $pdo, string $usuario, int $monto, string $orig
         )->execute([$usuario, $monto, $origen]);
     }
 
-    return ['ok' => true, 'id' => (int)$pdo->lastInsertId(), 'monto' => $monto,
+    $idRetiro = (int)$pdo->lastInsertId();
+
+    /* Aviso al agente: un retiro NO se paga solo, lo tiene que aprobar una
+       persona. Sin esto, el pedido espera a que alguien abra el CRM por su
+       cuenta -- y el jugador ya vio "lo aprueba un agente y te avisamos".
+       Va DESPUES del INSERT: el pedido ya esta registrado cuando suena, asi que
+       el agente que abra el CRM lo va a encontrar.
+       Sin clave a proposito: cada pedido de retiro es un evento distinto y hay
+       que avisarlos todos, no agruparlos. */
+    if (function_exists('tg_evento')) {
+        tg_evento($pdo, 'retiro', '💸 Pedido de retiro', [
+            'Jugador' => $usuario,
+            'Monto'   => number_format($monto, 0, ',', '.') . ($todo ? ' (todo su saldo)' : ''),
+            'Destino' => $destinoFinal !== '' ? $destinoFinal : 'no lo dejó, hay que pedírselo',
+            'Saldo'   => number_format($saldo, 0, ',', '.'),
+            'Qué hacer' => 'CRM → Retiros, para aprobarlo o rechazarlo.',
+        ]);
+    }
+
+    return ['ok' => true, 'id' => $idRetiro, 'monto' => $monto,
             'destino' => $destinoFinal,
             'falta_destino' => $destinoFinal === '',
             'saldo' => $saldo, 'retiro_todo' => $todo,
