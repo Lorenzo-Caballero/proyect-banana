@@ -2509,6 +2509,19 @@
                 <b>Inactivos</b>
                 <span>No cargó fichas hace más de N días (sin ninguna carga = siempre entra).</span>
               </label>
+              <!-- El único destinatario que NO sale de las conversaciones: sale
+                   de `usuarios`. Son los que existen como jugadores y nunca
+                   escribieron, así que no tienen chat en la bandeja y ninguna
+                   difusión los alcanzaba. -->
+              <label class="nv-aud-opt" data-aud="sin_chat" style="grid-column:1/-1">
+                <input type="radio" name="nvAud" value="sin_chat">
+                <b>Nunca escribieron</b>
+                <span>Existen como jugadores pero jamás mandaron un mensaje. El
+                      chat les queda esperando y lo ven la primera vez que lo
+                      abren; el push solo les llega si tienen la app.
+                      <button class="btn-mini-accion" id="nvVerAlcanceSinChat"
+                              type="button">Ver a cuántos</button></span>
+              </label>
             </div>
             <div class="nv-inactivos-cfg" id="nvInactivosCfg">
               <span>Más de</span>
@@ -7976,14 +7989,20 @@
   document.querySelectorAll(".nv-aud-opt").forEach(el=>{
     el.addEventListener("click", ()=> nvSetAudiencia(el.getAttribute("data-aud")));
   });
-  $("#nvVerAlcance").addEventListener("click", async ()=>{
-    const dias = Math.max(0, +$("#nvDias").value || 0);
+  async function nvVerAlcance(){
+    const sinChat = nvAudActual()==="sin_chat";
     $("#nvAlcanceTxt").textContent = "Calculando…";
     try{
-      const d = await jget({accion:"notif_alcance_inactivos", dias});
-      $("#nvAlcanceTxt").innerHTML = d.ok ? `<span class="nv-alcance">${d.alcance}</span> jugador${d.alcance===1?"":"es"}` : "Error";
+      const d = sinChat
+        ? await jget({accion:"notif_alcance_sin_chat"})
+        : await jget({accion:"notif_alcance_inactivos", dias: Math.max(0, +$("#nvDias").value || 0)});
+      $("#nvAlcanceTxt").innerHTML = d.ok
+        ? `<span class="nv-alcance">${d.alcance}</span> jugador${d.alcance===1?"":"es"}`
+        : "Error";
     } catch(e){ $("#nvAlcanceTxt").textContent = "Error"; }
-  });
+  }
+  $("#nvVerAlcance").addEventListener("click", nvVerAlcance);
+  $("#nvVerAlcanceSinChat").addEventListener("click", nvVerAlcance);
 
   function abrirNotif(){
     if(st.usuario){
@@ -8111,6 +8130,7 @@
     const canal = {push:"Push", chat:"Chat", ambos:"Push + Chat"}[nvCanalActual()];
     const aud = nvAudActual()==="inactivos"
       ? ("inactivos hace " + ($("#nvDias").value||0) + "+ días")
+      : nvAudActual()==="sin_chat" ? "los que nunca escribieron"
       : (nvAudActual()==="usuario" ? "un jugador" : "todos los jugadores");
     let cuando = "ahora";
     if($("#nProgramar").checked){
@@ -8152,9 +8172,20 @@
     let confirmMsg = null;
     if(todos) confirmMsg = `Se la va a mandar a TODOS los jugadores${incluyeChat?" (push y/o chat)":""}.\n\n${cuando}.\n\n¿Seguro?`;
     if(modoAud==="inactivos") confirmMsg = `Se la va a mandar a los jugadores inactivos hace más de ${Math.max(0,+$("#nvDias").value||0)} días.\n\n${cuando}.\n\n¿Seguro?`;
+    // Este avisa de más a propósito: a estos jugadores se les CREA la
+    // conversación, así que la bandeja se llena de chats que antes no existían.
+    if(modoAud==="sin_chat") confirmMsg = `Se la va a mandar a TODOS los jugadores que nunca escribieron.
+
+A cada uno se le abre una conversación en la bandeja, con el mensaje esperando: lo ven la primera vez que abran el chat.
+
+${cuando}.
+
+¿Seguro?`;
     if(confirmMsg && !confirm(confirmMsg)) return;
 
-    const filtro = modoAud==="inactivos" ? { modo:"inactivos", dias: Math.max(0, +$("#nvDias").value || 0) } : undefined;
+    const filtro = modoAud==="inactivos" ? { modo:"inactivos", dias: Math.max(0, +$("#nvDias").value || 0) }
+                 : modoAud==="sin_chat"  ? { modo:"sin_chat" }
+                 : undefined;
     const btn=$("#nOk"); btn.disabled=true; const txtBtn=programar?"Programar":"Enviar"; btn.textContent="…";
     // La masiva/inactivos no deja rastro en ningún hilo: no es de esa conversación.
     const d = await jpost({ accion:"notificar", todos, usuario: modoAud==="usuario" ? st.usuario : undefined,
@@ -8167,6 +8198,12 @@
         toast(`Programada — sale el ${$("#nFecha").value.replace("T"," ")}`);
       } else if(modoAud==="inactivos"){
         toast(`Enviado a ${d.alcance} jugador${d.alcance===1?"":"es"} inactivo${d.alcance===1?"":"s"}`);
+      } else if(modoAud==="sin_chat"){
+        // Se avisa "esperando" y no "enviado" porque es literal: el mensaje
+        // queda en su chat y lo ve cuando lo abra. Decir "enviado" haría creer
+        // que le sonó el celular.
+        toast(d.alcance ? `Esperando en el chat de ${d.alcance} jugador${d.alcance===1?"":"es"}`
+                        : (d.aviso || "No había ninguno sin chat"));
       } else {
         const partes = [];
         if(incluyePush) partes.push(d.alcance ? `push a ${d.alcance} celular${d.alcance===1?"":"es"}` : "push encolado");

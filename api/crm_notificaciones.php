@@ -43,6 +43,36 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
 
     /** Lista de usernames inactivos hace más de $dias. Mismo criterio que
      *  crmnotif_alcance_inactivos(), usada al resolver un envío masivo. */
+    /**
+     * Los que existen como jugadores pero NUNCA escribieron en el chat.
+     *
+     * "No interactuo" se mide por MENSAJES SUYOS, no por si tiene conversacion:
+     * la fila en `conversaciones` se puede crear sola (este mismo envio la
+     * crea), asi que preguntar por la conversacion daria falso desde el segundo
+     * envio en adelante. Lo que no miente es si alguna vez hablo el.
+     *
+     * El COLLATE es obligatorio: `usuarios` toma el default del servidor y las
+     * tablas del CRM son utf8mb4_unicode_ci. Sin el, el JOIN tira
+     * "Illegal mix of collations" -- la trampa clasica de este esquema.
+     *
+     * Se saltean los baneados: mandarle una promo a alguien al que le cerramos
+     * la cuenta es peor que no mandarle nada.
+     */
+    function crmnotif_usuarios_sin_chat(PDO $pdo): array
+    {
+        return $pdo->query(
+            "SELECT u.username FROM usuarios u
+              WHERE COALESCE(u.is_banned, 0) = 0
+                AND NOT EXISTS (
+                  SELECT 1
+                    FROM conversaciones c
+                    JOIN mensajes m ON m.conversacion_id = c.id AND m.rol = 'user'
+                   WHERE c.clave = u.username COLLATE utf8mb4_unicode_ci
+                )
+              ORDER BY u.username"
+        )->fetchAll(PDO::FETCH_COLUMN);
+    }
+
     function crmnotif_usuarios_inactivos(PDO $pdo, int $dias): array
     {
         $dias = max(0, $dias);

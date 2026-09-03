@@ -307,6 +307,13 @@ if (!function_exists('crm_difusion_chat_aplicar')) {
      *
      * Devuelve la cantidad de conversaciones donde se insertó.
      */
+    /* EL ROL VA 'agente' Y NO 'bot', Y NO ES ESTETICA.
+       mis_mensajes.php -- lo unico que le entrega mensajes al jugador -- pide
+       `m.rol = 'agente'`. Con 'bot' la difusion se guardaba en la base, se veia
+       en el CRM y entraba al contexto del modelo, pero el jugador NO LA VEIA
+       NUNCA, ni con el chat abierto. Se mandaban a la nada.
+       difusion_seleccion (crm.php) siempre uso 'agente' y por eso esa si
+       llegaba: eran dos caminos que parecian el mismo y no lo eran. */
     function crm_difusion_chat_aplicar(PDO $pdo, ?string $usuario, string $texto): int
     {
         $texto = trim($texto);
@@ -317,7 +324,7 @@ if (!function_exists('crm_difusion_chat_aplicar')) {
             $st->execute([mb_substr($usuario, 0, 50)]);
             $id = $st->fetchColumn();
             if (!$id) { return 0; }
-            crm_mensaje($pdo, (int)$id, 'bot', $texto);
+            crm_mensaje($pdo, (int)$id, 'agente', $texto);
             $pdo->prepare("UPDATE conversaciones SET preview = ?, no_leidos = no_leidos + 1, actualizada_en = NOW() WHERE id = ?")
                 ->execute([mb_substr($texto, 0, 280), $id]);
             return 1;
@@ -332,10 +339,71 @@ if (!function_exists('crm_difusion_chat_aplicar')) {
         $upd = $pdo->prepare("UPDATE conversaciones SET preview = ?, no_leidos = no_leidos + 1, actualizada_en = NOW() WHERE id = ?");
         $previewTxt = mb_substr($texto, 0, 280);
         foreach ($ids as $id) {
-            crm_mensaje($pdo, (int)$id, 'bot', $texto);
+            crm_mensaje($pdo, (int)$id, 'agente', $texto);
             $upd->execute([$previewTxt, $id]);
         }
         return count($ids);
+    }
+}
+
+if (!function_exists('crm_difusion_chat_sembrar')) {
+    /**
+     * Le deja un mensaje a jugadores que TODAVIA NO TIENEN CHAT: si la
+     * conversacion no existe, se crea.
+     *
+     * Es la diferencia con crm_difusion_chat_aplicar(), que recorre las
+     * conversaciones que ya hay y por eso nunca alcanza a los que nunca
+     * escribieron -- justamente el grupo al que uno quiere escribirle primero.
+     *
+     * COMO LE LLEGA (y cuando no): mis_mensajes.php empareja por session_id, no
+     * por usuario. Una conversacion recien sembrada tiene un session_id nuestro,
+     * de relleno, asi que el mensaje NO sale corriendo a ningun lado: queda
+     * esperando. Cuando el jugador abre el chat y se identifica,
+     * crm_conversacion_id() reconoce su `clave` y le pega el session_id real
+     * (es la rama 1 de esa funcion, la que ya existia para el que vuelve desde
+     * otro celular). Recien ahi se lo lleva.
+     *
+     * O sea: esto NO es un push. A alguien que nunca abre el chat no lo alcanza
+     * nada -- de estos jugadores no tenemos ni mail real (el del alta lo inventa
+     * el bot) ni telefono.
+     *
+     * El session_id de relleno lleva prefijo 'siembra:' para que se sepa de
+     * donde salio al mirar la tabla, y es unico por usuario para no pisar dos
+     * conversaciones distintas con la misma clave.
+     *
+     * NO toca `no_leidos`: lo escribio el agente, no el jugador. Sumarlo
+     * pondria cientos de chats sin leer arriba de la bandeja, tapando los que
+     * si esperan respuesta.
+     *
+     * Devuelve a cuantos les quedo el mensaje.
+     */
+    function crm_difusion_chat_sembrar(PDO $pdo, array $usuarios, string $texto,
+                                       string $operador = 'sistema'): int
+    {
+        $texto = trim($texto);
+        if ($texto === '' || !$usuarios) { return 0; }
+
+        $previewTxt = mb_substr($texto, 0, 280);
+        $upd = $pdo->prepare(
+            "UPDATE conversaciones SET preview = ?, actualizada_en = NOW() WHERE id = ?"
+        );
+
+        $n = 0;
+        foreach ($usuarios as $u) {
+            $u = trim((string)$u);
+            if ($u === '') { continue; }
+            try {
+                $convId = crm_conversacion_id($pdo, 'siembra:' . mb_substr($u, 0, 50), $u);
+                crm_mensaje($pdo, $convId, 'agente', $texto, null, $operador);
+                $upd->execute([$previewTxt, $convId]);
+                $n++;
+            } catch (Throwable $e) {
+                // Uno que falla no puede cortar la tanda: son cientos y el
+                // resto ya no se enteraria. Queda en el log con nombre y todo.
+                error_log('difusion_sembrar ' . $u . ': ' . $e->getMessage());
+            }
+        }
+        return $n;
     }
 }
 

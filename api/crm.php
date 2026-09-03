@@ -741,6 +741,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         }
 
         // ---- preview de alcance para el filtro "inactivos hace N días" ----
+        // Cuantos jugadores nunca escribieron. Se mira ANTES de mandar: este
+        // envio les crea la conversacion a todos, asi que conviene saber si son
+        // 12 o 1.200 antes de llenar la bandeja.
+        if ($accion === 'notif_alcance_sin_chat') {
+            salir(['ok' => true, 'alcance' => count(crmnotif_usuarios_sin_chat($pdo))]);
+        }
+
         if ($accion === 'notif_alcance_inactivos') {
             $dias = (int)($_GET['dias'] ?? 0);
             salir(['ok' => true, 'alcance' => crmnotif_alcance_inactivos($pdo, $dias)]);
@@ -1108,6 +1115,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                             'crm', $operador);
                 if (!$r['ok']) { salir($r, 500); }
                 salir(['ok' => true, 'alcance' => $r['alcance'], 'lote_id' => $r['lote_id'], 'canal' => 'push']);
+            }
+
+            /* ---- los que nunca escribieron ----
+               El unico destinatario que NO sale de `conversaciones`: sale de
+               `usuarios`. Por eso no puede pasar por crm_difusion_chat_aplicar,
+               que recorre los chats que ya hay y a estos los saltea en silencio
+               (devolvia 0 sin decir por que).
+               Push aparte: para recibirlo hace falta un dispositivo registrado,
+               y alguien creado en el panel que nunca abrio nada no tiene
+               ninguno. Se manda igual si lo pidieron -- si tiene la app, le
+               llega -- pero el que de verdad alcanza a este grupo es el chat. */
+            if ($modoFiltro === 'sin_chat') {
+                if ($incluyeChat && $mensajeChat === '') {
+                    salir(['ok' => false, 'error' => 'Falta el mensaje del chat'], 400);
+                }
+                if ($incluyePush && ($titulo === '' || $cuerpo === '')) {
+                    salir(['ok' => false, 'error' => 'Falta el título o el mensaje'], 400);
+                }
+                $destinos = crmnotif_usuarios_sin_chat($pdo);
+                if (!$destinos) {
+                    salir(['ok' => true, 'alcance' => 0, 'canal' => 'chat',
+                           'aviso' => 'No hay jugadores sin chat: todos escribieron alguna vez.']);
+                }
+
+                $alcanceChat = 0;
+                if ($incluyeChat) {
+                    $alcanceChat = crm_difusion_chat_sembrar($pdo, $destinos, $mensajeChat, $operador);
+                }
+                $alcancePush = 0;
+                if ($incluyePush) {
+                    foreach ($destinos as $d) {
+                        if (notif_crear($pdo, $d, $titulo, $cuerpo,
+                                        (string)($body['tipo'] ?? 'promo'), null, 'crm')) {
+                            $alcancePush++;
+                        }
+                    }
+                }
+                crm_bitacora($pdo, $operador, 'difusion_sin_chat',
+                             'A ' . count($destinos) . ' jugador(es) sin chat: '
+                             . mb_substr($mensajeChat ?: $cuerpo, 0, 120));
+                salir(['ok' => true, 'alcance' => $incluyeChat ? $alcanceChat : $alcancePush,
+                       'alcance_chat' => $alcanceChat, 'alcance_push' => $alcancePush,
+                       'canal' => $incluyeChat ? 'chat' : 'push']);
             }
 
             if (!$todos && $usuario === '') {
