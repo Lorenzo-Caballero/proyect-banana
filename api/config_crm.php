@@ -151,6 +151,24 @@ const CFG_CRM_DEFAULTS = [
     // calcula en el momento de la aprobacion y despues no se puede cargar.
     'lim_bono_carga_pct' => '0',
 
+    // ----- Plan de referidos (migracion 53, referidos_lib.php) -----
+    // Apagado y en 0 por defecto: prender el plan es una promesa de plata y
+    // tiene que ser una decision explicita del dueño, no un default.
+    //
+    //   ref_activo      habilita aceptar ?ref= en el alta y la difusion.
+    //   ref_bono_monto  BONOS que cobra el que trajo al amigo cuando el amigo
+    //                   acredita su PRIMERA carga. Monto fijo, no %: "traes
+    //                   un amigo, te llevas N" se entiende y se difunde solo.
+    //                   Se lee al momento de PAGAR: cambiarlo afecta los
+    //                   pagos futuros, no los ya hechos.
+    //   ref_mensaje     la plantilla de la difusion. {link} se reemplaza por
+    //                   el link UNICO de cada cliente -- por eso la difusion
+    //                   del plan tiene su camino propio y no la masiva comun,
+    //                   que manda el mismo texto a todos.
+    'ref_activo'     => '0',
+    'ref_bono_monto' => '0',
+    'ref_mensaje'    => '',
+
     // ----- Meta Ads (Pixel + Conversions API) -----
     // Apagado por defecto: sin pixel cargado no hay nada que mandar, y un
     // pixel a medio configurar ensucia las metricas de la campaña.

@@ -294,6 +294,11 @@
   const params = new URLSearchParams(location.search);
   const PUB    = (params.get('pub') || '').trim();
   const FBCLID = (params.get('fbclid') || '').trim();
+  /* Plan de referidos: el link que comparte un cliente es ESTA pagina con su
+     codigo (?ref=abc123). Se arrastra al POST del alta tal cual; el server lo
+     valida (codigo real, plan activo) y con eso sabe a quien pagarle cuando
+     este amigo haga su primera carga. Vacio si se entro sin link. */
+  const REF = (params.get('ref') || '').trim().toLowerCase();
 
   /* Identifica ESTE pedido y es lo único que después autoriza a ver la
      contraseña. Sin esto, cualquiera que recorra id=1,2,3... se lleva las
@@ -499,7 +504,7 @@
       const res = await fetch(API, {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({
-          usuario: u, sid: sid, promo: PROMO,
+          usuario: u, sid: sid, promo: PROMO, ref: REF,
           pub: PUB, fbclid: FBCLID,
           fbp: cookies.fbp || '', fbc: cookies.fbc || '',
         })

@@ -68,6 +68,13 @@ if (is_file(__DIR__ . '/landings_lib.php')) {
     require_once __DIR__ . '/landings_lib.php';
 }
 
+// Plan de referidos (migracion 53): cuando un jugador acredita su PRIMERA
+// carga, el que lo trajo cobra su bono. Mismo criterio best-effort que
+// landings_lib: sin el archivo, nadie cobra referidos y la acreditacion sigue.
+if (is_file(__DIR__ . '/referidos_lib.php')) {
+    require_once __DIR__ . '/referidos_lib.php';
+}
+
 // =====================  EDITA ESTO  =======================================
 const RL_COINS_POR_PESO = 1;        // 1 coin = 1 peso  (5000 coins => $5000)
 const RL_MIN_COINS      = 100;      // minimo por recarga
@@ -1007,6 +1014,13 @@ function rl_acreditar(PDO $pdo, array &$recarga, string $idUnico, string $conf,
        carga del camino B (y el candado evita que salga dos veces). */
     if ($esPrimera === 1) {
         rl_bono_bienvenida_aplicar($pdo, (string)$recarga['usuario'], (int)$recarga['coins']);
+        /* Y el plan de referidos, con el MISMO gate de "primera": si a este
+           jugador lo trajo otro cliente con su link, es ahora cuando el que
+           lo trajo cobra. El candado de una-sola-vez vive en el helper
+           (UNIQUE de referidos.referido), igual que el del bono arriba. */
+        if (function_exists('ref_pagar_por_primera_carga')) {
+            ref_pagar_por_primera_carga($pdo, (string)$recarga['usuario']);
+        }
     }
 
     // es_primera calculado arriba viaja al caller a traves de $recarga -- lo
@@ -1837,6 +1851,10 @@ function rl_acreditar_directo(PDO $pdo, string $idUnico, string $usuario,
         }
         if ($esPrimera === 1) {
             rl_bono_bienvenida_aplicar($pdo, $usuario, $coins);
+            // Referidos: mismo gate, mismo motivo que en rl_acreditar().
+            if (function_exists('ref_pagar_por_primera_carga')) {
+                ref_pagar_por_primera_carga($pdo, $usuario);
+            }
         }
 
         $pdo->commit();

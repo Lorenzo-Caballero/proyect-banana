@@ -270,6 +270,9 @@
   const params = new URLSearchParams(location.search);
   const PUB    = (params.get('pub') || '').trim();
   const FBCLID = (params.get('fbclid') || '').trim();
+  // Plan de referidos: si el link compartido apunta aca en vez de a
+  // bono.html, el rastro de quien lo trajo no se pierde igual.
+  const REF = (params.get('ref') || '').trim().toLowerCase();
 
   // La contraseña la genera el SERVER, una por cuenta, y vuelve en la
   // respuesta del alta. Antes era fija para todas ("12345678"): cómodo, pero
@@ -497,7 +500,7 @@
       const res = await fetch(API, {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({
-          usuario: u, sid: sid,
+          usuario: u, sid: sid, ref: REF,
           pub: PUB, fbclid: FBCLID,
           fbp: cookies.fbp || '', fbc: cookies.fbc || '',
         })

@@ -250,6 +250,12 @@ function hgw_acreditar_checkout(PDO $pdo, string $checkoutId, string $dbNombre):
             if ($esPrimera === 1 && function_exists('rl_bono_bienvenida_aplicar')) {
                 rl_bono_bienvenida_aplicar($pdo, (string)$recarga['usuario'], (int)$recarga['coins']);
             }
+            // Referidos: tercera puerta de acreditacion, mismo gate de
+            // "primera" que el bono de arriba. Sin esto, el amigo que paga su
+            // primera carga por HG Cash no le daba el bono a quien lo trajo.
+            if ($esPrimera === 1 && function_exists('ref_pagar_por_primera_carga')) {
+                ref_pagar_por_primera_carga($pdo, (string)$recarga['usuario']);
+            }
         } catch (Throwable $e) {
             // ...SALVO un deadlock: ese ya revirtio la transaccion entera del
             // lado del server (los helpers lo relanzan a proposito) y aca no

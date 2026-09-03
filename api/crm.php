@@ -1422,6 +1422,83 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Solo admin: apagar la ruleta o el registro cambia lo que ve TODO el
         // sitio, no una conversacion. Un agente de mostrador no deberia poder
         // hacerlo sin querer.
+        /* ---- Plan de referidos ----
+           La config (activo, monto, plantilla) viaja por config/config_guardar
+           como cualquier otro ajuste. Aca va lo que la config generica no
+           sabe hacer: los numeros del plan y la difusion PERSONALIZADA.
+
+           La difusion del plan NO reusa la masiva comun a proposito: aquella
+           manda EL MISMO texto a todos, y aca cada cliente tiene que recibir
+           SU link, con su codigo adentro -- es lo que permite saber despues
+           quien trajo a quien. {link} en la plantilla se reemplaza por
+           persona. */
+        if ($accion === 'referidos_resumen') {
+            if (!function_exists('ref_resumen')) {
+                $f = __DIR__ . '/referidos_lib.php';
+                if (is_file($f)) { require_once $f; }
+            }
+            if (!function_exists('ref_resumen')) {
+                salir(['ok' => false, 'error' => 'Falta api/referidos_lib.php en el server.'], 500);
+            }
+            // El link de muestra sale con un codigo de ejemplo: el agente ve
+            // la forma exacta de lo que va a recibir cada cliente.
+            salir(['ok' => true, 'resumen' => ref_resumen($pdo),
+                   'link_muestra' => ref_link('a1b2c3d4')]);
+        }
+
+        if ($accion === 'referidos_difundir') {
+            exigir_admin();   // manda mensajes a toda la base: decision de dueño
+            if (!function_exists('ref_codigo_de')) {
+                $f = __DIR__ . '/referidos_lib.php';
+                if (is_file($f)) { require_once $f; }
+            }
+            if (!function_exists('ref_codigo_de')) {
+                salir(['ok' => false, 'error' => 'Falta api/referidos_lib.php en el server.'], 500);
+            }
+            if (!cfg_crm_activo($pdo, 'ref_activo')) {
+                salir(['ok' => false, 'error' => 'El plan está apagado. Activalo y guardá antes de difundir.'], 400);
+            }
+            $plantilla = trim((string)cfg_crm($pdo, 'ref_mensaje'));
+            if ($plantilla === '' || strpos($plantilla, '{link}') === false) {
+                salir(['ok' => false, 'error' => 'El mensaje tiene que incluir {link}: ahí va el link único de cada cliente.'], 400);
+            }
+
+            /* A quien: todos los chats con usuario. Con incluir_sin_chat,
+               tambien los clientes que nunca escribieron (se les crea la
+               conversacion, como en la difusion "sin chat" comun). */
+            $destinos = $pdo->query(
+                "SELECT DISTINCT usuario FROM conversaciones
+                  WHERE usuario IS NOT NULL AND usuario <> ''"
+            )->fetchAll(PDO::FETCH_COLUMN);
+            if (!empty($body['incluir_sin_chat']) && function_exists('crmnotif_usuarios_sin_chat')) {
+                $destinos = array_values(array_unique(array_merge(
+                    $destinos, crmnotif_usuarios_sin_chat($pdo)
+                )));
+            }
+
+            $enviados = 0; $sinCodigo = 0;
+            foreach ($destinos as $u) {
+                $u = trim((string)$u);
+                if ($u === '') { continue; }
+                $cod = ref_codigo_de($pdo, $u);
+                if ($cod === '') { $sinCodigo++; continue; }   // tabla sin migrar: se corta solo
+                $texto = str_replace('{link}', ref_link($cod), $plantilla);
+                try {
+                    $convId = crm_conversacion_id($pdo, 'crm:' . mb_substr($u, 0, 50), $u);
+                    crm_mensaje($pdo, $convId, 'agente', $texto, null, $operador);
+                    $pdo->prepare(
+                        "UPDATE conversaciones SET preview = ?, actualizada_en = NOW() WHERE id = ?"
+                    )->execute([mb_substr($texto, 0, 280), $convId]);
+                    $enviados++;
+                } catch (Throwable $e) {
+                    error_log('referidos_difundir ' . $u . ': ' . $e->getMessage());
+                }
+            }
+            crm_bitacora($pdo, $operador, 'referidos_difundir',
+                         'Plan de referidos a ' . $enviados . ' cliente(s)');
+            salir(['ok' => true, 'enviados' => $enviados, 'sin_codigo' => $sinCodigo]);
+        }
+
         if ($accion === 'config_guardar') {
             exigir_admin();
             $vals = is_array($body['config'] ?? null) ? $body['config'] : [];

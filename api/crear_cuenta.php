@@ -197,6 +197,36 @@ if ($metodo === 'POST') {
         // eso es CompleteRegistration, que ya dispara altas_cola.php cuando el
         // bot confirma). `ref` con el id de la landing hace el event_id
         // reproducible por si la pestaña reintenta. Nunca puede tumbar el
+        /* Plan de referidos: con que codigo entro este alta (bono.html
+           arrastra el ?ref= del link compartido hasta aca).
+
+           Se valida TODO antes de guardar -- plan activo, formato, que el
+           codigo exista y que su dueño no sea el mismo nombre que se esta
+           creando -- porque este campo despues PAGA plata: cuando el amigo
+           acredite su primera carga, referidos_lib le suma el bono al dueño
+           del codigo. Un valor inventado no puede llegar a la base.
+
+           Va en un UPDATE aparte y best-effort, no dentro de alta_encolar():
+           la columna es de la migracion 53 y el alta de un amigo no puede
+           morir porque una base no migro todavia -- pierde el bono del
+           referidor (queda en el log), no la cuenta. */
+        if (($r['cuerpo']['ok'] ?? false) && ($r['cuerpo']['id'] ?? 0)) {
+            $refCod = strtolower(trim((string)($body['ref'] ?? '')));
+            if ($refCod !== '' && cfg_crm_activo($pdo, 'ref_activo')
+                && preg_match('/^[a-z0-9]{4,16}$/', $refCod)) {
+                try {
+                    require_once __DIR__ . '/referidos_lib.php';
+                    $dueno = ref_usuario_de_codigo($pdo, $refCod);
+                    if ($dueno !== '' && $dueno !== $usuarioFinal) {
+                        $pdo->prepare("UPDATE altas SET ref_codigo = ? WHERE id = ?")
+                            ->execute([$refCod, (int)$r['cuerpo']['id']]);
+                    }
+                } catch (Throwable $e) {
+                    error_log('crear_cuenta ref ' . $refCod . ': ' . $e->getMessage());
+                }
+            }
+        }
+
         // alta: si Meta esta caido, la cuenta se crea igual.
         if (($r['cuerpo']['ok'] ?? false) && ($r['cuerpo']['id'] ?? 0)) {
             try {

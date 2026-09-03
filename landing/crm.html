@@ -3594,6 +3594,62 @@
         <span class="cfg-sec-linea"></span>
       </div>
 
+      <!-- Plan de referidos ------------------------------------------ -->
+      <!-- Vive en Marketing y no en una pantalla propia: la config viaja por
+           el mismo config_guardar que todo lo demas, y lo unico especial (la
+           difusion con el link UNICO de cada cliente) es un boton. -->
+      <div class="cfg-card">
+        <div class="cfg-card-head">
+          <span class="cb-ico"><svg viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></span>
+          <div class="cfg-card-txt">
+            <b>Plan de referidos</b>
+            <span>Cada cliente comparte SU link; cuando el amigo hace su primera carga, el que lo trajo cobra bonos.</span>
+          </div>
+          <label class="cb-switch">
+            <input type="checkbox" id="cfgRef">
+            <span class="cb-slider"></span>
+          </label>
+        </div>
+        <div class="cfg-card-body">
+          <div class="cfg-grid">
+            <div>
+              <label class="cb-flabel">Bono para el que refiere</label>
+              <input class="cb-input" id="cfgRefBono" inputmode="numeric" placeholder="500" autocomplete="off">
+              <p class="cfg-hint">En BONOS, monto fijo. Se paga cuando el amigo
+                 acredita su <b>primera carga</b>. Se lee al momento de pagar:
+                 cambiarlo afecta los pagos futuros, no los ya hechos. En 0 no
+                 se paga nada.</p>
+            </div>
+            <div>
+              <label class="cb-flabel">Mensaje de la difusión</label>
+              <textarea class="cb-input" id="cfgRefMsg" rows="4"
+                placeholder="🎁 ¡Invitá y ganá! Compartí tu link y cuando tu amigo haga su primera carga te regalamos bonos: {link}"></textarea>
+              <p class="cfg-hint"><b>{link}</b> es obligatorio: ahí va el link
+                 único de cada cliente (bono.html?ref=su-código). Sin código no
+                 hay forma de saber quién trajo a quién.</p>
+            </div>
+          </div>
+
+          <div class="cfg-linkbox" style="margin-top:16px">
+            <label class="cb-flabel">Así se ve el link que recibe cada uno</label>
+            <div class="cfg-link-row">
+              <span class="cfg-link-url" id="refLinkMuestra">—</span>
+            </div>
+            <p class="cfg-hint" id="refResumen">—</p>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px">
+              <button class="btn-mini-accion" id="refDifundir" type="button">Difundir el plan por chat</button>
+              <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+                <input type="checkbox" id="refIncluirSinChat">
+                incluir a los que nunca escribieron (les crea el chat)
+              </label>
+            </div>
+            <p class="cfg-hint" style="margin-top:8px">Guardá los cambios ANTES
+               de difundir: la difusión manda lo que esté guardado, no lo que
+               esté escrito en esta pantalla.</p>
+          </div>
+        </div>
+      </div>
+
       <!-- Meta Ads --------------------------------------------------- -->
       <div class="cfg-card meta">
         <div class="cfg-card-head">
@@ -4653,6 +4709,10 @@
     lim_retiro_hora_desde: { el: "#cfgLimRetiroDesde", tipo: "texto" },
     lim_retiro_hora_hasta: { el: "#cfgLimRetiroHasta", tipo: "texto" },
 
+    ref_activo:       { el: "#cfgRef",     tipo: "bool"  },
+    ref_bono_monto:   { el: "#cfgRefBono", tipo: "texto" },
+    ref_mensaje:      { el: "#cfgRefMsg",  tipo: "texto" },
+
     meta_activo:      { el: "#cfgMeta",         tipo: "bool"  },
     meta_pixel_id:    { el: "#cfgMetaPixel",    tipo: "texto" },
     meta_capi_token:  { el: "#cfgMetaToken",    tipo: "texto" },
@@ -4749,6 +4809,42 @@
     if(av) av.style.display = $("#cfgMetaTest").value.trim() ? "" : "none";
   }
 
+  /* ---- Plan de referidos: resumen + difusion ---- */
+  async function refCargarResumen(){
+    try{
+      const d = await jget({ accion: "referidos_resumen" });
+      if(!d || !d.ok) return;
+      $("#refLinkMuestra").textContent = d.link_muestra || "—";
+      const r = d.resumen || {};
+      $("#refResumen").innerHTML =
+        `<b>${r.codigos||0}</b> con link · <b>${r.registrados||0}</b> amigo${(r.registrados||0)===1?"":"s"} registrado${(r.registrados||0)===1?"":"s"} · ` +
+        `<b>${r.pagados||0}</b> ya cargaron → <b>${(r.bonos_pagados||0).toLocaleString("es-AR")}</b> en bonos pagados`;
+    }catch(e){ /* sin migrar o sin lib: la tarjeta queda con los guiones */ }
+  }
+
+  $("#refDifundir").addEventListener("click", async ()=>{
+    const inclSin = $("#refIncluirSinChat").checked;
+    /* La difusion manda lo GUARDADO. Si hay cambios sin guardar en pantalla,
+       el agente cree que difunde una cosa y sale otra: se frena aca. */
+    if(cfgInstantanea() !== cfgLimpio){
+      toast("Tenés cambios sin guardar. Guardá primero y después difundí.");
+      return;
+    }
+    if(!confirm("Se le va a mandar por chat a CADA cliente su link único del plan de referidos."
+      + (inclSin ? "\n\nIncluye a los que nunca escribieron: a esos se les crea la conversación." : "")
+      + "\n\n¿Seguro?")) return;
+    const btn = $("#refDifundir");
+    btn.disabled = true; btn.textContent = "Enviando…";
+    try{
+      const d = await jpost({ accion: "referidos_difundir", incluir_sin_chat: inclSin });
+      if(d && d.ok){
+        toast(`Plan difundido a ${d.enviados} cliente${d.enviados===1?"":"s"}`);
+        refCargarResumen();
+      } else toast((d && d.error) || "No se pudo difundir");
+    }catch(e){ toast("No se pudo difundir: " + e.message); }
+    finally{ btn.disabled = false; btn.textContent = "Difundir el plan por chat"; }
+  });
+
   async function cargarConfig(){
     const aviso = $("#cfgAviso");
     aviso.style.display = "none";
@@ -4764,6 +4860,7 @@
       cfgPintarRuleta();
       cfgPintarJuegos();
       cfgPintarMeta();
+      refCargarResumen();   // los numeros del plan de referidos, aparte
       // Lo recien cargado ES el estado guardado: desde aca se mide "sucio".
       cfgLimpio = cfgInstantanea();
       cfgPintarSucio();
