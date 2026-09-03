@@ -302,6 +302,10 @@
      espera respuesta, es alguien a quien todavía nadie le escribió. Si
      compitiera visualmente con los chats reales, taparía justo lo que sí
      necesita atención. */
+  .chip-arch{display:inline-block;margin-top:4px;margin-right:5px;padding:1px 7px;
+    border-radius:7px;background:rgba(148,163,184,.16);color:var(--muted);
+    font-size:10.5px;font-weight:800;letter-spacing:.2px;cursor:help}
+
   .conv.sinchat{opacity:.72}
   .conv.sinchat:hover{opacity:1}
   .conv.sinchat .pv{font-style:italic}
@@ -1857,6 +1861,13 @@
         <!-- Las archivadas viven SOLO acá: si siguieran saliendo en "Todas",
              archivar no sacaría nada de la bandeja. -->
         <button class="tab tab-chico" data-e="archivadas" id="tabArchivadas">Archivadas</button>
+        <!-- La lista completa, como WhatsApp: TODO junto y ordenado por quien
+             habló último, sin que archivar esconda a nadie. Va aparte de
+             "Todas" a propósito: "Todas" tiene que seguir siendo la BANDEJA,
+             o sea lo que falta atender. Acá el que ya cargó y quedó archivado
+             sigue estando, con su chip. -->
+        <button class="tab tab-chico" data-e="todo"
+                title="Todos los chats, archivados incluidos, del más reciente al más viejo">Todo</button>
       </div>
       <!-- Inactividad: grupo APARTE del estado del ticket. Son dos preguntas
            independientes ("¿está abierta?" y "¿hace cuánto no recarga?") y se
@@ -5105,6 +5116,10 @@
       const der = c.derivada
         ? `<span class="chip-derivada" title="${esc(c.derivada_motivo||"El bot derivó esta conversación")}">Te necesita</span>`
         : "";
+      /* Una archivada puede aparecer fuera de su pestaña: en "Todo" y en
+         cualquier búsqueda. Sin el chip parece un chat común que se te pasó,
+         cuando en realidad alguien decidió sacarlo de la bandeja. */
+      const arch = c.archivada ? `<span class="chip-arch" title="Archivada — no aparece en la bandeja">Archivada</span>` : "";
       const ags = (c.agentes && c.agentes.length)
         ? `<div class="agentes-chat">${c.agentes.map(a=>`<span class="ag-chip${st.yo&&a===st.yo?" yo":""}"><span class="dot"></span>${esc(a)}</span>`).join("")}</div>`
         : "";
@@ -5126,7 +5141,7 @@
         <div class="av ${anon}" ${bg}>${esc(inic(c.usuario||"?"))}</div>
         <div class="mid">
           <div class="n"><b>${pin}<span class="est-dot est-${esc(c.estado)}"></span>${esc(nombre)}</b><span class="t">${hace(c.actualizada_en)}</span></div>
-          <div class="pv">${esc(c.preview||"—")}</div>${der}${ags}
+          <div class="pv">${esc(c.preview||"—")}</div>${arch}${der}${ags}
         </div>${nl}
       </div>`;
     }).join("");

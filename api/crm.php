@@ -418,9 +418,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                de la bandeja no sacaria nada.
 
                La pestaña es un valor de `estado` en el front pero NO toca el
-               ENUM: una archivada conserva si estaba abierta o pendiente. */
+               ENUM: una archivada conserva si estaba abierta o pendiente.
+
+               DOS EXCEPCIONES, y las dos salen del mismo problema real: un
+               jugador que hablo y cargo dejaba de existir para el agente en
+               cuanto alguien archivaba su chat.
+
+                 - 'todo': la vista completa, como la lista de WhatsApp. Es una
+                   pestaña aparte y no el default, porque "Todas" tiene que
+                   seguir siendo la BANDEJA (lo que falta atender).
+                 - Con BUSQUEDA puesta no se filtra por archivada. Buscar a
+                   alguien por nombre y que no aparezca -estando en la base- es
+                   la peor respuesta posible: el agente concluye que el jugador
+                   no existe. Si lo buscas por nombre, ya sabes a quien queres:
+                   el archivado no es un filtro, es un orden de bandeja. */
             if (crm_hay_archivada($pdo)) {
-                $where[] = $estado === 'archivadas' ? 'c.archivada = 1' : 'c.archivada = 0';
+                if ($estado === 'archivadas') {
+                    $where[] = 'c.archivada = 1';
+                } elseif ($estado !== 'todo' && $q === '') {
+                    $where[] = 'c.archivada = 0';
+                }
             } elseif ($estado === 'archivadas') {
                 // Sin la migracion no hay archivadas. Devolver la lista entera
                 // seria peor que devolver nada: parece que se archivo todo.
@@ -518,6 +535,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             // estan: sin este guard, una base sin migrar se queda sin bandeja.
             $hayDeriv  = crm_hay_derivada($pdo);
             $selDeriv  = $hayDeriv ? 'c.derivada_en, c.derivada_motivo,' : '';
+            // Si una fila archivada puede aparecer fuera de su pestaña (vista
+            // 'todo' o busqueda), el agente tiene que ver POR QUE no estaba en
+            // la bandeja. Sin el chip parece un chat comun que se le paso.
+            $selArch   = crm_hay_archivada($pdo) ? 'c.archivada,' : '';
 
             /* Las derivadas suben, arriba de todo menos de las fijadas.
                Esto es lo que hace que la derivacion sea un AVISO y no una
@@ -536,7 +557,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
             $st = $pdo->prepare(
                 "SELECT c.id, c.session_id, c.usuario, c.estado, c.preview,
-                        c.no_leidos, c.fijada, c.actualizada_en, $selDeriv
+                        c.no_leidos, c.fijada, c.actualizada_en, $selDeriv $selArch
                         $ultimaCarga AS ultima_carga
                  FROM conversaciones c $wsql
                  ORDER BY $ordenSql LIMIT 200"
@@ -550,6 +571,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 $it['agentes'] = [];
                 // Booleano para el front: le alcanza con "el bot pidio ayuda".
                 $it['derivada'] = !empty($it['derivada_en']);
+                $it['archivada'] = !empty($it['archivada']);
             }
             unset($it);
 
