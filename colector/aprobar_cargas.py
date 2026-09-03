@@ -139,10 +139,15 @@ WHITELIST = [u.strip() for u in os.environ.get("TEST_USERS_WHITELIST", "").split
 TIPO_DEPOSITO = 0
 
 # Cuanto tiene que llevar una transferencia sin poder asignarse para que valga
-# la pena avisar. Tiene que ser COMODAMENTE mayor que el intervalo de este
-# worker: si fuera mas corto, avisaria de pagos que esta misma pasada iba a
-# resolver, que es exactamente la falsa alarma que se vino a sacar.
-MINUTOS_SIN_RESOLVER = int(os.environ.get("MINUTOS_SIN_RESOLVER", "10"))
+# la pena avisar. Tiene que ser mayor que el intervalo de este worker: si fuera
+# mas corto, avisaria de pagos que la proxima pasada iba a resolver, que es
+# exactamente la falsa alarma que se vino a sacar.
+#
+# 3 minutos con el worker corriendo cada minuto (ver DEPLOY.md) son tres
+# pasadas completas antes de molestar a nadie. Del otro lado hay una persona
+# que ya transfirio y esta esperando, asi que tampoco conviene estirarlo: el
+# margen es para no avisar de mas, no para demorar el aviso que sirve.
+MINUTOS_SIN_RESOLVER = int(os.environ.get("MINUTOS_SIN_RESOLVER", "3"))
 
 
 class DesafioWAF(RuntimeError):

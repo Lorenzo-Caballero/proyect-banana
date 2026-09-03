@@ -416,7 +416,7 @@ try {
        --------------------------------------------------------------------- */
     if ($accion === 'avisar_pendientes') {
         $body    = json_decode(file_get_contents('php://input'), true) ?: [];
-        $minutos = (int)($body['minutos'] ?? 10);
+        $minutos = (int)($body['minutos'] ?? 3);
         $n = function_exists('rl_avisar_revision_vieja')
             ? rl_avisar_revision_vieja($pdo, $minutos)
             : 0;

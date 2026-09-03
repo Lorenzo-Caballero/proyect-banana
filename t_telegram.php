@@ -249,13 +249,17 @@ $sembrar = static function (PDO $pdo, string $id, string $estado, int $hace) {
     )->execute([$id, $estado, $hace]);
 };
 
-$sembrar($pdo, 'ttg-rev-fresco', 'revision', 0);
-chequear('recien entrada NO avisa (el camino A todavia puede levantarla)',
-         rl_avisar_revision_vieja($pdo, 10) === 0);
+/* Se llama SIN pasarle los minutos: lo que importa es el default, que es el
+   que va a correr en produccion. Son 3, y el worker pasa cada minuto, asi que
+   una transferencia recien entrada tiene tres pasadas por delante antes de
+   que esto moleste a nadie. */
+$sembrar($pdo, 'ttg-rev-fresco', 'revision', 1);
+chequear('al minuto NO avisa (al camino A todavia le quedan pasadas)',
+         rl_avisar_revision_vieja($pdo) === 0);
 
-$sembrar($pdo, 'ttg-rev-viejo', 'revision', 25);
-chequear('pero si sigue sin resolverse, SI avisa',
-         rl_avisar_revision_vieja($pdo, 10) === 1);
+$sembrar($pdo, 'ttg-rev-viejo', 'revision', 5);
+chequear('pero a los 5 minutos sin resolverse, SI avisa',
+         rl_avisar_revision_vieja($pdo) === 1);
 
 /* Y la que resolvio el camino A no tiene que avisar nunca: quedo 'usado'. Este
    es exactamente el caso de la carga que disparo la falsa alarma. */
@@ -263,7 +267,7 @@ $pdo->exec("DELETE FROM pagos WHERE id_unico LIKE 'ttg-rev%'");
 $pdo->exec("DELETE FROM tg_avisos WHERE clave LIKE 'pago_revision:ttg-rev%'");
 $sembrar($pdo, 'ttg-rev-usado', 'usado', 25);
 chequear('la que aprobo el camino A no avisa aunque sea vieja',
-         rl_avisar_revision_vieja($pdo, 10) === 0);
+         rl_avisar_revision_vieja($pdo) === 0);
 
 @unlink($logTmp3); ini_restore('error_log');
 $pdo->exec("DELETE FROM pagos WHERE id_unico LIKE 'ttg-rev%'");

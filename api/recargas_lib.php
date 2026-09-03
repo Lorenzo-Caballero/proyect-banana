@@ -830,7 +830,7 @@ function rl_registrar_pago(PDO $pdo, array $p): array
  *
  * Devuelve cuantos aviso.
  */
-function rl_avisar_revision_vieja(PDO $pdo, int $minutos = 10): int
+function rl_avisar_revision_vieja(PDO $pdo, int $minutos = 3): int
 {
     if (!function_exists('tg_evento')) { return 0; }
     if ($minutos < 1) { $minutos = 1; }
