@@ -1556,13 +1556,30 @@
     quick = [].slice.call(cont.querySelectorAll("button"));
   }
 
-  function abrir(){
+  /* `porGesto` es false cuando lo abrimos NOSOTROS (la apertura automática de
+     la primera visita). No es un detalle de estilo: pedirPermisoNavegador() y
+     audioDespertar() dependen de que haya un gesto del usuario.
+
+     Sin gesto, Notification.requestPermission() lo rechazan los navegadores
+     -- y peor: en algunos se gasta el intento, así que el día que el jugador
+     SÍ toque el chat ya no aparece el cartel. audioDespertar() simplemente
+     falla contra la política de autoplay.
+
+     Las dos se llaman igual, pero recién en la primera interacción de verdad
+     (ver despertarPorGesto más abajo). */
+  function abrir(porGesto){
     panel.classList.add("open");
     fab.classList.remove("hay");
     fab.classList.add("quieto");   // con el chat abierto el latido no hace falta
     tag.classList.add("oculto");   // y el letrero tampoco
     sinLeer = 0;
     if (!saludado) saludar();
+    if (porGesto === false) {
+      // Lo abrimos nosotros: el permiso y el audio esperan al primer toque.
+      body.scrollTop = body.scrollHeight;
+      setTimeout(function (){ body.scrollTop = body.scrollHeight; }, 150);
+      return;
+    }
     pedirPermisoNavegador();   // gesto del usuario: momento válido para pedirlo
     audioDespertar();          // y para habilitar el sonidito (autoplay lo exige)
     // Arrancar en el ÚLTIMO mensaje, no en el primero: mientras el panel estaba
@@ -1573,8 +1590,18 @@
   }
   function cerrar(){ panel.classList.remove("open"); fab.classList.remove("quieto"); tag.classList.remove("oculto"); }
 
-  fab.addEventListener("click", abrir);
+  fab.addEventListener("click", function (){ abrir(true); });
   $("gp-x").addEventListener("click", cerrar);
+
+  /* Lo que quedó pendiente cuando el chat se abrió solo: el permiso de
+     notificaciones y el audio. Se enganchan al PRIMER toque real que haga el
+     jugador adentro del panel -- escribir, tocar un atajo, lo que sea -- que
+     es el gesto que los navegadores piden. Se desengancha solo. */
+  function despertarPorGesto(){
+    panel.removeEventListener("pointerdown", despertarPorGesto, true);
+    pedirPermisoNavegador();
+    audioDespertar();
+  }
 
   /* Empezar de nuevo. Existe porque la charla se guarda en localStorage y se
      le manda al modelo como contexto: si en algún momento contestó algo mal
@@ -3458,6 +3485,33 @@
   // ---------- arranque ----------
   saludado = restaurar();          // si habia charla previa, no vuelve a saludar
   fabWrap.classList.add("on");
+
+  /* PRIMERA VISITA: el chat se abre solo.
+     Un globito en una esquina lo ignora casi todo el mundo; el panel abierto,
+     con el saludo ya escrito, convierte muchísimo mejor -- que es de lo que
+     vive esto.
+     Las cuatro condiciones existen para que sea UNA vez y nunca moleste:
+
+       - `goldpaw_abierto_solo` en localStorage. Se marca ANTES de abrir, no
+         después: si se marcara al cerrar, el que entra y se va sin tocar nada
+         se lo come de nuevo en cada visita.
+       - `saludado` ya en true significa que hay charla guardada, o sea que no
+         es la primera vez aunque el navegador se haya limpiado.
+       - El panel ya abierto: no se pisa nada.
+       - La demora. Abrirlo en el mismo instante en que carga la página lo
+         mezcla con el render de la plataforma y ni se nota que apareció; con
+         unos segundos, el jugador ya está mirando la pantalla y lo ve venir.
+         Además le da tiempo a restaurar() y a revisarSesion() a resolver quién
+         es, así el saludo sale con su nombre. */
+  var AUTO_ABRIR_MS = 3500;
+  if (!ls("goldpaw_abierto_solo") && !saludado) {
+    setTimeout(function (){
+      if (panel.classList.contains("open")) return;   // lo abrió él primero
+      lss("goldpaw_abierto_solo", "1");
+      panel.addEventListener("pointerdown", despertarPorGesto, true);
+      abrir(false);
+    }, AUTO_ABRIR_MS);
+  }
   mirarAgente();
   timerAgente = setInterval(mirarAgente, 6000);
   revisarSesion();
