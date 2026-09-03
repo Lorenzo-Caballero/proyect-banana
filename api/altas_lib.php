@@ -439,8 +439,18 @@ function alta_encolar(PDO $pdo, array $d): array
     if ($fila['estado'] === 'error') {
         // Reintento explicito: vuelve a la cola con la clave nueva y el
         // contador en cero, si no arranca ya agotado y no lo toma nadie.
+        //
+        // `origen` se pisa con el del pedido NUEVO, a proposito. La fila en
+        // 'error' puede ser de otra persona y de hace semanas: como
+        // alta_usuario_disponible() trata las filas 'error' como nombre libre,
+        // cualquier re-registro con el mismo nombre saneado cae justo aca. Si
+        // el origen viejo quedara, el bono de bienvenida (que se decide por
+        // altas.origen en rl_bono_bienvenida_aplicar) se heredaria de una
+        // landing que este registrante jamas vio -- o se perderia el que si
+        // le prometieron. El origen valido es el de quien esta pidiendo AHORA.
         $vals = [
             $password, $email !== '' ? $email : null,
+            $origen,
             $entCla !== '' ? $entCla : null,
             $entSid !== '' ? $entSid : null,
             $fila['id'],
@@ -449,6 +459,7 @@ function alta_encolar(PDO $pdo, array $d): array
             $pdo->prepare(
                 "UPDATE altas
                     SET password = ?, email = COALESCE(?, email),
+                        origen = ?,
                         estado = 'pendiente', intentos = 0,
                         mensaje = NULL, tomado_en = NULL,
                         proximo_intento_en = NULL,
@@ -464,6 +475,7 @@ function alta_encolar(PDO $pdo, array $d): array
             $pdo->prepare(
                 "UPDATE altas
                     SET password = ?, email = COALESCE(?, email),
+                        origen = ?,
                         estado = 'pendiente', intentos = 0,
                         mensaje = NULL, tomado_en = NULL,
                         entrega_clave = ?, entrega_sid = ?

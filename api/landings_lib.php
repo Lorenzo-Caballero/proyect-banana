@@ -144,6 +144,12 @@ function landings_slug_nuevo(PDO $pdo, string $nombre): string
     $s = preg_replace('/[^a-z0-9]+/', '-', $s);
     $s = trim((string)$s, '-');
     $s = mb_substr($s !== '' ? $s : 'landing', 0, 20);   // 20 + '-99' entra en 24
+    // El corte a 20 puede caer justo despues de un guion ("promo-de-
+    // septiembre-"): un slug con guion final es valido para el server pero
+    // los links por WhatsApp/anuncios pierden esa puntuacion final en el
+    // camino (y lp.html la pela al normalizar). Mejor no emitirlo nunca.
+    $s = trim($s, '-');
+    if ($s === '') { $s = 'landing'; }
 
     $candidato = $s;
     for ($i = 2; $i < 100; $i++) {

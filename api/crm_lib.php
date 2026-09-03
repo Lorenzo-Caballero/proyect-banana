@@ -235,16 +235,46 @@ if (!function_exists('crm_conversacion_id')) {
             return ['ok' => false, 'error' => 'El usuario no existe en usuarios'];
         }
 
-        $pdo->beginTransaction();
+        /* Puede llegar con una transaccion YA abierta: la llama
+           crmnotif_bono_aplicar_en_recarga() desde adentro de rl_acreditar(),
+           que corre dentro de la transaccion del matcher. Antes esto hacia
+           beginTransaction() incondicional: PDO lanzaba "already active", y
+           lo peor no era que el bono prometido no se aplicara NUNCA en el
+           camino B -- era que el catch de aca abajo hacia rollBack() de la
+           transaccion DEL CALLER, deshaciendo la acreditacion entera y
+           dejando el resto de rl_acreditar corriendo en autocommit. Con un
+           SAVEPOINT, anidada o no, un fallo aca solo deshace lo de aca. */
+        $anidada = $pdo->inTransaction();
+        if ($anidada) { $pdo->exec('SAVEPOINT sp_crm_cargar'); }
+        else          { $pdo->beginTransaction(); }
         try {
             $pdo->prepare("UPDATE usuarios SET $col = $col + ? WHERE username = ?")
                 ->execute([$monto, $usuario]);
             $pdo->prepare(
                 "INSERT INTO movimientos (usuario, tipo, monto, motivo, origen, operador) VALUES (?,?,?,?,?,?)"
             )->execute([$usuario, $tipo, $monto, $motivo !== '' ? $motivo : null, $origen, $operador]);
-            $pdo->commit();
+            if ($anidada) { $pdo->exec('RELEASE SAVEPOINT sp_crm_cargar'); }
+            else          { $pdo->commit(); }
         } catch (Throwable $e) {
-            if ($pdo->inTransaction()) { $pdo->rollBack(); }
+            /* Un deadlock (1213) revierte la transaccion ENTERA del lado del
+               server y descarta los savepoints: no hay nada que "deshacer
+               solo lo de aca". Igual si el ROLLBACK TO falla (1305, savepoint
+               inexistente): la transaccion del caller ya no existe. En los
+               dos casos, anidada, se RELANZA -- devolver ok=false dejaria al
+               caller commiteando un tramo suelto creyendo que acredito. */
+            $desgarro = $e instanceof PDOException
+                && ((string)($e->errorInfo[0] ?? '') === '40001'
+                    || (int)($e->errorInfo[1] ?? 0) === 1213);
+            try {
+                if ($anidada && !$desgarro)      { $pdo->exec('ROLLBACK TO SAVEPOINT sp_crm_cargar'); }
+                elseif (!$anidada && $pdo->inTransaction()) { $pdo->rollBack(); }
+            } catch (Throwable $e2) {
+                error_log('crm_cargar rollback: ' . $e2->getMessage());
+                $desgarro = true;
+            }
+            if ($anidada && $desgarro) {
+                throw $e;
+            }
             error_log('crm_cargar: ' . $e->getMessage());
             return ['ok' => false, 'error' => 'No se pudo cargar'];
         }

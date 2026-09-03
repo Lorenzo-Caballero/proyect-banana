@@ -309,7 +309,17 @@
   const BASE_API = esPorPath ? '/' + partesRuta[0] + '/gp-api' : '/gp-api';
 
   const params  = new URLSearchParams(location.search);
-  const SLUG    = (params.get('l') || '').trim();
+  /* El slug se NORMALIZA antes de usarlo: los links viajan por WhatsApp y
+     anuncios, y llegan con el punto de la frase pegado ('?l=verano.') o
+     retipeados con mayuscula ('?l=Verano'). Sin esto, la pagina quedaba viva
+     prometiendo el 50% del esqueleto y registraba SIN promo (la whitelist de
+     crear_cuenta.php es case-sensitive): cuentas creadas con exito visible y
+     bono que no llegaba nunca. Se baja a minusculas y se pela la puntuacion
+     de las puntas; si aun asi no es un slug valido, la pagina se declara
+     caida en vez de prometer un bono que no va a cumplir. */
+  let SLUG = (params.get('l') || '').trim().toLowerCase()
+    .replace(/^[^a-z0-9]+|[^a-z0-9-]+$/g, '');   // atras NO se pela el guion: es parte valida de un slug
+  if (!/^[a-z0-9-]{1,24}$/.test(SLUG)) SLUG = '';
   const PREVIEW = params.get('preview') === '1';
   const PUB     = (params.get('pub') || '').trim();
   const FBCLID  = (params.get('fbclid') || '').trim();
@@ -408,7 +418,12 @@
   } else if (SLUG){
     fetch(BASE_API + '/landing_publica.php?slug=' + encodeURIComponent(SLUG), { cache:'no-store' })
       .then(res => {
-        if (res.status === 404){ document.body.classList.add('rota'); return null; }
+        // 404 = no existe o esta pausada; 400 = slug que el server no acepta.
+        // En los dos casos la landing NO va a cumplir ninguna promesa: mejor
+        // el cartel de caida que el esqueleto vivo prometiendo un bono.
+        if (res.status === 404 || res.status === 400){
+          document.body.classList.add('rota'); return null;
+        }
         return res.json().catch(() => null);
       })
       .then(data => { if (data && data.ok) aplicar(data.landing); })

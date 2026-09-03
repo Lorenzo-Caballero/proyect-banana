@@ -162,32 +162,118 @@ function hgw_acreditar_checkout(PDO $pdo, string $checkoutId, string $dbNombre):
         error_log("hg_webhook: checkout $checkoutId sin recarga en $dbNombre");
         hgw_salir(['ok' => true, 'error' => 'recarga no encontrada']);
     }
-    $claim = $pdo->prepare(
-        "UPDATE recargas SET estado='acreditada', acreditada_en=NOW(), mensaje='HG Cash'
-          WHERE id = ? AND estado = 'pendiente'"
-    );
-    $claim->execute([(int)$recarga['id']]);
-    if ($claim->rowCount() !== 1) { hgw_salir(['ok' => true, 'ya_procesado' => true]); }
-
-    // Acreditar las fichas — el paso por el que existe todo esto.
-    $pdo->prepare("UPDATE usuarios SET coins = coins + ? WHERE username = ?")
-        ->execute([(int)$recarga['coins'], (string)$recarga['usuario']]);
-
-    // Aviso + bono pendiente, best-effort: nada de esto puede hacer que
-    // una acreditacion ya hecha parezca fallida.
+    // Las libs ANTES de abrir la transaccion: nada de I/O de disco con locks
+    // tomados. Aviso, bono pendiente y bono de bienvenida las necesitan.
     foreach (['/recargas_lib.php', '/notificaciones_lib.php', '/crm_lib.php'] as $lib) {
         if (is_file(__DIR__ . $lib)) { require_once __DIR__ . $lib; }
     }
+
+    /* TODO el tramo que mueve plata va en UNA transaccion. Antes eran
+       statements sueltos en autocommit y eso tenia dos problemas reales:
+       (a) el claim podia quedar commiteado y el coins+= fallar despues --
+       recarga "acreditada" sin fichas; (b) el candado de una-sola-vez del
+       bono de bienvenida (SELECT ... FOR UPDATE en el helper) no retiene
+       ningun lock en autocommit, asi que dos webhooks del mismo jugador a la
+       vez (HG reintenta hasta 4 veces) podian pagar el bono dos veces. */
     try {
-        if (function_exists('rl_notificar_acreditada')) {
-            rl_notificar_acreditada($pdo, $recarga);
+        $pdo->beginTransaction();
+
+        /* Serializa POR JUGADOR: dos webhooks del mismo usuario entran de a
+           uno, asi el conteo de "primera" y el candado del bono ven siempre
+           lo que el anterior ya commiteo. Mismo rol que cumple el UPDATE de
+           usuarios dentro de la transaccion del matcher. */
+        $lk = $pdo->prepare("SELECT id FROM usuarios WHERE username = ? FOR UPDATE");
+        $lk->execute([(string)$recarga['usuario']]);
+
+        /* "Primera carga" se decide ANTES del claim: el claim mismo vuelve
+           acreditada ESTA recarga y el conteo ya no diria "cero previas".
+           Mismo calculo que rl_acreditar(); se persiste en la fila para que
+           Publicidad haga SUM(es_primera) sin recalcular (las recargas HG
+           quedaban en NULL y no contaban como primera carga en el embudo). */
+        $esPrimera = null;
+        try {
+            $st = $pdo->prepare(
+                "SELECT COUNT(*) FROM recargas WHERE usuario = ? AND estado = 'acreditada'"
+            );
+            $st->execute([(string)$recarga['usuario']]);
+            $esPrimera = ((int)$st->fetchColumn() === 0) ? 1 : 0;
+        } catch (Throwable $e) {
+            error_log('hg_webhook: no pude calcular es_primera: ' . $e->getMessage());
         }
-        if (function_exists('crmnotif_bono_aplicar_en_recarga')) {
-            crmnotif_bono_aplicar_en_recarga($pdo, (string)$recarga['usuario'],
-                (int)$recarga['id'], (int)$recarga['coins']);
+
+        try {
+            $claim = $pdo->prepare(
+                "UPDATE recargas SET estado='acreditada', acreditada_en=NOW(), mensaje='HG Cash',
+                        es_primera=?
+                  WHERE id = ? AND estado = 'pendiente'"
+            );
+            $claim->execute([$esPrimera, (int)$recarga['id']]);
+        } catch (PDOException $e) {
+            // SOLO si falta la columna (migracion 44: SQLSTATE 42S22 / 1054)
+            // se reintenta sin ella. Cualquier otro error (deadlock, lock
+            // timeout) NO es "falta la columna": va al catch grande, que
+            // deshace todo y le pide a HG que reintente.
+            if ((string)($e->errorInfo[0] ?? '') !== '42S22'
+                && (int)($e->errorInfo[1] ?? 0) !== 1054) {
+                throw $e;
+            }
+            $claim = $pdo->prepare(
+                "UPDATE recargas SET estado='acreditada', acreditada_en=NOW(), mensaje='HG Cash'
+                  WHERE id = ? AND estado = 'pendiente'"
+            );
+            $claim->execute([(int)$recarga['id']]);
         }
+        if ($claim->rowCount() !== 1) {
+            $pdo->rollBack();
+            hgw_salir(['ok' => true, 'ya_procesado' => true]);
+        }
+
+        // Acreditar las fichas — el paso por el que existe todo esto.
+        $pdo->prepare("UPDATE usuarios SET coins = coins + ? WHERE username = ?")
+            ->execute([(int)$recarga['coins'], (string)$recarga['usuario']]);
+
+        // Aviso + bonos, best-effort: nada de esto puede hacer que la
+        // acreditacion parezca fallida...
+        try {
+            if (function_exists('rl_notificar_acreditada')) {
+                rl_notificar_acreditada($pdo, $recarga);
+            }
+            if (function_exists('crmnotif_bono_aplicar_en_recarga')) {
+                crmnotif_bono_aplicar_en_recarga($pdo, (string)$recarga['usuario'],
+                    (int)$recarga['id'], (int)$recarga['coins']);
+            }
+            /* Bono de bienvenida: una recarga HG ES camino B (la creo
+               rl_crear_recarga), pero se acredita por aca sin pasar por
+               rl_acreditar() -- y el bono no salia NUNCA para un jugador de
+               landing que pagaba por HG Cash. Mismo gate de "primera" que
+               alla; el candado de una-sola-vez esta en el helper. */
+            if ($esPrimera === 1 && function_exists('rl_bono_bienvenida_aplicar')) {
+                rl_bono_bienvenida_aplicar($pdo, (string)$recarga['usuario'], (int)$recarga['coins']);
+            }
+        } catch (Throwable $e) {
+            // ...SALVO un deadlock: ese ya revirtio la transaccion entera del
+            // lado del server (los helpers lo relanzan a proposito) y aca no
+            // queda nada que commitear -- sigue al catch grande.
+            if ($e instanceof PDOException
+                && ((string)($e->errorInfo[0] ?? '') === '40001'
+                    || (int)($e->errorInfo[1] ?? 0) === 1213)) {
+                throw $e;
+            }
+            error_log('hg_webhook aviso: ' . $e->getMessage());
+        }
+
+        $pdo->commit();
     } catch (Throwable $e) {
-        error_log('hg_webhook aviso: ' . $e->getMessage());
+        if ($pdo->inTransaction()) {
+            try { $pdo->rollBack(); } catch (Throwable $e2) {}
+        }
+        error_log('hg_webhook acreditar (' . $checkoutId . '): ' . $e->getMessage());
+        /* 500 A PROPOSITO, excepcion puntual a la regla de oro #3: esto es un
+           fallo transitorio (deadlock, base caida un instante) y el reintento
+           de HG es exactamente la recuperacion correcta -- el claim
+           condicional lo mantiene idempotente. La regla #3 aplica a errores
+           que van a volver a fallar igual; este no. */
+        hgw_salir(['ok' => false, 'error' => 'transitorio'], 500);
     }
 
     hgw_salir(['ok' => true, 'acreditada' => (int)$recarga['coins']]);

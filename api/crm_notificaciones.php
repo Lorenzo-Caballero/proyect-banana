@@ -453,6 +453,17 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
                   WHERE id=? AND estado='pendiente'"
             )->execute([$recargaId, $b['id']]);
         } catch (Throwable $e) {
+            /* "Nunca lanza" tiene UNA excepcion: un deadlock (1213) dentro de
+               la transaccion del caller ya la revirtio ENTERA del lado del
+               server -- tragarlo aca dejaria a rl_acreditar() siguiendo (y
+               despues "commiteando") una acreditacion que ya no existe. Se
+               relanza para que el caller aborte limpio; crm_cargar() ya hace
+               lo mismo. Cualquier otro fallo sigue siendo best-effort. */
+            if ($pdo->inTransaction() && $e instanceof PDOException
+                && ((string)($e->errorInfo[0] ?? '') === '40001'
+                    || (int)($e->errorInfo[1] ?? 0) === 1213)) {
+                throw $e;
+            }
             error_log('crmnotif_bono_aplicar_en_recarga: ' . $e->getMessage());
         }
     }

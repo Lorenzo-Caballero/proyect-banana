@@ -984,95 +984,195 @@ function rl_acreditar(PDO $pdo, array &$recarga, string $idUnico, string $conf,
 
     /* Bono de bienvenida (landing bono.html y las landings del CRM): en la
        PRIMERA recarga acreditada de un jugador que entro por una landing con
-       bono, se le suma el % prometido en BONOS. Va aca y no en un paso aparte
-       porque este es el unico lugar por el que pasan TODAS las acreditaciones
-       del camino B (automaticas y manuales del CRM): no hay forma de que una
-       primera carga se lo saltee.
-
-       El % depende de POR DONDE entro (altas.origen):
-         'bono50'     -> RL_BONO_BIENVENIDA_PCT (la landing fija de siempre)
-         'lp:<slug>'  -> landings.bono_pct de ESA landing (migracion 52).
-       La fila se busca AUNQUE la landing este pausada: pausar corta las altas
-       nuevas, no las promesas ya hechas a quien se registro antes.
+       bono, se le suma el % prometido en BONOS. La logica vive en
+       rl_bono_bienvenida_aplicar() porque este YA NO es el unico lugar que
+       acredita plata del camino B: rl_acreditar_directo() (Comprobantes a
+       mano) y hg_webhook.php (HG Cash) acreditan sin pasar por aca, y se
+       salteaban el bono -- la primera carga de un jugador de landing resuelta
+       por esos caminos no daba bono nunca, y una recarga posterior lo cobraba
+       de mas o sobre el monto equivocado.
 
        Descansa en $esPrimera, que ya se calculo ARRIBA, antes de marcar esta
        recarga como acreditada -- por eso vale "cero acreditadas previas". Si
        ese calculo fallo ($esPrimera === null) NO se acredita: mejor deberle un
        bono a alguien (se carga a mano desde el CRM) que regalarlo dos veces.
-
-       Nunca lanza: la recarga YA quedo acreditada arriba, y un problema con el
-       bono no puede hacerla parecer fallida.
+       El candado de una-sola-vez-por-jugador esta adentro del helper, y es lo
+       que frena el doble pago cuando dos acreditaciones del mismo usuario
+       calculan "primera" casi a la vez, o cuando la primera entro por otro
+       camino. Nunca lanza: la recarga YA quedo acreditada arriba.
 
        Limite conocido: si la primera carga entrara por el camino A (el boton
        "Depositos" DENTRO del juego), esto no corre -- ese camino no crea filas
-       en `recargas` ni pasa por aca. Para el flujo de la landing (chatbot ->
-       transferencia) es el camino de siempre. */
+       en `recargas` ni pasa por aca; el bono sale recien con la primera
+       carga del camino B (y el candado evita que salga dos veces). */
     if ($esPrimera === 1) {
-        try {
-            // El origen del alta dice por donde entro. Sin JOIN a proposito:
-            // `altas` comparte collation con `usuarios`, pero comparar contra
-            // un parametro PHP no depende de ninguna de las dos.
-            $sa = $pdo->prepare(
-                "SELECT origen FROM altas WHERE usuario = ? ORDER BY id DESC LIMIT 1"
-            );
-            $sa->execute([(string)$recarga['usuario']]);
-            $origenAlta = (string)$sa->fetchColumn();
-
-            $pctBono = 0;
-            if ($origenAlta === RL_BONO_BIENVENIDA_ORIGEN) {
-                $pctBono = RL_BONO_BIENVENIDA_PCT;
-            } elseif (strncmp($origenAlta, 'lp:', 3) === 0
-                      && function_exists('landings_por_slug')) {
-                $lpFila = landings_por_slug($pdo, substr($origenAlta, 3), false);
-                if ($lpFila) {
-                    $pctBono = (int)$lpFila['bono_pct'];
-                }
-            }
-
-            if ($pctBono > 0) {
-                $bono = (int)floor((int)$recarga['coins'] * $pctBono / 100);
-                if ($bono > 0) {
-                    $pdo->prepare("UPDATE usuarios SET bonus = bonus + ? WHERE username = ?")
-                        ->execute([$bono, (string)$recarga['usuario']]);
-                    // El movimiento con origen propio: en la ficha del CRM se
-                    // tiene que poder distinguir "bono de la promo" de un bono
-                    // cargado a mano, si no las cuentas de Publicidad no cierran.
-                    $pdo->prepare(
-                        "INSERT INTO movimientos (usuario, tipo, monto, motivo, origen)
-                         VALUES (?, 'bono', ?, ?, 'bono_bienvenida')"
-                    )->execute([
-                        mb_substr((string)$recarga['usuario'], 0, 50),
-                        $bono,
-                        'Bono de bienvenida ' . $pctBono . '% por su primera carga',
-                    ]);
-                    if (function_exists('notif_crear')) {
-                        notif_crear(
-                            $pdo,
-                            (string)$recarga['usuario'],
-                            '🎁 ¡Bono de bienvenida!',
-                            'Te acreditamos ' . number_format($bono, 0, ',', '.')
-                                . ' en bonos (' . $pctBono
-                                . '% de tu primera carga). ¡A jugarlos!',
-                            'bono',
-                            null,
-                            'recargas'
-                        );
-                    }
-                }
-            }
-        } catch (Throwable $e) {
-            // Queda en el log CON usuario y monto: si esto falla, el bono se
-            // le debe y alguien lo tiene que cargar a mano desde el CRM.
-            error_log('rl_acreditar/bono_bienvenida: ' . (string)$recarga['usuario']
-                . ' recarga ' . (string)($recarga['referencia'] ?? '?')
-                . ': ' . $e->getMessage());
-        }
+        rl_bono_bienvenida_aplicar($pdo, (string)$recarga['usuario'], (int)$recarga['coins']);
     }
 
     // es_primera calculado arriba viaja al caller a traves de $recarga -- lo
     // necesita rl_reportar_purchase(), que corre DESPUES del commit (ver esa
     // funcion para el porque).
     $recarga['es_primera'] = $esPrimera;
+}
+
+/**
+ * Cumple la promesa del bono de bienvenida sobre la primera carga: mira por
+ * que landing entro el jugador (altas.origen), resuelve el %
+ * ('bono50' -> RL_BONO_BIENVENIDA_PCT; 'lp:<slug>' -> landings.bono_pct de
+ * ESA landing, migracion 52) y lo suma en BONOS (usuarios.bonus, el contador
+ * propio -- no toca el saldo de ganamos).
+ *
+ * QUIEN DECIDE "PRIMERA" ES EL CALLER (es_primera en rl_acreditar; cero
+ * recargas acreditadas en rl_acreditar_directo y hg_webhook). Aca vive el
+ * candado de UNA SOLA VEZ POR JUGADOR: el movimiento con origen
+ * 'bono_bienvenida' es la marca, y se consulta con FOR UPDATE a proposito --
+ * una lectura bloqueante ve lo ultimo COMMITEADO, no el snapshot de la
+ * transaccion, asi que cuando dos acreditaciones del mismo usuario calculan
+ * "primera" casi a la vez (las dos contaron cero previas), la que llega
+ * segunda espera el lock de la fila de `usuarios` que la primera ya tiene,
+ * y al seguir VE el movimiento recien commiteado y se frena. Usa el indice
+ * ix_usuario de movimientos: no toca rangos de otros jugadores.
+ *
+ * El movimiento se inserta ANTES de sumar el bonus, a proposito: si algo se
+ * rompe entre los dos, queda el candado puesto y un log con el usuario.
+ * Deberle un bono (se carga a mano desde el CRM) es recuperable; pagarlo dos
+ * veces no.
+ *
+ * Dos decisiones sobre el alta:
+ *  - Solo cuenta un alta CONCRETADA (estado='ok'): una fila zombie en
+ *    'error' de un intento que nunca se completo no puede regalarle el bono
+ *    a un tocayo creado despues por el panel de agentes.
+ *  - La landing 'lp:' se busca AUNQUE este pausada: pausar corta las altas
+ *    nuevas, no las promesas ya hechas a quien se registro antes.
+ *
+ * Nunca lanza. Devuelve el bono acreditado (0 si no correspondia).
+ */
+function rl_bono_bienvenida_aplicar(PDO $pdo, string $usuario, int $coins): int
+{
+    try {
+        // Sin JOIN a proposito: `altas` comparte collation con `usuarios`,
+        // pero comparar contra un parametro PHP no depende de ninguna.
+        $sa = $pdo->prepare(
+            "SELECT origen FROM altas WHERE usuario = ? AND estado = 'ok'
+              ORDER BY id DESC LIMIT 1"
+        );
+        $sa->execute([$usuario]);
+        $origenAlta = (string)$sa->fetchColumn();
+
+        if ($origenAlta === '') {
+            /* Sin alta confirmada. Si igual hay una fila con promo en otro
+               estado, NO se paga (podria ser el zombie de un intento ajeno),
+               pero tampoco se calla: es el caso real de un alta de landing
+               que fallo y el agente creo la cuenta a mano en el panel -- el
+               bono se le debe y alguien lo tiene que ver. */
+            $sz = $pdo->prepare(
+                "SELECT origen, estado FROM altas WHERE usuario = ? ORDER BY id DESC LIMIT 1"
+            );
+            $sz->execute([$usuario]);
+            if ($z = $sz->fetch()) {
+                $oz = (string)$z['origen'];
+                if ($oz === RL_BONO_BIENVENIDA_ORIGEN || strncmp($oz, 'lp:', 3) === 0) {
+                    error_log('rl_bono_bienvenida: ' . $usuario . ' tiene alta con promo '
+                        . $oz . " en estado '" . (string)$z['estado'] . "' (no 'ok'):"
+                        . ' bono NO pagado solo. Si la cuenta se creo a mano por esa'
+                        . ' promo, cargarlo desde el CRM.');
+                }
+            }
+            return 0;
+        }
+
+        $pctBono = 0;
+        if ($origenAlta === RL_BONO_BIENVENIDA_ORIGEN) {
+            $pctBono = RL_BONO_BIENVENIDA_PCT;
+        } elseif (strncmp($origenAlta, 'lp:', 3) === 0) {
+            if (!function_exists('landings_por_slug')) {
+                // Deploy parcial (recargas_lib nuevo sin landings_lib): que
+                // no sea silencioso -- este log es la unica señal de que se
+                // le esta debiendo un bono prometido a alguien.
+                error_log('rl_bono_bienvenida: falta landings_lib.php y '
+                    . $usuario . ' entro por ' . $origenAlta
+                    . ' -- bono NO acreditado, cargarlo a mano desde el CRM');
+            } else {
+                $lpFila = landings_por_slug($pdo, substr($origenAlta, 3), false);
+                if ($lpFila) {
+                    $pctBono = (int)$lpFila['bono_pct'];
+                }
+            }
+        }
+        if ($pctBono <= 0) {
+            return 0;
+        }
+        $bono = (int)floor($coins * $pctBono / 100);
+        if ($bono <= 0) {
+            return 0;
+        }
+
+        // El candado (ver docblock).
+        $ya = $pdo->prepare(
+            "SELECT id FROM movimientos
+              WHERE usuario = ? AND origen = 'bono_bienvenida' LIMIT 1 FOR UPDATE"
+        );
+        $ya->execute([$usuario]);
+        if ($ya->fetchColumn()) {
+            return 0;
+        }
+
+        // El movimiento con origen propio: en la ficha del CRM se distingue
+        // "bono de la promo" de un bono cargado a mano (si no, las cuentas
+        // de Publicidad no cierran) -- y ademas ES el candado de arriba.
+        $pdo->prepare(
+            "INSERT INTO movimientos (usuario, tipo, monto, motivo, origen)
+             VALUES (?, 'bono', ?, ?, 'bono_bienvenida')"
+        )->execute([
+            mb_substr($usuario, 0, 50),
+            $bono,
+            'Bono de bienvenida ' . $pctBono . '% por su primera carga',
+        ]);
+
+        $pdo->prepare("UPDATE usuarios SET bonus = bonus + ? WHERE username = ?")
+            ->execute([$bono, $usuario]);
+
+        if (function_exists('notif_crear')) {
+            notif_crear(
+                $pdo,
+                $usuario,
+                '🎁 ¡Bono de bienvenida!',
+                'Te acreditamos ' . number_format($bono, 0, ',', '.')
+                    . ' en bonos (' . $pctBono
+                    . '% de tu primera carga). ¡A jugarlos!',
+                'bono',
+                null,
+                'recargas'
+            );
+        }
+        return $bono;
+    } catch (Throwable $e) {
+        /* Un deadlock (1213 / SQLSTATE 40001) NO es "fallo el bono": InnoDB
+           ya revirtio la transaccion ENTERA del caller del lado del server.
+           Tragarlo aca dejaria a rl_acreditar creyendo que acredito (y sus
+           efectos post-commit -- carga al juego, aviso -- correrian sobre
+           una acreditacion deshecha, que el matcher volveria a pagar en la
+           proxima pasada). Se RELANZA para que el caller haga su rollback y
+           devuelva error, como con cualquier otro fallo de acreditacion.
+           Solo dentro de una transaccion: en autocommit el deadlock revierte
+           nada mas que su statement y el best-effort de siempre esta bien. */
+        if ($pdo->inTransaction() && $e instanceof PDOException
+            && ((string)($e->errorInfo[0] ?? '') === '40001'
+                || (int)($e->errorInfo[1] ?? 0) === 1213)) {
+            throw $e;
+        }
+        // CON usuario y monto, y sin afirmar de mas: si fallo DESPUES del
+        // INSERT del movimiento, el candado quedo puesto con el bonus a
+        // medias -- revisar `movimientos` origen='bono_bienvenida' del
+        // usuario ANTES de acreditar nada a mano. Y OJO al reponerlo: una
+        // carga manual del CRM deja origen='crm', que NO planta el candado
+        // -- si el jugador acredita despues otra "primera" carga, el sistema
+        // puede volver a pagarlo solo. Verificar antes de duplicar.
+        error_log('rl_bono_bienvenida: ' . $usuario . ' coins=' . $coins
+            . ': ' . $e->getMessage()
+            . ' -- revisar movimientos bono_bienvenida del usuario antes de acreditar a mano');
+        return 0;
+    }
 }
 
 /**
@@ -1715,6 +1815,29 @@ function rl_acreditar_directo(PDO $pdo, string $idUnico, string $usuario,
         rl_aprender_huella($pdo, $usuario, $pago);
 
         if (function_exists('actividad_marcar')) { actividad_marcar($pdo, $usuario); }
+
+        /* Bono de bienvenida: esto ES una acreditacion del camino B (plata
+           real por transferencia), solo que resuelta a mano y sin fila en
+           `recargas` -- y por eso se lo salteaba: la primera carga de un
+           jugador de landing resuelta por aca no daba bono nunca, y la
+           SEGUNDA (por recarga normal) lo cobraba sobre el monto equivocado.
+           Mismo criterio de "primera" que rl_acreditar: cero recargas
+           acreditadas previas (este camino no crea filas en `recargas`, asi
+           que el candado de una-sola-vez del helper es el que evita el doble
+           pago entre caminos y entre dos directos seguidos). */
+        $esPrimera = null;
+        try {
+            $st = $pdo->prepare(
+                "SELECT COUNT(*) FROM recargas WHERE usuario = ? AND estado = 'acreditada'"
+            );
+            $st->execute([$usuario]);
+            $esPrimera = ((int)$st->fetchColumn() === 0) ? 1 : 0;
+        } catch (Throwable $e) {
+            error_log('rl_acreditar_directo: no pude calcular es_primera: ' . $e->getMessage());
+        }
+        if ($esPrimera === 1) {
+            rl_bono_bienvenida_aplicar($pdo, $usuario, $coins);
+        }
 
         $pdo->commit();
 
