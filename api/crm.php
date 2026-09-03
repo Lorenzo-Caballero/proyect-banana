@@ -574,6 +574,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 } catch (Throwable $e) { /* sin tabla (mig 30): quedan [] */ }
             }
 
+            /* ---- "Sin hablar": los que NO tienen ni conversacion ----
+               La lista sale de `conversaciones`, asi que el que se creo la
+               cuenta y nunca escribio no aparecia en ningun lado -- y es
+               justamente a quien uno quiere ir a buscar. Entran como filas
+               VIRTUALES (id 0): no existe ninguna conversacion todavia y no se
+               crea hasta que el agente le escriba (accion=chat_de_usuario).
+               Crear cientos de chats vacios de antemano taparia los que si
+               esperan respuesta.
+               Van al final, despues de los chats de verdad: son otra cosa. */
+            $sinChat = 0;
+            if ($inactTipo === 'chat') {
+                $faltan = 200 - count($items);
+                if ($faltan > 0) {
+                    foreach (crm_usuarios_sin_conversacion($pdo, $inact, $faltan) as $u) {
+                        $items[] = [
+                            'id'             => 0,
+                            'sin_chat'       => true,
+                            'session_id'     => '',
+                            'usuario'        => $u['username'],
+                            'estado'         => 'abierta',
+                            'preview'        => '',
+                            'no_leidos'      => 0,
+                            'fijada'         => false,
+                            'actualizada_en' => $u['creation_date'],
+                            'ultima_carga'   => null,
+                            'agentes'        => [],
+                            'derivada'       => false,
+                        ];
+                        $sinChat++;
+                    }
+                }
+            }
+
             /* Los totales del panel cuentan la BANDEJA, no la base: una
                conversacion archivada no es un pendiente que alguien tenga que
                atender, y si contara, el numero de "abiertas" nunca bajaria por
@@ -605,7 +638,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                  FROM usuarios"
             )->fetch(PDO::FETCH_ASSOC);
 
-            salir(['ok' => true, 'items' => $items, 'resumen' => [
+            salir(['ok' => true, 'items' => $items, 'sin_chat' => $sinChat, 'resumen' => [
                 'total'         => (int)$res['total'],
                 'abiertas'      => (int)$res['abiertas'],
                 'pendientes'    => (int)$res['pendientes'],
@@ -617,6 +650,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 'fichas_total'  => (int)$g['fichas'],
                 'bonos_total'   => (int)$g['bonos'],
             ]]);
+        }
+
+        /* ---- abrir el chat de un jugador que todavia no tiene ----
+           Lo llama el front cuando el agente clickea una de las filas virtuales
+           de "sin hablar". La conversacion nace ACA, en el momento en que
+           alguien decide escribirle -- no antes, para no llenar la bandeja de
+           chats vacios.
+
+           Es idempotente: crm_conversacion_id() devuelve la que ya exista para
+           ese usuario. Dos agentes clickeando al mismo tiempo abren la misma,
+           no dos.
+
+           El session_id de relleno lleva prefijo 'crm:' para que se vea de
+           donde salio. Cuando el jugador entre y se identifique,
+           crm_conversacion_id le pega el suyo real (la rama que ya existia para
+           el que vuelve desde otro celular) y ahi recien se lleva lo que le
+           hayamos escrito -- mis_mensajes.php empareja por session_id. */
+        if ($accion === 'chat_de_usuario') {
+            $u = trim((string)($_GET['usuario'] ?? ''));
+            if ($u === '') { salir(['ok' => false, 'error' => 'Falta el usuario'], 400); }
+
+            $st = $pdo->prepare("SELECT 1 FROM usuarios WHERE username = ? LIMIT 1");
+            $st->execute([$u]);
+            if (!$st->fetchColumn()) {
+                salir(['ok' => false, 'error' => 'Ese jugador no existe'], 404);
+            }
+
+            $convId = crm_conversacion_id($pdo, 'crm:' . mb_substr($u, 0, 50), $u);
+            salir(['ok' => true, 'id' => $convId, 'usuario' => $u]);
         }
 
         // ---- una conversacion con su hilo + ficha del usuario ----

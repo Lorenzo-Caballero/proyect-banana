@@ -346,6 +346,64 @@ if (!function_exists('crm_difusion_chat_aplicar')) {
     }
 }
 
+if (!function_exists('crm_usuarios_sin_conversacion')) {
+    /**
+     * Jugadores que existen en `usuarios` y NO tienen ninguna conversacion.
+     *
+     * Es el agujero de la bandeja: la lista sale de `conversaciones`, asi que
+     * el que se creo la cuenta y nunca escribio no aparece en ningun lado. No
+     * es un caso raro -- son casi todos los que entran por la landing o los que
+     * el agente da de alta desde el panel.
+     *
+     * NO se les crea la conversacion aca. Se devuelven como filas virtuales
+     * (id 0) y la conversacion nace recien cuando el agente le escribe: crear
+     * cientos de chats vacios de antemano llena la bandeja y tapa los que si
+     * esperan respuesta.
+     *
+     * $diasMin > 0 los recorta por antiguedad de la CUENTA (creation_date, el
+     * alta en ganamos). Es la unica fecha que tienen: no hablaron nunca, asi
+     * que no hay "ultimo mensaje" contra el cual medir.
+     *
+     * El COLLATE del NOT EXISTS no es opcional: `usuarios` toma el default del
+     * servidor y `conversaciones` es utf8mb4_unicode_ci (migracion 05).
+     */
+    function crm_usuarios_sin_conversacion(PDO $pdo, int $diasMin = 0, int $limite = 200): array
+    {
+        $limite = max(1, min($limite, 500));
+        $where  = ["COALESCE(u.is_banned, 0) = 0"];
+        $params = [];
+
+        if ($diasMin > 0) {
+            // Sin creation_date no se puede afirmar que sea vieja: se deja
+            // afuera del filtro por dias en vez de colarla.
+            $where[]  = "u.creation_date IS NOT NULL
+                         AND u.creation_date < DATE_SUB(NOW(), INTERVAL ? DAY)";
+            $params[] = $diasMin;
+        }
+
+        $sql = "SELECT u.username, u.creation_date, u.balance
+                  FROM usuarios u
+                 WHERE " . implode(' AND ', $where) . "
+                   AND NOT EXISTS (
+                     SELECT 1 FROM conversaciones c
+                      WHERE c.clave = u.username COLLATE utf8mb4_unicode_ci
+                   )
+                 ORDER BY u.creation_date DESC, u.username ASC
+                 LIMIT " . $limite;
+
+        try {
+            $st = $pdo->prepare($sql);
+            $st->execute($params);
+            return $st->fetchAll(PDO::FETCH_ASSOC);
+        } catch (Throwable $e) {
+            // Una base sin espejar (o sin la tabla) no puede dejar sin bandeja
+            // al agente: se devuelve vacio y la lista normal sigue andando.
+            error_log('crm_usuarios_sin_conversacion: ' . $e->getMessage());
+            return [];
+        }
+    }
+}
+
 if (!function_exists('crm_difusion_chat_sembrar')) {
     /**
      * Le deja un mensaje a jugadores que TODAVIA NO TIENEN CHAT: si la

@@ -298,6 +298,17 @@
     background:rgba(239,68,68,.14);color:var(--red);font-size:10.5px;font-weight:800;
     letter-spacing:.2px;cursor:help}
 
+  /* Jugador sin conversación. Va apagado a propósito: no es un chat que
+     espera respuesta, es alguien a quien todavía nadie le escribió. Si
+     compitiera visualmente con los chats reales, taparía justo lo que sí
+     necesita atención. */
+  .conv.sinchat{opacity:.72}
+  .conv.sinchat:hover{opacity:1}
+  .conv.sinchat .pv{font-style:italic}
+  .chip-sinchat{display:inline-block;padding:1px 7px;border-radius:7px;
+    background:rgba(148,163,184,.16);color:var(--muted);font-size:10.5px;
+    font-weight:800;letter-spacing:.2px;font-style:normal;margin-right:5px}
+
   /* Alta del bot de Telegram: los pasos que hay que hacer EN Telegram, que no
      los puede hacer el CRM (el token sale de @BotFather con la cuenta del
      dueño). Lo que sigue —encontrar el chat id— sí lo resuelve el botón. */
@@ -1859,7 +1870,8 @@
         <div class="inact-tipo" id="inactTipo" role="group" aria-label="Criterio de inactividad">
           <span class="inact-rot">Sin</span>
           <button class="tab tab-chico on" data-t="carga" title="Sin recargas acreditadas">cargar</button>
-          <button class="tab tab-chico" data-t="chat" title="Sin mensajes en la conversación">hablar</button>
+          <button class="tab tab-chico" data-t="chat"
+                  title="Chats sin movimiento — y al final, los jugadores que se crearon la cuenta y nunca escribieron (esos todavía no tienen chat: se crea al escribirles)">hablar</button>
         </div>
         <div class="tabs-chat" id="tabsInact">
           <button class="tab tab-chico on" data-i="0">Todos</button>
@@ -5078,7 +5090,10 @@
     $("#tabArchivadas").textContent = nArch ? `Archivadas ${nArch}` : "Archivadas";
 
     if(!d.items.length){ $("#list").innerHTML = `<div class="nouser">No hay conversaciones${st.q?" para esa búsqueda":""}.</div>`; return; }
-    listaCache = new Map(d.items.map(c=> [c.id, c]));
+    /* Las filas de "nunca escribió" no tienen conversación todavía, así que
+       todas llegan con id 0 y se pisarían entre sí en el Map. Se las indexa
+       por usuario. */
+    listaCache = new Map(d.items.map(c=> [c.sin_chat ? "u:"+c.usuario : c.id, c]));
     $("#list").innerHTML = d.items.map(c=>{
       const nombre = c.usuario || "Anónimo";
       const anon = c.usuario ? "" : "anon";
@@ -5093,6 +5108,19 @@
       const ags = (c.agentes && c.agentes.length)
         ? `<div class="agentes-chat">${c.agentes.map(a=>`<span class="ag-chip${st.yo&&a===st.yo?" yo":""}"><span class="dot"></span>${esc(a)}</span>`).join("")}</div>`
         : "";
+      /* Jugador sin conversación: existe en `usuarios` y nunca escribió. No
+         hay hilo que abrir todavía -- se crea recién si el agente le escribe.
+         Se marca distinto para que no se confunda con un chat vacío de verdad,
+         y en vez de "hace X" se muestra desde cuándo tiene la cuenta. */
+      if (c.sin_chat){
+        return `<div class="conv sinchat" data-id="0" data-usuario="${esc(c.usuario)}">
+          <div class="av" ${bg}>${esc(inic(c.usuario||"?"))}</div>
+          <div class="mid">
+            <div class="n"><b>${esc(nombre)}</b><span class="t">${c.actualizada_en?("alta "+hace(c.actualizada_en)):""}</span></div>
+            <div class="pv"><span class="chip-sinchat">Nunca escribió</span> Tocá para escribirle</div>
+          </div>
+        </div>`;
+      }
       return `<div class="conv ${c.id===st.convId?"sel":""}${seleccion.has(c.id)?" marcada":""}${c.derivada?" derivada":""}" data-id="${c.id}">
         <span class="marca"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span>
         <div class="av ${anon}" ${bg}>${esc(inic(c.usuario||"?"))}</div>
@@ -5104,6 +5132,22 @@
     }).join("");
     $("#list").querySelectorAll(".conv").forEach(el=>{
       const id = +el.getAttribute("data-id");
+      const usrSinChat = el.getAttribute("data-usuario");
+
+      /* Sin conversación: no hay id que abrir ni nada que seleccionar. Se le
+         pide una al server (que la crea si no existe) y se entra. Nada del
+         resto del handler aplica -- ni el long-press, ni la selección
+         múltiple, que trabajan con ids. */
+      if (usrSinChat){
+        el.addEventListener("click", async ()=>{
+          el.style.opacity = ".5";
+          const d = await jget({accion:"chat_de_usuario", usuario: usrSinChat});
+          el.style.opacity = "";
+          if(d.ok && d.id){ await cargarLista(); abrir(d.id); }
+          else toast(d.error || "No se pudo abrir el chat");
+        });
+        return;
+      }
 
       el.addEventListener("click", e=>{
         /* El click FANTASMA del long-press. Despues de mantener apretado, el
