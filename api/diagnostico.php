@@ -1,7 +1,7 @@
 <?php
 /**
  * Diagnostico de la instalacion. Subilo a /api/ y abrilo en el navegador:
- *   https://TU-DOMINIO/api/diagnostico.php?clave=dejame-ver
+ *   https://TU-DOMINIO/gp-api/diagnostico.php?clave=dejame-ver
  *
  * Escrito en PHP viejo a proposito, para que corra aunque el hosting tenga una
  * version antigua: si el resto tira "500 sin mensaje", este archivo igual anda

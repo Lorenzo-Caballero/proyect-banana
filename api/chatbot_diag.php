@@ -1,7 +1,7 @@
 <?php
 /**
  * Diagnostico del chatbot. Abrilo en el NAVEGADOR (pasa el WAF de Hostinger):
- *   https://TU-DOMINIO/api/chatbot_diag.php?clave=ver-chatbot
+ *   https://TU-DOMINIO/gp-api/chatbot_diag.php?clave=ver-chatbot
  *
  * Prueba la conexion real con Cohere y muestra el error exacto que provoca el 502.
  * BORRALO del server cuando termines.
