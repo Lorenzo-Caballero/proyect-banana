@@ -146,12 +146,20 @@ if ($metodo === 'POST') {
         $fbp        = trim((string)($body['fbp']    ?? ''));
         $fbc        = trim((string)($body['fbc']    ?? ''));
 
+        /* Por que landing entro. WHITELIST y no texto libre: el origen despues
+           decide si rl_acreditar() regala un bono real en la primera carga
+           (RL_BONO_BIENVENIDA_ORIGEN en recargas_lib.php), asi que aceptar
+           cualquier cosa seria dejar que el navegador elija promociones. Un
+           valor desconocido cae en 'landing', como siempre. */
+        $promo  = trim((string)($body['promo'] ?? ''));
+        $origen = $promo === 'bono50' ? 'bono50' : 'landing';
+
         $r = alta_encolar($pdo, [
             'usuario'  => $usuarioFinal,
             'password' => $clave,
             // La landing solo pide el usuario. Nombre, apellido y correo los
             // completa el bot al llenar el formulario del panel.
-            'origen'   => 'landing',
+            'origen'   => $origen,
             'ip'       => $ip,
             // Con sid, la clave queda guardada para entregarla cuando el bot
             // confirme el alta. Sin sid (pestaña vieja) se sigue devolviendo

@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bono de bienvenida</title>
+<!-- Mismo motivo que en registro.html: en el VPS esto se sirve desde
+     /var/www/replica/, que no tiene carpeta img/ propia. Se reusa
+     /replica/logo.png (ya subido) en vez de una ruta que rompe en producción. -->
+<link rel="icon" type="image/png" href="/replica/logo.png">
+<link rel="apple-touch-icon" href="/replica/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --violet:#8b3ffe;
+    --violet-2:#a855f7;
+    --ink:#f4ecff;
+    --ink-dim:#b9a6d6;
+    --line:rgba(168,120,255,.28);
+    --danger:#ff6b8a;
+    --gold:#ffc844;
+    --gold-2:#ffe9a8;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:'Poppins',system-ui,sans-serif;
+    color:var(--ink);
+    min-height:100dvh;
+    display:flex;flex-direction:column;align-items:center;
+    padding:26px 18px 20px;
+    background:
+      radial-gradient(120% 90% at 50% 30%, #3a1560 0%, #200a38 44%, #0b0416 80%, #060209 100%);
+    overflow-x:hidden;
+  }
+
+  /* ---------- hero ---------- */
+  .hero{width:100%;max-width:420px;margin:auto 0;text-align:center;
+    animation:sube .5s ease both}
+  @keyframes sube{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+
+  .marca{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:18px}
+  .marca .logo{width:44px;height:44px;border-radius:12px;object-fit:cover;
+    box-shadow:0 8px 22px rgba(139,63,254,.45)}
+  .marca b{font-size:19px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+
+  .pill{display:inline-flex;align-items:center;gap:7px;padding:7px 16px;border-radius:999px;
+    background:linear-gradient(180deg,var(--gold-2),var(--gold));color:#3a2400;
+    font-size:12.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;
+    box-shadow:0 6px 20px rgba(255,200,68,.28)}
+
+  .rot{margin-top:22px;font-size:15px;font-weight:600;letter-spacing:.22em;
+    text-transform:uppercase;color:#d9c7f5}
+
+  /* El número es el héroe de la pieza: gigante, dorado y con brillo propio.
+     clamp() y no un px fijo -- entre un iPhone SE y un desktop hay 3x de
+     ancho, y a tamaño fijo o se corta o queda ridículo. */
+  .cifra{font-size:clamp(74px,22vw,124px);font-weight:900;line-height:.92;
+    background:linear-gradient(180deg,#fff6d8 8%,var(--gold) 52%,#e29a00 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    filter:drop-shadow(0 6px 26px rgba(255,190,40,.35));letter-spacing:-.02em}
+  .cifra span{font-size:.52em;vertical-align:super;margin-left:-.04em}
+
+  .cifra-pie{margin-top:4px;font-size:15px;font-weight:700;letter-spacing:.18em;
+    text-transform:uppercase;color:#efe3ff}
+  .sub{margin-top:14px;font-size:14.5px;color:var(--ink-dim);line-height:1.5}
+
+  /* ---------- CTA ---------- */
+  .cta{margin-top:26px;width:100%;padding:17px 20px;border:0;border-radius:16px;
+    background:linear-gradient(180deg,var(--violet-2),var(--violet));
+    color:#fff;font:800 17px/1 'Poppins',sans-serif;letter-spacing:.02em;
+    cursor:pointer;box-shadow:0 14px 34px rgba(139,63,254,.45);
+    display:flex;align-items:center;justify-content:center;gap:10px;
+    transition:transform .12s ease, box-shadow .12s ease}
+  .cta:hover{transform:translateY(-1px);box-shadow:0 18px 40px rgba(139,63,254,.55)}
+  .cta:active{transform:translateY(1px)}
+  .cta .ico{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.9;
+    stroke-linecap:round;stroke-linejoin:round}
+
+  /* Latido lento del botón. Es la única animación en loop de la página: si
+     todo se mueve, nada llama la atención. */
+  @keyframes late{0%,88%,100%{transform:scale(1)}94%{transform:scale(1.025)}}
+  .cta{animation:late 3.4s ease-in-out infinite}
+  @media (prefers-reduced-motion:reduce){.cta{animation:none}}
+
+  .ventajas{margin-top:16px;display:flex;justify-content:center;gap:14px;flex-wrap:wrap;
+    font-size:12px;color:var(--ink-dim)}
+  .ventajas span{display:inline-flex;align-items:center;gap:5px}
+  .ventajas .ico{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;
+    stroke-linecap:round;stroke-linejoin:round;opacity:.85}
+
+  .legal{margin-top:22px;font-size:11px;color:#7c6a97;line-height:1.6}
+
+  /* ---------- hoja inferior (el "dropdown" del alta) ----------
+     Sale desde abajo y no un modal centrado: en el celular es donde está el
+     pulgar, y es el gesto que la gente ya conoce de cualquier app. */
+  .fondo{position:fixed;inset:0;background:rgba(6,2,12,.72);backdrop-filter:blur(3px);
+    opacity:0;pointer-events:none;transition:opacity .22s ease;z-index:40}
+  .fondo.on{opacity:1;pointer-events:auto}
+
+  .hoja{position:fixed;left:0;right:0;bottom:0;z-index:41;
+    background:linear-gradient(180deg,#2a1046,#1a0a2e);
+    border:1px solid var(--line);border-bottom:0;
+    border-radius:22px 22px 0 0;padding:10px 20px calc(24px + env(safe-area-inset-bottom));
+    transform:translateY(102%);transition:transform .28s cubic-bezier(.22,1,.36,1);
+    box-shadow:0 -18px 50px rgba(0,0,0,.5)}
+  .hoja.on{transform:none}
+  @media (min-width:560px){
+    .hoja{left:50%;right:auto;transform:translate(-50%,102%);width:440px;
+      border-radius:22px;bottom:24px;border-bottom:1px solid var(--line)}
+    .hoja.on{transform:translate(-50%,0)}
+  }
+
+  .tirador{width:42px;height:4px;border-radius:4px;background:rgba(255,255,255,.22);
+    margin:0 auto 16px}
+  .hoja h2{font-size:19px;font-weight:800;text-align:center}
+  .hoja .ayuda{margin-top:7px;font-size:13px;color:var(--ink-dim);text-align:center;line-height:1.5}
+
+  .inp{width:100%;margin-top:18px;padding:15px 16px;border-radius:13px;
+    border:1px solid var(--line);background:rgba(255,255,255,.05);color:var(--ink);
+    font:600 16px 'Poppins',sans-serif;outline:none}
+  .inp::placeholder{color:#8a76ab;font-weight:400}
+  .inp:focus{border-color:var(--violet-2);box-shadow:0 0 0 3px rgba(168,85,247,.18)}
+
+  .msg{display:block;min-height:17px;margin-top:8px;font-size:12.5px;color:var(--danger)}
+
+  .btn{width:100%;margin-top:6px;padding:16px;border:0;border-radius:14px;
+    background:linear-gradient(180deg,var(--violet-2),var(--violet));color:#fff;
+    font:800 16px 'Poppins',sans-serif;cursor:pointer;
+    box-shadow:0 12px 28px rgba(139,63,254,.4)}
+  .btn[disabled]{opacity:.6;cursor:default;box-shadow:none}
+  .link{background:none;border:0;color:var(--ink-dim);font:600 13px 'Poppins',sans-serif;
+    cursor:pointer;text-decoration:underline;padding:10px}
+
+  .pie-seg{margin-top:14px;font-size:11.5px;color:#7c6a97;text-align:center;
+    display:flex;align-items:center;justify-content:center;gap:6px}
+  .pie-seg .ico{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:2;
+    stroke-linecap:round;stroke-linejoin:round}
+
+  /* --- vistas de la hoja: form / espera / listo / éxito --- */
+  .vista{display:none}
+  .vista.on{display:block;animation:aparece .25s ease both}
+  @keyframes aparece{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+  .espera{text-align:center;padding:12px 0 4px}
+  .spinner{width:56px;height:56px;margin:0 auto 16px;border-radius:16px;
+    border:1px solid var(--line);display:flex;align-items:center;justify-content:center;
+    background:rgba(255,255,255,.04);animation:gira 2.4s linear infinite}
+  @keyframes gira{to{transform:rotate(360deg)}}
+  .spinner svg{width:26px;height:26px;fill:none;stroke:var(--gold);stroke-width:1.8;
+    stroke-linecap:round;stroke-linejoin:round}
+  .espera h2{font-size:18px;transition:opacity .25s ease}
+  .espera h2.cambiando{opacity:0}
+  .espera p{margin-top:8px;font-size:13.5px;color:var(--ink-dim)}
+  .barra{margin:16px auto 0;width:100%;height:5px;border-radius:5px;
+    background:rgba(255,255,255,.08);overflow:hidden}
+  .barra i{display:block;width:38%;height:100%;border-radius:5px;
+    background:linear-gradient(90deg,transparent,var(--violet-2),transparent);
+    animation:corre 1.3s ease-in-out infinite}
+  @keyframes corre{from{transform:translateX(-110%)}to{transform:translateX(320%)}}
+  .nota{margin-top:12px;font-size:12px;color:#8a76ab}
+
+  .check{width:58px;height:58px;margin:6px auto 14px;border-radius:50%;
+    background:rgba(84,230,181,.14);display:flex;align-items:center;justify-content:center}
+  .check svg{width:28px;height:28px;fill:none;stroke:#54e6b5;stroke-width:2.6;
+    stroke-linecap:round;stroke-linejoin:round}
+
+  .cred{display:flex;align-items:center;justify-content:space-between;gap:12px;
+    margin-top:10px;padding:13px 15px;border-radius:12px;
+    border:1px solid var(--line);background:rgba(255,255,255,.04)}
+  .cred .k{font-size:12px;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.06em}
+  .cred .v{font-size:17px;font-weight:800;word-break:break-all;text-align:right}
+  .aviso{margin-top:12px;font-size:12px;color:#8a76ab;line-height:1.5;text-align:center}
+</style>
+</head>
+<body>
+
+<main class="hero">
+  <div class="marca">
+    <img class="logo" src="/replica/logo.png" alt="">
+    <!-- OJO: este es el nombre que se ve arriba de todo. Cambialo por el de la
+         agencia antes de publicar la página. -->
+    <b id="marcaNombre">Tu Casino</b>
+  </div>
+
+  <span class="pill">🔥 Bono de bienvenida</span>
+
+  <div class="rot">Bono</div>
+  <!-- El número sale de BONO_PCT (abajo, en el script). NO se escribe a mano
+       acá: tiene que coincidir con lo que el sistema realmente acredita. -->
+  <div class="cifra"><span id="bonoPct">50</span><span>%</span></div>
+  <div class="cifra-pie">En tu primera carga</div>
+
+  <p class="sub">Creá tu cuenta gratis y jugá. Online las 24 horas.</p>
+
+  <button class="cta" id="ctaJugar" type="button">
+    <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8.2" cy="8.2" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.8" cy="15.8" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/></svg>
+    Jugar ahora
+  </button>
+
+  <div class="ventajas">
+    <span><svg class="ico" viewBox="0 0 24 24"><path d="M13 2 3 14h8l-1 8 10-12h-8z"/></svg> Carga al instante</span>
+    <span><svg class="ico" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg> Retiros rápidos</span>
+    <span><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="10.5" width="16" height="10.5" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg> Sin tarjeta</span>
+  </div>
+
+  <p class="legal">Jugá con responsabilidad · Solo mayores de 18 años</p>
+</main>
+
+<div class="fondo" id="fondo"></div>
+
+<!-- La hoja del alta. Es el MISMO flujo de registro.html: mismo endpoint,
+     mismo sondeo, misma clave de localStorage. Un pedido empezado en una
+     página se puede retomar en la otra. -->
+<section class="hoja" id="hoja" role="dialog" aria-modal="true" aria-labelledby="hojaTitulo">
+  <div class="tirador"></div>
+
+  <div class="vista on" id="vistaForm">
+    <h2 id="hojaTitulo">Creá tu cuenta</h2>
+    <p class="ayuda">Escribí tu nombre y listo. No pedimos mail, teléfono ni tarjeta.</p>
+    <form id="form" novalidate>
+      <input id="usuario" class="inp" type="text" inputmode="text"
+             autocomplete="name" placeholder="Ej: Martín" aria-label="Tu nombre">
+      <span class="msg" id="msg" role="alert"></span>
+      <button class="btn" id="btn" type="submit">Crear mi cuenta y activar el bono</button>
+    </form>
+    <p class="pie-seg"><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="10.5" width="16" height="10.5" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg> Registro seguro · gratis</p>
+  </div>
+
+  <div class="vista espera" id="vistaEspera">
+    <div class="spinner"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8.2" cy="8.2" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.8" cy="8.2" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="8.2" cy="15.8" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.8" cy="15.8" r="1.3" fill="currentColor" stroke="none"/></svg></div>
+    <h2 id="esperaTitulo">Creando tu cuenta…</h2>
+    <p>Estamos dando de alta <b id="esperaUser"></b> en el sistema.</p>
+    <div class="barra"><i></i></div>
+    <p class="nota" id="esperaNota">Suele tardar menos de un minuto.</p>
+  </div>
+
+  <div class="vista espera" id="vistaLista">
+    <div class="check"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></div>
+    <h2>¡Usuario creado!</h2>
+  </div>
+
+  <div class="vista" id="vistaExito">
+    <h2 style="text-align:center">¡Cuenta creada!</h2>
+    <p class="ayuda">Guardá estos datos para ingresar al juego.</p>
+    <div class="cred"><span class="k">Usuario</span><span class="v" id="outUser"></span></div>
+    <div class="cred"><span class="k">Contraseña</span><span class="v" id="outPass"></span></div>
+    <p class="aviso">Podés cambiarla más adelante desde tu cuenta.</p>
+    <button class="btn" id="btnJugar" type="button" style="margin-top:16px">Entrar a jugar</button>
+    <div style="text-align:center"><button class="link" id="btnCopiar" type="button">Copiar datos</button></div>
+  </div>
+</section>
+
+<script>
+(function(){
+  /* ======================================================================
+     EL PORCENTAJE DEL BONO.
+
+     Este número es una PROMESA y el que la CUMPLE es el server:
+     RL_BONO_BIENVENIDA_PCT en api/recargas_lib.php. Cuando a un jugador que
+     entró por acá se le acredita su PRIMERA recarga, rl_acreditar() le suma
+     ese % en bonos, automático. La marca viaja en el alta (promo:'bono50' →
+     altas.origen), así que solo lo cobra quien se registró por esta página.
+
+     Los dos números TIENEN que decir lo mismo, y el que manda es el del
+     server: si cambiás uno, cambiá el otro.
+     ====================================================================== */
+  const BONO_PCT = 50;
+  const PROMO    = 'bono50';   // la marca que viaja en el alta; whitelisteada en crear_cuenta.php
+
+  /* ======================================================================
+     Alta de cuenta. Es el MISMO flujo que registro.html -- mismo endpoint,
+     mismo sondeo, misma clave de localStorage -- para que no haya dos
+     implementaciones del camino por donde entra la plata.
+
+     RUTA RELATIVA a propósito (no un dominio fijo): esta página se sirve bajo
+     el dominio propio de CADA agencia (replica/, ver nginx-replica.conf). OJO
+     el prefijo: en la réplica la API es "/gp-api", NUNCA "/api" -- ese lo
+     tiene tomado la plataforma real, así que un fetch a "/api/..." cae ahí y
+     da 404.
+
+     Cliente por-path (ganamoscrm.online/<slug>/bono.html): la API vive bajo
+     /<slug>/gp-api/. Se arma leyendo el propio pathname.
+     ====================================================================== */
+  const partesRuta = location.pathname.split('/').filter(Boolean);
+  const esPorPath = partesRuta.length >= 2 && partesRuta[1] === 'bono.html';
+  const BASE_API = esPorPath ? '/' + partesRuta[0] + '/gp-api' : '/gp-api';
+  const API = BASE_API + "/crear_cuenta.php";
+
+  /* De qué publicista vino (?pub=<slug>) y el click id de Meta (?fbclid=...).
+     Se leen UNA vez al cargar. */
+  const params = new URLSearchParams(location.search);
+  const PUB    = (params.get('pub') || '').trim();
+  const FBCLID = (params.get('fbclid') || '').trim();
+
+  /* Identifica ESTE pedido y es lo único que después autoriza a ver la
+     contraseña. Sin esto, cualquiera que recorra id=1,2,3... se lleva las
+     credenciales de otro. */
+  function nuevoSid(){
+    return (window.crypto && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : 's-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+  }
+
+  /* MISMA clave que registro.html a propósito: si el jugador empezó el alta
+     allá y cae acá (o al revés), se retoma en vez de abrir un segundo pedido
+     con otro nombre. */
+  const CLAVE_LOCAL = 'goldpaw_alta';
+
+  const POLL_RAPIDO = 500;              // primeras ~20 vueltas (~10 s)
+  const POLL_LENTO  = 4000;
+  const POLL_VUELTAS_RAPIDAS = 20;
+  const AVISO_MS    = 90 * 1000;
+  const LIMITE_MS   = 6 * 60 * 1000;
+  const VENCE_MS    = 24 * 3600 * 1000;
+
+  const $ = id => document.getElementById(id);
+  const usuario = $('usuario'), msg = $('msg'), btn = $('btn'), form = $('form');
+  const hoja = $('hoja'), fondo = $('fondo');
+  const dormir = ms => new Promise(r => setTimeout(r, ms));
+
+  $('bonoPct').textContent = BONO_PCT;
+
+  usuario.addEventListener('input', ()=>{ msg.textContent=''; usuario.style.borderColor=''; });
+
+  // ---------- la hoja ----------
+  function abrirHoja(){
+    fondo.classList.add('on');
+    hoja.classList.add('on');
+    // El foco NO va en el mismo tick: en iOS, enfocar mientras la hoja todavía
+    // se está deslizando abre el teclado a mitad de la animación y el layout
+    // salta. 320ms es lo que dura la transición.
+    setTimeout(()=>{ if($('vistaForm').classList.contains('on')) usuario.focus(); }, 320);
+  }
+  function cerrarHoja(){
+    fondo.classList.remove('on');
+    hoja.classList.remove('on');
+  }
+  $('ctaJugar').addEventListener('click', abrirHoja);
+  /* Cerrar tocando el fondo SOLO desde el formulario. Con el alta en curso no
+     se cierra: el jugador perdería de vista la única pantalla donde van a
+     aparecer su usuario y su contraseña. */
+  fondo.addEventListener('click', ()=>{
+    if ($('vistaForm').classList.contains('on')) cerrarHoja();
+  });
+
+  function error(t){
+    verForm();
+    msg.textContent = t; usuario.style.borderColor = 'var(--danger)'; usuario.focus();
+  }
+
+  // ---------- el pedido vive en localStorage ----------
+  // Si solo viviera en memoria, cerrar la pestaña mientras el bot trabaja
+  // dejaría la cuenta creada y al jugador sin forma de ver sus datos. En
+  // incógnito puede fallar: por eso todo va en try.
+  function guardar(p){ try{ localStorage.setItem(CLAVE_LOCAL, JSON.stringify(p)); }catch(e){} }
+  function leer(){ try{ return JSON.parse(localStorage.getItem(CLAVE_LOCAL) || 'null'); }catch(e){ return null; } }
+  function olvidar(){ try{ localStorage.removeItem(CLAVE_LOCAL); }catch(e){} }
+
+  // ---------- vistas ----------
+  const FRASES_ESPERA = [
+    'Creando tu cuenta…',
+    'Reservando tu usuario…',
+    'Activando tu bono…',
+    'Ya casi está…',
+  ];
+  let rotEspera = null;
+  function iniciarRotacionEspera(){
+    let i = 0;
+    detenerRotacionEspera();
+    rotEspera = setInterval(()=>{
+      i = (i + 1) % FRASES_ESPERA.length;
+      const h2 = $('esperaTitulo');
+      h2.classList.add('cambiando');
+      setTimeout(()=>{ h2.textContent = FRASES_ESPERA[i]; h2.classList.remove('cambiando'); }, 250);
+    }, 2600);
+  }
+  function detenerRotacionEspera(){ if(rotEspera){ clearInterval(rotEspera); rotEspera = null; } }
+
+  function ver(id){
+    ['vistaForm','vistaEspera','vistaLista','vistaExito']
+      .forEach(v => $(v).classList.toggle('on', v === id));
+  }
+
+  function verForm(){
+    detenerRotacionEspera();
+    ver('vistaForm');
+    btn.disabled = false; btn.textContent = 'Crear mi cuenta y activar el bono';
+  }
+
+  function verEspera(u){
+    msg.textContent = '';
+    $('esperaUser').textContent = u;
+    $('esperaTitulo').textContent = FRASES_ESPERA[0];
+    $('esperaNota').textContent = 'Suele tardar menos de un minuto.';
+    ver('vistaEspera');
+    iniciarRotacionEspera();
+  }
+
+  /* Transición corta antes de las credenciales: 400ms alcanza para que el
+     cambio se note sin sumar un segundo entero justo cuando la cuenta ya
+     está lista. */
+  function verListo(p){
+    detenerRotacionEspera();
+    ver('vistaLista');
+    setTimeout(()=> verExito(p), 400);
+  }
+
+  function verExito(p){
+    $('outUser').textContent = p.usuario;
+    $('outPass').textContent = p.password;
+    ver('vistaExito');
+
+    $('btnCopiar').onclick = ()=>{
+      navigator.clipboard?.writeText(`Usuario: ${p.usuario}\nContraseña: ${p.password}`);
+      $('btnCopiar').textContent = '¡Copiado!';
+      setTimeout(()=> $('btnCopiar').textContent = 'Copiar datos', 1500);
+    };
+    /* "Entrar a jugar": raíz del dominio ACTUAL. Ahí el proxy replica/ sirve
+       el juego real con el chatbot ya inyectado y el login persiste. Para el
+       cliente por-path se manda al chat propio: el widget inyectado en "/" hoy
+       no resuelve el slug (limitación documentada en widget.js). */
+    const destino = esPorPath ? '/' + partesRuta[0] + '/chat.html' : '/';
+    $('btnJugar').onclick = ()=>{ olvidar(); location.href = destino; };
+  }
+
+  // ---------- esperar al bot ----------
+  async function sondear(p){
+    verEspera(p.usuario);
+
+    let vuelta = 0;
+    for(;;){
+      await dormir(vuelta++ < POLL_VUELTAS_RAPIDAS ? POLL_RAPIDO : POLL_LENTO);
+
+      let data = null;
+      try {
+        const url = API + '?id=' + encodeURIComponent(p.id) +
+                          '&usuario=' + encodeURIComponent(p.usuario) +
+                          (p.sid ? '&sid=' + encodeURIComponent(p.sid) : '');
+        const res = await fetch(url, { cache:'no-store' });
+        if (res.status === 404){
+          olvidar();
+          return error('No encontramos tu pedido. Probá de nuevo.');
+        }
+        data = await res.json().catch(()=> null);
+      } catch (e) {
+        // Se cayó la conexión. NO se corta: el bot sigue trabajando del otro
+        // lado y cortar acá perdería la referencia al pedido.
+        continue;
+      }
+      if (!data) continue;
+
+      if (data.listo){
+        if (data.password) p.password = data.password;
+        if (data.usuario)  p.usuario  = data.usuario;
+        p.listo = true;
+        guardar(p);
+        return verListo(p);
+      }
+
+      if (data.fallo){
+        olvidar();
+        return error('No pudimos crear la cuenta. Probá con otro nombre.');
+      }
+
+      const esperando = Date.now() - (p.desde || Date.now());
+      if (esperando > LIMITE_MS){
+        $('esperaNota').textContent =
+          'Está tardando más de lo normal, pero el pedido no se pierde. ' +
+          'Podés escribirnos por chat con tu usuario.';
+      } else if (esperando > AVISO_MS){
+        $('esperaNota').textContent = 'Seguimos en eso, no cierres la página…';
+      }
+    }
+  }
+
+  // ---------- alta ----------
+  // El jugador escribe su NOMBRE, no un username: el server decide el usuario
+  // final (alta_usuario_disponible() en altas_lib.php) y le pone prefijo o
+  // sufijo si hace falta. Cero fricción de "ese usuario ya existe".
+  form.addEventListener('submit', async e=>{
+    e.preventDefault();
+    const u = usuario.value.trim();
+    if (!u)           return error('Escribí tu nombre.');
+    // 4 y no 3: el backend acepta desde 3, pero el panel de agentes rechaza
+    // los muy cortos y ahí el alta muere después, cuando el jugador ya vio
+    // "creando tu cuenta". Mejor frenarlo acá, donde puede corregirlo.
+    if (u.length < 4) return error('Mínimo 4 caracteres.');
+
+    btn.disabled = true; btn.textContent = 'Creando…';
+
+    try {
+      const sid = nuevoSid();
+      // fbp/fbc los deja el Pixel en cookies. Sin pixel activo metaCookies()
+      // no existe: se manda vacío y el backend igual acredita el Lead.
+      const cookies = window.metaCookies ? window.metaCookies() : {};
+      const res = await fetch(API, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          usuario: u, sid: sid, promo: PROMO,
+          pub: PUB, fbclid: FBCLID,
+          fbp: cookies.fbp || '', fbc: cookies.fbc || '',
+        })
+      });
+      const data = await res.json().catch(()=> ({}));
+
+      if (res.ok && data.ok && data.id && data.usuario){
+        // `password` viene VACÍA a propósito: la cuenta todavía no existe en
+        // el panel. La clave llega en el sondeo, con el alta ya confirmada.
+        const pedido = { id:data.id, usuario:data.usuario, sid:sid,
+                         password:data.password || '', desde:Date.now() };
+        guardar(pedido);   // ANTES de mostrar nada
+        return sondear(pedido);
+      }
+
+      if (res.status === 429) return error(data.error || 'Esperá un rato antes de pedir otra cuenta.');
+      return error(data.error || 'No se pudo crear la cuenta. Probá de nuevo.');
+
+    } catch (err) {
+      error('No se pudo conectar. Revisá tu conexión.');
+    }
+  });
+
+  // ---------- al abrir: retomar un pedido a medias ----------
+  // Se abre la hoja sola: si dejó un alta en curso, lo que necesita ver es
+  // ESO, no el hero otra vez.
+  (function retomar(){
+    const p = leer();
+    if (!p || !p.id || !p.usuario) return;
+    if (Date.now() - (p.desde || 0) > VENCE_MS) return olvidar();
+    abrirHoja();
+    if (p.listo) return verExito(p);
+    sondear(p);
+  })();
+})();
+</script>
+
+<!-- Pixel de Meta. Se configura desde el CRM (Configuración → Meta Ads): el
+     pixel_id lo pide a la API, no viene hardcodeado, porque cada cliente
+     tiene el suyo. -->
+<script src="meta-pixel.js"></script>
+</body>
+</html>

@@ -68,6 +68,20 @@ const RL_VENCIMIENTO_MIN = 45;      // minutos que vive una recarga sin pagar
 const RL_VENTANA_MIN     = 120;     // ventana para el match de respaldo (entero)
 const RL_MAX_PENDIENTES_USUARIO = 5;// recargas pendientes simultaneas por usuario
 
+/* Bono de bienvenida de la landing bono.html: % de la PRIMERA recarga
+   acreditada que se suma en BONOS (usuarios.bonus, el contador propio -- no
+   toca el saldo de ganamos).
+
+   Solo lo cobra quien se registro por esa landing (altas.origen = 'bono50',
+   ver crear_cuenta.php): el numero gigante de esa pagina es una promesa, y
+   esto es lo que la cumple. Si cambias el porcentaje aca, cambia tambien
+   BONO_PCT en landing/bono.html -- los dos numeros TIENEN que decir lo mismo,
+   y el que manda es este.
+
+   0 lo apaga sin tocar la landing (quedaria prometiendo de mas: bajala). */
+const RL_BONO_BIENVENIDA_PCT    = 50;
+const RL_BONO_BIENVENIDA_ORIGEN = 'bono50';
+
 // Cruce por nombre del titular (migracion 45). Dos numeros, y conviene
 // entender que hace cada uno antes de tocarlos:
 //   UMBRAL  -- cuanto se tienen que parecer los nombres para siquiera
@@ -888,6 +902,73 @@ function rl_acreditar(PDO $pdo, array &$recarga, string $idUnico, string $conf,
     // parezca fallida.
     if (function_exists('crmnotif_bono_aplicar_en_recarga')) {
         crmnotif_bono_aplicar_en_recarga($pdo, (string)$recarga['usuario'], (int)$recarga['id'], (int)$recarga['coins']);
+    }
+
+    /* Bono de bienvenida (landing bono.html): en la PRIMERA recarga acreditada
+       de un jugador que entro por esa landing, se le suma el % prometido en
+       BONOS. Va aca y no en un paso aparte porque este es el unico lugar por
+       el que pasan TODAS las acreditaciones del camino B (automaticas y
+       manuales del CRM): no hay forma de que una primera carga se lo saltee.
+
+       Descansa en $esPrimera, que ya se calculo ARRIBA, antes de marcar esta
+       recarga como acreditada -- por eso vale "cero acreditadas previas". Si
+       ese calculo fallo ($esPrimera === null) NO se acredita: mejor deberle un
+       bono a alguien (se carga a mano desde el CRM) que regalarlo dos veces.
+
+       Nunca lanza: la recarga YA quedo acreditada arriba, y un problema con el
+       bono no puede hacerla parecer fallida.
+
+       Limite conocido: si la primera carga entrara por el camino A (el boton
+       "Depositos" DENTRO del juego), esto no corre -- ese camino no crea filas
+       en `recargas` ni pasa por aca. Para el flujo de la landing (chatbot ->
+       transferencia) es el camino de siempre. */
+    if ($esPrimera === 1 && RL_BONO_BIENVENIDA_PCT > 0) {
+        try {
+            // El origen del alta dice por donde entro. Sin JOIN a proposito:
+            // `altas` comparte collation con `usuarios`, pero comparar contra
+            // un parametro PHP no depende de ninguna de las dos.
+            $sa = $pdo->prepare(
+                "SELECT origen FROM altas WHERE usuario = ? ORDER BY id DESC LIMIT 1"
+            );
+            $sa->execute([(string)$recarga['usuario']]);
+            if ((string)$sa->fetchColumn() === RL_BONO_BIENVENIDA_ORIGEN) {
+                $bono = (int)floor((int)$recarga['coins'] * RL_BONO_BIENVENIDA_PCT / 100);
+                if ($bono > 0) {
+                    $pdo->prepare("UPDATE usuarios SET bonus = bonus + ? WHERE username = ?")
+                        ->execute([$bono, (string)$recarga['usuario']]);
+                    // El movimiento con origen propio: en la ficha del CRM se
+                    // tiene que poder distinguir "bono de la promo" de un bono
+                    // cargado a mano, si no las cuentas de Publicidad no cierran.
+                    $pdo->prepare(
+                        "INSERT INTO movimientos (usuario, tipo, monto, motivo, origen)
+                         VALUES (?, 'bono', ?, ?, 'bono_bienvenida')"
+                    )->execute([
+                        mb_substr((string)$recarga['usuario'], 0, 50),
+                        $bono,
+                        'Bono de bienvenida ' . RL_BONO_BIENVENIDA_PCT . '% por su primera carga',
+                    ]);
+                    if (function_exists('notif_crear')) {
+                        notif_crear(
+                            $pdo,
+                            (string)$recarga['usuario'],
+                            '🎁 ¡Bono de bienvenida!',
+                            'Te acreditamos ' . number_format($bono, 0, ',', '.')
+                                . ' en bonos (' . RL_BONO_BIENVENIDA_PCT
+                                . '% de tu primera carga). ¡A jugarlos!',
+                            'bono',
+                            null,
+                            'recargas'
+                        );
+                    }
+                }
+            }
+        } catch (Throwable $e) {
+            // Queda en el log CON usuario y monto: si esto falla, el bono se
+            // le debe y alguien lo tiene que cargar a mano desde el CRM.
+            error_log('rl_acreditar/bono_bienvenida: ' . (string)$recarga['usuario']
+                . ' recarga ' . (string)($recarga['referencia'] ?? '?')
+                . ': ' . $e->getMessage());
+        }
     }
 
     // es_primera calculado arriba viaja al caller a traves de $recarga -- lo
