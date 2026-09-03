@@ -556,8 +556,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             }
 
             $st = $pdo->prepare(
+                /* `hablo` = si el JUGADOR escribio alguna vez. No alcanza con
+                   mirar si hay mensajes: una conversacion sembrada desde el CRM
+                   ya tiene uno, el nuestro. Lo que distingue "chat vacio" de
+                   "chat de verdad" es un mensaje con rol='user'.
+                   El front lo usa para marcar de una todos los que nunca
+                   hablaron, en vez de tildarlos de a uno. */
                 "SELECT c.id, c.session_id, c.usuario, c.estado, c.preview,
                         c.no_leidos, c.fijada, c.actualizada_en, $selDeriv $selArch
+                        EXISTS (SELECT 1 FROM mensajes m
+                                 WHERE m.conversacion_id = c.id AND m.rol = 'user') AS hablo,
                         $ultimaCarga AS ultima_carga
                  FROM conversaciones c $wsql
                  ORDER BY $ordenSql LIMIT 200"
@@ -572,6 +580,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 // Booleano para el front: le alcanza con "el bot pidio ayuda".
                 $it['derivada'] = !empty($it['derivada_en']);
                 $it['archivada'] = !empty($it['archivada']);
+                $it['hablo'] = !empty($it['hablo']);
             }
             unset($it);
 

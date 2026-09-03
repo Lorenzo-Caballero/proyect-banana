@@ -1845,6 +1845,13 @@
              ficha, grande, y el globo late un instante con cada cambio. -->
         <span class="sel-pill"><b id="selN">0</b><span id="selTxt">seleccionadas</span></span>
         <button id="selTodas" type="button" title="Marcar todas las visibles"><svg class="ico" viewBox="0 0 24 24"><path d="m4 13 3.5 3.5L14 10"/><path d="m10 13 3.5 3.5L20 10"/></svg><span class="btxt">Todas</span></button>
+        <!-- Marcar de una todos los chats donde el jugador NUNCA escribió.
+             Existe porque después de una difusión quedan decenas de chats con
+             un solo mensaje nuestro, y tildarlos de a uno para archivarlos o
+             borrarlos es media hora de clicks. La acción que se aplique
+             después es la de siempre (Archivar / Eliminar), con su confirmación
+             y su bitácora: esto solo marca. -->
+        <button id="selMudas" type="button" title="Marcar los chats donde el jugador nunca escribió"><svg class="ico" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="m9 9 6 6M15 9l-6 6"/></svg><span class="btxt">Mudos</span></button>
         <span class="sel-esp"></span>
         <button id="selArchivar" type="button" title="Archivar las marcadas"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></svg><span class="btxt">Archivar</span></button>
         <button id="selDifundir" type="button" title="Mandar un mensaje a todas las marcadas"><svg class="ico" viewBox="0 0 24 24"><path d="m3 11 18-8-8 18-2-8z"/></svg><span class="btxt">Difundir</span></button>
@@ -5387,6 +5394,28 @@
     document.querySelectorAll("#list .conv").forEach(el=>
       seleccion.add(+el.getAttribute("data-id")));
     seleccionPintar();
+  });
+
+  /* Los "mudos": el jugador nunca escribió. Se marcan para poder archivarlos
+     o borrarlos de una, que es lo que queda después de una difusión.
+
+     Se filtra por `hablo`, que mira mensajes con rol='user', NO por si el chat
+     tiene mensajes: una conversación sembrada desde el CRM ya tiene uno -- el
+     nuestro -- y por esa cuenta ninguno sería mudo.
+
+     Las filas virtuales de "nunca escribieron" (id 0) quedan afuera: no existen
+     como conversación, no hay nada que archivar ni borrar. */
+  $("#selMudas").addEventListener("click", ()=>{
+    let n = 0;
+    document.querySelectorAll("#list .conv").forEach(el=>{
+      const id = +el.getAttribute("data-id");
+      if (!id) return;
+      const c = listaCache.get(id);
+      if (c && !c.hablo){ seleccion.add(id); n++; }
+    });
+    seleccionPintar();
+    toast(n ? `${n} chat${n===1?"":"s"} sin respuesta del jugador`
+            : "Acá todos escribieron alguna vez");
   });
 
   /* La confirmacion peligrosa como promesa. Un solo modal para todos los
