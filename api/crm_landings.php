@@ -62,7 +62,7 @@ function lp_config_sanear(array $cruda): array
     // Escalas en % (sliders del editor). Como string, que es lo que el merge
     // de landings_config_completa() sabe pisar. Fuera de rango se descarta y
     // queda el default de la plantilla.
-    foreach (['cifra', 'boton'] as $k) {
+    foreach (['cifra', 'boton', 'aire'] as $k) {
         $v = (int)($cruda['tamanos'][$k] ?? 0);
         if ($v >= 50 && $v <= 200) {
             $limpia['tamanos'][$k] = (string)$v;

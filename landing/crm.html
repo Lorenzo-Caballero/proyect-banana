@@ -3125,12 +3125,18 @@
 
             <div class="cb-field">
               <label class="cb-flabel">Tamaños</label>
-              <p class="cb-help">Qué tan grandes se ven el número del bono y el botón. Arrastrá y
-              miralo en la vista previa; 100% ya es grande.</p>
+              <p class="cb-help">Qué tan grandes se ven el número del bono y el botón, y cuánto
+              aire queda entre ellos. Arrastrá y miralo en la vista previa; 100% ya es grande.</p>
               <div class="lp-tamanos">
                 <label>Número del bono
                   <span class="lp-slider">
                     <input type="range" id="lpTamCifra" data-tam="cifra" min="50" max="200" step="5" value="100">
+                    <output>100%</output>
+                  </span>
+                </label>
+                <label>Espacio entre los elementos
+                  <span class="lp-slider">
+                    <input type="range" id="lpTamAire" data-tam="aire" min="50" max="200" step="5" value="100">
                     <output>100%</output>
                   </span>
                 </label>
@@ -9027,7 +9033,7 @@ ${cuando}.
       colores:  Object.assign({}, p.colores),
       textos:   Object.assign({}, p.textos),
       imagenes: Object.assign({logo:"", fondo:""}, p.imagenes),
-      tamanos:  Object.assign({cifra:"100", boton:"100"}, p.tamanos),
+      tamanos:  Object.assign({cifra:"100", boton:"100", aire:"100"}, p.tamanos),
     };
   }
 
@@ -9048,7 +9054,7 @@ ${cuando}.
 
     // Una fila guardada antes de que existieran los tamaños no trae la
     // sección: se completa acá para que los sliders y la preview no fallen.
-    lpDraft.config.tamanos = lpDraft.config.tamanos || {cifra:"100", boton:"100"};
+    lpDraft.config.tamanos = lpDraft.config.tamanos || {cifra:"100", boton:"100", aire:"100"};
 
     $("#lpEdTitulo").textContent = l ? ("Editar: " + l.nombre) : "Nueva landing";
     $("#lpMsg").textContent = "";

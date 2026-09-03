@@ -37,7 +37,7 @@ function landings_plantillas(): array
     // sí). Strings a propósito: el merge de landings_config_completa() solo
     // pisa con strings no vacíos, y así una config vieja sin 'tamanos' cae en
     // estos defaults sin caso especial.
-    $tamanos = ['cifra' => '100', 'boton' => '100'];
+    $tamanos = ['cifra' => '100', 'boton' => '100', 'aire' => '100'];
 
     return [
         'oro' => [
