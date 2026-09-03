@@ -405,6 +405,51 @@ function publicidad_gasto_dias(PDO $pdo, int $publicistaId, string $desde, strin
 }
 
 /**
+ * TODAS las cargas de un jugador, venga por donde venga la plata.
+ *
+ * EL BUG QUE ESTO ARREGLA (3/9/2026): el embudo salia solo de `recargas`, y
+ * por ahi pasa un solo camino -- el nuestro, el que arranca en el chatbot. La
+ * carga que el jugador pide con el boton "Depositos" DENTRO del juego no crea
+ * ninguna fila en `recargas` (lo dice peticiones_cola.php: "no hubo recarga
+ * nuestra"), asi que era invisible: no contaba como primera carga, ni como
+ * carga total, ni sumaba al depositado.
+ *
+ * O sea que Publicidad mostraba 0 conversiones mientras la gente cargaba de
+ * verdad. Con la pauta corriendo eso no es un numero feo en una pantalla: es
+ * un CPA inflado y un ROAS en cero, que llevan a apagar una campaña que
+ * estaba funcionando.
+ *
+ * Del camino A lo unico que queda de este lado es la linea de `movimientos`
+ * (origen='peticion'), porque las fichas las acredita la plataforma sobre el
+ * saldo real. Alcanza: tiene usuario, monto y fecha, que es lo que mide el
+ * embudo.
+ *
+ * `monto > 0` deja afuera los ajustes negativos, que no son cargas.
+ *
+ * EL COLLATE ES OBLIGATORIO Y ES NUEVO. `recargas` y `altas` nacieron sin uno
+ * explicito -- las dos caen al default del server -- y por eso el JOIN entre
+ * ellas nunca lo necesito. `movimientos` en cambio quedo fijada en
+ * utf8mb4_unicode_ci (05_crm.sql), asi que al meterla en el UNION las dos
+ * ramas traen collations distintas y MariaDB corta con "illegal mix of
+ * collations". Se fuerzan las dos ramas a la misma y listo; el JOIN contra
+ * `altas` de abajo tambien la fuerza, por el mismo motivo.
+ */
+function publicidad_sql_cargas(): string
+{
+    return "SELECT r.usuario COLLATE utf8mb4_unicode_ci AS usuario,
+                   r.acreditada_en                      AS cuando,
+                   r.monto_base                         AS monto
+              FROM recargas r
+             WHERE r.estado = 'acreditada' AND r.acreditada_en IS NOT NULL
+            UNION ALL
+            SELECT m.usuario COLLATE utf8mb4_unicode_ci,
+                   m.creado_en,
+                   m.monto
+              FROM movimientos m
+             WHERE m.origen = 'peticion' AND m.tipo = 'saldo' AND m.monto > 0";
+}
+
+/**
  * El embudo de un publicista en [desde, hasta]: registros (altas creadas en
  * el rango que vinieron de este publicista), primeras cargas, cargas totales,
  * depositado real. Todo en una sola consulta por metrica, sin joins pesados.
@@ -435,10 +480,6 @@ function publicidad_metricas(PDO $pdo, int $publicistaId, string $desde, string 
     // acreditadas en el rango -- sin importar cuando se registraron.
     $primeras = 0; $totalCargas = 0; $depositado = 0.0;
     try {
-        // Sin COLLATE: altas.usuario y recargas.usuario nacieron sin uno
-        // explicito, asi que las dos caen al default del server (el mismo con
-        // el que nacio usuarios.username, ver comentario en 13_cola_altas.sql)
-        // y se comparan directo. Forzar utf8mb4_unicode_ci aca las desalinea.
         // monto_base y NO monto_pedido, a proposito y NO es un bug:
         // monto_pedido = monto_base + los centavos que identifican la
         // transferencia (100.47). Esos centavos son un identificador, no
@@ -450,16 +491,32 @@ function publicidad_metricas(PDO $pdo, int $publicistaId, string $desde, string 
         // dos modulos dan unos centavos de diferencia sobre lo mismo. Si
         // algun dia parecen "descuadrados", es esto -- no unifiques uno con
         // el otro sin entender cual pregunta responde cada pantalla.
+        //
+        // "PRIMERA CARGA" SE CALCULA ACA, ya no se lee recargas.es_primera.
+        // Esa columna la escribe rl_acreditar() contando recargas anteriores,
+        // asi que a un jugador que empezo cargando por el boton "Depositos"
+        // le marca como primera la que en realidad es su segunda. Con las dos
+        // vias sobre la mesa, "la primera" es el MINIMO de las dos y hay que
+        // mirarlas juntas. La columna queda: la sigue escribiendo el camino B
+        // y no molesta.
+        //
+        // COUNT(DISTINCT ...) y no SUM(...): si un jugador tuviera dos cargas
+        // con el mismo timestamp al minimo, las dos empatarian con MIN() y se
+        // contaria dos veces como jugador nuevo.
+        $union = publicidad_sql_cargas();
         $st = $pdo->prepare(
             "SELECT
-                SUM(r.es_primera = 1)               AS primeras,
-                COUNT(*)                             AS total_cargas,
-                COALESCE(SUM(r.monto_base), 0)       AS depositado
-               FROM recargas r
-               JOIN altas a ON a.usuario = r.usuario
+                COUNT(DISTINCT IF(c.cuando = pr.primera, c.usuario, NULL)) AS primeras,
+                COUNT(*)                        AS total_cargas,
+                COALESCE(SUM(c.monto), 0)       AS depositado
+               FROM ($union) c
+               JOIN altas a
+                 ON a.usuario COLLATE utf8mb4_unicode_ci = c.usuario
+               JOIN (SELECT usuario, MIN(cuando) AS primera
+                       FROM ($union) t GROUP BY usuario) pr
+                 ON pr.usuario = c.usuario
               WHERE a.publicista_id = ?
-                AND r.estado = 'acreditada'
-                AND r.acreditada_en BETWEEN ? AND ?"
+                AND c.cuando BETWEEN ? AND ?"
         );
         $st->execute([$publicistaId, $desdeIni, $hastaFin]);
         $fila = $st->fetch();
@@ -476,21 +533,24 @@ function publicidad_metricas(PDO $pdo, int $publicistaId, string $desde, string 
     // periodo que este mirando el operador).
     $jugadoresConCarga = 0; $jugadoresQueVolvieron = 0;
     try {
+        // Las mismas dos vias. "Volvio a cargar" es la metrica que mas se
+        // rompia con una sola fuente: el jugador que carga la primera vez por
+        // el chatbot y las siguientes por el boton "Depositos" -- que es el
+        // recorrido natural, porque una vez adentro del juego el boton esta
+        // mas a mano -- figuraba con una sola carga y como que nunca volvio.
+        $union = publicidad_sql_cargas();
         $st = $pdo->prepare(
             "SELECT
-                COUNT(DISTINCT r.usuario) AS con_carga,
-                COUNT(DISTINCT CASE WHEN rep.total > 1 THEN r.usuario END) AS volvieron
-               FROM recargas r
-               JOIN altas a ON a.usuario = r.usuario
-               JOIN (
-                   SELECT usuario, COUNT(*) AS total
-                     FROM recargas
-                    WHERE estado = 'acreditada'
-                    GROUP BY usuario
-               ) rep ON rep.usuario = r.usuario
+                COUNT(DISTINCT c.usuario) AS con_carga,
+                COUNT(DISTINCT CASE WHEN rep.total > 1 THEN c.usuario END) AS volvieron
+               FROM ($union) c
+               JOIN altas a
+                 ON a.usuario COLLATE utf8mb4_unicode_ci = c.usuario
+               JOIN (SELECT usuario, COUNT(*) AS total
+                       FROM ($union) t GROUP BY usuario) rep
+                 ON rep.usuario = c.usuario
               WHERE a.publicista_id = ?
-                AND r.estado = 'acreditada'
-                AND r.acreditada_en BETWEEN ? AND ?"
+                AND c.cuando BETWEEN ? AND ?"
         );
         $st->execute([$publicistaId, $desdeIni, $hastaFin]);
         $fila = $st->fetch();
@@ -548,16 +608,23 @@ function publicidad_por_dia(PDO $pdo, int $publicistaId, string $desde, string $
     }
 
     try {
+        // Las dos vias de carga, igual que en publicidad_metricas(): si el
+        // total y el grafico por dia salieran de fuentes distintas, no
+        // cerrarian entre si y no habria forma de saber cual esta mal.
+        $union = publicidad_sql_cargas();
         $st = $pdo->prepare(
-            "SELECT DATE(r.acreditada_en) AS f,
-                    SUM(r.es_primera = 1)         AS primeras,
-                    COALESCE(SUM(r.monto_base), 0) AS depositado
-               FROM recargas r
-               JOIN altas a ON a.usuario = r.usuario
+            "SELECT DATE(c.cuando) AS f,
+                    COUNT(DISTINCT IF(c.cuando = pr.primera, c.usuario, NULL)) AS primeras,
+                    COALESCE(SUM(c.monto), 0) AS depositado
+               FROM ($union) c
+               JOIN altas a
+                 ON a.usuario COLLATE utf8mb4_unicode_ci = c.usuario
+               JOIN (SELECT usuario, MIN(cuando) AS primera
+                       FROM ($union) t GROUP BY usuario) pr
+                 ON pr.usuario = c.usuario
               WHERE a.publicista_id = ?
-                AND r.estado = 'acreditada'
-                AND r.acreditada_en BETWEEN ? AND ?
-              GROUP BY DATE(r.acreditada_en)"
+                AND c.cuando BETWEEN ? AND ?
+              GROUP BY DATE(c.cuando)"
         );
         $st->execute([$publicistaId, $desdeIni, $hastaFin]);
         foreach ($st->fetchAll() as $fila) {
