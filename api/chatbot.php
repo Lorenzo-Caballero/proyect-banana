@@ -266,6 +266,25 @@ $TOOLS = [
             'required' => [],
         ],
     ]],
+    /* El link de referido lo GENERA EL SISTEMA, nunca el modelo: la unica
+       fuente es referidos_lib (codigo unico por cliente, guardado en la
+       base). El bot solo lo pide y lo repite tal cual -- un link inventado
+       apuntaria el premio a nadie. */
+    ['type' => 'function', 'function' => [
+        'name' => 'consultar_link_referido',
+        'description' => 'El jugador quiere invitar/recomendar/traer amigos, pregunta por el '
+            . 'plan de referidos o pide "mi link". Devuelve SU link unico de invitacion, '
+            . 'generado por el sistema, y cuanto gana por cada amigo que haga su primera '
+            . 'carga. Pasale el link TAL CUAL, sin acortarlo ni cambiarlo.',
+        'parameters' => [
+            'type' => 'object',
+            'properties' => [
+                'usuario' => ['type' => 'string', 'description'
+                    => 'nombre de usuario del juego. Solo si NO inicio sesion; con sesion el server ya sabe quien es.'],
+            ],
+            'required' => [],
+        ],
+    ]],
     ['type' => 'function', 'function' => [
         'name' => 'informar_transferencia',
         'description' => 'El jugador dice que YA transfirio su recarga y pasa datos por TEXTO: '
@@ -368,6 +387,11 @@ $contextoBase = ($cfgBot['contexto'] !== '')
         // El link de la app sale de la config del cliente, no de las reglas
         // fijas: esas las comparten todos los casinos.
         'app_url'        => (string)(cfg_crm($pdo, 'app_url') ?? ''),
+        // Plan de referidos: el bloque del prompt solo aparece con el plan
+        // prendido Y un monto puesto -- un bot ofreciendo un premio de $0 es
+        // peor que un bot que no lo menciona.
+        'ref_activo'     => cfg_crm_activo($pdo, 'ref_activo') ? 1 : 0,
+        'ref_bono'       => (int)round((float)cfg_crm($pdo, 'ref_bono_monto')),
       ]);
 
 // Chatbot DESACTIVADO: no se llama a Cohere. El mensaje del jugador igual
@@ -1100,6 +1124,42 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
 
     if ($nombre === 'consultar_saldo') {
         return fichas_consultar($pdo, $usuarioSesion);
+    }
+
+    if ($nombre === 'consultar_link_referido') {
+        // La sesion manda, como en todas: el link es de QUIEN ESTA HABLANDO.
+        $u = $usuarioSesion !== '' ? $usuarioSesion : trim((string)($args['usuario'] ?? ''));
+        if ($u === '') {
+            return ['ok' => false, 'codigo' => 'falta_usuario',
+                    'error' => 'Falta el nombre de usuario del juego. Pedilo.'];
+        }
+        if (!function_exists('ref_codigo_de') || !function_exists('cfg_crm_activo')) {
+            return ['ok' => false, 'error' => 'El plan de referidos no esta disponible.'];
+        }
+        if (!cfg_crm_activo($pdo, 'ref_activo')) {
+            return ['ok' => false, 'codigo' => 'plan_apagado', 'error' =>
+                'El plan de referidos no esta activo por ahora. Decile que hoy no hay '
+                . 'plan de invitaciones, sin prometer que va a volver.'];
+        }
+        /* Solo clientes REALES: generarle codigo a un nombre que no existe
+           llena la tabla de basura y, peor, un premio que apunta a nadie. */
+        $st = $pdo->prepare("SELECT 1 FROM usuarios WHERE username = ? LIMIT 1");
+        $st->execute([$u]);
+        if (!$st->fetchColumn()) {
+            return ['ok' => false, 'codigo' => 'sin_usuario',
+                    'error' => 'Ese usuario no existe. Pedile el nombre exacto con el que juega.'];
+        }
+        $cod = ref_codigo_de($pdo, $u);
+        if ($cod === '') {
+            return ['ok' => false, 'error' => 'No pude generar el link. Que lo pida de nuevo en un rato.'];
+        }
+        $monto = (int)round((float)cfg_crm($pdo, 'ref_bono_monto'));
+        return ['ok' => true,
+                'link' => ref_link($cod),
+                'bono_por_amigo' => $monto,
+                'mensaje' => 'Pasale ESTE link tal cual, en su propia linea. Gana '
+                    . $monto . ' en bonos por cada amigo que se registre con el link '
+                    . 'y haga su primera carga.'];
     }
 
     if ($nombre === 'retirar_del_juego') {

@@ -1458,9 +1458,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!cfg_crm_activo($pdo, 'ref_activo')) {
                 salir(['ok' => false, 'error' => 'El plan está apagado. Activalo y guardá antes de difundir.'], 400);
             }
+            /* El link lo pone EL SISTEMA, siempre. El operador escribe el
+               texto (o ni eso: hay un default), y si no puso {link} para
+               elegir donde va, se agrega solo al final. Antes esto era un
+               error 400 que obligaba a conocer el placeholder -- exigirle
+               sintaxis a un campo de marketing es como perder jugadores,
+               pero en agente. */
             $plantilla = trim((string)cfg_crm($pdo, 'ref_mensaje'));
-            if ($plantilla === '' || strpos($plantilla, '{link}') === false) {
-                salir(['ok' => false, 'error' => 'El mensaje tiene que incluir {link}: ahí va el link único de cada cliente.'], 400);
+            if ($plantilla === '') {
+                $monto = (int)round((float)cfg_crm($pdo, 'ref_bono_monto'));
+                $plantilla = '🎁 ¡Invitá y ganá! Compartí tu link con tus amigos: cuando '
+                    . 'uno se registre y haga su primera carga, te regalamos '
+                    . ($monto > 0 ? number_format($monto, 0, ',', '.') . ' en bonos.' : 'bonos.');
+            }
+            if (strpos($plantilla, '{link}') === false) {
+                $plantilla .= "\n\n{link}";
             }
 
             /* A quien: todos los chats con usuario. Con incluir_sin_chat,

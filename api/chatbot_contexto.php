@@ -558,7 +558,40 @@ if (!function_exists('chatbot_contexto_dinamico')) {
         if ($bloqueApp !== '') {
             $p .= $bloqueApp . "\n\n";
         }
+        $bloqueRef = chatbot_bloque_referidos(
+            !empty($limites['ref_activo']), (int)($limites['ref_bono'] ?? 0)
+        );
+        if ($bloqueRef !== '') {
+            $p .= $bloqueRef . "\n\n";
+        }
         return $p;
+    }
+}
+
+if (!function_exists('chatbot_bloque_referidos')) {
+    /**
+     * El plan de referidos, si este cliente lo tiene prendido.
+     *
+     * Dinamico y no en CB_REGLAS_FIJAS por el mismo motivo que el link de la
+     * app: las reglas fijas las comparten TODOS los clientes y el plan (y su
+     * monto) es de cada uno. Sin el bloque, el bot ni lo menciona -- y si un
+     * jugador igual pide "mi link", la herramienta le contesta que no hay
+     * plan activo, asi que tampoco puede prometer de mas.
+     *
+     * Pide activo Y monto > 0: un premio de $0 no se ofrece.
+     */
+    function chatbot_bloque_referidos(bool $activo, int $monto): string
+    {
+        if (!$activo || $monto <= 0) { return ''; }
+        return "PLAN DE REFERIDOS (activo):\n"
+             . "- Si el jugador quiere invitar amigos, recomendar el casino o pide su\n"
+             . "  link, llama a consultar_link_referido y pasale el link que devuelve\n"
+             . "  TAL CUAL, en su propia linea. NUNCA lo inventes ni lo modifiques:\n"
+             . "  el link lo genera el sistema y es unico de cada cliente.\n"
+             . "- El premio: {$monto} en bonos por cada amigo que se registre con su\n"
+             . "  link y haga su primera carga. Se acredita solo, no hay que pedirlo.\n"
+             . "- Si viene al caso (el jugador esta contento, acaba de cobrar un\n"
+             . "  premio), podes mencionarle el plan en UNA linea. No insistas.";
     }
 }
 
