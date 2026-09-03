@@ -766,14 +766,24 @@ function rl_registrar_pago(PDO $pdo, array $p): array
         $quien = $tit !== '' ? $tit : '(el banco no informó el titular)';
         $plata = '$' . number_format((float)$monto, 2, ',', '.');
 
-        if (($res['resultado'] ?? '') === 'revision') {
-            tg_evento($pdo, 'revision', '⚠️ Entró una transferencia sin resolver', [
-                'Monto'   => $plata,
-                'De'      => $quien,
-                'Motivo'  => (string)($res['mensaje'] ?? ''),
-                'Qué hacer' => 'CRM → Comprobantes, para asignarla al jugador.',
-            ], 'pago_revision:' . $idUnico);
-        } elseif (($res['resultado'] ?? '') === 'acreditada') {
+        /* EL AVISO DE 'revision' YA NO SALE ACA. Lo manda el barrido de
+           rl_avisar_revision_vieja(), unos minutos despues.
+
+           Por que (3/9/2026): 'revision' significa "el matcher del camino B no
+           encontro a quien acreditarsela", y eso es CIERTO para toda carga
+           pedida con el boton "Depositos" -- ese camino no crea fila en
+           `recargas`, asi que nunca puede casar de este lado. Un minuto mas
+           tarde `aprobar_cargas.py` la cruza contra la solicitud del panel, la
+           aprueba y marca el pago 'usado'.
+
+           O sea que el aviso era correcto en el instante en que salia y falso
+           sesenta segundos despues: una falsa alarma por cada carga del camino
+           A. Y eso no es ruido inofensivo -- entrena a ignorar el aviso, que
+           es lo que lo rompe el dia que sea de verdad.
+
+           La condicion que importa no es "no casó", es "SIGUE sin resolverse
+           despues de un rato". Eso solo se puede saber mas tarde. */
+        if (($res['resultado'] ?? '') === 'acreditada') {
             /* SIN clave: este aviso sale SIEMPRE, sin tiempo de espera. Es un
                hecho puntual y cada transferencia es una distinta -- el freno
                esta pensado para los avisos de "algo sigue roto", que un cron
@@ -793,6 +803,66 @@ function rl_registrar_pago(PDO $pdo, array $p): array
     }
 
     return array_merge(['ok' => true, 'nuevo' => true], $res);
+}
+
+
+/**
+ * Avisa por Telegram las transferencias que SIGUEN sin resolverse.
+ *
+ * Es la otra mitad del cambio explicado arriba, en rl_registrar_pago(): el
+ * aviso no puede salir cuando entra el pago, porque en ese momento todavia no
+ * se sabe si lo va a levantar el camino A. Recien despues de unos minutos
+ * "sin resolver" significa algo.
+ *
+ * QUIEN LO LLAMA: aprobar_cargas.py, al terminar cada pasada. No es un cron
+ * nuevo -- es el mismo worker que, si esa transferencia era de una carga
+ * pedida desde el panel, acaba de aprobarla y marcarla 'usado'. Llamarlo
+ * justo despues es lo mas ajustado que se puede: para cuando corre, el camino
+ * A ya tomo lo suyo.
+ *
+ * LA ESPERA SE MIDE EN LA BASE, no en PHP. `capturado_en` y NOW() salen del
+ * mismo reloj; mezclar timestamps de la base con time() de PHP ya causo dos
+ * bugs distintos en este proyecto.
+ *
+ * El aviso va con clave por pago, asi que tg_avisar_una_vez() no lo repite en
+ * cada pasada. Que vuelva a sonar cuando pase la ventana es deseable: sigue
+ * habiendo plata de alguien sin acreditar.
+ *
+ * Devuelve cuantos aviso.
+ */
+function rl_avisar_revision_vieja(PDO $pdo, int $minutos = 10): int
+{
+    if (!function_exists('tg_evento')) { return 0; }
+    if ($minutos < 1) { $minutos = 1; }
+
+    try {
+        $st = $pdo->prepare(
+            "SELECT id_unico, monto, remitente
+               FROM pagos
+              WHERE estado = 'revision'
+                AND capturado_en <= NOW() - INTERVAL ? MINUTE
+              ORDER BY capturado_en ASC
+              LIMIT 20"
+        );
+        $st->execute([$minutos]);
+        $filas = $st->fetchAll();
+    } catch (PDOException $e) {
+        error_log('rl_avisar_revision_vieja: ' . $e->getMessage());
+        return 0;
+    }
+
+    $n = 0;
+    foreach ($filas as $f) {
+        $tit = trim((string)($f['remitente'] ?? ''));
+        tg_evento($pdo, 'revision', '⚠️ Hay una transferencia sin resolver', [
+            'Monto'     => '$' . number_format((float)$f['monto'], 2, ',', '.'),
+            'De'        => $tit !== '' ? $tit : '(el banco no informó el titular)',
+            'Hace'      => 'más de ' . $minutos . ' min sin poder asignarla',
+            'Qué hacer' => 'CRM → Comprobantes, para asignarla al jugador.',
+        ], 'pago_revision:' . (string)$f['id_unico']);
+        $n++;
+    }
+    return $n;
 }
 
 

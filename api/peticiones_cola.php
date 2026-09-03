@@ -403,15 +403,37 @@ try {
         exit;
     }
 
+    /* ---------------------------------------------------------------------
+       avisar_pendientes: las transferencias que siguen sin resolverse.
+
+       Vive ACA y no en un cron propio a proposito. El worker que pega esta
+       llamada es el mismo que acaba de aprobar las cargas del panel, asi que
+       cuando corre ya paso lo unico que podia resolverlas solas. Un cron
+       aparte tendria que adivinar cuanto esperar; este no.
+
+       Ver rl_avisar_revision_vieja() para por que el aviso no sale cuando
+       entra el pago.
+       --------------------------------------------------------------------- */
+    if ($accion === 'avisar_pendientes') {
+        $body    = json_decode(file_get_contents('php://input'), true) ?: [];
+        $minutos = (int)($body['minutos'] ?? 10);
+        $n = function_exists('rl_avisar_revision_vieja')
+            ? rl_avisar_revision_vieja($pdo, $minutos)
+            : 0;
+        echo json_encode(['ok' => true, 'avisados' => $n]);
+        exit;
+    }
+
     /* Decir CUALES son las acciones validas, no solo que esta mal. La primera
        corrida del worker fallo justo aca -- posteaba sin `?accion=evaluar` -- y
        "accion desconocida" a secas no daba ninguna pista de si el problema era
        el nombre, el metodo o la URL. */
     http_response_code(400);
+    $validas = 'evaluar, confirmar o avisar_pendientes';
     echo json_encode(['ok' => false,
                       'error' => $accion === ''
-                          ? 'falta ?accion= en la URL (esperaba evaluar o confirmar)'
-                          : "accion desconocida: '$accion' (esperaba evaluar o confirmar)"]);
+                          ? "falta ?accion= en la URL (esperaba $validas)"
+                          : "accion desconocida: '$accion' (esperaba $validas)"]);
 
 } catch (Throwable $e) {
     if ($pdo->inTransaction()) { $pdo->rollBack(); }

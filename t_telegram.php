@@ -30,6 +30,10 @@ $GLOBALS['pdo'] = $pdo;
 if (!function_exists('cfg')) { function cfg($c, $d = '') { return $d; } }
 require_once __DIR__ . '/api/config_crm.php';
 require_once __DIR__ . '/api/telegram_lib.php';
+// Por rl_avisar_revision_vieja(). require_once y no require: recargas_lib
+// carga varias libs por su cuenta y un require pelado revienta con
+// "Cannot redeclare" -- que php -l no ve, porque no ejecuta.
+require_once __DIR__ . '/api/recargas_lib.php';
 
 $ok = 0; $fail = 0;
 function chequear(string $q, bool $c, string $d = ''): void {
@@ -214,5 +218,58 @@ foreach (['tg_ev_derivacion', 'tg_ev_revision', 'tg_ev_retiro', 'tg_ev_salud'] a
 
 $pdo->exec("DELETE FROM tg_avisos WHERE clave LIKE 'test\\_%'");
 cfg_crm_guardar($pdo, ['tg_bot_token' => '', 'tg_chat_id' => ''], 'test');
+// ===========================================================================
+echo "\n=== El aviso de 'sin resolver' espera antes de sonar ===\n";
+
+/* EL BUG QUE ATAJA, del 3/9/2026: el aviso salia en el mismo momento en que
+   entraba el pago, y 'revision' significa "el matcher del camino B no encontro
+   a quien acreditarsela". Eso es CIERTO para toda carga pedida con el boton
+   "Depositos": ese camino no crea fila en `recargas`, asi que nunca puede
+   casar de este lado. Un minuto despues aprobar_cargas.py la cruza contra la
+   solicitud del panel, la aprueba y marca el pago 'usado'.
+
+   O sea una falsa alarma por cada carga del camino A -- que es la via que mas
+   se usa. Y eso no es ruido inofensivo: entrena a ignorar el aviso, que es lo
+   que lo rompe el dia que sea de verdad. */
+cfg_crm_guardar($pdo, ['tg_ev_revision' => '1'], 'test');
+$pdo->exec("DELETE FROM pagos WHERE id_unico LIKE 'ttg-rev%'");
+$pdo->exec("DELETE FROM tg_avisos WHERE clave LIKE 'pago_revision:ttg-rev%'");
+
+$logTmp3 = sys_get_temp_dir() . '/t_tg3_' . getmypid() . '.log';
+@unlink($logTmp3); ini_set('error_log', $logTmp3);
+
+/* La edad se calcula EN LA BASE (capturado_en contra NOW()). Por eso el pago
+   viejo se siembra con INTERVAL y no con una fecha armada en PHP: si el PHP y
+   la base no estan en el mismo huso -- que es el caso en produccion -- una
+   fecha de PHP haria pasar el test por el motivo equivocado. */
+$sembrar = static function (PDO $pdo, string $id, string $estado, int $hace) {
+    $pdo->prepare(
+        "INSERT INTO pagos (id_unico, monto, remitente, estado, capturado_en)
+         VALUES (?, 1000, 'Fulano de Prueba', ?, NOW() - INTERVAL ? MINUTE)"
+    )->execute([$id, $estado, $hace]);
+};
+
+$sembrar($pdo, 'ttg-rev-fresco', 'revision', 0);
+chequear('recien entrada NO avisa (el camino A todavia puede levantarla)',
+         rl_avisar_revision_vieja($pdo, 10) === 0);
+
+$sembrar($pdo, 'ttg-rev-viejo', 'revision', 25);
+chequear('pero si sigue sin resolverse, SI avisa',
+         rl_avisar_revision_vieja($pdo, 10) === 1);
+
+/* Y la que resolvio el camino A no tiene que avisar nunca: quedo 'usado'. Este
+   es exactamente el caso de la carga que disparo la falsa alarma. */
+$pdo->exec("DELETE FROM pagos WHERE id_unico LIKE 'ttg-rev%'");
+$pdo->exec("DELETE FROM tg_avisos WHERE clave LIKE 'pago_revision:ttg-rev%'");
+$sembrar($pdo, 'ttg-rev-usado', 'usado', 25);
+chequear('la que aprobo el camino A no avisa aunque sea vieja',
+         rl_avisar_revision_vieja($pdo, 10) === 0);
+
+@unlink($logTmp3); ini_restore('error_log');
+$pdo->exec("DELETE FROM pagos WHERE id_unico LIKE 'ttg-rev%'");
+$pdo->exec("DELETE FROM tg_avisos WHERE clave LIKE 'pago_revision:ttg-rev%'");
+cfg_crm_guardar($pdo, ['tg_ev_revision' => '1'], 'test');
+
+
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);
 exit($fail > 0 ? 1 : 0);

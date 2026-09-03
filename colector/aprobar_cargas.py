@@ -138,6 +138,12 @@ WHITELIST = [u.strip() for u in os.environ.get("TEST_USERS_WHITELIST", "").split
 # retiro por error SACA plata. Se filtra aca y otra vez del lado del server.
 TIPO_DEPOSITO = 0
 
+# Cuanto tiene que llevar una transferencia sin poder asignarse para que valga
+# la pena avisar. Tiene que ser COMODAMENTE mayor que el intervalo de este
+# worker: si fuera mas corto, avisaria de pagos que esta misma pasada iba a
+# resolver, que es exactamente la falsa alarma que se vino a sacar.
+MINUTOS_SIN_RESOLVER = int(os.environ.get("MINUTOS_SIN_RESOLVER", "10"))
+
 
 class DesafioWAF(RuntimeError):
     """La respuesta no fue JSON: casi seguro un challenge del WAF (ServicePipe)
@@ -387,7 +393,44 @@ def una_pasada(ctx, solo_ver: bool, dias: int) -> int:
         else:
             log.warning("    %s -> %s", estado.upper(), detalle[:160])
 
+    avisar_pendientes(ctx, solo_ver)
     return hechas
+
+
+def avisar_pendientes(ctx, solo_ver: bool) -> None:
+    """Pide al server que avise las transferencias que siguen sin resolverse.
+
+    VA AL FINAL DE LA PASADA, y ese orden es el punto. Una transferencia que
+    respalda una carga pedida desde el panel NO puede casar con el matcher de
+    las recargas nuestras -- ese camino no crea fila en `recargas` -- asi que
+    entra siempre como 'sin resolver'. Recien despues de que este worker hizo
+    lo suyo se sabe si quedo algo de verdad huerfano.
+
+    Antes el aviso salia apenas entraba el pago, y cada carga del boton
+    "Depositos" disparaba una falsa alarma que se resolvia sola un minuto
+    despues. Eso entrena a ignorar el aviso, que es lo que lo rompe el dia que
+    sea de verdad.
+
+    Si falla, se loguea y ya: no es parte de aprobar cargas y no puede tumbar
+    una pasada que hizo bien su trabajo.
+    """
+    if solo_ver:
+        log.info("(dry-run) no se piden los avisos de transferencias sin resolver")
+        return
+    key = os.environ.get("API_KEY", "")
+    if not key:
+        return
+    try:
+        r = ctx.request.post(url_cola() + "?accion=avisar_pendientes",
+                             headers={"X-API-Key": key},
+                             data={"minutos": MINUTOS_SIN_RESOLVER})
+        d = r.json() or {}
+        n = int(d.get("avisados") or 0)
+        if n:
+            log.warning("%d transferencia(s) sin resolver hace mas de %d min",
+                        n, MINUTOS_SIN_RESOLVER)
+    except Exception as e:
+        log.warning("no pude pedir los avisos de pendientes: %s", e)
 
 
 def main() -> int:
