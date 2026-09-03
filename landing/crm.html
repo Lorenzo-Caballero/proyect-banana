@@ -1756,6 +1756,62 @@
     border-radius:9px;padding:8px 10px;color:var(--txt);font-size:13px}
   .nv-bono-form input[type=text]{width:150px}
   .nv-bono-form input[type=number]{width:100px}
+
+  /* ---- Landings (modulo del rail) ----
+     Reusa los controles de Configuracion (.cb-*); lo propio es el layout:
+     lista en tarjetas, y el editor a dos columnas con la vista previa VIVA
+     al lado (un iframe de lp.html?preview=1 que se repinta por postMessage
+     con cada tecla, sin guardar nada). */
+  .lp-wrap{max-width:1200px;width:100%;margin:0 auto;padding:22px 20px 40px;
+    overflow-y:auto;flex:1;min-height:0}
+  .lp-lista{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-top:16px}
+  .lp-card{background:var(--panel2);border:1px solid var(--line);border-radius:13px;
+    padding:15px 16px;display:flex;flex-direction:column;gap:9px}
+  .lp-card.pausada{opacity:.6}
+  .lp-card-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .lp-card-top b{font-size:15px}
+  .lp-swatches{display:flex;gap:4px}
+  .lp-swatches i{width:14px;height:14px;border-radius:4px;border:1px solid var(--line2)}
+  .lp-card-datos{display:flex;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+  .lp-chip{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:2px 9px}
+  .lp-chip.bono{color:var(--green2)}
+  .lp-chip.off{color:var(--red)}
+  .lp-link{display:flex;gap:6px;align-items:center;min-width:0}
+  .lp-link input{flex:1;min-width:0;background:var(--panel);border:1px solid var(--line);
+    border-radius:9px;padding:7px 9px;color:var(--muted);font-size:12px}
+  .lp-card-acciones{display:flex;gap:8px;flex-wrap:wrap}
+  .lp-btn-mini{background:none;border:1px solid var(--line);color:var(--txt);border-radius:9px;
+    padding:6px 11px;font-size:12.5px;font-weight:600;cursor:pointer}
+  .lp-btn-mini:hover{background:var(--panel3)}
+
+  .lp-editor{display:flex;gap:18px;align-items:flex-start;margin-top:16px}
+  .lp-form{flex:1;min-width:0;display:flex;flex-direction:column;gap:12px}
+  .lp-form .cb-field{padding:14px 15px 13px}
+  .lp-colores{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-top:10px}
+  .lp-colores label{display:flex;flex-direction:column;gap:5px;font-size:11px;font-weight:600;color:var(--muted)}
+  .lp-colores input[type=color]{width:100%;height:36px;border:1px solid var(--line);border-radius:9px;
+    background:var(--panel);padding:3px;cursor:pointer}
+  .lp-textos{display:flex;flex-direction:column;gap:9px;margin-top:10px}
+  .lp-textos label{display:flex;flex-direction:column;gap:4px;font-size:11px;font-weight:600;color:var(--muted)}
+  .lp-img-fila{display:flex;align-items:center;gap:10px;margin-top:10px}
+  .lp-img-fila+.lp-img-fila{margin-top:8px}
+  .lp-img-thumb{width:44px;height:44px;border-radius:9px;border:1px solid var(--line);
+    background:var(--panel) center/cover no-repeat;flex:none;display:grid;place-items:center;
+    color:var(--muted2);font-size:10px}
+  .lp-img-fila .nom{flex:1;font-size:12px;color:var(--muted)}
+  /* La preview pegajosa: mientras el operador scrollea el formulario largo,
+     el telefono queda a la vista -- sin eso, editar el legal de abajo es
+     editar a ciegas. */
+  .lp-preview{flex:none;width:360px;position:sticky;top:0}
+  .lp-preview-marco{border:1px solid var(--line2);border-radius:20px;overflow:hidden;
+    background:#000;box-shadow:var(--shadow-sm)}
+  .lp-preview-marco iframe{display:block;width:100%;height:600px;border:0}
+  .lp-preview-pie{margin-top:8px;font-size:11.5px;color:var(--muted);text-align:center}
+  @media (max-width:900px){
+    .lp-editor{flex-direction:column}
+    .lp-preview{width:100%;position:static}
+    .lp-preview-marco iframe{height:520px}
+  }
 </style>
 </head>
 <body>
@@ -1784,6 +1840,7 @@
       <button class="rail-item" data-nav="peticiones" data-tip="Cargas del panel" data-corto="Panel"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg><span class="rail-badge" id="badgePeticiones"></span></button>
       <button class="rail-item" data-nav="push" data-tip="Push & Notificaciones" data-corto="Push"><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></button>
       <button class="rail-item" data-nav="publicidad" data-tip="Publicidad" data-corto="Public."><svg viewBox="0 0 24 24"><path d="M3 11v2a1 1 0 0 0 1 1h3l5 4V6L7 10H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 6a9 9 0 0 1 0 12"/></svg></button>
+      <button class="rail-item" data-nav="landings" data-tip="Landings" data-corto="Landings"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><circle cx="6.5" cy="6.5" r=".8" fill="currentColor" stroke="none"/><circle cx="9.5" cy="6.5" r=".8" fill="currentColor" stroke="none"/><path d="M7 13h6M7 16h4"/></svg></button>
       <button class="rail-item" data-nav="chatbot" data-tip="Chatbot (IA)" data-corto="Chatbot"><svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M12 8V4M9 4h6"/><circle cx="8.5" cy="14" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="14" r="1.3" fill="currentColor" stroke="none"/></svg></button>
       <button class="rail-item" id="railAgentes" data-nav="agentes" data-tip="Agentes" data-corto="Agentes" style="display:none"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></button>
       <button class="rail-item" data-nav="suscripcion" data-tip="Mi suscripción" data-corto="Saldo"><svg viewBox="0 0 24 24"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></button>
@@ -2970,6 +3027,122 @@
         </div>
         <div id="rsHistorial" class="cb-nota">—</div>
       </div>
+    </div>
+  </div>
+
+  <!-- ====================== LANDINGS ====================== -->
+  <div class="card-col view-panel" id="viewLandings" style="display:none">
+    <div class="lp-wrap">
+
+      <!-- Lista -->
+      <div id="lpVistaLista">
+        <div class="cb-head">
+          <div>
+            <h2 class="cb-title">Landings</h2>
+            <p class="cb-sub">Páginas de promo para tus anuncios: cada una con su link propio, su bono
+            y su estética. El bono se acredita solo en la <b>primera carga</b> de quien se registró
+            por esa página, automático.</p>
+          </div>
+          <button class="cb-btn" id="lpNuevaBtn" type="button">
+            <svg viewBox="0 0 24 24" width="15" height="15" style="vertical-align:-2px;margin-right:5px"><path d="M12 5v14M5 12h14"/></svg>
+            Nueva landing
+          </button>
+        </div>
+        <div class="lp-lista" id="lpLista"><div class="ag-vacio">Cargando…</div></div>
+      </div>
+
+      <!-- Editor -->
+      <div id="lpVistaEditor" style="display:none">
+        <div class="cb-head">
+          <div>
+            <h2 class="cb-title" id="lpEdTitulo">Nueva landing</h2>
+            <p class="cb-sub">Lo que toques se ve al instante en la vista previa. Nada se publica
+            hasta que aprietes <b>Guardar</b>.</p>
+          </div>
+          <button class="cb-btn-ghost" id="lpVolverBtn" type="button">← Volver a la lista</button>
+        </div>
+
+        <div class="lp-editor">
+          <div class="lp-form">
+
+            <div class="cb-field">
+              <label class="cb-flabel" for="lpNombre">Nombre interno</label>
+              <p class="cb-help">Solo para reconocerla en esta lista; el jugador no lo ve. El link
+              sale de este nombre y no cambia más.</p>
+              <input id="lpNombre" class="cb-input" maxlength="80" placeholder="Ej: Promo octubre 40%" style="margin-top:8px">
+            </div>
+
+            <div class="cb-field">
+              <label class="cb-flabel" for="lpPlantilla">Plantilla</label>
+              <p class="cb-help">Un punto de partida de colores y textos. Elegirla pisa lo que hayas
+              tocado abajo (las imágenes quedan).</p>
+              <select id="lpPlantilla" class="cb-input" style="margin-top:8px"></select>
+            </div>
+
+            <div class="cb-field">
+              <label class="cb-flabel" for="lpBono">Bono de bienvenida (%)</label>
+              <p class="cb-help">Se suma en <b>bonos</b> sobre la primera carga acreditada. 0 = sin
+              bono (la página deja de mostrar el número gigante). Es una promesa: el sistema la
+              cumple solo, no la subas si no la querés pagar.</p>
+              <input id="lpBono" class="cb-input" type="number" min="0" max="200" step="5" style="margin-top:8px;width:120px">
+            </div>
+
+            <div class="cb-field">
+              <label class="cb-flabel">Colores</label>
+              <div class="lp-colores">
+                <label>Fondo<input type="color" id="lpColFondo" data-col="fondo"></label>
+                <label>Botones<input type="color" id="lpColAcento" data-col="acento"></label>
+                <label>Destacado (bono)<input type="color" id="lpColDestacado" data-col="destacado"></label>
+                <label>Texto<input type="color" id="lpColTexto" data-col="texto"></label>
+              </div>
+            </div>
+
+            <div class="cb-field">
+              <label class="cb-flabel">Textos</label>
+              <div class="lp-textos">
+                <label>Marca (arriba de todo)<input class="cb-input" id="lpTxtMarca" data-txt="marca" maxlength="40"></label>
+                <label>Etiqueta de la promo<input class="cb-input" id="lpTxtPill" data-txt="pill" maxlength="60"></label>
+                <label>Título<input class="cb-input" id="lpTxtTitulo" data-txt="titulo" maxlength="60"></label>
+                <label>Debajo del número<input class="cb-input" id="lpTxtBajo" data-txt="bajo_cifra" maxlength="60"></label>
+                <label>Bajada<textarea class="cb-area" id="lpTxtSub" data-txt="sub" rows="2" maxlength="160"></textarea></label>
+                <label>Botón principal<input class="cb-input" id="lpTxtCta" data-txt="cta" maxlength="40"></label>
+                <label>Legal (pie)<input class="cb-input" id="lpTxtLegal" data-txt="legal" maxlength="120"></label>
+              </div>
+            </div>
+
+            <div class="cb-field">
+              <label class="cb-flabel">Imágenes</label>
+              <p class="cb-help">JPG, PNG o WEBP de hasta 4 MB. Sin logo propio se usa el del sitio.</p>
+              <div class="lp-img-fila">
+                <div class="lp-img-thumb" id="lpThumbLogo">logo</div>
+                <span class="nom" id="lpNomLogo">Logo: el del sitio</span>
+                <button class="lp-btn-mini" id="lpSubirLogo" type="button">Subir</button>
+                <button class="lp-btn-mini" id="lpQuitarLogo" type="button" style="display:none">Quitar</button>
+              </div>
+              <div class="lp-img-fila">
+                <div class="lp-img-thumb" id="lpThumbFondo">fondo</div>
+                <span class="nom" id="lpNomFondo">Imagen de fondo: ninguna</span>
+                <button class="lp-btn-mini" id="lpSubirFondo" type="button">Subir</button>
+                <button class="lp-btn-mini" id="lpQuitarFondo" type="button" style="display:none">Quitar</button>
+              </div>
+              <input type="file" id="lpArchivo" accept="image/jpeg,image/png,image/webp" style="display:none">
+            </div>
+
+            <div class="cb-acciones">
+              <span class="cb-msg" id="lpMsg"></span>
+              <div class="cb-acciones-der">
+                <button class="cb-btn" id="lpGuardar" type="button">Guardar</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="lp-preview">
+            <div class="lp-preview-marco"><iframe id="lpFrame" src="about:blank" title="Vista previa"></iframe></div>
+            <p class="lp-preview-pie">Vista previa en vivo — el registro está deshabilitado acá.</p>
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 
@@ -4209,7 +4382,7 @@
   // modulos nuevos ocultan esas 3 columnas y muestran su propio contenedor.
   // Se va sumando un nombre a VISTAS + su contenedor a VISTA_CONTENEDOR por
   // cada modulo que se conecte, sin tocar el resto de la funcion.
-  const VISTAS = ["chats", "comprobantes", "peticiones", "retiros", "cargas", "transacciones", "usuarios", "finanzas", "notificaciones", "publicidad", "chatbot", "agentes", "suscripcion", "config"];
+  const VISTAS = ["chats", "comprobantes", "peticiones", "retiros", "cargas", "transacciones", "usuarios", "finanzas", "notificaciones", "publicidad", "landings", "chatbot", "agentes", "suscripcion", "config"];
   const VISTA_CONTENEDOR = {
     comprobantes: "#viewComprobantes",
     peticiones: "#viewPeticiones",
@@ -4220,6 +4393,7 @@
     finanzas: "#viewFinanzas",
     notificaciones: "#viewNotificaciones",
     publicidad: "#viewPublicidad",
+    landings: "#viewLandings",
     chatbot: "#viewChatbot",
     agentes: "#viewAgentes",
     suscripcion: "#viewSuscripcion",
@@ -4307,6 +4481,9 @@
     if(nombre==="publicidad"){
       pbAbrir();
     }
+    if(nombre==="landings"){
+      lpAbrir();
+    }
     if(nombre==="chatbot"){
       cargarChatbotConfig();
     }
@@ -4331,6 +4508,7 @@
     comprobantes:"Comprobantes", peticiones:"Cargas del panel",
     notificaciones:"Notificaciones",
     publicidad:"Publicidad",
+    landings:"Landings",
     chatbot:"Chatbot", agentes:"Agentes", suscripcion:"Mi suscripción",
     config:"Configuración"
   };
@@ -8668,6 +8846,314 @@ ${cuando}.
     if(d.ok){ toast("Agente eliminado"); $("#backAgenteBorrar").classList.remove("on"); cargarAgentes(); }
     else { toast(d.error || "No se pudo eliminar"); }
   });
+
+  /* ==========================================================================
+     LANDINGS — páginas de promo creadas desde el CRM (migración 52).
+
+     La página real es landing/lp.html: acá solo se edita su config (colores,
+     textos, imágenes, bono) y se guarda por crm_landings.php. La vista previa
+     es el MISMO lp.html en un iframe con ?preview=1: cada cambio se le manda
+     por postMessage y lo pinta al instante, sin guardar nada — así lo que se
+     ve en el editor es exactamente lo que va a ver el jugador, porque lo
+     dibuja el mismo archivo.
+     ========================================================================== */
+  const API_LP = API_BASE + "/crm_landings.php";
+  let lpPlantillas = {};   // presets del server: {clave: {nombre, colores, textos, imagenes}}
+  let lpLandings   = [];
+  let lpEditando   = null; // id al editar, null al crear
+  let lpDraft      = null; // {nombre, plantilla, bono_pct, config} — lo que pinta la preview
+  let lpSubiendo   = null; // 'logo' | 'fondo' mientras el file picker está abierto
+
+  function lpUrlPublica(slug){
+    return location.origin + TENANT_PREFIJO + "/lp.html?l=" + encodeURIComponent(slug);
+  }
+
+  async function lpAbrir(){
+    lpMostrarLista();
+    try{
+      const r = await apiFetch(API_LP + "?accion=listar");
+      const d = await r.json();
+      if(!d.ok) throw new Error(d.error || "error");
+      lpPlantillas = d.plantillas || {};
+      lpLandings   = d.landings   || [];
+      lpPintarSelectPlantillas();
+      lpPintarLista();
+    }catch(e){
+      if(esSesionRequerida(e)) return;
+      $("#lpLista").innerHTML =
+        `<div class="ag-vacio">No se pudieron cargar las landings. ¿Corrió la migración 52?</div>`;
+    }
+  }
+
+  function lpMostrarLista(){
+    $("#lpVistaLista").style.display = "";
+    $("#lpVistaEditor").style.display = "none";
+  }
+  function lpMostrarEditor(){
+    $("#lpVistaLista").style.display = "none";
+    $("#lpVistaEditor").style.display = "";
+  }
+
+  function lpPintarSelectPlantillas(){
+    $("#lpPlantilla").innerHTML = Object.entries(lpPlantillas)
+      .map(([clave, p]) => `<option value="${esc(clave)}">${esc(p.nombre || clave)}</option>`)
+      .join("");
+  }
+
+  function lpPintarLista(){
+    const cont = $("#lpLista");
+    if(!lpLandings.length){
+      cont.innerHTML = `<div class="ag-vacio">Todavía no hay landings. Creá la primera con
+        «Nueva landing»: elegís plantilla y bono, y te llevás un link listo para los anuncios.</div>`;
+      return;
+    }
+    cont.innerHTML = lpLandings.map(l => {
+      const c = l.config.colores || {};
+      const url = lpUrlPublica(l.slug);
+      return `<div class="lp-card ${l.activa ? "" : "pausada"}" data-id="${l.id}">
+        <div class="lp-card-top">
+          <b>${esc(l.nombre)}</b>
+          <span class="lp-swatches">
+            <i style="background:${esc(c.fondo||"#222")}"></i><i style="background:${esc(c.acento||"#888")}"></i><i style="background:${esc(c.destacado||"#cc9")}"></i>
+          </span>
+        </div>
+        <div class="lp-card-datos">
+          <span class="lp-chip ${l.bono_pct > 0 ? "bono" : ""}">${l.bono_pct > 0 ? "Bono " + l.bono_pct + "%" : "Sin bono"}</span>
+          <span class="lp-chip">${esc((lpPlantillas[l.plantilla] || {}).nombre || l.plantilla)}</span>
+          ${l.activa ? "" : `<span class="lp-chip off">Pausada</span>`}
+        </div>
+        <div class="lp-link">
+          <input readonly value="${esc(url)}" onfocus="this.select()">
+          <button class="lp-btn-mini" data-acc="copiar" data-url="${esc(url)}">Copiar</button>
+        </div>
+        <div class="lp-card-acciones">
+          <button class="lp-btn-mini" data-acc="editar">Editar</button>
+          <button class="lp-btn-mini" data-acc="abrir" data-url="${esc(url)}">Abrir</button>
+          <button class="lp-btn-mini" data-acc="toggle">${l.activa ? "Pausar" : "Activar"}</button>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  // Un solo listener para toda la lista (las tarjetas se redibujan enteras).
+  $("#lpLista").addEventListener("click", async ev => {
+    const btn = ev.target.closest("[data-acc]");
+    if(!btn) return;
+    const acc  = btn.getAttribute("data-acc");
+    const card = btn.closest(".lp-card");
+    const id   = card ? parseInt(card.getAttribute("data-id"), 10) : 0;
+
+    if(acc === "copiar"){
+      navigator.clipboard?.writeText(btn.getAttribute("data-url"));
+      toast("Link copiado");
+      return;
+    }
+    if(acc === "abrir"){
+      window.open(btn.getAttribute("data-url"), "_blank");
+      return;
+    }
+    if(acc === "editar"){
+      lpEditar(id);
+      return;
+    }
+    if(acc === "toggle"){
+      btn.disabled = true;
+      try{
+        const r = await apiFetch(API_LP, {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({accion:"toggle", id}),
+        });
+        const d = await r.json();
+        if(d.ok){
+          const l = lpLandings.find(x => x.id === id);
+          if(l) l.activa = d.activa ? 1 : 0;
+          toast(d.activa ? "Landing activada" : "Landing pausada: el link deja de funcionar");
+          lpPintarLista();
+        } else toast(d.error || "No se pudo");
+      }catch(e){ if(!esSesionRequerida(e)) toast("No se pudo"); }
+    }
+  });
+
+  // ---------- editor ----------
+  function lpConfigDePlantilla(clave){
+    const p = lpPlantillas[clave] || Object.values(lpPlantillas)[0] || {};
+    return {
+      colores:  Object.assign({}, p.colores),
+      textos:   Object.assign({}, p.textos),
+      imagenes: Object.assign({logo:"", fondo:""}, p.imagenes),
+    };
+  }
+
+  function lpEditar(id){
+    const l = id ? lpLandings.find(x => x.id === id) : null;
+    lpEditando = l ? l.id : null;
+    lpDraft = l
+      ? JSON.parse(JSON.stringify({nombre:l.nombre, plantilla:l.plantilla, bono_pct:l.bono_pct, config:l.config}))
+      : {nombre:"", plantilla:Object.keys(lpPlantillas)[0] || "oro", bono_pct:50,
+         config:lpConfigDePlantilla(Object.keys(lpPlantillas)[0] || "oro")};
+
+    $("#lpEdTitulo").textContent = l ? ("Editar: " + l.nombre) : "Nueva landing";
+    $("#lpMsg").textContent = "";
+    lpPintarCampos();
+    lpMostrarEditor();
+
+    // La preview se carga recién acá (no en lpAbrir): un iframe por las dudas
+    // en una vista que quizá nunca se abre es red gastada.
+    const frame = $("#lpFrame");
+    if(frame.getAttribute("data-lista") !== "1"){
+      frame.addEventListener("load", () => {
+        frame.setAttribute("data-lista", "1");
+        lpPreview();
+      });
+      frame.src = "lp.html?preview=1";
+    } else {
+      lpPreview();
+    }
+  }
+
+  function lpPintarCampos(){
+    $("#lpNombre").value    = lpDraft.nombre;
+    $("#lpPlantilla").value = lpDraft.plantilla;
+    $("#lpBono").value      = lpDraft.bono_pct;
+    document.querySelectorAll("#viewLandings [data-col]").forEach(el => {
+      el.value = lpDraft.config.colores[el.getAttribute("data-col")] || "#000000";
+    });
+    document.querySelectorAll("#viewLandings [data-txt]").forEach(el => {
+      el.value = lpDraft.config.textos[el.getAttribute("data-txt")] || "";
+    });
+    lpPintarImagenes();
+  }
+
+  function lpPintarImagenes(){
+    const im = lpDraft.config.imagenes;
+    const pinta = (cual, thumbSel, nomSel, quitarSel, sinTexto) => {
+      const url = im[cual] || "";
+      $(thumbSel).style.backgroundImage = url ? `url("${url}")` : "";
+      $(thumbSel).textContent = url ? "" : cual;
+      $(nomSel).textContent = url ? "Imagen propia subida" : sinTexto;
+      $(quitarSel).style.display = url ? "" : "none";
+    };
+    pinta("logo",  "#lpThumbLogo",  "#lpNomLogo",  "#lpQuitarLogo",  "Logo: el del sitio");
+    pinta("fondo", "#lpThumbFondo", "#lpNomFondo", "#lpQuitarFondo", "Imagen de fondo: ninguna");
+  }
+
+  function lpPreview(){
+    const frame = $("#lpFrame");
+    if(!lpDraft || !frame.contentWindow) return;
+    frame.contentWindow.postMessage({
+      tipo: "lp_config",
+      landing: { bono_pct: parseInt($("#lpBono").value, 10) || 0, config: lpDraft.config },
+    }, "*");
+  }
+
+  // Cada tecla actualiza el borrador y repinta la preview. "input" y no
+  // "change": el gracia de la preview es verla mientras tipeás.
+  $("#lpNombre").addEventListener("input", () => { lpDraft.nombre = $("#lpNombre").value; });
+  $("#lpBono").addEventListener("input", lpPreview);
+  document.querySelectorAll("#viewLandings [data-col]").forEach(el => {
+    el.addEventListener("input", () => {
+      lpDraft.config.colores[el.getAttribute("data-col")] = el.value;
+      lpPreview();
+    });
+  });
+  document.querySelectorAll("#viewLandings [data-txt]").forEach(el => {
+    el.addEventListener("input", () => {
+      lpDraft.config.textos[el.getAttribute("data-txt")] = el.value;
+      lpPreview();
+    });
+  });
+
+  // Cambiar de plantilla pisa colores y textos con los del preset (para eso
+  // está: arrancar de nuevo). Las imágenes subidas y el bono quedan.
+  $("#lpPlantilla").addEventListener("change", () => {
+    const clave = $("#lpPlantilla").value;
+    const base = lpConfigDePlantilla(clave);
+    lpDraft.plantilla = clave;
+    lpDraft.config.colores = base.colores;
+    lpDraft.config.textos  = base.textos;
+    lpPintarCampos();
+    lpPreview();
+  });
+
+  // ---------- imágenes ----------
+  $("#lpSubirLogo").addEventListener("click", () => { lpSubiendo = "logo";  $("#lpArchivo").click(); });
+  $("#lpSubirFondo").addEventListener("click", () => { lpSubiendo = "fondo"; $("#lpArchivo").click(); });
+  $("#lpQuitarLogo").addEventListener("click", () => {
+    lpDraft.config.imagenes.logo = ""; lpPintarImagenes(); lpPreview();
+  });
+  $("#lpQuitarFondo").addEventListener("click", () => {
+    lpDraft.config.imagenes.fondo = ""; lpPintarImagenes(); lpPreview();
+  });
+
+  $("#lpArchivo").addEventListener("change", async () => {
+    const f = $("#lpArchivo").files[0];
+    const cual = lpSubiendo;
+    $("#lpArchivo").value = "";   // que el mismo archivo se pueda re-elegir
+    if(!f || !cual) return;
+    if(f.size > 4 * 1024 * 1024){ toast("La imagen supera 4 MB"); return; }
+
+    const fd = new FormData();
+    fd.append("accion", "imagen");
+    fd.append("archivo", f);
+    $("#lpMsg").className = "cb-msg"; $("#lpMsg").textContent = "Subiendo imagen…";
+    try{
+      const r = await apiFetch(API_LP, {method:"POST", body:fd});
+      const d = await r.json();
+      if(d.ok && d.url){
+        lpDraft.config.imagenes[cual] = d.url;
+        $("#lpMsg").textContent = "";
+        lpPintarImagenes();
+        lpPreview();
+      } else {
+        $("#lpMsg").className = "cb-msg err";
+        $("#lpMsg").textContent = d.error || "No se pudo subir";
+      }
+    }catch(e){
+      if(esSesionRequerida(e)) return;
+      $("#lpMsg").className = "cb-msg err"; $("#lpMsg").textContent = "No se pudo subir";
+    }
+  });
+
+  // ---------- guardar / navegación ----------
+  $("#lpGuardar").addEventListener("click", async () => {
+    const nombre = $("#lpNombre").value.trim();
+    if(!nombre){
+      $("#lpMsg").className = "cb-msg err"; $("#lpMsg").textContent = "Ponele un nombre";
+      $("#lpNombre").focus(); return;
+    }
+    const btn = $("#lpGuardar"); btn.disabled = true;
+    $("#lpMsg").className = "cb-msg"; $("#lpMsg").textContent = "Guardando…";
+    try{
+      const r = await apiFetch(API_LP, {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          accion:"guardar",
+          id: lpEditando || undefined,
+          nombre,
+          plantilla: lpDraft.plantilla,
+          bono_pct: parseInt($("#lpBono").value, 10) || 0,
+          config: lpDraft.config,
+        }),
+      });
+      const d = await r.json();
+      if(d.ok){
+        toast(lpEditando ? "Landing guardada" : "Landing creada — copiá el link desde la lista");
+        await lpAbrir();   // recarga la lista y vuelve a ella (ahí está el link)
+      } else {
+        $("#lpMsg").className = "cb-msg err";
+        $("#lpMsg").textContent = d.error || "No se pudo guardar";
+      }
+    }catch(e){
+      if(!esSesionRequerida(e)){
+        $("#lpMsg").className = "cb-msg err"; $("#lpMsg").textContent = "No se pudo guardar";
+      }
+    }finally{
+      btn.disabled = false;
+    }
+  });
+
+  $("#lpNuevaBtn").addEventListener("click", () => lpEditar(0));
+  $("#lpVolverBtn").addEventListener("click", lpMostrarLista);
 
   // ---------- arranque ----------
   // Un solo fetch de prueba decide todo: 401 -> login, cualquier otra cosa

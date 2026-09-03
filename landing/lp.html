@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bono de bienvenida</title>
+<!-- ============================================================================
+     lp.html — LA plantilla de las landings creadas desde el CRM.
+
+     No tiene nada hardcodeado de una promo puntual: TODO (colores, textos,
+     imágenes, % del bono) sale de la config que el operador armó en el módulo
+     "Landings" del CRM. Se abre como lp.html?l=<slug> y pide esa config a
+     landing_publica.php; el mismo archivo sirve para todas las landings.
+
+     Dos modos:
+       lp.html?l=<slug>       la página publicada (la que va en los anuncios)
+       lp.html?preview=1      vista previa DENTRO del CRM: no pide nada al
+                              server, espera la config por postMessage y pinta
+                              cada cambio en vivo. El alta queda deshabilitada.
+
+     El flujo de registro es el MISMO de bono.html/registro.html: mismo
+     endpoint, mismo sondeo, misma clave de localStorage. Lo único distinto es
+     la promo: acá viaja 'lp:<slug>', y recargas_lib.php cumple el bono con el
+     % guardado en la tabla `landings` (no con una constante).
+     ========================================================================= -->
+<link rel="icon" type="image/png" href="/replica/logo.png">
+<link rel="apple-touch-icon" href="/replica/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  /* Los valores de acá son SOLO el esqueleto (plantilla 'oro'): apenas llega
+     la config, aplicar() los pisa a todos. Así la página no parpadea en
+     blanco mientras espera la red. */
+  :root{
+    --acento:#8b3ffe; --acento2:#a855f7;
+    --destacado:#ffc844; --destacado2:#ffe9a8; --destacado-osc:#e29a00;
+    --texto:#f4ecff; --texto-dim:#b9a6d6; --texto-suave:#d9c7f5;
+    --line:rgba(168,120,255,.28);
+    --bg0:#3a1560; --bg1:#200a38; --bg2:#0b0416; --bg3:#060209;
+    --hoja1:#2a1046; --hoja2:#1a0a2e;
+    --danger:#ff6b8a;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:'Poppins',system-ui,sans-serif;
+    color:var(--texto);
+    min-height:100dvh;
+    display:flex;flex-direction:column;align-items:center;
+    padding:26px 18px 20px;
+    background:
+      radial-gradient(120% 90% at 50% 30%, var(--bg0) 0%, var(--bg1) 44%, var(--bg2) 80%, var(--bg3) 100%);
+    overflow-x:hidden;
+  }
+  /* Imagen de fondo opcional (config.imagenes.fondo): va detrás de todo,
+     oscurecida para que el texto siga leyéndose sobre cualquier foto. */
+  .fondo-img{position:fixed;inset:0;z-index:-1;background-size:cover;background-position:center;
+    opacity:.28;display:none}
+  .fondo-img.on{display:block}
+
+  /* ---------- hero ---------- */
+  .hero{width:100%;max-width:420px;margin:auto 0;text-align:center;
+    animation:sube .5s ease both}
+  @keyframes sube{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+
+  .marca{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:18px}
+  .marca .logo{width:44px;height:44px;border-radius:12px;object-fit:cover;
+    box-shadow:0 8px 22px rgba(0,0,0,.45)}
+  .marca b{font-size:19px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+
+  .pill{display:inline-flex;align-items:center;gap:7px;padding:7px 16px;border-radius:999px;
+    background:linear-gradient(180deg,var(--destacado2),var(--destacado));color:#3a2400;
+    font-size:12.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;
+    box-shadow:0 6px 20px rgba(0,0,0,.28)}
+
+  .rot{margin-top:22px;font-size:15px;font-weight:600;letter-spacing:.22em;
+    text-transform:uppercase;color:var(--texto-suave)}
+
+  /* Sin bono (bono_pct=0) el título pasa de rótulo chico a héroe de la pieza:
+     el hueco del número gigante lo tiene que llenar algo. */
+  .sin-bono .rot{font-size:clamp(30px,9vw,44px);font-weight:900;letter-spacing:0;
+    text-transform:none;color:var(--texto);line-height:1.15;margin-top:26px}
+  .sin-bono .pill,.sin-bono .cifra,.sin-bono .cifra-pie{display:none}
+
+  .cifra{font-size:clamp(74px,22vw,124px);font-weight:900;line-height:.92;
+    background:linear-gradient(180deg,var(--destacado2) 8%,var(--destacado) 52%,var(--destacado-osc) 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    filter:drop-shadow(0 6px 26px rgba(0,0,0,.35));letter-spacing:-.02em}
+  .cifra span{font-size:.52em;vertical-align:super;margin-left:-.04em}
+
+  .cifra-pie{margin-top:4px;font-size:15px;font-weight:700;letter-spacing:.18em;
+    text-transform:uppercase}
+  .sub{margin-top:14px;font-size:14.5px;color:var(--texto-dim);line-height:1.5}
+
+  /* ---------- CTA ---------- */
+  .cta{margin-top:26px;width:100%;padding:17px 20px;border:0;border-radius:16px;
+    background:linear-gradient(180deg,var(--acento2),var(--acento));
+    color:#fff;font:800 17px/1 'Poppins',sans-serif;letter-spacing:.02em;
+    cursor:pointer;box-shadow:0 14px 34px rgba(0,0,0,.45);
+    display:flex;align-items:center;justify-content:center;gap:10px;
+    transition:transform .12s ease, box-shadow .12s ease}
+  .cta:hover{transform:translateY(-1px)}
+  .cta:active{transform:translateY(1px)}
+  .cta .ico{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.9;
+    stroke-linecap:round;stroke-linejoin:round}
+
+  @keyframes late{0%,88%,100%{transform:scale(1)}94%{transform:scale(1.025)}}
+  .cta{animation:late 3.4s ease-in-out infinite}
+  @media (prefers-reduced-motion:reduce){.cta{animation:none}}
+
+  .ventajas{margin-top:16px;display:flex;justify-content:center;gap:14px;flex-wrap:wrap;
+    font-size:12px;color:var(--texto-dim)}
+  .ventajas span{display:inline-flex;align-items:center;gap:5px}
+  .ventajas .ico{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;
+    stroke-linecap:round;stroke-linejoin:round;opacity:.85}
+
+  .legal{margin-top:22px;font-size:11px;color:var(--texto-dim);opacity:.75;line-height:1.6}
+
+  /* ---------- hoja inferior (igual que bono.html) ---------- */
+  .fondo{position:fixed;inset:0;background:rgba(0,0,0,.72);backdrop-filter:blur(3px);
+    opacity:0;pointer-events:none;transition:opacity .22s ease;z-index:40}
+  .fondo.on{opacity:1;pointer-events:auto}
+
+  .hoja{position:fixed;left:0;right:0;bottom:0;z-index:41;
+    background:linear-gradient(180deg,var(--hoja1),var(--hoja2));
+    border:1px solid var(--line);border-bottom:0;
+    border-radius:22px 22px 0 0;padding:10px 20px calc(24px + env(safe-area-inset-bottom));
+    transform:translateY(102%);transition:transform .28s cubic-bezier(.22,1,.36,1);
+    box-shadow:0 -18px 50px rgba(0,0,0,.5)}
+  .hoja.on{transform:none}
+  @media (min-width:560px){
+    .hoja{left:50%;right:auto;transform:translate(-50%,102%);width:440px;
+      border-radius:22px;bottom:24px;border-bottom:1px solid var(--line)}
+    .hoja.on{transform:translate(-50%,0)}
+  }
+
+  .tirador{width:42px;height:4px;border-radius:4px;background:rgba(255,255,255,.22);
+    margin:0 auto 16px}
+  .hoja h2{font-size:19px;font-weight:800;text-align:center}
+  .hoja .ayuda{margin-top:7px;font-size:13px;color:var(--texto-dim);text-align:center;line-height:1.5}
+
+  .inp{width:100%;margin-top:18px;padding:15px 16px;border-radius:13px;
+    border:1px solid var(--line);background:rgba(255,255,255,.05);color:var(--texto);
+    font:600 16px 'Poppins',sans-serif;outline:none}
+  .inp::placeholder{color:var(--texto-dim);opacity:.7;font-weight:400}
+  .inp:focus{border-color:var(--acento2)}
+
+  .msg{display:block;min-height:17px;margin-top:8px;font-size:12.5px;color:var(--danger)}
+
+  .btn{width:100%;margin-top:6px;padding:16px;border:0;border-radius:14px;
+    background:linear-gradient(180deg,var(--acento2),var(--acento));color:#fff;
+    font:800 16px 'Poppins',sans-serif;cursor:pointer;
+    box-shadow:0 12px 28px rgba(0,0,0,.4)}
+  .btn[disabled]{opacity:.6;cursor:default;box-shadow:none}
+  .link{background:none;border:0;color:var(--texto-dim);font:600 13px 'Poppins',sans-serif;
+    cursor:pointer;text-decoration:underline;padding:10px}
+
+  .pie-seg{margin-top:14px;font-size:11.5px;color:var(--texto-dim);opacity:.8;text-align:center;
+    display:flex;align-items:center;justify-content:center;gap:6px}
+  .pie-seg .ico{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:2;
+    stroke-linecap:round;stroke-linejoin:round}
+
+  .vista{display:none}
+  .vista.on{display:block;animation:aparece .25s ease both}
+  @keyframes aparece{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+  .espera{text-align:center;padding:12px 0 4px}
+  .spinner{width:56px;height:56px;margin:0 auto 16px;border-radius:16px;
+    border:1px solid var(--line);display:flex;align-items:center;justify-content:center;
+    background:rgba(255,255,255,.04);animation:gira 2.4s linear infinite}
+  @keyframes gira{to{transform:rotate(360deg)}}
+  .spinner svg{width:26px;height:26px;fill:none;stroke:var(--destacado);stroke-width:1.8;
+    stroke-linecap:round;stroke-linejoin:round}
+  .espera h2{font-size:18px;transition:opacity .25s ease}
+  .espera h2.cambiando{opacity:0}
+  .espera p{margin-top:8px;font-size:13.5px;color:var(--texto-dim)}
+  .barra{margin:16px auto 0;width:100%;height:5px;border-radius:5px;
+    background:rgba(255,255,255,.08);overflow:hidden}
+  .barra i{display:block;width:38%;height:100%;border-radius:5px;
+    background:linear-gradient(90deg,transparent,var(--acento2),transparent);
+    animation:corre 1.3s ease-in-out infinite}
+  @keyframes corre{from{transform:translateX(-110%)}to{transform:translateX(320%)}}
+  .nota{margin-top:12px;font-size:12px;color:var(--texto-dim);opacity:.8}
+
+  .check{width:58px;height:58px;margin:6px auto 14px;border-radius:50%;
+    background:rgba(84,230,181,.14);display:flex;align-items:center;justify-content:center}
+  .check svg{width:28px;height:28px;fill:none;stroke:#54e6b5;stroke-width:2.6;
+    stroke-linecap:round;stroke-linejoin:round}
+
+  .cred{display:flex;align-items:center;justify-content:space-between;gap:12px;
+    margin-top:10px;padding:13px 15px;border-radius:12px;
+    border:1px solid var(--line);background:rgba(255,255,255,.04)}
+  .cred .k{font-size:12px;color:var(--texto-dim);text-transform:uppercase;letter-spacing:.06em}
+  .cred .v{font-size:17px;font-weight:800;word-break:break-all;text-align:right}
+  .aviso{margin-top:12px;font-size:12px;color:var(--texto-dim);opacity:.8;line-height:1.5;text-align:center}
+
+  /* Landing inexistente/pausada: un cartel simple, nada de la promo. */
+  .caida{margin:auto;text-align:center;color:var(--texto-dim);font-size:15px;display:none;
+    line-height:1.6}
+  body.rota .hero,body.rota .hoja,body.rota .fondo{display:none}
+  body.rota .caida{display:block}
+</style>
+</head>
+<body>
+
+<div class="fondo-img" id="fondoImg"></div>
+
+<main class="hero" id="hero">
+  <div class="marca">
+    <img class="logo" id="marcaLogo" src="/replica/logo.png" alt="">
+    <b id="marcaNombre">Tu Casino</b>
+  </div>
+
+  <span class="pill" id="pill">🔥 Bono de bienvenida</span>
+
+  <div class="rot" id="rot">Bono</div>
+  <div class="cifra"><span id="bonoPct">50</span><span>%</span></div>
+  <div class="cifra-pie" id="bajoCifra">En tu primera carga</div>
+
+  <p class="sub" id="sub">Creá tu cuenta gratis y jugá. Online las 24 horas.</p>
+
+  <button class="cta" id="ctaJugar" type="button">
+    <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8.2" cy="8.2" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.8" cy="15.8" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/></svg>
+    <span id="ctaTxt">Jugar ahora</span>
+  </button>
+
+  <div class="ventajas">
+    <span><svg class="ico" viewBox="0 0 24 24"><path d="M13 2 3 14h8l-1 8 10-12h-8z"/></svg> Carga al instante</span>
+    <span><svg class="ico" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg> Retiros rápidos</span>
+    <span><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="10.5" width="16" height="10.5" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg> Sin tarjeta</span>
+  </div>
+
+  <p class="legal" id="legal">Jugá con responsabilidad · Solo mayores de 18 años</p>
+</main>
+
+<p class="caida">Esta página ya no está disponible.<br>Si buscabas jugar, escribinos por el chat.</p>
+
+<div class="fondo" id="fondo"></div>
+
+<!-- MISMO flujo de alta que bono.html/registro.html: mismo endpoint, mismo
+     sondeo, misma clave de localStorage. Un pedido empezado en una página se
+     retoma en cualquiera de las otras. -->
+<section class="hoja" id="hoja" role="dialog" aria-modal="true" aria-labelledby="hojaTitulo">
+  <div class="tirador"></div>
+
+  <div class="vista on" id="vistaForm">
+    <h2 id="hojaTitulo">Creá tu cuenta</h2>
+    <p class="ayuda">Escribí tu nombre y listo. No pedimos mail, teléfono ni tarjeta.</p>
+    <form id="form" novalidate>
+      <input id="usuario" class="inp" type="text" inputmode="text"
+             autocomplete="name" placeholder="Ej: Martín" aria-label="Tu nombre">
+      <span class="msg" id="msg" role="alert"></span>
+      <button class="btn" id="btn" type="submit">Crear mi cuenta</button>
+    </form>
+    <p class="pie-seg"><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="10.5" width="16" height="10.5" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg> Registro seguro · gratis</p>
+  </div>
+
+  <div class="vista espera" id="vistaEspera">
+    <div class="spinner"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8.2" cy="8.2" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.8" cy="8.2" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/><circle cx="8.2" cy="15.8" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.8" cy="15.8" r="1.3" fill="currentColor" stroke="none"/></svg></div>
+    <h2 id="esperaTitulo">Creando tu cuenta…</h2>
+    <p>Estamos dando de alta <b id="esperaUser"></b> en el sistema.</p>
+    <div class="barra"><i></i></div>
+    <p class="nota" id="esperaNota">Suele tardar menos de un minuto.</p>
+  </div>
+
+  <div class="vista espera" id="vistaLista">
+    <div class="check"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></div>
+    <h2>¡Usuario creado!</h2>
+  </div>
+
+  <div class="vista" id="vistaExito">
+    <h2 style="text-align:center">¡Cuenta creada!</h2>
+    <p class="ayuda">Guardá estos datos para ingresar al juego.</p>
+    <div class="cred"><span class="k">Usuario</span><span class="v" id="outUser"></span></div>
+    <div class="cred"><span class="k">Contraseña</span><span class="v" id="outPass"></span></div>
+    <p class="aviso">Podés cambiarla más adelante desde tu cuenta.</p>
+    <button class="btn" id="btnJugar" type="button" style="margin-top:16px">Entrar a jugar</button>
+    <div style="text-align:center"><button class="link" id="btnCopiar" type="button">Copiar datos</button></div>
+  </div>
+</section>
+
+<script>
+(function(){
+  const $ = id => document.getElementById(id);
+  const dormir = ms => new Promise(r => setTimeout(r, ms));
+
+  /* ======================================================================
+     Rutas. Mismo criterio que bono.html: relativas al dominio que sirve la
+     página, y con soporte para el cliente por-path
+     (ganamoscrm.online/<slug-cliente>/lp.html?l=<landing>): ahí la API vive
+     bajo /<slug-cliente>/gp-api. OJO el prefijo /gp-api: /api es de la
+     plataforma real y un fetch ahí da 404.
+     ====================================================================== */
+  const partesRuta = location.pathname.split('/').filter(Boolean);
+  const esPorPath = partesRuta.length >= 2 && partesRuta[1] === 'lp.html';
+  const BASE_API = esPorPath ? '/' + partesRuta[0] + '/gp-api' : '/gp-api';
+
+  const params  = new URLSearchParams(location.search);
+  const SLUG    = (params.get('l') || '').trim();
+  const PREVIEW = params.get('preview') === '1';
+  const PUB     = (params.get('pub') || '').trim();
+  const FBCLID  = (params.get('fbclid') || '').trim();
+
+  /* La promo que viaja en el alta. crear_cuenta.php la valida contra la
+     tabla `landings` (whitelist real, no texto libre) y la guarda en
+     altas.origen; con eso recargas_lib.php cumple el bono en la primera
+     carga con el % de ESTA landing. */
+  const PROMO = 'lp:' + SLUG;
+
+  // ---------------- pintar la config ----------------
+  // Mezcla dos hex: t=0 -> a, t=1 -> b. Con esto se derivan todas las
+  // variantes (claro/oscuro) de los 4 colores que elige el operador, en vez
+  // de pedirle una paleta entera que nadie sabría completar.
+  function mez(a, b, t){
+    const pa = [1,3,5].map(i => parseInt(a.slice(i,i+2),16));
+    const pb = [1,3,5].map(i => parseInt(b.slice(i,i+2),16));
+    return '#' + pa.map((v,i) => Math.round(v+(pb[i]-v)*t).toString(16).padStart(2,'0')).join('');
+  }
+  function rgba(hex, al){
+    const p = [1,3,5].map(i => parseInt(hex.slice(i,i+2),16));
+    return 'rgba(' + p.join(',') + ',' + al + ')';
+  }
+  const HEX = v => /^#[0-9a-fA-F]{6}$/.test(v || '');
+
+  function aplicar(landing){
+    const c  = (landing.config && landing.config.colores)  || {};
+    const t  = (landing.config && landing.config.textos)   || {};
+    const im = (landing.config && landing.config.imagenes) || {};
+    const r  = document.documentElement.style;
+
+    if (HEX(c.acento)){
+      r.setProperty('--acento', c.acento);
+      r.setProperty('--acento2', mez(c.acento, '#ffffff', .22));
+      r.setProperty('--line', rgba(mez(c.acento, '#ffffff', .3), .3));
+    }
+    if (HEX(c.destacado)){
+      r.setProperty('--destacado', c.destacado);
+      r.setProperty('--destacado2', mez(c.destacado, '#ffffff', .55));
+      r.setProperty('--destacado-osc', mez(c.destacado, '#000000', .25));
+    }
+    if (HEX(c.texto)){
+      r.setProperty('--texto', c.texto);
+      r.setProperty('--texto-suave', mez(c.texto, '#888888', .18));
+    }
+    if (HEX(c.fondo)){
+      r.setProperty('--bg0', mez(c.fondo, '#ffffff', .14));
+      r.setProperty('--bg1', c.fondo);
+      r.setProperty('--bg2', mez(c.fondo, '#000000', .62));
+      r.setProperty('--bg3', mez(c.fondo, '#000000', .82));
+      r.setProperty('--hoja1', mez(c.fondo, '#ffffff', .08));
+      r.setProperty('--hoja2', mez(c.fondo, '#000000', .2));
+      if (HEX(c.texto)) r.setProperty('--texto-dim', mez(c.texto, c.fondo, .42));
+    }
+
+    const pon = (id, v) => { if (typeof v === 'string' && v !== '') $(id).textContent = v; };
+    pon('marcaNombre', t.marca);
+    pon('pill',        t.pill);
+    pon('rot',         t.titulo);
+    pon('bajoCifra',   t.bajo_cifra);
+    pon('sub',         t.sub);
+    pon('ctaTxt',      t.cta);
+    pon('legal',       t.legal);
+
+    if (im.logo) $('marcaLogo').src = im.logo;
+    const fi = $('fondoImg');
+    if (im.fondo){ fi.style.backgroundImage = 'url("' + im.fondo + '")'; fi.classList.add('on'); }
+    else { fi.classList.remove('on'); fi.style.backgroundImage = ''; }
+
+    const bono = parseInt(landing.bono_pct, 10) || 0;
+    $('bonoPct').textContent = bono;
+    document.body.classList.toggle('sin-bono', bono <= 0);
+    $('btn').textContent = bono > 0 ? 'Crear mi cuenta y activar el bono' : 'Crear mi cuenta';
+  }
+
+  // ---------------- de dónde sale la config ----------------
+  if (PREVIEW){
+    /* Vista previa dentro del CRM: no se pide nada al server — el editor
+       manda la config por postMessage con cada cambio y acá solo se pinta.
+       Sin chequeo de origin a propósito: esta rama no tiene ningún dato que
+       proteger (pinta colores y textos que le manden) y el CRM se sirve
+       desde el mismo lugar que esta página. */
+    window.addEventListener('message', ev => {
+      const d = ev.data;
+      if (d && d.tipo === 'lp_config' && d.landing) aplicar(d.landing);
+    });
+  } else if (SLUG){
+    fetch(BASE_API + '/landing_publica.php?slug=' + encodeURIComponent(SLUG), { cache:'no-store' })
+      .then(res => {
+        if (res.status === 404){ document.body.classList.add('rota'); return null; }
+        return res.json().catch(() => null);
+      })
+      .then(data => { if (data && data.ok) aplicar(data.landing); })
+      .catch(() => {});   // sin red: quedan los defaults del CSS, la página vive igual
+
+    /* El Pixel de Meta solo en la página real (en la preview del CRM cada
+       tecleo del operador contaría como PageView de campaña). Es el mismo
+       meta-pixel.js de las otras landings: pide el pixel_id a la API. */
+    const px = document.createElement('script');
+    px.src = 'meta-pixel.js';
+    document.body.appendChild(px);
+  } else {
+    document.body.classList.add('rota');
+  }
+
+  /* ======================================================================
+     De acá para abajo es el flujo de alta de bono.html, sin cambios de
+     fondo: solo PROMO (arriba) y el freno en modo preview.
+     ====================================================================== */
+  const API = BASE_API + '/crear_cuenta.php';
+  const CLAVE_LOCAL = 'goldpaw_alta';   // MISMA clave que registro.html/bono.html
+
+  const POLL_RAPIDO = 500;
+  const POLL_LENTO  = 4000;
+  const POLL_VUELTAS_RAPIDAS = 20;
+  const AVISO_MS    = 90 * 1000;
+  const LIMITE_MS   = 6 * 60 * 1000;
+  const VENCE_MS    = 24 * 3600 * 1000;
+
+  const usuario = $('usuario'), msg = $('msg'), btn = $('btn'), form = $('form');
+  const hoja = $('hoja'), fondo = $('fondo');
+
+  function nuevoSid(){
+    return (window.crypto && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : 's-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+  }
+
+  usuario.addEventListener('input', ()=>{ msg.textContent=''; usuario.style.borderColor=''; });
+
+  function abrirHoja(){
+    fondo.classList.add('on');
+    hoja.classList.add('on');
+    setTimeout(()=>{ if($('vistaForm').classList.contains('on')) usuario.focus(); }, 320);
+  }
+  function cerrarHoja(){
+    fondo.classList.remove('on');
+    hoja.classList.remove('on');
+  }
+  $('ctaJugar').addEventListener('click', abrirHoja);
+  fondo.addEventListener('click', ()=>{
+    if ($('vistaForm').classList.contains('on')) cerrarHoja();
+  });
+
+  function error(t){
+    verForm();
+    msg.textContent = t; usuario.style.borderColor = 'var(--danger)'; usuario.focus();
+  }
+
+  function guardar(p){ try{ localStorage.setItem(CLAVE_LOCAL, JSON.stringify(p)); }catch(e){} }
+  function leer(){ try{ return JSON.parse(localStorage.getItem(CLAVE_LOCAL) || 'null'); }catch(e){ return null; } }
+  function olvidar(){ try{ localStorage.removeItem(CLAVE_LOCAL); }catch(e){} }
+
+  const FRASES_ESPERA = [
+    'Creando tu cuenta…',
+    'Reservando tu usuario…',
+    'Activando tu bono…',
+    'Ya casi está…',
+  ];
+  let rotEspera = null;
+  function iniciarRotacionEspera(){
+    let i = 0;
+    detenerRotacionEspera();
+    rotEspera = setInterval(()=>{
+      i = (i + 1) % FRASES_ESPERA.length;
+      const h2 = $('esperaTitulo');
+      h2.classList.add('cambiando');
+      setTimeout(()=>{ h2.textContent = FRASES_ESPERA[i]; h2.classList.remove('cambiando'); }, 250);
+    }, 2600);
+  }
+  function detenerRotacionEspera(){ if(rotEspera){ clearInterval(rotEspera); rotEspera = null; } }
+
+  function ver(id){
+    ['vistaForm','vistaEspera','vistaLista','vistaExito']
+      .forEach(v => $(v).classList.toggle('on', v === id));
+  }
+
+  function verForm(){
+    detenerRotacionEspera();
+    ver('vistaForm');
+    btn.disabled = false;
+    btn.textContent = document.body.classList.contains('sin-bono')
+      ? 'Crear mi cuenta' : 'Crear mi cuenta y activar el bono';
+  }
+
+  function verEspera(u){
+    msg.textContent = '';
+    $('esperaUser').textContent = u;
+    $('esperaTitulo').textContent = FRASES_ESPERA[0];
+    $('esperaNota').textContent = 'Suele tardar menos de un minuto.';
+    ver('vistaEspera');
+    iniciarRotacionEspera();
+  }
+
+  function verListo(p){
+    detenerRotacionEspera();
+    ver('vistaLista');
+    setTimeout(()=> verExito(p), 400);
+  }
+
+  function verExito(p){
+    $('outUser').textContent = p.usuario;
+    $('outPass').textContent = p.password;
+    ver('vistaExito');
+
+    $('btnCopiar').onclick = ()=>{
+      navigator.clipboard?.writeText(`Usuario: ${p.usuario}\nContraseña: ${p.password}`);
+      $('btnCopiar').textContent = '¡Copiado!';
+      setTimeout(()=> $('btnCopiar').textContent = 'Copiar datos', 1500);
+    };
+    const destino = esPorPath ? '/' + partesRuta[0] + '/chat.html' : '/';
+    $('btnJugar').onclick = ()=>{ olvidar(); location.href = destino; };
+  }
+
+  async function sondear(p){
+    verEspera(p.usuario);
+
+    let vuelta = 0;
+    for(;;){
+      await dormir(vuelta++ < POLL_VUELTAS_RAPIDAS ? POLL_RAPIDO : POLL_LENTO);
+
+      let data = null;
+      try {
+        const url = API + '?id=' + encodeURIComponent(p.id) +
+                          '&usuario=' + encodeURIComponent(p.usuario) +
+                          (p.sid ? '&sid=' + encodeURIComponent(p.sid) : '');
+        const res = await fetch(url, { cache:'no-store' });
+        if (res.status === 404){
+          olvidar();
+          return error('No encontramos tu pedido. Probá de nuevo.');
+        }
+        data = await res.json().catch(()=> null);
+      } catch (e) {
+        continue;
+      }
+      if (!data) continue;
+
+      if (data.listo){
+        if (data.password) p.password = data.password;
+        if (data.usuario)  p.usuario  = data.usuario;
+        p.listo = true;
+        guardar(p);
+        return verListo(p);
+      }
+
+      if (data.fallo){
+        olvidar();
+        return error('No pudimos crear la cuenta. Probá con otro nombre.');
+      }
+
+      const esperando = Date.now() - (p.desde || Date.now());
+      if (esperando > LIMITE_MS){
+        $('esperaNota').textContent =
+          'Está tardando más de lo normal, pero el pedido no se pierde. ' +
+          'Podés escribirnos por chat con tu usuario.';
+      } else if (esperando > AVISO_MS){
+        $('esperaNota').textContent = 'Seguimos en eso, no cierres la página…';
+      }
+    }
+  }
+
+  form.addEventListener('submit', async e=>{
+    e.preventDefault();
+    // En la vista previa del CRM el alta no corre: crearía cuentas reales
+    // desde un editor de estética.
+    if (PREVIEW) return error('Es una vista previa: el registro no funciona acá.');
+    const u = usuario.value.trim();
+    if (!u)           return error('Escribí tu nombre.');
+    if (u.length < 4) return error('Mínimo 4 caracteres.');
+
+    btn.disabled = true; btn.textContent = 'Creando…';
+
+    try {
+      const sid = nuevoSid();
+      const cookies = window.metaCookies ? window.metaCookies() : {};
+      const res = await fetch(API, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          usuario: u, sid: sid,
+          promo: PROMO,
+          pub: PUB, fbclid: FBCLID,
+          fbp: cookies.fbp || '', fbc: cookies.fbc || '',
+        })
+      });
+      const data = await res.json().catch(()=> ({}));
+
+      if (res.ok && data.ok && data.id && data.usuario){
+        const pedido = { id:data.id, usuario:data.usuario, sid:sid,
+                         password:data.password || '', desde:Date.now() };
+        guardar(pedido);
+        return sondear(pedido);
+      }
+
+      if (res.status === 429) return error(data.error || 'Esperá un rato antes de pedir otra cuenta.');
+      return error(data.error || 'No se pudo crear la cuenta. Probá de nuevo.');
+
+    } catch (err) {
+      error('No se pudo conectar. Revisá tu conexión.');
+    }
+  });
+
+  (function retomar(){
+    if (PREVIEW) return;   // el editor no retoma altas de nadie
+    const p = leer();
+    if (!p || !p.id || !p.usuario) return;
+    if (Date.now() - (p.desde || 0) > VENCE_MS) return olvidar();
+    abrirHoja();
+    if (p.listo) return verExito(p);
+    sondear(p);
+  })();
+})();
+</script>
+</body>
+</html>

@@ -60,6 +60,14 @@ if (is_file(__DIR__ . '/telegram_lib.php')) {
     require_once __DIR__ . '/telegram_lib.php';
 }
 
+// Landings del CRM (migracion 52): el bono de bienvenida de una landing
+// 'lp:<slug>' sale de su fila en `landings`, no de la constante de abajo.
+// Best-effort igual que telegram: sin el archivo, ese camino simplemente no
+// da bonos y el resto de la acreditacion no se entera.
+if (is_file(__DIR__ . '/landings_lib.php')) {
+    require_once __DIR__ . '/landings_lib.php';
+}
+
 // =====================  EDITA ESTO  =======================================
 const RL_COINS_POR_PESO = 1;        // 1 coin = 1 peso  (5000 coins => $5000)
 const RL_MIN_COINS      = 100;      // minimo por recarga
@@ -904,11 +912,18 @@ function rl_acreditar(PDO $pdo, array &$recarga, string $idUnico, string $conf,
         crmnotif_bono_aplicar_en_recarga($pdo, (string)$recarga['usuario'], (int)$recarga['id'], (int)$recarga['coins']);
     }
 
-    /* Bono de bienvenida (landing bono.html): en la PRIMERA recarga acreditada
-       de un jugador que entro por esa landing, se le suma el % prometido en
-       BONOS. Va aca y no en un paso aparte porque este es el unico lugar por
-       el que pasan TODAS las acreditaciones del camino B (automaticas y
-       manuales del CRM): no hay forma de que una primera carga se lo saltee.
+    /* Bono de bienvenida (landing bono.html y las landings del CRM): en la
+       PRIMERA recarga acreditada de un jugador que entro por una landing con
+       bono, se le suma el % prometido en BONOS. Va aca y no en un paso aparte
+       porque este es el unico lugar por el que pasan TODAS las acreditaciones
+       del camino B (automaticas y manuales del CRM): no hay forma de que una
+       primera carga se lo saltee.
+
+       El % depende de POR DONDE entro (altas.origen):
+         'bono50'     -> RL_BONO_BIENVENIDA_PCT (la landing fija de siempre)
+         'lp:<slug>'  -> landings.bono_pct de ESA landing (migracion 52).
+       La fila se busca AUNQUE la landing este pausada: pausar corta las altas
+       nuevas, no las promesas ya hechas a quien se registro antes.
 
        Descansa en $esPrimera, que ya se calculo ARRIBA, antes de marcar esta
        recarga como acreditada -- por eso vale "cero acreditadas previas". Si
@@ -922,7 +937,7 @@ function rl_acreditar(PDO $pdo, array &$recarga, string $idUnico, string $conf,
        "Depositos" DENTRO del juego), esto no corre -- ese camino no crea filas
        en `recargas` ni pasa por aca. Para el flujo de la landing (chatbot ->
        transferencia) es el camino de siempre. */
-    if ($esPrimera === 1 && RL_BONO_BIENVENIDA_PCT > 0) {
+    if ($esPrimera === 1) {
         try {
             // El origen del alta dice por donde entro. Sin JOIN a proposito:
             // `altas` comparte collation con `usuarios`, pero comparar contra
@@ -931,8 +946,21 @@ function rl_acreditar(PDO $pdo, array &$recarga, string $idUnico, string $conf,
                 "SELECT origen FROM altas WHERE usuario = ? ORDER BY id DESC LIMIT 1"
             );
             $sa->execute([(string)$recarga['usuario']]);
-            if ((string)$sa->fetchColumn() === RL_BONO_BIENVENIDA_ORIGEN) {
-                $bono = (int)floor((int)$recarga['coins'] * RL_BONO_BIENVENIDA_PCT / 100);
+            $origenAlta = (string)$sa->fetchColumn();
+
+            $pctBono = 0;
+            if ($origenAlta === RL_BONO_BIENVENIDA_ORIGEN) {
+                $pctBono = RL_BONO_BIENVENIDA_PCT;
+            } elseif (strncmp($origenAlta, 'lp:', 3) === 0
+                      && function_exists('landings_por_slug')) {
+                $lpFila = landings_por_slug($pdo, substr($origenAlta, 3), false);
+                if ($lpFila) {
+                    $pctBono = (int)$lpFila['bono_pct'];
+                }
+            }
+
+            if ($pctBono > 0) {
+                $bono = (int)floor((int)$recarga['coins'] * $pctBono / 100);
                 if ($bono > 0) {
                     $pdo->prepare("UPDATE usuarios SET bonus = bonus + ? WHERE username = ?")
                         ->execute([$bono, (string)$recarga['usuario']]);
@@ -945,7 +973,7 @@ function rl_acreditar(PDO $pdo, array &$recarga, string $idUnico, string $conf,
                     )->execute([
                         mb_substr((string)$recarga['usuario'], 0, 50),
                         $bono,
-                        'Bono de bienvenida ' . RL_BONO_BIENVENIDA_PCT . '% por su primera carga',
+                        'Bono de bienvenida ' . $pctBono . '% por su primera carga',
                     ]);
                     if (function_exists('notif_crear')) {
                         notif_crear(
@@ -953,7 +981,7 @@ function rl_acreditar(PDO $pdo, array &$recarga, string $idUnico, string $conf,
                             (string)$recarga['usuario'],
                             '🎁 ¡Bono de bienvenida!',
                             'Te acreditamos ' . number_format($bono, 0, ',', '.')
-                                . ' en bonos (' . RL_BONO_BIENVENIDA_PCT
+                                . ' en bonos (' . $pctBono
                                 . '% de tu primera carga). ¡A jugarlos!',
                             'bono',
                             null,

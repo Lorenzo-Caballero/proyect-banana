@@ -33,6 +33,7 @@ require __DIR__ . '/db.php';
 require __DIR__ . '/altas_lib.php';
 require_once __DIR__ . '/config_crm.php';
 require __DIR__ . '/publicidad_lib.php';
+require __DIR__ . '/landings_lib.php';
 
 header('Content-Type: application/json; charset=utf-8');
 // La respuesta depende del pedido y cambia sola cuando el bot avanza: si un
@@ -150,9 +151,21 @@ if ($metodo === 'POST') {
            decide si rl_acreditar() regala un bono real en la primera carga
            (RL_BONO_BIENVENIDA_ORIGEN en recargas_lib.php), asi que aceptar
            cualquier cosa seria dejar que el navegador elija promociones. Un
-           valor desconocido cae en 'landing', como siempre. */
+           valor desconocido cae en 'landing', como siempre.
+
+           'lp:<slug>' son las landings creadas desde el CRM (lp.html,
+           migracion 52). La whitelist ahi es la tabla: solo cuenta si la
+           landing existe y esta ACTIVA en este momento -- una pausada deja
+           de prometer bonos, aunque el link viejo siga circulando. El bono
+           concreto lo cumple recargas_lib.php con el % de esa fila. */
         $promo  = trim((string)($body['promo'] ?? ''));
-        $origen = $promo === 'bono50' ? 'bono50' : 'landing';
+        $origen = 'landing';
+        if ($promo === 'bono50') {
+            $origen = 'bono50';
+        } elseif (preg_match('/^lp:([a-z0-9-]{1,24})$/', $promo, $mLp)
+                  && landings_por_slug($pdo, $mLp[1]) !== null) {
+            $origen = 'lp:' . $mLp[1];
+        }
 
         $r = alta_encolar($pdo, [
             'usuario'  => $usuarioFinal,
