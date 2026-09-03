@@ -1807,6 +1807,23 @@
     background:#000;box-shadow:var(--shadow-sm)}
   .lp-preview-marco iframe{display:block;width:100%;height:600px;border:0}
   .lp-preview-pie{margin-top:8px;font-size:11.5px;color:var(--muted);text-align:center}
+  /* La barra con el link de la landing. En verde a propósito: es EL resultado
+     de crear una landing (lo que se pega en el anuncio), no un dato más del
+     formulario. Aparece recién cuando la landing existe. */
+  .lp-linkbar{display:flex;align-items:center;gap:8px;margin-top:14px;padding:10px 12px;
+    background:var(--greenSoft);border:1px solid var(--green);border-radius:11px;flex-wrap:wrap}
+  .lp-linkbar-etq{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+    color:var(--green2);flex:none}
+  .lp-linkbar input{flex:1;min-width:180px;background:var(--panel);border:1px solid var(--line);
+    border-radius:9px;padding:8px 10px;color:var(--txt);font-size:12.5px}
+  /* Sliders de tamaño: rango + número al lado. El número tabular para que no
+     baile mientras se arrastra. */
+  .lp-tamanos{display:flex;flex-direction:column;gap:12px;margin-top:10px}
+  .lp-tamanos>label{display:flex;flex-direction:column;gap:6px;font-size:11px;font-weight:600;color:var(--muted)}
+  .lp-slider{display:flex;align-items:center;gap:10px}
+  .lp-slider input[type=range]{flex:1;accent-color:var(--violet2);cursor:pointer}
+  .lp-slider output{width:48px;text-align:right;font-size:13px;font-weight:700;color:var(--txt);
+    font-variant-numeric:tabular-nums}
   @media (max-width:900px){
     .lp-editor{flex-direction:column}
     .lp-preview{width:100%;position:static}
@@ -3062,6 +3079,15 @@
           <button class="cb-btn-ghost" id="lpVolverBtn" type="button">← Volver a la lista</button>
         </div>
 
+        <!-- El link aparece apenas la landing EXISTE (al abrir una guardada, o
+             en el momento de crearla): es el resultado que se viene a buscar. -->
+        <div class="lp-linkbar" id="lpLinkbar" style="display:none">
+          <span class="lp-linkbar-etq">Link de esta landing</span>
+          <input readonly id="lpLinkUrl" onfocus="this.select()">
+          <button class="lp-btn-mini" id="lpLinkCopiar" type="button">Copiar</button>
+          <button class="lp-btn-mini" id="lpLinkAbrir" type="button">Abrir</button>
+        </div>
+
         <div class="lp-editor">
           <div class="lp-form">
 
@@ -3094,6 +3120,26 @@
                 <label>Botones<input type="color" id="lpColAcento" data-col="acento"></label>
                 <label>Destacado (bono)<input type="color" id="lpColDestacado" data-col="destacado"></label>
                 <label>Texto<input type="color" id="lpColTexto" data-col="texto"></label>
+              </div>
+            </div>
+
+            <div class="cb-field">
+              <label class="cb-flabel">Tamaños</label>
+              <p class="cb-help">Qué tan grandes se ven el número del bono y el botón. Arrastrá y
+              miralo en la vista previa; 100% ya es grande.</p>
+              <div class="lp-tamanos">
+                <label>Número del bono
+                  <span class="lp-slider">
+                    <input type="range" id="lpTamCifra" data-tam="cifra" min="50" max="200" step="5" value="100">
+                    <output>100%</output>
+                  </span>
+                </label>
+                <label>Botón
+                  <span class="lp-slider">
+                    <input type="range" id="lpTamBoton" data-tam="boton" min="50" max="200" step="5" value="100">
+                    <output>100%</output>
+                  </span>
+                </label>
               </div>
             </div>
 
@@ -8981,7 +9027,15 @@ ${cuando}.
       colores:  Object.assign({}, p.colores),
       textos:   Object.assign({}, p.textos),
       imagenes: Object.assign({logo:"", fondo:""}, p.imagenes),
+      tamanos:  Object.assign({cifra:"100", boton:"100"}, p.tamanos),
     };
+  }
+
+  /** Muestra el link público de la landing (o esconde la barra si todavía no
+   *  existe — una nueva sin guardar no tiene slug que mostrar). */
+  function lpPintarLink(slug){
+    $("#lpLinkbar").style.display = slug ? "" : "none";
+    $("#lpLinkUrl").value = slug ? lpUrlPublica(slug) : "";
   }
 
   function lpEditar(id){
@@ -8992,8 +9046,13 @@ ${cuando}.
       : {nombre:"", plantilla:Object.keys(lpPlantillas)[0] || "oro", bono_pct:50,
          config:lpConfigDePlantilla(Object.keys(lpPlantillas)[0] || "oro")};
 
+    // Una fila guardada antes de que existieran los tamaños no trae la
+    // sección: se completa acá para que los sliders y la preview no fallen.
+    lpDraft.config.tamanos = lpDraft.config.tamanos || {cifra:"100", boton:"100"};
+
     $("#lpEdTitulo").textContent = l ? ("Editar: " + l.nombre) : "Nueva landing";
     $("#lpMsg").textContent = "";
+    lpPintarLink(l ? l.slug : null);
     lpPintarCampos();
     lpMostrarEditor();
 
@@ -9020,6 +9079,11 @@ ${cuando}.
     });
     document.querySelectorAll("#viewLandings [data-txt]").forEach(el => {
       el.value = lpDraft.config.textos[el.getAttribute("data-txt")] || "";
+    });
+    document.querySelectorAll("#viewLandings [data-tam]").forEach(el => {
+      const v = parseInt(lpDraft.config.tamanos[el.getAttribute("data-tam")], 10) || 100;
+      el.value = v;
+      el.nextElementSibling.textContent = v + "%";
     });
     lpPintarImagenes();
   }
@@ -9061,6 +9125,21 @@ ${cuando}.
       lpDraft.config.textos[el.getAttribute("data-txt")] = el.value;
       lpPreview();
     });
+  });
+  document.querySelectorAll("#viewLandings [data-tam]").forEach(el => {
+    el.addEventListener("input", () => {
+      lpDraft.config.tamanos[el.getAttribute("data-tam")] = el.value;
+      el.nextElementSibling.textContent = el.value + "%";
+      lpPreview();
+    });
+  });
+
+  $("#lpLinkCopiar").addEventListener("click", () => {
+    navigator.clipboard?.writeText($("#lpLinkUrl").value);
+    toast("Link copiado");
+  });
+  $("#lpLinkAbrir").addEventListener("click", () => {
+    window.open($("#lpLinkUrl").value, "_blank");
   });
 
   // Cambiar de plantilla pisa colores y textos con los del preset (para eso
@@ -9137,8 +9216,24 @@ ${cuando}.
       });
       const d = await r.json();
       if(d.ok){
-        toast(lpEditando ? "Landing guardada" : "Landing creada — copiá el link desde la lista");
-        await lpAbrir();   // recarga la lista y vuelve a ella (ahí está el link)
+        // NO se vuelve a la lista: lo que se vino a buscar es el link, y
+        // recién ahora existe. Aparece en la barra verde de arriba, listo
+        // para copiar, y el editor queda en modo "editar" sobre la misma fila.
+        const esNueva = !lpEditando;
+        lpEditando = d.id;
+        $("#lpEdTitulo").textContent = "Editar: " + nombre;
+        lpPintarLink(d.slug);
+        $("#lpMsg").className = "cb-msg ok";
+        $("#lpMsg").textContent = esNueva ? "¡Creada! Tu link está arriba, listo para copiar." : "Guardada";
+        toast(esNueva ? "Landing creada" : "Landing guardada");
+        // Refrescar el cache de la lista en silencio, para que al Volver ya
+        // esté la tarjeta nueva sin otro fetch.
+        try{
+          const rl = await apiFetch(API_LP + "?accion=listar");
+          const dl = await rl.json();
+          if(dl.ok) lpLandings = dl.landings || [];
+        }catch(e2){}
+        lpPintarLista();
       } else {
         $("#lpMsg").className = "cb-msg err";
         $("#lpMsg").textContent = d.error || "No se pudo guardar";

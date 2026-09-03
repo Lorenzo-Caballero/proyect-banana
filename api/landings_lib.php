@@ -33,6 +33,11 @@ function landings_plantillas(): array
         'legal'      => 'Jugá con responsabilidad · Solo mayores de 18 años',
     ];
     $imagenes = ['logo' => '', 'fondo' => ''];
+    // Escala en % sobre el tamaño base de lp.html (que ya es grande de por
+    // sí). Strings a propósito: el merge de landings_config_completa() solo
+    // pisa con strings no vacíos, y así una config vieja sin 'tamanos' cae en
+    // estos defaults sin caso especial.
+    $tamanos = ['cifra' => '100', 'boton' => '100'];
 
     return [
         'oro' => [
@@ -40,18 +45,21 @@ function landings_plantillas(): array
             'colores' => ['fondo' => '#200a38', 'acento' => '#8b3ffe', 'destacado' => '#ffc844', 'texto' => '#f4ecff'],
             'textos'  => $textosBase,
             'imagenes' => $imagenes,
+            'tamanos' => $tamanos,
         ],
         'neon' => [
             'nombre'  => 'Neón',
             'colores' => ['fondo' => '#04120b', 'acento' => '#00c96b', 'destacado' => '#3dffa0', 'texto' => '#eafff4'],
             'textos'  => $textosBase,
             'imagenes' => $imagenes,
+            'tamanos' => $tamanos,
         ],
         'fuego' => [
             'nombre'  => 'Fuego',
             'colores' => ['fondo' => '#1c0507', 'acento' => '#e5233d', 'destacado' => '#ffb03a', 'texto' => '#fff1ec'],
             'textos'  => $textosBase,
             'imagenes' => $imagenes,
+            'tamanos' => $tamanos,
         ],
     ];
 }
@@ -72,7 +80,7 @@ function landings_config_completa(string $plantilla, ?string $configJson): array
     if (!is_array($propio)) {
         return $base;
     }
-    foreach (['colores', 'textos', 'imagenes'] as $seccion) {
+    foreach (['colores', 'textos', 'imagenes', 'tamanos'] as $seccion) {
         foreach ($base[$seccion] as $k => $v) {
             $valor = $propio[$seccion][$k] ?? null;
             if (is_string($valor) && $valor !== '') {

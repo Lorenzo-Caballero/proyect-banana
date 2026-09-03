@@ -78,12 +78,17 @@
     text-transform:uppercase;color:var(--texto-suave)}
 
   /* Sin bono (bono_pct=0) el título pasa de rótulo chico a héroe de la pieza:
-     el hueco del número gigante lo tiene que llenar algo. */
-  .sin-bono .rot{font-size:clamp(30px,9vw,44px);font-weight:900;letter-spacing:0;
+     el hueco del número gigante lo tiene que llenar algo. Escala con el mismo
+     slider que la cifra: en este modo ES la cifra. */
+  .sin-bono .rot{font-size:calc(clamp(32px,10vw,50px) * var(--esc-cifra,1));font-weight:900;letter-spacing:0;
     text-transform:none;color:var(--texto);line-height:1.15;margin-top:26px}
   .sin-bono .pill,.sin-bono .cifra,.sin-bono .cifra-pie{display:none}
 
-  .cifra{font-size:clamp(74px,22vw,124px);font-weight:900;line-height:.92;
+  /* El número es el héroe y arranca GIGANTE a propósito (en un anuncio, el %
+     es lo único que se lee en el primer segundo). --esc-cifra es la escala
+     que elige el operador en el CRM (config.tamanos.cifra, en %): el clamp
+     sigue frenando el desborde en pantallas chicas. */
+  .cifra{font-size:calc(clamp(96px,30vw,180px) * var(--esc-cifra,1));font-weight:900;line-height:.92;
     background:linear-gradient(180deg,var(--destacado2) 8%,var(--destacado) 52%,var(--destacado-osc) 100%);
     -webkit-background-clip:text;background-clip:text;color:transparent;
     filter:drop-shadow(0 6px 26px rgba(0,0,0,.35));letter-spacing:-.02em}
@@ -93,16 +98,23 @@
     text-transform:uppercase}
   .sub{margin-top:14px;font-size:14.5px;color:var(--texto-dim);line-height:1.5}
 
-  /* ---------- CTA ---------- */
-  .cta{margin-top:26px;width:100%;padding:17px 20px;border:0;border-radius:16px;
+  /* ---------- CTA ----------
+     Grande por default (es LA acción de la página) y escalable con
+     --esc-boton (config.tamanos.boton, el otro slider del CRM). El font va
+     en propiedades sueltas y no en el shorthand `font:` porque calc() con la
+     barra de line-height dentro del shorthand no parsea en todos lados. */
+  .cta{margin-top:26px;width:100%;padding:calc(20px * var(--esc-boton,1)) 22px;border:0;
+    border-radius:calc(16px * var(--esc-boton,1));
     background:linear-gradient(180deg,var(--acento2),var(--acento));
-    color:#fff;font:800 17px/1 'Poppins',sans-serif;letter-spacing:.02em;
+    color:#fff;font-family:'Poppins',sans-serif;font-weight:800;line-height:1;
+    font-size:calc(19px * var(--esc-boton,1));letter-spacing:.02em;
     cursor:pointer;box-shadow:0 14px 34px rgba(0,0,0,.45);
     display:flex;align-items:center;justify-content:center;gap:10px;
     transition:transform .12s ease, box-shadow .12s ease}
   .cta:hover{transform:translateY(-1px)}
   .cta:active{transform:translateY(1px)}
-  .cta .ico{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.9;
+  .cta .ico{width:calc(22px * var(--esc-boton,1));height:calc(22px * var(--esc-boton,1));
+    fill:none;stroke:currentColor;stroke-width:1.9;
     stroke-linecap:round;stroke-linejoin:round}
 
   @keyframes late{0%,88%,100%{transform:scale(1)}94%{transform:scale(1.025)}}
@@ -327,7 +339,15 @@
     const c  = (landing.config && landing.config.colores)  || {};
     const t  = (landing.config && landing.config.textos)   || {};
     const im = (landing.config && landing.config.imagenes) || {};
+    const tm = (landing.config && landing.config.tamanos)  || {};
     const r  = document.documentElement.style;
+
+    // Escalas del CRM (en %). Se acota acá también, no solo en el server:
+    // esta rama la alimenta el postMessage de la preview, que no pasó por
+    // lp_config_sanear().
+    const esc = v => Math.min(200, Math.max(50, parseInt(v, 10) || 100)) / 100;
+    r.setProperty('--esc-cifra', esc(tm.cifra));
+    r.setProperty('--esc-boton', esc(tm.boton));
 
     if (HEX(c.acento)){
       r.setProperty('--acento', c.acento);
