@@ -963,9 +963,21 @@
   "box-shadow:0 24px 60px rgba(0,0,0,.45);font:14px/1.45 system-ui,Segoe UI,Roboto,Arial,sans-serif;color:#111b21}"+
   "#gp-panel.open{display:flex}"+
   /* mobile: ocupaba casi toda la pantalla y tapaba el juego de atras.
-     Se achica el alto y se le deja un margen fijo arriba, asi respira. */
+
+     Antes se resolvia con `top:64px; bottom:8px; height:auto`, o sea "todo el
+     alto menos 72px fijos". En un celular de 850px eso son 778: sigue siendo
+     la pantalla entera. El margen fijo no achica nada, solo corre el borde.
+
+     Ahora el alto es una PROPORCION con tope: 68vh deja siempre ~un tercio de
+     la pantalla a la vista -- se sigue viendo el juego de atras, que es de lo
+     que se trata -- y los 520px cortan en pantallas largas, donde 68vh seria
+     una columna incomoda de leer.
+
+     Queda pegado ABAJO (bottom, sin top) a proposito: es donde esta el pulgar
+     y donde aparece el teclado. Anclarlo arriba lo alejaria justo del campo
+     de escritura. */
   "@media (max-width:480px){"+
-  "#gp-panel{right:8px;left:8px;bottom:8px;top:64px;height:auto;max-width:none;border-radius:12px}"+
+  "#gp-panel{right:8px;left:8px;bottom:8px;top:auto;height:min(68vh,520px);max-width:none;border-radius:12px}"+
   ".gp-h{padding:9px 12px}.gp-h .a{width:34px;height:34px}.gp-h b{font-size:14px}.gp-h .s{font-size:11px}"+
   ".gp-b{padding:10px 9px;gap:5px}.gp-bub{font-size:13.5px;padding:7px 10px}"+
   ".gp-q{padding:7px 8px 2px}.gp-q button{padding:7px 4px;font-size:11.5px}"+
