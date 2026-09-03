@@ -164,10 +164,20 @@ const CFG_CRM_DEFAULTS = [
     //   ref_mensaje     la plantilla de la difusion. {link} se reemplaza por
     //                   el link UNICO de cada cliente -- por eso la difusion
     //                   del plan tiene su camino propio y no la masiva comun,
-    //                   que manda el mismo texto a todos.
+    //                   que manda el mismo texto a todos -- y {bono} por el
+    //                   monto configurado arriba, para que subirlo no exija
+    //                   acordarse de reescribir el mensaje.
+    //                   El default va ACA y no vacio: asi el CRM muestra la
+    //                   plantilla ya escrita, lista para tocar o mandar tal
+    //                   cual, en vez de un campo en blanco que hay que saber
+    //                   llenar.
     'ref_activo'     => '0',
     'ref_bono_monto' => '0',
-    'ref_mensaje'    => '',
+    'ref_mensaje'    => "🎁 ¡Invitá y ganá!\n\n"
+        . "Compartí tu link con tus amigos: cuando uno se registre y haga su "
+        . "primera carga, te regalamos {bono} en bonos. Se acreditan solos, "
+        . "sin pedir nada.\n\n"
+        . "👇 Este es TU link, tocalo y reenvialo:\n{link}",
 
     // ----- Meta Ads (Pixel + Conversions API) -----
     // Apagado por defecto: sin pixel cargado no hay nada que mandar, y un

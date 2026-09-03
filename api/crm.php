@@ -1466,14 +1466,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                pero en agente. */
             $plantilla = trim((string)cfg_crm($pdo, 'ref_mensaje'));
             if ($plantilla === '') {
-                $monto = (int)round((float)cfg_crm($pdo, 'ref_bono_monto'));
+                // Solo si el operador BORRO la plantilla a proposito: el
+                // default con texto vive en config_crm y cfg_crm lo devuelve
+                // solo cuando la fila no existe.
                 $plantilla = '🎁 ¡Invitá y ganá! Compartí tu link con tus amigos: cuando '
-                    . 'uno se registre y haga su primera carga, te regalamos '
-                    . ($monto > 0 ? number_format($monto, 0, ',', '.') . ' en bonos.' : 'bonos.');
+                    . 'uno se registre y haga su primera carga, te regalamos {bono} en bonos.';
             }
             if (strpos($plantilla, '{link}') === false) {
                 $plantilla .= "\n\n{link}";
             }
+            /* {bono} = el monto configurado, con puntos de miles. Se resuelve
+               UNA vez aca (es igual para todos); {link} adentro del loop (es
+               de cada uno). Con el monto en 0 se degrada a "bonos" a secas
+               antes que difundir un "0 en bonos". */
+            $monto = (int)round((float)cfg_crm($pdo, 'ref_bono_monto'));
+            $plantilla = str_replace(
+                '{bono}',
+                $monto > 0 ? number_format($monto, 0, ',', '.') : 'unos',
+                $plantilla
+            );
 
             /* A quien: todos los chats con usuario. Con incluir_sin_chat,
                tambien los clientes que nunca escribieron (se les crea la
