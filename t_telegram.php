@@ -301,6 +301,26 @@ $limpiarAltas = static function () use ($pdo): void {
 };
 $limpiarAltas();
 
+/* Este bloque cuenta los avisos que salen EN TOTAL, y alta_avisar_trabadas()
+   mira la tabla entera -- como corresponde en produccion. Asi que una sola
+   alta ajena pendiente en la base de prueba suma un aviso de mas y las
+   cuentas de abajo dejan de cerrar.
+   Se avisa en vez de borrarlas: pueden ser el fixture de otra suite, y un test
+   que borra datos que no son suyos es peor que uno que falla. */
+$ajenas = (int)$pdo->query(
+    "SELECT COUNT(*) FROM altas
+      WHERE usuario NOT LIKE 'ttgAlta%' AND estado IN ('pendiente','procesando')"
+)->fetchColumn();
+if ($ajenas > 0) {
+    printf("  (!) hay %d alta(s) ajena(s) sin terminar en la base de prueba.
+"
+         . "      Este bloque cuenta avisos globales, asi que van a sobrar %d.
+"
+         . "      Mirá: SELECT id,usuario,estado FROM altas WHERE estado IN ('pendiente','procesando');
+",
+           $ajenas, $ajenas);
+}
+
 /* pedido_en se siembra restando EN SQL, con el reloj de la base: la espera se
    mide ahi, y mezclar NOW() con time() de PHP ya causo bugs en este repo. */
 $sembrarAlta = static function (string $u, string $estado, int $intentos,
