@@ -579,8 +579,52 @@ try {
     $texto = procesar_chat($mensajes, $llamarModelo, $ejecutarTool, MAX_RONDAS);
 } catch (Throwable $e) {
     error_log('chatbot: ' . $e->getMessage());
-    http_response_code(502);
-    echo json_encode(['ok' => false, 'error' => $e->getMessage()], JSON_UNESCAPED_UNICODE);
+
+    // El ultimo mensaje del jugador, para que NO se pierda: aunque el modelo
+    // este caido, el agente lo ve en el CRM y puede contestar a mano.
+    $ultimoUser = '';
+    for ($i = count($mensajes) - 1; $i >= 0; $i--) {
+        if (($mensajes[$i]['role'] ?? '') === 'user' && is_string($mensajes[$i]['content'] ?? null)
+            && $mensajes[$i]['content'] !== '') {
+            $ultimoUser = (string)$mensajes[$i]['content'];
+            break;
+        }
+    }
+    if ($ultimoUser !== '' && function_exists('crm_registrar_turno')) {
+        try {
+            crm_registrar_turno($pdo, $sessionId, $ultimoUser, '', $usuarioDetectado);
+        } catch (Throwable $e2) {
+            error_log('chatbot: no pude guardar el turno con el modelo caido: ' . $e2->getMessage());
+        }
+    }
+
+    // Telegram: el chat esta caido y los jugadores lo estan VIENDO caido.
+    // Con clave: mientras siga roto, un aviso cada tanto, no uno por mensaje.
+    try {
+        if (function_exists('tg_evento')) {
+            tg_evento($pdo, 'salud', '🤖 El chat no está pudiendo responder', [
+                'Error'     => mb_substr($e->getMessage(), 0, 200),
+                'Qué pasa'  => 'El modelo de IA rechaza las llamadas y no hay respaldo que responda.',
+                'Qué hacer' => 'Abrir chatbot_diag.php?clave=ver-chatbot y revisar la cuota/key del modelo. '
+                             . 'Los mensajes de los jugadores quedan guardados en el CRM.',
+            ], 'chatbot_caido');
+        }
+    } catch (Throwable $e2) {
+        error_log('chatbot aviso caido: ' . $e2->getMessage());
+    }
+
+    /* 200 y no 502, y es importante: Cloudflare TAPA los 502/504 del origen
+       con su propia pagina text/plain ("error code: 502"), asi que este JSON
+       no le llegaba nunca al widget -- ni el motivo a nadie. El widget decide
+       por `ok`, no por el status; con ok:false pinta `error` como alerta. El
+       detalle tecnico va aparte, para el log de la consola, no para el
+       jugador. */
+    echo json_encode([
+        'ok'      => false,
+        'error'   => 'Uy, estamos con un problema técnico para responderte. '
+                   . 'Tu mensaje quedó guardado y un agente ya fue avisado.',
+        'detalle' => $e->getMessage(),
+    ], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
@@ -1432,7 +1476,58 @@ function ia_chat(string $key, array $mensajes, array $tools): array
     // `tools` vacio en vez de ignorarlo.
     if ($tools) { $cuerpo['tools'] = $tools; }
 
-    $ch = curl_init($base . '/chat/completions');
+    $r = ia_chat_post($base . '/chat/completions', $key, $cuerpo);
+
+    /* RESPALDO. Un 401/403 del proveedor primario no es "el jugador pregunto
+       algo raro": es la cuenta (key invalida, o cuota agotada -- el 5/9 Qwen
+       corto con "The free quota has been exhausted" y el chat quedo mudo).
+       Cohere tiene un endpoint COMPATIBLE con OpenAI (/compatibility/v1), o
+       sea que sirve el mismo cuerpo y devuelve el mismo formato: se reintenta
+       ahi con la COHERE_API_KEY que ya esta en config.local.php, y el chat
+       sigue vivo mientras alguien arregla la cuenta primaria con calma.
+
+       Solo 401/403 disparan el respaldo: un 429 (rate limit) o un 5xx del
+       proveedor son transitorios y el propio jugador reintenta; cambiar de
+       modelo por un pico de trafico seria inestable a lo bobo. */
+    if (in_array($r['http'], [401, 403], true)) {
+        $keyCo = (string)cfg('COHERE_API_KEY');
+        if ($keyCo === '' || strlen($keyCo) < 20) { $keyCo = $key; }
+        $baseCo = rtrim((string)cfg('COHERE_COMPAT_BASE', 'https://api.cohere.ai/compatibility/v1'), '/');
+        $modCo  = (string)cfg('COHERE_COMPAT_MODEL', 'command-r-08-2024');
+        error_log('chatbot: el modelo primario rechazo la llamada (HTTP '
+                . $r['http'] . ', cuota o key); pruebo el respaldo ' . $modCo);
+
+        $cuerpo['model'] = $modCo;
+        $r2 = ia_chat_post($baseCo . '/chat/completions', $keyCo, $cuerpo);
+        if ($r2['http'] === 200) {
+            // Avisar UNA vez que el chat esta corriendo sobre el respaldo:
+            // funciona, pero la cuenta primaria sigue rota y alguien la tiene
+            // que arreglar. Best-effort: el aviso no puede romper el turno.
+            try {
+                if (function_exists('tg_evento') && isset($GLOBALS['pdo'])) {
+                    tg_evento($GLOBALS['pdo'], 'salud', '⚠️ El chat está usando el modelo de respaldo', [
+                        'Qué pasa'  => 'El proveedor principal del chat rechaza las llamadas (cuota agotada o key inválida).',
+                        'Ahora'     => 'El chat sigue funcionando con el modelo de respaldo (Cohere).',
+                        'Qué hacer' => 'Revisar la cuenta de DashScope/Qwen (cuota o facturación), o dejarlo así si el respaldo alcanza.',
+                    ], 'chatbot_respaldo');
+                }
+            } catch (Throwable $e) {
+                error_log('chatbot aviso respaldo: ' . $e->getMessage());
+            }
+            return $r2;
+        }
+        // El respaldo tampoco pudo: se devuelve el error ORIGINAL, que es el
+        // que describe el problema real de la cuenta primaria.
+        error_log('chatbot: el respaldo tampoco respondio (HTTP ' . $r2['http'] . ')');
+    }
+    return $r;
+}
+
+
+/** Un POST crudo a una API de chat compatible con OpenAI. */
+function ia_chat_post(string $url, string $key, array $cuerpo): array
+{
+    $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST           => true,
