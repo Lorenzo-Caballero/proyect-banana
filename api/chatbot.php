@@ -627,15 +627,32 @@ for ($i = count($mensajes) - 1; $i >= 0; $i--) {
         break;
     }
 }
+// try/catch de verdad, no solo la intencion: el modelo YA respondio y esa
+// respuesta es lo unico que el jugador espera. Guardar el turno en el CRM es
+// un extra -- si la tabla `mensajes` cambio, una migracion no corrio en este
+// server, o la base parpadea, la excepcion NO puede tumbar el turno entero.
+// Sin este try, un PDOException aca sale sin atrapar y el chat contesta 502
+// DESPUES de haber generado la respuesta: el peor de los dos mundos (gastamos
+// el modelo y el jugador no ve nada). Fue exactamente asi como el chat quedo
+// mudo tras el deploy de referidos/bono.
 if (function_exists('crm_registrar_turno')) {
-    crm_registrar_turno($pdo, $sessionId, $ultimoUser, $texto, $usuarioDetectado);
+    try {
+        crm_registrar_turno($pdo, $sessionId, $ultimoUser, $texto, $usuarioDetectado);
+    } catch (Throwable $e) {
+        error_log('chatbot: crm_registrar_turno fallo (no corta la respuesta): ' . $e->getMessage());
+    }
 }
 
 // Escribir por el chat cuenta como actividad -- solo si sabemos quien es
-// (un chat anonimo no se le puede atribuir a nadie).
+// (un chat anonimo no se le puede atribuir a nadie). Mismo criterio: un fallo
+// al anotar actividad no puede tumbar la respuesta ya generada.
 if (!empty($usuarioDetectado) && is_file(__DIR__ . '/actividad_lib.php')) {
-    require_once __DIR__ . '/actividad_lib.php';
-    actividad_marcar($pdo, (string)$usuarioDetectado);
+    try {
+        require_once __DIR__ . '/actividad_lib.php';
+        actividad_marcar($pdo, (string)$usuarioDetectado);
+    } catch (Throwable $e) {
+        error_log('chatbot: actividad_marcar fallo (no corta la respuesta): ' . $e->getMessage());
+    }
 }
 
 /* Contact: el jugador esta hablando con nosotros. Se manda UNA vez por
@@ -669,7 +686,11 @@ try {
    la respuesta). Si cerro antes de leerla, se la muestra el worker en la barra.
    Solo sirve con usuario: a un chat anonimo no hay a quien notificarle. */
 if (function_exists('notif_chat')) {
-    notif_chat($pdo, $usuarioDetectado, $texto, false);
+    try {
+        notif_chat($pdo, $usuarioDetectado, $texto, false);
+    } catch (Throwable $e) {
+        error_log('chatbot: notif_chat fallo (no corta la respuesta): ' . $e->getMessage());
+    }
 }
 
 $salida = ['ok' => true, 'respuesta' => $texto];
