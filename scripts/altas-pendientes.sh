@@ -37,7 +37,24 @@ DBU="$(leer DB_USER)"; DBP="$(leer DB_PASS)"; CTL="$(leer CONTROL_DB_NAME)"
 CTL="${CTL:-goldpaw_control}"
 [ -n "$DBU" ] || { echo "No pude leer las credenciales de $CFG" >&2; exit 1; }
 
-q() { mariadb -u "$DBU" -p"$DBP" "$1" -N -B -e "$2" 2>/dev/null; }
+FALLOS=0
+
+# El 2>/dev/null de la primera version convertia cualquier error de SQL en
+# "no hay nada que arreglar". Y paso: la consulta nombraba una columna
+# inexistente (creada_en en vez de pedido_en), fallaba entera, y el informe
+# decia GRUPO A: 0 mientras el bot reportaba 27 altas en error. Un diagnostico
+# que se equivoca hacia "esta todo bien" es peor que no tenerlo.
+q() {
+  local salida err
+  err="$(mktemp)"
+  salida="$(mariadb -u "$DBU" -p"$DBP" "$1" -N -B -e "$2" 2>"$err")"
+  if [ -s "$err" ] && ! grep -qi 'using a password' "$err"; then
+    echo "!! consulta fallida en $1: $(head -1 "$err")" >&2
+    FALLOS=1
+  fi
+  rm -f "$err"
+  printf '%s' "$salida"
+}
 
 BASES="$(q "$CTL" "SELECT db_nombre FROM clientes WHERE estado <> 'baja';")"
 [ -n "$BASES" ] || { echo "No hay clientes registrados en $CTL" >&2; exit 1; }
@@ -54,7 +71,7 @@ for db in $BASES; do
 
   filasA="$(q "$db" "SELECT CONCAT('    ', LPAD(id,5,' '), '  ', RPAD(usuario,22,' '),
                           '  ', RPAD(COALESCE(origen,'?'),9,' '),
-                          '  ', DATE_FORMAT(creada_en,'%d/%m %H:%i'),
+                          '  ', DATE_FORMAT(pedido_en,'%d/%m %H:%i'),
                           '  int=', intentos,
                           '  ', COALESCE(LEFT(mensaje,60),''))
                        FROM altas WHERE estado='error' ORDER BY id;")"
@@ -63,7 +80,7 @@ for db in $BASES; do
   if [ "${tiene_cep:-0}" = "1" ]; then
     filasB="$(q "$db" "SELECT CONCAT('    ', LPAD(id,5,' '), '  ', RPAD(usuario,22,' '),
                             '  ', RPAD(COALESCE(origen,'?'),9,' '),
-                            '  ', DATE_FORMAT(creada_en,'%d/%m %H:%i'),
+                            '  ', DATE_FORMAT(pedido_en,'%d/%m %H:%i'),
                             '  entregada=', IF(entrega_clave IS NULL,'SI','no'))
                          FROM altas
                         WHERE estado='ok' AND COALESCE(creado_en_panel,0) <> 1
@@ -89,5 +106,6 @@ done
 
 echo "-----------------------------------------------------------"
 echo "GRUPO A: $totalA    GRUPO B: $totalB"
+[ "$FALLOS" = "1" ] && echo "OJO: alguna consulta fallo, los numeros de arriba estan incompletos." >&2
 [ "$totalB" -gt 0 ] && echo "Ojo con el GRUPO B: renombrarlas deja al jugador afuera de su cuenta."
 exit 0
