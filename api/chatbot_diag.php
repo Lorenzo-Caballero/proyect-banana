@@ -27,7 +27,7 @@ if (!defined('QWEN_BASE_DEF')) {
     define('QWEN_BASE_DEF', 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1');
 }
 if (!defined('QWEN_MODEL_DEF')) {
-    define('QWEN_MODEL_DEF', 'qwen-vl-max');
+    define('QWEN_MODEL_DEF', 'qwen-plus');
 }
 
 echo "=== ENTORNO ===\n";

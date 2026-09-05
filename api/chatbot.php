@@ -94,16 +94,30 @@ require __DIR__ . '/chatbot_contexto.php';
    ramas: preguntaba "¿ya tenes cuenta?", el jugador decia "si" y contestaba
    "ok, te creo una".
 
-   Los tres valores se pueden pisar desde config.local.php o el entorno, sin
-   tocar codigo: si un modelo resulta flojo con las herramientas, se cambia
-   QWEN_MODEL y listo. qwen-vl-max ademas VE imagenes, que es lo que permite
-   analizar comprobantes (ver comprobante_leer.php).
+   Los valores se pueden pisar desde config.local.php o el entorno, sin tocar
+   codigo: QWEN_MODEL (primario), QWEN_FALLBACK (lista separada por coma de
+   modelos de respaldo, ver ia_chat), QWEN_BASE_URL.
 
-   OJO si cambias de modelo: el chatbot depende de tool calling. Un modelo
-   que no lo soporte deja de poder cargar fichas o crear recargas -- va a
-   conversar igual, que es peor, porque parece que anda. */
+   OJO CUAL MODELO: el chatbot DEPENDE de tool calling. Un modelo que no lo
+   soporte deja de poder cargar fichas o crear recargas -- va a conversar
+   igual, que es peor, porque parece que anda. Verificado el 5/9/2026 contra
+   la API real: qwen-plus / qwen-turbo / qwen-max SI emiten tool_calls;
+   qwen-vl-max NO -- responde en prosa e ignora las herramientas. Por eso el
+   default es qwen-plus y NO qwen-vl-max, aunque este ultimo "vea" imagenes:
+   la vision del chat (leer comprobantes) la hace Claude Haiku aparte
+   (verificar_comprobante -> vision_lib.php), no el modelo de la charla.
+
+   La cuota gratis de DashScope es POR MODELO: si la de un modelo se agota
+   (403 "free quota has been exhausted"), el respaldo salta a otro modelo Qwen
+   con cuota, mismo contexto y tools. Cambiar QWEN_MODEL al que tenga cuota es
+   el arreglo de fondo; el respaldo es la red para que el chat no quede mudo
+   mientras tanto. */
 const QWEN_BASE_DEF  = 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1';
-const QWEN_MODEL_DEF = 'qwen-vl-max';
+const QWEN_MODEL_DEF = 'qwen-plus';
+// Respaldo: otros modelos Qwen (mismo endpoint/key/contexto/tools) para cuando
+// el primario se queda sin cuota. Solo modelos que SI hacen tool-calling --
+// qwen-vl-max queda afuera a proposito (ignora las tools). Se prueban en orden.
+const QWEN_FALLBACK_DEF = 'qwen-turbo,qwen-max';
 const MAX_MENSAJES = 12;
 const MAX_CARACT   = 1500;
 const MAX_TOKENS   = 600;
@@ -1476,51 +1490,96 @@ function ia_chat(string $key, array $mensajes, array $tools): array
     // `tools` vacio en vez de ignorarlo.
     if ($tools) { $cuerpo['tools'] = $tools; }
 
-    $r = ia_chat_post($base . '/chat/completions', $key, $cuerpo);
+    $url = $base . '/chat/completions';
+    $r = ia_chat_post($url, $key, $cuerpo);
+    if ($r['http'] === 200) { return $r; }
 
-    /* RESPALDO. Un 401/403 del proveedor primario no es "el jugador pregunto
-       algo raro": es la cuenta (key invalida, o cuota agotada -- el 5/9 Qwen
-       corto con "The free quota has been exhausted" y el chat quedo mudo).
-       Cohere tiene un endpoint COMPATIBLE con OpenAI (/compatibility/v1), o
-       sea que sirve el mismo cuerpo y devuelve el mismo formato: se reintenta
-       ahi con la COHERE_API_KEY que ya esta en config.local.php, y el chat
-       sigue vivo mientras alguien arregla la cuenta primaria con calma.
+    /* RESPALDO. Un 401/403 no es "el jugador pregunto algo raro": es la CUENTA
+       (key invalida o cuota agotada). El 5/9 Qwen corto qwen-plus con "The
+       free quota has been exhausted" y el chat quedo mudo. Clave: en DashScope
+       la cuota gratis es POR MODELO, asi que otro modelo Qwen del MISMO
+       endpoint, con la MISMA key, el MISMO system-prompt (el contexto) y las
+       MISMAS tools sigue andando IGUAL -- misma conversacion, misma logica de
+       herramientas, mismo formato de respuesta. Por eso el respaldo son otros
+       modelos Qwen ANTES que cualquier proveedor distinto: es "el mismo Qwen",
+       solo con un modelo que todavia tiene cuota.
 
-       Solo 401/403 disparan el respaldo: un 429 (rate limit) o un 5xx del
-       proveedor son transitorios y el propio jugador reintenta; cambiar de
-       modelo por un pico de trafico seria inestable a lo bobo. */
-    if (in_array($r['http'], [401, 403], true)) {
-        $keyCo = (string)cfg('COHERE_API_KEY');
-        if ($keyCo === '' || strlen($keyCo) < 20) { $keyCo = $key; }
+       OJO cuales: el chat DEPENDE de tool-calling (cargar fichas, recargas).
+       qwen-vl-max IGNORA las tools -- responde en prosa y nunca llama la
+       herramienta ("conversa igual, que es peor"). Por eso el respaldo por
+       defecto es qwen-turbo / qwen-max, que SI emiten tool_calls, y NO
+       qwen-vl-max. La vision (leer comprobantes) no la hace el modelo del
+       chat: la hace Claude Haiku aparte (verificar_comprobante), asi que al
+       chat no le hace falta un modelo con vision, le hace falta uno con tools.
+
+       Solo 401/403 disparan el respaldo: un 429 (rate limit) o un 5xx son
+       transitorios y el propio jugador reintenta; cambiar de modelo por un
+       pico de trafico seria inestable a lo bobo. */
+    if (!in_array($r['http'], [401, 403], true)) { return $r; }
+
+    error_log('chatbot: el modelo primario (' . $modelo . ') rechazo la llamada '
+            . '(HTTP ' . $r['http'] . ', cuota o key); pruebo los respaldos');
+
+    // 1) Otros modelos Qwen: mismo endpoint, misma key, mismo contexto y tools.
+    $alternos = array_values(array_filter(array_map('trim',
+        explode(',', (string)cfg('QWEN_FALLBACK', QWEN_FALLBACK_DEF)))));
+    foreach ($alternos as $alt) {
+        if ($alt === '' || strcasecmp($alt, $modelo) === 0) { continue; }
+        $c = $cuerpo; $c['model'] = $alt;
+        $ra = ia_chat_post($url, $key, $c);
+        if ($ra['http'] === 200) {
+            ia_chat_aviso_respaldo('Qwen ' . $alt, (int)$r['http'], true);
+            return $ra;
+        }
+        error_log('chatbot: respaldo Qwen ' . $alt . ' tampoco (HTTP ' . $ra['http'] . ')');
+    }
+
+    // 2) Ultimo recurso, proveedor DISTINTO: Cohere por su endpoint compatible
+    //    con OpenAI (mismo cuerpo, mismo formato). Cambia el caracter del bot
+    //    -- por algo se migro a Qwen -- pero es preferible a un chat mudo.
+    //    Solo si TODOS los modelos Qwen tambien fallaron (cuenta entera caida).
+    $keyCo = (string)cfg('COHERE_API_KEY');
+    if ($keyCo !== '' && strlen($keyCo) >= 20) {
         $baseCo = rtrim((string)cfg('COHERE_COMPAT_BASE', 'https://api.cohere.ai/compatibility/v1'), '/');
         $modCo  = (string)cfg('COHERE_COMPAT_MODEL', 'command-r-08-2024');
-        error_log('chatbot: el modelo primario rechazo la llamada (HTTP '
-                . $r['http'] . ', cuota o key); pruebo el respaldo ' . $modCo);
-
-        $cuerpo['model'] = $modCo;
-        $r2 = ia_chat_post($baseCo . '/chat/completions', $keyCo, $cuerpo);
-        if ($r2['http'] === 200) {
-            // Avisar UNA vez que el chat esta corriendo sobre el respaldo:
-            // funciona, pero la cuenta primaria sigue rota y alguien la tiene
-            // que arreglar. Best-effort: el aviso no puede romper el turno.
-            try {
-                if (function_exists('tg_evento') && isset($GLOBALS['pdo'])) {
-                    tg_evento($GLOBALS['pdo'], 'salud', '⚠️ El chat está usando el modelo de respaldo', [
-                        'Qué pasa'  => 'El proveedor principal del chat rechaza las llamadas (cuota agotada o key inválida).',
-                        'Ahora'     => 'El chat sigue funcionando con el modelo de respaldo (Cohere).',
-                        'Qué hacer' => 'Revisar la cuenta de DashScope/Qwen (cuota o facturación), o dejarlo así si el respaldo alcanza.',
-                    ], 'chatbot_respaldo');
-                }
-            } catch (Throwable $e) {
-                error_log('chatbot aviso respaldo: ' . $e->getMessage());
-            }
-            return $r2;
+        $c = $cuerpo; $c['model'] = $modCo;
+        $rc = ia_chat_post($baseCo . '/chat/completions', $keyCo, $c);
+        if ($rc['http'] === 200) {
+            ia_chat_aviso_respaldo('Cohere ' . $modCo, (int)$r['http'], false);
+            return $rc;
         }
-        // El respaldo tampoco pudo: se devuelve el error ORIGINAL, que es el
-        // que describe el problema real de la cuenta primaria.
-        error_log('chatbot: el respaldo tampoco respondio (HTTP ' . $r2['http'] . ')');
+        error_log('chatbot: el respaldo Cohere tampoco respondio (HTTP ' . $rc['http'] . ')');
     }
+
+    // Nada respondio: se devuelve el error ORIGINAL, que describe el problema
+    // real de la cuenta primaria (p. ej. "free quota has been exhausted").
     return $r;
+}
+
+
+/** Avisa por Telegram, UNA vez mientras dure, que el chat corre en respaldo.
+ *  $mismoQwen: true si el respaldo es otro modelo Qwen (mismo contexto, el
+ *  jugador ni lo nota); false si tuvo que saltar a otro proveedor (Cohere),
+ *  que cambia el caracter del bot. Best-effort: nunca rompe el turno. */
+function ia_chat_aviso_respaldo(string $cual, int $httpPrimario, bool $mismoQwen): void
+{
+    error_log('chatbot: corriendo sobre el respaldo ' . $cual
+            . ' (el primario dio HTTP ' . $httpPrimario . ')');
+    try {
+        if (function_exists('tg_evento') && isset($GLOBALS['pdo'])) {
+            tg_evento($GLOBALS['pdo'], 'salud', '⚠️ El chat está usando un modelo de respaldo', [
+                'Respaldo'  => $cual,
+                'Qué pasa'  => 'El modelo principal del chat rechaza las llamadas (HTTP '
+                             . $httpPrimario . ': cuota agotada o key inválida).',
+                'Impacto'   => $mismoQwen
+                    ? 'Es otro modelo del mismo Qwen: mismo contexto y herramientas, el jugador no lo nota.'
+                    : 'Es otro proveedor (Cohere): el chat responde, pero puede portarse distinto.',
+                'Qué hacer' => 'Revisar la cuota/facturación de la cuenta DashScope, o dejar el respaldo si alcanza.',
+            ], 'chatbot_respaldo:' . $cual);
+        }
+    } catch (Throwable $e) {
+        error_log('chatbot aviso respaldo: ' . $e->getMessage());
+    }
 }
 
 
