@@ -78,6 +78,49 @@ foreach ([
 }
 
 // ===========================================================================
+echo "\n=== 1b. Sospecha vs certeza: cuando SI se le cambia el nombre ===\n";
+
+/* EL BUG, del log del 4/9/2026 a las 22:58: cuatro intentos seguidos de la
+   misma persona -- holaChela1560, 6877, 2768, 1879 -- todos marcados "el
+   nombre ya esta tomado", y minutos despues la API creaba cuentas al primer
+   intento. El nombre NUNCA estuvo ocupado: se habia caido la sesion.
+
+   La frase que los disparo la escribe el bot cuando manda el formulario y
+   despues no encuentra al jugador en el listado. Pero si la sesion murio, el
+   listado tampoco anda: "no figura" ahi no prueba que el nombre este tomado,
+   prueba que no pudo mirar.
+
+   Creerle costaba caro. Cada sospecha renombraba y quemaba un intento, asi
+   que dos minutos de sesion caida se llevaban puestos los diez reintentos y
+   la persona se quedaba sin cuenta -- que es exactamente lo que paso. */
+$dicePlataforma = 'el panel rechazo la creacion: User with username: Juan - already exist';
+$deduceElBot    = 'el panel respondio 200 pero el jugador NO figura: lo mas probable es que el nombre ya este tomado';
+
+chequear('lo que dice la plataforma es CERTEZA',
+         alta_nombre_ocupado_seguro($dicePlataforma) === true);
+chequear('lo que deduce el bot es SOSPECHA, no certeza',
+         alta_nombre_ocupado_seguro($deduceElBot) === false
+         && alta_nombre_ocupado_sospecha($deduceElBot) === true);
+
+/* Con certeza se renombra de una: no hay nada que confirmar y cada vuelta con
+   el mismo nombre es un rechazo asegurado. */
+chequear('con certeza renombra en el PRIMER intento',
+         alta_debe_renombrar($dicePlataforma, 1) === true);
+
+/* Con sospecha se le da una vuelta mas con el MISMO nombre. Si fue la sesion,
+   el reintento sale bien -- y sale bien con el nombre que la persona eligio,
+   que es mejor que salir bien con uno inventado. */
+chequear('con sospecha NO renombra en el primero',
+         alta_debe_renombrar($deduceElBot, 1) === false);
+chequear('pero si vuelve a fallar, ahi si renombra',
+         alta_debe_renombrar($deduceElBot, 2) === true);
+
+/* Un fallo que no tiene nada que ver no renombra nunca, pase lo que pase. */
+chequear('una sesion caida declarada NO renombra ni al quinto intento',
+         alta_debe_renombrar('Sesion caida, sin re-login', 5) === false);
+
+
+// ===========================================================================
 echo "\n=== 2. Elegir un nombre libre ===\n";
 
 /* Se siembra ocupado el nombre QUE SE VA A GENERAR (con prefijo), no el crudo:

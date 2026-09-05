@@ -129,6 +129,15 @@ function alta_validar(string $usuario, string $password, string $email): ?string
  */
 function alta_parece_nombre_ocupado(string $mensaje): bool
 {
+    return alta_nombre_ocupado_seguro($mensaje)
+        || alta_nombre_ocupado_sospecha($mensaje);
+}
+
+/**
+ * LO DIJO LA PLATAFORMA. No hay nada que interpretar: renombrar de una.
+ */
+function alta_nombre_ocupado_seguro(string $mensaje): bool
+{
     $m = mb_strtolower($mensaje);
     /* 'already exist' SIN la s final, a proposito: el mensaje textual de la
        plataforma es "User with username: juan - already exist" (verificado el
@@ -136,11 +145,56 @@ function alta_parece_nombre_ocupado(string $mensaje): bool
        y el renombre no se disparaba nunca -- el alta reintentaba con el MISMO
        nombre las tres veces y se rendia. Como se busca por substring, esta
        forma cubre tambien el plural. */
-    foreach (['no figura', 'ya este tomado', 'ya está tomado', 'ya existe',
-              'already exist', 'ocupado', 'no aparece en el listado'] as $pista) {
+    foreach (['already exist', 'ya existe'] as $pista) {
         if (mb_strpos($m, $pista) !== false) { return true; }
     }
     return false;
+}
+
+/**
+ * LO DEDUJO EL BOT: mando el formulario, no exploto, y despues el jugador no
+ * aparecia en el listado. Es un indicio, no una prueba.
+ *
+ * POR QUE ESTA SEPARADO (4/9/2026): esa misma frase la produce una sesion
+ * caida. Si la sesion se murio, el listado que el bot consulta para verificar
+ * tampoco funciona, asi que "no figura" no significa que el nombre este
+ * tomado -- significa que no pudo mirar. En el log de esa noche se ve entero:
+ * cuatro intentos seguidos de la misma persona (holaChela1560, 6877, 2768,
+ * 1879) diagnosticados como "nombre tomado", y minutos despues la API crea
+ * cuentas al primer intento. El nombre nunca habia estado ocupado.
+ *
+ * El costo de creerle era alto: cada sospecha renombraba al jugador y quemaba
+ * un intento, asi que un problema de sesion de dos minutos se llevaba puestos
+ * todos los reintentos y la persona terminaba sin cuenta.
+ *
+ * No se descarta, porque cuando el camino rapido no esta disponible es la
+ * unica señal que hay. Se le pide una confirmacion mas: ver alta_debe_renombrar().
+ */
+function alta_nombre_ocupado_sospecha(string $mensaje): bool
+{
+    $m = mb_strtolower($mensaje);
+    foreach (['no figura', 'ya este tomado', 'ya está tomado',
+              'ocupado', 'no aparece en el listado'] as $pista) {
+        if (mb_strpos($m, $pista) !== false) { return true; }
+    }
+    return false;
+}
+
+/**
+ * Si corresponde cambiarle el nombre al jugador tras este fallo.
+ *
+ * Con certeza, siempre. Con sospecha, recien a partir del SEGUNDO intento: si
+ * fue una sesion caida, el reintento con el MISMO nombre suele salir bien --
+ * y salir bien con el nombre que la persona eligio es mejor que salir bien con
+ * uno inventado. Si el nombre estaba de verdad ocupado, el segundo intento
+ * vuelve a fallar y ahi si se renombra, con un solo intento de costo.
+ *
+ * $intentos es el contador de la fila, ya incrementado por 'pendientes'.
+ */
+function alta_debe_renombrar(string $mensaje, int $intentos): bool
+{
+    if (alta_nombre_ocupado_seguro($mensaje)) { return true; }
+    return alta_nombre_ocupado_sospecha($mensaje) && $intentos >= 2;
 }
 
 /** Prefijo de los usuarios que genera la landing.

@@ -380,12 +380,21 @@ if ($accion === 'marcar' && $metodo === 'POST') {
        jugador sondea por el id del alta, asi que sigue esperando sin enterarse
        y al final recibe las credenciales con el nombre que SI se pudo crear. */
     $renombrada = false;
-    if ($estado === 'error' && alta_parece_nombre_ocupado($mensaje)) {
+    if ($estado === 'error') {
         try {
-            $q = $pdo->prepare("SELECT usuario FROM altas WHERE id = ?");
+            /* `intentos` se lee ANTES de decidir, no solo para elegir el sufijo:
+               tambien decide SI se renombra. Cuando el bot solo SOSPECHA que el
+               nombre estaba tomado -- porque mando el formulario y despues el
+               jugador no aparecia en el listado -- esa misma frase la produce
+               una sesion caida, y ahi el listado tampoco funciona. Se le da una
+               vuelta mas con el mismo nombre antes de cambiarselo. Ver
+               alta_debe_renombrar(). */
+            $q = $pdo->prepare("SELECT usuario, intentos FROM altas WHERE id = ?");
             $q->execute([$id]);
-            $actual = (string)$q->fetchColumn();
-            if ($actual !== '') {
+            $fila   = $q->fetch() ?: [];
+            $actual = (string)($fila['usuario'] ?? '');
+            $ronda  = (int)($fila['intentos'] ?? 0);
+            if ($actual !== '' && alta_debe_renombrar($mensaje, $ronda)) {
                 /* Se parte del nombre SIN el sufijo numerico que podamos
                    haberle puesto antes: si no, cada reintento lo alarga
                    ("Juan" -> "Juan123" -> "Juan123456"). Si el jugador eligio
@@ -398,9 +407,6 @@ if ($accion === 'marcar' && $metodo === 'POST') {
                    para siempre y, con el patron agotado, cada reintento tenia
                    la misma probabilidad de chocar que el anterior: el 2/9/2026
                    fallaron Juan676, Juan565 y Juan557 seguidos. */
-                $q2 = $pdo->prepare("SELECT intentos FROM altas WHERE id = ?");
-                $q2->execute([$id]);
-                $ronda = (int)$q2->fetchColumn();
                 $nuevo = alta_usuario_disponible($pdo, $base, $ronda);
                 if ($nuevo !== '' && $nuevo !== $actual) {
                     $pdo->prepare("UPDATE altas SET usuario = ? WHERE id = ? AND estado <> 'ok'")
