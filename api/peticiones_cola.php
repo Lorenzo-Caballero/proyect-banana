@@ -420,7 +420,23 @@ try {
         $n = function_exists('rl_avisar_revision_vieja')
             ? rl_avisar_revision_vieja($pdo, $minutos)
             : 0;
-        echo json_encode(['ok' => true, 'avisados' => $n]);
+
+        /* Tambien las ALTAS trabadas. Los sondeos de la landing y el widget ya
+           lo chequean, pero solo mientras el jugador tiene la pestaña abierta:
+           si se fue, nadie mas pregunta. Esta pasada del worker es el respaldo
+           que no depende de ningun navegador (y tampoco del bot de altas, que
+           es justo el que puede estar caido). */
+        $nAltas = 0;
+        try {
+            require_once __DIR__ . '/altas_lib.php';
+            if (function_exists('alta_avisar_trabadas')) {
+                $nAltas = alta_avisar_trabadas($pdo);
+            }
+        } catch (Throwable $e) {
+            error_log('peticiones_cola avisar altas: ' . $e->getMessage());
+        }
+
+        echo json_encode(['ok' => true, 'avisados' => $n, 'altas_avisadas' => $nAltas]);
         exit;
     }
 

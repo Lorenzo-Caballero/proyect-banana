@@ -68,6 +68,14 @@ if ($metodo === 'GET') {
             echo json_encode(['ok' => false, 'error' => 'Pedido inexistente'], JSON_UNESCAPED_UNICODE);
             exit;
         }
+        // El que pregunta es un jugador ESPERANDO su cuenta: si la cola esta
+        // trabada, este es el momento exacto de avisarle al agente (no hay
+        // cron; el detalle en alta_avisar_trabadas). Despues de armar la
+        // respuesta y best-effort: el sondeo del jugador no puede romperse
+        // porque Telegram ande mal.
+        if (empty($e['listo']) && empty($e['fallo'])) {
+            try { alta_avisar_trabadas($pdo); } catch (Throwable $ex) {}
+        }
         echo json_encode([
             'ok'       => true,
             'estado'   => $e['estado'],
@@ -80,6 +88,10 @@ if ($metodo === 'GET') {
     }
 
     $r = alta_estado($pdo, $id, $usuario);
+    // Mismo aviso que arriba, para las pestañas con el flujo viejo (sin sid).
+    if (empty($r['cuerpo']['listo']) && empty($r['cuerpo']['fallo'])) {
+        try { alta_avisar_trabadas($pdo); } catch (Throwable $ex) {}
+    }
     http_response_code($r['http']);
     echo json_encode($r['cuerpo'], JSON_UNESCAPED_UNICODE);
     exit;

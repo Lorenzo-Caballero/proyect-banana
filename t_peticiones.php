@@ -20,6 +20,7 @@ declare(strict_types=1);
 
 $pdo = new PDO(
     'mysql:host=' . (getenv('T_HOST') ?: '127.0.0.1')
+        . ';port=' . (getenv('T_PORT') ?: '3306')
         . ';dbname=' . (getenv('T_DB') ?: 'goldpaw_demo') . ';charset=utf8mb4',
     getenv('T_USER') ?: 'root',
     getenv('T_PASS') ?: '',

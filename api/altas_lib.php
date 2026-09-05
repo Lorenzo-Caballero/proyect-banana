@@ -716,3 +716,131 @@ function alta_entrega(PDO $pdo, int $id, string $sid): array
             'usuario' => (string)$fila['usuario'], 'password' => $clave];
 }
 
+
+/**
+ * Avisa por Telegram las altas que SIGUEN sin salir.
+ *
+ * Es el hermano de rl_avisar_revision_vieja() (recargas_lib.php), y existe por
+ * el mismo incidente que aquel: la cola se traba EN SILENCIO. El 4/9/2026 el
+ * bot estuvo un rato sin crear cuentas -- un alta no salio nunca, otra tardo
+ * mas de 6 minutos -- y nadie se entero hasta que un jugador se quejo. La
+ * landing le dice "escribinos por chat" a los 6 minutos, pero del lado del
+ * agente no sonaba nada.
+ *
+ * Distingue DOS fallas que se arreglan distinto:
+ *
+ *   - Pendientes viejas que NADIE tomo (intentos=0 y ningun otro registro en
+ *     danza): el bot no esta sondeando la cola. Caido, sin API key valida o
+ *     apuntando a otro lado -- lo que sea, las altas no van a salir SOLAS.
+ *     Un solo aviso agregado, porque el problema es uno (el bot), no N.
+ *
+ *   - El resto (intentos gastados, backoff, 'procesando' vieja): el bot vive
+ *     pero el panel esta rechazando. Un aviso POR alta, con el ultimo error
+ *     que informo el bot, porque cada una puede tener un motivo distinto.
+ *
+ * QUIEN LO LLAMA: los endpoints que sondean los navegadores de los que estan
+ * ESPERANDO su cuenta (crear_cuenta.php GET, alta_estado.php) y la pasada
+ * periodica de aprobar_cargas.py (peticiones_cola.php?accion=avisar_pendientes),
+ * que cubre el caso de la pestania cerrada. NO puede vivir en el poll del bot
+ * (altas_cola.php): si el bot esta caido, ese poll no llega nunca -- justo
+ * cuando mas hace falta el aviso.
+ *
+ * LA ESPERA SE MIDE EN LA BASE (pedido_en contra NOW()), nunca contra time()
+ * de PHP: son dos relojes distintos y mezclarlos ya causo bugs aca.
+ *
+ * Los textos son ESTABLES a proposito ("mas de X min", no la edad real):
+ * tg_avisar_una_vez() reenvia cuando el contenido cambia, y un minutero en el
+ * texto lo convertiria en un aviso por minuto. Lo que SI puede cambiar el
+ * texto es una novedad de verdad: mas pedidos esperando, otro intento gastado,
+ * un error nuevo del bot.
+ *
+ * Devuelve cuantos avisos CORRESPONDIAN (como rl_avisar_revision_vieja: el
+ * envio en si puede fallar o estar deduplicado). Nunca lanza: avisar es un
+ * extra.
+ */
+function alta_avisar_trabadas(PDO $pdo, int $minutos = 3): int
+{
+    if ($minutos < 1) { $minutos = 1; }
+
+    // telegram_lib se carga aca y no arriba: la mayoria de los que incluyen
+    // esta lib (el POST del alta, el bot) no avisan nada.
+    try {
+        require_once __DIR__ . '/telegram_lib.php';
+    } catch (Throwable $e) {
+        return 0;
+    }
+    if (!function_exists('tg_evento')) { return 0; }
+
+    try {
+        // Solo cuentan las que el bot PUEDE crear: sin password no hay nada
+        // que tipear y esa fila no va a salir nunca (es otra clase de problema,
+        // y ya la reporta altas-pendientes.sh).
+        $st = $pdo->prepare(
+            "SELECT id, usuario, origen, estado, intentos, mensaje
+               FROM altas
+              WHERE estado IN ('pendiente', 'procesando')
+                AND password IS NOT NULL
+                AND pedido_en <= NOW() - INTERVAL ? MINUTE
+              ORDER BY pedido_en ASC
+              LIMIT 20"
+        );
+        $st->execute([$minutos]);
+        $filas = $st->fetchAll();
+    } catch (Throwable $e) {
+        error_log('alta_avisar_trabadas: ' . $e->getMessage());
+        return 0;
+    }
+
+    if (!$filas) { return 0; }
+
+    $sinTomar = [];
+    $conError = [];
+    foreach ($filas as $f) {
+        if ((string)$f['estado'] === 'pendiente' && (int)$f['intentos'] === 0) {
+            $sinTomar[] = $f;
+        } else {
+            $conError[] = $f;
+        }
+    }
+
+    $desdeTxt = static function (array $f): string {
+        $mapa = ['landing' => 'la landing', 'chatbot' => 'el chat', 'crm' => 'el CRM'];
+        $o = (string)($f['origen'] ?? '');
+        return $mapa[$o] ?? $o;
+    };
+
+    $n = 0;
+
+    /* Si ademas hay altas CON intentos, el bot esta vivo (algo tomo): las
+       sin tomar son cola atrasada y caen al aviso por alta, no al de "bot
+       caido". El poll del bot es cada pocos segundos, asi que una pendiente
+       intacta durante minutos, sin nada mas en danza, solo pasa si nadie
+       esta mirando la cola. */
+    if ($sinTomar && !$conError) {
+        /* Tipo 'salud' y no 'alta': tg_ev_alta arranca APAGADO (es el aviso
+           informativo de "se registro alguien"). Este es un "algo esta roto"
+           que pide accion, y esos tienen que sonar con la config de fabrica. */
+        tg_evento($pdo, 'salud', '🛑 Las altas no están saliendo', [
+            'Esperando' => count($sinTomar) . ' pedido(s) que nadie tomó en más de ' . $minutos . ' min',
+            'Qué pasa'  => 'El bot de altas no está mirando la cola: caído, sin la API key correcta, o apuntando a otro lado.',
+            'Qué hacer' => 'En el VPS: cd ~/Bot-python && docker compose logs --tail=50 creador. '
+                         . 'Si no se destraba: bash /opt/goldpaw/scripts/arreglar-bot-altas.sh',
+        ], 'altas_bot_caido');
+        $n++;
+    } else {
+        foreach ($filas as $f) {
+            $msj = trim((string)($f['mensaje'] ?? ''));
+            tg_evento($pdo, 'salud', '⏳ Un alta está tardando', [
+                'Usuario'      => (string)$f['usuario'],
+                'Vino de'      => $desdeTxt($f),
+                'Hace'         => 'más de ' . $minutos . ' min sin poder crearse',
+                'Intentos'     => (string)(int)$f['intentos'],
+                'Último error' => $msj !== '' ? mb_substr($msj, 0, 200) : '',
+                'Qué hacer'    => 'Si no sale sola, crearla a mano en el panel: el jugador está esperando.',
+            ], 'alta_trabada:' . (int)$f['id']);
+            $n++;
+        }
+    }
+
+    return $n;
+}

@@ -275,6 +275,90 @@ $pdo->exec("DELETE FROM pagos WHERE id_unico LIKE 'ttg-rev%'");
 $pdo->exec("DELETE FROM tg_avisos WHERE clave LIKE 'pago_revision:ttg-rev%'");
 cfg_crm_guardar($pdo, ['tg_ev_revision' => '1'], 'test');
 
+// ===========================================================================
+echo "\n=== Las altas trabadas avisan, y dicen QUE se rompio ===\n";
+
+/* EL INCIDENTE QUE ATAJA, del 4/9/2026: el bot de altas dejo de crear cuentas
+   un rato -- un alta no salio nunca, otra tardo mas de 6 minutos -- y no sono
+   NADA. La landing rinde a los 6 minutos con "escribinos por chat", pero del
+   lado del agente el silencio era total: los avisos existentes suenan cuando
+   un alta TERMINA (ok o error definitivo), y una cola trabada no termina.
+
+   Ademas del "cuando", importa el "que": pendientes que nadie tomo = el bot
+   no esta mirando la cola (un solo problema, un solo aviso); intentos
+   gastados = el panel esta rechazando (un aviso por alta, cada una tiene su
+   error). Confundirlos manda al agente a revisar el contenedor cuando el
+   problema es el panel, o al reves. */
+
+require_once __DIR__ . '/api/altas_lib.php';
+
+cfg_crm_guardar($pdo, ['tg_bot_token' => 'test:FALSO', 'tg_chat_id' => '1',
+                       'tg_ev_salud' => '1'], 'test');
+$limpiarAltas = static function () use ($pdo): void {
+    $pdo->exec("DELETE FROM altas WHERE usuario LIKE 'ttgAlta%'");
+    $pdo->exec("DELETE FROM tg_avisos WHERE clave = 'altas_bot_caido'
+                                         OR clave LIKE 'alta_trabada:%'");
+};
+$limpiarAltas();
+
+/* pedido_en se siembra restando EN SQL, con el reloj de la base: la espera se
+   mide ahi, y mezclar NOW() con time() de PHP ya causo bugs en este repo. */
+$sembrarAlta = static function (string $u, string $estado, int $intentos,
+                                int $haceMin, ?string $pass = '12345678',
+                                string $msj = '') use ($pdo): void {
+    $pdo->prepare(
+        "INSERT INTO altas (usuario, password, estado, intentos, mensaje, origen, pedido_en)
+         VALUES (?,?,?,?,?, 'landing', DATE_SUB(NOW(), INTERVAL ? MINUTE))"
+    )->execute([$u, $pass, $estado, $intentos, $msj !== '' ? $msj : null, $haceMin]);
+};
+
+$logTmp4 = sys_get_temp_dir() . '/t_tg4_' . getmypid() . '.log';
+@unlink($logTmp4); ini_set('error_log', $logTmp4);
+$envios = static function () use ($logTmp4): int {
+    return is_file($logTmp4) ? substr_count((string)@file_get_contents($logTmp4), 'telegram: HTTP') : 0;
+};
+
+/* Una recien encolada NO es una trabada: el bot todavia no tuvo tiempo. Sin
+   este silencio, cada sondeo de la landing (cada 500ms) dispararia avisos. */
+$sembrarAlta('ttgAltaNueva', 'pendiente', 0, 0);
+$i = $envios();
+chequear('una alta recien pedida no avisa', alta_avisar_trabadas($pdo) === 0 && $envios() === $i);
+
+/* Pendientes viejas que NADIE tomo = el bot esta caido. El problema es UNO
+   (el bot), asi que el aviso es UNO aunque las victimas sean varias. */
+$sembrarAlta('ttgAltaVieja1', 'pendiente', 0, 5);
+$sembrarAlta('ttgAltaVieja2', 'pendiente', 0, 8);
+$i = $envios();
+chequear('pendientes sin tomar => UN aviso de bot caido',
+         alta_avisar_trabadas($pdo) === 1 && $envios() === $i + 1,
+         'salieron ' . ($envios() - $i) . ' aviso(s) de 1');
+
+/* Si el bot SI esta gastando intentos, esta vivo: el que rechaza es el panel.
+   Ahi cada alta trabada avisa por separado, con su propio error. */
+$sembrarAlta('ttgAltaPanel', 'pendiente', 2, 6, '12345678',
+             'el panel rechazo la creacion: User with username - already exist');
+$i = $envios();
+chequear('con intentos gastados avisa POR alta (las 3 trabadas)',
+         alta_avisar_trabadas($pdo) === 3 && $envios() === $i + 3,
+         'salieron ' . ($envios() - $i) . ' aviso(s) de 3');
+
+/* Sin password el bot no puede crearla NUNCA: no es una trabada del bot ni
+   del panel (esa clase la reporta altas-pendientes.sh, y reintentar no la
+   arregla). */
+$limpiarAltas();
+$sembrarAlta('ttgAltaSinPass', 'pendiente', 0, 30, null);
+chequear('una alta sin password no cuenta como trabada', alta_avisar_trabadas($pdo) === 0);
+
+/* Las terminadas tampoco: 'ok' ya aviso el registro, 'error' ya aviso el
+   fracaso (altas_cola.php al marcar). Repetirlas aca seria doble campana. */
+$sembrarAlta('ttgAltaOk',  'ok',    1, 60);
+$sembrarAlta('ttgAltaErr', 'error', 3, 60);
+chequear('las terminadas (ok/error) no avisan de nuevo', alta_avisar_trabadas($pdo) === 0);
+
+@unlink($logTmp4); ini_restore('error_log');
+$limpiarAltas();
+cfg_crm_guardar($pdo, ['tg_bot_token' => '', 'tg_chat_id' => ''], 'test');
+
 
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);
 exit($fail > 0 ? 1 : 0);

@@ -50,7 +50,14 @@ if (!$id || $sid === '') {
 }
 
 try {
-    echo json_encode(alta_entrega($pdo, $id, $sid), JSON_UNESCAPED_UNICODE);
+    $e = alta_entrega($pdo, $id, $sid);
+    // El que sondea es un jugador esperando su cuenta: el momento justo para
+    // avisar al agente si la cola esta trabada (ver alta_avisar_trabadas).
+    // Best-effort: un Telegram caido no puede romperle el sondeo al jugador.
+    if (empty($e['listo']) && empty($e['fallo'])) {
+        try { alta_avisar_trabadas($pdo); } catch (Throwable $ex) {}
+    }
+    echo json_encode($e, JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
     // El detalle al log, nunca a la respuesta: acá contesta cualquiera.
     error_log('alta_estado: ' . $e->getMessage());
