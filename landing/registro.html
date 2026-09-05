@@ -341,6 +341,7 @@
     'Ya casi está…',
   ];
   let rotEspera = null;
+  let autoIr = null;   // la cuenta regresiva del redirect automático (verExito)
 
   function iniciarRotacionEspera(){
     let i = 0;
@@ -414,8 +415,35 @@
     // mandar al jugador a un juego sin SU chatbot, en ese caso se ofrece
     // volver al /<slug>/chat.html propio en vez de la raíz. esPorPath/
     // partesRuta ya se calcularon arriba, junto con BASE_API.
-    const destino = esPorPath ? '/' + partesRuta[0] + '/chat.html' : '/';
-    $('btnJugar').onclick = ()=>{ olvidar(); location.href = destino; };
+    // #gp-chat: widget.js lo lee al cargar y abre el chat solo. El recien
+    // registrado aterriza en el juego CON el chat abierto -- su proximo paso
+    // natural es hablar (cargar fichas, preguntar) y el globito solo en una
+    // esquina se lo pierde. En el cliente por-path el destino YA es el chat.
+    const destino = esPorPath ? '/' + partesRuta[0] + '/chat.html' : '/#gp-chat';
+    const irAJugar = ()=>{ olvidar(); location.href = destino; };
+    $('btnJugar').onclick = irAJugar;
+
+    /* Redirigir SOLO, sin esperar el toque: el que acaba de crear la cuenta
+       quiere jugar, no mirar un cartel. Pero no de una: unos segundos con la
+       cuenta regresiva a la vista, para que el usuario quede visto (la clave
+       es fija y el chat se la repite si hace falta). Copiar los datos cancela
+       la cuenta: ese quiere anotarlos con calma, no que le saquen la pagina
+       de abajo del dedo. */
+    if (autoIr) clearInterval(autoIr);   // verExito puede correr dos veces (F5, retomar)
+    let quedan = 5;
+    const btnJugar = $('btnJugar');
+    btnJugar.textContent = `Entrar a jugar (${quedan})`;
+    autoIr = setInterval(()=>{
+      quedan--;
+      if (quedan <= 0){ clearInterval(autoIr); autoIr = null; return irAJugar(); }
+      btnJugar.textContent = `Entrar a jugar (${quedan})`;
+    }, 1000);
+    const frenarAuto = ()=>{
+      if (!autoIr) return;
+      clearInterval(autoIr); autoIr = null;
+      btnJugar.textContent = 'Entrar a jugar';
+    };
+    $('btnCopiar').addEventListener('click', frenarAuto);
   }
 
   // -- Esperar al bot -------------------------------------------------------
