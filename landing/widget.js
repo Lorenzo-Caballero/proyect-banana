@@ -118,6 +118,7 @@
   var API_RULETA = BASE_API + "/ruleta.php";
   var API_NOTIF  = BASE_API + "/notificaciones.php";
   var API_SALDO  = BASE_API + "/saldo_reportar.php";
+  var API_COBRO  = BASE_API + "/datos_cobro.php";
 
   /* La API de la PLATAFORMA. Del bundle:
        Nn = { additionalBaseURL:"/api/user", loginUniversal:"/login",
@@ -192,6 +193,10 @@
   var ATAJOS = [
     { rot: "CARGAR",  txt: "Quiero cargar fichas",        clase: "ok" },
     { rot: "RETIRAR", txt: "Quiero retirar",              clase: "" },
+    // Respuesta AUTOMATICA (no pasa por el modelo): trae el alias/CBU/titular
+    // de datos_cobro.php y los muestra al instante con botones de copiar. El
+    // `accion` lo distingue de los atajos que mandan texto al bot.
+    { rot: "CBU / ALIAS", txt: "", clase: "", accion: "datos" },
     { rot: "SOPORTE", txt: "Necesito hablar con alguien", clase: "" }
   ];
   /* Sin sesión, "cargar" y "retirar" no llevan a ningún lado: las herramientas
@@ -1986,8 +1991,53 @@
     var b = e.target.closest("button"); if (!b) return;
     var a = atajosDeAhora()[+b.getAttribute("data-i")]; if (!a) return;
     abrir();
+    // Atajo con respuesta LOCAL (no pasa por el modelo): lo resuelve el widget
+    // al toque. Hoy: "DATOS PARA TRANSFERIR".
+    if (a.accion === "datos"){ mostrarDatosCobro(); return; }
     enviarMensaje(a.txt);
   });
+
+  /* Muestra el alias, CBU y titular de la cuenta de cobro con botones de
+     copiar, SIN pasar por el modelo: es informacion fija que no hace falta
+     pedirle a la IA (mas rapido y no puede fallar ni tipear mal un CBU). Los
+     trae de datos_cobro.php. Reutiliza copiar(), el mismo respaldo que
+     pintarCopiables para WebView sin portapapeles.
+
+     OJO: esto solo MUESTRA los datos. La plata se acredita por el mail del
+     banco (el flujo de siempre); mostrar el CBU no crea ninguna recarga. */
+  var pidiendoDatos = false;
+  function mostrarDatosCobro(){
+    if (pidiendoDatos) return;
+    pidiendoDatos = true;
+    setEstado("escribiendo…", true);
+    var esp = escribiendo();
+    fetch(API_COBRO, { cache: "no-store" })
+      .then(function (r){ return r.json(); })
+      .then(function (d){
+        esp.remove(); setEstado(AGENTE_ESTADO, false);
+        if (!d || !d.ok || (!d.cbu && !d.alias)){
+          pintar("b", "No pude traer los datos para transferir. Escribime y te "
+                    + "los paso, o tocá SOPORTE.", false, "alerta");
+          return;
+        }
+        var lineas = ["Estos son los datos para transferir:"];
+        if (d.titular) lineas.push("Titular: " + d.titular);
+        if (d.alias)   lineas.push("Alias: " + d.alias);
+        if (d.cbu)     lineas.push("CBU: " + d.cbu);
+        lineas.push("Cuando transfieras, mandame el comprobante o el titular y "
+                  + "el número de operación para acreditarte.");
+        pintar("b", lineas.join("\n"));
+        // Los botones de copiar reusan pintarCopiables (alias, CBU). El monto
+        // no va: en este atajo el jugador todavía no dijo cuánto carga.
+        pintarCopiables({ alias: d.alias || "", cbu: d.cbu || "" });
+      })
+      .catch(function (){
+        esp.remove(); setEstado(AGENTE_ESTADO, false);
+        pintar("b", "No pude traer los datos para transferir. Escribime y te "
+                  + "los paso, o tocá SOPORTE.", false, "alerta");
+      })
+      .then(function (){ pidiendoDatos = false; });
+  }
 
   // ---------- comprobantes ----------
   $("gp-att").addEventListener("click", function (){ fileI.click(); });
