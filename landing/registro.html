@@ -341,7 +341,6 @@
     'Ya casi está…',
   ];
   let rotEspera = null;
-  let autoIr = null;   // la cuenta regresiva del redirect automático (verExito)
 
   function iniciarRotacionEspera(){
     let i = 0;
@@ -400,13 +399,6 @@
     ocultarTodas();
     $('vistaExito').classList.add('show');
 
-    $('btnCopiar').onclick = ()=>{
-      const datos = 'Usuario: ' + p.usuario
-                  + (p.password ? '\nContraseña: ' + p.password : '');
-      navigator.clipboard?.writeText(datos);
-      $('btnCopiar').textContent = '¡Copiado!';
-      setTimeout(()=> $('btnCopiar').textContent = 'Copiar datos', 1500);
-    };
     // "Entrar a jugar": raíz del dominio ACTUAL (mismo origen que sirvió esta
     // página). Ahí el proxy replica/ sirve el juego real con el chatbot ya
     // inyectado y el login persiste (cookie reescrita al dominio propio) --
@@ -431,28 +423,36 @@
     // vacío y se creara una SEGUNDA cuenta con otro nombre.
     const irAJugar = ()=>{ location.href = destino; };
     $('btnJugar').onclick = irAJugar;
+    $('btnJugar').textContent = 'Entrar a jugar';
 
-    /* Redirigir SOLO, sin esperar el toque: el que acaba de crear la cuenta
-       quiere jugar, no mirar un cartel. Pero no de una: unos segundos con la
-       cuenta regresiva a la vista, para que el usuario quede visto (la clave
-       es fija y el chat se la repite si hace falta). Copiar los datos cancela
-       la cuenta: ese quiere anotarlos con calma, no que le saquen la pagina
-       de abajo del dedo. */
-    if (autoIr) clearInterval(autoIr);   // verExito puede correr dos veces (F5, retomar)
-    let quedan = 5;
-    const btnJugar = $('btnJugar');
-    btnJugar.textContent = `Entrar a jugar (${quedan})`;
-    autoIr = setInterval(()=>{
-      quedan--;
-      if (quedan <= 0){ clearInterval(autoIr); autoIr = null; return irAJugar(); }
-      btnJugar.textContent = `Entrar a jugar (${quedan})`;
-    }, 1000);
-    const frenarAuto = ()=>{
-      if (!autoIr) return;
-      clearInterval(autoIr); autoIr = null;
-      btnJugar.textContent = 'Entrar a jugar';
+    /* La redirección automática se dispara cuando el jugador COPIA sus datos,
+       no por un cronómetro. El motivo: recién cuando copió tiene las
+       credenciales guardadas -- mandarlo a jugar antes (por tiempo) lo dejaba
+       sin anotarlas. Y no lo dejamos varado: el que copió quiere jugar, así
+       que apenas confirma el copiado lo llevamos solo. Si no copia, el botón
+       "Entrar a jugar" sigue a mano para cuando quiera.
+       Solo se redirige tras un copiado EXITOSO: si el navegador no dejó copiar
+       (permiso denegado, sin API), NO se navega -- sería echarlo sin sus
+       datos; se le pide copiarlos a mano y el botón manual queda disponible. */
+    let yendo = false;
+    const irTrasCopiar = ()=>{
+      if (yendo) return;
+      yendo = true;
+      $('btnCopiar').textContent = '¡Copiado! Entrando…';
+      setTimeout(irAJugar, 1200);   // que alcance a ver el "¡Copiado!"
     };
-    $('btnCopiar').addEventListener('click', frenarAuto);
+    const copiarFallo = ()=>{
+      $('btnCopiar').textContent = 'Copiá los datos y tocá Entrar';
+    };
+    $('btnCopiar').onclick = ()=>{
+      const datos = 'Usuario: ' + p.usuario
+                  + (p.password ? '\nContraseña: ' + p.password : '');
+      try {
+        const pr = navigator.clipboard && navigator.clipboard.writeText(datos);
+        if (pr && pr.then) pr.then(irTrasCopiar, copiarFallo);
+        else copiarFallo();   // sin clipboard API (http, navegador viejo)
+      } catch (e) { copiarFallo(); }
+    };
   }
 
   // -- Esperar al bot -------------------------------------------------------
