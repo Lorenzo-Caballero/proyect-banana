@@ -138,6 +138,13 @@ esac
 # ---------------------------------------------------------------------------
 echo "==> Recreando el bot"
 cd "$BOT_DIR"
+# La version que se hornea en la imagen (el bot la anuncia al arrancar). Si
+# deploy-bot.sh ya la exporto, se respeta; si se corre este script solo, se
+# saca del repo del bot. Sin repo queda "desconocido", que tambien informa.
+if [ -z "${GIT_HASH:-}" ]; then
+  GIT_HASH="$(git -C "$BOT_DIR" rev-parse --short HEAD 2>/dev/null || echo desconocido)"
+  export GIT_HASH
+fi
 if [ -f docker-compose.yml ] || [ -f compose.yml ]; then
   # `restart` NO alcanza: env_file se lee cuando el contenedor se CREA, así que
   # un restart lo vuelve a levantar con las variables viejas y el .env nuevo se

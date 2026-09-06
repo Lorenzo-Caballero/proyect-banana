@@ -69,6 +69,24 @@ cache-busting, solo el widget.
 
 ## Cambios que necesitan pasos extra
 
+### El bot de altas (repo aparte, corre en Docker)
+
+El bot vive en **otro repo** (`~/Bot-python` en el VPS) y `deploy.sh` **no lo
+toca**. Si tocaste algo de `bot/`, en el VPS:
+
+```bash
+bash /opt/goldpaw/scripts/deploy-bot.sh
+```
+
+Hace `git pull`, corrige el `.env`, verifica la cola, **rebuildea la imagen**
+(el Dockerfile copia el código adentro: sin `--build` la imagen vieja sigue
+corriendo y nada avisa) y comprueba que el contenedor anuncie en el log la
+versión recién construida (`Version del bot: <hash>`). Si esa línea no
+coincide con `git log --oneline -1` del repo del bot, lo que corre es viejo.
+
+`deploy.sh` avisa al final si el bot quedó atrás del remoto, para que no se
+publique la web nueva conversando con un bot de hace un mes.
+
 ### Migraciones de base de datos
 
 Hay dos carpetas de SQL, y se aplican distinto:

@@ -113,4 +113,21 @@ if [ "$malos" -ne 0 ]; then
   exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# Aviso (no fatal): ¿el bot de altas quedo atras?
+# El bot se deploya APARTE (scripts/deploy-bot.sh) y olvidarlo es el fallo
+# silencioso clasico: la web nueva conversa con un bot viejo que "funciona",
+# solo que con los bugs de hace un mes.
+# ---------------------------------------------------------------------------
+BOT_DIR="${BOT_DIR:-$HOME/Bot-python}"
+if [ -d "$BOT_DIR/.git" ] && git -C "$BOT_DIR" fetch --quiet 2>/dev/null; then
+  atras="$(git -C "$BOT_DIR" rev-list --count 'HEAD..@{u}' 2>/dev/null || echo 0)"
+  if [ "${atras:-0}" -gt 0 ] 2>/dev/null; then
+    echo
+    echo "!! OJO: el bot de altas ($BOT_DIR) esta $atras commit(s) atras del remoto."
+    echo "   La web quedo publicada, pero el bot sigue con codigo viejo."
+    echo "   Actualizalo con: bash /opt/goldpaw/scripts/deploy-bot.sh"
+  fi
+fi
+
 echo "==> OK — publicado y servido como ?v=$HASH"
