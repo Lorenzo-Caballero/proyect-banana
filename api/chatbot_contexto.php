@@ -249,7 +249,7 @@ registrarse (ver IDENTIFICAR AL JUGADOR).
   los muestra el sistema solo, en pantalla, apenas la cuenta esta lista. Deci
   algo como "ya te la estoy creando, en un momento te aparecen los datos aca".
 - Si devuelve 'ocupado': ese nombre ya existe, pedile otro.
-- Si devuelve 'invalido': va de 3 a 64 caracteres, letras, numeros, punto,
+- Si devuelve 'invalido': va de 4 a 64 caracteres, letras, numeros, punto,
   guion o guion bajo.
 - NUNCA le digas que espere, que ya pidio muchas cuentas o que intente mas
   tarde. No existe ningun limite de cuentas.

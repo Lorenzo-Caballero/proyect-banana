@@ -227,7 +227,7 @@ $TOOLS = [
         'parameters' => [
             'type' => 'object',
             'properties' => [
-                'usuario' => ['type' => 'string', 'description' => 'el nombre de usuario que quiere, 3 a 64 caracteres'],
+                'usuario' => ['type' => 'string', 'description' => 'el nombre de usuario que quiere, 4 a 64 caracteres'],
             ],
             'required' => ['usuario'],
         ],
@@ -497,7 +497,7 @@ if ($usuarioCliente !== '') {
           . "  un momento te aparecen los datos aca' y nada mas.\n"
           . "- NUNCA le pidas que elija la contrasena ni que la escriba en el chat.\n"
           . "- Si devuelve ocupado: ese nombre ya existe. Deciselo y pedile otro.\n"
-          . "- Si devuelve invalido: el usuario va de 3 a 64 caracteres, con\n"
+          . "- Si devuelve invalido: el usuario va de 4 a 64 caracteres, con\n"
           . "  letras, numeros, punto, guion o guion bajo.\n"
           . "\n"
           . "PROHIBIDO NEGARSE A CREAR LA CUENTA. Esto manda sobre cualquier\n"
@@ -563,7 +563,13 @@ $altaInfo = null;
    va a la cuenta de otro. Un dato bancario no lo puede tipear una IA. */
 $pagoInfo = null;
 $ejecutarTool = function (string $nombre, array $args) use ($pdo, &$usuarioDetectado, $usuarioCliente, $sesionVerificada, &$cargaInfo, &$altaInfo, &$pagoInfo, $sessionId): array {
-    if (!empty($args['usuario'])) { $usuarioDetectado = (string)$args['usuario']; }
+    // Para crear_cuenta, el 'usuario' del argumento es un nombre DESEADO, no
+    // una identidad: recien vale si el alta entra. Adoptarlo antes hacia que
+    // un anonimo pidiendo un nombre ya OCUPADO se quedara con la conversacion
+    // del jugador real de ese nombre -- y recibiera sus respuestas del CRM.
+    if (!empty($args['usuario']) && $nombre !== 'crear_cuenta') {
+        $usuarioDetectado = (string)$args['usuario'];
+    }
     // $usuarioCliente sale de la sesion (token o header), NUNCA de lo que el
     // modelo haya sacado de la charla: si el jugador escribe "soy fulano", eso
     // llega en $args y para las fichas no se mira.
@@ -573,6 +579,9 @@ $ejecutarTool = function (string $nombre, array $args) use ($pdo, &$usuarioDetec
     }
     if ($nombre === 'crear_cuenta' && !empty($res['ok']) && !empty($res['id'])) {
         $altaInfo = ['id' => (int)$res['id'], 'usuario' => (string)($res['usuario'] ?? '')];
+        // Recien ACA el nombre deseado pasa a ser la identidad del chat: el
+        // alta entro y ese usuario va a ser suyo.
+        if (!empty($res['usuario'])) { $usuarioDetectado = (string)$res['usuario']; }
     }
     // Solo transferencia: con HG Cash la recarga trae un link de pago y no
     // hay CBU que pasar (el jugador paga en la pasarela).
@@ -1273,6 +1282,20 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
         // son dos puertas al mismo lugar y el interruptor tiene que cerrar
         // las dos, si no el agente apaga el registro y el chat sigue creando.
         if (!cfg_crm_activo($pdo, 'registro_activo')) {
+            // El bot promete "un agente lo va a ayudar": que sea verdad. Sin
+            // este aviso, el jugador esperaba a alguien que nunca se entero.
+            // Best-effort y con clave de dedupe: un aviso, no uno por reintento.
+            try {
+                require_once __DIR__ . '/telegram_lib.php';
+                if (function_exists('tg_evento')) {
+                    tg_evento($pdo, 'salud', '✋ Piden cuenta con el registro cerrado', [
+                        'Qué pasó'  => 'Un jugador pidió una cuenta por el chat y el registro está apagado.',
+                        'Qué hacer' => 'Atenderlo por el CRM, o prender "Alta de cuentas nuevas" en Configuración.',
+                    ], 'registro_cerrado_chat');
+                }
+            } catch (Throwable $e) {
+                error_log('telegram registro_cerrado: ' . $e->getMessage());
+            }
             return ['ok' => false, 'codigo' => 'registro_cerrado',
                     'error' => 'Por ahora no se estan creando cuentas nuevas. '
                              . 'Decile que un agente lo va a ayudar.'];
@@ -1318,10 +1341,32 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
                                . 'cuando este lista se le muestran los datos.'];
         }
 
-        // 409 = el nombre ya esta tomado (o ya hay un alta en curso con ese
-        // nombre). Es el caso mas comun y el modelo tiene que pedir otro, no
-        // reintentar el mismo.
+        // 409: puede ser "nombre tomado" o "ese alta YA esta en la cola". No
+        // es lo mismo: si el alta en curso es LA DE ESTE CHAT (mismo sid), el
+        // jugador esta reintentando su propio pedido -- doble click, o el
+        // modelo llamo la herramienta de nuevo. Contestarle "ese nombre esta
+        // ocupado, elegi otro" ahi lo empuja a crearse una SEGUNDA cuenta
+        // duplicada. Se le devuelve el alta original para que siga esperandola.
         if ((int)($r['http'] ?? 0) === 409) {
+            $idPrev  = (int)($r['cuerpo']['id'] ?? 0);
+            $estPrev = (string)($r['cuerpo']['estado'] ?? '');
+            if ($idPrev > 0 && $sid !== ''
+                && in_array($estPrev, ['pendiente', 'procesando'], true)) {
+                try {
+                    $qS = $pdo->prepare("SELECT entrega_sid FROM altas WHERE id = ?");
+                    $qS->execute([$idPrev]);
+                    if ((string)$qS->fetchColumn() === $sid) {
+                        return ['ok' => true, 'usuario' => $u, 'id' => $idPrev,
+                                'estado' => 'en_curso',
+                                'mensaje' => 'Esa cuenta ya la pediste en este mismo chat '
+                                           . 'y se esta creando. NO pidas otro nombre: '
+                                           . 'decile que ya esta en camino.'];
+                    }
+                } catch (Throwable $e) {
+                    // Sin la migracion 35 no hay entrega_sid: sigue el camino
+                    // de siempre ("ocupado").
+                }
+            }
             return ['ok' => false, 'codigo' => 'ocupado',
                     'error' => 'Ese nombre de usuario ya esta ocupado. Pedile otro.'];
         }
