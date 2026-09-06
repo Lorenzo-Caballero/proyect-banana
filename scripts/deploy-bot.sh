@@ -25,7 +25,11 @@ cd "$BOT_DIR"
 echo "==> git pull en $BOT_DIR"
 if ! git pull --ff-only; then
   echo "!! El pull FALLO — no se deploya nada." >&2
-  echo "   Suele ser por cambios locales: git -C $BOT_DIR status --short" >&2
+  echo "   Suele ser por cambios hechos a mano en el VPS. Para verlos:" >&2
+  echo "     git -C $BOT_DIR status --short && git -C $BOT_DIR diff" >&2
+  echo "   Si ya estan en el repo (o no importan), guardalos y reintenta:" >&2
+  echo "     git -C $BOT_DIR stash && bash $0" >&2
+  echo "   (el stash no borra nada: git stash pop los recupera)" >&2
   exit 1
 fi
 
