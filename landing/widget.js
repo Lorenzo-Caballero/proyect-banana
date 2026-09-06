@@ -1795,10 +1795,24 @@
     if (!info || !info.id) return;
     var id = info.id, intentos = 0, avisado = false;
 
+    /* Una sola narración por alta: la retoma del arranque y un turno nuevo
+       del chat pueden pedir la misma. */
+    if (narrarAlta._activa === id) return;
+    narrarAlta._activa = id;
+
+    /* El pedido queda ANOTADO hasta entregarse o fallar. Antes, si el alta
+       tardaba más que el sondeo (~4 min) o el jugador recargaba la página, el
+       id se perdía: la clave quedaba guardada en el server sin que nadie
+       preguntara por ella, y el chatbot repetía "todavía la estoy creando"
+       para siempre. Con esto, el widget retoma el sondeo al cargar. */
+    lss("goldpaw_alta_pend", JSON.stringify({ id: id, t: Date.now() }));
+    function cerrar(){ narrarAlta._activa = null; lsd("goldpaw_alta_pend"); }
+
     /* Los primeros ~15 s se pregunta cada 1,2 s (la mayoria de las altas
-       entran ahi); despues cada 4, que alcanza para las lentas sin dejar el
-       navegador preguntando cada segundo durante dos minutos. */
-    function proxima(){ return intentos < 20 ? 600 : 4000; }
+       entran ahi); despues cada 4; pasados ~4 minutos, cada 30 s. Nunca se
+       corta del todo: la promesa de "apenas esté te paso los datos" la tiene
+       que cumplir alguien. */
+    function proxima(){ return intentos < 20 ? 600 : (intentos < 60 ? 4000 : 30000); }
 
     /* El efecto de "escribiendo" era de 1200ms POR GLOBO, y acá son cuatro
        (aviso, usuario, contraseña, "guardala bien"): casi 5 segundos de espera
@@ -1831,9 +1845,17 @@
     setTimeout(sondear, 400);
 
     function sondear(){
-      if (intentos++ > 60){          // ~4 minutos
+      if (intentos++ === 61){        // ~4 minutos: avisar, pero NO rendirse.
+        /* Antes acá había un `return`: el sondeo moría prometiendo "apenas
+           esté te paso los datos", y esa promesa no la cumplía nadie. Ahora
+           solo avisa y sigue, cada 30 s. */
         decir("La cuenta se está tardando más de lo normal. Quedate tranquilo "
             + "que apenas esté te paso los datos por acá.");
+      }
+      if (intentos > 240){           // ~1,5 h en esta carga de página.
+        /* Se suelta el sondeo pero NO el pedido anotado: la próxima carga de
+           la página lo retoma y entrega la clave si ya está. */
+        narrarAlta._activa = null;
         return;
       }
       fetch(API_ALTA + "?id=" + id + "&sid=" + encodeURIComponent(sid) + "&_=" + Date.now())
@@ -1845,10 +1867,12 @@
             /* Ya se la mostramos antes (recargó la página, o entró otro
                sondeo). No la repetimos: la clave se entrega una sola vez. */
             if (d.entregada || !d.password){
+              cerrar();
               decir("Tu cuenta ya está creada. Si perdiste la contraseña, "
                   + "decímelo y te paso con un agente.");
               return;
             }
+            cerrar();
             pintarVarios([
               "¡Listo! Ya te creé la cuenta. Anotá estos datos:",
               "Usuario: " + d.usuario,
@@ -1861,6 +1885,7 @@
           }
 
           if (d.estado === "error"){
+            cerrar();
             decir("Uy, no pude crear la cuenta con ese nombre. Ya le aviso a "
                 + "un agente para que lo resuelva.");
             return;
@@ -1879,6 +1904,23 @@
         .catch(function (){ setTimeout(sondear, proxima()); });
     }
   }
+
+  /* Retomar un alta que quedó pendiente de otra carga de la página. La clave
+     se entrega UNA vez y solo a este sid: si nadie vuelve a preguntar, el
+     jugador se queda sin credenciales para siempre (y el chatbot repitiendo
+     "todavía la estoy creando"). 48 h de gracia: más viejo que eso ya lo
+     resolvió un agente por otro lado. */
+  (function retomarAltaPendiente(){
+    var crudo = ls("goldpaw_alta_pend");
+    if (!crudo) return;
+    var p = null;
+    try { p = JSON.parse(crudo); } catch (e) {}
+    if (p && p.id && Date.now() - (p.t || 0) < 48 * 3600 * 1000){
+      narrarAlta({ id: p.id });
+    } else {
+      lsd("goldpaw_alta_pend");
+    }
+  })();
 
   /* Narra el proceso de una carga como lo haría una persona: manda un mensaje,
      sondea carga_estado.php con el id que devolvió el chat, y va contando cada

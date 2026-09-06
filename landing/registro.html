@@ -393,12 +393,17 @@
 
   function verExito(p){
     $('outUser').textContent = p.usuario;
-    $('outPass').textContent = p.password;
+    // La clave puede no estar: se entrega UNA sola vez, y si se la llevó otro
+    // sondeo (otra pestaña) acá no llega. Antes eso pintaba "undefined" en el
+    // recuadro y se copiaba tal cual. El chat la puede repetir: es fija.
+    $('outPass').textContent = p.password || 'te la pasamos por el chat';
     ocultarTodas();
     $('vistaExito').classList.add('show');
 
     $('btnCopiar').onclick = ()=>{
-      navigator.clipboard?.writeText(`Usuario: ${p.usuario}\nContraseña: ${p.password}`);
+      const datos = 'Usuario: ' + p.usuario
+                  + (p.password ? '\nContraseña: ' + p.password : '');
+      navigator.clipboard?.writeText(datos);
       $('btnCopiar').textContent = '¡Copiado!';
       setTimeout(()=> $('btnCopiar').textContent = 'Copiar datos', 1500);
     };
@@ -420,7 +425,11 @@
     // natural es hablar (cargar fichas, preguntar) y el globito solo en una
     // esquina se lo pierde. En el cliente por-path el destino YA es el chat.
     const destino = esPorPath ? '/' + partesRuta[0] + '/chat.html' : '/#gp-chat';
-    const irAJugar = ()=>{ olvidar(); location.href = destino; };
+    // SIN olvidar() acá: el pedido guardado (con listo:true) es lo único que
+    // permite volver a esta página y ver los datos de nuevo. Borrarlo antes
+    // de navegar hacía que el que volvía se encontrara con el formulario
+    // vacío y se creara una SEGUNDA cuenta con otro nombre.
+    const irAJugar = ()=>{ location.href = destino; };
     $('btnJugar').onclick = irAJugar;
 
     /* Redirigir SOLO, sin esperar el toque: el que acaba de crear la cuenta
