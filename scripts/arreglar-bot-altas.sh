@@ -68,8 +68,14 @@ echo "==> Backup: $BACKUP"
 fijar() {   # fijar CLAVE VALOR  -> la agrega o la reemplaza
   local k="$1" v="$2"
   if grep -qE "^$k=" "$ENV"; then
+    # El valor se escapa para el sed: un '&' (que en el reemplazo significa
+    # "todo lo que matcheo"), una '\' o el propio separador '|' dentro de la
+    # API_KEY corrompian el .env EN SILENCIO -- el curl de verificacion de
+    # abajo pasaba con la clave buena, y el bot arrancaba con la rota.
+    local v_esc
+    v_esc=$(printf '%s' "$v" | sed -e 's/[&\\|]/\\&/g')
     # El separador es | porque los valores son URLs con /
-    sed -i "s|^$k=.*|$k=$v|" "$ENV"
+    sed -i "s|^$k=.*|$k=$v_esc|" "$ENV"
   else
     printf '%s=%s\n' "$k" "$v" >> "$ENV"
   fi
@@ -136,7 +142,12 @@ if [ -f docker-compose.yml ] || [ -f compose.yml ]; then
   # `restart` NO alcanza: env_file se lee cuando el contenedor se CREA, así que
   # un restart lo vuelve a levantar con las variables viejas y el .env nuevo se
   # ignora. Hay que recrearlo.
-  docker compose up -d --force-recreate
+  # Y `--build` TAMPOCO es opcional: el Dockerfile copia el código adentro de
+  # la imagen, así que un `git pull` sin rebuild deja la imagen vieja corriendo
+  # -- se despliega y todo sigue exactamente igual, sin un solo error a la
+  # vista. Pasó con el fast-path de altas: el código estaba en el VPS y el
+  # contenedor seguía creando de a una por formulario.
+  docker compose up -d --build --force-recreate
 else
   echo "   (no hay docker-compose acá: recrealo como lo tengas montado)"
 fi

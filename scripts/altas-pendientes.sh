@@ -78,10 +78,15 @@ for db in $BASES; do
 
   filasB=""
   if [ "${tiene_cep:-0}" = "1" ]; then
+    # entrega_clave NULL no siempre es "ya se la llevo": las altas del CRM
+    # nunca tuvieron clave de entrega (eso lo marca entrega_sid). Decir
+    # 'entregada=SI' ahi asustaba al pedo: nadie recibio nada.
     filasB="$(q "$db" "SELECT CONCAT('    ', LPAD(id,5,' '), '  ', RPAD(usuario,22,' '),
                             '  ', RPAD(COALESCE(origen,'?'),9,' '),
                             '  ', DATE_FORMAT(pedido_en,'%d/%m %H:%i'),
-                            '  entregada=', IF(entrega_clave IS NULL,'SI','no'))
+                            '  entregada=', CASE WHEN entrega_clave IS NOT NULL THEN 'no'
+                                                 WHEN entrega_sid IS NULL THEN 'sin clave de entrega'
+                                                 ELSE 'SI' END)
                          FROM altas
                         WHERE estado='ok' AND COALESCE(creado_en_panel,0) <> 1
                         ORDER BY id;")"
