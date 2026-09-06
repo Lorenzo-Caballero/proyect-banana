@@ -182,12 +182,25 @@ if ($accion === 'ver' && $metodo === 'GET') {
 // ---------------------------------------------------------------------------
 if ($accion === 'liberar' && $metodo === 'POST') {
 
+    // Con `ids` en el cuerpo se liberan SOLO esos: es lo que manda el bot al
+    // morirse, para devolver lo que EL reclamo. Sin ids se libera todo (uso
+    // manual de siempre) -- pero ojo: con dos instancias del bot vivas (deploy
+    // solapado), el liberar global le saca de las manos a la otra lo que esta
+    // procesando en ese momento, y esa alta sale dos veces.
+    $body = json_decode(file_get_contents('php://input'), true) ?: [];
+    $ids  = array_values(array_filter(array_map('intval', (array)($body['ids'] ?? []))));
+
+    $filtroIds = '';
+    if ($ids) {
+        $filtroIds = ' AND id IN (' . implode(',', $ids) . ')';
+    }
+
     $sqlLib = "UPDATE altas
                   SET estado   = 'pendiente',
                       intentos = 0,
                       mensaje  = NULL%s
                 WHERE estado   = 'procesando'
-                  AND password IS NOT NULL";
+                  AND password IS NOT NULL" . $filtroIds;
     try {
         $n = $pdo->exec(sprintf($sqlLib, ",
                       proximo_intento_en = NULL"));
@@ -218,6 +231,20 @@ if ($accion === 'pendientes' && $metodo === 'GET') {
               WHERE estado = 'procesando'
                 AND tomado_en < DATE_SUB(NOW(), INTERVAL " . MINUTOS_ZOMBIE . " MINUTE)
                 AND intentos < " . MAX_INTENTOS
+        );
+        // El zombie que ya gasto todos los intentos no puede volver a
+        // 'pendiente' (el filtro de arriba lo excluye), pero tampoco puede
+        // quedarse en 'procesando' para siempre: ahi no lo ve el bot, el
+        // front lo sondea eternamente y ningun aviso suena. Es un fracaso
+        // definitivo: que conste como tal.
+        $pdo->exec(
+            "UPDATE altas
+                SET estado  = 'error',
+                    mensaje = CONCAT('el bot murio sin marcar el ultimo intento. ',
+                                     COALESCE(mensaje, ''))
+              WHERE estado = 'procesando'
+                AND tomado_en < DATE_SUB(NOW(), INTERVAL " . MINUTOS_ZOMBIE . " MINUTE)
+                AND intentos >= " . MAX_INTENTOS
         );
 
         $pdo->beginTransaction();
@@ -312,11 +339,32 @@ if ($accion === 'marcar' && $metodo === 'POST') {
     $id      = (int)($body['id'] ?? 0);
     $estado  = $body['estado'] ?? '';
     $mensaje = mb_substr((string)($body['mensaje'] ?? ''), 0, 500);
+    // El nombre con el que el bot dice haber creado la cuenta. Opcional (los
+    // bots viejos no lo mandan), pero cuando viene, MANDA: un 'ok' solo vale
+    // si la fila todavia se llama asi. Sin esto, un ok tardio sobre un alta
+    // que la cola ya renombro confirmaba (y entregaba) credenciales de un
+    // nombre que nunca se creo.
+    $usuarioBot = trim((string)($body['usuario'] ?? ''));
 
     if (!$id || !in_array($estado, ['ok', 'error'], true)) {
         http_response_code(400);
         echo json_encode(['ok' => false, 'error' => 'Parametros invalidos']);
         exit;
+    }
+
+    if ($estado === 'ok' && $usuarioBot !== '') {
+        $qU = $pdo->prepare("SELECT usuario FROM altas WHERE id = ?");
+        $qU->execute([$id]);
+        $usuarioFila = (string)($qU->fetchColumn() ?: '');
+        if ($usuarioFila !== '' && $usuarioFila !== $usuarioBot) {
+            error_log("altas_cola marcar: ok ignorado para el alta $id -- el bot "
+                    . "creo '$usuarioBot' pero la fila ahora es '$usuarioFila' "
+                    . "(renombrada en el medio). Queda para el proximo intento.");
+            http_response_code(409);
+            echo json_encode(['ok' => false,
+                              'error' => 'La fila fue renombrada: ese ok ya no aplica']);
+            exit;
+        }
     }
 
     if ($estado === 'ok') {

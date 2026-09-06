@@ -85,8 +85,12 @@ function alta_ip(): string
  */
 function alta_validar(string $usuario, string $password, string $email): ?string
 {
-    if (!preg_match('/^[a-zA-Z0-9._-]{3,64}$/', $usuario)) {
-        return 'Usuario invalido: 3 a 64 caracteres, letras, numeros, punto, guion o guion bajo';
+    // 4 y no 3: el panel de agentes rechaza los nombres de 3, y con 3 el alta
+    // muere recien cuando el bot la intenta -- gastando los 10 reintentos con
+    // el mismo nombre corto y el jugador mirando "creando tu cuenta" horas.
+    // Mejor rechazarlo aca, donde el que pidio puede elegir otro al instante.
+    if (!preg_match('/^[a-zA-Z0-9._-]{4,64}$/', $usuario)) {
+        return 'Usuario invalido: 4 a 64 caracteres, letras, numeros, punto, guion o guion bajo';
     }
     $largo = mb_strlen($password);
     if ($largo < 6 || $largo > 128) {
@@ -502,8 +506,16 @@ function alta_encolar(PDO $pdo, array $d): array
         // altas.origen en rl_bono_bienvenida_aplicar) se heredaria de una
         // landing que este registrante jamas vio -- o se perderia el que si
         // le prometieron. El origen valido es el de quien esta pidiendo AHORA.
+        /* nombre, apellido y email se PISAN con los del pedido nuevo (aunque
+           vengan vacios), por la misma razon que `origen`: la fila en 'error'
+           puede ser de OTRA persona. Conservarlos hacia que la cuenta nueva
+           se creara en el panel con el nombre, el apellido y el mail de un
+           desconocido de hace semanas. Vacio es mejor que ajeno: el bot
+           completa los datos que falten con completar_datos(). */
         $vals = [
             $password, $email !== '' ? $email : null,
+            $nombre   !== '' ? $nombre   : null,
+            $apellido !== '' ? $apellido : null,
             $origen,
             $entCla !== '' ? $entCla : null,
             $entSid !== '' ? $entSid : null,
@@ -512,7 +524,8 @@ function alta_encolar(PDO $pdo, array $d): array
         try {
             $pdo->prepare(
                 "UPDATE altas
-                    SET password = ?, email = COALESCE(?, email),
+                    SET password = ?, email = ?,
+                        nombre = ?, apellido = ?,
                         origen = ?,
                         estado = 'pendiente', intentos = 0,
                         mensaje = NULL, tomado_en = NULL,
@@ -528,7 +541,8 @@ function alta_encolar(PDO $pdo, array $d): array
                     . '). Voy sin proximo_intento_en: revisa la migracion 37.');
             $pdo->prepare(
                 "UPDATE altas
-                    SET password = ?, email = COALESCE(?, email),
+                    SET password = ?, email = ?,
+                        nombre = ?, apellido = ?,
                         origen = ?,
                         estado = 'pendiente', intentos = 0,
                         mensaje = NULL, tomado_en = NULL,
