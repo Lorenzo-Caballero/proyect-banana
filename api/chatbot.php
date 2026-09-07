@@ -880,14 +880,19 @@ function chatbot_sin_credenciales(string $texto): string
  *      (que es lo que hace el modelo) puede cambiar un digito y desviar el pago.
  *
  * Por eso: se sacan del texto del modelo las lineas "CBU/CVU/Alias/Titular: ..."
- * y cualquier tira larga de digitos (un CBU). Si de verdad hay una recarga, el
- * codigo agrega los datos buenos abajo; si no la hay, no queda ningun dato
- * inventado en pantalla.
+ * y cualquier tira larga de digitos (un CBU). Tambien la "Referencia: XXXX":
+ * es el id INTERNO de la recarga (rl_crear_recarga se lo devuelve al modelo),
+ * no le sirve al jugador para transferir y solo confunde -- el pago se
+ * reconoce por monto + titular, no por esa referencia. Si de verdad hay una
+ * recarga, el codigo agrega los datos buenos abajo; si no la hay, no queda
+ * ningun dato inventado en pantalla.
  */
 function chatbot_limpiar_datos_pago(string $texto): string
 {
-    // 1. Lineas etiquetadas: "CBU: ...", "CVU = ...", "Alias: ...", "Titular: ...".
-    $rx1 = '/^[^\r\n]*(?:cbu|cvu|alias|titular)[^\S\r\n]*[:=][^\r\n]*$/imu';
+    // 1. Lineas etiquetadas que el jugador NO tiene que ver: los datos de pago
+    //    (los pone el codigo, exactos) y la Referencia (id interno, no sirve
+    //    para transferir).
+    $rx1 = '/^[^\r\n]*(?:cbu|cvu|alias|titular|referencia|referencia de pago)[^\S\r\n]*[:=][^\r\n]*$/imu';
     $out = preg_replace($rx1, '', $texto);
     if ($out === null) { return $texto; }   // regex fallo: mejor el original
 
