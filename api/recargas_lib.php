@@ -1285,7 +1285,11 @@ function rl_cargar_al_juego_auto(PDO $pdo, array $recarga): void
         return;
     }
     try {
-        $r = fichas_pedir_carga($pdo, (string)$recarga['usuario'], (int)$recarga['coins'], 'recarga');
+        // $confiable=true: la recarga YA se pago y se acredito, el jugador es
+        // real. Asi el deposito al juego se encola aunque el espejo `usuarios`
+        // no lo tenga todavia (sync atrasado o caido) -- sin esto la plata
+        // entraba pero las fichas no llegaban al juego.
+        $r = fichas_pedir_carga($pdo, (string)$recarga['usuario'], (int)$recarga['coins'], 'recarga', true);
         if (empty($r['ok'])) {
             // 'en_curso' no es un problema: ya hay una carga en camino para
             // ese jugador y el bot la esta por hacer. El resto si conviene

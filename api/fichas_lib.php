@@ -137,7 +137,8 @@ if (!function_exists('gp_trace')) {
  * Devuelve ['ok'=>bool, ...]. Nunca lanza por saldo insuficiente: eso es una
  * respuesta normal que el chatbot le tiene que explicar al jugador.
  */
-function fichas_pedir_carga(PDO $pdo, string $usuario, int $monto, string $origen = 'chatbot'): array
+function fichas_pedir_carga(PDO $pdo, string $usuario, int $monto, string $origen = 'chatbot',
+                           bool $confiable = false): array
 {
     $usuario = trim($usuario);
     if (function_exists('gp_trace')) { gp_trace("carga: pedido usuario='$usuario' monto=$monto origen=$origen"); }  // TRACE TEMPORAL
@@ -168,12 +169,26 @@ function fichas_pedir_carga(PDO $pdo, string $usuario, int $monto, string $orige
         $st->execute([$usuario]);
         $fila = $st->fetch();
 
-        // Esto se valida SIEMPRE, aunque no se cobre: el bot va a buscar este
-        // nombre en el panel, y si no existe se queda dando vueltas al pedo.
+        // El nombre tiene que existir para que el bot lo encuentre en el panel.
+        // PERO: si el que llama garantiza que es real ($confiable) -- viene de
+        // una recarga YA PAGADA (rl_cargar_al_juego_auto) -- se encola igual
+        // aunque no este en el espejo `usuarios`. Ese espejo lo pobla
+        // sync_usuarios y puede estar atrasado o CAIDO; sin este OR, un jugador
+        // que transfirio y todavia no espejo se quedaba sin sus fichas: la
+        // plata entraba, la recarga figuraba acreditada, pero el deposito al
+        // juego nunca se encolaba. Pasó el 7/9/2026 con el sync caido. El
+        // deposito lo hace ejecutar_cargas.py contra el PANEL (la fuente real),
+        // buscando por username -- no necesita el espejo.
         if (!$fila) {
-            $pdo->rollBack();
-            return ['ok' => false, 'codigo' => 'sin_usuario',
-                    'error' => 'Ese usuario no existe.'];
+            if (!$confiable) {
+                $pdo->rollBack();
+                return ['ok' => false, 'codigo' => 'sin_usuario',
+                        'error' => 'Ese usuario no existe.'];
+            }
+            // Sin fila en el espejo no hay coins que debitar: se encola el
+            // deposito y listo (la plata ya entro por la transferencia).
+            $cobrar = false;
+            $fila   = ['coins' => 0];
         }
 
         $coins = (int)$fila['coins'];
