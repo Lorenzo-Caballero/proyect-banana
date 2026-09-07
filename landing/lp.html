@@ -415,28 +415,41 @@
       const d = ev.data;
       if (d && d.tipo === 'lp_config' && d.landing) aplicar(d.landing);
     });
-  } else if (SLUG){
-    fetch(BASE_API + '/landing_publica.php?slug=' + encodeURIComponent(SLUG), { cache:'no-store' })
-      .then(res => {
-        // 404 = no existe o esta pausada; 400 = slug que el server no acepta.
-        // En los dos casos la landing NO va a cumplir ninguna promesa: mejor
-        // el cartel de caida que el esqueleto vivo prometiendo un bono.
-        if (res.status === 404 || res.status === 400){
-          document.body.classList.add('rota'); return null;
-        }
-        return res.json().catch(() => null);
-      })
-      .then(data => { if (data && data.ok) aplicar(data.landing); })
-      .catch(() => {});   // sin red: quedan los defaults del CSS, la página vive igual
-
-    /* El Pixel de Meta solo en la página real (en la preview del CRM cada
-       tecleo del operador contaría como PageView de campaña). Es el mismo
-       meta-pixel.js de las otras landings: pide el pixel_id a la API. */
-    const px = document.createElement('script');
-    px.src = 'meta-pixel.js';
-    document.body.appendChild(px);
   } else {
-    document.body.classList.add('rota');
+    /* Modo SIN BONO: no promete un % que no se va a cumplir. Se usa cuando la
+       landing no existe / esta pausada / no hay slug: en esos casos el server
+       crea el alta con origen 'landing' (sin bono), asi que la pagina no debe
+       ofrecer uno. El formulario SIGUE activo -- el jugador vino de un anuncio
+       y tiene que poder registrarse igual (antes la pagina se declaraba
+       'caida' y no dejaba crear ninguna cuenta: por eso las landings con el
+       slug mal, pausadas o sin la migracion 52 no registraban a nadie). */
+    function sinBono(){
+      document.body.classList.add('sin-bono');
+      $('bonoPct').textContent = '0';
+      $('btn').textContent = 'Crear mi cuenta';
+    }
+
+    if (SLUG){
+      fetch(BASE_API + '/landing_publica.php?slug=' + encodeURIComponent(SLUG), { cache:'no-store' })
+        .then(res => {
+          // 404 = no existe o esta pausada; 400 = slug que el server no acepta.
+          // Ya no se cae la pagina: se registra sin bono (ver arriba).
+          if (res.status === 404 || res.status === 400){ sinBono(); return null; }
+          return res.json().catch(() => null);
+        })
+        .then(data => { if (data && data.ok) aplicar(data.landing); })
+        .catch(() => {});   // sin red: quedan los defaults del CSS, la pagina vive igual
+
+      /* El Pixel de Meta solo en la pagina real (en la preview del CRM cada
+         tecleo del operador contaria como PageView de campaña). Es el mismo
+         meta-pixel.js de las otras landings: pide el pixel_id a la API. */
+      const px = document.createElement('script');
+      px.src = 'meta-pixel.js';
+      document.body.appendChild(px);
+    } else {
+      // Sin slug no hay promo, pero se deja crear una cuenta comun igual.
+      sinBono();
+    }
   }
 
   /* ======================================================================
@@ -536,16 +549,42 @@
 
   function verExito(p){
     $('outUser').textContent = p.usuario;
-    $('outPass').textContent = p.password;
+    // La clave puede no estar: se entrega UNA sola vez, y si se la llevó otro
+    // sondeo (otra pestaña) acá no llega. Sin fallback pintaba "undefined".
+    $('outPass').textContent = p.password || 'te la pasamos por el chat';
     ver('vistaExito');
 
-    $('btnCopiar').onclick = ()=>{
-      navigator.clipboard?.writeText(`Usuario: ${p.usuario}\nContraseña: ${p.password}`);
-      $('btnCopiar').textContent = '¡Copiado!';
-      setTimeout(()=> $('btnCopiar').textContent = 'Copiar datos', 1500);
-    };
+    // SIN olvidar() al navegar: el pedido guardado (listo:true) es lo único
+    // que permite volver a esta página y ver los datos de nuevo. Borrarlo
+    // hacía que el que volvía se encontrara el formulario vacío y se creara
+    // una SEGUNDA cuenta con otro nombre.
     const destino = esPorPath ? '/' + partesRuta[0] + '/chat.html' : '/';
-    $('btnJugar').onclick = ()=>{ olvidar(); location.href = destino; };
+    const irAJugar = ()=>{ location.href = destino; };
+    $('btnJugar').onclick = irAJugar;
+    $('btnJugar').textContent = 'Entrar a jugar';
+
+    /* La redirección automática se dispara cuando el jugador COPIA sus datos,
+       no por un reloj: recién ahí los tiene guardados. Si no copia, el botón
+       "Entrar a jugar" sigue a mano. Solo se redirige tras un copiado EXITOSO:
+       si el navegador no dejó copiar, NO navega (sería echarlo sin sus datos)
+       y le pide copiarlos a mano. Misma lógica que registro.html. */
+    let yendo = false;
+    const irTrasCopiar = ()=>{
+      if (yendo) return;
+      yendo = true;
+      $('btnCopiar').textContent = '¡Copiado! Entrando…';
+      setTimeout(irAJugar, 1200);
+    };
+    const copiarFallo = ()=>{ $('btnCopiar').textContent = 'Copiá los datos y tocá Entrar'; };
+    $('btnCopiar').onclick = ()=>{
+      const datos = 'Usuario: ' + p.usuario
+                  + (p.password ? '\nContraseña: ' + p.password : '');
+      try {
+        const pr = navigator.clipboard && navigator.clipboard.writeText(datos);
+        if (pr && pr.then) pr.then(irTrasCopiar, copiarFallo);
+        else copiarFallo();
+      } catch (e) { copiarFallo(); }
+    };
   }
 
   async function sondear(p){
