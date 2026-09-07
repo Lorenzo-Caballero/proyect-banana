@@ -255,6 +255,11 @@ if ($accion === 'pendientes' && $metodo === 'GET') {
         // El filtro por proximo_intento_en solo existe con la migracion 37. Si
         // falta, se consulta sin el: mejor tomar un registro antes de tiempo
         // que dejar la cola entera sin atender por una columna de backoff.
+        // ORDER BY intentos ASC: lo FRESCO primero. Un alta nueva (intentos=0,
+        // un jugador mirando la pantalla AHORA) no puede esperar detras de los
+        // reintentos viejos del backlog, que ya esperaron su backoff y pueden
+        // esperar una vuelta mas. El 6/9 una alta fresca tardo 23s por estar
+        // en cola detras de reintentos con formulario de 30s.
         try {
             $sel = $pdo->prepare(
                 "SELECT id FROM altas
@@ -262,7 +267,7 @@ if ($accion === 'pendientes' && $metodo === 'GET') {
                     AND intentos < ?
                     AND password IS NOT NULL
                     AND (proximo_intento_en IS NULL OR proximo_intento_en <= NOW())
-                  ORDER BY id ASC
+                  ORDER BY intentos ASC, id ASC
                   LIMIT $limite
                   FOR UPDATE"
             );
@@ -275,7 +280,7 @@ if ($accion === 'pendientes' && $metodo === 'GET') {
                   WHERE estado = 'pendiente'
                     AND intentos < ?
                     AND password IS NOT NULL
-                  ORDER BY id ASC
+                  ORDER BY intentos ASC, id ASC
                   LIMIT $limite
                   FOR UPDATE"
             );

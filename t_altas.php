@@ -128,20 +128,19 @@ echo "\n=== 2. Elegir un nombre libre ===\n";
 $pdo->prepare("INSERT INTO usuarios (id, username, coins) VALUES (?,?,0)
                ON DUPLICATE KEY UPDATE coins=0")->execute([crc32('holaTstlibre'), 'holaTstlibre']);
 
-/* El nombre sale con PREFIJO y sin numeros: "holaJuan", no "Juan427".
-   Se dicta y se recuerda -- un jugador que llama por telefono puede decir su
-   usuario -- y sobre todo NO CHOCA: en ganamos el nombre es unico en toda la
-   plataforma y el patron "Nombre + numeros" esta agotado. El 2/9/2026
-   fallaron Juan676, Juan565, Juan557 y Martin109, cuatro de cuatro. */
+/* El nombre sale con PREFIJO y sufijo de 3 digitos DESDE LA PRIMERA ronda:
+   "holaJuan847". Decision del dueño (6/9/2026): el nombre "lindo" sin numeros
+   chocaba con la plataforma (el nombre es unico entre TODOS los agentes) y
+   cada choque disparaba la maquinaria lenta -- verificar el listado (~15-20s),
+   renombrar, reintentar -- con el jugador esperando. Unico por construccion =
+   camino rapido siempre. */
 $libre = alta_usuario_disponible($pdo, 'tstnuevo', 0);
-chequear('lleva prefijo y NO numeros en la primera ronda',
-         $libre === 'holaTstnuevo', $libre);
+chequear('prefijo + 3 digitos desde la primera ronda',
+         (bool)preg_match('/^holaTstnuevo[0-9]{3}$/', $libre), $libre);
 
-/* Los numeros aparecen solo cuando la plataforma ya nos rechazo, y suben de a
-   poco: primero dos digitos, y recien despues cuatro. Asi el caso normal --
-   que es casi siempre -- se lleva el nombre lindo. */
-chequear('ronda 1: dos digitos',
-         (bool)preg_match('/^holaTstnuevo[0-9]{2}$/', alta_usuario_disponible($pdo, 'tstnuevo', 1)));
+/* Si aun asi la plataforma rechaza, la entropia sube: 4 digitos. */
+chequear('ronda 1: sigue con 3 digitos',
+         (bool)preg_match('/^holaTstnuevo[0-9]{3}$/', alta_usuario_disponible($pdo, 'tstnuevo', 1)));
 chequear('ronda 3: cuatro digitos',
          (bool)preg_match('/^holaTstnuevo[0-9]{4}$/', alta_usuario_disponible($pdo, 'tstnuevo', 3)));
 

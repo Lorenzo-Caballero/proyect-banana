@@ -203,14 +203,12 @@ function alta_debe_renombrar(string $mensaje, int $intentos): bool
 
 /** Prefijo de los usuarios que genera la landing.
  *
- *  "holaJuan" en vez de "Juan427". Dos motivos, y el segundo es el importante:
- *
- *  1. Se dicta y se recuerda. Un jugador que llama por telefono puede decir su
- *     usuario; "Juan427" se olvida apenas cierra la pantalla.
- *  2. NO CHOCA. En ganamos el nombre es unico en TODA la plataforma y esta
- *     saturada: el 2/9/2026 fallaron Juan676, Juan565, Juan557 y Martin109,
- *     cuatro de cuatro. El patron "Nombre + numeros" lo usa todo el mundo hace
- *     años; "hola + Nombre" no lo usa casi nadie.
+ *  "holaJuan847" en vez de "Juan427". El prefijo hace de espacio de nombres
+ *  propio (casi nadie usa "hola+Nombre"; "Nombre+numeros" esta agotado en la
+ *  plataforma: el 2/9/2026 fallaron Juan676, Juan565, Juan557 y Martin109,
+ *  cuatro de cuatro) y el sufijo de 3 digitos que va SIEMPRE (ver
+ *  alta_usuario_disponible) remata la unicidad: choque global practicamente
+ *  imposible = alta por el camino rapido, sin verificaciones lentas.
  */
 const ALTA_PREFIJO = 'hola';
 
@@ -234,16 +232,20 @@ function alta_usuario_disponible(PDO $pdo, string $nombreCrudo, int $ronda = 0):
         $base = 'jugador' . $base;
     }
 
-    /* El prefijo va SIEMPRE, y los numeros SOLO si hacen falta.
+    /* El prefijo va SIEMPRE, y el sufijo numerico TAMBIEN -- desde el primer
+       nombre, no solo al reintentar.
 
-       `$ronda` es cuantas veces ya nos rechazaron este alta, y sube la entropia
-       de a poco: se empieza por el nombre mas lindo posible y solo se ensucia
-       cuando la plataforma obliga. Asi el caso normal -- que es el 99% -- se
-       lleva "holaJuan" y no "holaJuan8471".
+       Decision del dueño (6/9/2026): antes la primera ronda salia "limpia"
+       ("holaJuan") y los numeros aparecian recien cuando la plataforma
+       rechazaba. El precio de esa estetica era CARO: cada choque de nombre
+       (unico en TODA la plataforma, entre todos los agentes) disparaba la
+       maquinaria lenta -- verificar contra el listado del panel (~15-20s),
+       renombrar, reintentar -- y el jugador esperaba. Con "hola" + Nombre + 3
+       digitos al azar, el choque global es practicamente imposible: el alta
+       sale por el camino rapido SIEMPRE y nadie espera.
 
-           ronda 0     holaJuan
-           ronda 1-2   holaJuan + 2 digitos
-           ronda 3+    holaJuan + 4 digitos
+           ronda 0-2   holaJuan + 3 digitos   (holaJuan847)
+           ronda 3+    holaJuan + 4 digitos   (holaJuan8471)
 
        Idempotente con el prefijo: si el nombre YA empieza con el, no se vuelve
        a agregar. Sin esto, cada renombre lo apilaba ("holaholaJuan"), porque el
@@ -255,10 +257,8 @@ function alta_usuario_disponible(PDO $pdo, string $nombreCrudo, int $ronda = 0):
 
     for ($intento = 0; $intento < 50; $intento++) {
         $vuelta = $ronda + $intento;
-        if ($vuelta === 0) {
-            $candidato = $base;                          // holaJuan
-        } elseif ($vuelta <= 2) {
-            $candidato = $base . random_int(10, 99);      // holaJuan47
+        if ($vuelta <= 2) {
+            $candidato = $base . random_int(100, 999);    // holaJuan847
         } else {
             $candidato = $base . random_int(1000, 9999);  // holaJuan8471
         }
