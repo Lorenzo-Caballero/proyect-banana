@@ -434,7 +434,8 @@ function rl_estado_efectivo(string $estado, $venceEn): string
  * familiar. Opcional para no romper a ningun llamador viejo: sin el, esa
  * recarga simplemente no participa del desempate por nombre.
  */
-function rl_crear_recarga(PDO $pdo, string $usuario, int $coins, string $titular = ''): array
+function rl_crear_recarga(PDO $pdo, string $usuario, int $coins, string $titular = '',
+                         bool $usuarioConfiable = false): array
 {
     $usuario = trim($usuario);
     if ($usuario === '') {
@@ -456,19 +457,24 @@ function rl_crear_recarga(PDO $pdo, string $usuario, int $coins, string $titular
                     . number_format($maxCarga, 0, ',', '.') . ' fichas.'];
     }
 
-    // El usuario tiene que ser real: figura en el espejo `usuarios`, O hay un
-    // alta CREADA con ese nombre (`altas.estado='ok'`).
+    // El usuario tiene que ser real. Se da por real si:
+    //   - $usuarioConfiable: vino de una SESION verificada (el jugador esta
+    //     logueado -> existe, aunque el espejo `usuarios` no lo tenga aun); o
+    //   - figura en el espejo `usuarios`; o
+    //   - tiene un alta CREADA con ese nombre (`altas.estado='ok'`).
     //
-    // Lo segundo cubre al jugador RECIEN registrado: la cuenta ya existe en el
-    // panel de ganamos, pero el espejo `usuarios` lo pobla sync_usuarios en su
-    // proxima pasada -- que puede tardar, o estar caido. Sin este OR, una
-    // cuenta nueva no podia recargar hasta que el sync corriera, y si el sync
-    // estaba caido, NUNCA: el jugador pedia cargar, el bot fallaba con
-    // 'sin_usuario' y (por la regla del prompt) terminaba diciendo "te paso
-    // los datos" sin pasar nada. Pasó el 7/9/2026 con el sync caido.
-    $st = $pdo->prepare("SELECT id FROM usuarios WHERE username = ? LIMIT 1");
-    $st->execute([$usuario]);
-    $existe = (bool)$st->fetchColumn();
+    // El OR con la sesion y con `altas` cubre al jugador RECIEN registrado o
+    // logueado cuando el espejo esta ATRASADO O CAIDO (lo pobla sync_usuarios).
+    // Sin esto, un jugador logueado no podia recargar hasta la proxima pasada
+    // del sync -- y con el sync caido, NUNCA: pedia cargar, el bot fallaba con
+    // 'sin_usuario' y (por la regla del prompt) terminaba diciendo "te paso los
+    // datos" sin pasar nada, o inventando un CBU. Pasó el 7/9/2026.
+    $existe = $usuarioConfiable;
+    if (!$existe) {
+        $st = $pdo->prepare("SELECT id FROM usuarios WHERE username = ? LIMIT 1");
+        $st->execute([$usuario]);
+        $existe = (bool)$st->fetchColumn();
+    }
     if (!$existe) {
         try {
             $sa = $pdo->prepare("SELECT 1 FROM altas WHERE usuario = ? AND estado = 'ok' LIMIT 1");

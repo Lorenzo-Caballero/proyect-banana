@@ -678,6 +678,11 @@ try {
 // cuenta que no existe -- el error mas caro de todo este flujo.
 $texto = chatbot_sin_credenciales($texto);
 
+/* Los datos de pago NUNCA los escribe el modelo (los inventa o los transcribe
+   mal). Se borran de su texto ACA; los reales los agrega el codigo abajo
+   (chatbot_bloque_pago). Va antes de ese bloque para no borrarse a si mismo. */
+$texto = chatbot_limpiar_datos_pago($texto);
+
 /* Los datos de pago los escribe el CODIGO, no el modelo (ver $pagoInfo).
    Va ACA, antes de partir el texto y de guardarlo: asi el bloque queda
    tambien en lo que el CRM archiva y en la notificacion, y el agente ve
@@ -861,6 +866,47 @@ function chatbot_sin_credenciales(string $texto): string
                 . 'Se filtraron (las entrega el widget al confirmarse el alta).');
     }
     return $limpio;
+}
+
+/**
+ * Borra los datos de pago que el modelo haya ESCRITO en su texto.
+ *
+ * Los datos de pago (CBU, alias, titular, monto) los pone SIEMPRE el codigo
+ * (chatbot_bloque_pago), exactos, nunca el modelo. Motivo doble:
+ *   1. El modelo los INVENTA cuando la recarga no se creo: el 7/9/2026 escribio
+ *      "CBU: 0123456789012345678901, Alias: ganamos123, Titular: Juan Perez" --
+ *      datos falsos. Un jugador que transfiere ahi pierde la plata.
+ *   2. Aun con los reales delante, transcribir un CBU de 22 digitos a mano
+ *      (que es lo que hace el modelo) puede cambiar un digito y desviar el pago.
+ *
+ * Por eso: se sacan del texto del modelo las lineas "CBU/CVU/Alias/Titular: ..."
+ * y cualquier tira larga de digitos (un CBU). Si de verdad hay una recarga, el
+ * codigo agrega los datos buenos abajo; si no la hay, no queda ningun dato
+ * inventado en pantalla.
+ */
+function chatbot_limpiar_datos_pago(string $texto): string
+{
+    // 1. Lineas etiquetadas: "CBU: ...", "CVU = ...", "Alias: ...", "Titular: ...".
+    $rx1 = '/^[^\r\n]*(?:cbu|cvu|alias|titular)[^\S\r\n]*[:=][^\r\n]*$/imu';
+    $out = preg_replace($rx1, '', $texto);
+    if ($out === null) { return $texto; }   // regex fallo: mejor el original
+
+    // 2. Tira larga de digitos (un CBU/CVU son 22; con puntos/espacios/guiones
+    //    intercalados). 16+ para agarrar tarjetas tambien. No toca montos ni
+    //    numeros de operacion, que son mas cortos.
+    $rx2 = '/\d[\d.\s\-]{15,}\d/u';
+    $out2 = preg_replace($rx2, '', $out);
+    if ($out2 !== null) { $out = $out2; }
+
+    // Limpiar los huecos que dejan las lineas borradas.
+    $out = preg_replace("/[^\S\r\n]*\r?\n[^\S\r\n]*(?:\r?\n[^\S\r\n]*){2,}/u", "\n\n", $out);
+    $out = trim((string)$out);
+
+    if ($out !== trim($texto)) {
+        error_log('chatbot: el modelo escribio datos de pago en el texto. Se '
+                . 'filtraron (los pone el codigo, exactos, o no van si no hay recarga).');
+    }
+    return $out;
 }
 
 function chatbot_partir(string $texto): array
@@ -1404,8 +1450,15 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
                 'error' => (string)($r['cuerpo']['error'] ?? 'No se pudo crear la cuenta.')];
     }
     if ($nombre === 'crear_recarga') {
-        return rl_crear_recarga($pdo, (string)($args['usuario'] ?? ''), (int)($args['coins'] ?? 0),
-                                 (string)($args['titular'] ?? ''));
+        // La sesion MANDA, igual que en fichas/retiro: un jugador logueado es
+        // real aunque el espejo `usuarios` todavia no lo tenga. El 'usuario'
+        // del modelo solo se usa en el flujo anonimo. El ultimo parametro dice
+        // "este usuario es de confianza" (vino de una sesion verificada): asi
+        // rl_crear_recarga no lo rechaza por no estar en el espejo caido.
+        $u = $usuarioSesion !== '' ? $usuarioSesion : trim((string)($args['usuario'] ?? ''));
+        return rl_crear_recarga($pdo, $u, (int)($args['coins'] ?? 0),
+                                (string)($args['titular'] ?? ''),
+                                $usuarioSesion !== '' && $sesionVerificada);
     }
     if ($nombre === 'consultar_recarga') {
         $ref = (string)($args['referencia_o_usuario'] ?? $args['referencia'] ?? $args['usuario'] ?? '');
