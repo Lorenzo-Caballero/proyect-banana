@@ -1381,6 +1381,9 @@
   .pb-tab .ico{width:12px;height:12px;opacity:.75}
   .pb-tab-pausado{opacity:.55}
   .pb-tab-agregar{background:transparent;border:1px dashed var(--line);color:var(--muted)}
+  .pb-tab-sep{align-self:center;margin:0 2px 0 8px;font-size:10.5px;font-weight:700;
+    text-transform:uppercase;letter-spacing:.06em;color:var(--muted);opacity:.7}
+  .pb-tab-lp.on{background:var(--violetSoft);border-color:var(--violet);color:var(--violet2)}
   .pb-tab-agregar:hover{border-color:var(--violet);color:var(--violet2)}
 
   .pb-landing-row{display:flex;align-items:center;gap:12px;padding:12px 16px;margin:0 20px 14px;
@@ -2768,6 +2771,11 @@
         de Meta con su propio pixel). Al crearlo, el sistema te da un link
         distinto para pasarle a esa persona — así sus resultados no se
         mezclan con los tuyos ni con los de otro publicista.
+        <br><br>
+        Y si creaste <b>Landings</b> propias, cada una aparece como una
+        solapa más acá abajo (a la derecha): tocala para ver cuántos
+        registros y cargas trajo esa página. Las landings no tienen gasto ni
+        pixel propio, así que el CPA y el ROAS ahí van en "—".
       </div>
 
       <!-- Tabs de publicistas: cada uno es una landing propia, opcionalmente
@@ -7853,6 +7861,18 @@
   let pbRangoActual = null;
   let pbPublicistas = [];
   let pbActivoId = null;
+  // Segmento landing seleccionado (slug) o null = estamos mirando un publicista.
+  // El embudo se puede ver por publicista O por landing del CRM (lp.html);
+  // ver publicidad_seg_norm() en el backend.
+  let pbLandings = [];
+  let pbLandingSel = null;   // {slug, nombre, activa} o null
+
+  // Los parametros de segmento para las 3 consultas (embudo/dia/export).
+  function pbSegParams(){
+    return pbLandingSel ? { landing: pbLandingSel.slug }
+                        : { publicista_id: pbActivoId };
+  }
+  function pbHaySel(){ return !!pbLandingSel || !!pbActivoId; }
 
   async function pbFetch(url, options){
     const opts = Object.assign({}, options || {});
@@ -7955,18 +7975,39 @@
     if(!d.ok){ toast(d.error || "Error al cargar publicistas"); return; }
     pbPublicistas = d.publicistas || [];
 
-    if(!pbPublicistas.length){
-      $("#pbTabs").innerHTML = '<span style="color:var(--muted);font-size:13px">Todavía no hay publicistas.</span>'
+    // Las landings del CRM (lp.html) también se miran acá, como tabs aparte.
+    // Best-effort: si la lista falla, seguimos solo con los publicistas.
+    try{
+      const r  = await apiFetch(API_LP + "?accion=listar");
+      const dl = await r.json();
+      pbLandings = (dl.ok && dl.landings) ? dl.landings : [];
+    }catch(e){ pbLandings = []; }
+
+    if(!pbPublicistas.length && !pbLandings.length){
+      $("#pbTabs").innerHTML = '<span style="color:var(--muted);font-size:13px">Todavía no hay publicistas ni landings.</span>'
         + ' <button class="pb-tab pb-tab-agregar" id="pbTabAgregarVacio" type="button">+ Agregar el primero</button>';
       $("#pbTabAgregarVacio").addEventListener("click", pbAbrirModalNuevo);
       $("#pbLandingRow").style.display = "none";
-      pbActivoId = null;
+      pbActivoId = null; pbLandingSel = null;
       pbLimpiarEmbudo();
       return;
     }
 
-    if(!pbActivoId || !pbPublicistas.some(p=>p.id===pbActivoId)){
-      pbActivoId = pbPublicistas[0].id;
+    // Si la landing seleccionada ya no existe, se suelta.
+    if(pbLandingSel && !pbLandings.some(l=>l.slug===pbLandingSel.slug)){
+      pbLandingSel = null;
+    }
+    // Selección por defecto: un publicista si hay; si no, la primera landing.
+    if(!pbLandingSel){
+      if(pbPublicistas.length){
+        if(!pbActivoId || !pbPublicistas.some(p=>p.id===pbActivoId)){
+          pbActivoId = pbPublicistas[0].id;
+        }
+      }else{
+        pbActivoId = null;
+        const l = pbLandings[0];
+        pbLandingSel = { slug: l.slug, nombre: l.nombre, activa: !!l.activa };
+      }
     }
     pbPintarTabs();
     pbPintarLandingRow();
@@ -7975,20 +8016,35 @@
   }
 
   function pbPintarTabs(){
-    $("#pbTabs").innerHTML = pbPublicistas.map(p=>
-      `<button class="pb-tab ${p.id===pbActivoId?"on":""} ${p.activo?"":"pb-tab-pausado"}" data-id="${p.id}" type="button">${esc(p.nombre)}${p.activo?"":ico("pausa")}</button>`
+    let html = pbPublicistas.map(p=>
+      `<button class="pb-tab ${(!pbLandingSel && p.id===pbActivoId)?"on":""} ${p.activo?"":"pb-tab-pausado"}" data-id="${p.id}" type="button">${esc(p.nombre)}${p.activo?"":ico("pausa")}</button>`
     ).join("") + '<button class="pb-tab pb-tab-agregar" id="pbTabAgregar" type="button">+ Agregar</button>';
+
+    // Las landings del CRM, separadas de los publicistas. Son OTRO eje: acá se
+    // ve QUÉ página de promo trajo al jugador (por altas.origen), no quién.
+    if(pbLandings.length){
+      html += '<span class="pb-tab-sep">Landings</span>' + pbLandings.map(l=>
+        `<button class="pb-tab pb-tab-lp ${(pbLandingSel && pbLandingSel.slug===l.slug)?"on":""} ${l.activa?"":"pb-tab-pausado"}" data-slug="${esc(l.slug)}" type="button">${esc(l.nombre)}${l.activa?"":ico("pausa")}</button>`
+      ).join("");
+    }
+    $("#pbTabs").innerHTML = html;
 
     document.querySelectorAll("#pbTabs .pb-tab[data-id]").forEach(btn=>{
       btn.addEventListener("click", ()=>{
         pbActivoId = parseInt(btn.getAttribute("data-id"), 10);
-        pbPintarTabs();
-        pbPintarLandingRow();
-        pbCargarEmbudo();
-        pbCargarDiaPorDia();
+        pbLandingSel = null;
+        pbPintarTabs(); pbPintarLandingRow(); pbCargarEmbudo(); pbCargarDiaPorDia();
       });
     });
-    $("#pbTabAgregar").addEventListener("click", pbAbrirModalNuevo);
+    document.querySelectorAll("#pbTabs .pb-tab[data-slug]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const l = pbLandings.find(x=>x.slug===btn.getAttribute("data-slug"));
+        pbLandingSel = l ? { slug: l.slug, nombre: l.nombre, activa: !!l.activa } : null;
+        pbPintarTabs(); pbPintarLandingRow(); pbCargarEmbudo(); pbCargarDiaPorDia();
+      });
+    });
+    const add = $("#pbTabAgregar");
+    if(add) add.addEventListener("click", pbAbrirModalNuevo);
   }
 
   function pbPublicistaActivo(){
@@ -7996,6 +8052,30 @@
   }
 
   function pbPintarLandingRow(){
+    // Segmento landing: mostramos su link lp.html y aclaramos que se edita en
+    // la sección Landings. Los controles de publicista (pixel, pausar, gasto)
+    // no aplican -- una landing no es una cuenta de anuncios.
+    if(pbLandingSel){
+      $("#pbLandingRow").style.display = "flex";
+      $("#pbLandingNombre").textContent = pbLandingSel.nombre + (pbLandingSel.activa ? "" : " (pausada)");
+      $("#pbLandingNombre").onclick = null;
+      $("#pbLandingNombre").style.cursor = "default";
+      $("#pbLandingNombre").title = "";
+      const urlLp = lpUrlPublica(pbLandingSel.slug);
+      $("#pbLandingUrl").textContent = urlLp;
+      $("#pbPixelEstado").textContent = "se edita en Landings";
+      $("#pbPixelEstado").className = "pb-pixel-estado";
+      $("#pbBtnCopiar").onclick = async ()=>{
+        try{ await navigator.clipboard.writeText(urlLp); toast("Link copiado"); }
+        catch(e){ toast(urlLp); }
+      };
+      $("#pbBtnPausar").style.display = "none";
+      const gLp = $("#pbBtnCargarGasto"); if(gLp) gLp.style.display = "none";
+      return;
+    }
+    // Publicista: todos los controles vuelven a la vista.
+    $("#pbBtnPausar").style.display = "";
+    const gPub = $("#pbBtnCargarGasto"); if(gPub) gPub.style.display = "";
     const p = pbPublicistaActivo();
     if(!p){ $("#pbLandingRow").style.display = "none"; return; }
     $("#pbLandingRow").style.display = "flex";
@@ -8168,10 +8248,10 @@
   });
 
   async function pbCargarEmbudo(){
-    if(!pbActivoId || !pbRangoActual) return;
+    if(!pbHaySel() || !pbRangoActual) return;
     let d;
     try{
-      d = await pbGetJson({accion:"embudo", publicista_id: pbActivoId, desde: pbRangoActual.desde, hasta: pbRangoActual.hasta});
+      d = await pbGetJson({accion:"embudo", ...pbSegParams(), desde: pbRangoActual.desde, hasta: pbRangoActual.hasta});
     }catch(e){ return; }
     if(!d.ok){ toast(d.error || "Error al cargar el embudo"); return; }
 
@@ -8217,10 +8297,10 @@
   }
 
   async function pbCargarDiaPorDia(){
-    if(!pbActivoId || !pbRangoActual) return;
+    if(!pbHaySel() || !pbRangoActual) return;
     let d;
     try{
-      d = await pbGetJson({accion:"dia_por_dia", publicista_id: pbActivoId, desde: pbRangoActual.desde, hasta: pbRangoActual.hasta});
+      d = await pbGetJson({accion:"dia_por_dia", ...pbSegParams(), desde: pbRangoActual.desde, hasta: pbRangoActual.hasta});
     }catch(e){ return; }
     if(!d.ok){ return; }
     const dias = d.dias || [];
@@ -8287,14 +8367,14 @@
 
   // ---------- exportar (todo el reporte del publicista activo, para IA) ----------
   async function pbExportarJson(){
-    if(!pbActivoId){ toast("Elegí un publicista primero"); return; }
+    if(!pbHaySel()){ toast("Elegí un publicista o una landing primero"); return; }
     if(!pbRangoActual){ toast("Elegí un período primero"); return; }
     const btn = $("#pbBtnExportar"); const txt = btn.textContent;
     btn.disabled = true; btn.innerHTML = '<span class="sp"></span> Generando…';
     let d;
     try{
       d = await pbGetJson({
-        accion: "export_json", publicista_id: pbActivoId,
+        accion: "export_json", ...pbSegParams(),
         desde: pbRangoActual.desde, hasta: pbRangoActual.hasta,
       });
     }catch(e){ btn.disabled = false; btn.textContent = txt; return; }

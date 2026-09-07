@@ -459,8 +459,48 @@ function publicidad_sql_cargas(): string
  * creo la cuenta. Un jugador que se registro el mes pasado y carga hoy cuenta
  * como carga de HOY, no arrastra el registro viejo al reporte de hoy.
  */
-function publicidad_metricas(PDO $pdo, int $publicistaId, string $desde, string $hasta): array
+/**
+ * UN SEGMENTO del embudo. El reporte se puede mirar por dos ejes distintos, y
+ * son preguntas distintas:
+ *
+ *   publicista -> QUIEN te trajo al jugador (una persona, con su pixel y su
+ *                 link registro.html?pub=<slug>). Se filtra por altas.publicista_id.
+ *   landing    -> QUE pagina de promo vio (lp.html?l=<slug>, modulo Landings).
+ *                 Se filtra por altas.origen = 'lp:<slug>'.
+ *
+ * Los dos viven en la misma tabla `altas`, asi que el embudo es el mismo: lo
+ * unico que cambia es la columna del WHERE. publicidad_metricas() y
+ * publicidad_por_dia() aceptan cualquiera de los dos via estas dos funciones,
+ * y siguen aceptando un int pelado (= publicista) por compatibilidad.
+ */
+function publicidad_seg_norm(int|array $seg): array
 {
+    if (is_int($seg)) { return ['tipo' => 'publicista', 'id' => $seg]; }
+    if (($seg['tipo'] ?? '') === 'landing') {
+        return ['tipo' => 'landing', 'origen' => (string)($seg['origen'] ?? '')];
+    }
+    return ['tipo' => 'publicista', 'id' => (int)($seg['id'] ?? 0)];
+}
+
+/**
+ * La condicion SQL de un segmento y su valor a bindear. $alias es el de la
+ * tabla `altas` en esa consulta ('' para las que la nombran sin alias, 'a'
+ * para las que hacen JOIN altas a).
+ */
+function publicidad_seg_where(array $seg, string $alias = ''): array
+{
+    $p = $alias !== '' ? $alias . '.' : '';
+    if (($seg['tipo'] ?? '') === 'landing') {
+        return ["{$p}origen = ?", (string)$seg['origen']];
+    }
+    return ["{$p}publicista_id = ?", (int)($seg['id'] ?? 0)];
+}
+
+function publicidad_metricas(PDO $pdo, int|array $seg, string $desde, string $hasta): array
+{
+    $seg = publicidad_seg_norm($seg);
+    [$wReg, $vReg] = publicidad_seg_where($seg, '');   // registros: `altas` sin alias
+    [$wA,   $vA]   = publicidad_seg_where($seg, 'a');  // cargas/retencion: JOIN altas a
     $hastaFin = $hasta . ' 23:59:59';
     $desdeIni = $desde . ' 00:00:00';
 
@@ -468,9 +508,9 @@ function publicidad_metricas(PDO $pdo, int $publicistaId, string $desde, string 
     try {
         $st = $pdo->prepare(
             "SELECT COUNT(*) FROM altas
-              WHERE publicista_id = ? AND pedido_en BETWEEN ? AND ?"
+              WHERE $wReg AND pedido_en BETWEEN ? AND ?"
         );
-        $st->execute([$publicistaId, $desdeIni, $hastaFin]);
+        $st->execute([$vReg, $desdeIni, $hastaFin]);
         $registros = (int)$st->fetchColumn();
     } catch (Throwable $e) {
         error_log('publicidad_metricas (registros): ' . $e->getMessage());
@@ -515,10 +555,10 @@ function publicidad_metricas(PDO $pdo, int $publicistaId, string $desde, string 
                JOIN (SELECT usuario, MIN(cuando) AS primera
                        FROM ($union) t GROUP BY usuario) pr
                  ON pr.usuario = c.usuario
-              WHERE a.publicista_id = ?
+              WHERE $wA
                 AND c.cuando BETWEEN ? AND ?"
         );
-        $st->execute([$publicistaId, $desdeIni, $hastaFin]);
+        $st->execute([$vA, $desdeIni, $hastaFin]);
         $fila = $st->fetch();
         $primeras    = (int)($fila['primeras'] ?? 0);
         $totalCargas = (int)($fila['total_cargas'] ?? 0);
@@ -549,10 +589,10 @@ function publicidad_metricas(PDO $pdo, int $publicistaId, string $desde, string 
                JOIN (SELECT usuario, COUNT(*) AS total
                        FROM ($union) t GROUP BY usuario) rep
                  ON rep.usuario = c.usuario
-              WHERE a.publicista_id = ?
+              WHERE $wA
                 AND c.cuando BETWEEN ? AND ?"
         );
-        $st->execute([$publicistaId, $desdeIni, $hastaFin]);
+        $st->execute([$vA, $desdeIni, $hastaFin]);
         $fila = $st->fetch();
         $jugadoresConCarga    = (int)($fila['con_carga'] ?? 0);
         $jugadoresQueVolvieron = (int)($fila['volvieron'] ?? 0);
@@ -560,7 +600,12 @@ function publicidad_metricas(PDO $pdo, int $publicistaId, string $desde, string 
         error_log('publicidad_metricas (retencion): ' . $e->getMessage());
     }
 
-    $gasto = publicidad_gasto_periodo($pdo, $publicistaId, $desde, $hasta);
+    // El gasto se carga por PUBLICISTA (una landing es una pagina, no una
+    // cuenta de Meta). Por landing no hay gasto -> 0, y el front muestra el CPA
+    // y el ROAS como "-", que es lo correcto: no hay con que calcularlos.
+    $gasto = $seg['tipo'] === 'publicista'
+        ? publicidad_gasto_periodo($pdo, (int)$seg['id'], $desde, $hasta)
+        : 0.0;
 
     return [
         'registros'          => $registros,
@@ -580,8 +625,11 @@ function publicidad_metricas(PDO $pdo, int $publicistaId, string $desde, string 
  * simple y más claro que un UNION/JOIN de dos granularidades distintas en
  * SQL, y el rango de un reporte es corto (semanas, no años).
  */
-function publicidad_por_dia(PDO $pdo, int $publicistaId, string $desde, string $hasta): array
+function publicidad_por_dia(PDO $pdo, int|array $seg, string $desde, string $hasta): array
 {
+    $seg = publicidad_seg_norm($seg);
+    [$wReg, $vReg] = publicidad_seg_where($seg, '');
+    [$wA,   $vA]   = publicidad_seg_where($seg, 'a');
     $hastaFin = $hasta . ' 23:59:59';
     $desdeIni = $desde . ' 00:00:00';
 
@@ -595,10 +643,10 @@ function publicidad_por_dia(PDO $pdo, int $publicistaId, string $desde, string $
         $st = $pdo->prepare(
             "SELECT DATE(pedido_en) AS f, COUNT(*) AS n
                FROM altas
-              WHERE publicista_id = ? AND pedido_en BETWEEN ? AND ?
+              WHERE $wReg AND pedido_en BETWEEN ? AND ?
               GROUP BY DATE(pedido_en)"
         );
-        $st->execute([$publicistaId, $desdeIni, $hastaFin]);
+        $st->execute([$vReg, $desdeIni, $hastaFin]);
         foreach ($st->fetchAll() as $fila) {
             $f = (string)$fila['f'];
             if (isset($porDia[$f])) { $porDia[$f]['registros'] = (int)$fila['n']; }
@@ -622,11 +670,11 @@ function publicidad_por_dia(PDO $pdo, int $publicistaId, string $desde, string $
                JOIN (SELECT usuario, MIN(cuando) AS primera
                        FROM ($union) t GROUP BY usuario) pr
                  ON pr.usuario = c.usuario
-              WHERE a.publicista_id = ?
+              WHERE $wA
                 AND c.cuando BETWEEN ? AND ?
               GROUP BY DATE(c.cuando)"
         );
-        $st->execute([$publicistaId, $desdeIni, $hastaFin]);
+        $st->execute([$vA, $desdeIni, $hastaFin]);
         foreach ($st->fetchAll() as $fila) {
             $f = (string)$fila['f'];
             if (isset($porDia[$f])) {
@@ -638,9 +686,12 @@ function publicidad_por_dia(PDO $pdo, int $publicistaId, string $desde, string $
         error_log('publicidad_por_dia (cargas): ' . $e->getMessage());
     }
 
-    foreach (publicidad_gasto_dias($pdo, $publicistaId, $desde, $hasta) as $g) {
-        $f = (string)$g['fecha'];
-        if (isset($porDia[$f])) { $porDia[$f]['gasto'] = round((float)$g['monto'], 2); }
+    // El gasto es por publicista (ver publicidad_metricas). Por landing no hay.
+    if ($seg['tipo'] === 'publicista') {
+        foreach (publicidad_gasto_dias($pdo, (int)$seg['id'], $desde, $hasta) as $g) {
+            $f = (string)$g['fecha'];
+            if (isset($porDia[$f])) { $porDia[$f]['gasto'] = round((float)$g['monto'], 2); }
+        }
     }
 
     // Mas reciente primero, como en el mockup.

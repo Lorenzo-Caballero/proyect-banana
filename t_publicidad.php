@@ -57,6 +57,13 @@ function alta(PDO $pdo, string $u): void {
          VALUES (?, 'ok', ?, ?)"
     )->execute([$u, PUB_ID, DIA . ' 09:00:00']);
 }
+/** Alta que vino de una LANDING del CRM (origen lp:<slug>), sin publicista. */
+function altaLp(PDO $pdo, string $u, string $slug): void {
+    $pdo->prepare(
+        "INSERT INTO altas (usuario, estado, origen, pedido_en)
+         VALUES (?, 'ok', ?, ?)"
+    )->execute([$u, 'lp:' . $slug, DIA . ' 09:00:00']);
+}
 /** Camino B: la recarga por transferencia que arranca en el chatbot. */
 function recarga(PDO $pdo, string $u, float $monto, string $hora): void
 {
@@ -163,6 +170,51 @@ echo "\n=== 5. El rango de fechas se aplica sobre la carga, no sobre el alta ===
    lo que ya hacia el camino B y no puede cambiar al sumar el otro. */
 $m = publicidad_metricas($pdo, PUB_ID, '2026-09-01', '2026-09-02');
 chequear('fuera del rango no aparece', (int)$m['cargas_totales'] === 0, json_encode($m));
+
+// ===========================================================================
+echo "
+=== 6. El embudo POR LANDING (origen lp:<slug>) ===
+";
+
+/* LA INCONGRUENCIA QUE ESTO CIERRA (7/9/2026): se podian crear landings en el
+   CRM (lp.html?l=<slug>) pero sus estadisticas no se veian en NINGUN lado. El
+   embudo filtraba solo por publicista_id, y una landing marca sus altas con
+   origen='lp:<slug>', sin publicista. Los registros existian y eran invisibles. */
+limpiar($pdo);
+altaLp($pdo, 'tpublp1', 'promo');
+peticion($pdo, 'tpublp1', 1500, '10:00:00');   // cargo por el boton
+altaLp($pdo, 'tpublp2', 'promo');              // se registro y no cargo
+
+$m = publicidad_metricas($pdo, ['tipo' => 'landing', 'origen' => 'lp:promo'], DIA, DIA);
+chequear('la landing cuenta sus registros',   (int)$m['registros'] === 2, json_encode($m));
+chequear('y sus cargas',                       (int)$m['cargas_totales'] === 1, json_encode($m));
+chequear('y su depositado',                    (float)$m['depositado'] === 1500.0, json_encode($m));
+chequear('sin gasto: una landing no tiene cuenta de anuncios',
+         (float)$m['gasto'] === 0.0, json_encode($m));
+
+/* AISLAMIENTO en las dos direcciones: la landing no se roba lo del publicista,
+   ni el publicista lo de la landing. Si el WHERE del segmento estuviera mal,
+   uno veria los registros del otro. */
+alta($pdo, 'tpubdelpub');                       // este es del publicista PUB_ID
+peticion($pdo, 'tpubdelpub', 5000, '11:00:00');
+
+$mLp  = publicidad_metricas($pdo, ['tipo' => 'landing', 'origen' => 'lp:promo'], DIA, DIA);
+$mPub = publicidad_metricas($pdo, PUB_ID, DIA, DIA);
+chequear('la landing NO ve la carga del publicista',
+         (float)$mLp['depositado'] === 1500.0, json_encode($mLp));
+chequear('el publicista NO ve los registros de la landing',
+         (int)$mPub['registros'] === 1, json_encode($mPub));
+
+/* Y el int pelado sigue significando publicista (compatibilidad). */
+$mInt = publicidad_metricas($pdo, PUB_ID, DIA, DIA);
+chequear('un int sigue siendo el publicista de siempre',
+         (int)$mInt['registros'] === (int)$mPub['registros']);
+
+/* El grafico por dia tambien respeta el segmento landing. */
+$dias = publicidad_por_dia($pdo, ['tipo' => 'landing', 'origen' => 'lp:promo'], DIA, DIA);
+chequear('por-dia de la landing cuadra con el total',
+         (int)($dias[0]['registros'] ?? -1) === 2
+         && (float)($dias[0]['depositado'] ?? -1) === 1500.0, json_encode($dias[0] ?? []));
 
 limpiar($pdo);
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);

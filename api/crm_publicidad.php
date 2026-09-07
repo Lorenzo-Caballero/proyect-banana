@@ -37,6 +37,8 @@ require __DIR__ . '/crm_lib.php';
 require __DIR__ . '/crm_auth.php';
 require __DIR__ . '/publicidad_lib.php';
 require __DIR__ . '/meta_lib.php';
+$landingsLib = __DIR__ . '/landings_lib.php';
+if (is_file($landingsLib)) { require_once $landingsLib; }
 
 $operador = exigir_operador();
 
@@ -46,6 +48,29 @@ function salir($data, int $code = 200): void
     http_response_code($code);
     echo json_encode($data, JSON_UNESCAPED_UNICODE);
     exit;
+}
+
+/**
+ * El SEGMENTO que se esta mirando, desde $_GET. Dos ejes (ver
+ * publicidad_seg_norm en publicidad_lib):
+ *   ?landing=<slug>       -> una landing del CRM (lp.html). Filtra por origen.
+ *   ?publicista_id=<id>   -> un publicista. Como siempre.
+ * Landing tiene prioridad si vienen los dos. Corta con 400 si no viene ninguno.
+ */
+function pub_segmento(): array
+{
+    $landing = trim((string)($_GET['landing'] ?? ''));
+    if ($landing !== '') {
+        if (!preg_match('/^[a-z0-9-]{1,24}$/', $landing)) {
+            salir(['ok' => false, 'error' => 'Landing inválida'], 400);
+        }
+        return ['tipo' => 'landing', 'origen' => 'lp:' . $landing, 'slug' => $landing];
+    }
+    $pid = (int)($_GET['publicista_id'] ?? 0);
+    if ($pid <= 0) {
+        salir(['ok' => false, 'error' => 'Falta publicista_id o landing'], 400);
+    }
+    return ['tipo' => 'publicista', 'id' => $pid];
 }
 
 /** Valida desde/hasta de $_GET (YYYY-MM-DD). Corta la ejecución si es inválido. */
@@ -201,13 +226,10 @@ if ($metodo === 'GET') {
         }
 
         if ($accion === 'embudo') {
-            $publicistaId = (int)($_GET['publicista_id'] ?? 0);
-            if ($publicistaId <= 0) {
-                salir(['ok' => false, 'error' => 'Falta publicista_id'], 400);
-            }
+            $seg = pub_segmento();
             [$desde, $hasta] = pub_rango_fechas();
 
-            $m = publicidad_metricas($pdo, $publicistaId, $desde, $hasta);
+            $m = publicidad_metricas($pdo, $seg, $desde, $hasta);
             $conversion = $m['registros'] > 0 ? round($m['primeras_cargas'] / $m['registros'] * 100, 1) : null;
             $cargasPorJugador = $m['primeras_cargas'] > 0 ? round($m['cargas_totales'] / $m['primeras_cargas'], 2) : null;
             $ticketPromedio   = $m['cargas_totales'] > 0 ? round($m['depositado'] / $m['cargas_totales'], 2) : null;
@@ -217,13 +239,18 @@ if ($metodo === 'GET') {
             // Visitas de página: solo si el publicista tiene su propio pixel
             // Y credenciales de Insights cargadas -- sin eso, null (el front
             // muestra "—", no rompe nada). Ver meta_insights_pageviews().
+            // Visitas de pagina salen de Meta Insights, que es por publicista
+            // (su cuenta de anuncios). Una landing no tiene eso -> visitas null,
+            // el front muestra "-".
             $visitas = null;
             $convVisitasRegistros = null;
-            $publicistaConInsights = publicidad_con_insights($pdo, $publicistaId);
-            if ($publicistaConInsights) {
-                $visitas = meta_insights_pageviews($publicistaConInsights, $desde, $hasta);
-                if ($visitas !== null && $visitas > 0) {
-                    $convVisitasRegistros = round($m['registros'] / $visitas * 100, 1);
+            if ($seg['tipo'] === 'publicista') {
+                $publicistaConInsights = publicidad_con_insights($pdo, (int)$seg['id']);
+                if ($publicistaConInsights) {
+                    $visitas = meta_insights_pageviews($publicistaConInsights, $desde, $hasta);
+                    if ($visitas !== null && $visitas > 0) {
+                        $convVisitasRegistros = round($m['registros'] / $visitas * 100, 1);
+                    }
                 }
             }
 
@@ -242,12 +269,9 @@ if ($metodo === 'GET') {
         }
 
         if ($accion === 'dia_por_dia') {
-            $publicistaId = (int)($_GET['publicista_id'] ?? 0);
-            if ($publicistaId <= 0) {
-                salir(['ok' => false, 'error' => 'Falta publicista_id'], 400);
-            }
+            $seg = pub_segmento();
             [$desde, $hasta] = pub_rango_fechas();
-            salir(['ok' => true, 'dias' => publicidad_por_dia($pdo, $publicistaId, $desde, $hasta)]);
+            salir(['ok' => true, 'dias' => publicidad_por_dia($pdo, $seg, $desde, $hasta)]);
         }
 
         // Todo el reporte de un publicista en un solo JSON, pensado para
@@ -256,17 +280,26 @@ if ($metodo === 'GET') {
         // nombres de campo autoexplicativos, sin ids internos salvo los que
         // hacen falta para referenciar (publicista_id).
         if ($accion === 'export_json') {
-            $publicistaId = (int)($_GET['publicista_id'] ?? 0);
-            if ($publicistaId <= 0) {
-                salir(['ok' => false, 'error' => 'Falta publicista_id'], 400);
-            }
+            $seg = pub_segmento();
             [$desde, $hasta] = pub_rango_fechas();
-            $publicista = publicidad_por_id($pdo, $publicistaId);
-            if (!$publicista) {
-                salir(['ok' => false, 'error' => 'Publicista inexistente'], 404);
+
+            // De quien es el reporte: un publicista (con su id/slug) o una
+            // landing (con su slug). Se arma el mismo bloque 'fuente' para los dos.
+            if ($seg['tipo'] === 'landing') {
+                $lp = function_exists('landings_por_slug')
+                    ? landings_por_slug($pdo, $seg['slug'], false) : null;
+                $fuente = ['tipo' => 'landing', 'slug' => $seg['slug'],
+                           'nombre' => $lp['nombre'] ?? $seg['slug']];
+            } else {
+                $publicista = publicidad_por_id($pdo, (int)$seg['id']);
+                if (!$publicista) {
+                    salir(['ok' => false, 'error' => 'Publicista inexistente'], 404);
+                }
+                $fuente = ['tipo' => 'publicista', 'id' => $publicista['id'],
+                           'nombre' => $publicista['nombre'], 'slug' => $publicista['slug']];
             }
 
-            $m = publicidad_metricas($pdo, $publicistaId, $desde, $hasta);
+            $m = publicidad_metricas($pdo, $seg, $desde, $hasta);
             $conversion = $m['registros'] > 0 ? round($m['primeras_cargas'] / $m['registros'] * 100, 1) : null;
             $cargasPorJugador = $m['primeras_cargas'] > 0 ? round($m['cargas_totales'] / $m['primeras_cargas'], 2) : null;
             $ticketPromedio   = $m['cargas_totales'] > 0 ? round($m['depositado'] / $m['cargas_totales'], 2) : null;
@@ -275,16 +308,18 @@ if ($metodo === 'GET') {
 
             $visitas = null;
             $convVisitasRegistros = null;
-            $publicistaConInsights = publicidad_con_insights($pdo, $publicistaId);
-            if ($publicistaConInsights) {
-                $visitas = meta_insights_pageviews($publicistaConInsights, $desde, $hasta);
-                if ($visitas !== null && $visitas > 0) {
-                    $convVisitasRegistros = round($m['registros'] / $visitas * 100, 1);
+            if ($seg['tipo'] === 'publicista') {
+                $publicistaConInsights = publicidad_con_insights($pdo, (int)$seg['id']);
+                if ($publicistaConInsights) {
+                    $visitas = meta_insights_pageviews($publicistaConInsights, $desde, $hasta);
+                    if ($visitas !== null && $visitas > 0) {
+                        $convVisitasRegistros = round($m['registros'] / $visitas * 100, 1);
+                    }
                 }
             }
 
             salir(['ok' => true,
-                'publicista' => ['id' => $publicista['id'], 'nombre' => $publicista['nombre'], 'slug' => $publicista['slug']],
+                'fuente'     => $fuente,
                 'periodo'    => ['desde' => $desde, 'hasta' => $hasta],
                 'embudo'     => [
                     'visitas_pagina'          => $visitas,
@@ -302,7 +337,7 @@ if ($metodo === 'GET') {
                 ],
                 'rentabilidad' => pub_rentabilidad($m),
                 'gasto_del_periodo' => $m['gasto'],
-                'dia_por_dia'  => publicidad_por_dia($pdo, $publicistaId, $desde, $hasta),
+                'dia_por_dia'  => publicidad_por_dia($pdo, $seg, $desde, $hasta),
                 'generado_en'  => date('Y-m-d H:i:s'),
             ]);
         }
