@@ -562,7 +562,14 @@ $altaInfo = null;
    modelo se puede truncar o cambiar un digito, y ahi la plata del jugador se
    va a la cuenta de otro. Un dato bancario no lo puede tipear una IA. */
 $pagoInfo = null;
-$ejecutarTool = function (string $nombre, array $args) use ($pdo, &$usuarioDetectado, $usuarioCliente, $sesionVerificada, &$cargaInfo, &$altaInfo, &$pagoInfo, $sessionId): array {
+/* Si crear_recarga se intento y FALLO, el motivo real (fuera de rango, hay que
+   registrarse, etc.). Es la red de seguridad contra el peor sintoma del chat:
+   el modelo dice "te paso los datos" (la linea que el prompt le pide para que
+   el sistema agregue el pago abajo) pero la recarga no se creo, asi que no hay
+   nada que agregar y el jugador se queda esperando datos que no llegan. Con
+   esto, cuando no hay pago pero SI hubo un fallo, el motivo se agrega solo. */
+$recargaFallo = '';
+$ejecutarTool = function (string $nombre, array $args) use ($pdo, &$usuarioDetectado, $usuarioCliente, $sesionVerificada, &$cargaInfo, &$altaInfo, &$pagoInfo, &$recargaFallo, $sessionId): array {
     // Para crear_cuenta, el 'usuario' del argumento es un nombre DESEADO, no
     // una identidad: recien vale si el alta entra. Adoptarlo antes hacia que
     // un anonimo pidiendo un nombre ya OCUPADO se quedara con la conversacion
@@ -594,6 +601,13 @@ $ejecutarTool = function (string $nombre, array $args) use ($pdo, &$usuarioDetec
             'titular'   => (string)($res['titular'] ?? ''),
             'vence_min' => (int)($res['vence_min'] ?? 0),
         ];
+    }
+    // Recarga intentada y NO creada: guardar el motivo. `falta_titular` NO
+    // cuenta como fallo -- ahi el flujo sigue (el modelo pregunta el titular y
+    // reintenta), no es un callejon sin salida.
+    if ($nombre === 'crear_recarga' && empty($res['ok'])
+        && ($res['codigo'] ?? '') !== 'falta_titular') {
+        $recargaFallo = (string)($res['error'] ?? 'No se pudo crear la recarga.');
     }
     return $res;
 };
@@ -679,6 +693,22 @@ if ($pagoInfo) {
         // En su propio globo ([[MSG]]), mismo criterio que las credenciales
         // de una cuenta nueva: se copia y pega sin arrastrar la charla.
         $texto = rtrim($texto) . "\n[[MSG]]\n" . $bloque;
+    }
+} elseif ($recargaFallo !== '') {
+    /* RED DE SEGURIDAD: se intento crear una recarga, fallo, y NO hay datos de
+       pago que dar. El modelo pudo haber dicho igual "te paso los datos" (la
+       linea que el prompt le pide para el caso exitoso): sin esto, el jugador
+       se queda mirando una promesa vacia. Se agrega el motivo REAL en su propio
+       globo, para que sepa que hacer (registrarse, corregir el monto, etc.).
+       No se duplica si el modelo ya lo dijo: se compara por una parte estable
+       del mensaje de error. */
+    $yaLoDijo = false;
+    foreach (['no existe todavia', 'entre ', 'varias recargas pendientes',
+              'iniciar sesion', 'inicia sesion'] as $pista) {
+        if (mb_stripos($texto, $pista) !== false) { $yaLoDijo = true; break; }
+    }
+    if (!$yaLoDijo) {
+        $texto = rtrim($texto) . "\n[[MSG]]\n" . $recargaFallo;
     }
 }
 

@@ -456,10 +456,29 @@ function rl_crear_recarga(PDO $pdo, string $usuario, int $coins, string $titular
                     . number_format($maxCarga, 0, ',', '.') . ' fichas.'];
     }
 
-    // El usuario tiene que existir en el panel de ganamos (tabla usuarios).
+    // El usuario tiene que ser real: figura en el espejo `usuarios`, O hay un
+    // alta CREADA con ese nombre (`altas.estado='ok'`).
+    //
+    // Lo segundo cubre al jugador RECIEN registrado: la cuenta ya existe en el
+    // panel de ganamos, pero el espejo `usuarios` lo pobla sync_usuarios en su
+    // proxima pasada -- que puede tardar, o estar caido. Sin este OR, una
+    // cuenta nueva no podia recargar hasta que el sync corriera, y si el sync
+    // estaba caido, NUNCA: el jugador pedia cargar, el bot fallaba con
+    // 'sin_usuario' y (por la regla del prompt) terminaba diciendo "te paso
+    // los datos" sin pasar nada. Pasó el 7/9/2026 con el sync caido.
     $st = $pdo->prepare("SELECT id FROM usuarios WHERE username = ? LIMIT 1");
     $st->execute([$usuario]);
-    if (!$st->fetchColumn()) {
+    $existe = (bool)$st->fetchColumn();
+    if (!$existe) {
+        try {
+            $sa = $pdo->prepare("SELECT 1 FROM altas WHERE usuario = ? AND estado = 'ok' LIMIT 1");
+            $sa->execute([$usuario]);
+            $existe = (bool)$sa->fetchColumn();
+        } catch (Throwable $e) {
+            // Sin tabla `altas` (setup viejo): queda el chequeo de `usuarios`.
+        }
+    }
+    if (!$existe) {
         return ['ok' => false, 'codigo' => 'sin_usuario', 'error' =>
             "El usuario '$usuario' no existe todavia. Primero hay que registrarse en el juego."];
     }
