@@ -612,6 +612,28 @@ $ejecutarTool = function (string $nombre, array $args) use ($pdo, &$usuarioDetec
     return $res;
 };
 
+/* ============== ATAJO DETERMINISTA DE CARGA (sin modelo) ==============
+   Si el jugador LOGUEADO acaba de decir cuanto quiere cargar, la recarga se
+   crea aca directo y se responde sin pasar por la IA. El paso monto -> datos
+   es el paso con plata del chat: mas rapido asi (sin latencia de modelo), y
+   sobre todo INMUNE a que el modelo este caido o el respaldo ignore las
+   tools -- que es como el 7/9 el bot decia "te paso los datos" sin pasarlos.
+   Todo lo demas (dudas, retiros, soporte) sigue yendo al modelo. */
+$texto = null;
+if ($usuarioCliente !== '') {
+    try {
+        $texto = chatbot_atajo_carga($mensajes, $ejecutarTool);
+        if ($texto !== null && function_exists('gp_trace')) {
+            gp_trace('atajo carga: respondio sin modelo');   // TRACE TEMPORAL
+        }
+    } catch (Throwable $e) {
+        // El atajo es una mejora: si explota, el turno sigue por el modelo.
+        error_log('chatbot atajo carga: ' . $e->getMessage());
+        $texto = null;
+    }
+}
+
+if ($texto === null) {
 try {
     $texto = procesar_chat($mensajes, $llamarModelo, $ejecutarTool, MAX_RONDAS);
 } catch (Throwable $e) {
@@ -664,6 +686,7 @@ try {
     ], JSON_UNESCAPED_UNICODE);
     exit;
 }
+}   // cierra el `if ($texto === null)` del atajo de carga
 
 /* El modelo puede partir su respuesta en varios mensajes con [[MSG]]. Se usa
    al entregar usuario y contrasena de una cuenta recien creada: cada dato va
@@ -912,6 +935,121 @@ function chatbot_limpiar_datos_pago(string $texto): string
                 . 'filtraron (los pone el codigo, exactos, o no van si no hay recarga).');
     }
     return $out;
+}
+
+/**
+ * Detecta, SIN modelo, que el jugador acaba de decir cuanto quiere cargar.
+ *
+ * Devuelve ['coins' => N, 'titular' => ''] si el ultimo mensaje es el monto
+ * (numero pelado despues de que el bot pregunto "¿cuanto queres cargar?", o
+ * un "cargar 5000" explicito), ['coins' => N, 'titular' => X] si es la
+ * respuesta a nuestra pregunta del titular, o null si no es nada de eso.
+ *
+ * Es PURA (no toca base ni modelo) para poder probarla sola. La usa el atajo
+ * determinista de carga: el paso monto -> datos es EL paso con plata del chat
+ * y no puede depender de que el modelo llame la herramienta -- cuando la
+ * cuota del modelo principal se agota, el respaldo contesta texto pero IGNORA
+ * las tools, y el jugador recibia "te paso los datos" sin datos (7/9/2026,
+ * con capturas). Todo lo que no matchea aca sigue yendo al modelo.
+ */
+function chatbot_atajo_extraer(array $mensajes): ?array
+{
+    // Ultimo mensaje del jugador y ultima respuesta del bot antes de el.
+    $msgUser = '';
+    $msgBot  = '';
+    for ($i = count($mensajes) - 1; $i >= 0; $i--) {
+        $rol = $mensajes[$i]['role'] ?? '';
+        $con = is_string($mensajes[$i]['content'] ?? null) ? trim($mensajes[$i]['content']) : '';
+        if ($con === '') { continue; }
+        if ($msgUser === '' && $rol === 'user') { $msgUser = $con; continue; }
+        if ($msgUser !== '' && $rol === 'assistant') { $msgBot = $con; break; }
+    }
+    if ($msgUser === '' || mb_strlen($msgUser) > 80) {
+        return null;
+    }
+    $ul = mb_strtolower($msgUser);
+    // "retirar 500" o cualquier mencion de retiro NO es una carga.
+    if (mb_strpos($ul, 'retir') !== false) {
+        return null;
+    }
+
+    $monto = static function (string $s): int {
+        return (int)preg_replace('/\D+/', '', $s);
+    };
+
+    // Caso 1: "quiero cargar 5000" / "cargame 2.000" — explicito, no necesita
+    // contexto. La \D{0,12} tolera "cargar unas $" en el medio.
+    if (preg_match('/carg[aá-]*[a-zá]*\D{0,12}?(\d(?:[\d.,]*\d)?)/u', $ul, $m)) {
+        $n = $monto($m[1]);
+        if ($n > 0) { return ['coins' => $n, 'titular' => '']; }
+    }
+
+    // Caso 2: numero pelado ("500", "$5.000", "1000 fichas") — SOLO si el bot
+    // acaba de preguntar cuanto quiere cargar. Sin ese contexto un numero
+    // suelto puede ser un retiro o cualquier otra cosa.
+    if (preg_match('/^\$?\s*(\d{1,3}(?:[.,]\d{3})+|\d+)\s*(?:fichas?|pesos?|ars)?\s*\.?$/u', $ul, $m)
+        && preg_match('/cu[aá]nto.{0,60}carg|carg.{0,60}cu[aá]nto/iu', $msgBot)) {
+        $n = $monto($m[1]);
+        if ($n > 0) { return ['coins' => $n, 'titular' => '']; }
+    }
+
+    // Caso 3: el bot pregunto "¿a nombre de quien esta la cuenta...?" (nuestro
+    // texto del atajo, por falta_titular) y el jugador contesto un nombre.
+    // El monto se rescata del mensaje numerico/`cargar N` mas reciente.
+    if (preg_match('/a nombre de qui[eé]n/iu', $msgBot)
+        && !preg_match('/\d{3,}/', $msgUser)
+        && mb_strlen($msgUser) >= 2 && mb_strlen($msgUser) <= 60) {
+        for ($i = count($mensajes) - 1, $vistos = 0; $i >= 0 && $vistos < 10; $i--) {
+            if (($mensajes[$i]['role'] ?? '') !== 'user') { continue; }
+            $c = mb_strtolower(trim((string)($mensajes[$i]['content'] ?? '')));
+            $vistos++;
+            if ($c === $ul) { continue; }   // el propio mensaje del titular
+            if (preg_match('/^\$?\s*(\d{1,3}(?:[.,]\d{3})+|\d+)\s*(?:fichas?|pesos?|ars)?\s*\.?$/u', $c, $m)
+                || preg_match('/carg[aá-]*[a-zá]*\D{0,12}?(\d(?:[\d.,]*\d)?)/u', $c, $m)) {
+                $n = $monto($m[1]);
+                if ($n > 0) { return ['coins' => $n, 'titular' => $msgUser]; }
+            }
+        }
+    }
+
+    return null;
+}
+
+/**
+ * El atajo en si: crea la recarga y devuelve el texto de respuesta, o null si
+ * este turno no es "el jugador dijo el monto" y tiene que ir al modelo.
+ * $tool es el $ejecutarTool de siempre: al pasar por ahi se llenan $pagoInfo
+ * (el bloque con los datos y los botones de copiar) y $recargaFallo solos.
+ */
+function chatbot_atajo_carga(array $mensajes, callable $tool): ?string
+{
+    $intento = chatbot_atajo_extraer($mensajes);
+    if ($intento === null) {
+        return null;
+    }
+
+    $res = $tool('crear_recarga', [
+        'coins'   => (int)$intento['coins'],
+        'titular' => (string)$intento['titular'],
+    ]);
+
+    if (!empty($res['ok'])) {
+        if (!empty($res['link_pago'])) {
+            return 'Listo, pagá desde este link y las fichas se acreditan solas: '
+                 . $res['link_pago'];
+        }
+        // Los datos concretos (monto/alias/CBU/titular) los agrega el codigo
+        // abajo, via $pagoInfo -> chatbot_bloque_pago. Aca solo la linea humana.
+        return '¡Listo! Transferí el monto exacto a los datos de acá abajo. '
+             . 'Apenas llega la plata, las fichas se acreditan solas.';
+    }
+    if (($res['codigo'] ?? '') === 'falta_titular') {
+        // La pregunta EXACTA que chatbot_atajo_extraer reconoce en el turno
+        // siguiente (caso 3): no cambiarla sin cambiar aquella regex.
+        return '¿A nombre de quién está la cuenta desde la que vas a transferir? '
+             . 'Decime el nombre y te paso los datos.';
+    }
+    return (string)($res['error'] ?? 'No pude crear la recarga, probá de nuevo en un ratito.');
 }
 
 function chatbot_partir(string $texto): array
