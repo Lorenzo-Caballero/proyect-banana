@@ -50,6 +50,8 @@ function limpiar(PDO $pdo): void {
               'movimientos' => 'usuario'] as $tabla => $col) {
         $pdo->prepare("DELETE FROM $tabla WHERE $col LIKE 'tpub%'")->execute();
     }
+    try { $pdo->prepare("DELETE FROM landing_visitas WHERE slug LIKE 'tpub%'")->execute(); }
+    catch (Throwable $e) {}
 }
 function alta(PDO $pdo, string $u): void {
     $pdo->prepare(
@@ -215,6 +217,50 @@ $dias = publicidad_por_dia($pdo, ['tipo' => 'landing', 'origen' => 'lp:promo'], 
 chequear('por-dia de la landing cuadra con el total',
          (int)($dias[0]['registros'] ?? -1) === 2
          && (float)($dias[0]['depositado'] ?? -1) === 1500.0, json_encode($dias[0] ?? []));
+
+// ===========================================================================
+echo "
+=== 7. Pageview de una landing (contador propio, no Meta) ===
+";
+
+/* Las visitas de una landing NO pueden venir de Meta (Insights es por cuenta
+   de anuncios, no por URL): lp.html las cuenta en landing_visitas y el embudo
+   las lee de ahi. Ver la migracion 54. */
+limpiar($pdo);
+
+$verVisita = static function (string $slug, string $vid, string $dia) use ($pdo): void {
+    $pdo->prepare(
+        "INSERT IGNORE INTO landing_visitas (slug, visita_id, dia) VALUES (?, ?, ?)"
+    )->execute([$slug, $vid, $dia]);
+};
+
+/* Tres navegadores distintos entran el mismo dia -> 3 visitas. */
+$verVisita('tpubpromo', 'nav-a', DIA);
+$verVisita('tpubpromo', 'nav-b', DIA);
+$verVisita('tpubpromo', 'nav-c', DIA);
+chequear('cuenta las visitas de la landing',
+         publicidad_visitas_landing($pdo, 'tpubpromo', DIA, DIA) === 3);
+
+/* El mismo navegador recargando el mismo dia NO suma (dedup por la UNIQUE). */
+$verVisita('tpubpromo', 'nav-a', DIA);
+$verVisita('tpubpromo', 'nav-a', DIA);
+chequear('un F5 del mismo navegador no cuenta de nuevo',
+         publicidad_visitas_landing($pdo, 'tpubpromo', DIA, DIA) === 3);
+
+/* Pero si vuelve otro dia, si es otra visita. */
+$verVisita('tpubpromo', 'nav-a', '2026-09-04');
+chequear('volver otro dia SI cuenta como visita nueva',
+         publicidad_visitas_landing($pdo, 'tpubpromo', '2026-09-04', '2026-09-04') === 1);
+
+/* Cada landing cuenta lo suyo: las visitas de una no son de la otra. */
+$verVisita('tpubotra', 'nav-x', DIA);
+chequear('las visitas no se cruzan entre landings',
+         publicidad_visitas_landing($pdo, 'tpubotra', DIA, DIA) === 1
+         && publicidad_visitas_landing($pdo, 'tpubpromo', DIA, DIA) === 3);
+
+/* El rango se respeta: una visita de otro dia no entra en el de hoy. */
+chequear('la visita de otro dia no entra en el rango de hoy',
+         publicidad_visitas_landing($pdo, 'tpubpromo', DIA, DIA) === 3);
 
 limpiar($pdo);
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);

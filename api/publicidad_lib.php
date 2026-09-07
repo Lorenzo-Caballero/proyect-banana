@@ -460,6 +460,33 @@ function publicidad_sql_cargas(): string
  * como carga de HOY, no arrastra el registro viejo al reporte de hoy.
  */
 /**
+ * Visitas de UNA landing en [desde, hasta] (fechas 'Y-m-d'), del contador
+ * propio (landing_visitas, migración 54). El equivalente de
+ * meta_insights_pageviews() para las landings: Meta da las visitas de una
+ * cuenta de anuncios, no de una URL, asi que una landing las cuenta aca.
+ *
+ * `dia` se compara con las fechas del rango directo: se guarda con CURDATE()
+ * del server, el mismo reloj con el que se guardan las altas (pedido_en), asi
+ * que visitas y registros del embudo cuadran entre si.
+ *
+ * Devuelve null si falta la migración 54 -- el front muestra "-", igual que un
+ * publicista sin Insights, en vez de un 0 que pareceria "nadie entro".
+ */
+function publicidad_visitas_landing(PDO $pdo, string $slug, string $desde, string $hasta): ?int
+{
+    try {
+        $st = $pdo->prepare(
+            "SELECT COUNT(*) FROM landing_visitas
+              WHERE slug = ? AND dia BETWEEN ? AND ?"
+        );
+        $st->execute([$slug, $desde, $hasta]);
+        return (int)$st->fetchColumn();
+    } catch (Throwable $e) {
+        return null;
+    }
+}
+
+/**
  * UN SEGMENTO del embudo. El reporte se puede mirar por dos ejes distintos, y
  * son preguntas distintas:
  *

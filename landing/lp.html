@@ -440,6 +440,32 @@
         .then(data => { if (data && data.ok) aplicar(data.landing); })
         .catch(() => {});   // sin red: quedan los defaults del CSS, la pagina vive igual
 
+      /* Contar la visita -- SOLO la pagina real, nunca la preview del CRM (ahi
+         cada tecleo del operador contaria como visita). El pageview de una
+         landing no puede venir de Meta (Insights es por cuenta de anuncios, no
+         por URL): lo contamos nosotros, y el embudo lo lee (ver la migracion
+         54 y lp_visita.php).
+         El id se guarda en localStorage para deduplicar una visita por
+         navegador y por dia; el dedup real lo hace la UNIQUE de la tabla, esto
+         solo manda un id estable. Best-effort: si algo falla, la pagina ni se
+         entera. keepalive para que el ping sobreviva si navega enseguida. */
+      if (!PREVIEW){
+        try {
+          var vid = '';
+          try { vid = localStorage.getItem('gp_vid') || ''; } catch(e){}
+          if (!vid){
+            vid = Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+            try { localStorage.setItem('gp_vid', vid); } catch(e){}
+          }
+          fetch(BASE_API + '/lp_visita.php', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ slug: SLUG, vid: vid }),
+            keepalive: true
+          }).catch(function(){});
+        } catch(e){}
+      }
+
       /* El Pixel de Meta solo en la pagina real (en la preview del CRM cada
          tecleo del operador contaria como PageView de campaña). Es el mismo
          meta-pixel.js de las otras landings: pide el pixel_id a la API. */

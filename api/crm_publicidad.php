@@ -248,10 +248,13 @@ if ($metodo === 'GET') {
                 $publicistaConInsights = publicidad_con_insights($pdo, (int)$seg['id']);
                 if ($publicistaConInsights) {
                     $visitas = meta_insights_pageviews($publicistaConInsights, $desde, $hasta);
-                    if ($visitas !== null && $visitas > 0) {
-                        $convVisitasRegistros = round($m['registros'] / $visitas * 100, 1);
-                    }
                 }
+            } else {
+                // Landing: visitas del contador propio (no de Meta).
+                $visitas = publicidad_visitas_landing($pdo, $seg['slug'], $desde, $hasta);
+            }
+            if ($visitas !== null && $visitas > 0) {
+                $convVisitasRegistros = round($m['registros'] / $visitas * 100, 1);
             }
 
             salir(['ok' => true,
@@ -312,10 +315,12 @@ if ($metodo === 'GET') {
                 $publicistaConInsights = publicidad_con_insights($pdo, (int)$seg['id']);
                 if ($publicistaConInsights) {
                     $visitas = meta_insights_pageviews($publicistaConInsights, $desde, $hasta);
-                    if ($visitas !== null && $visitas > 0) {
-                        $convVisitasRegistros = round($m['registros'] / $visitas * 100, 1);
-                    }
                 }
+            } else {
+                $visitas = publicidad_visitas_landing($pdo, $seg['slug'], $desde, $hasta);
+            }
+            if ($visitas !== null && $visitas > 0) {
+                $convVisitasRegistros = round($m['registros'] / $visitas * 100, 1);
             }
 
             salir(['ok' => true,

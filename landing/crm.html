@@ -8260,8 +8260,9 @@
     // Resumen visual: (Visitas ->) Registros -> Primera carga -> Volvió a
     // cargar. Registros/Primera carga/Volvió son siempre JUGADORES (nunca
     // depósitos), para que la conversión entre pasos sea real y no la infle
-    // un jugador que cargó varias veces. Visitas solo si Meta lo devolvió
-    // (pixel propio + token de Insights cargados, ver meta_insights_pageviews).
+    // un jugador que cargó varias veces. Visitas: de Meta Insights para un
+    // publicista (pixel propio + token), o del contador propio para una landing
+    // (landing_visitas). null = sin dato -> se oculta el paso.
     const hayVisitas = m.visitas != null;
     $("#pfPasoVisitas").style.display = hayVisitas ? "" : "none";
     $("#pfFlechaVisitas").style.display = hayVisitas ? "" : "none";
