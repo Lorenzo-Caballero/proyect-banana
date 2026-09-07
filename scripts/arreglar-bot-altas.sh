@@ -154,9 +154,34 @@ if [ -f docker-compose.yml ] || [ -f compose.yml ]; then
   # -- se despliega y todo sigue exactamente igual, sin un solo error a la
   # vista. Pasó con el fast-path de altas: el código estaba en el VPS y el
   # contenedor seguía creando de a una por formulario.
-  docker compose up -d --build --force-recreate
+  #
+  # `--remove-orphans` es CRÍTICO: si un servicio se renombró (el creador se
+  # llamaba distinto antes), el contenedor viejo queda HUÉRFANO con su
+  # restart=unless-stopped y ningún deploy futuro lo toca -- sigue vivo
+  # sondeando la MISMA cola de altas. El 7/9/2026 eso puso DOS bots a competir:
+  # una alta caía en el nuevo (1s) y la siguiente en el viejo con la sesión
+  # rota (5 min de backoff). Sin dos bots nunca sobre la misma cola.
+  docker compose up -d --build --force-recreate --remove-orphans
 else
   echo "   (no hay docker-compose acá: recrealo como lo tengas montado)"
+fi
+
+# ---------------------------------------------------------------------------
+# Nunca puede haber DOS contenedores del bot sondeando la cola. --remove-orphans
+# limpia los del MISMO proyecto compose; pero un contenedor creado a mano (otro
+# nombre, otro proyecto) no lo toca. Se avisa para que se mate a mano.
+# ---------------------------------------------------------------------------
+vivos="$(docker ps --filter 'name=ganamos' --filter 'name=altas' --filter 'name=bot-' \
+           --format '{{.Names}}' 2>/dev/null | grep -viE 'ganamos-bot-creador|ganamos-bot-sync' || true)"
+if [ -n "$vivos" ]; then
+  echo >&2
+  echo "!! OJO: hay otros contenedores del bot vivos ademas de ganamos-bot-creador:" >&2
+  printf '     %s\n' $vivos >&2
+  echo "   Si alguno sondea altas_cola.php, esta COMPITIENDO por la cola y las" >&2
+  echo "   altas van a caer al azar en uno u otro. Matalo:" >&2
+  for c in $vivos; do
+    echo "     docker update --restart=no $c && docker rm -f $c" >&2
+  done
 fi
 
 echo

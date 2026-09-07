@@ -87,6 +87,19 @@ coincide con `git log --oneline -1` del repo del bot, lo que corre es viejo.
 `deploy.sh` avisa al final si el bot quedó atrás del remoto, para que no se
 publique la web nueva conversando con un bot de hace un mes.
 
+> **Nunca puede haber DOS contenedores del bot sondeando la cola de altas.**
+> Si hay dos, cada alta cae al azar en uno: si uno tiene la sesión rota, esa
+> mitad tarda minutos (backoff) y la otra sale en 1s — intermitencia
+> imposible de diagnosticar por síntoma. Pasó el 7/9/2026: al renombrar el
+> servicio del creador, el contenedor viejo quedó huérfano con su
+> `restart=unless-stopped` y siguió vivo compitiendo. `deploy-bot.sh` ahora
+> corre `docker compose up --remove-orphans` (limpia los del proyecto) y
+> verifica al final que quede un solo bot creando altas. Si renombrás o
+> migrás un servicio a mano, hacé `docker compose down` del proyecto viejo
+> ANTES del `up` — un huérfano con `unless-stopped` no lo toca ningún deploy.
+> Verificar: `docker ps -a --filter name=ganamos --format '{{.Names}} | {{.Status}}'`
+> — solo `ganamos-bot-creador` Up, ningún otro creador vivo.
+
 ### Migraciones de base de datos
 
 Hay dos carpetas de SQL, y se aplican distinto:
