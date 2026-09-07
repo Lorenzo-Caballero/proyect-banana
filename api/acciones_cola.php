@@ -101,18 +101,46 @@ try {
            accion se entrega igual con usuario_id en null y el worker decide
            que hacer -- perder la accion seria peor.
 
+           COALESCE con altas.id_ganamos (migracion 55): el id de ganamos se
+           captura al CREAR el jugador y queda en `altas`, asi que aunque el
+           espejo `usuarios` este atrasado o CAIDO, el deposito igual tiene el
+           id y se completa. Sin esto, un jugador recien creado no espejado
+           dejaba el deposito en 'revisar' con la plata ya cobrada.
+
            El COLLATE es obligatorio: `usuarios` esta en la collation por
-           defecto del servidor y `acciones_saldo` en utf8mb4_unicode_ci. */
-        $get = $pdo->prepare(
-            "SELECT a.id, a.usuario, a.tipo, a.monto, a.motivo, a.origen, a.creada_en,
-                    u.id AS usuario_id
-               FROM acciones_saldo a
-               LEFT JOIN usuarios u
-                      ON u.username = a.usuario COLLATE utf8mb4_unicode_ci
-              WHERE a.id IN ($marcas)
-              ORDER BY a.id ASC"
-        );
-        $get->execute($ids);
+           defecto del servidor y `acciones_saldo` en utf8mb4_unicode_ci. La
+           subconsulta a `altas` va en un try aparte (abajo) para degradar sola
+           si la migracion 55 no corrio. */
+        try {
+            $get = $pdo->prepare(
+                "SELECT a.id, a.usuario, a.tipo, a.monto, a.motivo, a.origen, a.creada_en,
+                        COALESCE(u.id, al.id_ganamos) AS usuario_id
+                   FROM acciones_saldo a
+                   LEFT JOIN usuarios u
+                          ON u.username = a.usuario COLLATE utf8mb4_unicode_ci
+                   LEFT JOIN altas al
+                          ON al.usuario = a.usuario COLLATE utf8mb4_unicode_ci
+                         AND al.estado = 'ok' AND al.id_ganamos IS NOT NULL
+                  WHERE a.id IN ($marcas)
+                  ORDER BY a.id ASC"
+            );
+            $get->execute($ids);
+        } catch (PDOException $e) {
+            // Sin la columna id_ganamos (migracion 55 sin correr): consulta
+            // vieja, solo por el espejo. No rompe.
+            error_log('acciones_cola: sin altas.id_ganamos (migracion 55). '
+                    . 'Deposito depende del sync: ' . $e->getMessage());
+            $get = $pdo->prepare(
+                "SELECT a.id, a.usuario, a.tipo, a.monto, a.motivo, a.origen, a.creada_en,
+                        u.id AS usuario_id
+                   FROM acciones_saldo a
+                   LEFT JOIN usuarios u
+                          ON u.username = a.usuario COLLATE utf8mb4_unicode_ci
+                  WHERE a.id IN ($marcas)
+                  ORDER BY a.id ASC"
+            );
+            $get->execute($ids);
+        }
 
         $datos = array_map(function ($r) {
             $r['id']    = (int)$r['id'];
