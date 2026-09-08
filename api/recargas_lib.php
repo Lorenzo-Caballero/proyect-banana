@@ -117,9 +117,9 @@ const RL_MARGEN_NOMBRE = 0.15;
 // editar este archivo en el VPS no sirve: el deploy lo pisa en cada corrida.
 // Cuenta del dueño (Cencosud). El colector escucha los avisos de esa cuenta
 // en nahuelherrera1997@gmail.com (carpeta "pagos", remitente de Cencosud con
-// DKIM) -- ver colector/config.json. Sin alias por ahora: vacio significa
-// "no compartir alias", nunca inventar uno.
-const RL_ALIAS   = '';
+// DKIM) -- ver colector/config.json. Si algun dia queda sin alias, va vacio:
+// vacio significa "no compartir alias", nunca inventar uno.
+const RL_ALIAS   = 'ganamos1010';
 const RL_CBU     = '0000184305000041593023';
 const RL_TITULAR = 'Herrera Facundo Nahuel';
 // ==========================================================================

@@ -620,7 +620,42 @@ $ejecutarTool = function (string $nombre, array $args) use ($pdo, &$usuarioDetec
    tools -- que es como el 7/9 el bot decia "te paso los datos" sin pasarlos.
    Todo lo demas (dudas, retiros, soporte) sigue yendo al modelo. */
 $texto = null;
-if ($usuarioCliente !== '') {
+
+/* ============== ATAJO DETERMINISTA DE DATOS DE COBRO (sin modelo) ==========
+   "cbu", "alias", "¿a donde transfiero?": el jugador quiere NUESTROS datos
+   para transferir. Al modelo no se le puede dejar esto: lo confunde con el
+   CBU DEL JUGADOR para retiros (paso: a un "cbu" suelto contesto "decime el
+   CBU donde queres recibir la plata"), y los datos tampoco los puede escribir
+   el (chatbot_limpiar_datos_pago se los borra). Aca se contesta directo con
+   la cuenta de cobro real -- rl_cuenta_cobro(), la misma que muestra el boton
+   CBU/ALIAS del widget (datos_cobro.php) -- via $pagoInfo, que es el unico
+   camino por el que los datos llegan exactos y con botones de copiar.
+   Anda tambien para anonimos: el dato es publico. */
+if (chatbot_pide_datos_cobro($mensajes)) {
+    try {
+        $cta = rl_cuenta_cobro();
+        if (trim((string)($cta['alias'] ?? '')) !== '' || trim((string)($cta['cbu'] ?? '')) !== '') {
+            $pagoInfo = [
+                'monto'     => '',
+                'alias'     => trim((string)($cta['alias'] ?? '')),
+                'cbu'       => trim((string)($cta['cbu'] ?? '')),
+                'titular'   => trim((string)($cta['titular'] ?? '')),
+                'vence_min' => 0,
+            ];
+            // "cuanto ... cargar" a proposito: es la pregunta que el atajo de
+            // carga (chatbot_atajo_extraer, caso 2) reconoce en el turno que
+            // viene, asi el monto pelado que conteste crea la recarga sin modelo.
+            $texto = 'Estos son los datos para transferir. Contame cuánto vas a '
+                   . 'cargar, así apenas llegue la plata se te acredita sola.';
+        }
+    } catch (Throwable $e) {
+        // El atajo es una mejora: si explota, el turno sigue por el modelo.
+        error_log('chatbot atajo datos cobro: ' . $e->getMessage());
+        $texto = null;
+    }
+}
+
+if ($texto === null && $usuarioCliente !== '') {
     try {
         $texto = chatbot_atajo_carga($mensajes, $ejecutarTool);
         if ($texto !== null && function_exists('gp_trace')) {
@@ -1050,6 +1085,61 @@ function chatbot_atajo_carga(array $mensajes, callable $tool): ?string
              . 'Decime el nombre y te paso los datos.';
     }
     return (string)($res['error'] ?? 'No pude crear la recarga, probá de nuevo en un ratito.');
+}
+
+/**
+ * Detecta, SIN modelo, que el jugador esta PIDIENDO nuestros datos de cobro
+ * ("cbu", "alias", "¿a donde transfiero?").
+ *
+ * PURA (no toca base ni modelo), como chatbot_atajo_extraer. Conservadora a
+ * proposito: un falso negativo va al modelo y no pasa nada; un falso positivo
+ * le tira el alias a alguien que estaba hablando de OTRA cosa -- en
+ * particular, del CBU suyo para un retiro. Por eso los descartes:
+ *   - menciona "retir" -> esta en el flujo de retiro, no pidiendo pagar;
+ *   - trae un numero largo, "mi cbu/alias" o "alias: x" / "alias es x" ->
+ *     esta DANDO un dato bancario, no pidiendolo;
+ *   - el bot recien le pregunto donde quiere RECIBIR la plata (retiro) ->
+ *     lo que diga es la respuesta a eso.
+ */
+function chatbot_pide_datos_cobro(array $mensajes): bool
+{
+    // Ultimo mensaje del jugador y ultima respuesta del bot antes de el,
+    // mismo recorrido que chatbot_atajo_extraer.
+    $msgUser = '';
+    $msgBot  = '';
+    for ($i = count($mensajes) - 1; $i >= 0; $i--) {
+        $rol = $mensajes[$i]['role'] ?? '';
+        $con = is_string($mensajes[$i]['content'] ?? null) ? trim($mensajes[$i]['content']) : '';
+        if ($con === '') { continue; }
+        if ($msgUser === '' && $rol === 'user') { $msgUser = $con; continue; }
+        if ($msgUser !== '' && $rol === 'assistant') { $msgBot = $con; break; }
+    }
+    if ($msgUser === '' || mb_strlen($msgUser) > 60) {
+        return false;
+    }
+    $ul = mb_strtolower($msgUser);
+
+    $nombraDato  = (bool)preg_match('/\b(cbu|cvu|alias)\b/u', $ul);
+    $preguntaDonde = (bool)preg_match(
+        '/d[oó]nde\s+(te\s+|se\s+)?(transfiero|deposito|mando|env[ií]o|paga|pago)|datos\s+para\s+(transferir|pagar|depositar)/u', $ul);
+    if (!$nombraDato && !$preguntaDonde) {
+        return false;
+    }
+    if (mb_strpos($ul, 'retir') !== false) {
+        return false;
+    }
+    // Esta dando un dato, no pidiendolo: un CBU/numero de operacion (tira de
+    // digitos), "mi alias", o "alias: pepe.mp" / "el alias es pepe.mp".
+    if (preg_match('/\d{6,}/', $ul)
+        || preg_match('/\bmi\s+(cbu|cvu|alias)\b/u', $ul)
+        || preg_match('/\b(cbu|cvu|alias)\b\s*(?::|es\s+\S)/u', $ul)) {
+        return false;
+    }
+    // El bot recien pidio el CBU DEL JUGADOR (destino del retiro).
+    if ($msgBot !== '' && preg_match('/recibir\s+la\s+plata|d[oó]nde\s+quer[eé]s\s+recibir/iu', $msgBot)) {
+        return false;
+    }
+    return true;
 }
 
 function chatbot_partir(string $texto): array
