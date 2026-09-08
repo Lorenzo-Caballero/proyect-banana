@@ -630,8 +630,18 @@ $texto = null;
    la cuenta de cobro real -- rl_cuenta_cobro(), la misma que muestra el boton
    CBU/ALIAS del widget (datos_cobro.php) -- via $pagoInfo, que es el unico
    camino por el que los datos llegan exactos y con botones de copiar.
-   Anda tambien para anonimos: el dato es publico. */
+
+   SOLO LOGUEADOS. A un anonimo se le pide que inicie sesion, no se le dan
+   los datos: una transferencia que llega sin saber de que jugador es no se
+   puede acreditar sola (cae a revision y la tiene que destrabar un agente).
+   Ademas, sin usuario crear_recarga devuelve 'sin_usuario', asi que darle
+   los datos seria invitarlo a transferir sin recarga posible. */
 if (chatbot_pide_datos_cobro($mensajes)) {
+    if ($usuarioCliente === '') {
+        $texto = 'Para pasarte los datos primero iniciá sesión, así la '
+               . 'transferencia queda a tu nombre y las fichas se te acreditan '
+               . 'solas. Entrá con el botón de acceso y volvé a escribirme.';
+    } else {
     try {
         $cta = rl_cuenta_cobro();
         if (trim((string)($cta['alias'] ?? '')) !== '' || trim((string)($cta['cbu'] ?? '')) !== '') {
@@ -652,6 +662,7 @@ if (chatbot_pide_datos_cobro($mensajes)) {
         // El atajo es una mejora: si explota, el turno sigue por el modelo.
         error_log('chatbot atajo datos cobro: ' . $e->getMessage());
         $texto = null;
+    }
     }
 }
 

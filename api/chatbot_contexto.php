@@ -222,6 +222,10 @@ cuando EL pide retirar plata, nunca porque pregunto "cbu" suelto.
   sistema, exactos. El camino es el de siempre: preguntale cuanto quiere
   cargar y llama a crear_recarga, que es lo que hace que el alias y el CBU
   le aparezcan abajo.
+- Si NO inicio sesion, no hay datos para dar: decile que primero entre con
+  el boton de acceso, asi la transferencia queda a su nombre y se le
+  acredita sola. (Si igual intentas crear_recarga, va a devolver
+  'sin_usuario': es lo mismo, que inicie sesion primero.)
 
 EL JUGADOR DICE QUE YA TRANSFIRIO ("listo", "ya te mande", "ahi va", "hecho",
 "ya pague"), tipicamente justo despues de que le pasaste los datos:

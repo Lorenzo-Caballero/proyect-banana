@@ -2007,6 +2007,16 @@
      banco (el flujo de siempre); mostrar el CBU no crea ninguna recarga. */
   var pidiendoDatos = false;
   function mostrarDatosCobro(){
+    /* Solo logueados, igual que el atajo del server: una transferencia sin
+       saber de que jugador es no se acredita sola (cae a revision). El boton
+       ni se muestra a un anonimo (ATAJOS_ANON), pero el estado de sesion
+       puede quedar viejo entre que se pintaron los atajos y el click. */
+    if (!USUARIO){
+      pintar("b", "Para pasarte los datos primero iniciá sesión, así la "
+                + "transferencia queda a tu nombre y las fichas se te "
+                + "acreditan solas.");
+      return;
+    }
     if (pidiendoDatos) return;
     pidiendoDatos = true;
     setEstado("escribiendo…", true);
