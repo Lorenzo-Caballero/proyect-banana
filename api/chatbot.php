@@ -655,8 +655,10 @@ if (chatbot_pide_datos_cobro($mensajes)) {
             // "cuanto ... cargar" a proposito: es la pregunta que el atajo de
             // carga (chatbot_atajo_extraer, caso 2) reconoce en el turno que
             // viene, asi el monto pelado que conteste crea la recarga sin modelo.
-            $texto = 'Estos son los datos para transferir. Contame cuánto vas a '
-                   . 'cargar, así apenas llegue la plata se te acredita sola.';
+            // Los *asteriscos* los dibuja el widget como negrita (conNegritas).
+            $texto = 'Estos son los datos para transferir.' . "\n"
+                   . '*Importante: primero decime cuánto vas a cargar, así apenas '
+                   . 'llegue la plata la carga se te acredita automáticamente.*';
         }
     } catch (Throwable $e) {
         // El atajo es una mejora: si explota, el turno sigue por el modelo.

@@ -1362,6 +1362,27 @@
      sale de la regex es el href, y solo si empieza con http:// o https://
      (nada de javascript: ni data:). */
   var GP_RE_URL = /https?:\/\/[^\s<>"']+/g;
+
+  /* Negrita estilo WhatsApp: *texto* -> <b>texto</b>. Mismo criterio que
+     conLinks: nodos reales (createElement + createTextNode), NUNCA innerHTML,
+     asi nada de lo que escribe el server (o el jugador) se interpreta como
+     HTML. Solo dentro de una misma linea, para que un asterisco suelto no
+     ponga en negrita medio mensaje. */
+  var GP_RE_NEG = /\*([^*\n]+)\*/g;
+  function conNegritas(s){
+    var frag = document.createDocumentFragment(), i = 0, m;
+    GP_RE_NEG.lastIndex = 0;
+    while ((m = GP_RE_NEG.exec(s))){
+      if (m.index > i){ frag.appendChild(document.createTextNode(s.slice(i, m.index))); }
+      var b = document.createElement("b");
+      b.appendChild(document.createTextNode(m[1]));
+      frag.appendChild(b);
+      i = m.index + m[0].length;
+    }
+    if (i < s.length){ frag.appendChild(document.createTextNode(s.slice(i))); }
+    return frag;
+  }
+
   function conLinks(txt){
     var frag = document.createDocumentFragment();
     var s = String(txt == null ? "" : txt), i = 0, m;
@@ -1373,14 +1394,14 @@
       var recorte = url.match(/[.,;:!?)\]]+$/);
       if (recorte){ url = url.slice(0, url.length - recorte[0].length); }
       if (!url){ continue; }
-      if (m.index > i){ frag.appendChild(document.createTextNode(s.slice(i, m.index))); }
+      if (m.index > i){ frag.appendChild(conNegritas(s.slice(i, m.index))); }
       var a = document.createElement("a");
       a.href = url; a.target = "_blank"; a.rel = "noopener noreferrer";
       a.appendChild(document.createTextNode(url));
       frag.appendChild(a);
       i = m.index + url.length;
     }
-    if (i < s.length){ frag.appendChild(document.createTextNode(s.slice(i))); }
+    if (i < s.length){ frag.appendChild(conNegritas(s.slice(i))); }
     return frag;
   }
 
@@ -2034,6 +2055,10 @@
         if (d.titular) lineas.push("Titular: " + d.titular);
         if (d.alias)   lineas.push("Alias: " + d.alias);
         if (d.cbu)     lineas.push("CBU: " + d.cbu);
+        // *...* = negrita (conNegritas). La instruccion que importa: sin el
+        // monto dicho ANTES no hay recarga que casar y el pago cae a revision.
+        lineas.push("*Importante: primero decime cuánto vas a cargar, así se "
+                  + "te acredita automáticamente.*");
         lineas.push("Cuando transfieras, mandame el comprobante o el titular y "
                   + "el número de operación para acreditarte.");
         pintar("b", lineas.join("\n"));
