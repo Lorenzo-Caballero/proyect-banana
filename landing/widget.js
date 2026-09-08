@@ -462,6 +462,13 @@
   var dePlataforma  = ls("goldpaw_user") || "";
   var consultando   = false;
   var ultimaConsulta = 0;
+  /* true = lo ultimo que dijo /api/user/check fue "sin sesion". Es LA verdad
+     (lo afirma el server de la plataforma): mientras este prendido, lo visto
+     por la red y lo serializado en el storage del SPA no cuentan como
+     identidad -- son restos de la sesion anterior. Sin esto, despues de un
+     logout `dePlataforma`/`visto` seguian devolviendo al jugador viejo,
+     `hay` nunca bajaba y el suelte no corria NUNCA. */
+  var plataformaAnon = false;
 
   function preguntarPlataforma(forzar){
     if (consultando) return;
@@ -477,18 +484,37 @@
         credentials: "include",          // la sesion es una cookie
         headers: { "Accept": "application/json" }
       })
-        .then(function (r){ return r.ok ? r.json() : null; })
+        .then(function (r){
+          if (r.ok) return r.json();
+          /* Un 401/403 aca ES un veredicto: el server dice "no hay sesion",
+             solo que con el status en vez de un JSON vacio. Cualquier otro
+             fallo (500, red) no afirma nada -> null. */
+          if (r.status === 401 || r.status === 403) return {};
+          return null;
+        })
         .then(function (d){
           // La respuesta viene envuelta ({result:{...}}, {data:{...}}); se busca
           // el nombre donde sea que este, igual que con el espia de la red.
           var u = d ? limpiarUser(buscarUser(d, 0)) : "";
-          if (u && u !== dePlataforma){
-            dePlataforma = u;
-            lss("goldpaw_user", u);
-            log("la plataforma dice que sos:", u);
-            avisarVps("PLATAFORMA", { u: u });
-          } else if (!u && d){
+          if (u){
+            plataformaAnon = false;
+            if (u !== dePlataforma){
+              dePlataforma = u;
+              lss("goldpaw_user", u);
+              log("la plataforma dice que sos:", u);
+              avisarVps("PLATAFORMA", { u: u });
+            }
+          } else if (d){
+            /* El server dice "sin sesion". Borrar las capas que recuerdan a la
+               sesion anterior, o quienEs() las devuelve para siempre y el
+               suelte de revisarSesion no corre nunca (el bug del jugador
+               fantasma tras el logout). Solo con `d`: un fetch fallido no es
+               un veredicto. */
             log("/api/user/check contesto pero sin usuario: sesion anonima");
+            plataformaAnon = true;
+            dePlataforma = "";
+            visto = "";
+            delMenu = "";
           }
         })
         .catch(function (e){
@@ -882,6 +908,12 @@
 
     // Lo que se leyo abriendo el menu, si hubo que llegar a eso.
     if (delMenu){ selUsado = "menu abierto a mano"; return delMenu; }
+
+    /* Con el server diciendo "sin sesion", lo visto por la red y el storage
+       del SPA son restos de la sesion anterior: no cuentan. El JWT propio si:
+       es OTRO login (el del sitio), firmado por nuestro server, y no depende
+       de la sesion de la plataforma. */
+    if (plataformaAnon){ return userDeToken(AUTH); }
 
     return visto || usuarioDeStorage() || userDeToken(AUTH);
   }
@@ -2153,6 +2185,7 @@
    * ------------------------------------------------------------------- */
   var teniaSesion = null;   // null = todavia no miramos
   var sinSesion   = 0;      // pasadas seguidas sin sesion (con usuario guardado)
+  var ultimaForzada = 0;    // ultima consulta forzada al server por "DOM sin sesion"
   var ultimoDiag  = "";     // para no repetir la misma linea 50 veces por minuto
   var volcado     = false;  // el markup del header se vuelca una sola vez
 
@@ -2165,7 +2198,11 @@
        esta copia, el registro dice "ninguno" justo cuando la deteccion
        funciono, que es la forma mas confusa posible de estar mal. */
     var capa  = selUsado;
-    var hay   = !!quien || haySesionEnDom() || !!ls("ig_token");
+    /* Con "sin sesion" confirmado por el server, ni el DOM ni un ig_token
+       suelto pueden sostener el "hay alguien": el ig_token puede quedar en
+       localStorage tras un logout a medias (lo dice el comentario de abajo
+       de siempre) y era otra pata que dejaba `hay` clavado en true. */
+    var hay   = !!quien || (!plataformaAnon && (haySesionEnDom() || !!ls("ig_token")));
 
     /* Esto corre cada 1,2 s: si logueara siempre, el registro seria inutil.
        Solo se anota cuando algo CAMBIA, asi el diario queda siendo la historia
@@ -2211,6 +2248,17 @@
        consulta cada 15 s. */
     preguntarPlataforma(false);
 
+    /* El DOM dejo de mostrar sesion pero seguimos con una identidad: probable
+       logout recien hecho. La consulta normal espera hasta 15 s y mientras
+       tanto el chat sigue conversando como el jugador viejo; aca se fuerza el
+       veredicto del server ya, con su propio freno de 5 s por si los
+       selectores del DOM estan rotos y esto quedara disparando siempre. */
+    if (USUARIO && !plataformaAnon && !haySesionEnDom()
+        && Date.now() - ultimaForzada > 5000){
+      ultimaForzada = Date.now();
+      preguntarPlataforma(true);
+    }
+
     if (hay && !quien){
       leerAbriendoMenu();
     }
@@ -2223,6 +2271,7 @@
     if (hay && quien && quien !== USUARIO){
       log("ADOPTA usuario:", quien, "(antes:", USUARIO || "(ninguno)", ")");
       avisarVps("ADOPTA", { u: quien, sel: capa, id: idDeReact() });
+      plataformaAnon = false;   // volvio a entrar: el veredicto viejo ya fue
       USUARIO = quien;
       lss("goldpaw_user", USUARIO);
       reiniciarCharla();
