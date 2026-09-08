@@ -666,6 +666,26 @@ if (chatbot_pide_datos_cobro($mensajes)) {
     }
 }
 
+/* ============== ATAJO DETERMINISTA DE SOPORTE (sin modelo) ==============
+   El boton SOPORTE ("Necesito hablar con alguien") y sus variantes directas.
+   La respuesta es siempre la misma y la derivacion la hace una herramienta,
+   asi que el modelo solo agregaba latencia -- y el riesgo de decir "te paso
+   con alguien" SIN llamar a pasar_a_agente, que es el fallo conocido de esa
+   frase. Aca la llamada va primero y el texto solo sale si la derivacion
+   corrio. Anda para anonimos tambien: pasar_a_agente los marca igual. */
+if ($texto === null && chatbot_pide_agente($mensajes)) {
+    try {
+        $ejecutarTool('pasar_a_agente',
+            ['motivo' => 'Pidió hablar con una persona (botón SOPORTE del chat)']);
+        $texto = 'Listo, ya le avisé a un agente para que siga con vos por acá. '
+               . 'Mientras tanto contame qué necesitás, así lo lee apenas entra.';
+    } catch (Throwable $e) {
+        // El atajo es una mejora: si explota, el turno sigue por el modelo.
+        error_log('chatbot atajo soporte: ' . $e->getMessage());
+        $texto = null;
+    }
+}
+
 if ($texto === null && $usuarioCliente !== '') {
     try {
         $texto = chatbot_atajo_carga($mensajes, $ejecutarTool);
@@ -1071,6 +1091,15 @@ function chatbot_atajo_carga(array $mensajes, callable $tool): ?string
 {
     $intento = chatbot_atajo_extraer($mensajes);
     if ($intento === null) {
+        /* "Quiero cargar fichas" SIN monto (el boton CARGAR del widget, o
+           escrito a mano): la unica respuesta posible es preguntar cuanto, y
+           para eso no hace falta el modelo. La pregunta va con "cuanto ...
+           cargar" adrede: es la que chatbot_atajo_extraer (caso 2) reconoce
+           en el turno siguiente, asi el flujo entero de carga -- boton ->
+           monto -> datos -- sale sin una sola llamada al modelo. */
+        if (chatbot_pide_cargar_sin_monto($mensajes)) {
+            return '¿Cuánto querés cargar?';
+        }
         return null;
     }
 
@@ -1096,6 +1125,65 @@ function chatbot_atajo_carga(array $mensajes, callable $tool): ?string
              . 'Decime el nombre y te paso los datos.';
     }
     return (string)($res['error'] ?? 'No pude crear la recarga, probá de nuevo en un ratito.');
+}
+
+/**
+ * Detecta, SIN modelo, un "quiero cargar" SIN monto: el boton CARGAR del
+ * widget ("Quiero cargar fichas") o sus variantes escritas. PURA, como las
+ * demas detecciones. Conservadora: solo frases que son ESO y nada mas -- un
+ * "no me deja cargar el juego" o un "como cargo?" siguen yendo al modelo.
+ */
+function chatbot_pide_cargar_sin_monto(array $mensajes): bool
+{
+    $msgUser = '';
+    for ($i = count($mensajes) - 1; $i >= 0; $i--) {
+        if (($mensajes[$i]['role'] ?? '') === 'user'
+            && is_string($mensajes[$i]['content'] ?? null)
+            && trim($mensajes[$i]['content']) !== '') {
+            $msgUser = trim($mensajes[$i]['content']);
+            break;
+        }
+    }
+    if ($msgUser === '' || mb_strlen($msgUser) > 40) {
+        return false;
+    }
+    $ul = mb_strtolower($msgUser);
+    // Con numero lo resuelve chatbot_atajo_extraer (crea la recarga directo);
+    // "retirar" no es cargar.
+    if (preg_match('/\d/', $ul) || mb_strpos($ul, 'retir') !== false) {
+        return false;
+    }
+    return (bool)preg_match(
+        '/^(hola[!,.\s]+)?(quiero|necesito|me\s+gustar[ií]a)?\s*'
+        . '(cargar|carga|cargame|cargarme|recargar|me\s+cargas)\s*'
+        . '(fichas|saldo|plata)?\s*[?!.]*$/u', $ul);
+}
+
+/**
+ * Detecta, SIN modelo, el pedido explicito de hablar con una persona: el
+ * boton SOPORTE del widget ("Necesito hablar con alguien") y sus variantes
+ * directas. Solo frases que son ESO: un reclamo con contexto ("hablé con
+ * alguien y no me resolvio") va al modelo, que sabe leerlo.
+ */
+function chatbot_pide_agente(array $mensajes): bool
+{
+    $msgUser = '';
+    for ($i = count($mensajes) - 1; $i >= 0; $i--) {
+        if (($mensajes[$i]['role'] ?? '') === 'user'
+            && is_string($mensajes[$i]['content'] ?? null)
+            && trim($mensajes[$i]['content']) !== '') {
+            $msgUser = trim($mensajes[$i]['content']);
+            break;
+        }
+    }
+    if ($msgUser === '' || mb_strlen($msgUser) > 60) {
+        return false;
+    }
+    $ul = mb_strtolower($msgUser);
+    return (bool)preg_match(
+        '/^(hola[!,.\s]+)?(necesito|quiero|puedo|me\s+pasas\s+con)?\s*'
+        . '(hablar\s+con)?\s*(alguien|una\s+persona|un\s+agente|un\s+humano|soporte)'
+        . '\s*(real|por\s+favor|porfa)?\s*[?!.]*$/u', $ul);
 }
 
 /**
@@ -1955,11 +2043,23 @@ function ia_chat_aviso_respaldo(string $cual, int $httpPrimario, bool $mismoQwen
 }
 
 
-/** Un POST crudo a una API de chat compatible con OpenAI. */
+/** Un POST crudo a una API de chat compatible con OpenAI.
+ *
+ *  El handle de curl se REUSA entre llamadas del mismo turno (static): un
+ *  turno con herramientas son 2-4 POSTs seguidos al mismo endpoint, y abrir
+ *  conexion nueva cada vez paga TCP+TLS de nuevo contra un servidor lejano
+ *  (DashScope intl, ~medio segundo por ronda). Con el handle vivo, curl
+ *  mantiene la conexion y las rondas siguientes salen por la que ya esta
+ *  abierta. Entre requests PHP no persiste nada (FPM resetea los static),
+ *  asi que no hay conexiones colgadas que cuidar. */
 function ia_chat_post(string $url, string $key, array $cuerpo): array
 {
-    $ch = curl_init($url);
+    static $ch = null;
+    if ($ch === null) {
+        $ch = curl_init();
+    }
     curl_setopt_array($ch, [
+        CURLOPT_URL            => $url,
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST           => true,
         CURLOPT_POSTFIELDS     => json_encode($cuerpo, JSON_UNESCAPED_UNICODE),
@@ -1969,13 +2069,18 @@ function ia_chat_post(string $url, string $key, array $cuerpo): array
             'Authorization: Bearer ' . $key,
         ],
         CURLOPT_TIMEOUT        => 60,   // los modelos con vision tardan mas
+        CURLOPT_CONNECTTIMEOUT => 10,
     ]);
     $raw  = curl_exec($ch);
     $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $err  = curl_error($ch);
-    curl_close($ch);
 
     if ($raw === false) {
+        // Conexion rota: tirar el handle para que la proxima llamada del
+        // turno (el respaldo, u otra ronda) arranque con conexion nueva en
+        // vez de reintentar sobre una muerta.
+        curl_close($ch);
+        $ch = null;
         throw new RuntimeException('No se pudo contactar al modelo: ' . $err);
     }
     $data = json_decode($raw, true);
