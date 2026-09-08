@@ -2152,6 +2152,7 @@
    * telefono no compartan la conversacion.
    * ------------------------------------------------------------------- */
   var teniaSesion = null;   // null = todavia no miramos
+  var sinSesion   = 0;      // pasadas seguidas sin sesion (con usuario guardado)
   var ultimoDiag  = "";     // para no repetir la misma linea 50 veces por minuto
   var volcado     = false;  // el markup del header se vuelca una sola vez
 
@@ -2228,13 +2229,32 @@
       notifRegistrar();     // este celular ahora es de este jugador
     }
 
-    // Salio: se olvida de quien era.
-    if (teniaSesion === true && !hay && USUARIO){
-      log("SUELTA usuario:", USUARIO, "(cerro sesion)");
-      avisarVps("SUELTA", { u: USUARIO });
-      limpiarSesion();
-      reiniciarCharla();
-      notifRegistrar();     // lo desatamos: que no reciba los avisos del otro
+    /* Salio: se olvida de quien era. Dos formas de llegar "sin sesion":
+
+       1. La transicion en vivo (teniaSesion === true): cerro sesion con la
+          pagina abierta. Se suelta al instante, como siempre.
+       2. La pagina CARGO ya deslogueada pero con un usuario guardado de una
+          visita anterior (goldpaw_user). Antes esta rama esperaba la
+          transicion y no corria nunca: el chat seguia con la charla, los
+          atajos y la identidad del jugador viejo -- y el bot le daba datos
+          de cobro a alguien sin sesion. Para este caso se exige verlo SIN
+          sesion varias pasadas seguidas (~4 s) antes de borrar: en el
+          arranque el header y el ig_token pueden tardar en aparecer, y un
+          falso "no hay nadie" de la primera pasada le borraria la charla a
+          un jugador que SI esta logueado. */
+    if (!hay && USUARIO){
+      sinSesion++;
+      if (teniaSesion === true || sinSesion >= 3){
+        log("SUELTA usuario:", USUARIO,
+            teniaSesion === true ? "(cerro sesion)" : "(cargo sin sesion)");
+        avisarVps("SUELTA", { u: USUARIO });
+        limpiarSesion();
+        reiniciarCharla();
+        notifRegistrar();   // lo desatamos: que no reciba los avisos del otro
+        sinSesion = 0;
+      }
+    } else {
+      sinSesion = 0;
     }
 
     teniaSesion = hay;
