@@ -383,7 +383,41 @@
    *  400ms y no 1100: alcanza para que el cambio se note (si no, el salto
    *  directo se lee como un parpadeo) sin sumar un segundo entero de espera
    *  justo cuando la persona ya tiene la cuenta lista. */
+  /* AUTO-LOGIN en la plataforma: la clave de sacar el ÚLTIMO paso de fricción.
+     La cuenta recién creada tiene la clave fija, así que logueamos por la
+     persona -- mismo origen, porque el proxy replica/ sirve la plataforma en
+     este dominio -- para que al tocar "Entrar" aterrice en el juego YA adentro,
+     sin ver la pantalla de "Autorización".
+
+     La sesión es por COOKIE (verificado: la respuesta del login no trae token),
+     así que alcanza con credentials:'include' -- el navegador la guarda y viaja
+     sola al ir a /home. El endpoint es /api/user/login (POST {username,
+     password}), respuesta {status:0} = ok.
+
+     Best-effort de punta a punta: si algo falla (red, la plataforma cambió el
+     login, o es un cliente por-path donde el proxy no preserva el slug), NO se
+     rompe nada -- quedan las credenciales visibles y el botón manual lleva a la
+     pantalla de login de siempre. Nunca deja a nadie trabado. */
+  let sesionLista = false;
+  async function autologin(usuario, clave){
+    if (esPorPath || !usuario || !clave) return false;
+    try {
+      const r = await fetch('/api/user/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ username: usuario, password: clave })
+      });
+      const d = await r.json().catch(()=> null);
+      return !!(d && d.status === 0);
+    } catch (e) { return false; }
+  }
+
   function verListo(p){
+    // Se dispara YA, apenas la cuenta se confirma: así tiene los ~400ms de esta
+    // pantalla MÁS el tiempo que la persona tarda en leer y tocar "Entrar" para
+    // completarse. Para cuando toca, la cookie ya está.
+    if (p.password) autologin(p.usuario, p.password).then(ok => { sesionLista = ok; });
     detenerRotacionEspera();
     ocultarTodas();
     $('vistaLista').classList.add('show');
@@ -421,7 +455,14 @@
     // permite volver a esta página y ver los datos de nuevo. Borrarlo antes
     // de navegar hacía que el que volvía se encontrara con el formulario
     // vacío y se creara una SEGUNDA cuenta con otro nombre.
-    const irAJugar = ()=>{ location.href = destino; };
+    const irAJugar = async ()=>{
+      /* Si tocó "Entrar" antes de que el auto-login terminara, se lo espera un
+         toque (máx ~1,2s) para no mandarlo a la pantalla de login por unos
+         milisegundos de diferencia. Pasado ese margen, se navega igual: con
+         sesión (lo normal) o sin ella (fallback al login manual). */
+      for (let i = 0; i < 12 && !sesionLista; i++) { await dormir(100); }
+      location.href = destino;
+    };
     $('btnJugar').onclick = irAJugar;
     $('btnJugar').textContent = 'Entrar a jugar';
 
