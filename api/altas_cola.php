@@ -350,6 +350,10 @@ if ($accion === 'marcar' && $metodo === 'POST') {
     // que la cola ya renombro confirmaba (y entregaba) credenciales de un
     // nombre que nunca se creo.
     $usuarioBot = trim((string)($body['usuario'] ?? ''));
+    // El id del jugador EN GANAMOS, capturado por el bot al crearlo (migracion
+    // 55). Con esto el deposito de fichas tiene el id sin depender del sync.
+    // Opcional: los bots viejos no lo mandan.
+    $idGanamos = (int)($body['id_ganamos'] ?? 0);
 
     if (!$id || !in_array($estado, ['ok', 'error'], true)) {
         http_response_code(400);
@@ -369,6 +373,19 @@ if ($accion === 'marcar' && $metodo === 'POST') {
             echo json_encode(['ok' => false,
                               'error' => 'La fila fue renombrada: ese ok ya no aplica']);
             exit;
+        }
+    }
+
+    // El id de ganamos se guarda SIEMPRE que venga (ok o error): si el alta se
+    // creo aunque el bot no la haya podido confirmar 'ok', el id igual sirve
+    // para el deposito. UPDATE aparte y en try: sin la columna (migracion 55
+    // sin correr) no puede tumbar el marcado.
+    if ($idGanamos > 0) {
+        try {
+            $pdo->prepare("UPDATE altas SET id_ganamos = ? WHERE id = ? AND id_ganamos IS NULL")
+                ->execute([$idGanamos, $id]);
+        } catch (Throwable $e) {
+            error_log('altas_cola marcar: sin altas.id_ganamos (migracion 55): ' . $e->getMessage());
         }
     }
 

@@ -462,6 +462,13 @@
   var dePlataforma  = ls("goldpaw_user") || "";
   var consultando   = false;
   var ultimaConsulta = 0;
+  /* true = lo ultimo que dijo /api/user/check fue "sin sesion". Es LA verdad
+     (lo afirma el server de la plataforma): mientras este prendido, lo visto
+     por la red y lo serializado en el storage del SPA no cuentan como
+     identidad -- son restos de la sesion anterior. Sin esto, despues de un
+     logout `dePlataforma`/`visto` seguian devolviendo al jugador viejo,
+     `hay` nunca bajaba y el suelte no corria NUNCA. */
+  var plataformaAnon = false;
 
   function preguntarPlataforma(forzar){
     if (consultando) return;
@@ -477,18 +484,37 @@
         credentials: "include",          // la sesion es una cookie
         headers: { "Accept": "application/json" }
       })
-        .then(function (r){ return r.ok ? r.json() : null; })
+        .then(function (r){
+          if (r.ok) return r.json();
+          /* Un 401/403 aca ES un veredicto: el server dice "no hay sesion",
+             solo que con el status en vez de un JSON vacio. Cualquier otro
+             fallo (500, red) no afirma nada -> null. */
+          if (r.status === 401 || r.status === 403) return {};
+          return null;
+        })
         .then(function (d){
           // La respuesta viene envuelta ({result:{...}}, {data:{...}}); se busca
           // el nombre donde sea que este, igual que con el espia de la red.
           var u = d ? limpiarUser(buscarUser(d, 0)) : "";
-          if (u && u !== dePlataforma){
-            dePlataforma = u;
-            lss("goldpaw_user", u);
-            log("la plataforma dice que sos:", u);
-            avisarVps("PLATAFORMA", { u: u });
-          } else if (!u && d){
+          if (u){
+            plataformaAnon = false;
+            if (u !== dePlataforma){
+              dePlataforma = u;
+              lss("goldpaw_user", u);
+              log("la plataforma dice que sos:", u);
+              avisarVps("PLATAFORMA", { u: u });
+            }
+          } else if (d){
+            /* El server dice "sin sesion". Borrar las capas que recuerdan a la
+               sesion anterior, o quienEs() las devuelve para siempre y el
+               suelte de revisarSesion no corre nunca (el bug del jugador
+               fantasma tras el logout). Solo con `d`: un fetch fallido no es
+               un veredicto. */
             log("/api/user/check contesto pero sin usuario: sesion anonima");
+            plataformaAnon = true;
+            dePlataforma = "";
+            visto = "";
+            delMenu = "";
           }
         })
         .catch(function (e){
@@ -882,6 +908,12 @@
 
     // Lo que se leyo abriendo el menu, si hubo que llegar a eso.
     if (delMenu){ selUsado = "menu abierto a mano"; return delMenu; }
+
+    /* Con el server diciendo "sin sesion", lo visto por la red y el storage
+       del SPA son restos de la sesion anterior: no cuentan. El JWT propio si:
+       es OTRO login (el del sitio), firmado por nuestro server, y no depende
+       de la sesion de la plataforma. */
+    if (plataformaAnon){ return userDeToken(AUTH); }
 
     return visto || usuarioDeStorage() || userDeToken(AUTH);
   }
@@ -1362,6 +1394,27 @@
      sale de la regex es el href, y solo si empieza con http:// o https://
      (nada de javascript: ni data:). */
   var GP_RE_URL = /https?:\/\/[^\s<>"']+/g;
+
+  /* Negrita estilo WhatsApp: *texto* -> <b>texto</b>. Mismo criterio que
+     conLinks: nodos reales (createElement + createTextNode), NUNCA innerHTML,
+     asi nada de lo que escribe el server (o el jugador) se interpreta como
+     HTML. Solo dentro de una misma linea, para que un asterisco suelto no
+     ponga en negrita medio mensaje. */
+  var GP_RE_NEG = /\*([^*\n]+)\*/g;
+  function conNegritas(s){
+    var frag = document.createDocumentFragment(), i = 0, m;
+    GP_RE_NEG.lastIndex = 0;
+    while ((m = GP_RE_NEG.exec(s))){
+      if (m.index > i){ frag.appendChild(document.createTextNode(s.slice(i, m.index))); }
+      var b = document.createElement("b");
+      b.appendChild(document.createTextNode(m[1]));
+      frag.appendChild(b);
+      i = m.index + m[0].length;
+    }
+    if (i < s.length){ frag.appendChild(document.createTextNode(s.slice(i))); }
+    return frag;
+  }
+
   function conLinks(txt){
     var frag = document.createDocumentFragment();
     var s = String(txt == null ? "" : txt), i = 0, m;
@@ -1373,14 +1426,14 @@
       var recorte = url.match(/[.,;:!?)\]]+$/);
       if (recorte){ url = url.slice(0, url.length - recorte[0].length); }
       if (!url){ continue; }
-      if (m.index > i){ frag.appendChild(document.createTextNode(s.slice(i, m.index))); }
+      if (m.index > i){ frag.appendChild(conNegritas(s.slice(i, m.index))); }
       var a = document.createElement("a");
       a.href = url; a.target = "_blank"; a.rel = "noopener noreferrer";
       a.appendChild(document.createTextNode(url));
       frag.appendChild(a);
       i = m.index + url.length;
     }
-    if (i < s.length){ frag.appendChild(document.createTextNode(s.slice(i))); }
+    if (i < s.length){ frag.appendChild(conNegritas(s.slice(i))); }
     return frag;
   }
 
@@ -2007,6 +2060,16 @@
      banco (el flujo de siempre); mostrar el CBU no crea ninguna recarga. */
   var pidiendoDatos = false;
   function mostrarDatosCobro(){
+    /* Solo logueados, igual que el atajo del server: una transferencia sin
+       saber de que jugador es no se acredita sola (cae a revision). El boton
+       ni se muestra a un anonimo (ATAJOS_ANON), pero el estado de sesion
+       puede quedar viejo entre que se pintaron los atajos y el click. */
+    if (!USUARIO){
+      pintar("b", "Para pasarte los datos primero iniciá sesión, así la "
+                + "transferencia queda a tu nombre y las fichas se te "
+                + "acreditan solas.");
+      return;
+    }
     if (pidiendoDatos) return;
     pidiendoDatos = true;
     setEstado("escribiendo…", true);
@@ -2024,6 +2087,10 @@
         if (d.titular) lineas.push("Titular: " + d.titular);
         if (d.alias)   lineas.push("Alias: " + d.alias);
         if (d.cbu)     lineas.push("CBU: " + d.cbu);
+        // *...* = negrita (conNegritas). La instruccion que importa: sin el
+        // monto dicho ANTES no hay recarga que casar y el pago cae a revision.
+        lineas.push("*Importante: primero decime cuánto vas a cargar, así se "
+                  + "te acredita automáticamente.*");
         lineas.push("Cuando transfieras, mandame el comprobante o el titular y "
                   + "el número de operación para acreditarte.");
         pintar("b", lineas.join("\n"));
@@ -2117,6 +2184,8 @@
    * telefono no compartan la conversacion.
    * ------------------------------------------------------------------- */
   var teniaSesion = null;   // null = todavia no miramos
+  var sinSesion   = 0;      // pasadas seguidas sin sesion (con usuario guardado)
+  var ultimaForzada = 0;    // ultima consulta forzada al server por "DOM sin sesion"
   var ultimoDiag  = "";     // para no repetir la misma linea 50 veces por minuto
   var volcado     = false;  // el markup del header se vuelca una sola vez
 
@@ -2129,7 +2198,11 @@
        esta copia, el registro dice "ninguno" justo cuando la deteccion
        funciono, que es la forma mas confusa posible de estar mal. */
     var capa  = selUsado;
-    var hay   = !!quien || haySesionEnDom() || !!ls("ig_token");
+    /* Con "sin sesion" confirmado por el server, ni el DOM ni un ig_token
+       suelto pueden sostener el "hay alguien": el ig_token puede quedar en
+       localStorage tras un logout a medias (lo dice el comentario de abajo
+       de siempre) y era otra pata que dejaba `hay` clavado en true. */
+    var hay   = !!quien || (!plataformaAnon && (haySesionEnDom() || !!ls("ig_token")));
 
     /* Esto corre cada 1,2 s: si logueara siempre, el registro seria inutil.
        Solo se anota cuando algo CAMBIA, asi el diario queda siendo la historia
@@ -2175,6 +2248,17 @@
        consulta cada 15 s. */
     preguntarPlataforma(false);
 
+    /* El DOM dejo de mostrar sesion pero seguimos con una identidad: probable
+       logout recien hecho. La consulta normal espera hasta 15 s y mientras
+       tanto el chat sigue conversando como el jugador viejo; aca se fuerza el
+       veredicto del server ya, con su propio freno de 5 s por si los
+       selectores del DOM estan rotos y esto quedara disparando siempre. */
+    if (USUARIO && !plataformaAnon && !haySesionEnDom()
+        && Date.now() - ultimaForzada > 5000){
+      ultimaForzada = Date.now();
+      preguntarPlataforma(true);
+    }
+
     if (hay && !quien){
       leerAbriendoMenu();
     }
@@ -2187,19 +2271,39 @@
     if (hay && quien && quien !== USUARIO){
       log("ADOPTA usuario:", quien, "(antes:", USUARIO || "(ninguno)", ")");
       avisarVps("ADOPTA", { u: quien, sel: capa, id: idDeReact() });
+      plataformaAnon = false;   // volvio a entrar: el veredicto viejo ya fue
       USUARIO = quien;
       lss("goldpaw_user", USUARIO);
       reiniciarCharla();
       notifRegistrar();     // este celular ahora es de este jugador
     }
 
-    // Salio: se olvida de quien era.
-    if (teniaSesion === true && !hay && USUARIO){
-      log("SUELTA usuario:", USUARIO, "(cerro sesion)");
-      avisarVps("SUELTA", { u: USUARIO });
-      limpiarSesion();
-      reiniciarCharla();
-      notifRegistrar();     // lo desatamos: que no reciba los avisos del otro
+    /* Salio: se olvida de quien era. Dos formas de llegar "sin sesion":
+
+       1. La transicion en vivo (teniaSesion === true): cerro sesion con la
+          pagina abierta. Se suelta al instante, como siempre.
+       2. La pagina CARGO ya deslogueada pero con un usuario guardado de una
+          visita anterior (goldpaw_user). Antes esta rama esperaba la
+          transicion y no corria nunca: el chat seguia con la charla, los
+          atajos y la identidad del jugador viejo -- y el bot le daba datos
+          de cobro a alguien sin sesion. Para este caso se exige verlo SIN
+          sesion varias pasadas seguidas (~4 s) antes de borrar: en el
+          arranque el header y el ig_token pueden tardar en aparecer, y un
+          falso "no hay nadie" de la primera pasada le borraria la charla a
+          un jugador que SI esta logueado. */
+    if (!hay && USUARIO){
+      sinSesion++;
+      if (teniaSesion === true || sinSesion >= 3){
+        log("SUELTA usuario:", USUARIO,
+            teniaSesion === true ? "(cerro sesion)" : "(cargo sin sesion)");
+        avisarVps("SUELTA", { u: USUARIO });
+        limpiarSesion();
+        reiniciarCharla();
+        notifRegistrar();   // lo desatamos: que no reciba los avisos del otro
+        sinSesion = 0;
+      }
+    } else {
+      sinSesion = 0;
     }
 
     teniaSesion = hay;

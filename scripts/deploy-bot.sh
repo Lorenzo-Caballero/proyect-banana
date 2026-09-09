@@ -55,6 +55,19 @@ done
 if [ -n "$ok" ]; then
   echo "==> OK — el contenedor corre $GIT_HASH"
   docker compose logs --tail=15 creador | sed 's/^/    /'
+
+  # UN solo bot sondeando la cola. Dos = altas intermitentes (una cae en cada
+  # uno). --remove-orphans limpia los del proyecto; esto caza cualquier otro.
+  otros="$(docker ps --format '{{.Names}} {{.Command}}' 2>/dev/null \
+             | grep -iE 'bot_crear_jugador|altas' \
+             | awk '{print $1}' | grep -v '^ganamos-bot-creador$' || true)"
+  if [ -n "$otros" ]; then
+    echo "!! OJO: hay otro(s) contenedor(es) que parecen crear altas ademas del creador:" >&2
+    printf '     %s\n' $otros >&2
+    echo "   Matalos o van a competir por la cola: docker rm -f <nombre>" >&2
+  else
+    echo "==> un solo bot sondeando la cola. Correcto."
+  fi
 else
   echo "!! El contenedor NO anuncio 'Version del bot: $GIT_HASH' en 60s." >&2
   echo "   O sigue arrancando (mira: docker compose logs -f creador)," >&2

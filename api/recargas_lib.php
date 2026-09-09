@@ -117,9 +117,9 @@ const RL_MARGEN_NOMBRE = 0.15;
 // editar este archivo en el VPS no sirve: el deploy lo pisa en cada corrida.
 // Cuenta del dueño (Cencosud). El colector escucha los avisos de esa cuenta
 // en nahuelherrera1997@gmail.com (carpeta "pagos", remitente de Cencosud con
-// DKIM) -- ver colector/config.json. Sin alias por ahora: vacio significa
-// "no compartir alias", nunca inventar uno.
-const RL_ALIAS   = '';
+// DKIM) -- ver colector/config.json. Si algun dia queda sin alias, va vacio:
+// vacio significa "no compartir alias", nunca inventar uno.
+const RL_ALIAS   = 'ganamos1010';
 const RL_CBU     = '0000184305000041593023';
 const RL_TITULAR = 'Herrera Facundo Nahuel';
 // ==========================================================================
@@ -434,7 +434,8 @@ function rl_estado_efectivo(string $estado, $venceEn): string
  * familiar. Opcional para no romper a ningun llamador viejo: sin el, esa
  * recarga simplemente no participa del desempate por nombre.
  */
-function rl_crear_recarga(PDO $pdo, string $usuario, int $coins, string $titular = ''): array
+function rl_crear_recarga(PDO $pdo, string $usuario, int $coins, string $titular = '',
+                         bool $usuarioConfiable = false): array
 {
     $usuario = trim($usuario);
     if ($usuario === '') {
@@ -456,10 +457,34 @@ function rl_crear_recarga(PDO $pdo, string $usuario, int $coins, string $titular
                     . number_format($maxCarga, 0, ',', '.') . ' fichas.'];
     }
 
-    // El usuario tiene que existir en el panel de ganamos (tabla usuarios).
-    $st = $pdo->prepare("SELECT id FROM usuarios WHERE username = ? LIMIT 1");
-    $st->execute([$usuario]);
-    if (!$st->fetchColumn()) {
+    // El usuario tiene que ser real. Se da por real si:
+    //   - $usuarioConfiable: vino de una SESION verificada (el jugador esta
+    //     logueado -> existe, aunque el espejo `usuarios` no lo tenga aun); o
+    //   - figura en el espejo `usuarios`; o
+    //   - tiene un alta CREADA con ese nombre (`altas.estado='ok'`).
+    //
+    // El OR con la sesion y con `altas` cubre al jugador RECIEN registrado o
+    // logueado cuando el espejo esta ATRASADO O CAIDO (lo pobla sync_usuarios).
+    // Sin esto, un jugador logueado no podia recargar hasta la proxima pasada
+    // del sync -- y con el sync caido, NUNCA: pedia cargar, el bot fallaba con
+    // 'sin_usuario' y (por la regla del prompt) terminaba diciendo "te paso los
+    // datos" sin pasar nada, o inventando un CBU. Pasó el 7/9/2026.
+    $existe = $usuarioConfiable;
+    if (!$existe) {
+        $st = $pdo->prepare("SELECT id FROM usuarios WHERE username = ? LIMIT 1");
+        $st->execute([$usuario]);
+        $existe = (bool)$st->fetchColumn();
+    }
+    if (!$existe) {
+        try {
+            $sa = $pdo->prepare("SELECT 1 FROM altas WHERE usuario = ? AND estado = 'ok' LIMIT 1");
+            $sa->execute([$usuario]);
+            $existe = (bool)$sa->fetchColumn();
+        } catch (Throwable $e) {
+            // Sin tabla `altas` (setup viejo): queda el chequeo de `usuarios`.
+        }
+    }
+    if (!$existe) {
         return ['ok' => false, 'codigo' => 'sin_usuario', 'error' =>
             "El usuario '$usuario' no existe todavia. Primero hay que registrarse en el juego."];
     }
@@ -1260,7 +1285,11 @@ function rl_cargar_al_juego_auto(PDO $pdo, array $recarga): void
         return;
     }
     try {
-        $r = fichas_pedir_carga($pdo, (string)$recarga['usuario'], (int)$recarga['coins'], 'recarga');
+        // $confiable=true: la recarga YA se pago y se acredito, el jugador es
+        // real. Asi el deposito al juego se encola aunque el espejo `usuarios`
+        // no lo tenga todavia (sync atrasado o caido) -- sin esto la plata
+        // entraba pero las fichas no llegaban al juego.
+        $r = fichas_pedir_carga($pdo, (string)$recarga['usuario'], (int)$recarga['coins'], 'recarga', true);
         if (empty($r['ok'])) {
             // 'en_curso' no es un problema: ya hay una carga en camino para
             // ese jugador y el bot la esta por hacer. El resto si conviene
