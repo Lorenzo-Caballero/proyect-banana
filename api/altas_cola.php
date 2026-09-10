@@ -217,6 +217,18 @@ if ($accion === 'liberar' && $metodo === 'POST') {
 // ---------------------------------------------------------------------------
 if ($accion === 'pendientes' && $metodo === 'GET') {
 
+    /* LATIDO DEL BOT. Cada sondeo deja la hora en la config del tenant, y
+       salud_bot.php la muestra: es lo que permite responder "¿el contenedor
+       esta vivo?" desde AFUERA del VPS -- la pregunta exacta que en los
+       incidentes del 7/9 y 10/9 solo se podia contestar entrando por SSH.
+       Best-effort: un fallo aca jamas puede frenar la cola. */
+    try {
+        require_once __DIR__ . '/config_crm.php';
+        cfg_crm_guardar($pdo, ['bot_altas_visto_en' => date('Y-m-d H:i:s')], 'bot');
+    } catch (Throwable $e) {
+        error_log('altas_cola: no pude anotar el latido del bot: ' . $e->getMessage());
+    }
+
     $limite = min(max((int)($_GET['limite'] ?? 10), 1), 50);
 
     try {

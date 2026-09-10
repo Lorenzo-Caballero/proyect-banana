@@ -217,6 +217,15 @@ const CFG_CRM_DEFAULTS = [
     // dias que no lo podemos leer" -- las dos dejan el espejo vacio, pero una
     // es un problema del cliente y la otra es nuestro.
     'bancos_sync_en' => '',
+
+    // Ultima vez que el bot de altas sondeo su cola (lo escribe
+    // altas_cola.php en cada accion=pendientes; el bot sondea cada ~3s).
+    // No lo edita nadie a mano. Lo lee salud_bot.php: distingue "el
+    // contenedor esta muerto / crash-loopeando" (latido viejo o ausente) de
+    // "el bot vive pero el panel le rechaza el trabajo" (latido fresco y la
+    // cola igual no drena) SIN entrar al VPS -- la ambiguedad que alargo los
+    // incidentes del 7/9 y 10/9/2026.
+    'bot_altas_visto_en' => '',
 ];
 
 /** Cache por request: estas funciones se llaman varias veces por pedido. */
