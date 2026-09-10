@@ -280,6 +280,24 @@ try {
         exit;
     }
 
+    // --------------------- panel_credenciales ---------------------
+    // Las credenciales del panel de agentes que cargo el cliente en el CRM
+    // (Configuracion -> Panel de agentes). El bot las pide al arrancar y
+    // antes de cada re-login: asi un cambio de contraseña del panel se
+    // resuelve desde el CRM, sin tocar el .env del contenedor. Vacias =
+    // "usa las de tu .env", el comportamiento de siempre.
+    // Detras de exigir_api_key() como todo este archivo -- que ya entrega
+    // cosas igual de sensibles (mueve plata). Nunca exponer esto sin auth.
+    if ($accion === 'panel_credenciales') {
+        require_once __DIR__ . '/config_crm.php';
+        echo json_encode([
+            'ok'   => true,
+            'user' => trim((string)cfg_crm($pdo, 'panel_user')),
+            'pass' => (string)cfg_crm($pdo, 'panel_pass'),
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     // ------------------------- liberar ----------------------------
     // Vuelve a 'pendiente' lo que quedo en 'procesando'. Es a mano y a
     // proposito: quien lo corra tiene que haber mirado el panel antes.

@@ -1037,8 +1037,9 @@ function rl_acreditar(PDO $pdo, array &$recarga, string $idUnico, string $conf,
        "Depositos" DENTRO del juego), esto no corre -- ese camino no crea filas
        en `recargas` ni pasa por aca; el bono sale recien con la primera
        carga del camino B (y el candado evita que salga dos veces). */
+    $bono = 0;
     if ($esPrimera === 1) {
-        rl_bono_bienvenida_aplicar($pdo, (string)$recarga['usuario'], (int)$recarga['coins']);
+        $bono = rl_bono_bienvenida_aplicar($pdo, (string)$recarga['usuario'], (int)$recarga['coins']);
         /* Y el plan de referidos, con el MISMO gate de "primera": si a este
            jugador lo trajo otro cliente con su link, es ahora cuando el que
            lo trajo cobra. El candado de una-sola-vez vive en el helper
@@ -1050,8 +1051,12 @@ function rl_acreditar(PDO $pdo, array &$recarga, string $idUnico, string $conf,
 
     // es_primera calculado arriba viaja al caller a traves de $recarga -- lo
     // necesita rl_reportar_purchase(), que corre DESPUES del commit (ver esa
-    // funcion para el porque).
+    // funcion para el porque). El bono viaja igual: rl_cargar_al_juego_auto
+    // lo suma al deposito para que llegue AL JUEGO y no quede solo como un
+    // numero en el chat (el bug del "transferi 3000 con bono 50% y en la
+    // plataforma me aparecieron 3000").
     $recarga['es_primera'] = $esPrimera;
+    $recarga['bono']       = $bono;
 }
 
 /**
@@ -1289,7 +1294,10 @@ function rl_cargar_al_juego_auto(PDO $pdo, array $recarga): void
         // real. Asi el deposito al juego se encola aunque el espejo `usuarios`
         // no lo tenga todavia (sync atrasado o caido) -- sin esto la plata
         // entraba pero las fichas no llegaban al juego.
-        $r = fichas_pedir_carga($pdo, (string)$recarga['usuario'], (int)$recarga['coins'], 'recarga', true);
+        // El bono de bienvenida (si esta recarga lo gano) va en el MISMO
+        // deposito: transferencia de 3000 con bono 50% = una carga de 4500.
+        $r = fichas_pedir_carga($pdo, (string)$recarga['usuario'], (int)$recarga['coins'], 'recarga', true,
+                                max(0, (int)($recarga['bono'] ?? 0)));
         if (empty($r['ok'])) {
             // 'en_curso' no es un problema: ya hay una carga en camino para
             // ese jugador y el bot la esta por hacer. El resto si conviene
@@ -1878,8 +1886,9 @@ function rl_acreditar_directo(PDO $pdo, string $idUnico, string $usuario,
         } catch (Throwable $e) {
             error_log('rl_acreditar_directo: no pude calcular es_primera: ' . $e->getMessage());
         }
+        $bono = 0;
         if ($esPrimera === 1) {
-            rl_bono_bienvenida_aplicar($pdo, $usuario, $coins);
+            $bono = rl_bono_bienvenida_aplicar($pdo, $usuario, $coins);
             // Referidos: mismo gate, mismo motivo que en rl_acreditar().
             if (function_exists('ref_pagar_por_primera_carga')) {
                 ref_pagar_por_primera_carga($pdo, $usuario);
@@ -1891,9 +1900,10 @@ function rl_acreditar_directo(PDO $pdo, string $idUnico, string $usuario,
         /* Despues del commit, igual que en los otros caminos: encolar la carga
            al juego primero y avisar despues. Si el aviso saliera antes y el
            encolado fallara, le habriamos dicho "ya tenes tus fichas" a alguien
-           que no las va a recibir. */
+           que no las va a recibir. El bono viaja para que el deposito lo
+           incluya, igual que en rl_acreditar(). */
         $comoRecarga = ['usuario' => $usuario, 'coins' => $coins,
-                        'referencia' => 'manual', 'id' => 0];
+                        'referencia' => 'manual', 'id' => 0, 'bono' => $bono];
         rl_cargar_al_juego_auto($pdo, $comoRecarga);
         rl_notificar_acreditada($pdo, $comoRecarga);
 

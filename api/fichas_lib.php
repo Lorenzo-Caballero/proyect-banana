@@ -134,11 +134,20 @@ if (!function_exists('gp_trace')) {
  * El bot del VPS deposita el saldo real en el panel de ganamos; hasta que la
  * ejecute, la carga queda 'pendiente'. Requiere el bot en FICHAS_MODE=LIVE.
  *
+ * $bono: fichas de REGALO que van en el mismo deposito, debitadas de
+ * usuarios.bonus (no de coins). Lo usa el auto-canje de una recarga cuando el
+ * jugador cobro un bono de bienvenida: transferencia de 3000 con bono 50% =
+ * UN deposito de 4500. Se debita del contador para que el bono no se pueda
+ * jugar dos veces, y se registra en acciones_saldo.bono_debitado para que un
+ * fallo del panel lo devuelva a bonus (ver fichas_devolver). Si el jugador
+ * tiene menos bonus que $bono (carrera, ajuste a mano), se deposita lo que
+ * haya: mejor quedarse corto que inventar plata.
+ *
  * Devuelve ['ok'=>bool, ...]. Nunca lanza por saldo insuficiente: eso es una
  * respuesta normal que el chatbot le tiene que explicar al jugador.
  */
 function fichas_pedir_carga(PDO $pdo, string $usuario, int $monto, string $origen = 'chatbot',
-                           bool $confiable = false): array
+                           bool $confiable = false, int $bono = 0): array
 {
     $usuario = trim($usuario);
     if (function_exists('gp_trace')) { gp_trace("carga: pedido usuario='$usuario' monto=$monto origen=$origen"); }  // TRACE TEMPORAL
@@ -165,7 +174,9 @@ function fichas_pedir_carga(PDO $pdo, string $usuario, int $monto, string $orige
 
         // FOR UPDATE: sin esto, dos pedidos a la vez leen los mismos coins y
         // los gastan dos veces. Es el caso clasico del doble click.
-        $st = $pdo->prepare("SELECT COALESCE(coins,0) AS coins FROM usuarios WHERE username = ? FOR UPDATE");
+        $st = $pdo->prepare(
+            "SELECT COALESCE(coins,0) AS coins, COALESCE(bonus,0) AS bonus
+               FROM usuarios WHERE username = ? FOR UPDATE");
         $st->execute([$usuario]);
         $fila = $st->fetch();
 
@@ -188,7 +199,7 @@ function fichas_pedir_carga(PDO $pdo, string $usuario, int $monto, string $orige
             // Sin fila en el espejo no hay coins que debitar: se encola el
             // deposito y listo (la plata ya entro por la transferencia).
             $cobrar = false;
-            $fila   = ['coins' => 0];
+            $fila   = ['coins' => 0, 'bonus' => 0];
         }
 
         $coins = (int)$fila['coins'];
@@ -225,19 +236,57 @@ function fichas_pedir_carga(PDO $pdo, string $usuario, int $monto, string $orige
             )->execute([$usuario, -$monto, $origen]);
         }
 
+        /* El bono va en el MISMO deposito, debitado de usuarios.bonus. Capado
+           a lo que tenga: la promesa vive en el contador, no aca. Se debita
+           aunque no se cobren los coins ($confiable sin espejo deja bonus en
+           0 y esto queda en 0 solo). */
+        $bono = max(0, min($bono, (int)($fila['bonus'] ?? 0)));
+        if ($bono > 0) {
+            $pdo->prepare("UPDATE usuarios SET bonus = bonus - ? WHERE username = ?")
+                ->execute([$bono, $usuario]);
+            $pdo->prepare(
+                "INSERT INTO movimientos (usuario, tipo, monto, motivo, origen)
+                 VALUES (?, 'bono', ?, 'Bono jugado en la carga', ?)"
+            )->execute([$usuario, -$bono, $origen]);
+        }
+
         // coins_debitados es lo que se devuelve si el panel falla. En modo
         // 'libre' va 0: no se cobro nada, asi que no hay nada que devolver, y
         // un fallo NO le tiene que regalar fichas propias al jugador.
-        $pdo->prepare(
-            "INSERT INTO acciones_saldo (usuario, tipo, monto, motivo, origen, coins_debitados)
-             VALUES (?, 'cargar', ?, ?, ?, ?)"
-        )->execute([
-            $usuario,
-            $monto,
-            $cobrar ? 'Canje de fichas' : 'Carga de prueba (sin cobro)',
-            $origen,
-            $cobrar ? $monto : 0,
-        ]);
+        // bono_debitado, igual pero contra usuarios.bonus (migracion 56).
+        try {
+            $pdo->prepare(
+                "INSERT INTO acciones_saldo (usuario, tipo, monto, motivo, origen, coins_debitados, bono_debitado)
+                 VALUES (?, 'cargar', ?, ?, ?, ?, ?)"
+            )->execute([
+                $usuario,
+                $monto + $bono,
+                ($cobrar ? 'Canje de fichas' : 'Carga de prueba (sin cobro)')
+                    . ($bono > 0 ? ' + bono ' . $bono : ''),
+                $origen,
+                $cobrar ? $monto : 0,
+                $bono,
+            ]);
+        } catch (PDOException $e) {
+            /* Sin la migracion 56 no existe bono_debitado. El deposito sale
+               igual por el total -- lo que se pierde es SOLO la devolucion
+               automatica del bono si el panel fallara, y eso se loguea. */
+            if ($bono > 0) {
+                error_log('fichas_pedir_carga: sin acciones_saldo.bono_debitado (migracion 56); '
+                    . 'si esta carga falla, devolver ' . $bono . ' a bonus de ' . $usuario . ' a mano');
+            }
+            $pdo->prepare(
+                "INSERT INTO acciones_saldo (usuario, tipo, monto, motivo, origen, coins_debitados)
+                 VALUES (?, 'cargar', ?, ?, ?, ?)"
+            )->execute([
+                $usuario,
+                $monto + $bono,
+                ($cobrar ? 'Canje de fichas' : 'Carga de prueba (sin cobro)')
+                    . ($bono > 0 ? ' + bono ' . $bono : ''),
+                $origen,
+                $cobrar ? $monto : 0,
+            ]);
+        }
 
         $id = (int)$pdo->lastInsertId();
         $pdo->commit();
@@ -294,7 +343,8 @@ function fichas_pedir_carga(PDO $pdo, string $usuario, int $monto, string $orige
         }
         if (function_exists('gp_trace')) { gp_trace("carga: ENCOLADA id=$id usuario='$usuario' monto=$monto (espera al bot)"); }  // TRACE TEMPORAL
 
-        return ['ok' => true, 'id' => $id, 'monto' => $monto,
+        return ['ok' => true, 'id' => $id, 'monto' => $monto, 'bono' => $bono,
+                'total' => $monto + $bono,
                 'cobrado' => $cobrar,
                 'fichas_restantes' => $cobrar ? $coins - $monto : $coins,
                 'mensaje' => 'Listo, la carga está en camino. En un ratito la ves en tu saldo.'];
@@ -672,32 +722,61 @@ function fichas_devolver(PDO $pdo, int $accionId): int
 {
     $pdo->beginTransaction();
     try {
-        $st = $pdo->prepare(
-            "SELECT usuario, coins_debitados FROM acciones_saldo WHERE id = ? FOR UPDATE"
-        );
-        $st->execute([$accionId]);
-        $a = $st->fetch();
+        // bono_debitado es de la migracion 56: sin ella, consulta vieja y el
+        // bono (que tampoco se pudo debitar sin la 56) queda en 0.
+        try {
+            $st = $pdo->prepare(
+                "SELECT usuario, coins_debitados, bono_debitado FROM acciones_saldo WHERE id = ? FOR UPDATE"
+            );
+            $st->execute([$accionId]);
+            $a = $st->fetch();
+        } catch (PDOException $e) {
+            $st = $pdo->prepare(
+                "SELECT usuario, coins_debitados, 0 AS bono_debitado FROM acciones_saldo WHERE id = ? FOR UPDATE"
+            );
+            $st->execute([$accionId]);
+            $a = $st->fetch();
+        }
 
-        if (!$a || (int)$a['coins_debitados'] <= 0) {
+        $monto = $a ? (int)$a['coins_debitados'] : 0;
+        $bono  = $a ? (int)$a['bono_debitado']   : 0;
+        if ($monto <= 0 && $bono <= 0) {
             $pdo->commit();
             return 0;
         }
 
-        $monto = (int)$a['coins_debitados'];
+        if ($monto > 0) {
+            $pdo->prepare("UPDATE usuarios SET coins = coins + ? WHERE username = ?")
+                ->execute([$monto, $a['usuario']]);
 
-        $pdo->prepare("UPDATE usuarios SET coins = coins + ? WHERE username = ?")
-            ->execute([$monto, $a['usuario']]);
+            $pdo->prepare(
+                "INSERT INTO movimientos (usuario, tipo, monto, motivo, origen)
+                 VALUES (?, 'ficha', ?, 'Devolución: la carga no se pudo hacer', 'sistema')"
+            )->execute([$a['usuario'], $monto]);
+        }
 
-        $pdo->prepare(
-            "INSERT INTO movimientos (usuario, tipo, monto, motivo, origen)
-             VALUES (?, 'ficha', ?, 'Devolución: la carga no se pudo hacer', 'sistema')"
-        )->execute([$a['usuario'], $monto]);
+        // El bono vuelve a SU contador: devolverlo a coins lo convertiria en
+        // plata comun (y retirable) que el jugador nunca puso.
+        if ($bono > 0) {
+            $pdo->prepare("UPDATE usuarios SET bonus = bonus + ? WHERE username = ?")
+                ->execute([$bono, $a['usuario']]);
 
-        $pdo->prepare("UPDATE acciones_saldo SET coins_debitados = 0 WHERE id = ?")
-            ->execute([$accionId]);
+            $pdo->prepare(
+                "INSERT INTO movimientos (usuario, tipo, monto, motivo, origen)
+                 VALUES (?, 'bono', ?, 'Devolución del bono: la carga no se pudo hacer', 'sistema')"
+            )->execute([$a['usuario'], $bono]);
+        }
+
+        try {
+            $pdo->prepare("UPDATE acciones_saldo SET coins_debitados = 0, bono_debitado = 0 WHERE id = ?")
+                ->execute([$accionId]);
+        } catch (PDOException $e) {
+            $pdo->prepare("UPDATE acciones_saldo SET coins_debitados = 0 WHERE id = ?")
+                ->execute([$accionId]);
+        }
 
         $pdo->commit();
-        return $monto;
+        return $monto + $bono;
 
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) { $pdo->rollBack(); }

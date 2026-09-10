@@ -142,6 +142,18 @@ const CFG_CRM_DEFAULTS = [
     'lim_retiro_hora_desde' => '',
     'lim_retiro_hora_hasta' => '',
 
+    // ----- Credenciales del panel de agentes (agents.ganamosonline.com) -----
+    // Las usa el bot del VPS para loguearse y depositar/crear jugadores.
+    // VACIAS = el bot sigue con las PANEL_USER/PANEL_PASS de su .env, que es
+    // el comportamiento de siempre -- desplegar esto no cambia nada hasta que
+    // el cliente cargue las suyas. Se editan desde Configuracion del CRM y el
+    // bot las pide por acciones_cola.php?accion=panel_credenciales (con la
+    // API key), asi un cambio de contraseña del panel no exige tocar el .env
+    // del contenedor. panel_pass NUNCA va en meta_config_publica ni en ningun
+    // endpoint sin auth: solo el CRM (admin) y el bot (API key) la ven.
+    'panel_user' => '',
+    'panel_pass' => '',
+
     // Bono que se le suma a una carga pedida desde el boton Depositos de la
     // plataforma, en % del monto. '0' = sin bono, la carga entra por el importe
     // exacto que transfirio el jugador.

@@ -3597,6 +3597,30 @@
         </div>
       </div>
 
+      <div class="cfg-card">
+        <div class="cfg-card-head">
+          <span class="cb-ico"><svg viewBox="0 0 24 24"><path d="M12 2a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-1V7a5 5 0 0 0-5-5zm-3 8V7a3 3 0 0 1 6 0v3"/></svg></span>
+          <div class="cfg-card-txt">
+            <b>Panel de agentes</b>
+            <span>Las credenciales con las que el bot entra al panel para crear jugadores y depositar fichas.</span>
+          </div>
+        </div>
+        <div class="cfg-card-body">
+          <div class="cfg-grid">
+            <div>
+              <label class="cb-flabel">Usuario del panel</label>
+              <input class="cb-input" id="cfgPanelUser" autocomplete="off" placeholder="tu-usuario-de-agente">
+              <p class="cfg-hint">El mismo con el que entrás a <b>agents.ganamosonline.com</b>.</p>
+            </div>
+            <div>
+              <label class="cb-flabel">Contraseña del panel</label>
+              <input class="cb-input" id="cfgPanelPass" type="password" autocomplete="new-password" placeholder="••••••••">
+              <p class="cfg-hint">Si cambiás la contraseña del panel, actualizala acá: el bot la toma solo, sin tocar el servidor. <b>Vacío = se usa la configurada en el servidor.</b> Si el bot no puede entrar, las cargas quedan «pendientes».</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="cfg-sec">
         <h3>Marketing</h3>
         <span class="cfg-sec-linea"></span>
@@ -4719,6 +4743,9 @@
     tg_sin_actividad_hs:{ el: "#cfgTgSinAct",     tipo: "texto" },
     lim_retiro_hora_desde: { el: "#cfgLimRetiroDesde", tipo: "texto" },
     lim_retiro_hora_hasta: { el: "#cfgLimRetiroHasta", tipo: "texto" },
+
+    panel_user: { el: "#cfgPanelUser", tipo: "texto" },
+    panel_pass: { el: "#cfgPanelPass", tipo: "texto" },
 
     ref_activo:       { el: "#cfgRef",     tipo: "bool"  },
     ref_bono_monto:   { el: "#cfgRefBono", tipo: "texto" },
