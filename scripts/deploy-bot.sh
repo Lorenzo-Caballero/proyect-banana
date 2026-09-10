@@ -57,16 +57,41 @@ if [ -n "$ok" ]; then
   docker compose logs --tail=15 creador | sed 's/^/    /'
 
   # UN solo bot sondeando la cola. Dos = altas intermitentes (una cae en cada
-  # uno). --remove-orphans limpia los del proyecto; esto caza cualquier otro.
+  # uno, y la que cae en el viejo con la sesion rota tarda minutos). Paso DOS
+  # veces (7/9 y 10/9/2026) con el MISMO huerfano: altas-ganamoscrm, de un
+  # compose anterior a este repo, revivia por su restart=unless-stopped y
+  # ningun deploy lo tocaba (--remove-orphans no lo ve: es de OTRO proyecto).
+  # rm -f tampoco alcanza si algo lo recrea: primero se apaga la policy y
+  # despues se para. Ese nombre conocido se neutraliza SOLO; cualquier otro
+  # sospechoso se informa, no se mata a ciegas (podria ser algo legitimo,
+  # como el colector de mails).
+  if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx 'altas-ganamoscrm'; then
+    echo "==> neutralizando el bot viejo altas-ganamoscrm (compite por la cola de altas)"
+    docker update --restart=no altas-ganamoscrm >/dev/null 2>&1 || true
+    docker stop altas-ganamoscrm >/dev/null 2>&1 || true
+  fi
   otros="$(docker ps --format '{{.Names}} {{.Command}}' 2>/dev/null \
              | grep -iE 'bot_crear_jugador|altas' \
              | awk '{print $1}' | grep -v '^ganamos-bot-creador$' || true)"
   if [ -n "$otros" ]; then
     echo "!! OJO: hay otro(s) contenedor(es) que parecen crear altas ademas del creador:" >&2
     printf '     %s\n' $otros >&2
-    echo "   Matalos o van a competir por la cola: docker rm -f <nombre>" >&2
+    echo "   Mira que corre cada uno:  docker inspect --format '{{.Name}} {{.Config.Cmd}}' <nombre>" >&2
+    echo "   Si compite por la cola:   docker update --restart=no <nombre> && docker stop <nombre>" >&2
   else
     echo "==> un solo bot sondeando la cola. Correcto."
+  fi
+
+  # El espejo de usuarios (sync) no frena las altas, pero caido deja a los
+  # jugadores recien creados como "inexistentes" para el chat y las recargas.
+  # Se AVISA, no se levanta solo: sync y creador comparten la cuenta del
+  # panel y pueden patearse el login (ver docker-compose.yml del bot) --
+  # levantarlo es una decision de una persona mirando los logs del creador.
+  if docker ps -a --format '{{.Names}}\t{{.Status}}' 2>/dev/null \
+       | grep '^ganamos-bot-sync' | grep -qv 'Up'; then
+    echo "!! ganamos-bot-sync esta caido (el espejo de usuarios). Para levantarlo:" >&2
+    echo "     cd $BOT_DIR && docker compose --profile sync up -d sync" >&2
+    echo "   y mira por que se cayo:  docker logs --tail=50 ganamos-bot-sync" >&2
   fi
 else
   echo "!! El contenedor NO anuncio 'Version del bot: $GIT_HASH' en 60s." >&2

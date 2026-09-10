@@ -299,9 +299,31 @@ try {
     }
 
     // ------------------------- liberar ----------------------------
-    // Vuelve a 'pendiente' lo que quedo en 'procesando'. Es a mano y a
+    // Vuelve a 'pendiente' lo que quedo en 'procesando'.
+    //
+    // CON ids en el body: libera SOLO esos -- es lo que usa el bot cuando el
+    // techo de la pasada de depositos (FICHAS_PASADA_MAX_SEG) lo hace parar
+    // con acciones reclamadas que NO llego a intentar. Es seguro justamente
+    // por eso: el bot sabe que no les mando ningun POST al panel, asi que
+    // re-entregarlas no puede depositar dos veces. Mismo criterio que el
+    // liberar por ids de altas_cola.
+    //
+    // SIN ids: libera todo lo 'procesando'. Eso sigue siendo a mano y a
     // proposito: quien lo corra tiene que haber mirado el panel antes.
     if ($accion === 'liberar' && $metodo === 'POST') {
+        $body = json_decode(file_get_contents('php://input'), true) ?: [];
+        $ids  = array_values(array_filter(array_map('intval', (array)($body['ids'] ?? []))));
+        if ($ids) {
+            $marcas = implode(',', array_fill(0, count($ids), '?'));
+            $st = $pdo->prepare(
+                "UPDATE acciones_saldo
+                    SET estado = 'pendiente', tomada_en = NULL
+                  WHERE estado = 'procesando' AND id IN ($marcas)"
+            );
+            $st->execute($ids);
+            echo json_encode(['ok' => true, 'liberadas' => (int)$st->rowCount()]);
+            exit;
+        }
         $n = $pdo->exec(
             "UPDATE acciones_saldo
                 SET estado = 'pendiente', tomada_en = NULL
