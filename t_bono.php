@@ -142,6 +142,16 @@ acreditar($pdo, $r, 'tbono-p3');
 chequear('bono50 paga RL_BONO_BIENVENIDA_PCT', bonus($pdo, 'tbonoDos') === (int)floor(1000 * RL_BONO_BIENVENIDA_PCT / 100),
          'bonus=' . bonus($pdo, 'tbonoDos'));
 
+echo "-- 'chatbot' (cuenta creada por el chat) cobra el bono general --\n";
+jugador($pdo, 'tbonoChat');
+alta($pdo, 'tbonoChat', 'chatbot');
+$r = recarga($pdo, 'tbonoChat', 1000, 'tb3b');
+pago($pdo, 'tbono-p3b', 1000);
+acreditar($pdo, $r, 'tbono-p3b');
+chequear('chatbot cobra el bono de bienvenida (el bot lo prometio al crear la cuenta)',
+         bonus($pdo, 'tbonoChat') === (int)floor(1000 * RL_BONO_BIENVENIDA_PCT / 100),
+         'bonus=' . bonus($pdo, 'tbonoChat'));
+
 echo "-- sin promo no hay bono --\n";
 jugador($pdo, 'tbonoTres');
 alta($pdo, 'tbonoTres', 'landing');

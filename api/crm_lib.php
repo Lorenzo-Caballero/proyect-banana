@@ -130,6 +130,45 @@ if (!function_exists('crm_conversacion_id')) {
     }
 
     /**
+     * Deja un aviso del SISTEMA en el chat del jugador, como si lo escribiera un
+     * agente -- para que el widget lo muestre. Lo usa la acreditacion: cuando la
+     * carga entra (minutos despues, asincronica), Camila avisa "ya te cargue" en
+     * la conversacion, ademas de la notificacion push.
+     *
+     * Va con rol 'agente' A PROPOSITO: mis_mensajes.php SOLO entrega al widget
+     * los mensajes 'agente' (no los 'bot'), asi que es el unico rol que le llega
+     * al jugador por el sondeo. No suma no_leidos: es un aviso saliente, no algo
+     * que el jugador tenga que "leer" en el CRM.
+     *
+     * Best-effort: si el jugador nunca chateo (no hay conversacion) o algo falla,
+     * se sale sin ruido -- la notificacion push ya salio igual.
+     */
+    function crm_avisar_jugador(PDO $pdo, string $usuario, string $texto): bool
+    {
+        $usuario = mb_substr(trim($usuario), 0, 50);
+        $texto   = trim($texto);
+        if ($usuario === '' || $texto === '') { return false; }
+        try {
+            $st = $pdo->prepare(
+                "SELECT id FROM conversaciones WHERE clave = ? OR usuario = ? ORDER BY id DESC LIMIT 1"
+            );
+            $st->execute([$usuario, $usuario]);
+            $convId = (int)$st->fetchColumn();
+            if (!$convId) { return false; }   // nunca chateo: solo la push
+            crm_mensaje($pdo, $convId, 'agente', $texto, null, 'sistema');
+            try {
+                $pdo->prepare(
+                    "UPDATE conversaciones SET preview = ?, actualizada_en = NOW() WHERE id = ?"
+                )->execute([mb_substr($texto, 0, 300), $convId]);
+            } catch (Throwable $e) { /* preview es cosmetico */ }
+            return true;
+        } catch (Throwable $e) {
+            error_log('crm_avisar_jugador: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
      * ¿Esta base ya tiene `conversaciones.archivada` (migracion 41)?
      *
      * Se pregunta en vez de darlo por hecho: una migracion sin correr no puede

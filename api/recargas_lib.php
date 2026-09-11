@@ -1136,14 +1136,7 @@ function rl_bono_bienvenida_aplicar(PDO $pdo, string $usuario, int $coins): int
         }
 
         $pctBono = 0;
-        if ($origenAlta === RL_BONO_BIENVENIDA_ORIGEN) {
-            // Configurable por cliente (config_crm 'bono_bienvenida_pct'),
-            // con la constante historica de respaldo si la config no
-            // responde. fichas_limite() ya sabe degradar exactamente asi.
-            // La landing muestra el MISMO numero (bono_config.php): lo
-            // prometido y lo pagado no pueden divergir.
-            $pctBono = fichas_limite($pdo, 'bono_bienvenida_pct', RL_BONO_BIENVENIDA_PCT);
-        } elseif (strncmp($origenAlta, 'lp:', 3) === 0) {
+        if (strncmp($origenAlta, 'lp:', 3) === 0) {
             if (!function_exists('landings_por_slug')) {
                 // Deploy parcial (recargas_lib nuevo sin landings_lib): que
                 // no sea silencioso -- este log es la unica señal de que se
@@ -1157,6 +1150,18 @@ function rl_bono_bienvenida_aplicar(PDO $pdo, string $usuario, int $coins): int
                     $pctBono = (int)$lpFila['bono_pct'];
                 }
             }
+        } elseif ($origenAlta === RL_BONO_BIENVENIDA_ORIGEN || $origenAlta === 'chatbot') {
+            /* bono50 = landing de promo (siempre lo cobro). 'chatbot' = cuenta
+               creada POR EL CHAT: el bot le PROMETE el bono al crear la cuenta
+               ("con tu primera carga te doy el bono"), pero antes no lo cobraba
+               -- caia en el else y quedaba en 0. Ahora si, con el bono general
+               del casino (config_crm 'bono_bienvenida_pct', default 50%). Es la
+               primera carga (es_primera, garantizado por el caller) y el candado
+               de movimientos evita pagarlo dos veces. Para apagarlo, poner
+               bono_bienvenida_pct en 0 desde el CRM.
+               A proposito NO se incluye 'landing'/'panel'/manual: esos no
+               prometen bono, y darselo seria regalar fichas sin quererlo. */
+            $pctBono = fichas_limite($pdo, 'bono_bienvenida_pct', RL_BONO_BIENVENIDA_PCT);
         }
         if ($pctBono <= 0) {
             return 0;
@@ -1330,19 +1335,38 @@ function rl_cargar_al_juego_auto(PDO $pdo, array $recarga): void
  *  manual: para el jugador es el mismo evento, no hay por que distinguirlo. */
 function rl_notificar_acreditada(PDO $pdo, array $recarga): void
 {
-    if (!function_exists('notif_crear')) {
-        return;
+    $usuario = (string)$recarga['usuario'];
+    $coins   = (int)$recarga['coins'];
+    $bono    = max(0, (int)($recarga['bono'] ?? 0));
+
+    if (function_exists('notif_crear')) {
+        notif_crear(
+            $pdo,
+            $usuario,
+            'Recarga acreditada',
+            'Ya tenés tus ' . number_format($coins, 0, ',', '.')
+                . ' fichas disponibles. ¡A jugar!',
+            'recarga',
+            null,
+            'recargas'
+        );
     }
-    notif_crear(
-        $pdo,
-        (string)$recarga['usuario'],
-        'Recarga acreditada',
-        'Ya tenés tus ' . number_format((int)$recarga['coins'], 0, ',', '.')
-            . ' fichas disponibles. ¡A jugar!',
-        'recarga',
-        null,
-        'recargas'
-    );
+
+    /* Ademas del push, un aviso EN EL CHAT: la carga entra minutos despues de
+       que el jugador transfiere (asincronico), y hasta ahora preguntaba "ya me
+       cargaste?" sin recibir una confirmacion clara -- solo la push, que se
+       pierde facil. Ahora Camila se lo confirma en la conversacion cuando de
+       verdad entro (lo pidio Nahuel). Best-effort: si no chateo, queda la push. */
+    $crmLib = __DIR__ . '/crm_lib.php';
+    if (is_file($crmLib)) { require_once $crmLib; }
+    if (function_exists('crm_avisar_jugador')) {
+        $msg = '¡Listo! Ya te acredité tus ' . number_format($coins, 0, ',', '.') . ' fichas 🎉';
+        if ($bono > 0) {
+            $msg .= ' Y te sumé ' . number_format($bono, 0, ',', '.') . ' de bono de bienvenida.';
+        }
+        $msg .= ' ¡Que tengas suerte! 🍀';
+        crm_avisar_jugador($pdo, $usuario, $msg);
+    }
 }
 
 /**
