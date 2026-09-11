@@ -1876,6 +1876,22 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
                     'error' => 'Falta el nombre de usuario que quiere.'];
         }
 
+        // DEFENSA DURA contra el nombre inventado. El jugador dice "haceme una
+        // cuenta" sin dar nombre, y el modelo -- en vez de preguntar -- inventa
+        // uno generico ("nuevojugador123", "jugador123") y lo crea. Visto en
+        // produccion (12/9). El prompt le pide preguntar, pero Qwen lo saltea.
+        // Aca se rechazan esos placeholders: la cuenta NO se crea, y se le
+        // ordena al modelo pedir el nombre de verdad. Un jugador que quisiera
+        // llamarse asi es rarisimo y puede elegir otro; el dano de crear cuentas
+        // con nombres que la persona no eligio es peor.
+        if (function_exists('alta_nombre_es_placeholder') && alta_nombre_es_placeholder($u)) {
+            return ['ok' => false, 'codigo' => 'nombre_inventado',
+                    'error' => 'NO inventes el nombre de usuario. Ese ("' . $u . '") es un '
+                             . 'placeholder, no uno que el jugador eligio. PREGUNTALE que '
+                             . 'nombre de usuario quiere y recien cuando te lo diga, crea la '
+                             . 'cuenta con ese. No crees ninguna cuenta hasta entonces.'];
+        }
+
         // SIN freno por IP en el chat, a proposito. El que pide una cuenta por
         // aca ya esta hablando con nosotros: contestarle "espera una hora" es
         // perder al cliente en la puerta. Si algun dia hay abuso, se mira la

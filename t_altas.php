@@ -187,6 +187,25 @@ $corto = rtrim('ab12', '0123456789');
 chequear('si al sacarlo queda demasiado corto, se conserva el original',
          mb_strlen($corto) < 3);
 
+// ===========================================================================
+echo "
+=== 4. Nombres placeholder que el modelo NO puede colar como cuenta ===
+";
+
+/* El chatbot rechaza estos: cuando el jugador pide "haceme una cuenta" sin dar
+   nombre, el modelo a veces inventa uno generico en vez de preguntar (visto en
+   produccion 12/9: creo "nuevojugador123"). alta_nombre_es_placeholder los
+   caza para que el handler no cree cuentas con nombres que la persona no eligio. */
+foreach (['nuevojugador123', 'jugador123', 'usuario', 'nuevousuario',
+          'player1', 'miusuario', 'cuenta123', 'user'] as $ph) {
+    chequear('rechaza placeholder: ' . $ph, alta_nombre_es_placeholder($ph) === true);
+}
+/* Y NO puede confundir un nombre real con un placeholder. */
+foreach (['holaJuan', 'juan123', 'pedro', 'santucruz275', 'lucas20206',
+          'jugadorcito', 'juanusuario'] as $real) {
+    chequear('acepta nombre real: ' . $real, alta_nombre_es_placeholder($real) === false);
+}
+
 limpiar($pdo);
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);
 exit($fail > 0 ? 1 : 0);

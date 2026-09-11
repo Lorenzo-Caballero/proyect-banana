@@ -103,6 +103,24 @@ function alta_validar(string $usuario, string $password, string $email): ?string
 }
 
 /**
+ * ¿El nombre parece un PLACEHOLDER que invento el modelo, no uno que eligio el
+ * jugador? ("jugador123", "nuevousuario", "player1"...). El chatbot rechaza
+ * estos: cuando el jugador pide "haceme una cuenta" sin dar nombre, el modelo
+ * a veces inventa uno generico en vez de preguntar (visto en produccion 12/9).
+ *
+ * Es una lista corta y conservadora a proposito: solo palabras que NADIE elige
+ * de verdad como su usuario, opcionalmente con un prefijo generico y numeros.
+ * Un "juan123" o un "jugadorcito" pasan -- son nombres reales.
+ */
+function alta_nombre_es_placeholder(string $nombre): bool
+{
+    return (bool)preg_match(
+        '/^(nuevo|mi|el|un|tu)?(jugador|usuario|user|player|cuenta|nick|nombre)s?\d*$/i',
+        trim($nombre)
+    );
+}
+
+/**
  * A partir de lo que el jugador escribió como nombre, devuelve un username
  * LIBRE (sin chocar con `usuarios` ni con un pedido ya en `altas`), sin que
  * tenga que reintentar a mano.
