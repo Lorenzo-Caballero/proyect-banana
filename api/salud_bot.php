@@ -62,9 +62,50 @@ try {
     error_log('salud_bot: ' . $e->getMessage());
 }
 
+/* El loop de DEPOSITOS (acciones_saldo), aparte del de altas: un bot viejo
+   crea altas pero no deposita, y esa asimetria es invisible sin esto.
+   `ultima_falla` trae el mensaje del ultimo error/revisar (truncado): dice
+   en una linea POR QUE el panel rechaza, sin entrar al VPS. */
+$cargasHace = null;
+try {
+    $visto = trim((string)cfg_crm($pdo, 'bot_cargas_visto_en'));
+    if ($visto !== '') {
+        $t = strtotime($visto);
+        if ($t !== false) { $cargasHace = max(0, time() - $t); }
+    }
+} catch (Throwable $e) {}
+
+$cargas = null; $cargasVieja = null; $falla = null;
+try {
+    $r = $pdo->query(
+        "SELECT COUNT(*) AS c,
+                TIMESTAMPDIFF(MINUTE, MIN(creada_en), NOW()) AS m
+           FROM acciones_saldo
+          WHERE tipo = 'cargar' AND estado IN ('pendiente', 'procesando')"
+    )->fetch();
+    if ($r) {
+        $cargas = (int)$r['c'];
+        $cargasVieja = ($cargas > 0 && $r['m'] !== null) ? (int)$r['m'] : null;
+    }
+    $f = $pdo->query(
+        "SELECT estado, mensaje FROM acciones_saldo
+          WHERE tipo = 'cargar' AND estado IN ('error', 'revisar')
+          ORDER BY id DESC LIMIT 1"
+    )->fetch();
+    if ($f) {
+        $falla = $f['estado'] . ': ' . mb_substr((string)$f['mensaje'], 0, 120);
+    }
+} catch (Throwable $e) {
+    error_log('salud_bot: ' . $e->getMessage());
+}
+
 echo json_encode([
-    'ok'                 => true,
-    'bot_visto_hace_seg' => $hace,
-    'altas_en_cola'      => $enCola,
-    'mas_vieja_min'      => $viejaMin,
+    'ok'                        => true,
+    'bot_visto_hace_seg'        => $hace,
+    'altas_en_cola'             => $enCola,
+    'mas_vieja_min'             => $viejaMin,
+    'bot_cargas_visto_hace_seg' => $cargasHace,
+    'cargas_en_cola'            => $cargas,
+    'cargas_mas_vieja_min'      => $cargasVieja,
+    'cargas_ultima_falla'       => $falla,
 ], JSON_UNESCAPED_UNICODE);
