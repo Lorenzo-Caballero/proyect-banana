@@ -231,15 +231,18 @@ try {
         // aprieta el boton: cuando el saldo del panel se movio de verdad. Es el
         // unico momento en que decirle "ya lo tenes" no puede ser mentira.
         if ($estado === 'hecha' && function_exists('notif_crear')) {
-            // bono_debitado es de la migracion 56: sin ella, 0 y todo sigue.
+            // bono_debitado es de la migracion 56: sin ella, 0 y todo sigue
+            // (con $sinMig56 prendido para que el bono se rescate del motivo).
+            $sinMig56 = false;
             try {
                 $acc = $pdo->prepare(
-                    "SELECT usuario, tipo, monto, origen, coins_debitados, bono_debitado
+                    "SELECT usuario, tipo, monto, motivo, origen, coins_debitados, bono_debitado
                        FROM acciones_saldo WHERE id = ?");
                 $acc->execute([$id]);
             } catch (PDOException $e) {
+                $sinMig56 = true;
                 $acc = $pdo->prepare(
-                    "SELECT usuario, tipo, monto, origen, coins_debitados, 0 AS bono_debitado
+                    "SELECT usuario, tipo, monto, motivo, origen, coins_debitados, 0 AS bono_debitado
                        FROM acciones_saldo WHERE id = ?");
                 $acc->execute([$id]);
             }
@@ -264,13 +267,27 @@ try {
                    bono de carga activo ni siquiera coincidian los importes, asi
                    que el error era irregular y mas dificil de ver. */
                 $deRecarga = ($a['origen'] ?? '') === 'recarga';
-                /* Un deposito que es TODO bono (coins_debitados 0 y el monto
-                   sale entero de bono_debitado) es un REGALO de la casa, no
+                /* Cuanto del deposito era BONO. Normalmente sale de la
+                   columna (migracion 56); sin la migracion se rescata del
+                   MOTIVO, que fichas_pedir_carga escribe con el bono adentro
+                   ('Bonos al juego' = todo bono; 'Canje de fichas + bono N').
+                   OJO: no sirve mirar origen='crm' + coins 0 -- ese es el
+                   DEFAULT del esquema y lo comparte la carga de saldo manual. */
+                $bonoDep = (int)($a['bono_debitado'] ?? 0);
+                if ($sinMig56 && $bonoDep === 0 && ($a['tipo'] ?? '') === 'cargar') {
+                    $mot = (string)($a['motivo'] ?? '');
+                    if (strpos($mot, 'Bonos al juego') === 0) {
+                        $bonoDep = (int)round((float)($a['monto'] ?? 0));
+                    } elseif (preg_match('/\+ bono (\d+)/', $mot, $m)) {
+                        $bonoDep = (int)$m[1];
+                    }
+                }
+                /* Un deposito que es TODO bono es un REGALO de la casa, no
                    ingresos: reportarlo como Purchase inflaria los numeros de
                    la campaña con plata que nunca entro. */
-                $esRegalo = (int)($a['bono_debitado'] ?? 0) > 0
+                $esRegalo = $bonoDep > 0
                          && (int)($a['coins_debitados'] ?? 0) === 0
-                         && (float)($a['monto'] ?? 0) <= (int)($a['bono_debitado'] ?? 0);
+                         && (float)($a['monto'] ?? 0) <= $bonoDep;
                 if (($a['tipo'] ?? '') === 'cargar' && !$deRecarga && !$esRegalo) {
                     try {
                         require_once __DIR__ . '/meta_lib.php';
@@ -292,7 +309,6 @@ try {
                         error_log('meta Purchase: ' . $e->getMessage());
                     }
                 }
-                $bonoDep = (int)($a['bono_debitado'] ?? 0);
                 $cuanto = number_format((float)$a['monto'], 0, ',', '.');
                 $saldo  = $sDespues !== null
                         ? ' Tu saldo quedó en ' . number_format($sDespues, 0, ',', '.') . '.'
