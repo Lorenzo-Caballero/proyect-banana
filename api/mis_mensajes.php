@@ -91,13 +91,20 @@ try {
         }
     } catch (Throwable $e2) { /* sin migracion 57 o meta raro: se sigue */ }
 
+    // ¿Corrió la migración 58 (mensajes eliminados)? Sonda barata: sin la
+    // columna, el filtro y las lápidas se saltean y todo sigue como antes.
+    $hayBorrado = true;
+    try { $pdo->query("SELECT borrado_en FROM mensajes LIMIT 0"); }
+    catch (Throwable $e2) { $hayBorrado = false; }
+
     $st = $pdo->prepare(
         "SELECT m.id, m.texto, m.meta, m.creado_en
          FROM mensajes m
          WHERE m.conversacion_id IN ($enConv)
            AND (m.conversacion_id IN (SELECT id FROM conversaciones WHERE session_id = ?)
                 OR m.creado_en >= NOW() - INTERVAL 1 DAY)
-           AND m.rol = 'agente' AND m.id > ?
+           AND m.rol = 'agente' AND m.id > ?"
+           . ($hayBorrado ? " AND m.borrado_en IS NULL" : "") . "
          ORDER BY m.id ASC LIMIT 50"
     );
     $st->execute([$sessionId, $desde]);
@@ -150,8 +157,24 @@ try {
         )->fetchColumn() ?: null;
     } catch (Throwable $e2) { /* sin migracion 57 */ }
 
+    /* LAPIDAS: mensajes eliminados desde el CRM en las ultimas 24 h. El
+       widget saca esas burbujas de la pantalla y de la charla guardada del
+       jugador que YA las habia recibido -- el "eliminar para todos". */
+    $borrados = [];
+    if ($hayBorrado) {
+        try {
+            $borrados = array_map('intval', $pdo->query(
+                "SELECT id FROM mensajes
+                  WHERE conversacion_id IN ($enConv) AND rol = 'agente'
+                    AND borrado_en IS NOT NULL
+                    AND borrado_en >= NOW() - INTERVAL 1 DAY"
+            )->fetchAll(PDO::FETCH_COLUMN));
+        } catch (Throwable $e2) { /* best-effort */ }
+    }
+
     echo json_encode(['ok' => true, 'mensajes' => $msgs, 'ultimo_id' => $ultimo,
-                      'leido_user_en' => $leidoUser], JSON_UNESCAPED_UNICODE);
+                      'leido_user_en' => $leidoUser,
+                      'borrados' => $borrados], JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
     error_log('mis_mensajes: ' . $e->getMessage());
     echo json_encode(['ok' => false, 'mensajes' => [], 'ultimo_id' => $desde]);

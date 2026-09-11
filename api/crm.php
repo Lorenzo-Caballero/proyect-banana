@@ -751,19 +751,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             } catch (Throwable $e) { /* sin migracion 57 */ }
 
             // `operador` por mensaje (migración 30). Si la columna no existe,
-            // se reintenta sin ella para no romper el hilo. visto_en es de la
-            // migracion 57: el fallback intermedio la deja afuera.
+            // se reintenta sin ella para no romper el hilo. visto_en (57) y
+            // borrado_en/borrado_por (58) llegan juntos en el primer intento:
+            // con cualquiera de esas migraciones sin correr se degrada al
+            // fallback y el hilo carga igual, sin visto ni borrar.
             try {
-                $st = $pdo->prepare("SELECT rol, operador, texto, meta, creado_en, visto_en FROM mensajes
+                $st = $pdo->prepare("SELECT id, rol, operador, texto, meta, creado_en, visto_en,
+                                            borrado_en, borrado_por FROM mensajes
                                      WHERE conversacion_id = ? ORDER BY creado_en ASC, id ASC");
                 $st->execute([$id]);
             } catch (Throwable $e) {
                 try {
-                    $st = $pdo->prepare("SELECT rol, operador, texto, meta, creado_en FROM mensajes
+                    $st = $pdo->prepare("SELECT id, rol, operador, texto, meta, creado_en FROM mensajes
                                          WHERE conversacion_id = ? ORDER BY creado_en ASC, id ASC");
                     $st->execute([$id]);
                 } catch (Throwable $e2) {
-                    $st = $pdo->prepare("SELECT rol, texto, meta, creado_en FROM mensajes
+                    $st = $pdo->prepare("SELECT id, rol, texto, meta, creado_en FROM mensajes
                                          WHERE conversacion_id = ? ORDER BY creado_en ASC, id ASC");
                     $st->execute([$id]);
                 }
@@ -772,9 +775,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 $meta = $m['meta'] ? json_decode($m['meta'], true) : null;
                 // adjunto: {tipo,url,nombre}. interno: true = rastro del agente
                 // ("Fiorella cargó $500"), no una respuesta real al cliente.
+                $m['id'] = (int)$m['id'];
                 $m['adjunto'] = ($meta && isset($meta['url'])) ? $meta : null;
                 $m['interno'] = (bool)($meta['interno'] ?? false);
                 unset($m['meta']);
+                // Un mensaje eliminado no viaja con su texto: el hilo muestra
+                // el rastro ("Mensaje eliminado"), no el contenido borrado.
+                if (!empty($m['borrado_en'])) { $m['texto'] = ''; $m['adjunto'] = null; }
                 return $m;
             }, $st->fetchAll(PDO::FETCH_ASSOC));
 
@@ -786,6 +793,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                    'usuario' => $ficha, 'movimientos' => $movs,
                    'agentes' => crm_agentes_de($pdo, $id),
                    'yo' => $operador]);
+        }
+
+        /* ---- eliminar un mensaje ENVIADO (estilo WhatsApp) ----
+           Borrado BLANDO (migracion 58): la fila queda con borrado_en y hace
+           de rastro en el CRM ("Mensaje eliminado"), de freno de entrega
+           (mis_mensajes deja de mandarlo) y de LAPIDA para retraerlo del
+           widget del jugador que ya lo habia recibido.
+           SOLO salientes: los mensajes del jugador son SU palabra en un
+           sistema que mueve plata -- no se tocan, ni por error. */
+        if ($accion === 'mensaje_borrar') {
+            $mid = (int)($body['id'] ?? 0);
+            if (!$mid) { salir(['ok' => false, 'error' => 'Falta id'], 400); }
+            try {
+                $st = $pdo->prepare(
+                    "UPDATE mensajes SET borrado_en = NOW(), borrado_por = ?
+                      WHERE id = ? AND rol <> 'user' AND borrado_en IS NULL"
+                );
+                $st->execute([mb_substr((string)$operador, 0, 60), $mid]);
+            } catch (Throwable $e) {
+                salir(['ok' => false, 'error' => 'Falta la migración 58 (mensajes.borrado_en)'], 500);
+            }
+            if ($st->rowCount() === 0) {
+                salir(['ok' => false,
+                       'error' => 'Ese mensaje no se puede eliminar (no existe, ya está eliminado, o es del jugador)'], 400);
+            }
+            crm_bitacora($pdo, $operador, 'mensaje_borrar', 'mensaje #' . $mid);
+            salir(['ok' => true, 'id' => $mid]);
         }
 
         // ---- plantillas de mensaje ----

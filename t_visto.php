@@ -71,6 +71,32 @@ $pdo->prepare("UPDATE mensajes SET visto_en = NOW() WHERE conversacion_id = ? AN
 $leido = $pdo->query("SELECT MAX(visto_en) FROM mensajes WHERE conversacion_id IN ($conv) AND rol='user' AND visto_en IS NOT NULL")->fetchColumn();
 chequear('leido_user_en sale con fecha', !empty($leido), (string)$leido);
 
+echo "\n=== 4. Eliminar un mensaje enviado (migracion 58) ===\n";
+$ins->execute([$conv, 'agente', 'esto salio mal, borralo', null, date('Y-m-d H:i:s'), null]);
+$idBorrable = (int)$pdo->lastInsertId();
+$ins->execute([$conv, 'user', 'mensaje del jugador', null, date('Y-m-d H:i:s'), null]);
+$idJugador = (int)$pdo->lastInsertId();
+// La sentencia de crm.php mensaje_borrar:
+$bo = $pdo->prepare("UPDATE mensajes SET borrado_en = NOW(), borrado_por = ?
+                      WHERE id = ? AND rol <> 'user' AND borrado_en IS NULL");
+$bo->execute(['test_op', $idBorrable]);
+chequear('el saliente se marca borrado', $bo->rowCount() === 1);
+$bo->execute(['test_op', $idJugador]);
+chequear('el del JUGADOR no se puede borrar', $bo->rowCount() === 0);
+$bo->execute(['test_op', $idBorrable]);
+chequear('borrar dos veces no hace nada', $bo->rowCount() === 0);
+// La entrega de mis_mensajes lo excluye:
+$n = (int)$pdo->query("SELECT COUNT(*) FROM mensajes
+                        WHERE conversacion_id IN ($conv) AND rol='agente' AND id > 0
+                          AND borrado_en IS NULL AND id = $idBorrable")->fetchColumn();
+chequear('la entrega ya no lo incluye', $n === 0);
+// Y la lapida sale para la retraccion del widget:
+$lap = array_map('intval', $pdo->query(
+    "SELECT id FROM mensajes WHERE conversacion_id IN ($conv) AND rol='agente'
+      AND borrado_en IS NOT NULL AND borrado_en >= NOW() - INTERVAL 1 DAY"
+)->fetchAll(PDO::FETCH_COLUMN));
+chequear('la lapida sale en borrados', in_array($idBorrable, $lap, true), json_encode($lap));
+
 $pdo->exec("DELETE FROM mensajes WHERE conversacion_id=$conv");
 $pdo->exec("DELETE FROM conversaciones WHERE id=$conv");
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);
