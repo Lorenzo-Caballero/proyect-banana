@@ -1766,9 +1766,13 @@
             pintarCopiables(d.pago);
             if (d.carga) narrarCarga(d.carga);
             if (d.alta)  narrarAlta(d.alta);
-          });
+          }, d.mensaje_id);
         } else {
-          pintar("b", d.respuesta);
+          var fb = pintar("b", d.respuesta);
+          // El id del mensaje en el CRM viaja con la burbuja: es lo que
+          // permite RETRAERLA si un operador la elimina (d.borrados del
+          // sondeo). Sin esto, lo que decia Camila era imborrable.
+          if (fb._ent && d.mensaje_id){ fb._ent.id = d.mensaje_id; guardar(); }
           pintarCopiables(d.pago);
           if (d.carga) narrarCarga(d.carga);   // narrar el proceso de la carga
           if (d.alta)  narrarAlta(d.alta);     // esperar a que el bot la cree
@@ -1841,13 +1845,20 @@
      El primero sale ya (el jugador viene de esperar la respuesta); los que
      siguen esperan. La pausa es corta a propósito: son datos que el jugador
      está esperando para anotar, no charla. */
-  function pintarVarios(lista, alTerminar){
+  function pintarVarios(lista, alTerminar, msjId){
+    // El CRM guarda la respuesta partida como UN solo mensaje: todas las
+    // burbujas comparten ese id, asi que si el operador lo elimina se
+    // retraen todas juntas (que es lo que el ve como "el mensaje").
+    function conId(txt){
+      var f = pintar("b", txt);
+      if (f._ent && msjId){ f._ent.id = msjId; guardar(); }
+    }
     var i = 0;
     function siguiente(){
       if (i >= lista.length){ if (alTerminar) alTerminar(); return; }
       var txt = lista[i++];
       if (i === 1){                       // el primero, sin demora
-        pintar("b", txt);
+        conId(txt);
         setTimeout(siguiente, 700);
         return;
       }
@@ -1856,7 +1867,7 @@
       setTimeout(function (){
         esp.remove();
         setEstado(AGENTE_ESTADO, false);
-        pintar("b", txt);
+        conId(txt);
         setTimeout(siguiente, 700);
       }, 900);
     }

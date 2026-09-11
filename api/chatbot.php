@@ -854,9 +854,12 @@ for ($i = count($mensajes) - 1; $i >= 0; $i--) {
 // DESPUES de haber generado la respuesta: el peor de los dos mundos (gastamos
 // el modelo y el jugador no ve nada). Fue exactamente asi como el chat quedo
 // mudo tras el deploy de referidos/bono.
+// El id del mensaje del bot en el CRM viaja al widget (mensaje_id, abajo):
+// es lo que permite RETRAER la burbuja si un operador la elimina despues.
+$mensajeIdBot = 0;
 if (function_exists('crm_registrar_turno')) {
     try {
-        crm_registrar_turno($pdo, $sessionId, $ultimoUser, $texto, $usuarioDetectado);
+        $mensajeIdBot = (int)crm_registrar_turno($pdo, $sessionId, $ultimoUser, $texto, $usuarioDetectado);
     } catch (Throwable $e) {
         error_log('chatbot: crm_registrar_turno fallo (no corta la respuesta): ' . $e->getMessage());
     }
@@ -913,6 +916,9 @@ if (function_exists('notif_chat')) {
 }
 
 $salida = ['ok' => true, 'respuesta' => $texto];
+// El id del mensaje del bot en el CRM: el widget lo ata a la(s) burbuja(s)
+// de esta respuesta para poder retraerlas si un operador las elimina.
+if ($mensajeIdBot > 0) { $salida['mensaje_id'] = $mensajeIdBot; }
 // Solo si de verdad hay mas de uno: asi el widget viejo (que no conoce el
 // campo) sigue andando igual con `respuesta`, y el nuevo no cambia nada en el
 // 99% de los turnos, que son de un solo mensaje.
