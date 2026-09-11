@@ -159,13 +159,16 @@ try {
 
     /* LAPIDAS: mensajes eliminados desde el CRM en las ultimas 24 h. El
        widget saca esas burbujas de la pantalla y de la charla guardada del
-       jugador que YA las habia recibido -- el "eliminar para todos". */
+       jugador que YA las habia recibido -- el "eliminar para todos".
+       rol 'agente' Y 'bot': las respuestas de Camila llegan al widget por la
+       respuesta del chatbot (no por este sondeo) pero se retraen por aca
+       igual -- el widget ata cada burbuja del bot a su mensaje_id. */
     $borrados = [];
     if ($hayBorrado) {
         try {
             $borrados = array_map('intval', $pdo->query(
                 "SELECT id FROM mensajes
-                  WHERE conversacion_id IN ($enConv) AND rol = 'agente'
+                  WHERE conversacion_id IN ($enConv) AND rol IN ('agente', 'bot')
                     AND borrado_en IS NOT NULL
                     AND borrado_en >= NOW() - INTERVAL 1 DAY"
             )->fetchAll(PDO::FETCH_COLUMN));

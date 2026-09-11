@@ -750,9 +750,12 @@
   .msg-agente{font-weight:700;color:var(--violet2)}
   /* El "✓✓ Visto HH:MM" del jugador, al lado de la hora del mensaje. */
   .msg-visto{color:#4fc3f7;font-weight:600}
-  /* Eliminar mensaje: discreto en la meta; el rastro del eliminado, en gris. */
-  .msg-del{background:none;border:0;cursor:pointer;padding:0 2px;font-size:12px;opacity:.45}
-  .msg-del:hover{opacity:1}
+  /* Eliminar mensaje: discreto en la meta pero clickeable de verdad (el
+     emoji salía diminuto y distinto según el sistema; SVG propio). */
+  .msg-del{background:none;border:0;cursor:pointer;padding:2px 4px;margin:-2px 0;
+           color:inherit;opacity:.45;vertical-align:middle;line-height:1}
+  .msg-del svg{width:14px;height:14px;display:block}
+  .msg-del:hover{opacity:1;color:#e5484d}
   .msg-borrado{color:var(--muted,#8b8fa3);font-style:italic}
   .agentes-chat{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}
   .ag-chip{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;line-height:1;
@@ -6194,8 +6197,9 @@
       }
       // Eliminar: solo salientes (agente/bot); la palabra del jugador no se
       // toca. Pide confirmación y el jugador deja de verlo (estilo WhatsApp).
+      // SVG propio (no emoji): el emoji salía diminuto y distinto por sistema.
       const del = (m.id && m.rol!=="user")
-        ? ` · <button type="button" class="msg-del" data-id="${m.id}" title="Eliminar mensaje">🗑</button>` : "";
+        ? ` · <button type="button" class="msg-del" data-id="${m.id}" title="Eliminar mensaje"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>` : "";
       return `<div class="row ${cls}"><div><div class="bub">${inner}</div><div class="meta">${quien}${horaExacta(m.creado_en)}${visto}${del}</div></div></div>`;
     }).join("") || `<div class="nouser">Conversación vacía.</div>`;
     const th=$("#thread"); th.scrollTop = th.scrollHeight;

@@ -795,33 +795,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                    'yo' => $operador]);
         }
 
-        /* ---- eliminar un mensaje ENVIADO (estilo WhatsApp) ----
-           Borrado BLANDO (migracion 58): la fila queda con borrado_en y hace
-           de rastro en el CRM ("Mensaje eliminado"), de freno de entrega
-           (mis_mensajes deja de mandarlo) y de LAPIDA para retraerlo del
-           widget del jugador que ya lo habia recibido.
-           SOLO salientes: los mensajes del jugador son SU palabra en un
-           sistema que mueve plata -- no se tocan, ni por error. */
-        if ($accion === 'mensaje_borrar') {
-            $mid = (int)($body['id'] ?? 0);
-            if (!$mid) { salir(['ok' => false, 'error' => 'Falta id'], 400); }
-            try {
-                $st = $pdo->prepare(
-                    "UPDATE mensajes SET borrado_en = NOW(), borrado_por = ?
-                      WHERE id = ? AND rol <> 'user' AND borrado_en IS NULL"
-                );
-                $st->execute([mb_substr((string)$operador, 0, 60), $mid]);
-            } catch (Throwable $e) {
-                salir(['ok' => false, 'error' => 'Falta la migración 58 (mensajes.borrado_en)'], 500);
-            }
-            if ($st->rowCount() === 0) {
-                salir(['ok' => false,
-                       'error' => 'Ese mensaje no se puede eliminar (no existe, ya está eliminado, o es del jugador)'], 400);
-            }
-            crm_bitacora($pdo, $operador, 'mensaje_borrar', 'mensaje #' . $mid);
-            salir(['ok' => true, 'id' => $mid]);
-        }
-
         // ---- plantillas de mensaje ----
         if ($accion === 'plantillas') {
             try {
@@ -1233,6 +1206,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->prepare("UPDATE conversaciones SET actualizada_en = NOW() WHERE id = ?")->execute([$convId]);
             }
             salir(['ok' => true, 'encolada' => true]);
+        }
+
+        /* ---- eliminar un mensaje ENVIADO (estilo WhatsApp) ----
+           Borrado BLANDO (migracion 58): la fila queda con borrado_en y hace
+           de rastro en el CRM ("Mensaje eliminado"), de freno de entrega
+           (mis_mensajes deja de mandarlo) y de LAPIDA para retraerlo del
+           widget del jugador que ya lo habia recibido.
+           SOLO salientes: los mensajes del jugador son SU palabra en un
+           sistema que mueve plata -- no se tocan, ni por error.
+           OJO: va en el bloque POST (el boton postea). El primer intento
+           quedo en el bloque GET y el server contestaba "accion desconocida". */
+        if ($accion === 'mensaje_borrar') {
+            $mid = (int)($body['id'] ?? 0);
+            if (!$mid) { salir(['ok' => false, 'error' => 'Falta id'], 400); }
+            try {
+                $st = $pdo->prepare(
+                    "UPDATE mensajes SET borrado_en = NOW(), borrado_por = ?
+                      WHERE id = ? AND rol <> 'user' AND borrado_en IS NULL"
+                );
+                $st->execute([mb_substr((string)$operador, 0, 60), $mid]);
+            } catch (Throwable $e) {
+                salir(['ok' => false, 'error' => 'Falta la migración 58 (mensajes.borrado_en)'], 500);
+            }
+            if ($st->rowCount() === 0) {
+                salir(['ok' => false,
+                       'error' => 'Ese mensaje no se puede eliminar (no existe, ya está eliminado, o es del jugador)'], 400);
+            }
+            crm_bitacora($pdo, $operador, 'mensaje_borrar', 'mensaje #' . $mid);
+            salir(['ok' => true, 'id' => $mid]);
         }
 
         // ---- responder al cliente (mensaje del agente) ----

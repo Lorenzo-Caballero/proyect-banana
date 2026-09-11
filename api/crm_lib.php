@@ -183,16 +183,24 @@ if (!function_exists('crm_conversacion_id')) {
         return $porConexion[$k];
     }
 
-    /** Guarda un turno del chatbot. Nunca rompe el chat: si falla, solo loguea. */
+    /** Guarda un turno del chatbot. Nunca rompe el chat: si falla, solo loguea.
+     *  Devuelve el id del MENSAJE DEL BOT insertado (0 si no hubo): el chat lo
+     *  manda al widget (mensaje_id) y es lo que permite RETRAER esa burbuja
+     *  si un operador la elimina despues desde el CRM -- sin el id, las
+     *  respuestas de Camila eran imborrables del lado del jugador. */
     function crm_registrar_turno(PDO $pdo, string $sessionId, string $textoUser,
-                                 string $textoBot, ?string $usuario = null): void
+                                 string $textoBot, ?string $usuario = null): int
     {
-        if ($sessionId === '') { return; }
+        if ($sessionId === '') { return 0; }
+        $idBot = 0;
         try {
             $pdo->beginTransaction();
             $convId = crm_conversacion_id($pdo, $sessionId, $usuario);
             if ($textoUser !== '') { crm_mensaje($pdo, $convId, 'user', $textoUser); }
-            if ($textoBot  !== '') { crm_mensaje($pdo, $convId, 'bot',  $textoBot); }
+            if ($textoBot  !== '') {
+                crm_mensaje($pdo, $convId, 'bot', $textoBot);
+                $idBot = (int)$pdo->lastInsertId();
+            }
             $preview = mb_substr($textoBot !== '' ? $textoBot : $textoUser, 0, 280);
 
             /* Si el jugador VUELVE A ESCRIBIR, la conversacion vuelve a la
@@ -216,7 +224,9 @@ if (!function_exists('crm_conversacion_id')) {
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) { $pdo->rollBack(); }
             error_log('crm_registrar_turno: ' . $e->getMessage());
+            return 0;
         }
+        return $idBot;
     }
 
     /** Suma fichas ('ficha') o bono ('bono') a un jugador y registra el movimiento.
