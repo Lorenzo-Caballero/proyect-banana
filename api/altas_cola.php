@@ -548,14 +548,25 @@ if ($accion === 'marcar' && $metodo === 'POST') {
             // solo `usuario` y el evento se reporta igual, con el pixel
             // general (sin pixel propio de publicista).
             $publicista = null;
-            try {
-                $u = $pdo->prepare("SELECT usuario, publicista_id, fbp, fbc FROM altas WHERE id = ?");
-                $u->execute([$id]);
-                $fila = $u->fetch();
-            } catch (Throwable $e) {
-                $u = $pdo->prepare("SELECT usuario FROM altas WHERE id = ?");
-                $u->execute([$id]);
-                $fila = $u->fetch();
+            // ip/ua/url_landing son del JUGADOR (migracion 51), NO del server.
+            // Este evento lo dispara el bot al confirmar el alta, asi que sin
+            // esto CompleteRegistration viajaba con la IP del VPS y un UA de PHP
+            // -- Meta usa esos campos para reconocer a la persona, y con los del
+            // datacenter el match es pobre. Mismo criterio que el Purchase.
+            // Se prueba de mas a menos columnas: una base sin la 51 (o sin la
+            // 44) cae al SELECT que si tenga, nunca a un fatal.
+            $fila = null;
+            foreach ([
+                "SELECT usuario, publicista_id, fbp, fbc, ip, ua, url_landing FROM altas WHERE id = ?",
+                "SELECT usuario, publicista_id, fbp, fbc FROM altas WHERE id = ?",
+                "SELECT usuario FROM altas WHERE id = ?",
+            ] as $sql) {
+                try {
+                    $u = $pdo->prepare($sql);
+                    $u->execute([$id]);
+                    $fila = $u->fetch();
+                    break;
+                } catch (Throwable $e) { /* falta una migracion: probar con menos columnas */ }
             }
             if (!empty($fila['publicista_id'])) {
                 $publicista = publicidad_por_id($pdo, (int)$fila['publicista_id']);
@@ -565,6 +576,9 @@ if ($accion === 'marcar' && $metodo === 'POST') {
                 'ref'     => 'alta:' . $id,
                 'fbp'     => (string)($fila['fbp'] ?? ''),
                 'fbc'     => (string)($fila['fbc'] ?? ''),
+                'ip'      => (string)($fila['ip'] ?? ''),
+                'ua'      => (string)($fila['ua'] ?? ''),
+                'url'     => (string)($fila['url_landing'] ?? ''),
                 'pixel'   => publicidad_pixel_propio($publicista),
             ]);
         } catch (Throwable $e) {
