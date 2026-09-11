@@ -2417,9 +2417,22 @@
       log("ADOPTA usuario:", quien, "(antes:", USUARIO || "(ninguno)", ")");
       avisarVps("ADOPTA", { u: quien, sel: capa, id: idDeReact() });
       plataformaAnon = false;   // volvio a entrar: el veredicto viejo ya fue
+      // ¿Venia SIN loguear (anonimo)? Entonces es la MISMA persona que estaba
+      // chateando y recien inicio sesion: NO se borra la charla. Perderla es el
+      // bug que reporto Nahuel -- alguien que ya transfirio sin loguear y al
+      // entrar pierde todo el hilo. Se ADOPTA a su nombre, igual que el server
+      // (crm_conversacion_id adopta el anon:sid). Solo si cambia de un usuario
+      // logueado a OTRO (otra persona en el mismo navegador) se borra, para no
+      // mezclar dos identidades en el mismo hilo.
+      var eraAnonimo = !USUARIO;
       USUARIO = quien;
       lss("goldpaw_user", USUARIO);
-      reiniciarCharla();
+      if (eraAnonimo){
+        guardar();        // re-guardar la MISMA charla bajo el usuario nuevo
+        pintarAtajos();   // ahora tiene sesion: los atajos cambian
+      } else {
+        reiniciarCharla();
+      }
       notifRegistrar();     // este celular ahora es de este jugador
     }
 

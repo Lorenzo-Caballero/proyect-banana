@@ -2202,7 +2202,8 @@ function ia_chat(string $key, array $mensajes, array $tools): array
             $rc = ia_chat_post(CLAUDE_COMPAT_BASE . '/chat/completions', $claudeKey, $cc, $claudeHeaders);
             if ($rc['http'] === 200) { return $rc; }
             error_log('chatbot: Claude (' . $claudeModel . ') dio HTTP ' . $rc['http']
-                    . '; sigo con Qwen de respaldo');
+                    . '; sigo con Qwen de respaldo. Respuesta de Claude: '
+                    . mb_substr((string)($rc['raw'] ?? ''), 0, 400));
             ia_chat_aviso_respaldo('Qwen ' . $modelo, (int)$rc['http'], true);
         } catch (Throwable $e) {
             error_log('chatbot: Claude no respondio (' . $e->getMessage() . '); sigo con Qwen');
