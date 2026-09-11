@@ -118,7 +118,13 @@ const QWEN_MODEL_DEF = 'qwen-plus';
 // el primario se queda sin cuota. Solo modelos que SI hacen tool-calling --
 // qwen-vl-max queda afuera a proposito (ignora las tools). Se prueban en orden.
 const QWEN_FALLBACK_DEF = 'qwen-turbo,qwen-max';
-const MAX_MENSAJES = 12;
+// 50 y no 12: que el bot LEA CASI TODA la charla, no los ultimos 12 turnos.
+// Con 12 se olvidaba del nombre del jugador y del monto dichos al principio,
+// y repetia preguntas -- la queja numero uno (ver el chat de santucruz275,
+// 9/9). El modelo es gratuito, asi que el costo es tiempo, no plata; 50
+// cubre entera cualquier conversacion normal sin reventar su ventana de
+// contexto. El widget manda hasta MAX_CONTEXTO (que sube a la par).
+const MAX_MENSAJES = 50;
 const MAX_CARACT   = 1500;
 const MAX_TOKENS   = 600;
 const MAX_RONDAS   = 4;   // vueltas de tool-use antes de rendirse
@@ -416,6 +422,16 @@ $contextoBase = ($cfgBot['contexto'] !== '')
 // switch POR CHAT (conversaciones.ia_activa). El global manda: el por-chat
 // solo puede APAGAR un chat puntual cuando el global está prendido.
 $iaEsteChat = chatbot_ia_del_chat($pdo, $sessionId, $usuarioCliente);
+
+// RECONEXION: si la IA se apago por una derivacion y ya pasaron los minutos
+// configurados sin que un agente atienda, el bot retoma este mismo turno. Solo
+// aplica si el switch GLOBAL esta prendido -- si el operador apago el bot
+// entero, no lo revive.
+if (!$iaEsteChat && $botActivo
+    && chatbot_reconectar_derivacion($pdo, $sessionId, $usuarioCliente)) {
+    $iaEsteChat = true;
+}
+
 if (!$botActivo || !$iaEsteChat) {
     $ultimoUser = '';
     for ($i = count($historial) - 1; $i >= 0; $i--) {
@@ -423,6 +439,12 @@ if (!$botActivo || !$iaEsteChat) {
             $ultimoUser = (string)$historial[$i]['content'];
             break;
         }
+    }
+    // Avisar por Telegram que el jugador derivado escribio, con lo que dijo.
+    // Solo si sigue apagado por DERIVACION (no por el switch global ni por un
+    // apagado manual): si el operador apago el bot entero, no tiene sentido.
+    if ($botActivo) {
+        chatbot_avisar_derivada_escribio($pdo, $sessionId, $usuarioCliente, $ultimoUser);
     }
     $aviso = 'En un momento te responde un agente. ¡Gracias por tu paciencia!';
     // Guardamos el turno con el aviso como "respuesta", asi el hilo del CRM
@@ -1316,6 +1338,123 @@ function chatbot_fecha_ar(): string
          . "\nUsá esto si te preguntan la fecha/hora o para cosas que dependan del"
          . " día (promos de finde, horarios de atención, etc.). No lo menciones si"
          . " no viene al caso.";
+}
+
+/**
+ * La conversacion (clave) de este chat: el usuario si se conoce, o anon:<sid>.
+ * Mismo criterio que chatbot_ia_del_chat y el resto del CRM.
+ */
+function chatbot_clave_conv(string $sessionId, string $usuario): string
+{
+    if ($usuario !== '')   { return mb_substr($usuario, 0, 50); }
+    if ($sessionId !== '') { return 'anon:' . substr($sessionId, 0, 64); }
+    return '';
+}
+
+/**
+ * RECONEXION AUTOMATICA de la IA tras una derivacion sin atender.
+ *
+ * El problema (visto con clientes reales): el bot deriva a un humano, apaga su
+ * IA para ese chat, y si el agente no la reactiva, el jugador que vuelve a
+ * escribir mas tarde queda hablando con una pared -- solo recibe el mensaje
+ * fijo, para siempre.
+ *
+ * Aca, si la IA esta apagada POR UNA DERIVACION (derivada_en no es NULL) y ya
+ * pasaron los minutos configurados, el bot retoma: reactiva ia_activa y borra
+ * la marca de derivada, y este mismo turno responde normal.
+ *
+ * SOLO reconecta derivaciones. Si el operador apago la IA a mano desde el CRM
+ * (ia_activa=0 pero derivada_en NULL), se respeta: la apago a proposito.
+ *
+ * Devuelve true si reconecto. Best-effort: sin la migracion 49 (derivada_en)
+ * no puede saber si fue derivacion, asi que no reconecta -- como antes.
+ */
+function chatbot_reconectar_derivacion(PDO $pdo, string $sessionId, string $usuario): bool
+{
+    $clave = chatbot_clave_conv($sessionId, $usuario);
+    if ($clave === '') { return false; }
+
+    $min = function_exists('cfg_crm') ? (int)cfg_crm($pdo, 'ia_reconectar_min') : 30;
+    if ($min <= 0) { return false; }   // 0 = reconexion apagada
+
+    try {
+        // Se hace en un solo UPDATE condicional (no leer-despues-escribir): dos
+        // mensajes del jugador entrando a la vez no reconectan dos veces ni se
+        // pisan. Devuelve 1 fila solo si de verdad estaba derivada y ya vencio.
+        $st = $pdo->prepare(
+            "UPDATE conversaciones
+                SET ia_activa = 1, derivada_en = NULL, derivada_motivo = NULL
+              WHERE clave = ?
+                AND COALESCE(ia_activa, 1) = 0
+                AND derivada_en IS NOT NULL
+                AND derivada_en <= NOW() - INTERVAL ? MINUTE"
+        );
+        $st->execute([$clave, $min]);
+        return $st->rowCount() > 0;
+    } catch (Throwable $e) {
+        // Sin la migracion 49 (derivada_en) no se puede distinguir derivacion
+        // de apagado manual: no se reconecta, para no revivir un chat que el
+        // operador apago a proposito.
+        return false;
+    }
+}
+
+/**
+ * Avisa por Telegram que un jugador DERIVADO volvio a escribir, con lo que
+ * escribio. Es lo que el operador pidio para poder atender a tiempo.
+ *
+ * Con FRENO: un aviso cada ~5 min por chat, no uno por mensaje -- un jugador
+ * ansioso escribe diez veces seguidas (se ve en los chats reales) y no son
+ * diez avisos. El texto dice en cuantos minutos lo retoma el bot, asi el
+ * operador sabe el margen que tiene.
+ */
+function chatbot_avisar_derivada_escribio(PDO $pdo, string $sessionId, string $usuario, string $texto): void
+{
+    if (!function_exists('tg_evento')) { return; }
+    $clave = chatbot_clave_conv($sessionId, $usuario);
+    if ($clave === '') { return; }
+
+    // Solo si fue una DERIVACION del bot (derivada_en), no un apagado manual
+    // del operador: si lo apago a mano, probablemente ya lo esta atendiendo y
+    // el aviso seria ruido. Sin la migracion 49 no se puede distinguir -> se
+    // avisa igual (perder el aviso es peor que uno de mas).
+    try {
+        $st = $pdo->prepare("SELECT derivada_en FROM conversaciones WHERE clave = ? LIMIT 1");
+        $st->execute([$clave]);
+        $der = $st->fetchColumn();
+        if ($der === false || $der === null) { return; }
+    } catch (Throwable $e) { /* sin columna: se avisa igual */ }
+
+    $min   = function_exists('cfg_crm') ? (int)cfg_crm($pdo, 'ia_reconectar_min') : 30;
+    $quien = $usuario !== '' ? $usuario : 'un jugador sin identificar';
+    $reco  = $min > 0
+        ? 'El bot lo retoma solo si nadie lo atiende en ' . $min . ' min.'
+        : 'El bot NO lo retoma solo: hay que atenderlo desde el CRM.';
+
+    /* FRENO de 5 min por chat, a mano y no con el dedupe de tg_evento. El
+       dedupe interno se destraba cuando cambia el CONTENIDO, y este aviso
+       lleva lo que escribio el jugador -- que cambia en cada mensaje --, asi
+       que sin este chequeo previo avisaria por cada linea. Aca se mira solo el
+       TIEMPO del ultimo aviso de este chat: el primero pasa, los que siguen en
+       los proximos 5 min no. */
+    $claveAviso = 'derivada_msg:' . $clave;
+    try {
+        $st = $pdo->prepare(
+            "SELECT 1 FROM tg_avisos WHERE clave = ? AND ultimo_en > NOW() - INTERVAL 5 MINUTE LIMIT 1"
+        );
+        $st->execute([$claveAviso]);
+        if ($st->fetchColumn()) { return; }   // ya avise hace poco por este chat
+    } catch (Throwable $e) {
+        // Sin la tabla tg_avisos (migracion 50) no hay freno posible: se avisa
+        // igual, que es el lado seguro (perder el aviso es peor que repetirlo).
+    }
+
+    tg_evento($pdo, 'derivacion', '💬 Un jugador derivado escribió', [
+        'Jugador'   => $quien,
+        'Escribió'  => mb_substr(trim($texto), 0, 300),
+        'Nota'      => $reco,
+        'Qué hacer' => 'CRM → Conversaciones, para responderle.',
+    ], $claveAviso);
 }
 
 /**

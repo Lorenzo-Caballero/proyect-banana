@@ -166,8 +166,8 @@
   avisarVps("arranca", { host: location.hostname });
 
   var CHAT_KEY = "goldpaw_chat";   // la charla guardada entre aperturas
-  var MAX_GUARDADO = 40;           // cuantos mensajes se recuerdan
-  var MAX_CONTEXTO = 20;           // cuantos turnos se le mandan al modelo
+  var MAX_GUARDADO = 80;           // cuantos mensajes se recuerdan (localStorage)
+  var MAX_CONTEXTO = 50;           // cuantos turnos se le mandan al modelo (que lea casi todo)
 
   /* =====================  EDITA ESTO  =====================================
    * Como se presenta el chat. El nombre y la foto son lo primero que ve el

@@ -108,6 +108,12 @@ const CFG_CRM_DEFAULTS = [
     // Estos dos son informativos, no piden accion: sirven para mirar el
     // negocio de reojo sin entrar al CRM. Arrancan APAGADOS a proposito --
     // con volumen son muchos mensajes por dia, y quien los quiera los prende.
+    // Minutos que la IA espera antes de RETOMAR una charla que derivo a un
+    // humano, si el agente no la atendio. 0 = nunca reconecta (queda para
+    // el agente para siempre, como era antes). El aviso de Telegram al
+    // jugador que reescribe derivado dice este numero, asi el operador sabe
+    // en cuanto lo va a retomar el bot.
+    'ia_reconectar_min' => '30',
     'tg_ev_alta'       => '0',   // se registro un jugador (o no se pudo)
     'tg_ev_pago'       => '0',   // entro una transferencia y se acredito sola
 
