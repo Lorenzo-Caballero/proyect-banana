@@ -454,6 +454,7 @@ foreach ($activos as $c) {
 // mostrarlo en el panel del dueño sin tener que entrar por SSH.
 // ---------------------------------------------------------------------------
 $ALTA_ATASCADA_MIN = 15;   // una alta sana se resuelve en ~2 min
+$ESPEJO_ATRASADO_MIN = 30; // el sync espeja usuarios cada pocos minutos
 $problemas = [];
 
 $todos = $pdo->query(
@@ -531,6 +532,34 @@ foreach ($todos as $c) {
                 }
             }
         } catch (Throwable $e) { /* tablas distintas: se saltea */ }
+
+        // 5. EL LOGIN DEL PANEL FALLA (credenciales mal / sesion caida sin
+        //    recuperar). Sintoma: hay jugadores CREADOS en el panel
+        //    (altas.estado='ok') que hace rato no aparecen en el espejo
+        //    `usuarios`. Si el sync_usuarios no puede loguearse, deja de traer
+        //    gente y en el CRM esos jugadores no tienen saldo, fichas ni nada
+        //    -- que fue justo lo que paso (11/9) con la password del panel mal.
+        //    Solo se miran altas RECIENTES (< 1 dia): un desfase historico no
+        //    es la falla de ahora. usuarios y altas comparten collation (ver
+        //    migracion 13), asi que la comparacion no necesita COLLATE.
+        try {
+            $st = $q->prepare(
+                "SELECT COUNT(*) FROM altas a
+                  WHERE a.estado = 'ok' AND a.creado_en_panel = 1
+                    AND a.hecho_en < DATE_SUB(NOW(), INTERVAL ? MINUTE)
+                    AND a.hecho_en > DATE_SUB(NOW(), INTERVAL 1 DAY)
+                    AND NOT EXISTS (SELECT 1 FROM usuarios u WHERE u.username = a.usuario)"
+            );
+            $st->execute([$ESPEJO_ATRASADO_MIN]);
+            $sinEspejo = (int) $st->fetchColumn();
+            if ($sinEspejo > 0) {
+                $problemas[] = "$slug: $sinEspejo jugador(es) creados no llegaron al espejo (login del panel?)";
+                $suyos[] = "$sinEspejo jugador(es) creados hace mas de {$ESPEJO_ATRASADO_MIN} min "
+                         . "NO figuran en el CRM. Casi seguro el login del panel de agentes esta "
+                         . "fallando (revisa PANEL_USER/PANEL_PASS): el sync no puede traer a nadie, "
+                         . "y en el chat esos jugadores salen como \"no encontrado\".";
+            }
+        } catch (Throwable $e) { /* falta una columna/tabla: se saltea */ }
 
         // El aviso va con la clave 'salud': si el problema sigue igual, no se
         // repite hasta que pase el tiempo configurado. Sin eso serian 1.440
