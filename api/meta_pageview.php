@@ -43,6 +43,9 @@ try {
         'event_id' => $eventId,
         'fbp'      => (string)($body['fbp'] ?? ''),
         'fbc'      => (string)($body['fbc'] ?? ''),
+        // La pagina donde ocurrio el PageView: la manda el navegador (url) o, si
+        // no, el referer. Sin esto Meta marca "falta event_source_url".
+        'url'      => trim((string)($body['url'] ?? '')) ?: (string)($_SERVER['HTTP_REFERER'] ?? ''),
         'pixel'    => publicidad_pixel_propio($publicista),
     ]);
     echo json_encode(['ok' => true]);

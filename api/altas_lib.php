@@ -359,7 +359,7 @@ function alta_encolar(PDO $pdo, array $d): array
     $pubId    = isset($d['publicista_id']) ? (int)$d['publicista_id'] : 0;
     $fbclid   = mb_substr(trim((string)($d['fbclid'] ?? '')), 0, 255);
     $fbp      = mb_substr(trim((string)($d['fbp']    ?? '')), 0, 80);
-    $fbc      = mb_substr(trim((string)($d['fbc']    ?? '')), 0, 120);
+    $fbc      = mb_substr(trim((string)($d['fbc']    ?? '')), 0, 255);   // fbc largo: no truncar (migracion 59)
     // Navegador y URL del jugador (migracion 51). Se guardan para poder mandarle
     // a Meta los datos de LA PERSONA en los eventos que dispara despues el bot,
     // donde $_SERVER es del servidor. Ver el docblock de la migracion.

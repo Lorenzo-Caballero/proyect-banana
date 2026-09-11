@@ -196,7 +196,21 @@ function meta_evento(PDO $pdo, string $evento, array $datos = []): string
         'action_source'    => 'website',
         'user_data'        => $userData,
     ];
-    if (!empty($datos['url'])) { $ev['event_source_url'] = (string)$datos['url']; }
+    /* event_source_url: Meta lo EXIGE para atribuir y optimizar (si falta, avisa
+       en Diagnostico y baja la calidad de match). Se usa la url que paso el
+       caller (la landing real); si no vino -- evento del bot sin url_landing, o
+       un PageView sin url --, se cae al dominio del sitio. Para los eventos del
+       bot, HTTP_HOST es el dominio del cliente (lo manda en el header al pegarle
+       a la API); para los del navegador, es la propia pagina. Meta acepta el
+       dominio como origen valido. */
+    $urlEvento = trim((string)($datos['url'] ?? ''));
+    if ($urlEvento === '') {
+        $host = trim((string)($_SERVER['HTTP_HOST'] ?? ''));
+        if ($host !== '' && stripos($host, 'localhost') === false && strpos($host, '127.0.0.1') === false) {
+            $urlEvento = 'https://' . $host . '/';
+        }
+    }
+    if ($urlEvento !== '') { $ev['event_source_url'] = $urlEvento; }
     if ($valor !== null) {
         $ev['custom_data'] = ['value' => round($valor, 2), 'currency' => $moneda];
     }

@@ -1,0 +1,13 @@
+-- 59_fbc_ancho.sql — el fbc de Meta no entra en VARCHAR(120) y se truncaba.
+--
+-- El fbc tiene la forma 'fb.1.<timestamp>.<fbclid>', y el fbclid moderno pasa
+-- los 100 caracteres, asi que el fbc completo supera los 120 y se cortaba al
+-- guardarlo en `altas`. Meta lo detecta en Diagnostico como "fbc modificado
+-- (truncado)" y le baja la calidad de coincidencia a CompleteRegistration y
+-- Purchase -- justo los eventos que optimizan las campañas.
+--
+-- Se ensancha a 255 (holgado para cualquier fbclid). El fbp sigue en 80: es
+-- 'fb.1.<ts>.<random>', mas corto, y no da problemas.
+--
+-- Aditiva e idempotente: MODIFY sobre una columna que ya existe (migracion 44).
+ALTER TABLE altas MODIFY fbc VARCHAR(255) NULL;
