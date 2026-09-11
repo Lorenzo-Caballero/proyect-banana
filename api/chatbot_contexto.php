@@ -268,7 +268,7 @@ y puede tardar. Que el jugador diga que pago NO confirma nada: puede haberse
 equivocado de monto, de alias, o no haber transferido todavia.
 1. Primero fijate, no contestes de memoria:
    - subio una FOTO del comprobante al chat -> verificar_comprobante
-   - te paso por TEXTO el titular o el numero de operacion -> informar_transferencia
+   - te paso por TEXTO el nombre del titular de la cuenta -> informar_transferencia
    - no te dio ningun dato -> consultar_recarga
    Ojo con lo que prueba cada cosa: el comprobante NO confirma que la plata
    entro -- se saca antes de que el banco acredite. Lo que hace es DECLARAR

@@ -1678,6 +1678,115 @@ function rl_matchear_y_acreditar(PDO $pdo, string $idUnico, float $monto): array
 }
 
 /**
+ * DECLARAR el pago: el jugador ya transfirio y dice a nombre de QUIEN esta la
+ * cuenta (por texto o leido de la foto del comprobante). Lo llaman las
+ * herramientas informar_transferencia y verificar_comprobante del chatbot.
+ *
+ * QUE HACE, y que NO:
+ * - Guarda el titular en la recarga PENDIENTE del jugador (recargas.titular_
+ *   declarado). Eso es lo unico que desempata dos recargas del mismo monto
+ *   cuando llega el pago -- ver rl_elegir_recarga.
+ * - Re-intenta casar los pagos que quedaron en 'revision' de ese monto: si el
+ *   pago ya habia entrado y estaba esperando justo este dato, ahora se
+ *   acredita. Reusa rl_matchear_y_acreditar, que NUNCA adivina: solo acredita
+ *   con match claro.
+ * - NO acredita por si mismo ni por lo que diga el jugador. El unico que
+ *   confirma que entro la plata es el aviso del banco. Declarar solo AYUDA a
+ *   casar; si el pago no entro, el dato queda guardado y espera.
+ *
+ * El numero de operacion (trx) se guarda si viene, pero NO hace falta para
+ * casar: el matcher no lo usa. No se le pide al jugador (ver el chatbot).
+ *
+ * Devuelve estado: 'acreditada' | 'pendiente' | 'sin_pendiente'.
+ */
+function rl_declarar_pago(PDO $pdo, string $usuario, string $titular = '',
+                          string $nroTrx = '', ?float $monto = null,
+                          string $origen = 'chat'): array
+{
+    $usuario = trim($usuario);
+    if ($usuario === '') {
+        return ['ok' => false, 'error' => 'Falta el usuario.'];
+    }
+    rl_vencer($pdo);
+
+    // La recarga PENDIENTE mas reciente: la que esta esperando la plata.
+    $st = $pdo->prepare(
+        "SELECT * FROM recargas WHERE usuario = ? AND estado = 'pendiente' ORDER BY id DESC LIMIT 1"
+    );
+    $st->execute([$usuario]);
+    $rec = $st->fetch();
+
+    if (!$rec) {
+        // Sin pendiente: quizas ya se acredito (se lo confirmamos) o no pidio.
+        $cons = rl_consultar($pdo, $usuario);
+        if (!empty($cons['encontrada']) && ($cons['estado'] ?? '') === 'acreditada') {
+            return ['ok' => true, 'estado' => 'acreditada', 'usuario' => $usuario,
+                    'coins' => $cons['coins'] ?? null];
+        }
+        return ['ok' => true, 'estado' => 'sin_pendiente'];
+    }
+
+    // Guardar el titular (y el nro si vino). COALESCE + NULLIF: un dato vacio no
+    // pisa lo que ya habia (el jugador pudo declararlo al crear la recarga).
+    $titular = trim($titular);
+    $nroTrx  = trim($nroTrx);
+    if ($titular !== '' || $nroTrx !== '') {
+        try {
+            $pdo->prepare(
+                "UPDATE recargas
+                    SET titular_declarado = COALESCE(NULLIF(?, ''), titular_declarado),
+                        trx_declarada     = COALESCE(NULLIF(?, ''), trx_declarada)
+                  WHERE id = ?"
+            )->execute([$titular, $nroTrx, $rec['id']]);
+        } catch (Throwable $e) {
+            // trx_declarada es de 45_recarga_exacta, que puede faltar aunque
+            // exista titular_declarado (45_match_titular). Guardar el titular
+            // es lo que DESEMPATA -- no puede caerse porque falte la columna
+            // del numero de operacion, que ni siquiera se usa para casar.
+            try {
+                $pdo->prepare(
+                    "UPDATE recargas
+                        SET titular_declarado = COALESCE(NULLIF(?, ''), titular_declarado)
+                      WHERE id = ?"
+                )->execute([$titular, $rec['id']]);
+            } catch (Throwable $e2) {
+                error_log('rl_declarar_pago: no pude guardar el titular: ' . $e2->getMessage());
+            }
+        }
+    }
+
+    // Re-intentar los pagos en 'revision' de este monto: con el titular recien
+    // declarado, uno que estaba trabado por ambiguedad puede desempatar ahora.
+    $montoRec = (float)$rec['monto_pedido'];
+    try {
+        $pg = $pdo->prepare(
+            "SELECT id_unico, monto FROM pagos
+              WHERE estado = 'revision'
+                AND (ROUND(monto*100) = ROUND(? * 100) OR FLOOR(monto) = FLOOR(?))
+              ORDER BY capturado_en DESC LIMIT 10"
+        );
+        $pg->execute([$montoRec, $montoRec]);
+        foreach ($pg->fetchAll() as $pago) {
+            $res = rl_matchear_y_acreditar($pdo, (string)$pago['id_unico'], (float)$pago['monto']);
+            // Solo cuenta si acredito LA recarga de ESTE usuario. Si el match
+            // acredito la de otro (era su pago), se sigue buscando el nuestro.
+            if (($res['resultado'] ?? '') === 'acreditada'
+                && (string)($res['usuario'] ?? '') === $usuario) {
+                return ['ok' => true, 'estado' => 'acreditada', 'usuario' => $usuario,
+                        'coins' => (int)($res['coins'] ?? $rec['coins'])];
+            }
+        }
+    } catch (Throwable $e) {
+        error_log('rl_declarar_pago: rematch: ' . $e->getMessage());
+    }
+
+    // El pago todavia no entro (o no casa aun): el dato quedo guardado y espera
+    // al aviso del banco. El chatbot dice "quedo anotada", nunca "ya esta".
+    return ['ok' => true, 'estado' => 'pendiente', 'usuario' => $usuario,
+            'coins' => (int)$rec['coins'], 'monto_pedido' => $montoRec];
+}
+
+/**
  * Asignacion MANUAL de un pago en revision a una recarga pendiente puntual
  * (Fase A, modulo Comprobantes sin resolver). Revalida los dos con
  * FOR UPDATE dentro de la transaccion: si el matcher automatico o otro

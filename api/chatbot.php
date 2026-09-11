@@ -307,19 +307,19 @@ $TOOLS = [
     ]],
     ['type' => 'function', 'function' => [
         'name' => 'informar_transferencia',
-        'description' => 'El jugador dice que YA transfirio su recarga y pasa datos por TEXTO: '
-            . 'el nombre del TITULAR de la cuenta desde la que transfirio y/o el numero de '
-            . 'operacion/transaccion del comprobante. Registra esos datos y, si el pago real '
-            . 'ya llego, acredita al instante. Llamala con lo que haya dado, aunque sea un '
-            . 'solo dato. Si tiene el comprobante en imagen, mejor que lo suba al chat con el '
-            . 'clip y usa verificar_comprobante.',
+        'description' => 'El jugador dice que YA transfirio su recarga y te pasa por TEXTO '
+            . 'el nombre del TITULAR de la cuenta desde la que transfirio. Ese es el dato que '
+            . 'importa: con el titular alcanza para casar el pago. Registra el dato y, si la '
+            . 'plata ya llego, acredita al instante. Si tiene el comprobante en imagen, mejor '
+            . 'que lo suba al chat con el clip y usa verificar_comprobante.',
         'parameters' => [
             'type' => 'object',
             'properties' => [
                 'titular' => ['type' => 'string', 'description'
                     => 'nombre y apellido del titular de la cuenta DESDE la que transfirio'],
                 'nro_transaccion' => ['type' => 'string', 'description'
-                    => 'numero de operacion / transaccion / comprobante'],
+                    => 'OPCIONAL. Numero de operacion, SOLO si el jugador lo dio sin que se lo '
+                     . 'pidas. No hace falta para casar el pago: NO se lo pidas nunca.'],
                 'usuario' => ['type' => 'string', 'description'
                     => 'nombre de usuario del juego. Solo si NO inicio sesion; con sesion el server ya sabe quien es.'],
             ],
@@ -1984,9 +1984,9 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
         }
         if (!function_exists('vision_extraer_comprobante') || !vision_disponible()) {
             return ['ok' => false, 'codigo' => 'sin_vision', 'error' =>
-                'La lectura automatica de comprobantes no esta disponible. Pedile '
-                . 'por texto el titular de SU cuenta y el numero de operacion, y usa '
-                . 'informar_transferencia.'];
+                'No pude leer la imagen. Pedile por texto el nombre del titular de la '
+                . 'cuenta desde la que transfirio -- con eso alcanza -- y usa '
+                . 'informar_transferencia. NO le pidas el numero de operacion.'];
         }
         $v = vision_extraer_comprobante($adj['ruta']);
         if (empty($v['ok'])) {
