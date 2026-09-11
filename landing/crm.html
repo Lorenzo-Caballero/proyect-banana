@@ -2108,6 +2108,10 @@
         </div>
         <div class="acts" style="margin-top:9px">
           <button class="act bono" id="btnBono"><svg viewBox="0 0 24 24"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg> Cargar bono</button>
+          <!-- El rescate de bonos que quedaron en el contador (ruleta, cargas
+               viejas, o un bono cargado mientras habia una carga en curso):
+               los manda TODOS al juego en un solo deposito. -->
+          <button class="act bono" id="btnBonosJuego"><svg viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg> Bonos al juego</button>
           <button class="act ver" id="btnVer"><svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg> Ver balance</button>
         </div>
         <div class="acts" style="margin-top:9px">
@@ -3584,6 +3588,11 @@
               <p class="cfg-hint">Extra que se le suma al jugador cuando carga desde el botón <b>Depósitos</b> de la plataforma. <b>0 = sin bono</b>, entra el importe exacto que transfirió.</p>
             </div>
             <div>
+              <label class="cb-flabel">Bono de bienvenida landing (%)</label>
+              <input class="cb-input" id="cfgBonoBienvenida" inputmode="numeric" placeholder="50">
+              <p class="cfg-hint">El % que promete la landing <b>bono.html</b> sobre la <b>primera</b> carga. La landing muestra este mismo número y el bono entra al juego junto con la carga. Las landings creadas en <b>Landings</b> no usan esto: cada una tiene su propio %.</p>
+            </div>
+            <div>
               <label class="cb-flabel">No se retira desde</label>
               <input class="cb-input" id="cfgLimRetiroDesde" placeholder="03:00">
               <p class="cfg-hint">Hora en que <b>cierran</b> los retiros.</p>
@@ -4730,6 +4739,7 @@
     lim_retiro_min:     { el: "#cfgLimRetiroMin", tipo: "texto" },
     lim_retiro_max_dia: { el: "#cfgLimRetiroDia", tipo: "texto" },
     lim_bono_carga_pct: { el: "#cfgLimBonoCarga", tipo: "texto" },
+    bono_bienvenida_pct:{ el: "#cfgBonoBienvenida", tipo: "texto" },
     app_url:            { el: "#cfgAppUrl",       tipo: "texto" },
     tg_bot_token:       { el: "#cfgTgToken",      tipo: "texto" },
     tg_chat_id:         { el: "#cfgTgChat",       tipo: "texto" },
@@ -6222,6 +6232,10 @@
     if(bp.fichas>0) partesBono.push(nf.format(bp.fichas));
     if(bp.pct_cantidad>0) partesBono.push(`${bp.pct_cantidad}×%`);
     if(bp.giro_cantidad>0) partesBono.push(`${bp.giro_cantidad}×giro`);
+    // El contador usuarios.bonus: bonos ya acreditados que todavia no fueron
+    // al juego (el boton «Bonos al juego» los manda). Sin esto el agente
+    // cargaba un bono y la ficha no cambiaba en nada.
+    if((u.bonus|0) > 0) partesBono.push(`${nf.format(u.bonus)} sin depositar`);
     $("#uBonos").textContent = partesBono.length ? partesBono.join(" + ") : "0";
 
     const flags=[];
@@ -8437,6 +8451,14 @@
   $("#btnSaldo").addEventListener("click", ()=>abrirModal("cargar_saldo","Cargar saldo",true));
   $("#btnRetiro").addEventListener("click", ()=>abrirModal("retirar_saldo","Retirar saldo",true));
   $("#btnBono").addEventListener("click", ()=>abrirModal("cargar_bono","Cargar bono",false));
+  // Manda TODO el bonus acumulado del jugador al juego, en un deposito.
+  $("#btnBonosJuego").addEventListener("click", async ()=>{
+    if(!st.usuario){ toast("Esta conversación no tiene usuario vinculado"); return; }
+    if(!confirm(`¿Mandar TODOS los bonos de @${st.usuario} al juego?`)) return;
+    const d = await jpost({accion:"bonos_al_juego", usuario:st.usuario});
+    if(d.ok) toast(`${nf.format(d.monto)} en bonos van al juego (los deposita el bot en segundos)`);
+    else toast(d.error || "No se pudo");
+  });
   $("#btnVer").addEventListener("click", ()=>{
     if(!st.usuario){ toast("Sin usuario vinculado"); return; }
     toast(`Saldo ${$("#uSaldo").textContent} · Bono pendiente ${$("#uBonos").textContent}`);
@@ -8451,7 +8473,12 @@
     btn.disabled=false; btn.textContent="Cargar";
     if(d.ok){
       $("#back").classList.remove("on");
-      if(st.accion==="cargar_bono") toast(`Bono cargado (nuevo: ${nf.format(d.saldo)})`);
+      if(st.accion==="cargar_bono"){
+        // al_juego dice si el deposito quedo encolado; si no (p.ej. habia una
+        // carga en curso), `aviso` trae que hacer -- mostrarlo, no taparlo.
+        if(d.aviso) toast(d.aviso);
+        else toast(d.al_juego ? "Bono cargado: va al juego en segundos" : `Bono cargado (nuevo: ${nf.format(d.saldo)})`);
+      }
       else toast(st.accion==="retirar_saldo" ? "Retiro encolado en ganamos" : "Carga de saldo encolada en ganamos");
       abrir(st.convId);
     } else { toast(d.error || "No se pudo"); }

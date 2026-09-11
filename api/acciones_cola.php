@@ -216,8 +216,18 @@ try {
         // aprieta el boton: cuando el saldo del panel se movio de verdad. Es el
         // unico momento en que decirle "ya lo tenes" no puede ser mentira.
         if ($estado === 'hecha' && function_exists('notif_crear')) {
-            $acc = $pdo->prepare("SELECT usuario, tipo, monto, origen FROM acciones_saldo WHERE id = ?");
-            $acc->execute([$id]);
+            // bono_debitado es de la migracion 56: sin ella, 0 y todo sigue.
+            try {
+                $acc = $pdo->prepare(
+                    "SELECT usuario, tipo, monto, origen, coins_debitados, bono_debitado
+                       FROM acciones_saldo WHERE id = ?");
+                $acc->execute([$id]);
+            } catch (PDOException $e) {
+                $acc = $pdo->prepare(
+                    "SELECT usuario, tipo, monto, origen, coins_debitados, 0 AS bono_debitado
+                       FROM acciones_saldo WHERE id = ?");
+                $acc->execute([$id]);
+            }
             if ($a = $acc->fetch()) {
                 /* Purchase para Meta: ACA, no cuando el chatbot encolo. Este
                    es el mismo punto donde se le avisa al jugador "ya lo tenes"
@@ -239,7 +249,14 @@ try {
                    bono de carga activo ni siquiera coincidian los importes, asi
                    que el error era irregular y mas dificil de ver. */
                 $deRecarga = ($a['origen'] ?? '') === 'recarga';
-                if (($a['tipo'] ?? '') === 'cargar' && !$deRecarga) {
+                /* Un deposito que es TODO bono (coins_debitados 0 y el monto
+                   sale entero de bono_debitado) es un REGALO de la casa, no
+                   ingresos: reportarlo como Purchase inflaria los numeros de
+                   la campaña con plata que nunca entro. */
+                $esRegalo = (int)($a['bono_debitado'] ?? 0) > 0
+                         && (int)($a['coins_debitados'] ?? 0) === 0
+                         && (float)($a['monto'] ?? 0) <= (int)($a['bono_debitado'] ?? 0);
+                if (($a['tipo'] ?? '') === 'cargar' && !$deRecarga && !$esRegalo) {
                     try {
                         require_once __DIR__ . '/meta_lib.php';
                         require_once __DIR__ . '/publicidad_lib.php';

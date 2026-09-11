@@ -156,13 +156,23 @@ function fichas_pedir_carga(PDO $pdo, string $usuario, int $monto, string $orige
         return ['ok' => false, 'codigo' => 'sin_usuario',
                 'error' => 'No sé a qué usuario cargarle. Primero hay que iniciar sesión.'];
     }
+    /* Deposito SOLO-BONO (monto=0, bono>0): el CRM mandando al juego los
+       bonos del jugador. Es un regalo de la casa, no una compra del jugador:
+       los limites de carga (minimo/maximo del AUTOSERVICIO) no aplican, igual
+       que no aplican cuando un agente carga a mano. Un monto negativo sigue
+       siendo invalido. */
+    $soloBono = ($monto === 0 && $bono > 0);
+    if ($monto < 0) {
+        return ['ok' => false, 'codigo' => 'monto_bajo',
+                'error' => 'El monto no puede ser negativo.'];
+    }
     $minCarga = fichas_limite($pdo, 'lim_carga_min', FICHAS_MIN_CARGA);
     $maxCarga = fichas_limite($pdo, 'lim_carga_max', FICHAS_MAX_CARGA);
-    if ($monto < $minCarga) {
+    if (!$soloBono && $monto < $minCarga) {
         return ['ok' => false, 'codigo' => 'monto_bajo', 'minimo' => $minCarga,
                 'error' => 'El mínimo para cargar es ' . number_format($minCarga, 0, ',', '.') . ' fichas.'];
     }
-    if ($maxCarga > 0 && $monto > $maxCarga) {
+    if (!$soloBono && $maxCarga > 0 && $monto > $maxCarga) {
         return ['ok' => false, 'codigo' => 'monto_alto', 'maximo' => $maxCarga,
                 'error' => 'Ese monto es muy alto para cargar solo. Te lo hace un agente por chat.'];
     }
@@ -224,7 +234,9 @@ function fichas_pedir_carga(PDO $pdo, string $usuario, int $monto, string $orige
                     'error' => 'Ya tenés una carga en camino. Esperá a que se acredite.'];
         }
 
-        if ($cobrar) {
+        // Con monto=0 (solo-bono) no hay coins que cobrar ni movimiento de
+        // fichas que anotar: un "-0" en el historial solo confunde.
+        if ($cobrar && $monto > 0) {
             $pdo->prepare("UPDATE usuarios SET coins = coins - ? WHERE username = ?")
                 ->execute([$monto, $usuario]);
 
@@ -241,6 +253,13 @@ function fichas_pedir_carga(PDO $pdo, string $usuario, int $monto, string $orige
            aunque no se cobren los coins ($confiable sin espejo deja bonus en
            0 y esto queda en 0 solo). */
         $bono = max(0, min($bono, (int)($fila['bonus'] ?? 0)));
+        // Solo-bono sin bonos disponibles: no hay NADA que depositar. Sin
+        // este corte se encolaba una accion de monto 0 (el bot depositaria $0).
+        if ($soloBono && $bono <= 0) {
+            $pdo->rollBack();
+            return ['ok' => false, 'codigo' => 'sin_bonos', 'bonos' => (int)($fila['bonus'] ?? 0),
+                    'error' => 'El jugador no tiene bonos para mandar al juego.'];
+        }
         if ($bono > 0) {
             $pdo->prepare("UPDATE usuarios SET bonus = bonus - ? WHERE username = ?")
                 ->execute([$bono, $usuario]);
@@ -254,6 +273,10 @@ function fichas_pedir_carga(PDO $pdo, string $usuario, int $monto, string $orige
         // 'libre' va 0: no se cobro nada, asi que no hay nada que devolver, y
         // un fallo NO le tiene que regalar fichas propias al jugador.
         // bono_debitado, igual pero contra usuarios.bonus (migracion 56).
+        $motivoAcc = $soloBono
+            ? 'Bonos al juego'
+            : ($cobrar ? 'Canje de fichas' : 'Carga de prueba (sin cobro)')
+                . ($bono > 0 ? ' + bono ' . $bono : '');
         try {
             $pdo->prepare(
                 "INSERT INTO acciones_saldo (usuario, tipo, monto, motivo, origen, coins_debitados, bono_debitado)
@@ -261,10 +284,9 @@ function fichas_pedir_carga(PDO $pdo, string $usuario, int $monto, string $orige
             )->execute([
                 $usuario,
                 $monto + $bono,
-                ($cobrar ? 'Canje de fichas' : 'Carga de prueba (sin cobro)')
-                    . ($bono > 0 ? ' + bono ' . $bono : ''),
+                $motivoAcc,
                 $origen,
-                $cobrar ? $monto : 0,
+                ($cobrar && $monto > 0) ? $monto : 0,
                 $bono,
             ]);
         } catch (PDOException $e) {
@@ -281,10 +303,9 @@ function fichas_pedir_carga(PDO $pdo, string $usuario, int $monto, string $orige
             )->execute([
                 $usuario,
                 $monto + $bono,
-                ($cobrar ? 'Canje de fichas' : 'Carga de prueba (sin cobro)')
-                    . ($bono > 0 ? ' + bono ' . $bono : ''),
+                $motivoAcc,
                 $origen,
-                $cobrar ? $monto : 0,
+                ($cobrar && $monto > 0) ? $monto : 0,
             ]);
         }
 
@@ -318,7 +339,10 @@ function fichas_pedir_carga(PDO $pdo, string $usuario, int $monto, string $orige
            embudo al reves -- Purchase primero, InitiateCheckout despues -- que
            es imposible y ensucia el modelo. El inicio real de esa compra fue
            cuando el jugador pidio la recarga por el chat. */
-        if ($origen !== 'recarga') {
+        // Tampoco con un deposito solo-bono: es un REGALO de la casa, no una
+        // intencion de compra del jugador -- reportarlo optimizaria la
+        // campaña hacia gente que recibe regalos, no que paga.
+        if ($origen !== 'recarga' && !$soloBono) {
             try {
                 require_once __DIR__ . '/meta_lib.php';
                 require_once __DIR__ . '/publicidad_lib.php';

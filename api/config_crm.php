@@ -154,6 +154,14 @@ const CFG_CRM_DEFAULTS = [
     'panel_user' => '',
     'panel_pass' => '',
 
+    // Bono de BIENVENIDA de la landing bono.html, en % de la primera carga.
+    // El default '50' reproduce la constante historica RL_BONO_BIENVENIDA_PCT:
+    // desplegar esto no cambia nada hasta que el cliente lo toque. La landing
+    // muestra este mismo numero (lo pide a bono_config.php), asi la promesa y
+    // el pago no pueden decir cosas distintas. Las landings del CRM (lp:<slug>)
+    // no usan esto: cada una tiene SU bono_pct propio.
+    'bono_bienvenida_pct' => '50',
+
     // Bono que se le suma a una carga pedida desde el boton Depositos de la
     // plataforma, en % del monto. '0' = sin bono, la carga entra por el importe
     // exacto que transfirio el jugador.

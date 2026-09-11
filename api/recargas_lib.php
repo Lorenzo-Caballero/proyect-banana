@@ -1127,7 +1127,12 @@ function rl_bono_bienvenida_aplicar(PDO $pdo, string $usuario, int $coins): int
 
         $pctBono = 0;
         if ($origenAlta === RL_BONO_BIENVENIDA_ORIGEN) {
-            $pctBono = RL_BONO_BIENVENIDA_PCT;
+            // Configurable por cliente (config_crm 'bono_bienvenida_pct'),
+            // con la constante historica de respaldo si la config no
+            // responde. fichas_limite() ya sabe degradar exactamente asi.
+            // La landing muestra el MISMO numero (bono_config.php): lo
+            // prometido y lo pagado no pueden divergir.
+            $pctBono = fichas_limite($pdo, 'bono_bienvenida_pct', RL_BONO_BIENVENIDA_PCT);
         } elseif (strncmp($origenAlta, 'lp:', 3) === 0) {
             if (!function_exists('landings_por_slug')) {
                 // Deploy parcial (recargas_lib nuevo sin landings_lib): que

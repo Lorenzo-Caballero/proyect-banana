@@ -134,6 +134,45 @@ rl_cargar_al_juego_auto($pdo, $recarga3);
 $a = fila($pdo, "SELECT monto FROM acciones_saldo WHERE usuario = ? AND tipo='cargar' ORDER BY id DESC LIMIT 1", [$U]);
 chequear('deposito por 3000, sin bono inventado', (int)($a['monto'] ?? 0) === 3000, json_encode($a));
 
+echo "\n=== 7. El % de bono50 es CONFIGURABLE (config bono_bienvenida_pct) ===\n";
+require_once __DIR__ . '/api/landings_lib.php';
+cfg_crm_guardar($pdo, ['bono_bienvenida_pct' => '40'], 'test');
+limpiar($pdo, $U);
+$pdo->prepare("INSERT INTO altas (usuario, estado, origen) VALUES (?, 'ok', 'bono50')")->execute([$U]);
+$pdo->prepare(
+    "INSERT INTO recargas (usuario, coins, monto_pedido, monto_base, estado, referencia, vence_en)
+     VALUES (?, 3000, 3000.00, 3000.00, 'pendiente', 'TB7', DATE_ADD(NOW(), INTERVAL 45 MINUTE))"
+)->execute([$U]);
+$r7 = fila($pdo, "SELECT * FROM recargas WHERE usuario = ? LIMIT 1", [$U]);
+$pdo->beginTransaction();
+rl_acreditar($pdo, $r7, 'pago-test-bono-7', 'test', null, null);
+$pdo->commit();
+chequear('con la config en 40, el bono es 1200', (int)($r7['bono'] ?? 0) === 1200, json_encode($r7['bono'] ?? null));
+rl_cargar_al_juego_auto($pdo, $r7);
+$a = fila($pdo, "SELECT monto FROM acciones_saldo WHERE usuario = ? AND tipo='cargar' ORDER BY id DESC LIMIT 1", [$U]);
+chequear('deposito 4200 (3000 + 40%)', (int)($a['monto'] ?? 0) === 4200, json_encode($a));
+cfg_crm_guardar($pdo, ['bono_bienvenida_pct' => '50'], 'test');
+
+echo "\n=== 8. Landing del CRM (lp:<slug>): usa SU bono_pct ===\n";
+$pdo->exec("DELETE FROM landings WHERE slug = 'promo40'");
+$pdo->prepare("INSERT INTO landings (slug, nombre, plantilla, bono_pct, activa) VALUES ('promo40','Promo 40','oro',40,1)")
+    ->execute();
+limpiar($pdo, $U);
+$pdo->prepare("INSERT INTO altas (usuario, estado, origen) VALUES (?, 'ok', 'lp:promo40')")->execute([$U]);
+$pdo->prepare(
+    "INSERT INTO recargas (usuario, coins, monto_pedido, monto_base, estado, referencia, vence_en)
+     VALUES (?, 3000, 3000.00, 3000.00, 'pendiente', 'TB8', DATE_ADD(NOW(), INTERVAL 45 MINUTE))"
+)->execute([$U]);
+$r8 = fila($pdo, "SELECT * FROM recargas WHERE usuario = ? LIMIT 1", [$U]);
+$pdo->beginTransaction();
+rl_acreditar($pdo, $r8, 'pago-test-bono-8', 'test', null, null);
+$pdo->commit();
+chequear('landing del 40 => bono 1200 (el % de ESA landing)', (int)($r8['bono'] ?? 0) === 1200, json_encode($r8['bono'] ?? null));
+rl_cargar_al_juego_auto($pdo, $r8);
+$a = fila($pdo, "SELECT monto FROM acciones_saldo WHERE usuario = ? AND tipo='cargar' ORDER BY id DESC LIMIT 1", [$U]);
+chequear('EL DEPOSITO AL JUEGO ES 4200', (int)($a['monto'] ?? 0) === 4200, json_encode($a));
+$pdo->exec("DELETE FROM landings WHERE slug = 'promo40'");
+
 limpiar($pdo, $U);
 $pdo->prepare("DELETE FROM usuarios WHERE username = ?")->execute([$U]);
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);

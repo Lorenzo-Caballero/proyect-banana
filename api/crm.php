@@ -89,6 +89,7 @@ function ficha_usuario(PDO $pdo, string $usuario): ?array
     $st = $pdo->prepare(
         "SELECT id AS ganamos_id, username AS nombre_usuario,
                 COALESCE(balance,0) AS saldo,
+                COALESCE(bonus,0)   AS bonus,
                 COALESCE(total_deposits,0) AS total_deposits,
                 role, is_banned, tiene_app, notificaciones,
                 creation_date, ultima_actividad
@@ -98,6 +99,10 @@ function ficha_usuario(PDO $pdo, string $usuario): ?array
     $r = $st->fetch(PDO::FETCH_ASSOC);
     if (!$r) { return null; }
 
+    // El contador de bonos SIN depositar (usuarios.bonus). Antes la ficha no
+    // lo mostraba en ningun lado: el agente cargaba un bono, el numero caia
+    // aca, y en pantalla no cambiaba NADA -- "el bono no funciona".
+    $r['bonus']          = (int)$r['bonus'];
     $r['saldo']          = (float)$r['saldo'];
     $r['total_deposits'] = (float)$r['total_deposits'];
     $r['is_banned']      = (bool)$r['is_banned'];
@@ -1095,6 +1100,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 notif_crear($pdo, $usuario, $nt, $nc, $tipo === 'bono' ? 'bono' : 'fichas', null, 'crm');
             }
 
+            /* Un BONO positivo va AL JUEGO en el acto. El contador
+               usuarios.bonus era donde los bonos iban a morir: el CRM los
+               sumaba, el jugador veia el numero en el chat, y en el juego --
+               donde efectivamente se juega -- nunca aparecia nada. Ahora se
+               encola el deposito solo-bono (fichas_pedir_carga con monto=0):
+               el mismo camino, bot y devolucion-si-falla que toda carga.
+               Best-effort: si justo hay una carga en curso ('en_curso'), el
+               bono QUEDA en el contador y la respuesta lo dice -- el boton
+               «Bonos al juego» lo manda despues, sin volver a cargarlo. */
+            $alJuego = null;
+            if ($tipo === 'bono' && $monto > 0) {
+                require_once __DIR__ . '/fichas_lib.php';
+                try {
+                    $dep = fichas_pedir_carga($pdo, $usuario, 0, 'crm', false, $monto);
+                    $alJuego = !empty($dep['ok']);
+                    if (!$alJuego) {
+                        $r['aviso'] = ($dep['codigo'] ?? '') === 'en_curso'
+                            ? 'El jugador tiene una carga en camino: el bono quedó en su contador. En un rato mandalo con «Bonos al juego».'
+                            : 'El bono quedó en el contador pero no se pudo encolar al juego: ' . ($dep['error'] ?? '');
+                    }
+                } catch (Throwable $e) {
+                    error_log('cargar_bono al juego: ' . $e->getMessage());
+                    $r['aviso'] = 'El bono quedó en el contador; el envío al juego falló, usá «Bonos al juego».';
+                }
+            }
+
             // Dejar rastro en el hilo de la conversacion, si vino.
             $convId = (int)($body['conversacion_id'] ?? 0);
             if ($convId) {
@@ -1102,10 +1133,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $signo = $monto > 0 ? '+' : '';
                 crm_mensaje($pdo, $convId, 'agente',
                     "Cargó $signo" . number_format($monto, 0, ',', '.') . " $etiqueta"
+                    . ($tipo === 'bono' && $alJuego ? ' (va al juego)' : '')
                     . ($motivo !== '' ? " · $motivo" : ''), ['interno' => true], $operador);
                 $pdo->prepare("UPDATE conversaciones SET actualizada_en = NOW() WHERE id = ?")->execute([$convId]);
             }
-            salir(['ok' => true, 'tipo' => $tipo, 'saldo' => $r['saldo']]);
+            salir(['ok' => true, 'tipo' => $tipo, 'saldo' => $r['saldo'],
+                   'al_juego' => $alJuego, 'aviso' => $r['aviso'] ?? null]);
+        }
+
+        /* ---- mandar los BONOS acumulados del jugador al juego ----
+           El rescate para todo bono que quedo en el contador: los cargados a
+           mano cuando habia una carga en curso, los de la ruleta, los
+           prometidos por notificacion de antes de que el deposito automatico
+           existiera. Deposita TODO el bonus disponible en una sola carga. */
+        if ($accion === 'bonos_al_juego') {
+            $usuario = trim((string)($body['usuario'] ?? ''));
+            if ($usuario === '') { salir(['ok' => false, 'error' => 'Falta usuario'], 400); }
+            require_once __DIR__ . '/fichas_lib.php';
+            $bo = $pdo->prepare("SELECT COALESCE(bonus,0) FROM usuarios WHERE username = ?");
+            $bo->execute([$usuario]);
+            $disp = (int)$bo->fetchColumn();
+            if ($disp <= 0) { salir(['ok' => false, 'error' => 'El jugador no tiene bonos para mandar.'], 400); }
+            $dep = fichas_pedir_carga($pdo, $usuario, 0, 'crm', false, $disp);
+            if (empty($dep['ok'])) { salir(['ok' => false, 'error' => $dep['error'] ?? 'No se pudo encolar.'], 400); }
+            crm_bitacora($pdo, $operador, 'bonos_al_juego',
+                         $usuario . ': ' . $disp . ' en bonos al juego');
+            salir(['ok' => true, 'monto' => (int)($dep['bono'] ?? $disp)]);
         }
 
         // ---- cargar / retirar SALDO real (se encola para el worker de ganamos) ----

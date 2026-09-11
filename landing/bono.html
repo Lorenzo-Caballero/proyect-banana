@@ -267,7 +267,7 @@
      Los dos números TIENEN que decir lo mismo, y el que manda es el del
      server: si cambiás uno, cambiá el otro.
      ====================================================================== */
-  const BONO_PCT = 50;
+  const BONO_PCT = 50;         // respaldo si bono_config.php no contesta
   const PROMO    = 'bono50';   // la marca que viaja en el alta; whitelisteada en crear_cuenta.php
 
   /* ======================================================================
@@ -327,6 +327,14 @@
   const dormir = ms => new Promise(r => setTimeout(r, ms));
 
   $('bonoPct').textContent = BONO_PCT;
+  /* El % REAL lo dicta el server (config_crm 'bono_bienvenida_pct', editable
+     desde Configuración del CRM): se pinta el que él diga, así la promesa de
+     esta pantalla y el bono que efectivamente se paga no pueden divergir.
+     Best-effort: si el fetch falla queda el respaldo de arriba. */
+  fetch(BASE_API + '/bono_config.php', { cache: 'no-store' })
+    .then(r => r.json())
+    .then(d => { if (d && d.ok && Number.isFinite(d.pct) && d.pct > 0) $('bonoPct').textContent = d.pct; })
+    .catch(()=>{});
 
   usuario.addEventListener('input', ()=>{ msg.textContent=''; usuario.style.borderColor=''; });
 
