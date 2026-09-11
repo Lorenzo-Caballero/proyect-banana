@@ -1727,13 +1727,35 @@
   /* Un solo camino para el formulario y para los atajos: si cada uno armara su
      propio fetch, el día que cambie el contrato de la API se arregla uno y se
      olvida el otro. */
+  /* DEBOUNCE del envio. La gente escribe en varias burbujas ("hola" /
+     "me creas cuenta?"). Si el bot responde apenas llega la primera, pisa a la
+     segunda. Se espera una pausa corta; si entra otra burbuja, se reinicia el
+     reloj y las dos van en UN solo turno. pendienteTrasTurno cubre las que
+     llegan MIENTRAS el bot ya esta respondiendo: se contestan al terminar. */
+  var debounceTurno = null, pendienteTrasTurno = false, DEBOUNCE_MS = 1300;
+
   function enviarMensaje(t){
     t = String(t || "").trim();
-    if (!t || enviando) return;
+    if (!t) return;
 
-    var miFila = pintar("u", t);           // guardamos la fila para el tilde
+    var miFila = pintar("u", t);           // la burbuja se ve YA
     historial.push({ role: "user", content: t });
     text.value = ""; text.style.height = "auto"; snd.disabled = true;
+    setTimeout(function (){ marcarTilde(miFila, "recibido"); }, 350);
+
+    // Si el bot ya esta respondiendo, este mensaje se contesta en el PROXIMO
+    // turno: no se pierde ni interrumpe el que esta en curso.
+    if (enviando){ pendienteTrasTurno = true; return; }
+    if (debounceTurno) clearTimeout(debounceTurno);
+    debounceTurno = setTimeout(dispararTurno, DEBOUNCE_MS);
+  }
+
+  /* El turno de verdad: manda al modelo TODO lo que la persona escribio en sus
+     burbujas (historial) y revela la respuesta. Separado de enviarMensaje para
+     que varias burbujas seguidas entren en UNA sola llamada, en vez de que el
+     bot conteste cada una por separado. */
+  function dispararTurno(){
+    debounceTurno = null;
     enviando = true;
     quick.forEach(function (b){ b.disabled = true; });
 
@@ -1793,13 +1815,20 @@
          próximos segundos, no queremos que le suene un aviso por un mensaje que
          acaba de leer acá. */
       setTimeout(mirarNotif, 600);
+
+      // Mensajes que entraron MIENTRAS respondíamos: se contestan ahora, con la
+      // misma pausa por si la persona sigue escribiendo más burbujas.
+      if (pendienteTrasTurno){
+        pendienteTrasTurno = false;
+        if (debounceTurno) clearTimeout(debounceTurno);
+        debounceTurno = setTimeout(dispararTurno, DEBOUNCE_MS);
+      }
     }
 
-    // Tildes: enviado (una, ya está) -> recibido; y ahí, "escribiendo…".
-    // El "leído" (azul) dejó de ser un timer decorativo: llega DE VERDAD por
-    // mis_mensajes (leido_user_en), cuando un agente abre la conversación en
-    // el CRM. Dos grises = entregado; azules = un humano lo vio.
-    setTimeout(function (){ marcarTilde(miFila, "recibido"); }, 350);
+    // "escribiendo…" recién cuando el turno arranca (ya pasó la pausa del
+    // debounce). El "recibido" de cada burbuja se marcó al mandarla. El "leído"
+    // (azul) llega DE VERDAD por mis_mensajes (leido_user_en) cuando un agente
+    // abre la conversación en el CRM. Dos grises = entregado; azules = lo vio un humano.
     setTimeout(function (){
       esperando = escribiendo();
       setEstado("escribiendo…", true);
