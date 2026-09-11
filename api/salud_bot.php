@@ -88,12 +88,18 @@ try {
         $cargasVieja = ($cargas > 0 && $r['m'] !== null) ? (int)$r['m'] : null;
     }
     $f = $pdo->query(
-        "SELECT estado, mensaje FROM acciones_saldo
+        "SELECT estado, mensaje,
+                TIMESTAMPDIFF(MINUTE, COALESCE(tomada_en, creada_en), NOW()) AS hace_min
+           FROM acciones_saldo
           WHERE tipo = 'cargar' AND estado IN ('error', 'revisar')
           ORDER BY id DESC LIMIT 1"
     )->fetch();
     if ($f) {
-        $falla = $f['estado'] . ': ' . mb_substr((string)$f['mensaje'], 0, 120);
+        // Con la antiguedad: un error de hace dias es historia (p.ej. los
+        // del bot viejo por listado), no el estado de ahora. Sin esto, un
+        // fallo viejisimo parecia el problema vigente.
+        $falla = $f['estado'] . ' (hace ' . (int)$f['hace_min'] . ' min): '
+               . mb_substr((string)$f['mensaje'], 0, 120);
     }
 } catch (Throwable $e) {
     error_log('salud_bot: ' . $e->getMessage());
