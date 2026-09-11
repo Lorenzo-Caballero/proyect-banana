@@ -105,8 +105,16 @@ try {
     error_log('salud_bot: ' . $e->getMessage());
 }
 
+// ¿Corrió la migración 56 (bono_debitado)? Sin ella el bono igual se
+// deposita, pero la devolución automática y el desglose dependen del motivo.
+$mig56 = null;
+try {
+    $mig56 = (bool)$pdo->query("SHOW COLUMNS FROM acciones_saldo LIKE 'bono_debitado'")->fetch();
+} catch (Throwable $e) {}
+
 echo json_encode([
     'ok'                        => true,
+    'mig56_bono_debitado'       => $mig56,
     'bot_visto_hace_seg'        => $hace,
     'altas_en_cola'             => $enCola,
     'mas_vieja_min'             => $viejaMin,
