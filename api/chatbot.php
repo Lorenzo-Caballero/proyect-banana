@@ -1730,9 +1730,17 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
         }
 
         if ($marcada && function_exists('tg_evento')) {
+            // La nota dice en cuanto lo retoma el bot: el operador lo sabe, pero
+            // desde el PRIMER aviso -- que es el que se ve siempre -- para saber
+            // el margen que tiene antes de que la IA vuelva sola.
+            $recoMin = function_exists('cfg_crm') ? (int)cfg_crm($pdo, 'ia_reconectar_min') : 30;
+            $nota = $recoMin > 0
+                ? 'El bot lo retoma solo si nadie lo atiende en ' . $recoMin . ' min.'
+                : 'El bot NO lo retoma solo: atendelo desde el CRM.';
             tg_evento($pdo, 'derivacion', '🙋 Te derivaron una conversación', [
                 'Jugador' => $quien,
                 'Motivo'  => $motivo !== '' ? $motivo : '(no lo dijo)',
+                'Nota'    => $nota,
             ]);
         }
 
