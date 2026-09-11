@@ -6709,8 +6709,35 @@
         <input class="cb-input" id="cdCoins" inputmode="numeric" value="${Math.round(d.pago.monto)}">
         <button class="btn-asignar" id="cdBtn" type="button">Acreditar</button>
       </div>
-      ${sug ? `<div class="cd-directo-hint">Sugerido: <b>@${esc(sug)}</b> ya cargó antes desde esta misma cuenta bancaria.</div>` : ""}`;
+      ${sug ? `<div class="cd-directo-hint">Sugerido: <b>@${esc(sug)}</b> ya cargó antes desde esta misma cuenta bancaria.</div>` : ""}
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--linea, #e4e4e7);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <span style="font-size:12px;color:var(--muted)">¿No es de ningún jugador? (una transferencia tuya o de un tercero)</span>
+        <button id="cdDescartar" type="button" style="background:none;border:1px solid var(--linea,#d4d4d8);color:var(--muted);border-radius:8px;padding:6px 12px;font-size:12.5px;cursor:pointer">Descartar</button>
+      </div>`;
     $("#cdBtn").addEventListener("click", acreditarDirecto);
+    const dsc = $("#cdDescartar"); if(dsc) dsc.addEventListener("click", descartarComprobante);
+  }
+
+  /* Descartar: la transferencia NO es de ningún jugador (propia o de un tercero).
+     No le acredita a nadie; solo la saca de la bandeja para que no quede en
+     revisión para siempre. Reversible del lado del server (queda auditada). */
+  async function descartarComprobante(){
+    if(!compPagoActual) return;
+    const quien = compPagoActual.remitente || "remitente desconocido";
+    if(!confirm(`¿Descartar este comprobante de ${money(compPagoActual.monto)} de ${quien}?\n\n`+
+                `NO se le acredita a ningún jugador. Usalo solo si la transferencia no es de un jugador `+
+                `(una tuya o de un tercero).`)) return;
+    const btn = $("#cdDescartar");
+    btn.disabled = true; btn.textContent = "…";
+    const d = await jpost({accion:"descartar", pago_id:compPagoActual.id_unico}, API_COMP);
+    if(d.ok){
+      toast("Comprobante descartado");
+      actualizarBadgeComp();
+      cargarComprobantes();
+    } else {
+      btn.disabled = false; btn.textContent = "Descartar";
+      toast(d.error || "No se pudo descartar");
+    }
   }
 
   async function acreditarDirecto(){

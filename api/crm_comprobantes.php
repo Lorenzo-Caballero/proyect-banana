@@ -228,6 +228,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         salir(array_merge(['ok' => true], $r));
     }
 
+    /* Descartar un comprobante que NO es de ningún jugador: una transferencia
+       propia (del operador) o de un tercero que no juega. Sin esto queda en
+       'revision' para siempre -- sonando el aviso "sin resolver" y ocupando la
+       bandeja --, porque las otras dos salidas (asignar / acreditar) le dan
+       plata a alguien, y esta transferencia no va para nadie.
+
+       NO toca coins ni saldo. Lo saca de 'revision' marcándolo 'usado' (el ENUM
+       de pagos no tiene un estado propio de descarte) con la huella de quién lo
+       descartó en asignado_por, así queda AUDITABLE y REVERSIBLE: devolverlo a
+       'revision' lo trae de vuelta a la bandeja. Mismo criterio que la limpieza
+       del backlog del apagón. */
+    if ($accion === 'descartar') {
+        $idUnico = trim((string)($body['pago_id'] ?? ''));
+        if ($idUnico === '') {
+            salir(['ok' => false, 'error' => 'Falta el comprobante'], 400);
+        }
+        // Solo se descarta lo que sigue en 'revision': si otro ya lo resolvió
+        // (asignó/acreditó) entremedio, no se pisa -- el WHERE no matchea y
+        // rowCount queda en 0. asignado_por es VARCHAR(60): 'descartado:' (11) +
+        // 45 del operador entra con margen.
+        $st = $pdo->prepare(
+            "UPDATE pagos
+                SET estado = 'usado',
+                    asignado_por = ?, asignado_en = NOW()
+              WHERE id_unico = ? AND estado = 'revision'"
+        );
+        $st->execute(['descartado:' . mb_substr($operador, 0, 45), $idUnico]);
+        if ($st->rowCount() === 0) {
+            salir(['ok' => false, 'error' => 'Ese comprobante ya no está en revisión'], 409);
+        }
+        salir(['ok' => true, 'descartado' => true]);
+    }
+
     salir(['ok' => false, 'error' => 'Acción desconocida'], 400);
 }
 
