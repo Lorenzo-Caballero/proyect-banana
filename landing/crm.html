@@ -748,6 +748,8 @@
   .pin-mini{color:var(--orange2);display:inline-flex;margin-right:5px;flex:none}
   /* multi-agente: etiqueta de quién escribió cada mensaje + agentes atendiendo */
   .msg-agente{font-weight:700;color:var(--violet2)}
+  /* El "✓✓ Visto HH:MM" del jugador, al lado de la hora del mensaje. */
+  .msg-visto{color:#4fc3f7;font-weight:600}
   .agentes-chat{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}
   .ag-chip{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;line-height:1;
            padding:3px 8px;border-radius:20px;background:var(--violetSoft);color:var(--violet2);border:1px solid color-mix(in srgb,var(--violet) 40%,transparent)}
@@ -5272,34 +5274,44 @@
     const hue=((hashStr(nombre)%360)+360)%360;
     return `linear-gradient(160deg, hsl(${hue} 70% 62%), hsl(${(hue+35)%360} 68% 48%))`;
   }
+  /* Las fechas de la base vienen en UTC (el MySQL de producción corre en
+     UTC): se parsean COMO UTC (sufijo Z) y se muestran SIEMPRE en hora
+     argentina, sin importar la zona del navegador del operador. Antes se
+     parseaban como hora local del navegador: las horas del hilo salían
+     corridas (p. ej. -3 h con la base en UTC), y "hace()" mentía igual. */
+  const TZ_AR = "America/Argentina/Buenos_Aires";
+  function fechaDB(iso){
+    return new Date(String(iso).replace(" ","T") + "Z");
+  }
   /** Días enteros desde una fecha. Para decidir si un jugador se está
    *  enfriando sin repetir la aritmética en cada vista. */
   function diasDesde(iso){
     if(!iso) return 0;
-    return Math.floor((Date.now() - new Date(String(iso).replace(" ","T")).getTime())/86400000);
+    return Math.floor((Date.now() - fechaDB(iso).getTime())/86400000);
   }
   function hace(iso){
     if(!iso) return "";
-    const d = new Date(iso.replace(" ","T")); const s = (Date.now()-d.getTime())/1000;
+    const s = (Date.now()-fechaDB(iso).getTime())/1000;
     if(s<60) return "recién"; if(s<3600) return Math.floor(s/60)+"m";
     if(s<86400) return Math.floor(s/3600)+"h"; return Math.floor(s/86400)+"d";
   }
-  /** Hora exacta para las burbujas del chat: HH:MM si es hoy, si no
-   *  DD/MM HH:MM -- a diferencia de hace(), no pierde precisión con el tiempo. */
+  /** Hora exacta para las burbujas del chat, EN HORA ARGENTINA: HH:MM si es
+   *  hoy, si no DD/MM HH:MM -- a diferencia de hace(), no pierde precisión. */
   function horaExacta(iso){
     if(!iso) return "";
-    const d = new Date(iso.replace(" ","T"));
+    const d = fechaDB(iso);
     const hoy = new Date();
-    const esHoy = d.toDateString() === hoy.toDateString();
-    const hhmm = d.toLocaleTimeString("es-AR", {hour:"2-digit", minute:"2-digit"});
+    const esHoy = d.toLocaleDateString("es-AR", {timeZone: TZ_AR})
+               === hoy.toLocaleDateString("es-AR", {timeZone: TZ_AR});
+    const hhmm = d.toLocaleTimeString("es-AR", {hour:"2-digit", minute:"2-digit", timeZone: TZ_AR});
     if(esHoy) return hhmm;
-    return d.toLocaleDateString("es-AR", {day:"2-digit", month:"2-digit"}) + " " + hhmm;
+    return d.toLocaleDateString("es-AR", {day:"2-digit", month:"2-digit", timeZone: TZ_AR}) + " " + hhmm;
   }
   /** Cuenta regresiva hasta una fecha FUTURA (vence_en) -- hace() es al revés
    *  (tiempo transcurrido desde una fecha pasada), no sirve para esto. */
   function faltan(iso){
     if(!iso) return "";
-    const d = new Date(iso.replace(" ","T")); const s = (d.getTime()-Date.now())/1000;
+    const s = (fechaDB(iso).getTime()-Date.now())/1000;
     if(s<=0) return "ya venció";
     if(s<3600) return Math.ceil(s/60)+"m";
     if(s<86400) return Math.floor(s/3600)+"h "+Math.floor((s%3600)/60)+"m";
@@ -6165,7 +6177,12 @@
       // Quién respondió: solo en mensajes de agente que tengan operador.
       const quien = (m.rol==="agente" && m.operador)
         ? `<span class="msg-agente">${esc(m.operador)}</span> · ` : "";
-      return `<div class="row ${cls}"><div><div class="bub">${inner}</div><div class="meta">${quien}${horaExacta(m.creado_en)}</div></div></div>`;
+      // El "Visto" del jugador (mensajes.visto_en, migración 57): el widget
+      // lo estampa cuando el mensaje estuvo delante del jugador con el chat
+      // abierto. Solo en salientes reales (no en los rastros internos).
+      const visto = (m.rol!=="user" && !m.interno && m.visto_en)
+        ? ` · <span class="msg-visto">✓✓ Visto ${horaExacta(m.visto_en)}</span>` : "";
+      return `<div class="row ${cls}"><div><div class="bub">${inner}</div><div class="meta">${quien}${horaExacta(m.creado_en)}${visto}</div></div></div>`;
     }).join("") || `<div class="nouser">Conversación vacía.</div>`;
     const th=$("#thread"); th.scrollTop = th.scrollHeight;
 

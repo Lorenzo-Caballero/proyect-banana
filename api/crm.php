@@ -737,16 +737,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             // marcar como leida
             $pdo->prepare("UPDATE conversaciones SET no_leidos = 0 WHERE id = ?")->execute([$id]);
 
-            // `operador` por mensaje (migración 30). Si la columna no existe,
-            // se reintenta sin ella para no romper el hilo.
+            /* VISTO del agente (migracion 57): el hilo esta EN PANTALLA, asi
+               que los mensajes del jugador quedan vistos ahora. Es lo que el
+               widget usa para pintar las tildes azules de verdad (antes eran
+               un timer decorativo). Que el sondeo de 9s tambien pase por aca
+               esta bien: la conversacion sigue abierta delante del agente.
+               Best-effort: sin la migracion, el hilo carga igual. */
             try {
-                $st = $pdo->prepare("SELECT rol, operador, texto, meta, creado_en FROM mensajes
+                $pdo->prepare(
+                    "UPDATE mensajes SET visto_en = NOW()
+                      WHERE conversacion_id = ? AND rol = 'user' AND visto_en IS NULL"
+                )->execute([$id]);
+            } catch (Throwable $e) { /* sin migracion 57 */ }
+
+            // `operador` por mensaje (migración 30). Si la columna no existe,
+            // se reintenta sin ella para no romper el hilo. visto_en es de la
+            // migracion 57: el fallback intermedio la deja afuera.
+            try {
+                $st = $pdo->prepare("SELECT rol, operador, texto, meta, creado_en, visto_en FROM mensajes
                                      WHERE conversacion_id = ? ORDER BY creado_en ASC, id ASC");
                 $st->execute([$id]);
             } catch (Throwable $e) {
-                $st = $pdo->prepare("SELECT rol, texto, meta, creado_en FROM mensajes
-                                     WHERE conversacion_id = ? ORDER BY creado_en ASC, id ASC");
-                $st->execute([$id]);
+                try {
+                    $st = $pdo->prepare("SELECT rol, operador, texto, meta, creado_en FROM mensajes
+                                         WHERE conversacion_id = ? ORDER BY creado_en ASC, id ASC");
+                    $st->execute([$id]);
+                } catch (Throwable $e2) {
+                    $st = $pdo->prepare("SELECT rol, texto, meta, creado_en FROM mensajes
+                                         WHERE conversacion_id = ? ORDER BY creado_en ASC, id ASC");
+                    $st->execute([$id]);
+                }
             }
             $mensajes = array_map(function ($m) {
                 $meta = $m['meta'] ? json_decode($m['meta'], true) : null;
