@@ -477,6 +477,10 @@ if ($usuarioCliente !== '') {
           . "El jugador NO inicio sesion. No sabes quien es.\n"
           . "- NO podes cargarle fichas, ni retirarle, ni decirle su saldo. Esas\n"
           . "  herramientas necesitan sesion: no las llames.\n"
+          . "- NUNCA inventes un nombre de usuario. Si no lo sabes, no lo pongas: no\n"
+          . "  llames crear_recarga ni identificar_usuario con un nombre que el jugador\n"
+          . "  no dijo (nada de 'jugador123' ni parecidos). Sin usuario real, el camino\n"
+          . "  es que inicie sesion o crear la cuenta, nunca cargar.\n"
           /* ACA DECIA: "Lo PRIMERO es saber si YA TIENE cuenta o NO TIENE.
              Preguntaselo en una linea." Era la pregunta de dos ramas que las
              REGLAS FIJAS prohiben explicitamente -- y como este bloque se
