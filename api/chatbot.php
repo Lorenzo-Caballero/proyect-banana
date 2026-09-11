@@ -30,6 +30,9 @@
  *   3b) CHAT_MODEL    opcional: si es un modelo claude-... (ej. claude-sonnet-5)
  *                     y hay ANTHROPIC_API_KEY, el chat corre sobre Claude por su
  *                     endpoint compatible con OpenAI. Vaciarlo vuelve a Qwen.
+ *   3c) ANTHROPIC_WORKSPACE_ID  opcional: si la key de Anthropic es a nivel
+ *                     ORGANIZACION, el endpoint compat exige este id (si no, da
+ *                     400). Con una key ya scopeada a un workspace, dejar vacio.
  *   4) El contexto del juego -> chatbot_contexto.php (editable desde el CRM)
  *   5) Datos de la cuenta a transferir -> los trae recargas_lib.php desde el
  *      panel de ganamos (ver rl_banco_panel).
@@ -2187,8 +2190,15 @@ function ia_chat(string $key, array $mensajes, array $tools): array
     $claudeKey   = (string)cfg('ANTHROPIC_API_KEY', '');
     if (ia_chat_claude_activo($claudeModel, $claudeKey)) {
         $cc = $cuerpo; $cc['model'] = $claudeModel;
+        // Una key de Anthropic a nivel ORGANIZACION (no scopeada a un workspace)
+        // hace que el endpoint compatible exija el header anthropic-workspace-id
+        // -- si no, contesta 400. Se pasa desde la config; con una key ya
+        // scopeada a un workspace no hace falta y se deja vacio.
+        $claudeHeaders = [];
+        $ws = trim((string)cfg('ANTHROPIC_WORKSPACE_ID', ''));
+        if ($ws !== '') { $claudeHeaders[] = 'anthropic-workspace-id: ' . $ws; }
         try {
-            $rc = ia_chat_post(CLAUDE_COMPAT_BASE . '/chat/completions', $claudeKey, $cc);
+            $rc = ia_chat_post(CLAUDE_COMPAT_BASE . '/chat/completions', $claudeKey, $cc, $claudeHeaders);
             if ($rc['http'] === 200) { return $rc; }
             error_log('chatbot: Claude (' . $claudeModel . ') dio HTTP ' . $rc['http']
                     . '; sigo con Qwen de respaldo');
@@ -2300,22 +2310,27 @@ function ia_chat_aviso_respaldo(string $cual, int $httpPrimario, bool $mismoQwen
  *  mantiene la conexion y las rondas siguientes salen por la que ya esta
  *  abierta. Entre requests PHP no persiste nada (FPM resetea los static),
  *  asi que no hay conexiones colgadas que cuidar. */
-function ia_chat_post(string $url, string $key, array $cuerpo): array
+function ia_chat_post(string $url, string $key, array $cuerpo, array $extraHeaders = []): array
 {
     static $ch = null;
     if ($ch === null) {
         $ch = curl_init();
     }
+    // Los headers se fijan ENTEROS en cada llamada (no se acumulan): asi un
+    // header extra de una llamada (p. ej. el workspace de Claude) no se filtra a
+    // la siguiente (el respaldo Qwen, que no lo lleva).
+    $headers = [
+        'Content-Type: application/json',
+        'Accept: application/json',
+        'Authorization: Bearer ' . $key,
+    ];
+    foreach ($extraHeaders as $h) { if (trim((string)$h) !== '') { $headers[] = $h; } }
     curl_setopt_array($ch, [
         CURLOPT_URL            => $url,
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST           => true,
         CURLOPT_POSTFIELDS     => json_encode($cuerpo, JSON_UNESCAPED_UNICODE),
-        CURLOPT_HTTPHEADER     => [
-            'Content-Type: application/json',
-            'Accept: application/json',
-            'Authorization: Bearer ' . $key,
-        ],
+        CURLOPT_HTTPHEADER     => $headers,
         CURLOPT_TIMEOUT        => 60,   // los modelos con vision tardan mas
         CURLOPT_CONNECTTIMEOUT => 10,
     ]);
