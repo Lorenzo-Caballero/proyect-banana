@@ -2210,6 +2210,10 @@
           d.mensajes.forEach(function (m){
             var fila = (m.adjunto && m.adjunto.url) ? pintarAdj("b", m.adjunto)
                                                     : pintar("b", m.texto);
+            // El id del server viaja con la entrada guardada: es lo que
+            // permite RETRAER el mensaje si el agente lo elimina despues
+            // (d.borrados, mas abajo) -- incluso tras recargar la pagina.
+            if (fila._ent && m.id){ fila._ent.id = m.id; guardar(); }
             if ((m.efimero | 0) > 0) programarEfimero(fila, m.efimero | 0);
           });
           /* Avisar (sonido + notificación en la barra) por la respuesta del
@@ -2239,6 +2243,19 @@
         if (d.ok && d.leido_user_en && d.leido_user_en !== lastLeidoUser){
           lastLeidoUser = d.leido_user_en;
           body.querySelectorAll(".gp-r.u").forEach(function (f){ marcarTilde(f, "leido"); });
+        }
+        // RETRACCION: el agente elimino un mensaje desde el CRM. Se saca la
+        // burbuja de la pantalla y de la charla guardada -- el "eliminar
+        // para todos" de WhatsApp. Los ids vienen como lapidas (d.borrados).
+        if (d.ok && d.borrados && d.borrados.length){
+          var setB = {};
+          d.borrados.forEach(function (i){ setB[i] = 1; });
+          body.querySelectorAll(".gp-r.b").forEach(function (f){
+            if (f._ent && f._ent.id && setB[f._ent.id]){ try { f.remove(); } catch (e) {} }
+          });
+          var antes = charla.length;
+          charla = charla.filter(function (x){ return !(x.id && setB[x.id]); });
+          if (charla.length !== antes) guardar();
         }
       })
       .catch(function (){});

@@ -750,6 +750,10 @@
   .msg-agente{font-weight:700;color:var(--violet2)}
   /* El "✓✓ Visto HH:MM" del jugador, al lado de la hora del mensaje. */
   .msg-visto{color:#4fc3f7;font-weight:600}
+  /* Eliminar mensaje: discreto en la meta; el rastro del eliminado, en gris. */
+  .msg-del{background:none;border:0;cursor:pointer;padding:0 2px;font-size:12px;opacity:.45}
+  .msg-del:hover{opacity:1}
+  .msg-borrado{color:var(--muted,#8b8fa3);font-style:italic}
   .agentes-chat{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}
   .ag-chip{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;line-height:1;
            padding:3px 8px;border-radius:20px;background:var(--violetSoft);color:var(--violet2);border:1px solid color-mix(in srgb,var(--violet) 40%,transparent)}
@@ -6182,7 +6186,17 @@
       // abierto. Solo en salientes reales (no en los rastros internos).
       const visto = (m.rol!=="user" && !m.interno && m.visto_en)
         ? ` · <span class="msg-visto">✓✓ Visto ${horaExacta(m.visto_en)}</span>` : "";
-      return `<div class="row ${cls}"><div><div class="bub">${inner}</div><div class="meta">${quien}${horaExacta(m.creado_en)}${visto}</div></div></div>`;
+      // Mensaje ELIMINADO (migración 58): queda el rastro, no el contenido.
+      // El jugador deja de verlo (mis_mensajes lo retrae del widget).
+      if (m.borrado_en){
+        const porQuien = m.borrado_por ? ` por ${esc(m.borrado_por)}` : "";
+        return `<div class="row ${cls}"><div><div class="bub"><i class="msg-borrado">🚫 Mensaje eliminado</i></div><div class="meta">${quien}${horaExacta(m.creado_en)} · eliminado${porQuien} ${horaExacta(m.borrado_en)}</div></div></div>`;
+      }
+      // Eliminar: solo salientes (agente/bot); la palabra del jugador no se
+      // toca. Pide confirmación y el jugador deja de verlo (estilo WhatsApp).
+      const del = (m.id && m.rol!=="user")
+        ? ` · <button type="button" class="msg-del" data-id="${m.id}" title="Eliminar mensaje">🗑</button>` : "";
+      return `<div class="row ${cls}"><div><div class="bub">${inner}</div><div class="meta">${quien}${horaExacta(m.creado_en)}${visto}${del}</div></div></div>`;
     }).join("") || `<div class="nouser">Conversación vacía.</div>`;
     const th=$("#thread"); th.scrollTop = th.scrollHeight;
 
@@ -6190,6 +6204,18 @@
     // carga, así que engancharlos uno por uno se perdería al refrescar.
     th.querySelectorAll(".att-leer").forEach(b=>{
       b.addEventListener("click", ()=>leerComprobante(b));
+    });
+
+    // Eliminar un mensaje enviado (estilo WhatsApp): confirmación, borrado
+    // blando en el server, y el jugador deja de verlo aunque ya lo tuviera
+    // en pantalla (mis_mensajes manda la lápida y el widget lo retrae).
+    th.querySelectorAll(".msg-del").forEach(b=>{
+      b.addEventListener("click", async ()=>{
+        if(!confirm("¿Eliminar este mensaje? El jugador va a dejar de verlo.")) return;
+        const d = await jpost({accion:"mensaje_borrar", id:+b.getAttribute("data-id")});
+        if(d.ok){ toast("Mensaje eliminado"); abrir(st.convId); }
+        else toast(d.error || "No se pudo eliminar");
+      });
     });
 
     pintarUsuario(d.usuario, d.movimientos, c.notas);
