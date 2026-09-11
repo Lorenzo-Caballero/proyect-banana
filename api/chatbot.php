@@ -23,9 +23,13 @@
  * en ia_chat(), ia_texto() y procesar_chat().
  *
  * CONFIG (config.local.php o entorno):
- *   1) QWEN_API_KEY   la clave. Obligatoria.
+ *   1) QWEN_API_KEY   la clave. Obligatoria (aunque corras sobre Claude: Qwen
+ *                     queda de respaldo si Claude falla).
  *   2) QWEN_BASE_URL  opcional, default en QWEN_BASE_DEF.
  *   3) QWEN_MODEL     opcional, default en QWEN_MODEL_DEF.
+ *   3b) CHAT_MODEL    opcional: si es un modelo claude-... (ej. claude-sonnet-5)
+ *                     y hay ANTHROPIC_API_KEY, el chat corre sobre Claude por su
+ *                     endpoint compatible con OpenAI. Vaciarlo vuelve a Qwen.
  *   4) El contexto del juego -> chatbot_contexto.php (editable desde el CRM)
  *   5) Datos de la cuenta a transferir -> los trae recargas_lib.php desde el
  *      panel de ganamos (ver rl_banco_panel).
@@ -118,6 +122,12 @@ const QWEN_MODEL_DEF = 'qwen-plus';
 // el primario se queda sin cuota. Solo modelos que SI hacen tool-calling --
 // qwen-vl-max queda afuera a proposito (ignora las tools). Se prueban en orden.
 const QWEN_FALLBACK_DEF = 'qwen-turbo,qwen-max';
+// Claude (Anthropic) por su endpoint COMPATIBLE con OpenAI: mismo cuerpo,
+// mismas tools y misma respuesta (choices[0].message.tool_calls) que Qwen, asi
+// que el resto del loop no cambia. Se PRENDE poniendo CHAT_MODEL=claude-... y
+// ANTHROPIC_API_KEY en config.local.php; vaciar CHAT_MODEL vuelve a Qwen al
+// instante (sin redeploy). Qwen queda de respaldo si Claude rechaza la llamada.
+const CLAUDE_COMPAT_BASE = 'https://api.anthropic.com/v1';
 // 50 y no 12: que el bot LEA CASI TODA la charla, no los ultimos 12 turnos.
 // Con 12 se olvidaba del nombre del jugador y del monto dichos al principio,
 // y repetia preguntas -- la queja numero uno (ver el chat de santucruz275,
@@ -2133,6 +2143,19 @@ function chatbot_ultimo_adjunto(PDO $pdo, string $usuario, string $sid): ?array
  * (Cohere los ponia en message, a secas -- de ahi que el manejo de errores
  * tambien cambie).
  */
+/**
+ * ¿Corre el chat sobre Claude? Solo si hay un modelo claude configurado
+ * (CHAT_MODEL) Y una key de Anthropic con pinta de real. Puro (no toca red ni
+ * config global) para poder testearlo. Sin CHAT_MODEL, el chat es Qwen como
+ * siempre -- las instalaciones que no lo configuran no cambian en nada.
+ */
+function ia_chat_claude_activo(string $model, string $key): bool
+{
+    return $model !== ''
+        && stripos($model, 'claude') === 0
+        && strlen(trim($key)) > 20;
+}
+
 function ia_chat(string $key, array $mensajes, array $tools): array
 {
     $base   = rtrim((string)cfg('QWEN_BASE_URL', QWEN_BASE_DEF), '/');
@@ -2147,6 +2170,27 @@ function ia_chat(string $key, array $mensajes, array $tools): array
     // Sin herramientas no se manda la clave: algunos modelos rechazan un
     // `tools` vacio en vez de ignorarlo.
     if ($tools) { $cuerpo['tools'] = $tools; }
+
+    /* PRIMARIO: Claude, si esta configurado (CHAT_MODEL=claude-... y
+       ANTHROPIC_API_KEY). Mucho mejor coherencia para un bot que maneja plata.
+       Va por el endpoint compatible con OpenAI, asi que solo cambia el modelo,
+       la base y la key -- el formato de mensajes/tools/respuesta es el mismo.
+       Si Claude rechaza (cuota/key/modelo malo) o no contesta, NO se cae el
+       chat: se avisa y sigue con Qwen de respaldo (el bloque de abajo). */
+    $claudeModel = trim((string)cfg('CHAT_MODEL', ''));
+    $claudeKey   = (string)cfg('ANTHROPIC_API_KEY', '');
+    if (ia_chat_claude_activo($claudeModel, $claudeKey)) {
+        $cc = $cuerpo; $cc['model'] = $claudeModel;
+        try {
+            $rc = ia_chat_post(CLAUDE_COMPAT_BASE . '/chat/completions', $claudeKey, $cc);
+            if ($rc['http'] === 200) { return $rc; }
+            error_log('chatbot: Claude (' . $claudeModel . ') dio HTTP ' . $rc['http']
+                    . '; sigo con Qwen de respaldo');
+            ia_chat_aviso_respaldo('Qwen ' . $modelo, (int)$rc['http'], true);
+        } catch (Throwable $e) {
+            error_log('chatbot: Claude no respondio (' . $e->getMessage() . '); sigo con Qwen');
+        }
+    }
 
     $url = $base . '/chat/completions';
     $r = ia_chat_post($url, $key, $cuerpo);
