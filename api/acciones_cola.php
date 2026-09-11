@@ -47,6 +47,21 @@ try {
     // ------------------------- pendientes -------------------------
     if ($accion === 'pendientes') {
 
+        /* LATIDO del loop de CARGAS, gemelo del de altas (altas_cola.php).
+           Es el discriminador que falto el 10/9: el latido de altas fresco
+           decia "el bot vive", pero un bot VIEJO (pre-14e0d9b) crea altas y
+           NO tiene loop de depositos -- las cargas del CRM quedaban
+           'pendiente' para siempre sin que nada lo delatara. salud_bot.php
+           muestra los dos latidos: altas fresco + cargas nulo/viejo = el
+           contenedor corre una imagen sin loop de depositos (deploy-bot).
+           Best-effort: jamas frena la cola. */
+        try {
+            require_once __DIR__ . '/config_crm.php';
+            cfg_crm_guardar($pdo, ['bot_cargas_visto_en' => date('Y-m-d H:i:s')], 'bot');
+        } catch (Throwable $e) {
+            error_log('acciones_cola: no pude anotar el latido: ' . $e->getMessage());
+        }
+
         // Las que quedaron colgadas (el bot se cayo con el navegador abierto)
         // van a 'revisar', NO a 'pendiente': no sabemos si alcanzo a depositar.
         $pdo->exec(

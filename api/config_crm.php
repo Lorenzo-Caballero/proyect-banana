@@ -240,6 +240,12 @@ const CFG_CRM_DEFAULTS = [
     // cola igual no drena) SIN entrar al VPS -- la ambiguedad que alargo los
     // incidentes del 7/9 y 10/9/2026.
     'bot_altas_visto_en' => '',
+
+    // Gemelo del anterior para el loop de DEPOSITOS (acciones_cola.php
+    // accion=pendientes). Un bot viejo late en altas pero no aca: es la
+    // firma exacta de "las altas andan y las cargas del CRM quedan
+    // pendientes para siempre" (10/9/2026).
+    'bot_cargas_visto_en' => '',
 ];
 
 /** Cache por request: estas funciones se llaman varias veces por pedido. */
