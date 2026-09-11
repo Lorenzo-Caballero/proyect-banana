@@ -1713,10 +1713,18 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
             if (function_exists('crm_conversacion_id') && $sid !== '') {
                 $convId = crm_conversacion_id($pdo, $sid, $usuarioSesion !== '' ? $usuarioSesion : null);
                 if ($convId) {
+                    // Se APAGA la IA (ia_activa=0), no solo se marca la
+                    // derivacion. Sin esto el bot seguia conversando despues de
+                    // derivar -- respondia con el modelo en vez del mensaje fijo
+                    // (visto en el chat de holatesteo163, 11/9) -- y ademas la
+                    // reconexion a los 30 min no aplicaba nunca, porque el guard
+                    // que la dispara solo corre con ia_activa=0.
                     // Solo si NO estaba ya derivada: si el jugador insiste, no
-                    // se pisa la hora original ni se vuelve a avisar.
+                    // se pisa la hora original ni se vuelve a avisar (y la IA ya
+                    // quedo apagada de la primera vez).
                     $upd = $pdo->prepare(
-                        "UPDATE conversaciones SET derivada_en = NOW(), derivada_motivo = ?
+                        "UPDATE conversaciones
+                            SET ia_activa = 0, derivada_en = NOW(), derivada_motivo = ?
                           WHERE id = ? AND derivada_en IS NULL"
                     );
                     $upd->execute([mb_substr($motivo, 0, 255), $convId]);
