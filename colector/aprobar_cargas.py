@@ -183,12 +183,17 @@ def _json(r):
         raise DesafioWAF(f"respuesta no-JSON del panel: {txt[:200]}")
 
 
-def traer_solicitudes(ctx, dias: int) -> list | None:
-    """Las solicitudes de carga pendientes en el panel.
+def traer_solicitudes(ctx, dias: int) -> tuple[list, list] | None:
+    """Las solicitudes pendientes en el panel, separadas: (depositos, retiros).
 
-    Devuelve None si la lectura fallo. La diferencia con [] importa: [] hace
-    que el server cierre las que ya no figuran, y un error de red no puede
+    Devuelve None si la lectura fallo. La diferencia con ([], []) importa: []
+    hace que el server cierre las que ya no figuran, y un error de red no puede
     disparar eso.
+
+    Los RETIROS este worker NO los toca (aprobar un retiro saca plata: lo
+    decide una persona), pero se devuelven aparte para AVISARLOS: el jugador
+    puede pedir un retiro desde el boton de la plataforma y sin esto nadie se
+    enteraba hasta que abria el panel a ojo.
     """
     hoy = datetime.now().date()
     params = {
@@ -218,14 +223,11 @@ def traer_solicitudes(ctx, dias: int) -> list | None:
         log.error("respuesta inesperada del panel: %s", str(data)[:200])
         return None
 
-    solicitudes = []
+    solicitudes, retiros = [], []
     for it in items:
         if not isinstance(it, dict):
             continue
-        if it.get("type") != TIPO_DEPOSITO:
-            # Un retiro. Nunca se toca: este worker solo aprueba depositos.
-            continue
-        solicitudes.append({
+        registro = {
             "id":         it.get("id"),
             "username":   it.get("username") or "",
             "amount":     it.get("amount") or 0,
@@ -233,8 +235,15 @@ def traer_solicitudes(ctx, dias: int) -> list | None:
             "cbu":        it.get("cbu") or "",
             "created_at": it.get("created_at") or "",
             "type":       it.get("type"),
-        })
-    return solicitudes
+        }
+        if it.get("type") != TIPO_DEPOSITO:
+            # Un retiro. NO se aprueba (eso saca plata y lo decide una persona),
+            # pero se junta para avisarlo por Telegram. El server dedup por id,
+            # asi que listarlo cada minuto no repite el aviso.
+            retiros.append(registro)
+            continue
+        solicitudes.append(registro)
+    return solicitudes, retiros
 
 
 def evaluar(ctx, solicitudes: list, dias: int) -> list:
@@ -334,9 +343,14 @@ def aprobar(ctx, request_id: int) -> tuple[str, str]:
 
 
 def una_pasada(ctx, solo_ver: bool, dias: int) -> int:
-    solicitudes = traer_solicitudes(ctx, dias)
-    if solicitudes is None:
+    leido = traer_solicitudes(ctx, dias)
+    if leido is None:
         return 0          # fallo la lectura: no se evalua nada
+    solicitudes, retiros = leido
+
+    # Los retiros se avisan aunque no haya nada que aprobar: es READ-ONLY (no
+    # mueve plata) y el que pidio el retiro esta esperando del otro lado.
+    avisar_retiros(ctx, retiros, solo_ver)
 
     decisiones = evaluar(ctx, solicitudes, dias)
 
@@ -436,6 +450,38 @@ def avisar_pendientes(ctx, solo_ver: bool) -> None:
                         n, MINUTOS_SIN_RESOLVER)
     except Exception as e:
         log.warning("no pude pedir los avisos de pendientes: %s", e)
+
+
+def avisar_retiros(ctx, retiros: list, solo_ver: bool) -> None:
+    """Le pide al server que avise por Telegram los retiros pedidos desde la
+    plataforma. El worker NO los aprueba (saca plata: lo hace una persona), solo
+    avisa que hay uno esperando.
+
+    El dedup vive del lado del server (una vez por id de solicitud), asi que
+    esto se puede llamar en cada pasada sin repetir el aviso: la misma solicitud
+    figura en el panel cada minuto hasta que un agente la resuelve.
+
+    Si falla, se loguea y ya: avisar no es parte de aprobar cargas y no puede
+    tumbar una pasada que hizo bien lo suyo.
+    """
+    if not retiros:
+        return
+    if solo_ver:
+        log.info("(dry-run) %d retiro(s) en el panel; no se piden avisos", len(retiros))
+        return
+    key = os.environ.get("API_KEY", "")
+    if not key:
+        return
+    try:
+        r = ctx.request.post(url_cola() + "?accion=avisar_retiros",
+                             headers={"X-API-Key": key},
+                             data={"retiros": retiros})
+        d = r.json() or {}
+        n = int(d.get("avisados") or 0)
+        log.info("%d retiro(s) en el panel, %d aviso(s) nuevo(s) por Telegram",
+                 len(retiros), n)
+    except Exception as e:
+        log.warning("no pude pedir los avisos de retiros: %s", e)
 
 
 def main() -> int:

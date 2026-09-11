@@ -1345,14 +1345,40 @@ function chatbot_fecha_ar(): string
 }
 
 /**
- * La conversacion (clave) de este chat: el usuario si se conoce, o anon:<sid>.
- * Mismo criterio que chatbot_ia_del_chat y el resto del CRM.
+ * La conversacion (clave) de este chat, RESUELTA IGUAL que crm_conversacion_id.
+ *
+ * El usuario si vino en este post; si no, el chat identificado de ESTA sesion
+ * (un turno anterior); y recien si nunca se identifico, anon:<sid>.
+ *
+ * Ese fallback del medio es lo que arregla el apagado del bot. El widget scrapea
+ * el nombre del header de la plataforma y a veces postea SIN usuario (recien
+ * cargada la pagina, antes de resolverlo). crm_registrar_turno igual mete el
+ * turno en el chat CON NOMBRE (crm_conversacion_id sigue la sesion). Si aca
+ * cayeramos al anon:<sid>, el bot miraria una fila distinta de la que el CRM
+ * apaga (el CRM apaga el chat con nombre), y seguiria respondiendo un chat que
+ * el agente apago a proposito. El mismo criterio de los dos lados, o el toggle
+ * no apaga nada. Por eso ahora recibe PDO.
  */
-function chatbot_clave_conv(string $sessionId, string $usuario): string
+function chatbot_clave_conv(PDO $pdo, string $sessionId, string $usuario): string
 {
-    if ($usuario !== '')   { return mb_substr($usuario, 0, 50); }
-    if ($sessionId !== '') { return 'anon:' . substr($sessionId, 0, 64); }
-    return '';
+    if ($usuario !== '') { return mb_substr($usuario, 0, 50); }
+    $sid = substr($sessionId, 0, 64);
+    if ($sid === '') { return ''; }
+    try {
+        $st = $pdo->prepare(
+            "SELECT usuario FROM conversaciones
+              WHERE session_id = ? AND usuario IS NOT NULL AND usuario <> ''
+              ORDER BY actualizada_en DESC LIMIT 1"
+        );
+        $st->execute([$sid]);
+        $u = $st->fetchColumn();
+        if ($u !== false && $u !== null && (string)$u !== '') {
+            return mb_substr((string)$u, 0, 50);
+        }
+    } catch (Throwable $e) {
+        // Sin la columna/tabla: caemos al anon, como siempre.
+    }
+    return 'anon:' . $sid;
 }
 
 /**
@@ -1375,7 +1401,7 @@ function chatbot_clave_conv(string $sessionId, string $usuario): string
  */
 function chatbot_reconectar_derivacion(PDO $pdo, string $sessionId, string $usuario): bool
 {
-    $clave = chatbot_clave_conv($sessionId, $usuario);
+    $clave = chatbot_clave_conv($pdo, $sessionId, $usuario);
     if ($clave === '') { return false; }
 
     $min = function_exists('cfg_crm') ? (int)cfg_crm($pdo, 'ia_reconectar_min') : 30;
@@ -1415,7 +1441,7 @@ function chatbot_reconectar_derivacion(PDO $pdo, string $sessionId, string $usua
 function chatbot_avisar_derivada_escribio(PDO $pdo, string $sessionId, string $usuario, string $texto): void
 {
     if (!function_exists('tg_evento')) { return; }
-    $clave = chatbot_clave_conv($sessionId, $usuario);
+    $clave = chatbot_clave_conv($pdo, $sessionId, $usuario);
     if ($clave === '') { return; }
 
     // Solo si fue una DERIVACION del bot (derivada_en), no un apagado manual
@@ -1471,15 +1497,12 @@ function chatbot_avisar_derivada_escribio(PDO $pdo, string $sessionId, string $u
 function chatbot_ia_del_chat(PDO $pdo, string $sessionId, string $usuario): bool
 {
     try {
-        if ($usuario !== '') {
-            $st = $pdo->prepare("SELECT ia_activa FROM conversaciones WHERE clave = ? LIMIT 1");
-            $st->execute([mb_substr($usuario, 0, 50)]);
-        } elseif ($sessionId !== '') {
-            $st = $pdo->prepare("SELECT ia_activa FROM conversaciones WHERE clave = ? LIMIT 1");
-            $st->execute(['anon:' . substr($sessionId, 0, 64)]);
-        } else {
-            return true;
-        }
+        // La MISMA clave que crm_conversacion_id: si no, el bot leeria el estado
+        // de una fila y el CRM apagaria otra (ver chatbot_clave_conv).
+        $clave = chatbot_clave_conv($pdo, $sessionId, $usuario);
+        if ($clave === '') { return true; }
+        $st = $pdo->prepare("SELECT ia_activa FROM conversaciones WHERE clave = ? LIMIT 1");
+        $st->execute([$clave]);
         $v = $st->fetchColumn();
         if ($v === false) { return true; }   // sin conversacion aun -> IA activa
         return (int)$v === 1;
@@ -1507,9 +1530,7 @@ function chatbot_ia_del_chat(PDO $pdo, string $sessionId, string $usuario): bool
  */
 function chatbot_derivar(PDO $pdo, string $usuario, string $sid, string $motivo): array
 {
-    $clave = $usuario !== ''
-        ? mb_substr($usuario, 0, 50)
-        : ($sid !== '' ? 'anon:' . substr($sid, 0, 64) : '');
+    $clave = chatbot_clave_conv($pdo, $sid, $usuario);
     if ($clave === '') {
         // Sin conversacion no hay a quien derivar ni donde marcarlo. Igual se
         // devuelve ok: que el modelo le diga que lo pasa, y el chat queda en el

@@ -440,12 +440,54 @@ try {
         exit;
     }
 
+    /* ---------------------------------------------------------------------
+       avisar_retiros: los RETIROS que el jugador pide desde la plataforma
+       (boton "Retiros" dentro del juego).
+
+       Este worker NO los aprueba -- aprobar un retiro SACA plata y eso lo
+       decide una persona -- pero hasta ahora nadie se enteraba de que habia uno
+       esperando: el worker los filtraba y seguia de largo. Aca se avisa por
+       Telegram UNA vez por solicitud (dedup 'retiro_panel:<id>'; la misma
+       solicitud vuelve a listarse cada minuto hasta que un agente la resuelve,
+       asi que sin el dedup serian decenas de avisos por el mismo retiro).
+
+       Es el gemelo del aviso de retiro por chat (fichas_lib -> tg_evento
+       'retiro'): el jugador puede pedir el retiro por el chat o por el boton de
+       la plataforma, y los dos caminos tienen que avisar. Mismo toggle
+       (tg_ev_retiro), asi que se prenden/apagan juntos. */
+    if ($accion === 'avisar_retiros') {
+        $lista = (isset($body['retiros']) && is_array($body['retiros'])) ? $body['retiros'] : [];
+        if (!function_exists('tg_evento')) {
+            $tl = __DIR__ . '/telegram_lib.php';
+            if (is_file($tl)) { require_once $tl; }
+        }
+        $avisados = 0;
+        foreach ($lista as $r) {
+            if (!is_array($r)) { continue; }
+            $rid = (int)($r['id'] ?? 0);
+            if ($rid <= 0 || !function_exists('tg_evento')) { continue; }
+            $usr = trim((string)($r['username'] ?? ''));
+            $mon = (float)($r['amount'] ?? 0);
+            $ok = tg_evento($pdo, 'retiro', '💸 Solicitud de retiro (plataforma)', [
+                'Jugador'   => $usr !== '' ? $usr : '(sin nombre)',
+                'Monto'     => number_format($mon, 0, ',', '.'),
+                'Titular'   => trim((string)($r['name'] ?? '')),
+                'Destino'   => trim((string)($r['cbu'] ?? '')),
+                'Pedido'    => trim((string)($r['created_at'] ?? '')),
+                'Qué hacer' => 'Panel de agentes → Retiros, para aprobarlo o rechazarlo.',
+            ], 'retiro_panel:' . $rid);
+            if ($ok) { $avisados++; }
+        }
+        echo json_encode(['ok' => true, 'avisados' => $avisados]);
+        exit;
+    }
+
     /* Decir CUALES son las acciones validas, no solo que esta mal. La primera
        corrida del worker fallo justo aca -- posteaba sin `?accion=evaluar` -- y
        "accion desconocida" a secas no daba ninguna pista de si el problema era
        el nombre, el metodo o la URL. */
     http_response_code(400);
-    $validas = 'evaluar, confirmar o avisar_pendientes';
+    $validas = 'evaluar, confirmar, avisar_pendientes o avisar_retiros';
     echo json_encode(['ok' => false,
                       'error' => $accion === ''
                           ? "falta ?accion= en la URL (esperaba $validas)"
