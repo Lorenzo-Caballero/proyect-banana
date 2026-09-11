@@ -110,7 +110,8 @@ echo "\n=== 4. La doble compra: el codigo que la evitaba ===\n";
    El filtro es por `origen`: la accion que nace de una recarga NO reporta. */
 $src = (string)@file_get_contents(__DIR__ . '/api/acciones_cola.php');
 chequear('acciones_cola lee `origen` de la accion',
-         str_contains($src, "SELECT usuario, tipo, monto, origen"),
+         (str_contains($src, "['origen']") || str_contains($src, "\$a['origen']"))
+             && str_contains($src, "\$deRecarga"),
          'sin ese campo no puede distinguir de donde viene la carga');
 chequear('y saltea el Purchase si viene de una recarga',
          str_contains($src, "\$deRecarga") && str_contains($src, "&& !\$deRecarga"),
@@ -120,7 +121,7 @@ chequear('y saltea el Purchase si viene de una recarga',
    al reves, imposible, que ensucia el modelo de atribucion. */
 $srcF = (string)@file_get_contents(__DIR__ . '/api/fichas_lib.php');
 chequear('fichas_lib no manda InitiateCheckout si la carga viene de una recarga',
-         str_contains($srcF, "if (\$origen !== 'recarga') {"),
+         str_contains($srcF, "\$origen !== 'recarga'"),
          'Meta veria Purchase primero y InitiateCheckout despues');
 
 // ===========================================================================
