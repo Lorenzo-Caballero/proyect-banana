@@ -2139,7 +2139,13 @@
 
   // ---------- respuestas humanas del agente (CRM) ----------
   function mirarAgente(){
-    fetch(API_MIS + "?session_id=" + encodeURIComponent(sid) + "&desde=" + lastAgentId)
+    // El usuario viaja ademas del sid: la conversacion del CRM guarda el sid
+    // del ultimo mensaje ESCRITO, asi que un aviso del sistema (bono
+    // acreditado, difusion) no llegaba a una sesion nueva donde el jugador
+    // todavia no escribio. Con el nombre, el server entrega lo reciente de
+    // SU conversacion aunque el sid haya cambiado (ver mis_mensajes.php).
+    fetch(API_MIS + "?session_id=" + encodeURIComponent(sid) + "&desde=" + lastAgentId
+          + (USUARIO ? "&usuario=" + encodeURIComponent(USUARIO) : ""))
       .then(function (r){ return r.json(); })
       .then(function (d){
         if (d.ok && d.mensajes && d.mensajes.length){
