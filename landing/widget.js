@@ -1768,7 +1768,7 @@
     /* Secuencia WhatsApp: primero le llega y se LEE tu mensaje (las tildes se
        ponen azules) y RECIÉN DESPUÉS aparece "escribiendo…". La respuesta se
        revela cuando el server contestó Y el "escribiendo…" ya se vio un rato. */
-    var datos, esperando = null, mostrado = false, typingListo = false;
+    var datos, esperando = null, mostrado = false, typingListo = false, typingMs = 1100;
 
     function revelar(){
       if (mostrado || datos === undefined || !typingListo) return;
@@ -1829,11 +1829,23 @@
     // debounce). El "recibido" de cada burbuja se marcó al mandarla. El "leído"
     // (azul) llega DE VERDAD por mis_mensajes (leido_user_en) cuando un agente
     // abre la conversación en el CRM. Dos grises = entregado; azules = lo vio un humano.
+    // "escribiendo…" tiene que verse un rato PROPORCIONAL a lo que va a
+    // contestar, como una persona tipeando: una respuesta corta ("Dale") sale
+    // rápido, una larga tarda unos segundos. Sin esto sale al instante y se nota
+    // que es un bot (la queja de Nahuel). typingMs se ajusta al llegar la
+    // respuesta (según su largo); acá se espera hasta que pasó ese tiempo Y ya
+    // llegó la respuesta.
     setTimeout(function (){
       esperando = escribiendo();
       setEstado("escribiendo…", true);
-      // "escribiendo…" tiene que verse un mínimo, aunque la respuesta ya llegó.
-      setTimeout(function (){ typingListo = true; revelar(); }, 800);
+      var arranco = Date.now();
+      (function verSiListo(){
+        if (typingListo || mostrado) return;
+        if (datos !== undefined && (Date.now() - arranco) >= typingMs){
+          typingListo = true; revelar(); return;
+        }
+        setTimeout(verSiListo, 150);
+      })();
     }, 1100);
 
     fetch(API_CHAT, {
@@ -1857,7 +1869,14 @@
       .then(function (r){ return r.json(); })
       .then(function (d){
         if (d && !d.ok) log("chat <- ERROR del server:", d.error || "(sin detalle)");
-        datos = d; revelar();
+        datos = d;
+        // Cuánto "tarda en tipear" según el largo de la respuesta: ~28ms por
+        // caracter, entre 1.1s y 4s. Una respuesta larga se siente escrita, no
+        // volcada de golpe.
+        var txt = (d && d.respuesta) ? String(d.respuesta)
+                : (d && d.mensajes ? d.mensajes.join(" ") : "");
+        typingMs = Math.min(4000, Math.max(1100, txt.length * 28));
+        revelar();
       })
       .catch(function (e){
         // Ojo: si el server contesto HTML (error de PHP, o la pagina del WAF),

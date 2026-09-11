@@ -485,16 +485,18 @@ function rl_crear_recarga(PDO $pdo, string $usuario, int $coins, string $titular
         }
     }
     if (!$existe) {
-        // El mensaje NO nombra al usuario a proposito: este codigo salta cuando
-        // el jugador NO inicio sesion (con sesion verificada ya paso arriba), y
-        // el nombre que llego suele ser uno que el MODELO invento -- repetirlo
-        // al jugador ("'jugador123' no existe") es puro desconcierto. En vez de
-        // eso se le dice al modelo que haga lo correcto.
+        // OJO: este `error` el MODELO lo suele mostrar TAL CUAL al jugador (Haiku
+        // filtro la version vieja, que estaba escrita como instruccion interna y
+        // hasta nombraba la herramienta). Por eso ahora es un mensaje NATURAL,
+        // para el jugador, seguro de copiar. La regla de "no inventes el nombre"
+        // ya vive en el prompt, no hace falta repetirsela al modelo aca.
+        // El mensaje NO nombra al usuario a proposito: el nombre que llego suele
+        // ser uno que el modelo invento, y repetirlo ("'jugador123' no existe")
+        // solo confunde al jugador.
         return ['ok' => false, 'codigo' => 'sin_usuario', 'error' =>
-            'Para cargar hace falta la cuenta con sesion iniciada. Si el jugador '
-            . 'NO inicio sesion, NO uses un nombre que el no dijo (no inventes '
-            . 'ninguno): pedile que inicie sesion con el boton de acceso, o si es '
-            . 'nuevo ofrecele crear la cuenta con crear_cuenta.'];
+            'Para cargarte las fichas primero tenes que iniciar sesion en la '
+            . 'pagina, con el boton de acceso. Si todavia no tenes cuenta, '
+            . 'decime y te la creo en el momento.'];
     }
 
     $montoBase = (int)round($coins / RL_COINS_POR_PESO);   // pesos enteros

@@ -1925,11 +1925,12 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
         // llamarse asi es rarisimo y puede elegir otro; el dano de crear cuentas
         // con nombres que la persona no eligio es peor.
         if (function_exists('alta_nombre_es_placeholder') && alta_nombre_es_placeholder($u)) {
+            // `error` player-safe: el modelo lo suele mostrar tal cual, y en este
+            // caso lo correcto ES preguntarle el nombre. La cuenta NO se creo
+            // (ok:false); con este texto el modelo relaya la pregunta y no
+            // inventa. NADA de instrucciones internas ni nombres de herramientas.
             return ['ok' => false, 'codigo' => 'nombre_inventado',
-                    'error' => 'NO inventes el nombre de usuario. Ese ("' . $u . '") es un '
-                             . 'placeholder, no uno que el jugador eligio. PREGUNTALE que '
-                             . 'nombre de usuario quiere y recien cuando te lo diga, crea la '
-                             . 'cuenta con ese. No crees ninguna cuenta hasta entonces.'];
+                    'error' => '¿Qué nombre de usuario querés para tu cuenta?'];
         }
 
         // SIN freno por IP en el chat, a proposito. El que pide una cuenta por
