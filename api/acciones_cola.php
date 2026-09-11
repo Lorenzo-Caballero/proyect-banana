@@ -292,19 +292,66 @@ try {
                         error_log('meta Purchase: ' . $e->getMessage());
                     }
                 }
+                $bonoDep = (int)($a['bono_debitado'] ?? 0);
                 $cuanto = number_format((float)$a['monto'], 0, ',', '.');
                 $saldo  = $sDespues !== null
                         ? ' Tu saldo quedó en ' . number_format($sDespues, 0, ',', '.') . '.'
                         : '';
-                notif_crear(
-                    $pdo,
-                    $a['usuario'],
-                    '¡Fichas acreditadas!',
-                    'Ya te cargamos ' . $cuanto . ' fichas.' . $saldo . ' A jugar.',
-                    'fichas',
-                    null,
-                    'carga'
-                );
+                /* La notificacion dice lo que FUE: un deposito que es todo
+                   bono no es "te cargamos fichas" (suena a que pago y no
+                   pago), es un regalo acreditado. */
+                if ($esRegalo) {
+                    notif_crear(
+                        $pdo,
+                        $a['usuario'],
+                        '🎁 ¡Bonos acreditados!',
+                        'Te sumamos ' . number_format($bonoDep, 0, ',', '.')
+                            . ' en bonos a tu saldo del juego.' . $saldo . ' ¡A jugarlos!',
+                        'bono',
+                        null,
+                        'carga'
+                    );
+                } else {
+                    notif_crear(
+                        $pdo,
+                        $a['usuario'],
+                        '¡Fichas acreditadas!',
+                        'Ya te cargamos ' . $cuanto . ' fichas.' . $saldo . ' A jugar.',
+                        'fichas',
+                        null,
+                        'carga'
+                    );
+                }
+
+                /* Y EL MENSAJE EN EL CHAT, ademas de la notificacion: cuando
+                   el deposito incluyo BONOS, el jugador recibe la confirmacion
+                   por donde esta mirando -- el chat -- con la cantidad exacta.
+                   Va por crm_difusion_chat_aplicar, que inserta con el rol que
+                   mis_mensajes SI entrega y solo si la conversacion existe
+                   (a quien nunca chateo le queda la notificacion de arriba).
+                   Best-effort: un fallo aca no puede voltear el 'marcar'. */
+                if (($a['tipo'] ?? '') === 'cargar' && $bonoDep > 0) {
+                    try {
+                        require_once __DIR__ . '/crm_lib.php';
+                        if ($esRegalo) {
+                            $txt = '🎁 ¡Te acreditamos '
+                                 . number_format($bonoDep, 0, ',', '.')
+                                 . ' en bonos! Ya están en tu saldo del juego. ¡A jugarlos!';
+                        } else {
+                            $base = (float)$a['monto'] - $bonoDep;
+                            $txt = '🎁 ¡Bono acreditado! A tu carga de '
+                                 . number_format($base, 0, ',', '.')
+                                 . ' le sumamos ' . number_format($bonoDep, 0, ',', '.')
+                                 . ' en bonos: ya tenés '
+                                 . $cuanto . ' en tu saldo del juego.';
+                        }
+                        if (function_exists('crm_difusion_chat_aplicar')) {
+                            crm_difusion_chat_aplicar($pdo, (string)$a['usuario'], $txt);
+                        }
+                    } catch (Throwable $e) {
+                        error_log('acciones_cola: no pude avisar el bono por chat: ' . $e->getMessage());
+                    }
+                }
             }
         }
 
