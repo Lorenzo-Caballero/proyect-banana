@@ -425,6 +425,10 @@
   }
 
   function verExito(p){
+    // El que VUELVE con el pedido ya listo entra por acá directo (retomar),
+    // sin pasar por verListo: sin esta línea, el auto-login nunca corría para
+    // él y aterrizaba en la pantalla de login con la cuenta ya creada.
+    if (p.password && !sesionLista) autologin(p.usuario, p.password).then(ok => { sesionLista = sesionLista || ok; });
     $('outUser').textContent = p.usuario;
     // La clave puede no estar: se entrega UNA sola vez, y si se la llevó otro
     // sondeo (otra pestaña) acá no llega. Antes eso pintaba "undefined" en el

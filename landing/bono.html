@@ -412,16 +412,45 @@
     iniciarRotacionEspera();
   }
 
+  /* AUTO-LOGIN en la plataforma — el mismo bloque que registro.html, que era
+     el ÚNICO que lo tenía: el jugador de ESTA landing (justo el del tráfico
+     de publicidad) recibía sus credenciales y aterrizaba en la pantalla de
+     login igual. La cuenta recién creada tiene la clave fija, así que
+     logueamos por la persona — mismo origen vía el proxy replica/ — y al
+     tocar "Entrar" cae al juego YA adentro. Endpoint /api/user/login (POST
+     {username,password}), respuesta {status:0} = ok, sesión por cookie.
+     Best-effort: si falla, quedan las credenciales y el login manual. */
+  let sesionLista = false;
+  async function autologin(usuario, clave){
+    if (esPorPath || !usuario || !clave) return false;
+    try {
+      const r = await fetch('/api/user/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ username: usuario, password: clave })
+      });
+      const d = await r.json().catch(()=> null);
+      return !!(d && d.status === 0);
+    } catch (e) { return false; }
+  }
+
   /* Transición corta antes de las credenciales: 400ms alcanza para que el
      cambio se note sin sumar un segundo entero justo cuando la cuenta ya
      está lista. */
   function verListo(p){
+    // Se dispara YA: para cuando la persona lee y toca "Entrar", la cookie
+    // de sesión ya está puesta.
+    if (p.password) autologin(p.usuario, p.password).then(ok => { sesionLista = ok; });
     detenerRotacionEspera();
     ver('vistaLista');
     setTimeout(()=> verExito(p), 400);
   }
 
   function verExito(p){
+    // El que VUELVE con el pedido ya listo entra por acá directo (retomar),
+    // sin pasar por verListo: sin esta línea el auto-login no corría para él.
+    if (p.password && !sesionLista) autologin(p.usuario, p.password).then(ok => { sesionLista = sesionLista || ok; });
     $('outUser').textContent = p.usuario;
     $('outPass').textContent = p.password;
     ver('vistaExito');
@@ -434,9 +463,18 @@
     /* "Entrar a jugar": raíz del dominio ACTUAL. Ahí el proxy replica/ sirve
        el juego real con el chatbot ya inyectado y el login persiste. Para el
        cliente por-path se manda al chat propio: el widget inyectado en "/" hoy
-       no resuelve el slug (limitación documentada en widget.js). */
+       no resuelve el slug (limitación documentada en widget.js).
+       SIN olvidar() antes de navegar (la lección de registro.html): el pedido
+       guardado es lo único que permite volver y ver los datos de nuevo;
+       borrarlo hacía que el que volvía se creara una SEGUNDA cuenta. */
     const destino = esPorPath ? '/' + partesRuta[0] + '/chat.html' : '/';
-    $('btnJugar').onclick = ()=>{ olvidar(); location.href = destino; };
+    $('btnJugar').onclick = async ()=>{
+      /* Si tocó "Entrar" antes de que el auto-login terminara, se lo espera
+         un toque (máx ~1,2s). Después se navega igual: con sesión (lo
+         normal) o al login manual de siempre. */
+      for (let i = 0; i < 12 && !sesionLista; i++) await dormir(100);
+      location.href = destino;
+    };
   }
 
   // ---------- esperar al bot ----------
