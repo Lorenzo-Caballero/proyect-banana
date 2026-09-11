@@ -344,7 +344,12 @@ if (!function_exists('crm_difusion_chat_aplicar')) {
        NUNCA, ni con el chat abierto. Se mandaban a la nada.
        difusion_seleccion (crm.php) siempre uso 'agente' y por eso esa si
        llegaba: eran dos caminos que parecian el mismo y no lo eran. */
-    function crm_difusion_chat_aplicar(PDO $pdo, ?string $usuario, string $texto): int
+    /* $meta (opcional, solo para UN usuario): viaja al json `meta` del
+       mensaje. Lo usa el aviso de bonos con {'efimero': segundos}: el widget
+       lo borra de la pantalla ese tiempo despues de VISTO, y el server lo
+       borra de la base (ver mis_mensajes.php). Una difusion masiva no lleva
+       meta: no es efimera. */
+    function crm_difusion_chat_aplicar(PDO $pdo, ?string $usuario, string $texto, ?array $meta = null): int
     {
         $texto = trim($texto);
         if ($texto === '') { return 0; }
@@ -354,7 +359,7 @@ if (!function_exists('crm_difusion_chat_aplicar')) {
             $st->execute([mb_substr($usuario, 0, 50)]);
             $id = $st->fetchColumn();
             if (!$id) { return 0; }
-            crm_mensaje($pdo, (int)$id, 'agente', $texto);
+            crm_mensaje($pdo, (int)$id, 'agente', $texto, $meta);
             $pdo->prepare("UPDATE conversaciones SET preview = ?, no_leidos = no_leidos + 1, actualizada_en = NOW() WHERE id = ?")
                 ->execute([mb_substr($texto, 0, 280), $id]);
             return 1;

@@ -362,7 +362,13 @@ try {
                                  . $cuanto . ' en tu saldo del juego.';
                         }
                         if (function_exists('crm_difusion_chat_aplicar')) {
-                            crm_difusion_chat_aplicar($pdo, (string)$a['usuario'], $txt);
+                            /* efimero: el aviso vive 300s despues de que el
+                               jugador lo VIO (visto_en). El widget lo saca de
+                               la pantalla y mis_mensajes.php lo borra de la
+                               base: es una confirmacion, no historial -- el
+                               registro contable queda en `movimientos`. */
+                            crm_difusion_chat_aplicar($pdo, (string)$a['usuario'], $txt,
+                                                      ['efimero' => 300]);
                         }
                     } catch (Throwable $e) {
                         error_log('acciones_cola: no pude avisar el bono por chat: ' . $e->getMessage());

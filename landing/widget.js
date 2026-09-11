@@ -1333,8 +1333,14 @@
     charla    = d.charla || [];
     historial = d.historial || [];
     lastAgentId = d.lastAgentId || 0;
+    /* Efimeros: el que vencio mientras el chat estuvo cerrado no vuelve; el
+       que todavia vive se repinta y su reloj se re-arma por el resto. */
+    var ahora = Date.now();
+    charla = charla.filter(function (m){ return !m.exp || m.exp > ahora; });
     charla.forEach(function (m){
-      if (m.adj) pintarAdj(m.q, m.adj, true); else pintar(m.q, m.t, true);
+      var fila = m.adj ? pintarAdj(m.q, m.adj, true) : pintar(m.q, m.t, true);
+      fila._ent = m;
+      if (m.exp) armarEfimero(fila, Math.max(1000, m.exp - ahora));
     });
     return charla.length > 0;
   }
@@ -1465,7 +1471,12 @@
     b.appendChild(conLinks(txt));
 
     r.appendChild(b); body.appendChild(r); body.scrollTop = body.scrollHeight;
-    if (!mudo){ charla.push({ q: quien, t: txt }); guardar(); }
+    if (!mudo){
+      // La entrada queda atada a la fila (r._ent): es lo que permite que un
+      // aviso efimero se borre de `charla` ademas del DOM (armarEfimero).
+      var ent = { q: quien, t: txt };
+      charla.push(ent); r._ent = ent; guardar();
+    }
     return r;
   }
 
@@ -1560,7 +1571,10 @@
       a.appendChild(document.createTextNode(adj.nombre || "Comprobante.pdf"));
     }
     b.appendChild(a); r.appendChild(b); body.appendChild(r); body.scrollTop = body.scrollHeight;
-    if (!mudo){ charla.push({ q: quien, adj: adj }); guardar(); }
+    if (!mudo){
+      var ent = { q: quien, adj: adj };
+      charla.push(ent); r._ent = ent; guardar();
+    }
     return r;
   }
 
@@ -1648,6 +1662,15 @@
     fab.classList.add("quieto");   // con el chat abierto el latido no hace falta
     tag.classList.add("oculto");   // y el letrero tampoco
     sinLeer = 0;
+    /* Recien AHORA el jugador tiene delante lo que llego con el chat cerrado:
+       arrancan los relojes de los avisos efimeros pendientes, y un sondeo
+       inmediato con el panel ya abierto estampa el visto en el server sin
+       esperar los 6s del intervalo. */
+    while (efimerosPend.length){
+      var _p = efimerosPend.shift();
+      armarEfimero(_p.fila, _p.ms);
+    }
+    try { mirarAgente(); } catch (e) {}
     if (!saludado) saludar();
     if (porGesto === false) {
       // Lo abrimos nosotros: el permiso y el audio esperan al primer toque.
@@ -1768,10 +1791,12 @@
       setTimeout(mirarNotif, 600);
     }
 
-    // Tildes: enviado (una, ya está) -> recibido -> leído; y ahí sí, "escribiendo…".
+    // Tildes: enviado (una, ya está) -> recibido; y ahí, "escribiendo…".
+    // El "leído" (azul) dejó de ser un timer decorativo: llega DE VERDAD por
+    // mis_mensajes (leido_user_en), cuando un agente abre la conversación en
+    // el CRM. Dos grises = entregado; azules = un humano lo vio.
     setTimeout(function (){ marcarTilde(miFila, "recibido"); }, 350);
     setTimeout(function (){
-      marcarTilde(miFila, "leido");
       esperando = escribiendo();
       setEstado("escribiendo…", true);
       // "escribiendo…" tiene que verse un mínimo, aunque la respuesta ya llegó.
@@ -2138,14 +2163,42 @@
   });
 
   // ---------- respuestas humanas del agente (CRM) ----------
+
+  /* Aviso EFIMERO (los bonos acreditados): vive `seg` segundos desde que el
+     jugador lo VIO (chat abierto delante). Si llego con el chat cerrado, el
+     reloj arranca recien al abrirlo. El server hace exactamente lo mismo con
+     visto_en y ademas lo borra de la base (mis_mensajes.php); aca solo se lo
+     saca de la pantalla y de la charla guardada. */
+  var efimerosPend = [];
+  function programarEfimero(fila, seg){
+    if (panel.classList.contains("open")) armarEfimero(fila, seg * 1000);
+    else efimerosPend.push({ fila: fila, ms: seg * 1000 });
+  }
+  function armarEfimero(fila, ms){
+    var ent = fila._ent;
+    if (ent){ ent.exp = Date.now() + ms; guardar(); }
+    setTimeout(function (){
+      try { fila.remove(); } catch (e) {}
+      if (ent){
+        charla = charla.filter(function (x){ return x !== ent; });
+        guardar();
+      }
+    }, ms);
+  }
+
+  var lastLeidoUser = "";
   function mirarAgente(){
     // El usuario viaja ademas del sid: la conversacion del CRM guarda el sid
     // del ultimo mensaje ESCRITO, asi que un aviso del sistema (bono
     // acreditado, difusion) no llegaba a una sesion nueva donde el jugador
     // todavia no escribio. Con el nombre, el server entrega lo reciente de
     // SU conversacion aunque el sid haya cambiado (ver mis_mensajes.php).
+    // visto=1 SOLO con el panel abierto: es lo que estampa mensajes.visto_en
+    // ("el jugador lo tiene delante") y lo que arranca el reloj efimero.
+    var abierto = panel.classList.contains("open");
     fetch(API_MIS + "?session_id=" + encodeURIComponent(sid) + "&desde=" + lastAgentId
-          + (USUARIO ? "&usuario=" + encodeURIComponent(USUARIO) : ""))
+          + (USUARIO ? "&usuario=" + encodeURIComponent(USUARIO) : "")
+          + (abierto ? "&visto=1" : ""))
       .then(function (r){ return r.json(); })
       .then(function (d){
         if (d.ok && d.mensajes && d.mensajes.length){
@@ -2155,7 +2208,9 @@
             fab.classList.add("hay");
           }
           d.mensajes.forEach(function (m){
-            if (m.adjunto && m.adjunto.url) pintarAdj("b", m.adjunto); else pintar("b", m.texto);
+            var fila = (m.adjunto && m.adjunto.url) ? pintarAdj("b", m.adjunto)
+                                                    : pintar("b", m.texto);
+            if ((m.efimero | 0) > 0) programarEfimero(fila, m.efimero | 0);
           });
           /* Avisar (sonido + notificación en la barra) por la respuesta del
              agente, DIRECTO desde acá. El mensaje ya llegó por mis_mensajes
@@ -2176,6 +2231,14 @@
         }
         if (typeof d.ultimo_id === "number" && d.ultimo_id !== lastAgentId){
           lastAgentId = d.ultimo_id; guardar();
+        }
+        // Tildes AZULES de verdad: un agente abrio la conversacion en el CRM
+        // (crm.php estampa visto_en en los mensajes del jugador) y el server
+        // lo reporta aca. Se pintan todas las burbujas del jugador: es la
+        // semantica de WhatsApp -- si leyo lo ultimo, leyo lo anterior.
+        if (d.ok && d.leido_user_en && d.leido_user_en !== lastLeidoUser){
+          lastLeidoUser = d.leido_user_en;
+          body.querySelectorAll(".gp-r.u").forEach(function (f){ marcarTilde(f, "leido"); });
         }
       })
       .catch(function (){});
