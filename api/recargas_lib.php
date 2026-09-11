@@ -485,8 +485,16 @@ function rl_crear_recarga(PDO $pdo, string $usuario, int $coins, string $titular
         }
     }
     if (!$existe) {
+        // El mensaje NO nombra al usuario a proposito: este codigo salta cuando
+        // el jugador NO inicio sesion (con sesion verificada ya paso arriba), y
+        // el nombre que llego suele ser uno que el MODELO invento -- repetirlo
+        // al jugador ("'jugador123' no existe") es puro desconcierto. En vez de
+        // eso se le dice al modelo que haga lo correcto.
         return ['ok' => false, 'codigo' => 'sin_usuario', 'error' =>
-            "El usuario '$usuario' no existe todavia. Primero hay que registrarse en el juego."];
+            'Para cargar hace falta la cuenta con sesion iniciada. Si el jugador '
+            . 'NO inicio sesion, NO uses un nombre que el no dijo (no inventes '
+            . 'ninguno): pedile que inicie sesion con el boton de acceso, o si es '
+            . 'nuevo ofrecele crear la cuenta con crear_cuenta.'];
     }
 
     $montoBase = (int)round($coins / RL_COINS_POR_PESO);   // pesos enteros
