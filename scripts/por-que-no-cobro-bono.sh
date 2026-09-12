@@ -20,12 +20,46 @@ set -uo pipefail
 
 CFG="${CFG:-/var/www/api/config.local.php}"
 U="${1:-}"
-[ -n "$U" ] || { echo "Uso: bash $0 <usuario>" >&2; exit 1; }
+
 
 leer() { php -r '$c=@include "'"$CFG"'"; echo is_array($c)?($c["'"$1"'"]??""):"";' 2>/dev/null; }
 DBU="$(leer DB_USER)"; DBP="$(leer DB_PASS)"; CTL="$(leer CONTROL_DB_NAME)"
 CTL="${CTL:-goldpaw_control}"
 [ -n "$DBU" ] || { echo "No pude leer las credenciales de $CFG" >&2; exit 1; }
+
+# --- Modo LISTA: sin usuario, busca a quienes el bug del 12/9/2026 les
+# comio el bono. Firma exacta: tienen el movimiento 'bono_bienvenida'
+# (o sea el bono se calculo y prometio) pero el deposito al juego de ese
+# dia salio con bono_debitado = 0. Son los que hay que cargar a mano.
+if [ -z "$U" ]; then
+  echo "Uso: bash $0 <usuario>   (diagnostico de UN jugador)"
+  echo
+  echo "=== Jugadores con bono PROMETIDO que no viajo al deposito ==========="
+  q0() { mariadb -u "$DBU" -p"$DBP" "$1" -e "$2" 2>/dev/null; }
+  for db in $(mariadb -u "$DBU" -p"$DBP" "$CTL" -N -B \
+                -e "SELECT db_nombre FROM clientes WHERE estado <> 'baja';" 2>/dev/null); do
+    echo "-- base $db"
+    q0 "$db" "SELECT m.usuario,
+                     m.monto           AS bono_prometido,
+                     a.monto           AS deposito_hecho,
+                     a.bono_debitado   AS bono_en_el_deposito,
+                     a.estado,
+                     m.creado_en
+                FROM movimientos m
+                JOIN acciones_saldo a
+                  ON a.usuario = m.usuario AND a.tipo = 'cargar'
+                 AND a.creada_en BETWEEN m.creado_en - INTERVAL 5 MINUTE
+                                     AND m.creado_en + INTERVAL 5 MINUTE
+               WHERE m.origen = 'bono_bienvenida'
+                 AND COALESCE(a.bono_debitado,0) = 0
+               ORDER BY m.creado_en DESC LIMIT 30;"
+  done
+  echo
+  echo "Los que aparezcan perdieron el bono: cargaselo a mano desde el CRM"
+  echo "(Cargar bono) y despues «Bonos al juego». Con el arreglo desplegado"
+  echo "esto no vuelve a pasar."
+  exit 0
+fi
 
 q() { mariadb -u "$DBU" -p"$DBP" "$1" -N -B -e "$2" 2>/dev/null; }
 tabla() { mariadb -u "$DBU" -p"$DBP" "$1" -e "$2" 2>/dev/null; }
