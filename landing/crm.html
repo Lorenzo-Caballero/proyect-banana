@@ -103,7 +103,7 @@
   :focus-visible{outline:2px solid var(--violet);outline-offset:2px;border-radius:4px}
   svg{stroke-linecap:round;stroke-linejoin:round}
 
-  .app{display:flex;height:100vh;padding:12px;gap:12px}
+  .app{display:flex;height:100vh;height:100dvh;padding:12px;gap:12px}
   .card-col{background:var(--panel);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow-sm)}
 
   /* ---- nav rail ----
@@ -281,7 +281,7 @@
     text-align:center;white-space:nowrap}
   /* Filas compactas: mucho menos padding vertical para ver más chats de un
      vistazo (prioridad densidad), sin perder legibilidad de nombre/preview. */
-  .list{flex:1;overflow-y:auto;padding:4px 8px 8px;margin-top:2px}
+  .list{flex:1;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:4px 8px 8px;margin-top:2px}
   .conv{display:flex;gap:10px;padding:8px 8px;border-radius:12px;cursor:pointer;position:relative;transition:.12s;margin-bottom:0}
   .conv:hover{background:var(--panel2)}
   .conv.sel{background:var(--violetSoft);box-shadow:inset 0 0 0 1px var(--violet)}
@@ -518,7 +518,7 @@
     line-height:1.5;background:rgba(245,166,35,.14);border:1px solid var(--orange);
     color:var(--orange2)}
 
-  .thread{flex:1;overflow-y:auto;padding:24px 24px;display:flex;flex-direction:column;gap:16px}
+  .thread{flex:1;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:24px 24px;display:flex;flex-direction:column;gap:16px}
   .row{display:flex;max-width:76%}
   .row.user{align-self:flex-start} .row.saliente{align-self:flex-end} .row.interno{align-self:center;max-width:92%}
   .bub{padding:12px 16px;border-radius:16px;font-size:14px;line-height:1.5;white-space:pre-wrap;word-break:break-word;box-shadow:var(--shadow-sm)}
@@ -608,7 +608,7 @@
   .btn-peligro:hover{filter:brightness(1.08)}
   @media (prefers-reduced-motion:reduce){ .pel-ico svg{animation:none} }
   .modal{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:24px;width:100%;max-width:370px;
-         box-shadow:var(--shadow);max-height:calc(100vh - 40px);overflow-y:auto}
+         box-shadow:var(--shadow);max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px);overflow-y:auto}
   .modal h3{margin:0 0 4px;font-size:18px} .modal p{color:var(--muted);margin:0 0 16px;font-size:13px}
   .modal label{display:block;font-size:12px;color:var(--muted);margin:12px 0 5px}
   .modal input,.modal textarea{width:100%;padding:12px;background:var(--panel2);border:1px solid var(--line);
@@ -933,7 +933,7 @@
     .ag-acciones{width:100%;justify-content:flex-end;margin-top:4px}
     /* modales en general: menos margen perdido en pantallas angostas */
     .back{padding:10px}
-    .modal{padding:18px;border-radius:15px;max-height:calc(100vh - 20px)}
+    .modal{padding:18px;border-radius:15px;max-height:calc(100vh - 20px);max-height:calc(100dvh - 20px)}
     .ag-rol-toggle{grid-template-columns:1fr}
     .ag-modal-head{gap:10px}
     /* Barra de seleccion en angosto: quedan los iconos (con su title) y el
@@ -4332,7 +4332,7 @@
        en la que estuvieras. */
     pollConv = setInterval(()=>{
       if(vistaActual !== "chats") return;
-      if(st.convId && !$("#back").classList.contains("on")) abrir(st.convId);
+      if(st.convId && !$("#back").classList.contains("on")) abrir(st.convId, true);
     }, 9000);
     // Los badges corren siempre, sin importar que modulo este abierto -- asi
     // el numero del rail se actualiza aunque el operador este mirando otra
@@ -6125,7 +6125,7 @@
   plantillasCargar();
 
   // ---------- abrir ----------
-  async function abrir(id){
+  async function abrir(id, esRefresco = false){
     st.convId = id;
     /* La ficha se muestra solo si estamos EN Conversaciones.
        Antes iba `true` fijo, y eso la dejaba colgada en las otras secciones:
@@ -6134,12 +6134,19 @@
        conversacion, que la volvia a mostrar. El sintoma era ver la ficha de un
        jugador encima de una pantalla que no tiene nada que ver con el. */
     pintarUserPane(vistaActual === "chats");
-    $("#app").classList.add("viewing");
-    $("#chatEmpty").style.display="none";
-    $("#chatView").style.display="flex";
-    $("#volver").style.display = window.innerWidth<=760 ? "inline-flex" : "none";
-    $("#app").classList.remove("info");
-    document.querySelectorAll(".conv").forEach(c=>c.classList.toggle("sel", +c.getAttribute("data-id")===id));
+    /* El estado de VISTA solo se toca en una apertura de verdad. El sondeo
+       refresca cada 9 s llamando aca de nuevo, y antes volvia a forzar
+       "viewing": en el celular te sacaba de la lista de chats y te reabria la
+       conversacion solo, o te re-seleccionaba un chat mientras navegabas.
+       En un refresco solo se actualiza el CONTENIDO. */
+    if (!esRefresco){
+      $("#app").classList.add("viewing");
+      $("#chatEmpty").style.display="none";
+      $("#chatView").style.display="flex";
+      $("#volver").style.display = window.innerWidth<=760 ? "inline-flex" : "none";
+      $("#app").classList.remove("info");
+      document.querySelectorAll(".conv").forEach(c=>c.classList.toggle("sel", +c.getAttribute("data-id")===id));
+    }
 
     let d;
     try{ d = await jget({accion:"conversacion", id}); }
@@ -6163,6 +6170,13 @@
     st.yo = d.yo || "";
     pintarAgentes(d.agentes || []);
 
+    /* ¿El operador estaba leyendo mas arriba? Se mide ANTES de repintar.
+       El salto al fondo era incondicional y el sondeo lo ejecutaba en CADA
+       refresco: subias a leer una conversacion y 9 segundos despues te
+       devolvia al final. En el celular hacia imposible leer un chat largo. */
+    const th = $("#thread");
+    const alFondo = (th.scrollHeight - th.scrollTop - th.clientHeight) < 80;
+    const scrollPrevio = th.scrollTop;
     $("#thread").innerHTML = d.mensajes.map(m=>{
       // interno = rastro del agente ("Fiorella cargó $500"), no un mensaje real.
       // El resto de "user" sale a la izquierda; agente/bot (difusión de chat)
@@ -6202,7 +6216,11 @@
         ? ` · <button type="button" class="msg-del" data-id="${m.id}" title="Eliminar mensaje"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>` : "";
       return `<div class="row ${cls}"><div><div class="bub">${inner}</div><div class="meta">${quien}${horaExacta(m.creado_en)}${visto}${del}</div></div></div>`;
     }).join("") || `<div class="nouser">Conversación vacía.</div>`;
-    const th=$("#thread"); th.scrollTop = th.scrollHeight;
+    // Al fondo solo si es una apertura real o si ya estaba mirando el final
+    // (ahi el salto es lo que espera: llego un mensaje nuevo). Si estaba
+    // leyendo mas arriba, se le respeta donde estaba.
+    if (!esRefresco || alFondo) th.scrollTop = th.scrollHeight;
+    else th.scrollTop = scrollPrevio;
 
     // Un solo listener delegado en el hilo: los botones se repintan en cada
     // carga, así que engancharlos uno por uno se perdería al refrescar.
