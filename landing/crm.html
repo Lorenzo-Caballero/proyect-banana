@@ -871,6 +871,23 @@
     .col-list,.col-chat{width:100%;min-width:0;flex:1;min-height:0}
     .app.viewing .col-list{display:none}
     .app:not(.viewing) .col-chat{display:none}
+    /* EN EL CELULAR EL SCROLL VA EN EL PANEL, no en contenedores internos.
+       En el desktop .view-panel recorta a proposito y la tabla de adentro
+       scrollea sola: tiene alto de sobra. En un telefono no: el encabezado, las
+       tarjetas de totales y los filtros se comen la pantalla, la tabla se queda
+       con alto CERO y, como el panel recortaba, no habia ninguna forma de
+       llegar hasta ella. El sintoma exacto: en Usuarios se veian los totales
+       (saldo, bono pendiente) y nada mas, sin poder bajar.
+       Ademas evita el scroll anidado, que en tactil es lo peor: el dedo nunca
+       sabe cual de los dos se va a mover. */
+    .view-panel{overflow-y:auto;overscroll-behavior:contain;
+      -webkit-overflow-scrolling:touch}
+    /* Los que en desktop scrollean solos pasan a CRECER con su contenido (el
+       scroll vertical ya es del panel). Se les deja el overflow puesto: es lo
+       que le da scroll HORIZONTAL a las tablas anchas, que en el celular si
+       hace falta. */
+    .us-tabla-wrap,.mv-tabla-wrap{flex:0 0 auto}
+    .fn-contenido,.nv-body{flex:0 0 auto;overflow-y:visible;min-height:0}
     .lhead{padding:12px 14px} .subhead{padding:10px 14px 0}
     .thread{padding:14px 12px;gap:13px} .chead{padding:12px 14px}
     /* En un telefono el 76% de ancho de burbuja desperdicia media pantalla:
