@@ -821,6 +821,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             salir(['ok' => true, 'config' => cfg_crm_todo($pdo)]);
         }
 
+        // ---- ultimas recaudaciones (para la vista Recaudar del CRM) ----
+        // Sin la migracion 60 la tabla no existe: lista vacia, no error, para
+        // que la vista abra igual en una base que todavia no la corrio.
+        if ($accion === 'recaudar_estado') {
+            try {
+                $filas = $pdo->query(
+                    "SELECT id, estado, dry_run, dias, saltar, tope, min_saldo,
+                            pedido_por, resultado, mensaje, creada_en, actualizada_en
+                       FROM recaudaciones ORDER BY id DESC LIMIT 15"
+                )->fetchAll(PDO::FETCH_ASSOC);
+            } catch (Throwable $e) {
+                $filas = [];
+            }
+            foreach ($filas as &$f) {
+                $f['dry_run']   = (int)$f['dry_run'] === 1;
+                $f['resultado'] = $f['resultado'] ? json_decode($f['resultado'], true) : null;
+            }
+            salir(['ok' => true, 'recaudaciones' => $filas]);
+        }
+
         if ($accion === 'yo') {
             // El CSRF viaja acá porque el front lo pierde en cada F5 (vive solo
             // en memoria a propósito). Sin esto, después de recargar la página
@@ -1186,6 +1206,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             crm_bitacora($pdo, $operador, 'bonos_al_juego',
                          $usuario . ': ' . $disp . ' en bonos al juego');
             salir(['ok' => true, 'monto' => (int)($dep['bono'] ?? $disp)]);
+        }
+
+        /* ---- RECAUDAR el saldo de jugadores inactivos ----
+           Encola un pedido; lo ejecuta el bot del VPS (bot_recaudar.py)
+           contra el panel de agentes -- el CRM no puede abrir ese panel.
+           SOLO ADMIN: retira plata de cuentas de jugadores en masa, no es una
+           accion de mostrador. Los topes viajan con el pedido; por defecto es
+           una PRUEBA (dry_run) que lista a quien tocaria sin retirar nada. */
+        if ($accion === 'recaudar_pedir') {
+            exigir_admin();
+            $dry  = !isset($body['si']) || !$body['si'];   // sin 'si' explicito = prueba
+            $dias = max(1, (int)($body['dias'] ?? 30));
+            $salt = max(0, (int)($body['saltar'] ?? 4));
+            $tope = max(1, min(100, (int)($body['tope'] ?? 10)));
+            $minS = max(0, (int)($body['min_saldo'] ?? 100));
+
+            // Una sola en vuelo: si ya hay pendiente/procesando, no apilar otra
+            // (el bot las hace de a una; dos pedidos encimados confunden).
+            $enVuelo = $pdo->query(
+                "SELECT id FROM recaudaciones WHERE estado IN ('pendiente','procesando') LIMIT 1"
+            )->fetchColumn();
+            if ($enVuelo) {
+                salir(['ok' => false, 'error' => 'Ya hay una recaudación en curso (#'
+                        . (int)$enVuelo . '). Esperá a que termine.'], 409);
+            }
+
+            $pdo->prepare(
+                "INSERT INTO recaudaciones (estado, dry_run, dias, saltar, tope, min_saldo, pedido_por)
+                 VALUES ('pendiente', ?, ?, ?, ?, ?, ?)"
+            )->execute([$dry ? 1 : 0, $dias, $salt, $tope, $minS, $operador]);
+            $id = (int)$pdo->lastInsertId();
+            crm_bitacora($pdo, $operador, 'recaudar_pedir',
+                "#$id " . ($dry ? 'PRUEBA' : 'REAL') . " dias=$dias saltar=$salt tope=$tope min=$minS");
+            salir(['ok' => true, 'id' => $id, 'dry_run' => $dry]);
         }
 
         // ---- cargar / retirar SALDO real (se encola para el worker de ganamos) ----
