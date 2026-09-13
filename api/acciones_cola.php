@@ -34,6 +34,14 @@ require __DIR__ . '/fichas_lib.php';
 // simplemente no se avisa. Una carga acreditada nunca puede fallar por el aviso.
 $notifLib = __DIR__ . '/notificaciones_lib.php';
 if (is_file($notifLib)) { require_once $notifLib; }
+/* Igual de opcional, y por el mismo motivo: si falta, la cola sigue y solo se
+   pierde el aviso. Hace falta aca para avisar cuando un deposito NO sale --
+   sin este require, tg_evento no existe y el aviso se cae en silencio, que es
+   exactamente el problema que vino a resolver. config_crm es su dependencia
+   (decide si el tipo de aviso esta prendido). */
+foreach (['/config_crm.php', '/telegram_lib.php'] as $opc) {
+    if (is_file(__DIR__ . $opc)) { require_once __DIR__ . $opc; }
+}
 
 header('Content-Type: application/json; charset=utf-8');
 exigir_api_key();   // corta si la X-API-Key no coincide con BOT_API_KEY
@@ -225,6 +233,44 @@ try {
         $devuelto = 0;
         if ($estado === 'error') {
             $devuelto = fichas_devolver($pdo, $id);
+        }
+
+        /* UN DEPOSITO QUE FALLA TIENE QUE SONAR. Devolverle las fichas al
+           jugador no alcanza: el sigue sin poder cargar, y el proximo intento
+           va a fallar por lo mismo.
+
+           El caso real (12-13/9/2026): la cuenta de agente se quedo SIN FICHAS
+           y la plataforma empezo a contestar {"status":501}. Nadie se entero
+           hasta que los jugadores reclamaron -- hubo que cargarles a mano y
+           recien ahi comprarle mas al proveedor. Es una condicion operativa
+           normal y previsible, no una rareza: se acaba el stock y hay que
+           reponerlo. Lo unico que faltaba era que avisara.
+
+           Con clave de dedupe GLOBAL, no por accion: cuando no hay fichas
+           fallan TODOS los depositos, y treinta mensajes seguidos terminan con
+           el operador silenciando el bot. Uno por ventana alcanza -- el resto
+           se ve en la cola de Cargas del CRM, con su badge. */
+        if (in_array($estado, ['error', 'revisar'], true) && function_exists('tg_evento')) {
+            try {
+                $q = $pdo->prepare(
+                    "SELECT usuario, tipo, monto FROM acciones_saldo WHERE id = ?");
+                $q->execute([$id]);
+                $a = $q->fetch(PDO::FETCH_ASSOC) ?: [];
+                if (($a['tipo'] ?? '') === 'cargar') {
+                    tg_evento($pdo, 'salud', '⚠️ No se pudo depositar en el juego', [
+                        'Jugador'  => (string)($a['usuario'] ?? '-'),
+                        'Fichas'   => number_format((float)($a['monto'] ?? 0), 0, ',', '.'),
+                        'Respuesta'=> $mensaje !== '' ? $mensaje : '(sin detalle)',
+                        'Ojo'      => $estado === 'error'
+                            ? 'Se le devolvieron las fichas, pero NO puede cargar hasta que se arregle. '
+                            . 'Si dice que no hay saldo, comprale fichas al proveedor.'
+                            : 'No se sabe si entro: NO se devolvieron fichas. Miralo en Cargas.',
+                        'Donde'    => 'CRM > Cargas',
+                    ], 'deposito_fallo');
+                }
+            } catch (Throwable $e) {
+                error_log('acciones_cola/aviso: ' . $e->getMessage());
+            }
         }
 
         // Recien ACA se avisa. No cuando el chatbot encola ni cuando el bot
