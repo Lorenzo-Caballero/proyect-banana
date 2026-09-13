@@ -76,17 +76,46 @@ if ($accion === 'registrar') {
     if (trim($deviceId) === '') {
         salir(['ok' => false, 'error' => 'Falta device_id'], 400);
     }
+    $usuarioReg = isset($body['usuario']) ? trim((string)$body['usuario']) : null;
+    $plataforma = (string)($body['plataforma'] ?? 'web');
     $ok = notif_registrar_dispositivo(
         $pdo,
         $deviceId,
-        isset($body['usuario']) ? (string)$body['usuario'] : null,
-        (string)($body['plataforma'] ?? 'web'),
+        $usuarioReg !== '' ? $usuarioReg : null,
+        $plataforma,
         isset($body['modelo'])  ? (string)$body['modelo']  : null,
         isset($body['version']) ? (string)$body['version'] : null,
         !isset($body['permitido']) || (bool)$body['permitido'],
         !empty($body['soltar'])
     );
-    salir($ok ? ['ok' => true] : ['ok' => false, 'error' => 'No se pudo registrar'], $ok ? 200 : 500);
+    $resp = $ok ? ['ok' => true] : ['ok' => false, 'error' => 'No se pudo registrar'];
+
+    /* Promo "descarga la app", para el jugador LOGUEADO EN EL NAVEGADOR que
+       todavia no la tiene: viaja acá porque este registro es el momento exacto
+       en que el widget sabe quién es (lo llama al adoptar la sesión). El
+       widget decide si mostrar el cartel y cada cuánto; acá solo se dice "a
+       este le corresponde". Desde la app (android) nunca: ya la tiene.
+       Best-effort: sin config_crm no hay promo y el registro sigue igual. */
+    if ($ok && $usuarioReg !== null && $usuarioReg !== '' && $plataforma !== 'android') {
+        try {
+            require_once __DIR__ . '/config_crm.php';
+            if (cfg_crm_activo($pdo, 'app_promo_activa')) {
+                $fichas = max(0, (int)(cfg_crm($pdo, 'app_bono_fichas') ?? 0));
+                if ($fichas > 0) {
+                    $st = $pdo->prepare("SELECT tiene_app FROM usuarios WHERE username = ?");
+                    $st->execute([$usuarioReg]);
+                    $fila = $st->fetch();
+                    if ($fila && !(int)$fila['tiene_app']) {
+                        $resp['app_promo'] = [
+                            'fichas' => $fichas,
+                            'url'    => trim((string)(cfg_crm($pdo, 'app_url') ?? '')),
+                        ];
+                    }
+                }
+            }
+        } catch (Throwable $e) { /* sin promo, el registro ya salió bien */ }
+    }
+    salir($resp, $ok ? 200 : 500);
 }
 
 // ---- la tocó ----

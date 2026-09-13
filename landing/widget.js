@@ -1930,11 +1930,26 @@
 
      NUNCA dentro del APK (APP): ahí la app ya está instalada y el bono se
      acredita solo al iniciar sesión (notif_registrar_dispositivo). */
+  /* Para el jugador YA LOGUEADO (viene en la respuesta del registro del
+     dispositivo): mismo modal, pero con freno de UNA vez por día por
+     dispositivo -- el registro corre en cada carga de página y sin el freno
+     el cartel sería spam. El flujo del alta NO pasa por acá: una cuenta
+     recién creada lo ve siempre (y deja marcado el día, para no repetirlo
+     a los dos minutos). */
+  function ofrecerPromoApp(promo){
+    try {
+      var visto = parseInt(ls("gp_app_promo_dia") || "0", 10);
+      if (visto && (Date.now() - visto) < 24 * 60 * 60 * 1000) return;
+    } catch (e) {}
+    mostrarPromoApp(promo);
+  }
+
   function mostrarPromoApp(promo){
     if (APP) return;                              // ya está en la app
     if (!promo || !(promo.fichas > 0)) return;
     if (mostrarPromoApp._puesta) return;          // una por carga de página
     mostrarPromoApp._puesta = true;
+    lss("gp_app_promo_dia", String(Date.now()));
 
     // La URL la manda el server (config app_url); sin ella, el APK de la
     // réplica. Se completa el esquema como hace el chatbot, porque el
@@ -3892,6 +3907,10 @@
         if (APP && APP_TK){
           try { APP.vincular(APP_TK, DEVICE, USUARIO || ""); } catch (e) {}
         }
+        /* El server manda app_promo SOLO si este jugador esta logueado en el
+           navegador y todavia no tiene la app: se le ofrece el modal (con el
+           freno de una vez por dia). */
+        if (d.app_promo) ofrecerPromoApp(d.app_promo);
       })
       .catch(function (){ notifRegistrado = null; });   // reintenta en el proximo sondeo
   }

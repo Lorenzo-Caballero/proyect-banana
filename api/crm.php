@@ -856,6 +856,87 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             salir(['ok' => true, 'recaudaciones' => $filas]);
         }
 
+        // ---- instalaciones de la app (vista App del CRM) ----
+        // Numeros de la promo "descarga la app": cuantos la tienen, cuantos
+        // entraron por primera vez hoy / esta semana, y los bonos EFECTIVAMENTE
+        // pagados (movimientos origen 'bono_app', el candado del regalo). La
+        // lista sale de `dispositivos` (android con usuario), que ademas dice
+        // desde que celular y cuando se lo vio por ultima vez.
+        if ($accion === 'app_stats') {
+            $u = $pdo->query(
+                "SELECT COUNT(*) total, COALESCE(SUM(tiene_app),0) con_app FROM usuarios"
+            )->fetch(PDO::FETCH_ASSOC);
+
+            // Bonos pagados. Try/catch propio: sin movimientos no se cae la vista.
+            try {
+                $b = $pdo->query(
+                    "SELECT COUNT(*) n, COALESCE(SUM(monto),0) fichas,
+                            SUM(creado_en >= CURDATE()) hoy,
+                            SUM(creado_en >= DATE_SUB(NOW(), INTERVAL 7 DAY)) semana
+                       FROM movimientos WHERE origen = 'bono_app' AND monto > 0"
+                )->fetch(PDO::FETCH_ASSOC);
+            } catch (Throwable $e) {
+                $b = ['n' => 0, 'fichas' => 0, 'hoy' => 0, 'semana' => 0];
+            }
+
+            /* Instalaciones por fecha: el primer celular android de cada
+               jugador. Sin JOIN a usuarios a proposito (choque de collations,
+               ver CLAUDE.md): dispositivos ya tiene el usuario. */
+            try {
+                $t = $pdo->query(
+                    "SELECT SUM(primera >= CURDATE()) hoy,
+                            SUM(primera >= DATE_SUB(NOW(), INTERVAL 7 DAY)) semana
+                       FROM (SELECT usuario, MIN(creado_en) primera
+                               FROM dispositivos
+                              WHERE plataforma = 'android' AND usuario IS NOT NULL
+                              GROUP BY usuario) d"
+                )->fetch(PDO::FETCH_ASSOC);
+            } catch (Throwable $e) {
+                $t = ['hoy' => 0, 'semana' => 0];
+            }
+
+            try {
+                $lista = $pdo->query(
+                    "SELECT usuario, modelo, version, permitido, creado_en, visto_en
+                       FROM dispositivos
+                      WHERE plataforma = 'android' AND usuario IS NOT NULL
+                      ORDER BY creado_en DESC LIMIT 50"
+                )->fetchAll(PDO::FETCH_ASSOC);
+            } catch (Throwable $e) {
+                $lista = [];
+            }
+            // El bono de cada uno, sin JOIN (misma razon): un IN con los
+            // usuarios de la pagina. Como mucho 50.
+            $conBono = [];
+            if ($lista) {
+                $usuarios = array_values(array_unique(array_column($lista, 'usuario')));
+                $marcas = implode(',', array_fill(0, count($usuarios), '?'));
+                try {
+                    $st = $pdo->prepare(
+                        "SELECT DISTINCT usuario FROM movimientos
+                          WHERE origen = 'bono_app' AND monto > 0 AND usuario IN ($marcas)"
+                    );
+                    $st->execute($usuarios);
+                    $conBono = array_fill_keys($st->fetchAll(PDO::FETCH_COLUMN), true);
+                } catch (Throwable $e) {}
+            }
+            foreach ($lista as &$d) {
+                $d['permitido'] = (int)$d['permitido'] === 1;
+                $d['bono']      = isset($conBono[$d['usuario']]);
+            }
+
+            salir(['ok' => true, 'resumen' => [
+                'total_usuarios'  => (int)$u['total'],
+                'con_app'         => (int)$u['con_app'],
+                'instaladas_hoy'    => (int)($t['hoy'] ?? 0),
+                'instaladas_semana' => (int)($t['semana'] ?? 0),
+                'bonos_entregados' => (int)$b['n'],
+                'bonos_fichas'     => (int)$b['fichas'],
+                'bonos_hoy'        => (int)($b['hoy'] ?? 0),
+                'bonos_semana'     => (int)($b['semana'] ?? 0),
+            ], 'dispositivos' => $lista]);
+        }
+
         if ($accion === 'yo') {
             // El CSRF viaja acá porque el front lo pierde en cada F5 (vive solo
             // en memoria a propósito). Sin esto, después de recargar la página
