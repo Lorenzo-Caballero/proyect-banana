@@ -86,7 +86,8 @@ function vision_extraer_comprobante(string $ruta): array
     if (!vision_disponible()) {
         return ['ok' => false, 'codigo' => 'sin_api', 'error' =>
             'La lectura automatica de comprobantes no esta configurada. '
-            . 'Pedile los datos por texto: titular de su cuenta y numero de operacion.'];
+            . 'Pedile por texto el nombre del TITULAR de la cuenta desde la que '
+            . 'transfirio -- con eso alcanza. NO le pidas el numero de operacion.'];
     }
     if (!is_file($ruta)) {
         return ['ok' => false, 'codigo' => 'sin_archivo', 'error' =>
@@ -199,8 +200,9 @@ TXT;
     if (!is_array($d)) {
         error_log('vision_extraer_comprobante: respuesta no-JSON: ' . substr($texto, 0, 300));
         return ['ok' => false, 'codigo' => 'parseo', 'error' =>
-            'No pude interpretar el comprobante. Pedile los datos por texto: '
-            . 'titular de su cuenta y numero de operacion.'];
+            'No pude interpretar el comprobante. Pedile por texto el nombre del '
+            . 'TITULAR de la cuenta desde la que transfirio -- con eso alcanza '
+            . 'para casarlo. NO le pidas el numero de operacion.'];
     }
 
     return ['ok' => true, 'datos' => [
