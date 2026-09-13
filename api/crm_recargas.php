@@ -120,6 +120,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                LEFT JOIN + subconsulta para no romper si la tabla no existe en
                una instalacion vieja (se degrada abajo, en el catch).
 
+               EL ANCLA ES `acreditada_en`, NO `creada_en`, y con una ventana de
+               10 minutos. Primero lo ate a `creada_en` y emparejaba mal: a una
+               recarga PENDIENTE -- que por definicion todavia no genero ningun
+               deposito, porque la accion se crea recien al acreditar -- le
+               enganchaba el deposito de OTRA recarga anterior del mismo
+               jugador. En pantalla eso se veia como "Esperando pago" +
+               "Fichas en el juego" a la vez, que es imposible y peor que no
+               mostrar nada: informa mal sobre plata. Visto con holapablo757.
+               rl_cargar_al_juego_auto() se llama inmediatamente despues de
+               rl_acreditar(), asi que la accion buena nace a segundos de
+               `acreditada_en`; 10 minutos es margen de sobra y a la vez
+               demasiado poco para agarrar la carga siguiente del jugador.
+
                El COLLATE del JOIN es obligatorio: `recargas.usuario` quedo en
                utf8mb4_general_ci y `acciones_saldo.usuario` en
                utf8mb4_unicode_ci, y sin el MySQL corta con el error de mezcla
@@ -141,7 +154,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                           ON a.id = (SELECT a2.id FROM acciones_saldo a2
                                       WHERE a2.usuario = r.usuario COLLATE utf8mb4_unicode_ci
                                         AND a2.tipo = 'cargar'
-                                        AND a2.creada_en >= r.creada_en
+                                        AND r.acreditada_en IS NOT NULL
+                                        AND a2.creada_en >= r.acreditada_en
+                                        AND a2.creada_en < r.acreditada_en + INTERVAL 10 MINUTE
                                       ORDER BY a2.creada_en ASC LIMIT 1)
                   WHERE " . implode(' AND ', $whereR) . "
                   ORDER BY r.creada_en DESC

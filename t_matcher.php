@@ -382,5 +382,66 @@ chequear('no se puede acreditar a un jugador inexistente',
          ($r['resultado'] ?? '') === 'error', json_encode($r));
 
 limpiar($pdo);
+// ===========================================================================
+echo "\n=== 11. El CRM no puede decir que las fichas llegaron si no llegaron ===\n";
+/* La pantalla de Cargas muestra, al lado del estado del pago, si las fichas
+   entraron AL JUEGO -- que es otro dato, en acciones_saldo. Para eso hay que
+   emparejar cada recarga con SU deposito, y ese emparejamiento es por tiempo.
+   Primera version: "la primera carga del jugador posterior a la recarga". Mal:
+   a una recarga PENDIENTE (que todavia no genero ningun deposito, porque la
+   accion se crea recien al acreditar) le enganchaba el deposito de otra
+   recarga anterior del mismo jugador, y en pantalla salia "Esperando pago" +
+   "Fichas en el juego" a la vez. Visto en produccion con holapablo757.
+   Ahora el ancla es `acreditada_en` con ventana de 10 min. */
+limpiar($pdo);
+crearUsuario($pdo, 'test_ana');
+$emparejar = function (int $recargaId) use ($pdo): ?int {
+    // Copia del JOIN de crm_recargas.php. Si divergen, esto no protege nada.
+    $st = $pdo->prepare(
+        "SELECT (SELECT a2.id FROM acciones_saldo a2
+                  WHERE a2.usuario = r.usuario COLLATE utf8mb4_unicode_ci
+                    AND a2.tipo = 'cargar'
+                    AND r.acreditada_en IS NOT NULL
+                    AND a2.creada_en >= r.acreditada_en
+                    AND a2.creada_en < r.acreditada_en + INTERVAL 10 MINUTE
+                  ORDER BY a2.creada_en ASC LIMIT 1)
+           FROM recargas r WHERE r.id = ?");
+    $st->execute([$recargaId]);
+    $v = $st->fetchColumn();
+    return $v ? (int)$v : null;
+};
+
+// Una carga vieja de ana, ya depositada, de una recarga anterior.
+$pdo->exec("INSERT INTO acciones_saldo (usuario,tipo,monto,estado,creada_en)
+            VALUES ('test_ana','cargar',3000,'hecha', NOW() - INTERVAL 2 HOUR)");
+$viejaAccion = (int)$pdo->lastInsertId();
+
+// Y ahora pide otra: PENDIENTE, nadie transfirio todavia.
+$r = rl_crear_recarga($pdo, 'test_ana', 5000, '');
+$idPend = (int)$pdo->query("SELECT id FROM recargas WHERE referencia='"
+          . $r['referencia'] . "'")->fetchColumn();
+chequear('una recarga PENDIENTE no se empareja con ningun deposito',
+         $emparejar($idPend) === null, var_export($emparejar($idPend), true));
+chequear('y menos con el deposito de una recarga anterior',
+         $emparejar($idPend) !== $viejaAccion);
+
+// Se acredita, y recien ahi nace SU deposito.
+$pdo->prepare("UPDATE recargas SET estado='acreditada', acreditada_en=NOW() WHERE id=?")
+    ->execute([$idPend]);
+$pdo->exec("INSERT INTO acciones_saldo (usuario,tipo,monto,estado,creada_en)
+            VALUES ('test_ana','cargar',5000,'hecha', NOW())");
+$suAccion = (int)$pdo->lastInsertId();
+chequear('acreditada: se empareja con SU deposito', $emparejar($idPend) === $suAccion,
+         var_export($emparejar($idPend), true) . " esperaba $suAccion");
+
+/* Y la carga SIGUIENTE del jugador, horas despues, no es de esta recarga. */
+$pdo->exec("INSERT INTO acciones_saldo (usuario,tipo,monto,estado,creada_en)
+            VALUES ('test_ana','cargar',9000,'hecha', NOW() + INTERVAL 3 HOUR)");
+chequear('una carga posterior lejana no le roba el emparejamiento',
+         $emparejar($idPend) === $suAccion);
+
+limpiar($pdo);
+
+
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);
 exit($fail > 0 ? 1 : 0);

@@ -1209,6 +1209,9 @@
   .ret-row .rr-copiar .ico{width:13px;height:13px;opacity:.75;flex:none}
   .ret-row .rr-dato{color:var(--muted);font-size:12px}
   .ret-row .rr-dato.falta{color:var(--red)}
+  /* El monto y la accion juntos a la derecha, sin que el monto se mueva cuando
+     la fila no tiene boton. */
+  .comp-row .pt-der{display:inline-flex;align-items:center;gap:10px}
   /* Ancho fijo: si los botones cambian por fila, el monto de al lado baila y
      la columna deja de leerse como columna. */
   .ret-row .rr-acciones{display:flex;gap:6px;justify-content:flex-end;min-width:190px;flex:none}
@@ -6962,11 +6965,20 @@
       const dem = p.demorada
         ? ` · <b style="color:#f1c40f">${ptEspera(p.minutos)} que espera</b>` : "";
       const motivo = ptMotivo(p);
+      /* CERRAR A MANO. El caso real: el matcher no puede probar cual
+         transferencia es, el operador la aprueba en el panel de ganamos, y acá
+         quedaba "Esperando la transferencia" PARA SIEMPRE -- no habia ninguna
+         accion en esta pantalla. Solo aparece en las que esperan algo: una
+         aprobada ya se resolvio sola. */
+      const puedeCerrar = p.estado==="esperando" || p.estado==="revision" || p.estado==="error";
+      const btnCerrar = puedeCerrar
+        ? `<button class="btn-mini-accion" data-cerrar="${p.request_id}" type="button"
+                   title="Ya la resolviste en el panel: sacarla de la lista">Ya la resolví</button>` : "";
       return `
       <div class="comp-row">
         <div class="cr-top">
           <span>${esc(p.username)} <span style="color:var(--muted)">#${p.request_id}</span></span>
-          <span>${money(p.monto)}</span>
+          <span class="pt-der">${money(p.monto)}${btnCerrar}</span>
         </div>
         <div class="cr-sub">
           <b style="color:${e.c}">${esc(e.t)}</b>${dem}
@@ -6975,6 +6987,35 @@
         ${motivo ? `<div class="cr-sub" style="opacity:.8">${esc(motivo)}</div>` : ""}
       </div>`;
     }).join("");
+
+    cont.querySelectorAll("[data-cerrar]").forEach(btn=>{
+      btn.addEventListener("click", ()=> cerrarPeticion(+btn.getAttribute("data-cerrar"), btn));
+    });
+  }
+
+  /* NO acredita nada: la carga ya la hizo el operador en el panel. Acá solo se
+     deja de preguntar por ella. La nota es la única constancia de por qué se
+     cerró sin que el sistema pudiera probar el pago. */
+  async function cerrarPeticion(rid, btn){
+    const nota = prompt(
+      `Cerrar la solicitud #${rid}.
+
+` +
+      `Esto NO le carga nada al jugador: es para cuando YA se la aprobaste en el panel de ganamos.
+
+` +
+      `¿Por qué la cerrás? (queda como constancia)`, "");
+    if(nota === null) return;
+    if(nota.trim().length < 8){ toast("Contá por qué la cerrás, al menos 8 caracteres"); return; }
+    btn.disabled = true; btn.textContent = "…";
+    const d = await jpost({accion:"cerrar", request_id:rid, nota:nota.trim()}, API_PET);
+    if(d.ok){
+      toast(d.mensaje || "Solicitud cerrada");
+      cargarPeticiones(); actualizarBadgePeticiones();
+    } else {
+      btn.disabled = false; btn.textContent = "Ya la resolví";
+      toast(d.error || "No se pudo cerrar");
+    }
   }
 
   // ---------- Comprobantes sin resolver (Fase A, Módulo 1) ----------
