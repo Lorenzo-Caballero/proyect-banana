@@ -136,7 +136,17 @@ comporte como antes — así ningún otro llamador se rompe.
 En `_depositar_una()`, guardar la respuesta completa para evaluarla y recortar
 solo lo que se manda a la cola como detalle.
 
-### 3. (Recomendado) Reintentar el challenge del WAF
+### 3. Reintentar el challenge del WAF — y no esperar salvarse cambiando de dominio
+
+**Importante, verificado el 13/09/2026:** el challenge llega en
+`agents.ganamosonline.com`, el mismo host donde el bot está logueado. Se
+comprobó en el contenedor: `PANEL_API`, `PANEL_URL` y `LOGIN_URL` los tres en
+ese dominio, y el `POST .../payment/` igual recibió el HTML de ServicePipe. No
+era un mismatch de hosts, y **mover el `.env` a otro dominio no lo evita** — la
+documentación del proyecto decía que ese dominio estaba libre de WAF y era
+falso. Ya está corregida.
+
+Así que esto no es opcional: el código tiene que sobrevivir un challenge.
 
 Un challenge **prueba** que la request no llegó al backend, así que reintentarlo
 es seguro: no hay forma de depositar dos veces por esa vía. Esto lo distingue de
@@ -147,6 +157,10 @@ Se reconoce por `/exhk` en el cuerpo, o por un `<noscript>` con
 `http-equiv="refresh"`. Con dos o tres reintentos y una pausa corta suele
 alcanzar: ServicePipe deja la cookie de clearance en la respuesta del propio
 challenge, y `page.context.request` comparte cookies con el navegador.
+
+El challenge aparece **de a ratos**: la sesión de Playwright normalmente lleva
+la cookie de clearance y pasa. De 20 depósitos seguidos, 18 recibieron JSON y 2
+el HTML. Por eso el bug es tan traicionero — funciona casi siempre.
 
 ### 4. (Aparte, del lado del operador) Avisar cuando falla
 

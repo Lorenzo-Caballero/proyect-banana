@@ -30,10 +30,29 @@ necesite un subdominio de la plataforma.
 >     LOGIN_URL=https://agents.ganamosonline.com/
 >
 > **Los dos son el mismo panel.** `agents.ganamosonline.com` es un envoltorio
-> de `agents.ganamos7.com`: mismo backend, mismos datos, mismos endpoints. La
-> diferencia es que **`ganamos7` está detrás del WAF** (ServicePipe) y
-> `ganamosonline` no. Por eso se usa este: automatizarlo no choca contra el
+> de `agents.ganamos7.com`: mismo backend, mismos datos, mismos endpoints. Se
+> usa este porque con él las altas salen; `ganamos7` choca de entrada contra el
 > challenge anti-bot.
+>
+> **Pero `ganamosonline` NO está libre del WAF, como decía acá hasta el
+> 13/09/2026.** Verificado ese día: el bot logueado en `ganamosonline`, con
+> `PANEL_API`, `PANEL_URL` y `LOGIN_URL` los tres en ese dominio, hizo un
+> `POST .../api/agent_admin/user/{id}/payment/` y le contestó el challenge de
+> ServicePipe (HTML con el `/exhk...`), **con código 200**. No era un mismatch
+> de dominios: era el mismo host que el del login.
+>
+> Lo que pasa es que el challenge aparece **de a ratos**. La sesión de
+> Playwright normalmente lleva la cookie de clearance y pasa; cada tanto
+> ServicePipe la vuelve a desafiar. De 20 depósitos seguidos, 18 recibieron
+> JSON y 2 el HTML del challenge — y esos 2 se contaron como depósitos hechos,
+> costándole las fichas a dos jugadores.
+>
+> **La conclusión práctica: cambiar de dominio no es la solución, y el código
+> tiene que sobrevivir un challenge.** O sea reconocerlo (`/exhk` en el cuerpo,
+> o un `<noscript>` con `http-equiv="refresh"`) y reintentar — un challenge
+> prueba que la request no llegó al backend, así que repetirla no puede
+> duplicar nada. Lo que NO se puede es mirar solo el código HTTP: el WAF
+> responde 200.
 >
 > **Este bloque se dio vuelta dos veces, y las dos por la misma razón: los dos
 > dominios responden.** Apuntar al equivocado no falla de entrada — devuelve
