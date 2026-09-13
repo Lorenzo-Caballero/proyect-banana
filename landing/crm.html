@@ -1302,7 +1302,12 @@
   .au-operador.sistema{color:var(--muted)}
   .au-operador.ninguno{color:var(--muted2)}
 
-  .au-detalle{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default}
+  /* La columna mas ancha de la tabla, porque es la que lleva el texto que
+     escribio una persona. Antes tenia 280px con el resto del ancho sin usar. */
+  .au-detalle{max-width:520px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default}
+  /* Al expandir la fila, el detalle se lee ENTERO y en varias lineas: para una
+     nota de auditoria, "…" no alcanza. */
+  .mv-tabla tbody tr.au-expandida .au-detalle{white-space:normal;max-width:none}
   .au-referencia{font-family:ui-monospace,"SF Mono",Consolas,monospace;color:var(--muted);font-size:11.5px}
 
   .au-vacio{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
@@ -7728,7 +7733,15 @@
     const esIngreso = f.tipo === "deposito" || f.tipo === "bono";
     const signo = esIngreso ? "pos" : "neg";
     const rowId = `auRow${idx}`;
-    const detalleCorto = f.detalle && f.detalle.length > 60 ? f.detalle.slice(0,60) + "…" : (f.detalle || "—");
+    /* 60 caracteres cortaban JUSTO donde empieza lo que uno viene a leer: el
+       detalle arranca con "Retiro $100 — hecha | pagado a mano por nahuel:" y
+       la NOTA -- el unico dato que escribio una persona, y la unica constancia
+       de por que se cerro -- quedaba afuera. Nahuel lo reporto: "me pedia una
+       nota... pero eso no lo veo en auditoria".
+       Estaba en el title (tooltip), que en una auditoria no sirve: hay que
+       saber que existe y pasar el mouse fila por fila. 150 entra comodo en la
+       columna ensanchada, y lo que sobre se ve al expandir la fila. */
+    const detalleCorto = f.detalle && f.detalle.length > 150 ? f.detalle.slice(0,150) + "…" : (f.detalle || "—");
     return `<tr id="${rowId}" data-usuario="${esc(f.usuario)}" class="au-fila-clickeable">
       <td>
         <span class="au-fecha-desktop">${auFechaFmt(f.fecha)}</span>
@@ -7822,12 +7835,14 @@
       ? dListar.data.map(auFilaHtml).join("")
       : auVacioHtml();
 
-    // Expandir detalle al tap en mobile (spec: si está truncado, tap expande la fila).
+    /* Expandir la fila para leer el detalle ENTERO. Estaba limitado al celular
+       -- en desktop el click no hacía nada -- y el texto largo vivía solo en el
+       tooltip del title, que para una auditoría no sirve: hay que saber que
+       existe y pasar el mouse fila por fila. La nota que escribe una persona al
+       cerrar un pedido de plata es justo lo que hay que poder leer. */
     document.querySelectorAll("#auBody tr.au-fila-clickeable").forEach(tr=>{
-      tr.addEventListener("click", ()=>{
-        if(window.innerWidth > 600) return;
-        tr.classList.toggle("au-expandida");
-      });
+      tr.addEventListener("click", ()=> tr.classList.toggle("au-expandida"));
+      tr.style.cursor = "pointer";
     });
 
     // Dropdown de operadores: se repuebla en cada carga (depende del rango

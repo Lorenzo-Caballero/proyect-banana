@@ -97,10 +97,23 @@ function au_query_base(): string
         a.estado COLLATE utf8mb4_unicode_ci                                    AS subtipo,
         a.usuario COLLATE utf8mb4_unicode_ci                                   AS usuario,
         a.monto                                                                AS monto,
-        REGEXP_REPLACE(a.mensaje, '^.*cancelada por ([^:]+):.*$', '\\\\1')
+        /* LAS TRES FORMAS en que una persona deja su nombre en el mensaje.
+           Antes el patron solo conocia 'cancelada por X:', asi que 'pagado a
+           mano por X:' -- la accion nueva para cerrar un retiro pagado por
+           fuera -- figuraba como SISTEMA. Una accion tomada por una persona
+           anotada como automatica es lo peor que puede decir una auditoria, y
+           encima es la que mas hace falta rastrear: cierra un pedido de plata
+           sin que el sistema haya podido verificar nada.
+           Si algun dia se agrega otro mensaje con nombre de operador, va aca.
+           El CASE devuelve NULL cuando no matchea: sin el, REGEXP_REPLACE
+           deja pasar el MENSAJE ENTERO como si fuera el nombre. */
+        CASE WHEN a.mensaje REGEXP '(cancelada|pagado a mano|cerrada a mano) por [^:]+:'
+             THEN REGEXP_REPLACE(a.mensaje,
+                    '^.*(cancelada|pagado a mano|cerrada a mano) por ([^:]+):.*$', '\\\\2')
+             ELSE NULL END
           COLLATE utf8mb4_unicode_ci                                           AS operador,
         CASE
-          WHEN a.mensaje REGEXP '^cancelada por [^:]+:' THEN 'humano'
+          WHEN a.mensaje REGEXP '(cancelada|pagado a mano|cerrada a mano) por [^:]+:' THEN 'humano'
           ELSE 'sistema'
         END                                                                    AS actor_tipo,
         CONCAT(
