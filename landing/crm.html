@@ -415,9 +415,11 @@
   @container chat (max-width:620px){
     .chead{flex-wrap:wrap;row-gap:10px}
     .chead .who{width:100%;flex:none}
-    .chead-grupos{width:100%;flex-wrap:nowrap;overflow-x:auto;justify-content:flex-start;
-      scrollbar-width:none;-ms-overflow-style:none}
-    .chead-grupos::-webkit-scrollbar{display:none}
+    /* Mismo criterio que en el celular: envolver, no esconder detras de un
+       scroll lateral que nadie descubre. Vale igual en desktop con la columna
+       del chat angosta. */
+    .chead-grupos{width:100%;flex-wrap:wrap;row-gap:8px;overflow:visible;
+      justify-content:flex-start}
     .chead-grupos > *{flex:none}
     .chead-grupos > * + *::before{display:none}
     .chead-acciones{margin-left:auto}
@@ -899,6 +901,14 @@
        hace falta. */
     .us-tabla-wrap,.mv-tabla-wrap{flex:0 0 auto}
     .fn-contenido,.nv-body{flex:0 0 auto;overflow-y:visible;min-height:0}
+    /* PESTAÑAS EN DOS FILAS, no ocho apretadas en una. Con Todas / Abiertas /
+       Pendientes / Cerradas / No leídas / Leídas / Archivadas / Todo, el
+       flex:1 las encoge hasta que el texto no entra y las últimas quedan
+       ilegibles e intocables. Reportado como "tampoco puedo filtrar los chats
+       por leído o no leídos" -- estaban ahí, pero no se podían ni leer.
+       Al envolver se ven todas y cada una tiene un área de toque decente. */
+    .tabs-chat{flex-wrap:wrap;row-gap:5px}
+    .tabs-chat .tab-chico{flex:0 0 auto;padding:6px 10px}
     .lhead{padding:12px 14px} .subhead{padding:10px 14px 0}
     .thread{padding:14px 12px;gap:13px} .chead{padding:12px 14px}
     /* En un telefono el 76% de ancho de burbuja desperdicia media pantalla:
@@ -926,15 +936,19 @@
     .chead .who{width:100%;min-width:0}
     .chead .who b{font-size:15px}
 
-    /* Los controles en su propia fila. Si aun así no entran, se DESLIZAN en
-       horizontal en vez de romper el layout -- es preferible arrastrar el
-       dedo a que el header crezca tres renglones. */
-    .chead-grupos{width:100%;gap:10px;flex-wrap:nowrap;overflow-x:auto;
-      justify-content:flex-start;padding-bottom:2px;
-      scrollbar-width:none;-ms-overflow-style:none}
-    .chead-grupos::-webkit-scrollbar{display:none}
+    /* Los controles ENVUELVEN, no scrollean. Antes deslizaban en horizontal
+       con el argumento de que el header no creciera; en un telefono eso deja
+       los ultimos botones FUERA DE PANTALLA, y hay que descubrir solo que el
+       header se arrastra de costado. El que quedaba escondido asi era btnInfo
+       -- el que abre la ficha del usuario: saldo, depositar, bonos -- que
+       ademas SOLO existe en pantallas angostas. O sea que en el celular el
+       boton mas necesario era el mas dificil de encontrar. Reportado como
+       "puedo entrar pero no puedo ver los datos de ese usuario".
+       Un renglon mas de header es infinitamente mejor que un boton invisible. */
+    .chead-grupos{width:100%;gap:8px;row-gap:8px;flex-wrap:wrap;overflow:visible;
+      justify-content:flex-start}
     .chead-grupos > *{flex:none}
-    /* Sin separadores acá: con scroll horizontal quedan cortados a la mitad. */
+    /* Sin separadores: al envolver quedarian colgando al principio de la fila. */
     .chead-grupos > * + *::before{display:none}
     .chead-sep{display:none}
 
@@ -5685,7 +5699,7 @@
        todas llegan con id 0 y se pisarían entre sí en el Map. Se las indexa
        por usuario. */
     listaCache = new Map(d.items.map(c=> [c.sin_chat ? "u:"+c.usuario : c.id, c]));
-    $("#list").innerHTML = d.items.map(c=>{
+    const htmlLista = d.items.map(c=>{
       const nombre = c.usuario || "Anónimo";
       const anon = c.usuario ? "" : "anon";
       const bg = c.usuario ? `style="background:${colorDe(c.usuario)}"` : "";
@@ -5724,7 +5738,24 @@
           <div class="pv">${esc(c.preview||"—")}</div>${arch}${der}${ags}
         </div>${nl}
       </div>`;
-    }).join("");
+     }).join("");
+
+    /* NO REPINTAR SI NO CAMBIO NADA. Esto corre cada 12 segundos, y hasta
+       ahora reescribia la lista entera con innerHTML pase lo que pase: el
+       scroll se iba al tope y el agente perdia el lugar donde estaba mirando.
+       En el desktop molesta; en el celular, donde hay que scrolear mucho para
+       llegar a cualquier lado, hace la lista inusable -- "no puedo scrolear, se
+       mueve solo". La mayoria de las pasadas no cambia nada, asi que comparar
+       antes ahorra el repintado entero, el parpadeo y la perdida de scroll. */
+    const cajaLista = $("#list");
+    if (cajaLista.innerHTML === htmlLista) { return; }
+
+    /* Y cuando SI cambio, se conserva la posicion. Excepcion: si estaba arriba
+       de todo se lo deja arriba -- ahi es donde entran los chats nuevos, y es
+       justo lo que queria ver. */
+    const scrollPrevio = cajaLista.scrollTop;
+    cajaLista.innerHTML = htmlLista;
+    if (scrollPrevio > 4) { cajaLista.scrollTop = scrollPrevio; }
     $("#list").querySelectorAll(".conv").forEach(el=>{
       const id = +el.getAttribute("data-id");
       const usrSinChat = el.getAttribute("data-usuario");
