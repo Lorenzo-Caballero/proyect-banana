@@ -27,9 +27,21 @@ import sys
 from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright
 
+# El propio directorio, para panel_url.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import bot_crear_jugador as bot          # noqa: E402
+
+# bot_crear_jugador vive en OTRO repo (la imagen `ganamos-bot`), montado en
+# /app. Se busca igual que en aprobar_cargas.py: importar en vez de copiar,
+# porque ahi esta resuelto el login y la sesion persistida.
+for _ruta in ("/app", "/opt/goldpaw/bot",
+              os.path.join(os.path.dirname(__file__), "..", "bot")):
+    if os.path.isfile(os.path.join(_ruta, "bot_crear_jugador.py")):
+        sys.path.insert(0, os.path.abspath(_ruta))
+        break
+try:
+    import bot_crear_jugador as bot          # noqa: E402
+except ImportError:
+    sys.exit("No encuentro bot_crear_jugador.py: esta sonda corre DENTRO de la imagen ganamos-bot (docker exec ganamos-bot-creador ...).")
 from panel_url import resolver as _resolver_panel   # noqa: E402
 
 load_dotenv()
