@@ -2379,10 +2379,11 @@
     </div>
     <div class="subhead">
       <p class="cfg-hint" style="margin:0">
-        Las que el jugador pide desde el botón <b>Depósitos</b> dentro del juego.
-        Se aprueban solas cuando entra la transferencia y se puede probar cuál es.
-        Lo que no se puede probar solo queda acá para que lo mires.
-      </p>
+        Espejo <b>en vivo</b> de las solicitudes que el jugador pide desde el botón
+      <b>Depósitos</b> dentro del juego: se refresca cada minuto contra ganamos.
+      Se aprueban solas cuando entra la transferencia y se puede probar cuál es.
+      <b>Si la resolvés en ganamos, acá se cierra sola.</b> Lo que no se puede
+      probar queda para que lo mires.</p>
     </div>
     <div class="list" id="ptList" style="margin-top:0"></div>
   </div>
@@ -6978,7 +6979,7 @@
       const puedeCerrar = p.estado==="esperando" || p.estado==="revision" || p.estado==="error";
       const btnCerrar = puedeCerrar
         ? `<button class="btn-mini-accion" data-cerrar="${p.request_id}" type="button"
-                   title="Ya la resolviste en el panel: sacarla de la lista">Ya la resolví</button>` : "";
+                   title="Sacarla de ESTA lista. No la cancela en ganamos.">Sacar de la lista</button>` : "";
       return `
       <div class="comp-row">
         <div class="cr-top">
@@ -7003,13 +7004,15 @@
      cerró sin que el sistema pudiera probar el pago. */
   async function cerrarPeticion(rid, btn){
     const nota = prompt(
-      `Cerrar la solicitud #${rid}.
+      `Sacar de la lista la solicitud #${rid}.
 
 ` +
-      `Esto NO le carga nada al jugador: es para cuando YA se la aprobaste en el panel de ganamos.
+      `OJO: esto solo la saca de ESTA pantalla. NO la cancela en ganamos ni le carga nada al jugador.
+` +
+      `Si la resolvés en el panel de ganamos, se cierra sola en menos de un minuto y no hace falta tocar esto.
 
 ` +
-      `¿Por qué la cerrás? (queda como constancia)`, "");
+      `¿Por qué la sacás? (queda como constancia)`, "");
     if(nota === null) return;
     if(nota.trim().length < 8){ toast("Contá por qué la cerrás, al menos 8 caracteres"); return; }
     btn.disabled = true; btn.textContent = "…";
@@ -7018,7 +7021,7 @@
       toast(d.mensaje || "Solicitud cerrada");
       cargarPeticiones(); actualizarBadgePeticiones();
     } else {
-      btn.disabled = false; btn.textContent = "Ya la resolví";
+      btn.disabled = false; btn.textContent = "Sacar de la lista";
       toast(d.error || "No se pudo cerrar");
     }
   }
@@ -7262,6 +7265,13 @@
       if(r.estado==="pendiente" || r.estado==="revisar" || r.estado==="error"){
         btns.push(`<button class="btn-mini-accion exito" data-accion="pagado" data-id="${r.id}" type="button" title="Ya le transferiste: cerrar el pedido">Pagado</button>`);
       }
+      /* Deshacer un "pagado a mano". Solo aparece en los que marco una persona
+         -- se reconoce por el mensaje, la misma marca que usa la auditoria.
+         Si lo ejecuto el bot, la plata salio de verdad y deshacerlo aca diria
+         que se le debe algo que ya cobro. */
+      if(r.estado==="hecha" && /pagado a mano por [^:]+:/.test(r.mensaje||"")){
+        btns.push(`<button class="btn-mini-accion" data-accion="deshacer" data-id="${r.id}" type="button" title="Volver a dejarlo pendiente">Deshacer</button>`);
+      }
       // Cancelar: solo desde pendiente o error -- nunca desde 'procesando'
       // (el bot podria estar ejecutandolo en este instante).
       if(r.estado==="pendiente" || r.estado==="error"){
@@ -7328,6 +7338,20 @@
       btn.addEventListener("click", ()=>{
         const fila = d.items.find(x=>x.id===+btn.getAttribute("data-id"));
         if(fila) abrirCancelarRetiro(fila);
+      });
+    });
+    $("#retList").querySelectorAll("[data-accion='deshacer']").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        const fila = d.items.find(x=>x.id===+btn.getAttribute("data-id"));
+        if(!fila) return;
+        if(!confirm(`Deshacer el "pagado" del retiro de ${money(fila.monto)} de @${fila.usuario}.
+
+` +
+                    `Vuelve a quedar PENDIENTE. Usalo si lo marcaste por error o era una prueba.`)) return;
+        btn.disabled = true; btn.textContent = "…";
+        const res = await jpost({accion:"deshacer_pagado", id:fila.id}, API_RET);
+        if(res.ok){ toast(res.mensaje || "Volvió a pendiente"); cargarRetiros(); actualizarBadgeRetiros(); }
+        else { btn.disabled = false; btn.textContent = "Deshacer"; toast(res.error || "No se pudo"); }
       });
     });
     $("#retList").querySelectorAll("[data-accion='pagado']").forEach(btn=>{

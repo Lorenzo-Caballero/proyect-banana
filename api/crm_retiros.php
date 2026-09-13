@@ -329,6 +329,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             salir(['ok' => true, 'mensaje' => 'Retiro marcado como pagado']);
         }
 
+        /* ---- deshacer un "pagado a mano" ----
+           Para los testeos, que era el pedido, pero tambien para el error
+           honesto: marcaste pagado el retiro equivocado.
+
+           SOLO se puede deshacer lo que marco UNA PERSONA. Si el estado
+           'hecha' lo puso el bot, la plata SALIO de verdad del saldo en
+           ganamos, y volver la fila a 'pendiente' seria mentir: el CRM diria
+           que se debe algo que ya se pago, y alguien lo pagaria dos veces.
+           Se distingue por el mensaje, que es la misma marca que usa la
+           auditoria para saber quien actuo: 'pagado a mano por X:'.
+
+           Vuelve a 'pendiente' y NO a 'cancelada': deshacer es volver al
+           estado anterior, no decidir que no se paga. Si ademas hay que
+           cancelarlo, esta el boton de cancelar. */
+        if ($accion === 'deshacer_pagado') {
+            $id = (int)($body['id'] ?? 0);
+            if (!$id) { salir(['ok' => false, 'error' => 'Falta id'], 400); }
+            if (!crm_rate_limite("deshacer_retiro_$operador", 20, 3600)) {
+                salir(['ok' => false, 'error' => 'Demasiados en poco tiempo. Esperá un rato.'], 429);
+            }
+
+            $st = $pdo->prepare(
+                "SELECT id, usuario, monto, estado, mensaje FROM acciones_saldo
+                  WHERE id = ? AND tipo = 'retirar' LIMIT 1"
+            );
+            $st->execute([$id]);
+            $fila = $st->fetch(PDO::FETCH_ASSOC);
+            if (!$fila) { salir(['ok' => false, 'error' => 'Ese retiro no existe'], 404); }
+            if ($fila['estado'] !== 'hecha') {
+                salir(['ok' => false, 'error' =>
+                    'Solo se deshace un retiro marcado como pagado. Este está en: '
+                    . $fila['estado']], 409);
+            }
+            if (!preg_match('/pagado a mano por [^:]+:/u', (string)$fila['mensaje'])) {
+                salir(['ok' => false, 'error' =>
+                    'Este retiro lo ejecutó el sistema: la plata ya salió del saldo en ganamos. '
+                    . 'Deshacerlo acá diría que se le debe algo que ya cobró. Si hay que corregirlo, '
+                    . 'hacelo en el panel.'], 409);
+            }
+
+            $msg = mb_substr("marcado pagado y DESHECHO por $operador", 0, 300);
+            $upd = $pdo->prepare(
+                "UPDATE acciones_saldo
+                    SET estado = 'pendiente', ejecutada_en = NULL, mensaje = ?
+                  WHERE id = ? AND tipo = 'retirar' AND estado = 'hecha'"
+            );
+            $upd->execute([$msg, $id]);
+            if ($upd->rowCount() === 0) {
+                salir(['ok' => false, 'error' => 'Otro operador lo tocó recién. Recargá.'], 409);
+            }
+
+            crm_bitacora($pdo, $operador, 'retiro_pagado_deshecho', json_encode([
+                'id' => $id, 'usuario' => $fila['usuario'], 'monto' => (float)$fila['monto'],
+            ], JSON_UNESCAPED_UNICODE));
+
+            salir(['ok' => true, 'mensaje' => 'Volvió a quedar pendiente']);
+        }
+
         // ---- cancelar (puntual, solo desde pendiente o error) ----
         if ($accion === 'cancelar') {
             $id   = (int)($body['id'] ?? 0);
