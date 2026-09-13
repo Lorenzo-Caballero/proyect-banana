@@ -822,6 +822,15 @@
       border-radius:0;box-shadow:var(--shadow);overflow-y:auto;
       transform:translateX(102%);transition:transform .28s cubic-bezier(.22,1,.36,1);
     }
+    /* Afordancia: en angosto el nombre abre la ficha, asi que tiene que
+       parecer tocable. El chevron es chico a proposito -- no compite con el
+       nombre del jugador, que es lo que se lee primero. */
+    .who-txt{cursor:pointer;border-radius:10px;padding:2px 22px 2px 4px;margin-left:-4px;
+      position:relative;-webkit-tap-highlight-color:transparent}
+    .who-txt::after{content:"";position:absolute;right:7px;top:50%;width:6px;height:6px;
+      border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);
+      transform:translateY(-50%) rotate(-45deg);opacity:.75}
+    .who-txt:active{background:var(--panel3)}
     .app.info .col-user{transform:translateX(0)}
     .app.info .drawer-back{display:block;position:fixed;inset:0;background:rgba(6,9,20,.5);z-index:69}
     .col-user .cerrar-drawer{display:grid}
@@ -892,15 +901,24 @@
        llegar hasta ella. El sintoma exacto: en Usuarios se veian los totales
        (saldo, bono pendiente) y nada mas, sin poder bajar.
        Ademas evita el scroll anidado, que en tactil es lo peor: el dedo nunca
-       sabe cual de los dos se va a mover. */
-    .view-panel{overflow-y:auto;overscroll-behavior:contain;
+       sabe cual de los dos se va a mover.
+
+       VAN PREFIJADAS CON .app A PROPOSITO, y esto es lo que hacia que el
+       arreglo no funcionara: mas abajo en esta misma hoja hay
+       `.view-panel{...overflow:hidden...}` y `.us-tabla-wrap{flex:1;overflow:auto}`
+       SIN media query. Misma especificidad (una clase) y van DESPUES, asi que
+       ganaban ellas y el celular seguia sin poder scrolear en Usuarios, Cargas
+       y el resto. `.app .view-panel` suma una clase y gana sin importar el
+       orden. Si alguien mueve estos bloques de lugar, el prefijo los sigue
+       protegiendo. */
+    .app .view-panel{overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;
       -webkit-overflow-scrolling:touch}
     /* Los que en desktop scrollean solos pasan a CRECER con su contenido (el
-       scroll vertical ya es del panel). Se les deja el overflow puesto: es lo
-       que le da scroll HORIZONTAL a las tablas anchas, que en el celular si
+       scroll vertical ya es del panel). Se les deja el overflow horizontal: es
+       lo que le da scroll lateral a las tablas anchas, que en el celular si
        hace falta. */
-    .us-tabla-wrap,.mv-tabla-wrap{flex:0 0 auto}
-    .fn-contenido,.nv-body{flex:0 0 auto;overflow-y:visible;min-height:0}
+    .app .us-tabla-wrap,.app .mv-tabla-wrap{flex:0 0 auto;overflow-y:visible}
+    .app .fn-contenido,.app .nv-body{flex:0 0 auto;overflow-y:visible;min-height:0}
     /* PESTAÑAS EN DOS FILAS, no ocho apretadas en una. Con Todas / Abiertas /
        Pendientes / Cerradas / No leídas / Leídas / Archivadas / Todo, el
        flex:1 las encoge hasta que el texto no entra y las últimas quedan
@@ -2056,7 +2074,15 @@
         <div class="who">
           <button class="mini" id="volver" style="display:none;margin:0">←</button>
           <div class="av" id="chatAv" style="display:none">?</div>
-          <div>
+          <!-- Tocar el nombre abre la ficha del usuario (saldo, depositar,
+               bonos, notas). Es el gesto de WhatsApp y el que la gente prueba
+               sola. En el celular la ficha es un cajon que se abre con un
+               boton chico en la fila de controles, y Nahuel reporto que no lo
+               encontraba: "puedo entrar pero no puedo ver los datos de ese
+               usuario". El boton sigue estando; esto agrega el camino obvio.
+               En desktop la ficha ya esta a la vista, asi que no hace nada. -->
+          <div class="who-txt" id="chatWhoTap" role="button" tabindex="0"
+               title="Ver la ficha del jugador">
             <b id="chatWho">—</b>
             <div class="sub" id="chatSub"></div>
             <div class="agentes-chat" id="chatAgentes"></div>
@@ -6575,6 +6601,17 @@
   });
   $("#volver").addEventListener("click", ()=>{ $("#app").classList.remove("viewing"); });
   $("#btnInfo").addEventListener("click", ()=> $("#app").classList.add("info"));
+  /* El mismo destino desde el nombre del jugador. Se chequea que el boton este
+     VISIBLE en vez de mirar el ancho de la ventana: asi hay una sola fuente de
+     verdad -- el CSS decide cuando la ficha es un cajon, y esto lo sigue. En
+     desktop la ficha ya esta a la vista y tocar el nombre no tiene que hacer
+     nada. */
+  const fichaEsCajon = ()=> $("#btnInfo").offsetParent !== null;
+  const abrirFicha = ()=>{ if(fichaEsCajon()) $("#app").classList.add("info"); };
+  $("#chatWhoTap").addEventListener("click", abrirFicha);
+  $("#chatWhoTap").addEventListener("keydown", e=>{
+    if(e.key === "Enter" || e.key === " "){ e.preventDefault(); abrirFicha(); }
+  });
   const cerrarInfo = ()=> $("#app").classList.remove("info");
   $("#drawerBack").addEventListener("click", cerrarInfo);
   $("#cerrarDrawer").addEventListener("click", cerrarInfo);
