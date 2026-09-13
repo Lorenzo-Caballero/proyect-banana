@@ -78,6 +78,9 @@ switch ($filtro) {
     case 'baneados':           $where[] = 'u.is_banned = 1'; break;
     case 'con_bono_pendiente': $where[] = 'bp.suma > 0'; break;
     case 'con_bonos':          $where[] = 'u.bonus > 0'; break;
+    // Quien inicio sesion desde la app alguna vez (unico escritor:
+    // notif_registrar_dispositivo, solo con plataforma android).
+    case 'con_app':            $where[] = 'u.tiene_app = 1'; break;
 
     // Inactivos: MISMA definicion que usa el push masivo
     // (crmnotif_alcance_inactivos en crm_notificaciones.php) -- "no hizo una
@@ -166,6 +169,7 @@ if ($hayBonosPend) {
 // inactivos, nunca ver el dato. Ahora se muestra.
 $SELECT = "SELECT u.id, u.username, u.balance, u.bonus, u.total_deposits, u.role,
                   u.is_banned, u.creation_date, u.actualizado_en, u.ultima_actividad,
+                  u.tiene_app,
                   $selBono";
 
 /** Castea los tipos de una fila para que el JSON salga prolijo. */
@@ -177,6 +181,7 @@ function tipar(array $it): array
     $it['bono_pendiente'] = (int)$it['bono_pendiente'];
     $it['total_deposits'] = (float)$it['total_deposits'];
     $it['is_banned']      = (bool)$it['is_banned'];
+    $it['tiene_app']      = (bool)($it['tiene_app'] ?? false);
     return $it;
 }
 
@@ -191,12 +196,13 @@ if ($accion === 'exportar') {
     $out = fopen('php://output', 'w');
     fprintf($out, "\xEF\xBB\xBF");   // BOM para que Excel abra bien los acentos
     fputcsv($out, ['id', 'usuario', 'saldo', 'bono_pendiente', 'bono_historico', 'depositos_total',
-                   'rol', 'baneado', 'alta_ganamos', 'actualizado']);
+                   'rol', 'baneado', 'app', 'alta_ganamos', 'actualizado']);
     while ($row = $st->fetch(PDO::FETCH_ASSOC)) {
         $r = tipar($row);
         fputcsv($out, [
             $r['id'], $r['username'], $r['balance'], $r['bono_pendiente'], $r['bonus'],
             $r['total_deposits'], $r['role'], $r['is_banned'] ? 'si' : 'no',
+            $r['tiene_app'] ? 'si' : 'no',
             $r['creation_date'], $r['actualizado_en'],
         ]);
     }
@@ -224,8 +230,25 @@ try {
     $u = $pdo->query("SELECT COUNT(*) total, SUM(balance>0) con_saldo,
                              COALESCE(SUM(balance),0) saldo_total, SUM(is_banned) baneados,
                              SUM(coins>0) con_coins, COALESCE(SUM(coins),0) coins_total,
-                             COALESCE(SUM(bonus),0) bonos_total
+                             COALESCE(SUM(bonus),0) bonos_total,
+                             COALESCE(SUM(tiene_app),0) con_app
                       FROM usuarios")->fetch(PDO::FETCH_ASSOC);
+
+    /* Analisis de la promo de la app: cuantos bonos por instalarla se
+       entregaron y cuantas fichas fueron. Sale de `movimientos` (origen
+       'bono_app', el candado de idempotencia del bono), asi el conteo es
+       exactamente lo pagado, no una estimacion. Try/catch propio: sin la
+       tabla el resumen sigue. */
+    try {
+        $ap = $pdo->query(
+            "SELECT COUNT(*) n, COALESCE(SUM(monto),0) fichas
+               FROM movimientos WHERE origen = 'bono_app' AND monto > 0"
+        )->fetch(PDO::FETCH_ASSOC);
+        $appBonos  = (int)$ap['n'];
+        $appFichas = (int)$ap['fichas'];
+    } catch (Throwable $e) {
+        $appBonos = 0; $appFichas = 0;
+    }
     $ultima = $pdo->query("SELECT MAX(actualizado_en) FROM usuarios")->fetchColumn();
 
     // Bono pendiente total: suma de bonos_pendientes tipo='fichas' sin
@@ -257,6 +280,9 @@ try {
             'coins_total'           => (int)$u['coins_total'],
             'bonos_total'           => (int)$u['bonos_total'],
             'bono_pendiente_total'  => $bonoPendienteTotal,
+            'con_app'               => (int)$u['con_app'],
+            'app_bonos_entregados'  => $appBonos,
+            'app_bonos_fichas'      => $appFichas,
             'ultima_sync'           => $ultima,
         ],
     ], JSON_UNESCAPED_UNICODE);

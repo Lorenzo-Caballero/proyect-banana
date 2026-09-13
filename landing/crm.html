@@ -2488,6 +2488,7 @@
         <button class="tab" data-f="con_bonos">Con bono histórico</button>
         <button class="tab" data-f="baneados">Baneados</button>
         <button class="tab" data-f="sin_saldo">Sin saldo</button>
+        <button class="tab" data-f="con_app">Con la app</button>
         <!-- Inactividad: misma definición que el push masivo -- sin recarga
              acreditada en N días. Sirve para ver a quién reactivar antes de
              mandarle una promo. -->
@@ -3696,6 +3697,30 @@
         </div>
       </div>
 
+      <!-- Promo descarga de la app --------------------------------------- -->
+      <div class="cfg-card">
+        <div class="cfg-card-head">
+          <span class="cb-ico"><svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg></span>
+          <div class="cfg-card-txt">
+            <b>Promo: fichas por instalar la app</b>
+            <span>Tras crear una cuenta por el chat aparece un cartel con la descarga; al primer inicio de sesión desde la app las fichas se acreditan solas, una única vez por jugador.</span>
+          </div>
+          <label class="cb-switch">
+            <input type="checkbox" id="cfgAppPromo">
+            <span class="cb-slider"></span>
+          </label>
+        </div>
+        <div class="cfg-card-body">
+          <label class="cb-flabel">Fichas de regalo</label>
+          <input class="cb-input" id="cfgAppBono" inputmode="numeric" placeholder="1000">
+          <p class="cfg-hint">
+            El bono va <b>directo al juego</b> (mismo camino que un bono del CRM) y
+            queda contado en Usuarios («Bonos por instalar»). Con la promo apagada
+            nadie ve el cartel ni cobra nada, y el chatbot no la menciona.
+          </p>
+        </div>
+      </div>
+
       <!-- Aviso por Telegram --------------------------------------------- -->
       <div class="cfg-card">
         <div class="cfg-card-head">
@@ -3753,6 +3778,7 @@
           <div class="cfg-sub">Para mirar el negocio de reojo</div>
           <label class="cb-check"><input type="checkbox" id="cfgTgAlta"><span>Se registró un jugador nuevo</span></label>
           <label class="cb-check"><input type="checkbox" id="cfgTgPago"><span>Entró una transferencia y se acreditó sola</span></label>
+          <label class="cb-check"><input type="checkbox" id="cfgTgApp"><span>Un jugador instaló la app y entró</span></label>
           <p class="cfg-hint">
             Estos dos no piden que hagas nada: son para seguir el movimiento sin entrar al CRM.
             <b>Con mucho volumen son muchos mensajes por día</b> — si te satura, apagalos y
@@ -5066,6 +5092,8 @@
     lim_bono_carga_pct: { el: "#cfgLimBonoCarga", tipo: "texto" },
     bono_bienvenida_pct:{ el: "#cfgBonoBienvenida", tipo: "texto" },
     app_url:            { el: "#cfgAppUrl",       tipo: "texto" },
+    app_promo_activa:   { el: "#cfgAppPromo",     tipo: "bool"  },
+    app_bono_fichas:    { el: "#cfgAppBono",      tipo: "texto" },
     tg_bot_token:       { el: "#cfgTgToken",      tipo: "texto" },
     tg_chat_id:         { el: "#cfgTgChat",       tipo: "texto" },
     tg_ev_derivacion:   { el: "#cfgTgDeriv",      tipo: "bool"  },
@@ -5074,6 +5102,7 @@
     tg_ev_salud:        { el: "#cfgTgSalud",      tipo: "bool"  },
     tg_ev_alta:         { el: "#cfgTgAlta",       tipo: "bool"  },
     tg_ev_pago:         { el: "#cfgTgPago",       tipo: "bool"  },
+    tg_ev_app:          { el: "#cfgTgApp",        tipo: "bool"  },
     tg_repetir_min:     { el: "#cfgTgRepetir",    tipo: "texto" },
     tg_sin_actividad_hs:{ el: "#cfgTgSinAct",     tipo: "texto" },
     lim_retiro_hora_desde: { el: "#cfgLimRetiroDesde", tipo: "texto" },
@@ -8001,6 +8030,11 @@
   const usSt = { q:"", filtro:"todos", orden:"balance", dir:"desc", pagina:1, porPagina:25 };
 
   function pintarCardsUs(r){
+    /* "Con la app" con el % sobre el total: el numero suelto no dice si la
+       promo convierte. Los bonos entregados salen de movimientos origen
+       'bono_app' (lo efectivamente pagado, no una estimacion). */
+    const pctApp = r.total_usuarios > 0
+      ? " (" + Math.round((r.con_app || 0) * 100 / r.total_usuarios) + "%)" : "";
     const c = [
       { k:"Usuarios",              v:nf.format(r.total_usuarios),     cls:"" },
       { k:"Con saldo",             v:nf.format(r.con_saldo),          cls:"green" },
@@ -8008,6 +8042,9 @@
       { k:"Bono pendiente total",  v:nf.format(r.bono_pendiente_total), cls:"gold" },
       { k:"Bono histórico total",  v:nf.format(r.bonos_total),        cls:"gold" },
       { k:"Baneados",              v:nf.format(r.baneados),           cls:"red" },
+      { k:"Con la app",            v:nf.format(r.con_app || 0) + pctApp, cls:"green" },
+      { k:"Bonos por instalar",    v:nf.format(r.app_bonos_entregados || 0)
+            + (r.app_bonos_fichas ? " · " + nf.format(r.app_bonos_fichas) + " fichas" : ""), cls:"gold" },
     ];
     $("#usCards").innerHTML = c.map(x=>
       `<div class="us-stat ${x.cls}"><div class="k">${esc(x.k)}</div><div class="v">${x.v}</div></div>`).join("");
@@ -8027,8 +8064,12 @@
     const visto = u.ultima_actividad
       ? `<span class="${diasDesde(u.ultima_actividad)>=15?"us-frio":""}">${hace(u.ultima_actividad)}</span>`
       : `<span class="us-zero" title="Sin señales registradas todavía">—</span>`;
+    /* La marca de la app va pegada al nombre y no en una columna propia:
+       agregar una columna obliga a tocar todos los colspan y el CSV, y el
+       dato es un si/no que se lee perfecto como emoji. */
+    const app = u.tiene_app ? ` <span title="Inició sesión desde la app">📱</span>` : "";
     return `<tr>
-      <td><b>${esc(u.username)}</b></td>
+      <td><b>${esc(u.username)}</b>${app}</td>
       <td class="num">${saldo}</td>
       <td class="num">${bonoPen}</td>
       <td class="num">${bonos}</td>

@@ -1922,6 +1922,77 @@
     siguiente();
   }
 
+  /* ================== PROMO "DESCARGÁ LA APP" ==================
+     Modal que aparece UNA vez, justo después de entregar las credenciales de
+     una cuenta recién creada: es el momento de mayor atención del jugador y
+     el único en que el server manda `app_promo` (ver alta_estado.php). El
+     server decide si hay promo y cuántas fichas; acá solo se dibuja.
+
+     NUNCA dentro del APK (APP): ahí la app ya está instalada y el bono se
+     acredita solo al iniciar sesión (notif_registrar_dispositivo). */
+  function mostrarPromoApp(promo){
+    if (APP) return;                              // ya está en la app
+    if (!promo || !(promo.fichas > 0)) return;
+    if (mostrarPromoApp._puesta) return;          // una por carga de página
+    mostrarPromoApp._puesta = true;
+
+    // La URL la manda el server (config app_url); sin ella, el APK de la
+    // réplica. Se completa el esquema como hace el chatbot, porque el
+    // operador suele pegarla sin https://.
+    var url = String(promo.url || "").trim();
+    if (url && !/^https?:\/\//i.test(url)) url = "https://" + url;
+    if (!url) url = "/ganamos.apk";
+
+    var css =
+      "#gpa-ov{position:fixed;inset:0;z-index:2147483004;display:none;align-items:center;justify-content:center;"+
+      "padding:18px;background:rgba(6,3,15,.78);backdrop-filter:blur(3px);"+
+      "font:14px/1.5 system-ui,Segoe UI,Roboto,Arial,sans-serif;color:#eef0fb}"+
+      "#gpa-ov.show{display:flex}"+
+      ".gpa-card{position:relative;width:100%;max-width:340px;background:linear-gradient(170deg,#1a1440,#120d2b);"+
+      "border:1px solid #2a2350;border-radius:20px;padding:26px 20px 20px;text-align:center;"+
+      "box-shadow:0 26px 70px rgba(0,0,0,.65);animation:gpa-entra .35s ease}"+
+      "@keyframes gpa-entra{from{transform:translateY(14px) scale(.97);opacity:0}to{transform:none;opacity:1}}"+
+      ".gpa-x{position:absolute;top:9px;right:11px;background:0;border:0;color:#9aa0c4;font-size:24px;"+
+      "line-height:1;cursor:pointer;padding:2px 6px}"+
+      ".gpa-ico{font-size:44px;line-height:1;margin-bottom:10px;animation:gpa-late 1.8s ease-in-out infinite}"+
+      "@keyframes gpa-late{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}"+
+      ".gpa-card h2{font-size:19px;margin:0 0 6px;font-weight:800}"+
+      ".gpa-card h2 b{color:#E3B14A}"+
+      ".gpa-sub{color:#9aa0c4;font-size:13.5px;margin-bottom:16px}"+
+      ".gpa-btn{display:block;width:100%;padding:14px;border:0;border-radius:12px;cursor:pointer;"+
+      "font:700 15px system-ui,Segoe UI,Roboto,Arial,sans-serif;color:#2b1a00;text-decoration:none;box-sizing:border-box;"+
+      "background:linear-gradient(145deg,#F0C567,#E3B14A);box-shadow:0 10px 26px rgba(227,177,74,.4)}"+
+      ".gpa-nota{color:#9aa0c4;font-size:11.5px;margin-top:9px}";
+    var st = document.createElement("style"); st.textContent = css;
+    document.head.appendChild(st);
+
+    var fichas = Number(promo.fichas).toLocaleString("es-AR");
+    var ov = document.createElement("div");
+    ov.id = "gpa-ov";
+    ov.innerHTML =
+      '<div class="gpa-card">'+
+        '<button class="gpa-x" type="button" aria-label="Cerrar">×</button>'+
+        '<div class="gpa-ico">🎁</div>'+
+        '<h2>¿Querés <b>' + fichas + ' fichas</b><br>más de regalo?</h2>'+
+        '<div class="gpa-sub">Descargá nuestra app y accedé al beneficio, promos y novedades.</div>'+
+        '<a class="gpa-btn" href="' + url + '" download>📲 Descargar la app</a>'+
+        '<div class="gpa-nota">Android · gratis · Al entrar desde la app, las fichas se acreditan solas.</div>'+
+      '</div>';
+    document.body.appendChild(ov);
+
+    function cerrar(){ ov.classList.remove("show"); setTimeout(function(){ ov.remove(); }, 250); }
+    ov.querySelector(".gpa-x").addEventListener("click", cerrar);
+    ov.addEventListener("click", function(e){ if (e.target === ov) cerrar(); });
+    ov.querySelector(".gpa-btn").addEventListener("click", function(){
+      // La descarga arrancó: se despide con la instrucción que falta y listo.
+      var sub = ov.querySelector(".gpa-sub");
+      if (sub) sub.textContent = "¡Descargando! Instalala, entrá con tu cuenta y las fichas se acreditan solas.";
+      setTimeout(cerrar, 3800);
+    });
+
+    ov.classList.add("show");
+  }
+
   /* Espera a que el bot cree la cuenta en el panel y RECIÉN AHÍ entrega
      usuario y contraseña, cada uno en su propio globo.
 
@@ -2021,7 +2092,11 @@
               "Contraseña: " + d.password
             ], function (){
               decir("Guardala bien, no te la voy a poder repetir. "
-                  + "Ya podés iniciar sesión con esos datos.");
+                  + "Ya podés iniciar sesión con esos datos.", function (){
+                /* Cuenta nueva recién entregada: el momento de la promo de la
+                   app. El server decide si viene (app_promo) y cuánto regala. */
+                if (d.app_promo) setTimeout(function (){ mostrarPromoApp(d.app_promo); }, 1200);
+              });
             });
             return;
           }

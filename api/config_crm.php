@@ -75,6 +75,19 @@ const CFG_CRM_DEFAULTS = [
     // Play Store, donde no esta.
     'app_url'         => '',
 
+    // ----- Promo "descarga la app y gana fichas" -----
+    // Arranca APAGADA por la misma regla que los juegos: una promo que regala
+    // fichas no puede aparecersele al jugador por un default de codigo, la
+    // prende el agente desde Configuracion. Con esto en '1':
+    //   - tras crear una cuenta por el chat aparece el modal de descarga
+    //   - el chatbot invita a bajar la app mencionando el regalo
+    //   - al PRIMER inicio de sesion desde la app se acreditan las fichas
+    //     (una sola vez por jugador, y directo al juego)
+    'app_promo_activa' => '0',
+    // Cuantas fichas regala. '0' = ni modal ni bono aunque la promo este
+    // prendida: un cartel ofreciendo 0 fichas es peor que ninguno.
+    'app_bono_fichas'  => '1000',
+
     // ----- Aviso por Telegram cuando el bot deriva a un agente -----
     // Vacios = sin Telegram, y no pasa nada: la derivacion igual queda marcada
     // en el CRM. Esto es el aviso que suena en el celular cuando nadie tiene
@@ -116,6 +129,9 @@ const CFG_CRM_DEFAULTS = [
     'ia_reconectar_min' => '30',
     'tg_ev_alta'       => '0',   // se registro un jugador (o no se pudo)
     'tg_ev_pago'       => '0',   // entro una transferencia y se acredito sola
+    // Prendido por defecto a pedido de Nahuel: es la señal de que la promo de
+    // la app convierte, y el volumen es el de instalaciones, no el de pagos.
+    'tg_ev_app'        => '1',   // un jugador instalo la app y entro
 
     // ----- Limites de carga y retiro, por cliente -----
     // Cada agencia tiene los suyos ("no cargo menos de 500", "no pago mas de

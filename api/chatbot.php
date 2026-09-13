@@ -429,6 +429,10 @@ $contextoBase = ($cfgBot['contexto'] !== '')
         // El link de la app sale de la config del cliente, no de las reglas
         // fijas: esas las comparten todos los casinos.
         'app_url'        => (string)(cfg_crm($pdo, 'app_url') ?? ''),
+        // Promo "descarga la app": el bot la menciona solo si esta prendida
+        // Y regala mas que cero (mismo criterio que referidos).
+        'app_bono'       => cfg_crm_activo($pdo, 'app_promo_activa')
+                              ? max(0, (int)(cfg_crm($pdo, 'app_bono_fichas') ?? 0)) : 0,
         // Plan de referidos: el bloque del prompt solo aparece con el plan
         // prendido Y un monto puesto -- un bot ofreciendo un premio de $0 es
         // peor que un bot que no lo menciona.

@@ -172,11 +172,16 @@ chequear('y lo dice en singular cuando el limite es 1',
          strpos((string)($r['error'] ?? ''), 'un retiro por') !== false, (string)($r['error'] ?? ''));
 
 // Un retiro RECHAZADO no gasta cupo de cantidad (mismo criterio que el monto).
+// 'cancelada' y no 'rechazada': el ENUM de acciones_saldo no tiene 'rechazada'
+// (pendiente/procesando/hecha/error/revisar/cancelada). Con sql_mode laxo el
+// valor invalido truncaba a '' y el test pasaba de casualidad; en una MariaDB
+// estricta explotaba con "Data truncated". Prueba lo mismo: un estado fuera
+// del IN(...) del cupo no cuenta.
 limpiarLimites($pdo);
 ponerLimite($pdo, 'lim_retiro_cant_dia', '1');
 prepararJugador($pdo, $ID, 500000);
 $pdo->prepare("INSERT INTO acciones_saldo (usuario,tipo,monto,estado,creada_en)
-               VALUES ('test_lim','retirar',5000,'rechazada',NOW())")->execute();
+               VALUES ('test_lim','retirar',5000,'cancelada',NOW())")->execute();
 $r = fichas_pedir_retiro($pdo, 'test_lim', 5000, 'test');
 chequear('un retiro rechazado NO consume el cupo de cantidad',
          !empty($r['ok']), json_encode($r));

@@ -697,22 +697,45 @@ if (!function_exists('chatbot_bloque_app')) {
      * El sintoma que esto arregla: mandaba a los jugadores a buscar la app en
      * Play Store, donde no esta y nunca estuvo.
      */
-    function chatbot_bloque_app(string $url): string
+    function chatbot_bloque_app(string $url, int $bonoApp = 0): string
     {
         $url = trim($url);
-        if ($url === '') { return ''; }
-        /* El operador lo escribe a mano en el CRM y muchas veces lo pega sin
-           esquema ("ganamoscrm.online/descargar.html"). Asi el chat lo muestra
-           como texto plano -- solo se vuelve link lo que arranca con http o
-           https -- y el jugador tiene que copiarlo a mano. Se completa aca, que
-           es por donde pasan todos los clientes, y no al guardar en el CRM: de
-           esta forma los que ya lo tienen cargado sin esquema tambien quedan
-           arreglados. */
-        if (!preg_match('~^https?://~i', $url)) { $url = 'https://' . $url; }
-        return "LINK DE DESCARGA DE LA APP (usa este, tal cual, no lo cambies,\n"
-             . "y siempre entero con el https:// adelante, que es lo que lo\n"
-             . "vuelve tocable en el chat):\n"
-             . $url;
+        if ($url === '' && $bonoApp <= 0) { return ''; }
+        $p = '';
+        if ($url !== '') {
+            /* El operador lo escribe a mano en el CRM y muchas veces lo pega sin
+               esquema ("ganamoscrm.online/descargar.html"). Asi el chat lo muestra
+               como texto plano -- solo se vuelve link lo que arranca con http o
+               https -- y el jugador tiene que copiarlo a mano. Se completa aca, que
+               es por donde pasan todos los clientes, y no al guardar en el CRM: de
+               esta forma los que ya lo tienen cargado sin esquema tambien quedan
+               arreglados. */
+            if (!preg_match('~^https?://~i', $url)) { $url = 'https://' . $url; }
+            $p .= "LINK DE DESCARGA DE LA APP (usa este, tal cual, no lo cambies,\n"
+                . "y siempre entero con el https:// adelante, que es lo que lo\n"
+                . "vuelve tocable en el chat):\n"
+                . $url;
+        }
+        /* Promo de la app (config app_promo_activa + app_bono_fichas): la
+           mencion despues del alta va aca y no en las reglas fijas porque el
+           monto y el estado son de ESTE cliente. La mecanica esta blindada:
+           el bono lo acredita el sistema al detectar el primer inicio de
+           sesion desde la app -- el bot solo INVITA, nunca carga. */
+        if ($bonoApp > 0) {
+            $monto = number_format($bonoApp, 0, ',', '.');
+            $p .= ($p !== '' ? "\n\n" : '')
+                . "PROMO DE LA APP (esta activa): al que instala nuestra app de\n"
+                . "Android y entra con su cuenta se le acreditan {$monto} fichas\n"
+                . "de bono, solas, una unica vez. Cuando le entregues una cuenta\n"
+                . "recien creada, invitalo con UNA linea a bajar la app por las\n"
+                . "{$monto} fichas de regalo (ademas le va a aparecer un cartel\n"
+                . "con el boton de descarga). Si alguien pregunta como conseguir\n"
+                . "el bono de la app, explicaselo. NO lo cargues vos: se acredita\n"
+                . "solo al entrar desde la app. Si dice que ya la instalo y no le\n"
+                . "llego, que cierre y vuelva a entrar en la app; si sigue sin\n"
+                . "llegar, pasa_a_agente.";
+        }
+        return $p;
     }
 }
 
@@ -770,7 +793,10 @@ if (!function_exists('chatbot_contexto_dinamico')) {
         if ($bloqueLim !== '') {
             $p .= $bloqueLim . "\n\n";
         }
-        $bloqueApp = chatbot_bloque_app((string)($limites['app_url'] ?? ''));
+        $bloqueApp = chatbot_bloque_app(
+            (string)($limites['app_url'] ?? ''),
+            (int)($limites['app_bono'] ?? 0)
+        );
         if ($bloqueApp !== '') {
             $p .= $bloqueApp . "\n\n";
         }
