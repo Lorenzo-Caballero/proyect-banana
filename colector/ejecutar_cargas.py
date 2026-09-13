@@ -162,6 +162,56 @@ def marcar(ctx, id_accion: int, estado: str, mensaje: str) -> None:
         log.error("  no pude marcar la accion %s como %s: %s", id_accion, estado, e)
 
 
+def leer_respuesta_deposito(cuerpo: str) -> tuple[str, str]:
+    """Que dijo REALMENTE la plataforma. Devuelve (veredicto, detalle), donde
+    veredicto es 'ok' | 'error' | 'dudoso'.
+
+    HTTP 200 NO ALCANZA, y esto costo fichas de verdad. El 13/9/2026 el worker
+    marco 'hecha' dos depositos que nunca ocurrieron, porque los dos vinieron
+    con codigo 200:
+      - holamiliii550: el cuerpo era "<!DOCTYPE html>..." -- la pagina del WAF.
+        La request ni siquiera llego a la API.
+      - holalourdes220: {"status":501,...,"error_message":...}, un rechazo
+        explicito de la plataforma. 30.000 + 37.500 fichas.
+    En los dos casos se le descontaron las fichas al jugador, no se deposito
+    nada, y la accion quedo en 'hecha': nadie se entero. Los jugadores lo
+    reclamaron y hubo que cargarles a mano.
+
+    La plataforma contesta SIEMPRE 200 y pone el resultado en el cuerpo:
+    `status` 0 es exito y cualquier otra cosa es un error con `error_message`.
+    Asi que el cuerpo es lo unico que sirve para decidir.
+
+    Criterio de los tres veredictos:
+      - 'ok'     -> la API dijo status 0. Deposito hecho.
+      - 'error'  -> la API dijo que NO. Es seguro devolverle las fichas: quien
+                    rechaza explicitamente no proceso nada.
+      - 'dudoso' -> no entendemos la respuesta (HTML, vacia, sin `status`). NO
+                    se devuelven fichas solas: pudo haberse procesado y
+                    devolverlas seria pagar dos veces. Lo mira una persona.
+    """
+    txt = (cuerpo or "").strip()
+    if not txt:
+        return "dudoso", "respuesta vacia"
+    if txt[0] == "<":
+        # HTML donde tendria que haber JSON: challenge del WAF, un redirect al
+        # login o una pagina de error del proxy. Nunca es una API contestando.
+        return "dudoso", "vino HTML en vez de JSON (WAF, login o proxy)"
+    try:
+        d = json.loads(txt)
+    except Exception:
+        return "dudoso", "la respuesta no es JSON"
+    if not isinstance(d, dict) or "status" not in d:
+        return "dudoso", "JSON sin campo 'status'"
+    try:
+        st = int(d.get("status"))
+    except Exception:
+        return "dudoso", "el campo 'status' no es un numero"
+    if st == 0:
+        return "ok", ""
+    msg = d.get("error_message") or d.get("message") or ""
+    return "error", f"la plataforma rechazo el deposito (status {st}) {msg}".strip()
+
+
 def depositar(ctx, id_ganamos: int, monto: float) -> tuple[str, str]:
     """Deposita en la cuenta del jugador. Devuelve (estado, detalle).
 
@@ -176,15 +226,24 @@ def depositar(ctx, id_ganamos: int, monto: float) -> tuple[str, str]:
         # No sabemos si el server lo proceso antes de cortarse.
         return "revisar", f"no se pudo confirmar el deposito ({e})"
 
-    cuerpo_txt = ""
+    # El cuerpo COMPLETO para decidir; recortado solo para guardar el detalle.
+    # Antes se recortaba antes de mirarlo, asi que ni se podia parsear.
+    cuerpo_full = ""
     try:
-        cuerpo_txt = r.text()[:300]
+        cuerpo_full = r.text()
     except Exception:
         pass
+    cuerpo_txt = cuerpo_full[:300]
 
     if r.ok:
-        # 2xx: el panel lo acepto. Se guarda la respuesta para poder auditar.
-        return "hecha", f"deposito por API ({r.status}) {cuerpo_txt}".strip()
+        # 2xx NO quiere decir depositado: la plataforma responde 200 igual y
+        # pone el resultado adentro. Ver leer_respuesta_deposito().
+        veredicto, detalle = leer_respuesta_deposito(cuerpo_full)
+        if veredicto == "ok":
+            return "hecha", f"deposito por API ({r.status}) {cuerpo_txt}".strip()
+        if veredicto == "error":
+            return "error", f"NO se deposito ({r.status}): {detalle} | {cuerpo_txt}".strip()
+        return "revisar", f"respuesta ilegible ({r.status}): {detalle} | {cuerpo_txt}".strip()
 
     if 400 <= r.status < 500 and r.status not in (408, 429):
         # El server RECHAZO el pedido y no lo proceso: devolver las fichas es
