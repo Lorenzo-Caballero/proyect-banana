@@ -606,6 +606,18 @@
     font:700 13px inherit;background:linear-gradient(180deg,#e5484d,#c0272d);
     box-shadow:0 8px 20px rgba(229,72,77,.3);transition:.15s}
   .btn-peligro:hover{filter:brightness(1.08)}
+  /* Vista Recaudar */
+  .rc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}
+  .rc-acciones{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+  .rc-lista{display:flex;flex-direction:column;gap:8px}
+  .rc-row{border:1px solid var(--line);border-radius:11px;padding:10px 12px;font-size:13px}
+  .rc-row .rc-top{display:flex;justify-content:space-between;gap:8px;align-items:center}
+  .rc-badge{font:700 11px inherit;padding:2px 8px;border-radius:999px}
+  .rc-badge.pendiente{background:#3a3550;color:#c9c3e8}
+  .rc-badge.procesando{background:#2d3a55;color:#9ec5ff}
+  .rc-badge.hecha{background:#1f5133;color:#8ff0b5}
+  .rc-badge.error{background:#5a2327;color:#ffb0b3}
+  .rc-det{color:var(--muted,#8b8fa3);margin-top:6px;white-space:pre-wrap}
   @media (prefers-reduced-motion:reduce){ .pel-ico svg{animation:none} }
   .modal{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:24px;width:100%;max-width:370px;
          box-shadow:var(--shadow);max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px);overflow-y:auto}
@@ -1890,6 +1902,8 @@
       <button class="rail-item" data-nav="chatbot" data-tip="Chatbot (IA)" data-corto="Chatbot"><svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M12 8V4M9 4h6"/><circle cx="8.5" cy="14" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="14" r="1.3" fill="currentColor" stroke="none"/></svg></button>
       <button class="rail-item" id="railAgentes" data-nav="agentes" data-tip="Agentes" data-corto="Agentes" style="display:none"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></button>
       <button class="rail-item" data-nav="suscripcion" data-tip="Mi suscripción" data-corto="Saldo"><svg viewBox="0 0 24 24"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></button>
+      <!-- Solo-admin (se muestra en cargarQuienSoy segun ROL, como railAgentes). -->
+      <button class="rail-item" id="railRecaudar" data-nav="recaudar" data-tip="Recaudar inactivos" data-corto="Recaudar" style="display:none"><svg viewBox="0 0 24 24"><path d="M12 2v14M6 10l6 6 6-6"/><path d="M4 21h16"/></svg></button>
     </div>
     <div class="grp">
       <button class="rail-item" data-nav="config" data-tip="Configuración" data-corto="Config"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
@@ -3359,6 +3373,61 @@
     </div>
   </div>
 
+  <!-- ================= RECAUDAR (saldo de inactivos) ================= -->
+  <!-- Encola un pedido; lo ejecuta el bot del VPS (bot_recaudar.py --demonio)
+       contra el panel de agentes. El CRM no puede abrir ese panel. -->
+  <div class="card-col view-panel" id="viewRecaudar" style="display:none">
+    <div class="cb-wrap">
+      <div class="cb-head">
+        <div>
+          <h2>Recaudar saldo de inactivos</h2>
+          <p class="cb-sub">Retira el saldo de los jugadores que hace tiempo no juegan, desde el panel. Lo hace el bot: vos elegís los límites y confirmás.</p>
+        </div>
+      </div>
+
+      <div class="cb-card">
+        <div class="cb-card-body">
+          <div class="rc-grid">
+            <div>
+              <label class="cb-flabel">Inactivos hace (días)</label>
+              <input class="cb-input" id="rcDias" inputmode="numeric" value="30">
+              <p class="cfg-hint">No toca a nadie que haya jugado en los últimos N días. Se mide con la actividad real, no con la posición en la lista.</p>
+            </div>
+            <div>
+              <label class="cb-flabel">Saltear páginas</label>
+              <input class="cb-input" id="rcSaltar" inputmode="numeric" value="4">
+              <p class="cfg-hint">Tras ordenar por saldo de mayor a menor, saltea las primeras páginas: los de más saldo suelen ser los que acaban de cargar.</p>
+            </div>
+            <div>
+              <label class="cb-flabel">Máximo de retiros</label>
+              <input class="cb-input" id="rcTope" inputmode="numeric" value="10">
+              <p class="cfg-hint">Tope por corrida. Un freno de daño.</p>
+            </div>
+            <div>
+              <label class="cb-flabel">Saldo mínimo</label>
+              <input class="cb-input" id="rcMin" inputmode="numeric" value="100">
+              <p class="cfg-hint">No tocar saldos menores a esto.</p>
+            </div>
+          </div>
+          <div class="rc-acciones">
+            <button class="btn-sec" id="rcProbar" type="button">Probar (no retira)</button>
+            <button class="btn-peligro" id="rcRecaudar" type="button">Recaudar de verdad</button>
+          </div>
+          <p class="cfg-hint" style="margin-top:6px">
+            <b>Probar</b> deja una corrida en seco: el bot lista a quién tocaría y cuánto, sin retirar. Miralo abajo antes de recaudar de verdad.
+          </p>
+        </div>
+      </div>
+
+      <div class="cb-card">
+        <div class="cb-card-head"><b>Últimas recaudaciones</b></div>
+        <div class="cb-card-body">
+          <div id="rcLista" class="rc-lista"><p class="cfg-hint">—</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="card-col view-panel" id="viewConfig" style="display:none">
     <div class="cb-wrap">
       <div class="cb-head">
@@ -4185,7 +4254,7 @@
      esconder datos en atributos del DOM. */
   let listaCache = new Map();
   let debounce, pollList, pollConv, pollBadgeComp, pollBadgeRet, pollRetirosVista, pollCargasVista,
-      pollBadgePet, pollPeticionesVista;
+      pollBadgePet, pollPeticionesVista, pollRecaudarVista;
 
   // ---------- sesion de operador: shell vs. login (Fase 0.5) ----------
   function ocultarBoot(){ const b=$("#bootLoading"); if(b) b.style.display="none"; }
@@ -4300,6 +4369,72 @@
     pintarCreditosCrm();   // que el box del rail no quede desactualizado
   }
 
+  /* ===================== RECAUDAR (saldo inactivos) =====================
+     El CRM encola el pedido; el bot del VPS lo ejecuta contra el panel. Esta
+     vista solo pide y muestra el estado -- no toca plata directamente. */
+  function rcParams(){
+    const n = (id, def) => { const v = parseInt(($("#"+id).value||"").trim(),10); return isNaN(v)?def:v; };
+    return { dias:n("rcDias",30), saltar:n("rcSaltar",4), tope:n("rcTope",10), min_saldo:n("rcMin",100) };
+  }
+  async function recaudarPedir(deVerdad){
+    const p = rcParams();
+    if(deVerdad){
+      const ok = await confirmarPeligro({
+        titulo:"¿Recaudar de verdad?",
+        sub:`Va a retirar el saldo de hasta ${p.tope} jugador(es) inactivos hace ${p.dias}+ días.`,
+        nota:"Esto <b>saca plata de cuentas de jugadores</b> en el panel. Es irreversible. Probá primero sin retirar si tenés dudas.",
+        boton:"Sí, recaudar"
+      });
+      if(!ok) return;
+    }
+    const btn = deVerdad ? $("#rcRecaudar") : $("#rcProbar");
+    const txt = btn.textContent; btn.disabled = true; btn.textContent = "Encolando…";
+    // 'si' solo cuando es de verdad: sin ese flag el backend lo encola como prueba.
+    const d = await jpost(Object.assign({accion:"recaudar_pedir"}, p, deVerdad?{si:true}:{}));
+    btn.disabled = false; btn.textContent = txt;
+    if(d.ok) toast(deVerdad ? "Recaudación encolada — el bot la ejecuta en segundos" : "Prueba encolada — mirá el resultado abajo");
+    else toast(d.error || "No se pudo encolar");
+    recaudarCargar();
+  }
+  async function recaudarCargar(){
+    let d;
+    try{ d = await jget({accion:"recaudar_estado"}); }catch(e){ return; }
+    const cont = $("#rcLista"); if(!cont) return;
+    const rs = (d && d.recaudaciones) || [];
+    if(!rs.length){ cont.innerHTML = '<p class="cfg-hint">Todavía no hay recaudaciones.</p>'; return; }
+    cont.innerHTML = rs.map(r=>{
+      const res = r.resultado || {};
+      const modo = r.dry_run ? "PRUEBA" : "REAL";
+      let det = "";
+      if(r.estado==="error"){
+        det = `<div class="rc-det">✕ ${esc(r.mensaje||"error")}</div>`;
+      } else if(res && (res.objetivo || res.detalle)){
+        const lista = r.dry_run ? (res.objetivo||[]) : (res.detalle||[]);
+        const tot = r.dry_run ? (res.total_objetivo||0) : (res.total||0);
+        const cab = r.dry_run
+          ? `Tocaría a ${lista.length} jugador(es), $${nf.format(tot)} en total:`
+          : `Retirados ${res.retirados||0} por $${nf.format(tot)}${res.fallados?` · ${res.fallados} fallaron`:""}:`;
+        const items = lista.slice(0,20).map(x=>{
+          const marca = (!r.dry_run && x.ok===false) ? " ✕" : "";
+          return `${esc(x.usuario)} — $${nf.format(x.saldo||0)}${marca}`;
+        }).join("\n");
+        det = `<div class="rc-det">${cab}\n${items||"(nadie)"}</div>`;
+      } else if(r.estado==="procesando" || r.estado==="pendiente"){
+        det = `<div class="rc-det">En curso…</div>`;
+      }
+      return `<div class="rc-row">
+        <div class="rc-top">
+          <span><b>#${r.id}</b> · ${modo} · ${esc(r.pedido_por||"?")} · ${horaExacta(r.creada_en)}</span>
+          <span class="rc-badge ${r.estado}">${r.estado}</span>
+        </div>
+        <div class="cfg-hint" style="margin-top:2px">inactivos ${r.dias}+ días · saltar ${r.saltar} pág · máx ${r.tope} · mín $${nf.format(r.min_saldo)}</div>
+        ${det}
+      </div>`;
+    }).join("");
+  }
+  $("#rcProbar")?.addEventListener("click", ()=>recaudarPedir(false));
+  $("#rcRecaudar")?.addEventListener("click", ()=>recaudarPedir(true));
+
   async function pagarSuscripcion(plan, pref){
     pref = pref || "saldo";
     const errEl = $("#" + pref + "Error");
@@ -4338,6 +4473,9 @@
     // El apartado "Agentes" (gestión) solo lo ve un admin.
     const railAg = $("#railAgentes");
     if(railAg) railAg.style.display = (ROL === "admin") ? "" : "none";
+    // Recaudar mueve plata de cuentas en masa: solo admin, como Agentes.
+    const railRc = $("#railRecaudar");
+    if(railRc) railRc.style.display = (ROL === "admin") ? "" : "none";
   }
 
   function iniciarPolling(){
@@ -4581,7 +4719,7 @@
   // modulos nuevos ocultan esas 3 columnas y muestran su propio contenedor.
   // Se va sumando un nombre a VISTAS + su contenedor a VISTA_CONTENEDOR por
   // cada modulo que se conecte, sin tocar el resto de la funcion.
-  const VISTAS = ["chats", "comprobantes", "peticiones", "retiros", "cargas", "transacciones", "usuarios", "finanzas", "notificaciones", "publicidad", "landings", "chatbot", "agentes", "suscripcion", "config"];
+  const VISTAS = ["chats", "comprobantes", "peticiones", "retiros", "cargas", "transacciones", "usuarios", "finanzas", "notificaciones", "publicidad", "landings", "chatbot", "agentes", "suscripcion", "recaudar", "config"];
   const VISTA_CONTENEDOR = {
     comprobantes: "#viewComprobantes",
     peticiones: "#viewPeticiones",
@@ -4596,6 +4734,7 @@
     chatbot: "#viewChatbot",
     agentes: "#viewAgentes",
     suscripcion: "#viewSuscripcion",
+    recaudar: "#viewRecaudar",
     config: "#viewConfig",
   };
 
@@ -4641,6 +4780,7 @@
     if(pollRetirosVista){ clearInterval(pollRetirosVista); pollRetirosVista = null; }
     if(pollCargasVista){ clearInterval(pollCargasVista); pollCargasVista = null; }
     if(pollPeticionesVista){ clearInterval(pollPeticionesVista); pollPeticionesVista = null; }
+    if(pollRecaudarVista){ clearInterval(pollRecaudarVista); pollRecaudarVista = null; }
 
     if(nombre==="comprobantes") cargarComprobantes();
     if(nombre==="peticiones"){
@@ -4692,6 +4832,12 @@
     if(nombre==="suscripcion"){
       cargarVistaSuscripcion();
     }
+    if(nombre==="recaudar"){
+      recaudarCargar();
+      // Cola operativa: mientras una corrida esta en curso, refrescar para ver
+      // como avanza (el bot marca hecha/error al terminar). Se para al salir.
+      pollRecaudarVista = setInterval(recaudarCargar, 8000);
+    }
   }
 
   /* ---------- rutas ----------
@@ -4709,7 +4855,7 @@
     publicidad:"Publicidad",
     landings:"Landings",
     chatbot:"Chatbot", agentes:"Agentes", suscripcion:"Mi suscripción",
-    config:"Configuración"
+    recaudar:"Recaudar", config:"Configuración"
   };
   let vistaActual = "chats";
 

@@ -1364,7 +1364,7 @@ function rl_notificar_acreditada(PDO $pdo, array $recarga): void
         if ($bono > 0) {
             $msg .= ' Y te sumé ' . number_format($bono, 0, ',', '.') . ' de bono de bienvenida.';
         }
-        $msg .= ' ¡Que tengas suerte! 🍀';
+        $msg .= ' ¡Gracias por jugar con nosotros, mucha suerte! 🍀';
         crm_avisar_jugador($pdo, $usuario, $msg);
     }
 }

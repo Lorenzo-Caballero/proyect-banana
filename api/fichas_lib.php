@@ -200,6 +200,10 @@ function fichas_pedir_carga(PDO $pdo, string $usuario, int $monto, string $orige
         // juego nunca se encolaba. Pasó el 7/9/2026 con el sync caido. El
         // deposito lo hace ejecutar_cargas.py contra el PANEL (la fuente real),
         // buscando por username -- no necesita el espejo.
+        // Se recuerda si el espejo TENIA la fila: mas abajo, el bono de una
+        // recarga ya acreditada no se puede capar contra un contador que no
+        // existe (ver el bloque del bono).
+        $habiaFila = (bool)$fila;
         if (!$fila) {
             if (!$confiable) {
                 $pdo->rollBack();
@@ -248,11 +252,22 @@ function fichas_pedir_carga(PDO $pdo, string $usuario, int $monto, string $orige
             )->execute([$usuario, -$monto, $origen]);
         }
 
-        /* El bono va en el MISMO deposito, debitado de usuarios.bonus. Capado
-           a lo que tenga: la promesa vive en el contador, no aca. Se debita
-           aunque no se cobren los coins ($confiable sin espejo deja bonus en
-           0 y esto queda en 0 solo). */
-        $bono = max(0, min($bono, (int)($fila['bonus'] ?? 0)));
+        /* El bono va en el MISMO deposito, debitado de usuarios.bonus.
+           Normalmente se capa a lo que el jugador TENGA en el contador: nadie
+           puede jugar bonos que no existen.
+
+           EXCEPCION, y es la que arregla el bono perdido del 12/9/2026: con
+           $confiable y SIN fila en el espejo (`usuarios` atrasado o caido,
+           tipico en una cuenta recien creada), el contador no se puede leer
+           -- $fila quedo en ['coins'=>0,'bonus'=>0] mas arriba. Capar contra
+           ese 0 borraba un bono YA PROMETIDO Y CALCULADO: el jugador cargaba
+           7000 con 50% y recibia 7000 pelado, sin un solo error en el log.
+           El bono de una recarga acreditada no depende del espejo, igual que
+           no depende el deposito de las fichas (mismo motivo, ver arriba). */
+        $sinEspejo = $confiable && !$habiaFila;
+        $bono = $sinEspejo
+            ? max(0, $bono)
+            : max(0, min($bono, (int)($fila['bonus'] ?? 0)));
         // Solo-bono sin bonos disponibles: no hay NADA que depositar. Sin
         // este corte se encolaba una accion de monto 0 (el bot depositaria $0).
         if ($soloBono && $bono <= 0) {
