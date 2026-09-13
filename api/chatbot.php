@@ -2086,7 +2086,31 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
     }
     if ($nombre === 'consultar_recarga') {
         $ref = (string)($args['referencia_o_usuario'] ?? $args['referencia'] ?? $args['usuario'] ?? '');
-        return rl_consultar($pdo, $ref);
+        $r = rl_consultar($pdo, $ref);
+
+        /* LA PLATA ENTRO PERO QUEDO TRABADA: eso se avisa SOLO, sin esperar a
+           que el jugador pida un agente. Es el unico caso donde el operador
+           puede resolverlo en segundos -- el pago esta ahi, con nombre y monto,
+           solo falta decir de quien es -- y donde el jugador, si no se entera
+           nadie, se queda mirando un "todavia no me figura" que es falso.
+           Con clave de dedupe: un aviso por pago, no uno por pregunta. El
+           jugador nervioso pregunta cinco veces. */
+        $tr = $r['pago_trabado'] ?? null;
+        if ($tr && !empty($tr['hay']) && function_exists('tg_evento')) {
+            /* tipo 'revision' (el interruptor que el operador ya conoce) y la
+               clave de dedupe en el 5to parametro: un aviso por PAGO, no uno
+               por pregunta -- el que espera su plata pregunta cinco veces. */
+            tg_evento($pdo, 'revision',
+                '💸 Hay plata trabada y el jugador la esta esperando', [
+                    'Jugador'          => (string)($r['usuario'] ?? '-'),
+                    'Pidio'            => '$' . (string)($r['monto_pedido'] ?? '-'),
+                    'Pago que no casa' => '$' . number_format((float)$tr['monto'], 2, ',', '.')
+                                        . ' de ' . ($tr['titular'] !== '' ? $tr['titular'] : '(sin nombre)'),
+                    'Esperando'        => ($tr['desde_min'] !== null ? $tr['desde_min'] . ' min' : '-'),
+                    'Que hacer'        => 'CRM > Comprobantes sin resolver: asignaselo o descartalo.',
+                ], 'pago_trabado:' . $tr['id_unico']);
+        }
+        return $r;
     }
     if ($nombre === 'informar_transferencia') {
         // La sesion manda; el parametro 'usuario' es solo para el flujo anonimo

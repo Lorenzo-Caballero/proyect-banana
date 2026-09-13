@@ -786,7 +786,7 @@ function rl_consultar(PDO $pdo, string $refOUsuario): array
         $saldo = $b->fetchColumn();
     }
 
-    return [
+    $out = [
         'ok'           => true,
         'encontrada'   => true,
         'referencia'   => $r['referencia'],
@@ -796,6 +796,97 @@ function rl_consultar(PDO $pdo, string $refOUsuario): array
         'estado'       => $r['estado'],   // pendiente|acreditada|vencida|cancelada|revision
         'saldo_actual' => $saldo !== false && $saldo !== null ? (int)$saldo : null,
     ];
+
+    /* Si sigue pendiente, mirar si la plata YA ENTRO y quedo trabada en
+       revision. Va aca y no en una herramienta nueva a proposito: es
+       exactamente el momento en que el bot pregunta "¿llego lo mio?", asi que
+       el dato le llega solo, sin que tenga que acordarse de ir a buscarlo. */
+    if ($r['estado'] === 'pendiente') {
+        $trab = rl_pago_trabado($pdo, (string)$r['usuario'], (float)$r['monto_pedido']);
+        if (!empty($trab['hay'])) {
+            $out['pago_trabado'] = $trab;
+        }
+    }
+
+    return $out;
+}
+
+
+/**
+ * ¿HAY PLATA DE ESTE JUGADOR TRABADA EN REVISION?
+ *
+ * EL PROBLEMA QUE RESUELVE: cuando el matcher no puede decidir a quien
+ * acreditarle una transferencia, la deja en `pagos` con estado 'revision'
+ * esperando a una persona. La plata ESTA. Pero ninguna herramienta del chatbot
+ * miraba esa tabla -- consultar_recarga lee `recargas`, o sea lo que el jugador
+ * PIDIO, nunca lo que LLEGO -- asi que el bot le decia "todavia no me figura" a
+ * alguien cuyo pago ya habia entrado. No mentia: estaba ciego.
+ *
+ * Para el jugador son dos situaciones opuestas:
+ *   - no llego     -> hay que esperar al banco, no hay nada que hacer;
+ *   - llego trabado -> la plata ya esta adentro y un agente la libera en
+ *                      segundos, pero alguien tiene que enterarse.
+ * Distinguirlas es lo que convierte "ya le avise a un agente" (repetido diez
+ * veces) en una respuesta que sirve.
+ *
+ * QUE NO HACE: no acredita ni decide nada. Solo MIRA y reporta. El unico que
+ * casa un pago sigue siendo rl_matchear_y_acreditar, con sus reglas, que
+ * rl_declarar_pago ya reintenta cuando el jugador declara el titular. Si el
+ * matcher no pudo, esto no lo va a "convencer" -- lo hace visible, que es otra
+ * cosa. La regla de oro no se toca: nunca adivina.
+ *
+ * Devuelve ['hay' => bool, 'cantidad' => int, 'monto' => float|null,
+ *           'id_unico' => string, 'titular' => string, 'desde_min' => int|null]
+ */
+function rl_pago_trabado(PDO $pdo, string $usuario, ?float $monto = null): array
+{
+    $vacio = ['hay' => false, 'cantidad' => 0, 'monto' => null,
+              'id_unico' => '', 'titular' => '', 'desde_min' => null];
+    $usuario = trim($usuario);
+    if ($usuario === '') { return $vacio; }
+
+    try {
+        /* El monto de referencia: el que pidio y todavia espera. Sin recarga
+           pendiente no hay con que cruzar -- un pago en revision suelto puede
+           ser de cualquiera, y adjudicarselo al que pregunta seria justo lo que
+           el matcher se niega a hacer. */
+        if ($monto === null) {
+            $st = $pdo->prepare(
+                "SELECT monto_pedido FROM recargas
+                  WHERE usuario = ? AND estado = 'pendiente'
+                  ORDER BY id DESC LIMIT 1"
+            );
+            $st->execute([$usuario]);
+            $v = $st->fetchColumn();
+            if ($v === false || $v === null) { return $vacio; }
+            $monto = (float)$v;
+        }
+
+        $pg = $pdo->prepare(
+            "SELECT id_unico, monto, remitente, capturado_en,
+                    TIMESTAMPDIFF(MINUTE, capturado_en, NOW()) AS desde_min
+               FROM pagos
+              WHERE estado = 'revision'
+                AND (ROUND(monto*100) = ROUND(? * 100) OR FLOOR(monto) = FLOOR(?))
+              ORDER BY capturado_en DESC LIMIT 5"
+        );
+        $pg->execute([$monto, $monto]);
+        $filas = $pg->fetchAll();
+        if (!$filas) { return $vacio; }
+
+        $p = $filas[0];
+        return [
+            'hay'       => true,
+            'cantidad'  => count($filas),
+            'monto'     => (float)$p['monto'],
+            'id_unico'  => (string)$p['id_unico'],
+            'titular'   => trim((string)($p['remitente'] ?? '')),
+            'desde_min' => $p['desde_min'] !== null ? (int)$p['desde_min'] : null,
+        ];
+    } catch (Throwable $e) {
+        error_log('rl_pago_trabado: ' . $e->getMessage());
+        return $vacio;
+    }
 }
 
 

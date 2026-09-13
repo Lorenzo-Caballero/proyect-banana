@@ -268,6 +268,48 @@ chequear('otro monto del mismo jugador si abre una nueva',
          json_encode($r));
 
 // ===========================================================================
+echo "\n=== 10. El bot VE la plata trabada en revision ===\n";
+/* El agujero que hacia que el bot repitiera "ya le avise a un agente": ninguna
+   de sus herramientas miraba `pagos`. consultar_recarga leia `recargas` -- lo
+   que el jugador PIDIO -- y nunca lo que LLEGO. Entonces a alguien cuyo pago ya
+   habia entrado y estaba en revision le contestaba "todavia no me figura".
+   No mentia: estaba ciego. Son dos situaciones opuestas para el jugador. */
+limpiar($pdo);
+crearUsuario($pdo, 'test_ana');
+crearUsuario($pdo, 'test_beto');
+
+$r = rl_crear_recarga($pdo, 'test_ana', 1000, '');
+chequear('ana pide 1000', !empty($r['ok']), json_encode($r));
+
+// Todavia no llego nada: no hay que inventar ningun pago trabado.
+$c = rl_consultar($pdo, 'test_ana');
+chequear('sin pago entrado: NO reporta plata trabada',
+         ($c['estado'] ?? '') === 'pendiente' && !isset($c['pago_trabado']),
+         json_encode($c));
+
+// Entra la transferencia pero el matcher no puede decidir de quien es.
+crearPago($pdo, 'TEST-TRAB', 1000, 'DIEGO SANTILLAN');
+$pdo->exec("UPDATE pagos SET estado='revision' WHERE id_unico='TEST-TRAB'");
+
+$c = rl_consultar($pdo, 'test_ana');
+chequear('con el pago en revision: AHORA si lo ve', !empty($c['pago_trabado']['hay']),
+         json_encode($c['pago_trabado'] ?? null));
+chequear('y trae el dato que sirve para destrabarlo (a nombre de quien vino)',
+         ($c['pago_trabado']['titular'] ?? '') === 'DIEGO SANTILLAN');
+chequear('con el id del pago, para que el agente lo encuentre',
+         ($c['pago_trabado']['id_unico'] ?? '') === 'TEST-TRAB');
+chequear('la recarga NO se acredito sola (mirar no es acreditar)',
+         ($c['estado'] ?? '') === 'pendiente' && coinsDe($pdo, 'test_ana') === 0);
+
+/* Y no se le adjudica al que pasaba por ahi: beto tiene una pendiente de OTRO
+   monto, asi que ese pago no es suyo y no tiene por que verlo. */
+rl_crear_recarga($pdo, 'test_beto', 5000, '');
+$c = rl_consultar($pdo, 'test_beto');
+chequear('a otro jugador con otro monto no se le ofrece esa plata',
+         !isset($c['pago_trabado']), json_encode($c['pago_trabado'] ?? null));
+
+
+// ===========================================================================
 echo "\n=== Resolver a mano lo que el matcher no pudo ===\n";
 
 /* Estos comprobantes son los que se venian acumulando sin salida: 25 llegaron
