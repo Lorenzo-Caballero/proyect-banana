@@ -307,6 +307,50 @@ def fijar_bono(ctx, request_id: int, pct: float) -> bool:
     return True
 
 
+def rechazar(ctx, request_id: int) -> tuple[str, str]:
+    """Cancela la solicitud EN GANAMOS. Devuelve (estado, detalle).
+
+    MISMO endpoint que aprobar, con status 0 en vez de 1. Capturado del panel
+    el 13/9/2026 mirando que hace su boton de cancelar -- no adivinado, que en
+    un endpoint de plata no es una diferencia menor: si status 0 hubiera sido
+    otra cosa, "rechazar" podria haber terminado aprobando.
+
+    OJO CON LOS DOS `status`: el del CUERPO QUE MANDAMOS es la accion (0
+    rechaza, 1 aprueba); el del CUERPO QUE VUELVE es el codigo de resultado (0
+    = salio bien). Se llaman igual y significan cosas distintas.
+
+    Quien decide rechazar es una persona desde el CRM, no este worker: aca solo
+    se ejecuta lo que el CRM ya marco, con la guarda de que no tenga una
+    transferencia reclamada (eso lo chequean los dos lados).
+    """
+    url = f"{PANEL_API}/payment/deposit/{request_id}"
+    try:
+        r = ctx.request.patch(url, data={"status": 0}, timeout=45_000)
+    except Exception as e:
+        # No se sabe si el panel alcanzo a procesarlo: se reintenta la proxima.
+        return "revisar", f"no se pudo confirmar el rechazo ({e})"
+
+    try:
+        cuerpo = r.text()[:300]
+    except Exception:
+        cuerpo = ""
+
+    if r.ok:
+        # Mismo criterio que aprobar: 2xx no alcanza, el resultado viene en el
+        # cuerpo. Un status != 0 significa que la API lo entendio y dijo que no.
+        try:
+            d = r.json()
+            if isinstance(d, dict) and d.get("status") not in (None, 0):
+                return "revisar", f"el panel no la rechazo (status={d.get('status')}) {cuerpo}".strip()
+        except Exception:
+            pass
+        return "cerrada", f"rechazada en ganamos por API ({r.status}) {cuerpo}".strip()
+
+    if 400 <= r.status < 500 and r.status not in (408, 429):
+        return "revisar", f"el panel no acepto el rechazo ({r.status}) {cuerpo}".strip()
+    return "revisar", f"respuesta dudosa al rechazar ({r.status}) {cuerpo}".strip()
+
+
 def aprobar(ctx, request_id: int) -> tuple[str, str]:
     """Aprueba la carga en el panel. Devuelve (estado, detalle)."""
     url = f"{PANEL_API}/payment/deposit/{request_id}"
@@ -367,6 +411,19 @@ def una_pasada(ctx, solo_ver: bool, dias: int) -> int:
         que    = (d.get("decision") or "").strip()
         motivo = (d.get("motivo") or "").strip()
         usr    = (d.get("usuario") or "").strip()
+
+        if que == "rechazar":
+            # Lo pidio una persona desde el CRM; aca solo se ejecuta.
+            if solo_ver or MODE == "DRY_RUN":
+                log.info("  [ver] #%s %s -> RECHAZARIA en ganamos. %s", rid, usr, motivo)
+                continue
+            estado, detalle = rechazar(ctx, rid)
+            if estado == "cerrada":
+                log.info("  #%s %s: rechazada en ganamos", rid, usr)
+            else:
+                log.warning("  #%s %s: NO se pudo rechazar: %s", rid, usr, detalle)
+            confirmar(ctx, rid, estado, detalle)
+            continue
 
         if que != "aprobar":
             if que == "nada":

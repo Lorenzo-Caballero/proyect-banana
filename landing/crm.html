@@ -6980,14 +6980,24 @@
       const btnCerrar = puedeCerrar
         ? `<button class="btn-mini-accion" data-cerrar="${p.request_id}" type="button"
                    title="Sacarla de ESTA lista. No la cancela en ganamos.">Sacar de la lista</button>` : "";
+      /* RECHAZAR DE VERDAD: la cancela en ganamos. Distinto de "Sacar de la
+         lista", que solo limpia esta pantalla. No aparece si ya tiene una
+         transferencia asociada: ahí el jugador pagó y lo que corresponde es
+         aprobar, no cancelar. */
+      const rechazoEnCamino = !!p.rechazo_pedido_en;
+      const btnRechazar = (puedeCerrar && !p.pago_id_unico && !rechazoEnCamino)
+        ? `<button class="btn-mini-accion peligro" data-rechazar="${p.request_id}" type="button"
+                   title="Cancelarla en ganamos, no solo acá">Rechazar</button>` : "";
+      const chipRechazo = rechazoEnCamino
+        ? `<span class="urg-chip warn">${ico("reloj")}Rechazo en camino</span>` : "";
       return `
       <div class="comp-row">
         <div class="cr-top">
           <span>${esc(p.username)} <span style="color:var(--muted)">#${p.request_id}</span></span>
-          <span class="pt-der">${money(p.monto)}${btnCerrar}</span>
+          <span class="pt-der">${money(p.monto)}${btnRechazar}${btnCerrar}</span>
         </div>
         <div class="cr-sub">
-          <b style="color:${e.c}">${esc(e.t)}</b>${dem}
+          <b style="color:${e.c}">${esc(e.t)}</b>${dem}${chipRechazo}
           ${p.titular ? " · a nombre de " + esc(p.titular) : ""}
         </div>
         ${motivo ? `<div class="cr-sub" style="opacity:.8">${esc(motivo)}</div>` : ""}
@@ -6996,6 +7006,9 @@
 
     cont.querySelectorAll("[data-cerrar]").forEach(btn=>{
       btn.addEventListener("click", ()=> cerrarPeticion(+btn.getAttribute("data-cerrar"), btn));
+    });
+    cont.querySelectorAll("[data-rechazar]").forEach(btn=>{
+      btn.addEventListener("click", ()=> rechazarPeticion(+btn.getAttribute("data-rechazar"), btn));
     });
   }
 
@@ -7023,6 +7036,33 @@
     } else {
       btn.disabled = false; btn.textContent = "Sacar de la lista";
       toast(d.error || "No se pudo cerrar");
+    }
+  }
+
+  /* Rechazar DE VERDAD: la cancela en ganamos. El CRM no puede hacerlo solo
+     (ese endpoint necesita la sesión del panel), así que se anota el pedido y
+     lo ejecuta el worker en su próxima pasada, en menos de un minuto. */
+  async function rechazarPeticion(rid, btn){
+    const nota = prompt(
+      `RECHAZAR la solicitud #${rid} en ganamos.
+
+` +
+      `Esto la cancela de verdad en la plataforma, no solo acá.
+` +
+      `Si el jugador ya transfirió, NO la rechaces: corresponde aprobarla.
+
+` +
+      `¿Por qué la rechazás? (queda como constancia)`, "");
+    if(nota === null) return;
+    if(nota.trim().length < 8){ toast("Contá por qué la rechazás, al menos 8 caracteres"); return; }
+    btn.disabled = true; btn.textContent = "…";
+    const d = await jpost({accion:"rechazar", request_id:rid, nota:nota.trim()}, API_PET);
+    if(d.ok){
+      toast(d.mensaje || "Pedido de rechazo anotado");
+      cargarPeticiones(); actualizarBadgePeticiones();
+    } else {
+      btn.disabled = false; btn.textContent = "Rechazar";
+      toast(d.error || "No se pudo rechazar");
     }
   }
 

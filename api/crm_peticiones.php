@@ -74,19 +74,27 @@ try {
     }
 
     if ($accion === 'listar') {
-        try {
-            $st = $pdo->query(
-                "SELECT request_id, username, titular, monto, alias_destino, creada_api,
-                        primera_vez, estado, confianza, motivo, pago_id_unico,
-                        actualizada_en,
-                        TIMESTAMPDIFF(MINUTE, primera_vez, NOW()) AS minutos
-                   FROM peticiones_carga
-                  ORDER BY FIELD(estado,'revision','error','esperando','aprobada','cerrada'),
+        /* Dos intentos, y la diferencia importa: `rechazo_pedido_en` es de la
+           migracion 63 y solo sirve para mostrar "rechazo en camino". Si falta,
+           NO se puede declarar `sin_migracion` -- eso vacia la pantalla entera y
+           le dice al operador que falta la 48, que es otra cosa. Se sirve la
+           lista sin ese dato, que es lo que importa. Sin la 48 si no hay tabla,
+           y ahi si corresponde. */
+        $cols = "request_id, username, titular, monto, alias_destino, creada_api,
+                 primera_vez, estado, confianza, motivo, pago_id_unico, actualizada_en,
+                 TIMESTAMPDIFF(MINUTE, primera_vez, NOW()) AS minutos";
+        $orden = "ORDER BY FIELD(estado,'revision','error','esperando','aprobada','cerrada'),
                            primera_vez DESC
-                  LIMIT 200"
-            );
+                  LIMIT 200";
+        $st = null;
+        try {
+            $st = $pdo->query("SELECT $cols, rechazo_pedido_en FROM peticiones_carga $orden");
         } catch (PDOException $e) {
-            salir(['ok' => true, 'items' => [], 'sin_migracion' => true]);
+            try {
+                $st = $pdo->query("SELECT $cols, NULL AS rechazo_pedido_en FROM peticiones_carga $orden");
+            } catch (PDOException $e2) {
+                salir(['ok' => true, 'items' => [], 'sin_migracion' => true]);
+            }
         }
         $items = array_map(static function ($r) {
             $r['request_id'] = (int)$r['request_id'];
@@ -153,6 +161,80 @@ try {
             ], JSON_UNESCAPED_UNICODE));
         }
         salir(['ok' => true, 'mensaje' => 'Solicitud cerrada']);
+    }
+
+    /* ---- rechazar DE VERDAD, tambien en ganamos ----
+       La diferencia con 'cerrar': aquello solo sacaba la fila de ESTA lista y
+       la solicitud seguia abierta del otro lado. Esto la cancela en la
+       plataforma.
+
+       El CRM no puede hacerlo solo: ese endpoint necesita la sesion del panel,
+       que la tiene el worker. Asi que aca solo se PIDE, y lo ejecuta
+       colector/aprobar_cargas.py en su proxima pasada (PATCH
+       /api/payment/deposit/{id} con {"status":0} -- capturado del panel el
+       13/9/2026, no adivinado: el mismo endpoint que aprueba con status 1).
+
+       LA GUARDA QUE IMPORTA: no se rechaza una solicitud que YA tiene un pago
+       reclamado. Si el matcher encontro la transferencia, el jugador pago y lo
+       que corresponde es aprobarla, no cancelarla -- rechazarla ahi seria
+       quedarse con la plata. */
+    if ($accion === 'rechazar' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+        $rid  = (int)($cuerpo['request_id'] ?? 0);
+        $nota = trim((string)($cuerpo['nota'] ?? ''));
+
+        if (!$rid) { salir(['ok' => false, 'error' => 'Falta request_id'], 400); }
+        if (mb_strlen($nota) < 8) {
+            salir(['ok' => false, 'error' =>
+                'Contá por qué la rechazás (mínimo 8 caracteres). Es la única constancia.'], 400);
+        }
+        if (mb_strlen($nota) > 200) {
+            salir(['ok' => false, 'error' => 'La nota es muy larga (máximo 200 caracteres)'], 400);
+        }
+
+        $st = $pdo->prepare(
+            "SELECT request_id, username, monto, estado, pago_id_unico
+               FROM peticiones_carga WHERE request_id = ? LIMIT 1"
+        );
+        $st->execute([$rid]);
+        $fila = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$fila) { salir(['ok' => false, 'error' => 'Esa solicitud no existe'], 404); }
+        if ($fila['estado'] !== 'esperando' && $fila['estado'] !== 'revision') {
+            salir(['ok' => false, 'error' =>
+                'Solo se rechaza una solicitud que sigue abierta. Esta está: ' . $fila['estado']], 409);
+        }
+        if (!empty($fila['pago_id_unico'])) {
+            salir(['ok' => false, 'error' =>
+                'Esta solicitud ya tiene una transferencia asociada: el jugador pagó. '
+                . 'Lo que corresponde es aprobarla, no rechazarla.'], 409);
+        }
+
+        try {
+            $upd = $pdo->prepare(
+                "UPDATE peticiones_carga
+                    SET rechazo_pedido_en = NOW(), rechazo_por = ?,
+                        motivo = ?, actualizada_en = NOW()
+                  WHERE request_id = ? AND estado IN ('esperando','revision')
+                    AND rechazo_pedido_en IS NULL"
+            );
+            $upd->execute([mb_substr($operador, 0, 60),
+                           mb_substr("rechazo pedido por $operador: $nota", 0, 255), $rid]);
+        } catch (Throwable $e) {
+            salir(['ok' => false, 'error' =>
+                'Falta aplicar la migración 63. Avisale a soporte.'], 500);
+        }
+        if ($upd->rowCount() === 0) {
+            salir(['ok' => false, 'error' =>
+                'Ya había un rechazo pedido, o la solicitud cambió de estado.'], 409);
+        }
+
+        if (function_exists('crm_bitacora')) {
+            crm_bitacora($pdo, $operador, 'peticion_rechazo_pedido', json_encode([
+                'request_id' => $rid, 'usuario' => $fila['username'],
+                'monto' => (float)$fila['monto'], 'nota' => $nota,
+            ], JSON_UNESCAPED_UNICODE));
+        }
+        salir(['ok' => true,
+               'mensaje' => 'Pedido de rechazo anotado. Se cancela en ganamos en menos de un minuto.']);
     }
 
     salir(['ok' => false, 'error' => 'Acción desconocida'], 400);

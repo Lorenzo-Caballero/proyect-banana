@@ -188,15 +188,50 @@ try {
               WHERE request_id = ? AND estado = 'esperando'"
         );
 
-        $pend = $pdo->query(
-            "SELECT request_id, username, titular, monto, primera_vez, pago_id_unico
-               FROM peticiones_carga WHERE estado = 'esperando' ORDER BY primera_vez ASC"
-        )->fetchAll(PDO::FETCH_ASSOC);
+        /* rechazo_pedido_en es de la migracion 63: si falta, se sigue sin la
+           columna y simplemente no hay rechazos que ejecutar. */
+        try {
+            $pend = $pdo->query(
+                "SELECT request_id, username, titular, monto, primera_vez, pago_id_unico,
+                        rechazo_pedido_en
+                   FROM peticiones_carga WHERE estado = 'esperando' ORDER BY primera_vez ASC"
+            )->fetchAll(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            $pend = $pdo->query(
+                "SELECT request_id, username, titular, monto, primera_vez, pago_id_unico,
+                        NULL AS rechazo_pedido_en
+                   FROM peticiones_carga WHERE estado = 'esperando' ORDER BY primera_vez ASC"
+            )->fetchAll(PDO::FETCH_ASSOC);
+        }
 
         $datos = [];
         foreach ($pend as $q) {
             $rid    = (int)$q['request_id'];
             $centavos = (string)round((float)$q['monto'] * 100);
+
+            /* UN OPERADOR PIDIO RECHAZARLA. Va PRIMERO, antes de buscarle
+               transferencia: si se evaluara despues, una solicitud marcada para
+               rechazo podria reclamar un pago en la misma pasada y quedar
+               reclamando plata que despues se cancela.
+               Y si ya tenia un pago reclamado, NO se rechaza: el jugador pago y
+               lo que corresponde es aprobar. Es la misma guarda que hace el CRM
+               al aceptar el pedido, repetida aca porque entre una cosa y la
+               otra pudo entrar la transferencia. */
+            if (!empty($q['rechazo_pedido_en'])) {
+                if (!empty($q['pago_id_unico'])) {
+                    $datos[] = ['request_id' => $rid, 'decision' => 'nada',
+                                'usuario' => (string)$q['username'],
+                                'monto' => (float)$q['monto'],
+                                'motivo' => 'se pidio rechazarla pero YA tiene transferencia: '
+                                          . 'miralo, corresponde aprobar'];
+                    continue;
+                }
+                $datos[] = ['request_id' => $rid, 'decision' => 'rechazar',
+                            'usuario' => (string)$q['username'],
+                            'monto' => (float)$q['monto'],
+                            'motivo' => 'rechazo pedido desde el CRM'];
+                continue;
+            }
 
             // Ya tenia una transferencia reclamada de una vuelta anterior (el
             // worker se corto entre evaluar y confirmar): se le devuelve la
@@ -264,7 +299,10 @@ try {
         $estado  = (string)($body['estado'] ?? '');
         $mensaje = mb_substr((string)($body['mensaje'] ?? ''), 0, 250);
 
-        if (!$rid || !in_array($estado, ['aprobada', 'error', 'revisar'], true)) {
+        /* 'cerrada' la manda el worker cuando cancelo la solicitud en ganamos
+           (rechazo pedido desde el CRM). Es el mismo estado que usa el cierre
+           automatico: la solicitud ya no existe del lado de la plataforma. */
+        if (!$rid || !in_array($estado, ['aprobada', 'error', 'revisar', 'cerrada'], true)) {
             http_response_code(400);
             echo json_encode(['ok' => false, 'error' => 'Datos invalidos']);
             exit;
