@@ -27,6 +27,13 @@
  */
 
 declare(strict_types=1);
+
+/* Cuantas veces vuelve sola a la cola una accion que se sabe que NO se ejecuto
+   (hoy: solo el challenge del WAF). La cola corre cada minuto, asi que son ~5
+   minutos de insistir antes de pedir ayuda humana. Mas que esto ya no es un
+   corte pasajero y conviene que lo mire alguien. */
+const ACCION_REINTENTOS_MAX = 5;
+
 require __DIR__ . '/config.php';
 require __DIR__ . '/db.php';
 require __DIR__ . '/fichas_lib.php';
@@ -184,6 +191,74 @@ try {
         $id      = (int)($body['id'] ?? 0);
         $estado  = (string)($body['estado'] ?? '');
         $mensaje = mb_substr((string)($body['mensaje'] ?? ''), 0, 300);
+
+        /* 'reintentar' es el cuarto estado y NO se guarda: es un pedido del
+           worker. Significa "esto NO se ejecuto, y lo se con certeza -- volve a
+           ponerlo en la cola". Lo unico que lo manda hoy es el challenge del
+           WAF, que prueba que la request ni llego a la plataforma.
+           POR QUE HACE FALTA: antes esa carga quedaba en 'revisar' esperando a
+           una persona. A las 4 de la manana no hay persona, y el jugador que ya
+           transfirio se queda sin sus fichas hasta que alguien se despierte. */
+        if ($estado === 'reintentar') {
+            if (!$id) {
+                http_response_code(400);
+                echo json_encode(['ok' => false, 'error' => 'Falta id']);
+                exit;
+            }
+            $tope = ACCION_REINTENTOS_MAX;
+            try {
+                /* El tope es lo que lo hace seguro: sin el, un problema
+                   permanente reintentaria para siempre, y cada reintento es un
+                   POST que mueve plata. Se incrementa y se decide en UN solo
+                   UPDATE por fila, para que dos workers a la vez no puedan
+                   pasarse del tope. */
+                $pdo->prepare(
+                    "UPDATE acciones_saldo
+                        /* El IF va ANTES del incremento: MySQL evalua el SET de izquierda
+                           a derecha, asi que despues de `intentos = intentos + 1` la
+                           columna ya vale el valor NUEVO y la comparacion cortaba un
+                           intento antes de tiempo. Lo agarro t_reintento.php. */
+                        SET estado   = IF(intentos + 1 >= ?, 'revisar', 'pendiente'),
+                            intentos = intentos + 1,
+                            tomada_en = NULL,
+                            mensaje  = ?
+                      WHERE id = ? AND estado IN ('pendiente','procesando')"
+                )->execute([$tope, $mensaje !== '' ? $mensaje : null, $id]);
+                $q = $pdo->prepare("SELECT estado, intentos FROM acciones_saldo WHERE id = ?");
+                $q->execute([$id]);
+                $fila = $q->fetch(PDO::FETCH_ASSOC) ?: [];
+            } catch (Throwable $e) {
+                /* Sin la migracion 62 no existe `intentos`. Se cae al
+                   comportamiento de antes -- 'revisar' -- que es peor pero
+                   seguro: nunca reintenta a ciegas. */
+                error_log('acciones_cola/reintentar: ' . $e->getMessage());
+                $pdo->prepare(
+                    "UPDATE acciones_saldo SET estado='revisar', mensaje=?, ejecutada_en=NOW()
+                      WHERE id = ? AND estado IN ('pendiente','procesando')"
+                )->execute([$mensaje !== '' ? $mensaje : null, $id]);
+                $fila = ['estado' => 'revisar', 'intentos' => 0];
+            }
+            $agotado = ($fila['estado'] ?? '') === 'revisar';
+            if ($agotado && function_exists('tg_evento')) {
+                // Se agotaron los reintentos: ahora si hace falta una persona.
+                try {
+                    $q = $pdo->prepare("SELECT usuario, monto FROM acciones_saldo WHERE id = ?");
+                    $q->execute([$id]);
+                    $a = $q->fetch(PDO::FETCH_ASSOC) ?: [];
+                    tg_evento($pdo, 'salud', '⚠️ Una carga no entra ni reintentando', [
+                        'Jugador'   => (string)($a['usuario'] ?? '-'),
+                        'Fichas'    => number_format((float)($a['monto'] ?? 0), 0, ',', '.'),
+                        'Intentos'  => (string)($fila['intentos'] ?? '?'),
+                        'Respuesta' => $mensaje !== '' ? $mensaje : '(sin detalle)',
+                        'Donde'     => 'CRM > Cargas',
+                    ], 'deposito_fallo');
+                } catch (Throwable $e) { error_log('acciones_cola/aviso: ' . $e->getMessage()); }
+            }
+            echo json_encode(['ok' => true, 'reintentar' => !$agotado,
+                              'intentos' => (int)($fila['intentos'] ?? 0),
+                              'estado' => $fila['estado'] ?? 'revisar']);
+            exit;
+        }
 
         if (!$id || !in_array($estado, ['hecha', 'error', 'revisar'], true)) {
             http_response_code(400);

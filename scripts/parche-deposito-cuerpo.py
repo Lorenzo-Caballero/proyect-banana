@@ -41,8 +41,9 @@ def _gp_leer_cuerpo_deposito(cuerpo):
     if "/exhk" in t[:2000] or ("<noscript" in t[:2000].lower()
                                and 'http-equiv="refresh"' in t[:2000].lower()):
         # Challenge de ServicePipe: el WAF contesto el, la request NO llego al
-        # backend. El deposito NO ocurrio.
-        return "dudoso", "el WAF corto el deposito (challenge de ServicePipe)"
+        # backend. El deposito NO ocurrio, con CERTEZA -- por eso este es el
+        # unico caso que se puede reintentar sin riesgo de depositar dos veces.
+        return "reintentar", "el WAF corto el deposito (challenge de ServicePipe)"
     if t[0] == "<":
         return "dudoso", "vino HTML en vez de JSON (login o proxy)"
     try:
@@ -75,6 +76,11 @@ def evaluar_deposito(status, cuerpo=None):
         v, _ = _gp_leer_cuerpo_deposito(cuerpo)
         if v == "ok":
             return "hecha"
+        if v == "reintentar":
+            # La cola lo devuelve a 'pendiente' un numero acotado de veces y
+            # recien despues pide ayuda humana. Sin esto, un challenge suelto a
+            # las 4 AM dejaba al jugador esperando hasta que alguien despertara.
+            return "reintentar"
         # 'error' -> la API dijo que no: es seguro devolver las fichas.
         # 'dudoso' -> no se sabe: NO se devuelven (pudo entrar), lo mira alguien.
         return "error" if v == "error" else "revisar"

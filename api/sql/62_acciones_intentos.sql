@@ -1,0 +1,21 @@
+-- 62. Cuántas veces se intentó ejecutar una acción de saldo.
+--
+-- POR QUÉ: cuando el WAF corta un depósito, sabemos con certeza que la request
+-- NO llegó al backend (el challenge lo contesta el WAF, no la plataforma), así
+-- que repetirla no puede depositar dos veces. Pero hasta ahora esa carga
+-- quedaba en 'revisar' esperando a que la mire una persona -- y a las 4 de la
+-- mañana no hay ninguna. El jugador transfirió, no recibió nada, y se queda
+-- así hasta que alguien se despierte.
+--
+-- Con este contador la acción puede volver sola a la cola un número ACOTADO de
+-- veces. El tope es lo que hace que sea seguro: sin él, un problema permanente
+-- haría reintentar para siempre, y cada reintento es un POST que mueve plata.
+-- Agotados los intentos sí queda en 'revisar' y suena el Telegram.
+--
+-- Solo se reintenta lo que se sabe que NO se ejecutó. Cualquier otra duda
+-- (timeout, 5xx, respuesta ilegible) sigue yendo a 'revisar' directo: ahí no
+-- sabemos si entró, y reintentar sería pagar dos veces.
+--
+-- Idempotente: se corre en cada deploy (panel/provisionar.php).
+ALTER TABLE acciones_saldo
+    ADD COLUMN IF NOT EXISTS intentos TINYINT NOT NULL DEFAULT 0 AFTER estado;
