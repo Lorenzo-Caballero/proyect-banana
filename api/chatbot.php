@@ -1887,7 +1887,21 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
     }
     if ($nombre === 'identificar_usuario') {
         $u = trim((string)($args['usuario'] ?? ''));
-        if ($u === '') { return ['ok' => false, 'error' => 'falta usuario']; }
+        if ($u === '') { return ['ok' => false, 'error' => '¿Cuál es tu usuario del juego?']; }
+        /* TIENE QUE PARECER UN USUARIO. Esto no validaba nada, y el modelo le
+           pasaba lo que el jugador hubiera escrito: en produccion quedo una
+           conversacion cuya clave es "No tengo cuenta, quiero crear una" (la
+           frase entera del jugador, 7/9/2026). No es cosmetico -- la clave de
+           la conversacion ES el usuario (migracion 08), asi que esa persona
+           quedo en un chat fantasma, separada del suyo, y toda recarga o
+           consulta que hiciera despues apuntaba a un usuario inexistente.
+           Un usuario del juego es una sola palabra. Si no lo parece, no se
+           registra nada y se le vuelve a preguntar. */
+        if (!preg_match('/^[A-Za-z0-9._-]{3,50}$/', $u)) {
+            return ['ok' => false, 'codigo' => 'usuario_invalido',
+                    'error' => '¿Cuál es tu usuario del juego? '
+                             . 'Es una sola palabra, sin espacios.'];
+        }
         $st = $pdo->prepare("SELECT 1 FROM usuarios WHERE username = ? LIMIT 1");
         $st->execute([$u]);
         return ['ok' => true, 'usuario' => $u, 'existe' => (bool)$st->fetchColumn()];
