@@ -59,7 +59,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     }
 
     $limite = (int)($_GET['limite'] ?? NOTIF_MAX_POR_SONDEO);
-    salir(['ok' => true, 'notificaciones' => notif_pendientes($pdo, $deviceId, $limite)]);
+    $resp = ['ok' => true, 'notificaciones' => notif_pendientes($pdo, $deviceId, $limite)];
+    /* El estado de la RULETA viaja en el sondeo para que el APK no invente:
+       sus recordatorios locales (Enganche) tienen textos que prometen un giro,
+       y con la ruleta apagada del CRM esa promesa es falsa. El celular guarda
+       este flag y saltea esos textos. Best-effort: sin config_crm no viaja y
+       el APK asume prendida (el comportamiento de siempre). */
+    try {
+        require_once __DIR__ . '/config_crm.php';
+        if (function_exists('cfg_crm_activo')) {
+            $resp['ruleta'] = cfg_crm_activo($pdo, 'ruleta_activa');
+        }
+    } catch (Throwable $e) { /* sin flag */ }
+    salir($resp);
 }
 
 // ------------------------------- POST --------------------------------------

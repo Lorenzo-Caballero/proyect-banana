@@ -35,14 +35,19 @@ object Enganche {
     private const val HORA_DESDE = 9    // no antes de las 9 de la mañana
     private const val HORA_HASTA = 1    // ni despues de la 1 de la madrugada
 
-    /** Los textos. Van rotando en orden para no repetir siempre el mismo. */
+    /** Los textos. Van rotando en orden para no repetir siempre el mismo.
+     *  `esRuleta = true` marca los que PROMETEN un giro: esos se saltean
+     *  cuando el CRM tiene la ruleta apagada (el flag llega en el sondeo y lo
+     *  guarda Notificaciones.pendientes). Prometer un giro que el server va a
+     *  rechazar es peor que no avisar nada. */
+    private data class Mensaje(val titulo: String, val cuerpo: String, val esRuleta: Boolean = false)
     private val MENSAJES = listOf(
-        "🎰 Te esperan tus fichas" to "Entrá a ganamos y probá tu suerte. Hoy puede ser tu día.",
-        "🎁 Tenés un giro gratis" to "Girá la ruleta y llevate bonos para jugar.",
-        "🔥 ¿Volvemos a jugar?" to "Tus juegos favoritos te están esperando en la app.",
-        "💜 Tu cuenta te extraña" to "Entrá y mirá cómo quedaron tus fichas y tus bonos.",
-        "🪙 ¿Te quedaste sin fichas?" to "Recargá en segundos desde el chat y seguí jugando.",
-        "🎯 Probá la ruleta de hoy" to "Un giro por día, gratis. Puede salir 2.000 en bonos."
+        Mensaje("🎰 Te esperan tus fichas", "Entrá a ganamos y probá tu suerte. Hoy puede ser tu día."),
+        Mensaje("🎁 Tenés un giro gratis", "Girá la ruleta y llevate bonos para jugar.", esRuleta = true),
+        Mensaje("🔥 ¿Volvemos a jugar?", "Tus juegos favoritos te están esperando en la app."),
+        Mensaje("💜 Tu cuenta te extraña", "Entrá y mirá cómo quedaron tus fichas y tus bonos."),
+        Mensaje("🪙 ¿Te quedaste sin fichas?", "Recargá en segundos desde el chat y seguí jugando."),
+        Mensaje("🎯 Probá la ruleta de hoy", "Un giro por día, gratis. Puede salir 2.000 en bonos.", esRuleta = true)
     )
     // ======================================================================
 
@@ -105,19 +110,26 @@ object Enganche {
         val cuantos = if (mismoDia) p.getInt(K_HOY, 0) else 0
         if (cuantos >= MAX_POR_DIA) return false
 
-        val i = p.getInt(K_INDICE, 0) % MENSAJES.size
-        val (titulo, cuerpo) = MENSAJES[i]
+        /* Con la ruleta apagada, los textos que la prometen quedan afuera de la
+           rotación. El default es prendida: un APK que nunca recibió el flag
+           (server viejo) se comporta como siempre. */
+        val elegibles = if (p.getBoolean("ruleta_activa", true)) MENSAJES
+                        else MENSAJES.filterNot { it.esRuleta }
+        if (elegibles.isEmpty()) return false
+
+        val i = p.getInt(K_INDICE, 0) % elegibles.size
+        val m = elegibles[i]
 
         Notificaciones.mostrar(
             ctx,
-            Aviso(ID_NOTIFICACION, titulo, cuerpo, "promo", null)
+            Aviso(ID_NOTIFICACION, m.titulo, m.cuerpo, "promo", null)
         )
 
         p.edit()
             .putLong(K_ULTIMO_AVISO, ahora)
             .putString(K_DIA, hoy)
             .putInt(K_HOY, cuantos + 1)
-            .putInt(K_INDICE, (i + 1) % MENSAJES.size)
+            .putInt(K_INDICE, (i + 1) % elegibles.size)
             .apply()
         return true
     }

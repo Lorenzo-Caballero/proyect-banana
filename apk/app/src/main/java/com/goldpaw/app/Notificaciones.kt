@@ -191,12 +191,19 @@ object Notificaciones {
     // --------------------------------------------------------------------- red
 
     /** Lo que este celular todavia no vio. El server los marca al devolverlos. */
-    fun pendientes(deviceId: String): List<Aviso> {
+    fun pendientes(ctx: Context, deviceId: String): List<Aviso> {
         val url = "$API?accion=pendientes&device_id=" + URLEncoder.encode(deviceId, "UTF-8")
         val cuerpo = pedir(url, null) ?: return emptyList()
         return try {
             val raiz = JSONObject(cuerpo)
             if (!raiz.optBoolean("ok")) return emptyList()
+            /* El server aprovecha el sondeo para contar si la RULETA esta
+               prendida. Se guarda para que Enganche no prometa un giro que el
+               CRM apago. Si el server no lo manda (version vieja), no se toca
+               lo guardado. */
+            if (raiz.has("ruleta")) {
+                prefs(ctx).edit().putBoolean("ruleta_activa", raiz.optBoolean("ruleta", true)).apply()
+            }
             val arr = raiz.optJSONArray("notificaciones") ?: return emptyList()
             (0 until arr.length()).map { i ->
                 val o = arr.getJSONObject(i)

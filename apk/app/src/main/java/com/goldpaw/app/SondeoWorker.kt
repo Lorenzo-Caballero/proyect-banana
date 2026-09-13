@@ -36,7 +36,7 @@ class SondeoWorker(ctx: Context, params: WorkerParameters) : Worker(ctx, params)
         // El alta la hace el widget. Si todavia no corrio, no hay nada que pedir.
         val device = Notificaciones.deviceId(ctx)
 
-        val avisos = if (device != null) Notificaciones.pendientes(device) else emptyList()
+        val avisos = if (device != null) Notificaciones.pendientes(ctx, device) else emptyList()
         avisos.forEach { Notificaciones.mostrar(ctx, it) }
 
         // Solo si no hubo nada real que decir: un recordatorio encima de un

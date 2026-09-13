@@ -1930,16 +1930,18 @@
 
      NUNCA dentro del APK (APP): ahí la app ya está instalada y el bono se
      acredita solo al iniciar sesión (notif_registrar_dispositivo). */
-  /* Para el jugador YA LOGUEADO (viene en la respuesta del registro del
-     dispositivo): mismo modal, pero con freno de UNA vez por día por
-     dispositivo -- el registro corre en cada carga de página y sin el freno
-     el cartel sería spam. El flujo del alta NO pasa por acá: una cuenta
-     recién creada lo ve siempre (y deja marcado el día, para no repetirlo
-     a los dos minutos). */
+  /* Cada cuántos MINUTOS se puede repetir el cartel de la app. Cerrarlo no lo
+     apaga: Nahuel lo quiere insistente -- vuelve en cada carga de página, en
+     cada login, al volver a la pestaña, y cada tanto si la deja abierta. El
+     freno solo evita la ametralladora (el registro y el sondeo corren todo el
+     tiempo). */
+  var PROMO_APP_MIN = 30;
+  var ultimaPromoApp = null;   // lo último que mandó el server, para re-ofrecer
+
   function ofrecerPromoApp(promo){
     try {
-      var visto = parseInt(ls("gp_app_promo_dia") || "0", 10);
-      if (visto && (Date.now() - visto) < 24 * 60 * 60 * 1000) return;
+      var visto = parseInt(ls("gp_app_promo_visto") || "0", 10);
+      if (visto && (Date.now() - visto) < PROMO_APP_MIN * 60 * 1000) return;
     } catch (e) {}
     mostrarPromoApp(promo);
   }
@@ -1947,9 +1949,8 @@
   function mostrarPromoApp(promo){
     if (APP) return;                              // ya está en la app
     if (!promo || !(promo.fichas > 0)) return;
-    if (mostrarPromoApp._puesta) return;          // una por carga de página
-    mostrarPromoApp._puesta = true;
-    lss("gp_app_promo_dia", String(Date.now()));
+    if (document.getElementById("gpa-ov")) return;   // ya hay uno abierto
+    lss("gp_app_promo_visto", String(Date.now()));
 
     // La URL la manda el server (config app_url); sin ella, el APK de la
     // réplica. Se completa el esquema como hace el chatbot, porque el
@@ -1978,8 +1979,11 @@
       "font:700 15px system-ui,Segoe UI,Roboto,Arial,sans-serif;color:#2b1a00;text-decoration:none;box-sizing:border-box;"+
       "background:linear-gradient(145deg,#F0C567,#E3B14A);box-shadow:0 10px 26px rgba(227,177,74,.4)}"+
       ".gpa-nota{color:#9aa0c4;font-size:11.5px;margin-top:9px}";
-    var st = document.createElement("style"); st.textContent = css;
-    document.head.appendChild(st);
+    // El CSS una sola vez: el modal puede reaparecer varias veces por sesion.
+    if (!document.getElementById("gpa-css")){
+      var st = document.createElement("style"); st.id = "gpa-css"; st.textContent = css;
+      document.head.appendChild(st);
+    }
 
     var fichas = Number(promo.fichas).toLocaleString("es-AR");
     var ov = document.createElement("div");
@@ -3908,11 +3912,11 @@
           try { APP.vincular(APP_TK, DEVICE, USUARIO || ""); } catch (e) {}
         }
         /* El server manda app_promo a todo el que entre desde el NAVEGADOR
-           (anonimo incluido) salvo que ya tenga la app: se le ofrece el modal
-           con el freno de una vez por dia. Como este registro corre al
-           arrancar el widget, el cartel aparece a los segundos de abrir
-           /home. */
-        if (d.app_promo) ofrecerPromoApp(d.app_promo);
+           (anonimo incluido) salvo que ya tenga la app. Se guarda para poder
+           re-ofrecerlo cada tanto (mirarNotif); si el server dejo de mandarlo
+           (ya instalo, o se apago la promo), se deja de insistir. */
+        if (d.app_promo) { ultimaPromoApp = d.app_promo; ofrecerPromoApp(d.app_promo); }
+        else ultimaPromoApp = null;
       })
       .catch(function (){ notifRegistrado = null; });   // reintenta en el proximo sondeo
   }
@@ -3926,6 +3930,12 @@
     // Si el alta fallo, o el jugador cambio, se reintenta aca (cada 25 s) y no
     // en revisarSesion, que corre muchisimo mas seguido.
     if (notifRegistrado !== (USUARIO || "")) { notifRegistrar(); }
+
+    /* Con la pestaña abierta un buen rato, el cartel de la app vuelve solo
+       cada PROMO_APP_MIN minutos (el freno vive en ofrecerPromoApp). Si el
+       server dejo de mandar la promo, ultimaPromoApp quedo en null y no se
+       insiste mas. */
+    if (ultimaPromoApp) ofrecerPromoApp(ultimaPromoApp);
 
     fetch(API_NOTIF + "?accion=pendientes&device_id=" + encodeURIComponent(DEVICE))
       .then(function (r){ return r.json(); })
