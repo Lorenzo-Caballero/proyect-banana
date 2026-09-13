@@ -2527,6 +2527,14 @@
       } else {
         reiniciarCharla();
       }
+      /* Login nuevo = el cartel de la app vuelve a corresponder AHORA, sin
+         esperar el freno de PROMO_APP_MIN (pedido de Nahuel: mostrarlo cada
+         vez que cierra e inicia sesion). Esta rama corre SOLO en el cambio
+         de identidad -- una recarga de pagina con la sesion ya puesta no
+         pasa por aca, asi que el freno sigue mandando en la navegacion
+         normal. La respuesta del registrar de abajo trae app_promo (si no
+         tiene la app) y el ofrecer ya no encuentra el freno. */
+      lsd("gp_app_promo_visto");
       notifRegistrar();     // este celular ahora es de este jugador
     }
 
