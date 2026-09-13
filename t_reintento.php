@@ -106,6 +106,48 @@ $n = (int)$pdo->query(
     "SELECT COUNT(*) FROM acciones_saldo WHERE id=$id AND tipo='cargar' AND monto=3750")->fetchColumn();
 chequear('la accion sigue siendo la misma, por el mismo monto', $n === 1);
 
+echo "\n=== 5. El watchdog cuenta lo que tiene que contar ===\n";
+/* scripts/monitor-cargas.sh avisa cuando hay cargas que el jugador pago y no
+   recibio. Lo que se fija aca es SU CONSULTA: si cuenta de mas, avisa siempre
+   y nadie lo lee; si cuenta de menos, no avisa cuando importa. */
+$pdo->prepare("DELETE FROM acciones_saldo WHERE usuario = ?")->execute([$U]);
+$meter = function (string $tipo, string $estado, string $edad) use ($pdo, $U) {
+    $pdo->prepare("INSERT INTO acciones_saldo (usuario,tipo,monto,estado,creada_en)
+                   VALUES (?,?,1000,?, NOW() - INTERVAL $edad)")->execute([$U, $tipo, $estado]);
+};
+$contar = function () use ($pdo, $U): int {
+    // Copia de la consulta de monitor-cargas.sh. Si divergen, esto no protege nada.
+    $st = $pdo->prepare(
+        "SELECT COUNT(*) FROM acciones_saldo
+          WHERE usuario = ? AND tipo='cargar' AND estado IN ('pendiente','procesando')
+            AND creada_en < NOW() - INTERVAL 10 MINUTE
+            AND creada_en > NOW() - INTERVAL 1 DAY");
+    $st->execute([$U]);
+    return (int)$st->fetchColumn();
+};
+
+$meter('cargar', 'pendiente', '2 MINUTE');
+chequear('una carga recien creada NO cuenta (todavia esta a tiempo)', $contar() === 0);
+
+$meter('cargar', 'pendiente', '40 MINUTE');
+chequear('una carga de 40 min SI cuenta', $contar() === 1);
+
+/* Un retiro espera la aprobacion de un agente: puede estar horas en pendiente y
+   es lo normal. Si contara, el watchdog avisaria todos los dias. */
+$meter('retirar', 'pendiente', '40 MINUTE');
+chequear('un retiro esperando aprobacion NO cuenta', $contar() === 1);
+
+/* Hay acciones viejas trabadas de epocas en que el worker no corria. Sin el
+   corte de 1 dia, el watchdog avisaria para siempre por historia antigua -- y
+   un aviso que suena siempre no se lee. */
+$meter('cargar', 'pendiente', '40 DAY');
+chequear('una carga de hace 40 dias NO cuenta (es historia, no una emergencia)',
+         $contar() === 1);
+
+$meter('cargar', 'hecha', '40 MINUTE');
+chequear('una carga ya hecha NO cuenta', $contar() === 1);
+
+
 $pdo->prepare("DELETE FROM acciones_saldo WHERE usuario = ?")->execute([$U]);
 
 echo "\n---------------------------------------\n";
