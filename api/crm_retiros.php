@@ -106,13 +106,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $hayHg = true;
             try { $pdo->query("SELECT destino FROM acciones_saldo LIMIT 0"); }
             catch (Throwable $e) { $hayHg = false; }
+            /* El nombre y el CUIT del destino son de la misma migracion que
+               `destino`, y son EL dato que se necesita para pagarle: el CBU
+               solo no alcanza -- hay que confirmar que la cuenta sea suya. */
             $colsHg = $hayHg
-                ? ", COALESCE(destino,'') destino, COALESCE(hg_estado,'') hg_estado"
-                : ", '' destino, '' hg_estado";
+                ? ", COALESCE(destino,'') destino, COALESCE(hg_estado,'') hg_estado,
+                     COALESCE(destino_nombre,'') destino_nombre,
+                     COALESCE(destino_cuit,'') destino_cuit"
+                : ", '' destino, '' hg_estado, '' destino_nombre, '' destino_cuit";
 
             $st = $pdo->prepare(
                 "SELECT id, usuario, monto, motivo, estado, aprobado, tomada_en, mensaje,
-                        saldo_antes, saldo_despues, creada_en, ejecutada_en $colsHg
+                        saldo_antes, saldo_despues, creada_en, ejecutada_en,
+                        TIMESTAMPDIFF(MINUTE, creada_en, NOW()) AS espera_min $colsHg
                    FROM acciones_saldo
                   WHERE " . implode(' AND ', $where) . "
                   ORDER BY creada_en DESC
@@ -123,6 +129,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 $r['id']            = (int)$r['id'];
                 $r['monto']         = (float)$r['monto'];
                 $r['aprobado']      = (int)($r['aprobado'] ?? 0);
+                $r['espera_min']    = $r['espera_min'] !== null ? (int)$r['espera_min'] : null;
                 $r['saldo_antes']   = $r['saldo_antes']   !== null ? (float)$r['saldo_antes']   : null;
                 $r['saldo_despues'] = $r['saldo_despues'] !== null ? (float)$r['saldo_despues'] : null;
                 return $r;
@@ -253,6 +260,73 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             crm_bitacora($pdo, $operador, 'reintentar_retiro', "id $id");
             salir(['ok' => true]);
+        }
+
+        /* ---- marcar como PAGADO A MANO ----
+           El agujero mas concreto de esta pantalla: un retiro en 'revisar'
+           (p. ej. "retiro: lo resuelve un agente") no tenia forma de cerrarse.
+           La unica accion disponible era CANCELAR, que le devuelve el saldo --
+           o sea que despues de pagarle por transferencia, la unica opcion del
+           CRM era regalarle la plata otra vez. Por eso quedaban ahi para
+           siempre: en la captura de Nahuel habia uno de hace 26 dias.
+
+           Esto cierra el pedido SIN tocar saldo: la plata ya salio del banco,
+           el jugador ya la tiene, lo unico que falta es dejarlo registrado.
+           Pide nota obligatoria porque es la unica prueba de que se pago: no
+           hay comprobante automatico del otro lado. */
+        if ($accion === 'marcar_pagado') {
+            $id   = (int)($body['id'] ?? 0);
+            $nota = trim((string)($body['nota'] ?? ''));
+            $NOTA_MAX = 200;
+
+            if (!$id) { salir(['ok' => false, 'error' => 'Falta id'], 400); }
+            if (mb_strlen($nota) < 8) {
+                salir(['ok' => false, 'error' =>
+                    'Contá cómo lo pagaste (mínimo 8 caracteres). Es la única constancia.'], 400);
+            }
+            if (mb_strlen($nota) > $NOTA_MAX) {
+                salir(['ok' => false, 'error' => "La nota es muy larga (máximo $NOTA_MAX caracteres)"], 400);
+            }
+            if (!crm_rate_limite("pagado_retiro_$operador", 30, 3600)) {
+                salir(['ok' => false, 'error' => 'Demasiados en poco tiempo. Esperá un rato.'], 429);
+            }
+
+            /* Estados desde los que se puede: los que estan ESPERANDO que pase
+               algo. Desde 'hecha' no (ya esta), desde 'cancelada' tampoco (se
+               decidio no pagarlo, y revivirlo a mano esconderia esa decision),
+               y desde 'procesando' menos: el bot puede estar ejecutandolo justo
+               ahora y quedarian dos pagos. */
+            $st = $pdo->prepare(
+                "SELECT id, usuario, monto, estado, mensaje FROM acciones_saldo
+                  WHERE id = ? AND tipo = 'retirar' LIMIT 1"
+            );
+            $st->execute([$id]);
+            $fila = $st->fetch(PDO::FETCH_ASSOC);
+            if (!$fila) { salir(['ok' => false, 'error' => 'Ese retiro no existe'], 404); }
+            if (!in_array($fila['estado'], ['pendiente', 'revisar', 'error'], true)) {
+                salir(['ok' => false, 'error' =>
+                    'No se puede marcar como pagado un retiro en estado: ' . $fila['estado']], 409);
+            }
+
+            $msg = mb_substr("pagado a mano por $operador: $nota", 0, 300);
+            $upd = $pdo->prepare(
+                "UPDATE acciones_saldo
+                    SET estado = 'hecha', mensaje = ?, ejecutada_en = NOW()
+                  WHERE id = ? AND tipo = 'retirar'
+                    AND estado IN ('pendiente','revisar','error')"
+            );
+            $upd->execute([$msg, $id]);
+            if ($upd->rowCount() === 0) {
+                salir(['ok' => false, 'error' =>
+                    'Otro operador lo tocó recién. Recargá y fijate cómo quedó.'], 409);
+            }
+
+            crm_bitacora($pdo, $operador, 'retiro_pagado_a_mano', json_encode([
+                'id' => $id, 'usuario' => $fila['usuario'],
+                'monto' => (float)$fila['monto'], 'desde' => $fila['estado'], 'nota' => $nota,
+            ], JSON_UNESCAPED_UNICODE));
+
+            salir(['ok' => true, 'mensaje' => 'Retiro marcado como pagado']);
         }
 
         // ---- cancelar (puntual, solo desde pendiente o error) ----

@@ -1193,6 +1193,28 @@
   .cg-fichas.ok{background:rgba(62,224,138,.12);color:#3ee08a}
   .cg-fichas.en-curso{background:rgba(245,166,35,.14);color:#f5a623}
   .cg-fichas.trabado{background:rgba(229,89,93,.16);color:#ff7a7e}
+
+  /* ---- Retiros: el destino es el dato con el que se trabaja ----
+     Para pagarle hay que pegar ese CBU en el panel de ganamos. Estaba en gris
+     dentro del subtitulo, detras de una flechita, y habia que seleccionarlo a
+     mano sin agarrar de mas. Ahora es un boton: un toque y esta en el
+     portapapeles. */
+  .ret-row .rr-destino{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin-top:6px}
+  .ret-row .rr-copiar{display:inline-flex;align-items:center;gap:7px;cursor:pointer;
+    background:var(--panel3);border:1px solid var(--line);border-radius:9px;
+    padding:4px 9px;color:var(--txt);font:inherit}
+  .ret-row .rr-copiar:hover{border-color:var(--brand)}
+  .ret-row .rr-copiar code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;
+    letter-spacing:.2px}
+  .ret-row .rr-copiar .ico{width:13px;height:13px;opacity:.75;flex:none}
+  .ret-row .rr-dato{color:var(--muted);font-size:12px}
+  .ret-row .rr-dato.falta{color:var(--red)}
+  /* Ancho fijo: si los botones cambian por fila, el monto de al lado baila y
+     la columna deja de leerse como columna. */
+  .ret-row .rr-acciones{display:flex;gap:6px;justify-content:flex-end;min-width:190px;flex:none}
+  @media(max-width:760px){
+    .ret-row .rr-acciones,.carga-row .cg-acciones{min-width:0;flex-wrap:wrap}
+  }
   .carga-tag{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap}
   .carga-tag.pendiente{background:var(--panel2);color:var(--muted);border:1px solid var(--line)}
   .carga-tag.acreditada{background:var(--greenSoft);color:var(--green2);border:1px solid var(--green)}
@@ -5628,6 +5650,7 @@
     diana:   '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4"/>',
     rayo:    '<path d="M13 2 4.5 13.5H11l-1 8.5 8.5-11.5H12z"/>',
     ok:      '<circle cx="12" cy="12" r="9"/><path d="m8.5 12.2 2.4 2.4 4.6-4.9"/>',
+    copiar:  '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
     movil:   '<rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18.5h2"/>',
     globo:   '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
     campana: '<path d="M18 8a6 6 0 0 0-12 0c0 6-3 7-3 7h18s-3-1-3-7"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/>',
@@ -7142,6 +7165,14 @@
       if(r.estado==="error"){
         btns.push(`<button class="btn-mini-accion" data-accion="reintentar" data-id="${r.id}" type="button">Reintentar</button>`);
       }
+      /* MARCAR COMO PAGADO: el retiro se paga POR FUERA (transferencia desde
+         el panel), asi que el CRM necesita una forma de cerrarlo. Sin esto, un
+         retiro en 'revisar' solo se podia CANCELAR -- que le devuelve el saldo
+         al jugador al que acabas de pagarle. Por eso quedaban eternos: en la
+         captura de Nahuel habia uno de 26 dias. */
+      if(r.estado==="pendiente" || r.estado==="revisar" || r.estado==="error"){
+        btns.push(`<button class="btn-mini-accion exito" data-accion="pagado" data-id="${r.id}" type="button" title="Ya le transferiste: cerrar el pedido">Pagado</button>`);
+      }
       // Cancelar: solo desde pendiente o error -- nunca desde 'procesando'
       // (el bot podria estar ejecutandolo en este instante).
       if(r.estado==="pendiente" || r.estado==="error"){
@@ -7160,14 +7191,42 @@
       const hgChip = r.hg_estado
         ? `<span class="ret-tag ${r.hg_estado==="DONE"?"hecha":(r.hg_estado==="ERROR"?"error":"procesando")}">${esc(HG_TXT[r.hg_estado]||("HG: "+r.hg_estado))}</span>`
         : "";
+      /* EL DESTINO, ARRIBA Y COPIABLE. Es el dato con el que se hace el
+         trabajo: para pagarle hay que pegar ese CBU en el panel. Estaba
+         perdido en el subtitulo, en gris, detras de una flechita -- habia que
+         seleccionarlo con el mouse sin agarrar de mas. El nombre y el CUIT van
+         al lado porque el CBU solo no alcanza: hay que confirmar que la cuenta
+         sea del jugador antes de mandar plata. */
+      const saldo = r.saldo_antes!=null
+        ? `<span class="rr-dato">Saldo antes: ${money(r.saldo_antes)}</span>` : "";
+
+      const dest = r.destino
+        ? `<div class="rr-destino">
+             <button class="rr-copiar" data-copiar="${esc(r.destino)}" type="button"
+                     title="Copiar para pegarlo en el panel">${ico("copiar")}<code>${esc(r.destino)}</code></button>
+             ${r.destino_nombre ? `<span class="rr-dato">${esc(r.destino_nombre)}</span>` : ""}
+             ${r.destino_cuit ? `<span class="rr-dato">CUIT ${esc(r.destino_cuit)}</span>` : ""}
+             ${saldo}
+           </div>`
+        : `<div class="rr-destino"><span class="rr-dato falta">Sin CBU/alias — pedíselo por el chat</span></div>`;
+
+      /* Cuanto hace que espera, y solo cuando ya es mucho. Un retiro de hace
+         diez minutos no necesita un cartel; uno de tres dias si. */
+      const dias = r.espera_min!=null ? Math.floor(r.espera_min/1440) : 0;
+      const abierto = r.estado!=="hecha" && r.estado!=="cancelada";
+      const chipEspera = (abierto && dias >= 1)
+        ? `<span class="urg-chip ${dias>=3?"crit":"warn"}">${ico("reloj")}Espera hace ${dias} ${dias===1?"día":"días"}</span>`
+        : "";
+
       return `<div class="ret-row">
         <div class="rr-mid">
-          <div class="rr-user">@${esc(r.usuario)}<span class="ret-tag ${esc(r.estado)}">${esc(tagTxt)}</span>${hgChip}</div>
-          <div class="rr-sub">#${r.id} · ${hace(r.creada_en)}${r.motivo?" · "+esc(r.motivo):""}${r.destino?" · → "+esc(r.destino):""}</div>
+          <div class="rr-user">@${esc(r.usuario)}<span class="ret-tag ${esc(r.estado)}">${esc(tagTxt)}</span>${hgChip}${chipEspera}</div>
+          <div class="rr-sub">#${r.id} · ${hace(r.creada_en)}${r.motivo?" · "+esc(r.motivo):""}</div>
+          ${dest}
           ${nota}
         </div>
         <div class="rr-monto">${money(r.monto)}</div>
-        <div style="display:flex;gap:6px">${btns.join("")}</div>
+        <div class="rr-acciones">${btns.join("")}</div>
       </div>`;
     }).join("");
     $("#retList").querySelectorAll("[data-accion='aprobar']").forEach(btn=>{
@@ -7182,6 +7241,58 @@
         if(fila) abrirCancelarRetiro(fila);
       });
     });
+    $("#retList").querySelectorAll("[data-accion='pagado']").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const fila = d.items.find(x=>x.id===+btn.getAttribute("data-id"));
+        if(fila) marcarRetiroPagado(fila, btn);
+      });
+    });
+    /* Copiar el CBU de un toque. Es el gesto del trabajo real: se copia acá y
+       se pega en el panel de ganamos para transferir. */
+    $("#retList").querySelectorAll("[data-copiar]").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        const val = btn.getAttribute("data-copiar");
+        try{
+          await navigator.clipboard.writeText(val);
+          toast("Copiado: " + val);
+        }catch(e){
+          /* Sin permiso de portapapeles (o sin HTTPS): al menos se selecciona
+             para que se pueda copiar a mano, en vez de no hacer nada. */
+          const r = document.createRange();
+          r.selectNodeContents(btn.querySelector("code"));
+          const s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+          toast("Copialo con Ctrl+C");
+        }
+      });
+    });
+  }
+
+  /* Cerrar un retiro que se pagó POR FUERA (transferencia desde el panel). Sin
+     esto, la única salida era Cancelar -- que le devuelve el saldo a alguien a
+     quien ya le pagaste. La nota es obligatoria porque es la única constancia:
+     del otro lado no queda comprobante automático. */
+  async function marcarRetiroPagado(r, btn){
+    const nota = prompt(
+      `Marcar como PAGADO el retiro de ${money(r.monto)} de @${r.usuario}.
+
+` +
+      `Esto NO transfiere nada: es para cuando YA le pagaste desde el panel.
+` +
+      `No le devuelve el saldo.
+
+` +
+      `¿Cómo se lo pagaste? (queda como constancia)`, "");
+    if(nota === null) return;
+    if(nota.trim().length < 8){ toast("Contá cómo lo pagaste, al menos 8 caracteres"); return; }
+    btn.disabled = true; btn.textContent = "…";
+    const d = await jpost({accion:"marcar_pagado", id:r.id, nota:nota.trim()}, API_RET);
+    if(d.ok){
+      toast(d.mensaje || "Retiro marcado como pagado");
+      cargarRetiros(); actualizarBadgeRetiros();
+    } else {
+      btn.disabled = false; btn.textContent = "Pagado";
+      toast(d.error || "No se pudo marcar");
+    }
   }
 
   async function aprobarRetiro(id, btn){
