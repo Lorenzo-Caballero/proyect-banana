@@ -1430,13 +1430,20 @@ function chatbot_reconectar_derivacion(PDO $pdo, string $sessionId, string $usua
         // Se hace en un solo UPDATE condicional (no leer-despues-escribir): dos
         // mensajes del jugador entrando a la vez no reconectan dos veces ni se
         // pisan. Devuelve 1 fila solo si de verdad estaba derivada y ya vencio.
+        /* El ancla es ia_silencio_en (migracion 60), NO derivada_en: al
+           atender, el CRM BORRA derivada_en para bajar el badge, y con eso la
+           condicion de abajo no se cumplia nunca -- el bot quedaba mudo para
+           siempre. ia_silencio_en marca cuando se callo solo (porque entro un
+           agente) y sobrevive a que se atienda la derivacion.
+           Si el operador lo apago A MANO, ia_silencio_en queda NULL y el bot no
+           se despierta: apagar con el switch sigue siendo para siempre. */
         $st = $pdo->prepare(
             "UPDATE conversaciones
-                SET ia_activa = 1, derivada_en = NULL, derivada_motivo = NULL
+                SET ia_activa = 1, ia_silencio_en = NULL
               WHERE clave = ?
                 AND COALESCE(ia_activa, 1) = 0
-                AND derivada_en IS NOT NULL
-                AND derivada_en <= NOW() - INTERVAL ? MINUTE"
+                AND ia_silencio_en IS NOT NULL
+                AND ia_silencio_en <= NOW() - INTERVAL ? MINUTE"
         );
         $st->execute([$clave, $min]);
         return $st->rowCount() > 0;
@@ -1757,18 +1764,21 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
             if (function_exists('crm_conversacion_id') && $sid !== '') {
                 $convId = crm_conversacion_id($pdo, $sid, $usuarioSesion !== '' ? $usuarioSesion : null);
                 if ($convId) {
-                    // Se APAGA la IA (ia_activa=0), no solo se marca la
-                    // derivacion. Sin esto el bot seguia conversando despues de
-                    // derivar -- respondia con el modelo en vez del mensaje fijo
-                    // (visto en el chat de holatesteo163, 11/9) -- y ademas la
-                    // reconexion a los 30 min no aplicaba nunca, porque el guard
-                    // que la dispara solo corre con ia_activa=0.
-                    // Solo si NO estaba ya derivada: si el jugador insiste, no
-                    // se pisa la hora original ni se vuelve a avisar (y la IA ya
-                    // quedo apagada de la primera vez).
+                    /* DERIVAR YA NO APAGA LA IA. Se avisa al agente y se marca
+                       la conversacion, pero el bot SIGUE ATENDIENDO: puede
+                       resolverle una carga, pasarle el alias o contestarle el
+                       saldo mientras el agente llega.
+                       Antes se apagaba aca, y el resultado era un jugador
+                       hablandole a una pared: en el chat de holaJorge443 (12/9)
+                       pidio retirar ~20 veces entre las 04:25 y las 06:45 y
+                       siempre recibio la misma frase enlatada. El bot se calla
+                       cuando el agente ESCRIBE DE VERDAD (crm.php, accion
+                       'responder'), que es cuando hay alguien del otro lado.
+                       Solo si NO estaba ya derivada: si el jugador insiste, no se
+                       pisa la hora original ni se vuelve a avisar. */
                     $upd = $pdo->prepare(
                         "UPDATE conversaciones
-                            SET ia_activa = 0, derivada_en = NOW(), derivada_motivo = ?
+                            SET derivada_en = NOW(), derivada_motivo = ?
                           WHERE id = ? AND derivada_en IS NULL"
                     );
                     $upd->execute([mb_substr($motivo, 0, 255), $convId]);

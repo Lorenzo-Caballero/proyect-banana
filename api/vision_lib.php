@@ -151,16 +151,19 @@ TXT;
         ]],
     ]);
 
+    /* OJO CON EL WORKSPACE: si la key de Anthropic es a nivel ORGANIZACION (no
+       scopeada a un workspace), la API exige el header anthropic-workspace-id y
+       si no responde 400. Sin esto la vision fallaba SIEMPRE y el bot contestaba
+       "no puedo leer la imagen" a cada comprobante -- justo cuando mas se
+       necesita, porque el que recarga por segunda vez no avisa nada: manda la
+       foto y listo, y sin leerla el matcher no tiene con que desempatar.
+       Mismo header que usa el chat (ver CLAUDE_COMPAT_BASE en chatbot.php). */
     $ch = curl_init('https://api.anthropic.com/v1/messages');
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST           => true,
         CURLOPT_POSTFIELDS     => $payload,
-        CURLOPT_HTTPHEADER     => [
-            'Content-Type: application/json',
-            'x-api-key: ' . cfg('ANTHROPIC_API_KEY'),
-            'anthropic-version: 2023-06-01',
-        ],
+        CURLOPT_HTTPHEADER     => vision_headers(),
         CURLOPT_TIMEOUT        => 45,
     ]);
     $raw  = curl_exec($ch);
@@ -171,8 +174,9 @@ TXT;
     if ($raw === false || $http !== 200) {
         error_log('vision_extraer_comprobante: HTTP ' . $http . ' ' . $err . ' ' . substr((string)$raw, 0, 300));
         return ['ok' => false, 'codigo' => 'api', 'error' =>
-            'No pude leer el comprobante en este momento. Pedile los datos por '
-            . 'texto: titular de su cuenta y numero de operacion.'];
+            'No pude leer el comprobante en este momento. Pedile por texto el '
+            . 'nombre del TITULAR de la cuenta desde la que transfirio -- con '
+            . 'eso alcanza para casarlo. NO le pidas el numero de operacion.'];
     }
 
     $data  = json_decode((string)$raw, true);
@@ -209,4 +213,21 @@ TXT;
         'fecha'           => mb_substr(trim((string)($d['fecha'] ?? '')), 0, 60),
         'entidad'         => mb_substr(trim((string)($d['entidad'] ?? '')), 0, 60),
     ]];
+}
+
+if (!function_exists('vision_headers')) {
+    /** Headers para la API de Anthropic. El workspace va SOLO si esta
+     *  configurado: con una key ya scopeada a un workspace no hace falta, y
+     *  mandarlo vacio seria peor. */
+    function vision_headers(): array
+    {
+        $h = [
+            'Content-Type: application/json',
+            'x-api-key: ' . cfg('ANTHROPIC_API_KEY'),
+            'anthropic-version: 2023-06-01',
+        ];
+        $ws = trim((string)cfg('ANTHROPIC_WORKSPACE_ID', ''));
+        if ($ws !== '') { $h[] = 'anthropic-workspace-id: ' . $ws; }
+        return $h;
+    }
 }

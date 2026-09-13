@@ -1,0 +1,23 @@
+-- 60_ia_silencio.sql — cuando el bot se callo SOLO, para poder despertarlo solo.
+--
+-- EL AGUJERO QUE TAPA: el bot quedaba mudo PARA SIEMPRE. La cadena era:
+--   1. pasar_a_agente ponia ia_activa=0 y derivada_en=NOW();
+--   2. el agente respondia y BORRABA derivada_en (para bajar el badge del rail),
+--      dejando ia_activa=0 a proposito;
+--   3. la reconexion automatica exige derivada_en IS NOT NULL... que ya no esta.
+-- Resultado: nadie volvia a prenderlo salvo a mano. Visto en el chat de
+-- holaJorge443 (12/9): pidio retirar ~20 veces entre las 04:25 y las 06:45 y
+-- SIEMPRE recibio "en un momento te responde un agente", toda la madrugada.
+--
+-- `ia_silencio_en` marca CUANDO se callo el bot solo (porque un agente entro a
+-- contestar). Es lo que permite despertarlo despues de un rato sin respuestas
+-- del agente, sin depender de derivada_en -- que se borra al atender y es lo
+-- que rompia el circuito.
+--
+-- DISTINGUE EL APAGADO MANUAL: si el operador lo apaga con el switch, esta
+-- columna queda NULL, y sin marca no hay despertar automatico. Apagar a mano
+-- sigue siendo para siempre, que es lo que el operador espera.
+--
+-- Aditiva e idempotente.
+ALTER TABLE conversaciones
+  ADD COLUMN IF NOT EXISTS ia_silencio_en DATETIME NULL AFTER ia_activa;

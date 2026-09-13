@@ -1265,6 +1265,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 )->execute([$id]);
             }
 
+            /* ACA se calla el bot, y no al derivar: recien ahora hay una persona
+               del otro lado. Derivar solo avisa; mientras el agente no aparece,
+               el bot sigue resolviendo (una carga, el alias, el saldo).
+               ia_silencio_en (migracion 60) deja la marca de que se callo SOLO,
+               que es lo que despues permite despertarlo si el agente no vuelve a
+               escribir en ia_reconectar_min. Antes se apagaba al derivar y el
+               despertar dependia de derivada_en, que estas mismas lineas de
+               arriba borran: por eso quedaba mudo para siempre. */
+            try {
+                $pdo->prepare(
+                    "UPDATE conversaciones SET ia_activa = 0, ia_silencio_en = NOW() WHERE id = ?"
+                )->execute([$id]);
+            } catch (Throwable $e) {
+                // Sin la migracion 60 no existe la columna: al menos se calla.
+                try {
+                    $pdo->prepare("UPDATE conversaciones SET ia_activa = 0 WHERE id = ?")->execute([$id]);
+                } catch (Throwable $e2) { error_log('responder/ia_activa: ' . $e2->getMessage()); }
+            }
+
             /* La respuesta del agente llega cuando llega: es el caso donde mas
                falta hace el aviso, porque el jugador casi nunca sigue mirando.
                El que esta adentro no lo ve dos veces: ya lo recibe por
@@ -1510,6 +1529,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $id = (int)($body['id'] ?? 0);
             if (!$id) { salir(['ok' => false, 'error' => 'Falta id'], 400); }
             $activa = !empty($body['activa']) ? 1 : 0;
+            /* Se limpia ia_silencio_en en las dos direcciones: apagar A MANO no
+               deja marca, asi que el bot NO se despierta solo (es una decision
+               del operador y se respeta); y al prenderlo tampoco queda una marca
+               vieja que lo vuelva a dormir. */
+            try {
+                $pdo->prepare("UPDATE conversaciones SET ia_silencio_en = NULL WHERE id = ?")->execute([$id]);
+            } catch (Throwable $e) { /* sin migracion 60 */ }
             $pdo->prepare("UPDATE conversaciones SET ia_activa = ? WHERE id = ?")
                 ->execute([$activa, $id]);
             salir(['ok' => true, 'ia_activa' => (bool)$activa]);

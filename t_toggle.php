@@ -119,19 +119,40 @@ chequear('el chatbot ARREGLADO ve la IA apagada aunque el post venga anonimo',
 chequear('la logica VIEJA daba IA activa (documenta la regresion)',
          ia_activa_vieja($pdo, $SID, '') === true);
 
-echo "\n=== 5. La reconexion NO revive un apagado manual (derivada_en NULL) ===\n";
-// Mismo UPDATE condicional que chatbot_reconectar_derivacion, ventana 0 min.
-$rec = $pdo->prepare(
-    "UPDATE conversaciones SET ia_activa = 1, derivada_en = NULL, derivada_motivo = NULL
-      WHERE clave = ? AND COALESCE(ia_activa,1) = 0
-        AND derivada_en IS NOT NULL AND derivada_en <= NOW() - INTERVAL 0 MINUTE");
-$rec->execute([$USR]);
-chequear('un apagado manual (sin derivada_en) no lo reconecta ni con 0 min',
-         $rec->rowCount() === 0, 'filas=' . $rec->rowCount());
-chequear('y sigue apagado despues del intento de reconexion',
+echo "\n=== 5. El bot se calla cuando ESCRIBE el agente, no al derivar ===\n";
+/* Derivar solo AVISA: marca la conversacion y deja al bot atendiendo. Antes
+   apagaba la IA ahi mismo y el jugador quedaba hablandole a una pared -- en el
+   chat de holaJorge443 (12/9) pidio retirar ~20 veces entre las 04:25 y las
+   06:45 y siempre recibio la misma frase enlatada. */
+$pdo->prepare("UPDATE conversaciones SET ia_activa=1, ia_silencio_en=NULL, derivada_en=NOW() WHERE id=?")
+    ->execute([$idU]);
+chequear('derivar NO apaga el bot: sigue resolviendo mientras llega el agente',
+         ia_activa_chatbot($pdo, $SID, $USR) === true);
+// El agente escribe: RECIEN AHI se calla, con la marca de que fue automatico.
+$pdo->prepare("UPDATE conversaciones SET ia_activa=0, ia_silencio_en=NOW() WHERE id=?")->execute([$idU]);
+chequear('cuando el agente escribe de verdad, el bot se calla',
          ia_activa_chatbot($pdo, $SID, $USR) === false);
 
-echo "\n=== 6. El agente vuelve a prender el bot ===\n";
+echo "\n=== 6. Se despierta solo si el agente no vuelve; el manual no ===\n";
+// Mismo UPDATE que chatbot_reconectar_derivacion (ventana 0 min para el test).
+$rec = $pdo->prepare(
+    "UPDATE conversaciones SET ia_activa = 1, ia_silencio_en = NULL
+      WHERE clave = ? AND COALESCE(ia_activa,1) = 0
+        AND ia_silencio_en IS NOT NULL AND ia_silencio_en <= NOW() - INTERVAL 0 MINUTE");
+$rec->execute([$USR]);
+chequear('callado por el agente: se despierta al pasar la ventana',
+         $rec->rowCount() === 1, 'filas=' . $rec->rowCount());
+chequear('y vuelve a atender', ia_activa_chatbot($pdo, $SID, $USR) === true);
+/* Apagado A MANO: sin marca de silencio. Es una decision del operador y se
+   respeta -- no se despierta nunca solo. Esta distincion es la que hace que el
+   despertar automatico sea seguro. */
+$pdo->prepare("UPDATE conversaciones SET ia_activa=0, ia_silencio_en=NULL WHERE id=?")->execute([$idU]);
+$rec->execute([$USR]);
+chequear('apagado a mano (sin marca) NO se despierta solo',
+         $rec->rowCount() === 0, 'filas=' . $rec->rowCount());
+chequear('y sigue apagado', ia_activa_chatbot($pdo, $SID, $USR) === false);
+
+echo "\n=== 7. El agente vuelve a prender el bot ===\n";
 $pdo->prepare("UPDATE conversaciones SET ia_activa = 1 WHERE id = ?")->execute([$idU]);
 chequear('con usuario, el bot se ve prendido', ia_activa_chatbot($pdo, $SID, $USR) === true);
 chequear('y anonimo tambien (misma fila)', ia_activa_chatbot($pdo, $SID, '') === true);
