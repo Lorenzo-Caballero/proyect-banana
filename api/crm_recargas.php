@@ -67,10 +67,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             } elseif (in_array($estado, ['acreditada', 'cancelada'], true)) {
                 $where[]  = 'estado = ?';
                 $params[] = $estado;
+            } elseif ($estado === 'todas') {
+                // El historial completo, vencidas incluidas. Pestaña aparte
+                // porque no es lo que se viene a mirar a esta pantalla.
+                // (sin condicion de estado)
             } else {
-                // "Todos" (sin filtro explicito): excluir vencidas, mismo
-                // criterio que Retiros excluye 'cancelada' por defecto --
-                // hay un tab aparte para consultarlas.
+                /* El default ("Activas") deja afuera las vencidas: son
+                   transferencias que nunca llegaron y no piden nada. Se
+                   llamaba "Todos", y con 21 ahi y 52 en "Vencida" el numero no
+                   cerraba ni habia forma de entender por que. Mismo criterio
+                   que Retiros con las resueltas: el default es lo que importa
+                   hoy, el historial esta a un clic. */
                 $where[] = "NOT (estado = 'vencida' OR " . RC_VENCIDA_SQL . ")";
             }
             if ($q !== '') {

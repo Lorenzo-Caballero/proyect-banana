@@ -78,10 +78,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             if (in_array($estado, ['pendiente', 'procesando', 'hecha', 'error', 'revisar', 'cancelada'], true)) {
                 $where[]  = 'estado = ?';
                 $params[] = $estado;
+            } elseif ($estado === 'todas') {
+                // El historial completo, canceladas incluidas. Es una pestaña
+                // aparte porque no es lo que se viene a hacer a esta pantalla.
+                // (sin condicion de estado)
             } else {
-                // "Todos" (sin filtro explicito): no mostrar canceladas para
-                // no generar ruido -- hay un tab aparte para consultarlas.
-                $where[] = "estado <> 'cancelada'";
+                /* EL DEFAULT ES "LO QUE FALTA RESOLVER", no "todo".
+                   Antes solo escondia las canceladas, asi que la pantalla que
+                   se llama RETIROS PENDIENTES listaba tambien las ya pagadas y
+                   los ajustes viejos. El contador de arriba decia "4 retiros"
+                   con dos ya hechos, y la sensacion era de tener siempre algo
+                   sin resolver -- reportado por Nahuel.
+                   Un retiro resuelto ya no pide nada: sale de la bandeja y vive
+                   en su pestaña, igual que un chat archivado. */
+                $where[] = "estado NOT IN ('hecha','cancelada')";
             }
             if ($q !== '') {
                 $where[]  = '(usuario LIKE ? OR id = ?)';

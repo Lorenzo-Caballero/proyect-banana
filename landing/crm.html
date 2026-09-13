@@ -1154,7 +1154,17 @@
   .btn-mini-accion:hover{border-color:var(--violet);color:var(--txt)}
   .btn-mini-accion:disabled{opacity:.6;cursor:default}
 
-  /* ---- Cargas / Recargas (Fase A, Módulo 3) ---- */
+  /* Una linea que explica QUE es cada pantalla. Nahuel: "cuando miro todo ese
+     panel, no entiendo bien que es lo que me esta mostrando... no es lo
+     suficientemente intuitivo". Vale mas una frase en la pantalla que un
+     manual que nadie abre. Discreta a proposito: se lee la primera vez y
+     despues no estorba. */
+  .vista-ayuda{margin:0;padding:0 16px 10px;color:var(--muted);font-size:12.5px;
+    line-height:1.5;max-width:78ch}
+  .vista-ayuda b{color:var(--txt);font-weight:600}
+  @media(max-width:760px){ .vista-ayuda{padding:0 14px 10px;font-size:12px} }
+
+  /* ---- Cargas por transferencia (Fase A, Módulo 3) ---- */
   .carga-row{display:flex;flex-direction:column;gap:8px;padding:12px 16px;border-bottom:1px solid var(--line);cursor:pointer}
   .carga-row:hover{background:var(--panel2)}
   .carga-row .cg-top{display:flex;align-items:center;gap:12px}
@@ -1921,12 +1931,12 @@
       <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
       <button class="rail-item active" data-nav="chats" data-tip="Conversaciones" data-corto="Chats"><svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="rail-badge" id="badgeChats"></span></button>
       <button class="rail-item" data-nav="usuarios" data-tip="Usuarios" data-corto="Usuarios"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></button>
-      <button class="rail-item" data-nav="cargas" data-tip="Cargas / Recargas" data-corto="Cargas"><svg viewBox="0 0 24 24"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></button>
+      <button class="rail-item" data-nav="cargas" data-tip="Cargas por transferencia (pedidas por el chat)" data-corto="Cargas"><svg viewBox="0 0 24 24"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg></button>
       <button class="rail-item" data-nav="transacciones" data-tip="Auditoría" data-corto="Auditoría"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></button>
       <button class="rail-item" data-nav="finanzas" data-tip="Finanzas" data-corto="Finanzas"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></button>
       <button class="rail-item" data-nav="retiros" data-tip="Retiros pendientes" data-corto="Retiros"><svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg><span class="rail-badge" id="badgeRetiros"></span></button>
       <button class="rail-item" data-nav="comprobantes" data-tip="Comprobantes" data-corto="Compr."><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg><span class="rail-badge" id="badgeComprobantes"></span></button>
-      <button class="rail-item" data-nav="peticiones" data-tip="Cargas del panel" data-corto="Panel"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg><span class="rail-badge" id="badgePeticiones"></span></button>
+      <button class="rail-item" data-nav="peticiones" data-tip="Cargas pedidas dentro del juego" data-corto="Panel"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg><span class="rail-badge" id="badgePeticiones"></span></button>
       <button class="rail-item" data-nav="push" data-tip="Push & Notificaciones" data-corto="Push"><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></button>
       <button class="rail-item" data-nav="publicidad" data-tip="Publicidad" data-corto="Public."><svg viewBox="0 0 24 24"><path d="M3 11v2a1 1 0 0 0 1 1h3l5 4V6L7 10H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 6a9 9 0 0 1 0 12"/></svg></button>
       <button class="rail-item" data-nav="landings" data-tip="Landings" data-corto="Landings"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><circle cx="6.5" cy="6.5" r=".8" fill="currentColor" stroke="none"/><circle cx="9.5" cy="6.5" r=".8" fill="currentColor" stroke="none"/><path d="M7 13h6M7 16h4"/></svg></button>
@@ -2236,19 +2246,29 @@
       <b>Retiros pendientes</b>
       <span class="cap" id="retCap"></span>
     </div>
+    <p class="vista-ayuda">
+      Jugadores que pidieron cobrar. <b>El retiro no es automático</b>: lo pagás
+      vos desde el panel de ganamos y después lo marcás acá.
+      Los ya resueltos salen de esta lista y quedan en «Hecha».
+    </p>
     <div class="subhead">
       <label class="search">
         <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
         <input id="retQ" placeholder="Buscar por usuario o id…" autocomplete="off">
       </label>
       <div class="tabs" id="retTabs">
-        <button class="tab on" data-e="">Todos</button>
+        <!-- El default es lo que FALTA resolver: esta pantalla se llama
+             "Retiros pendientes" y mostraba tambien los ya pagados, asi que
+             parecia haber siempre algo sin atender. Un retiro resuelto sale de
+             la bandeja y vive en su pestaña, igual que un chat archivado. -->
+        <button class="tab on" data-e="" title="Los que todavía necesitan que hagas algo">Por resolver</button>
         <button class="tab" data-e="pendiente">Pendiente</button>
         <button class="tab" data-e="procesando">Procesando</button>
         <button class="tab" data-e="revisar">Revisar</button>
         <button class="tab" data-e="hecha">Hecha</button>
         <button class="tab" data-e="error">Error</button>
         <button class="tab" data-e="cancelada">Canceladas</button>
+        <button class="tab" data-e="todas" title="El historial completo, canceladas incluidas">Todas</button>
       </div>
     </div>
     <div class="ret-toolbar">
@@ -2259,20 +2279,34 @@
 
   <div class="card-col view-panel" id="viewCargas" style="display:none">
     <div class="comp-head">
-      <b>Cargas</b>
+      <b>Cargas por transferencia</b>
       <span class="cap" id="cgCap"></span>
     </div>
+    <!-- Explicar QUE es esto, en una linea. El nombre viejo era "Cargas /
+         Recargas" y competia con "Cargas del panel", que es OTRA cosa: alla el
+         jugador pide la carga DENTRO del juego. Aca cada fila es un jugador que
+         pidio fichas por el chat y tiene que transferir. -->
+    <p class="vista-ayuda">
+      Cada fila es un jugador que pidió fichas por el chat y tiene que
+      transferirte. Cuando llega el mail del banco se acredita sola.
+      <b>Si pidió la carga desde el juego</b>, eso está en «Cargas del panel».
+    </p>
     <div class="subhead">
       <label class="search">
         <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
         <input id="cgQ" placeholder="Buscar por usuario, referencia o id…" autocomplete="off">
       </label>
       <div class="tabs" id="cgTabs">
-        <button class="tab on" data-e="">Todos</button>
-        <button class="tab" data-e="pendiente">Pendiente</button>
-        <button class="tab" data-e="acreditada">Acreditada</button>
-        <button class="tab" data-e="vencida">Vencida</button>
+        <!-- Decia "Todos" y escondia las vencidas: con 21 en "Todos" y 52 en
+             "Vencida", el numero no cerraba y no habia forma de entender por
+             que. Las vencidas siguen fuera del default (son ruido: transferencias
+             que nunca llegaron), pero ahora el nombre lo dice. -->
+        <button class="tab on" data-e="" title="Esperando la transferencia, o ya acreditadas. Sin las vencidas.">Activas</button>
+        <button class="tab" data-e="pendiente" title="Esperando que llegue la transferencia">Esperando pago</button>
+        <button class="tab" data-e="acreditada" title="Llegó el pago y ya tiene sus fichas">Acreditada</button>
+        <button class="tab" data-e="vencida" title="Pasó el plazo y la transferencia nunca llegó">Vencida</button>
         <button class="tab" data-e="cancelada">Cancelada</button>
+        <button class="tab" data-e="todas" title="El historial completo, vencidas incluidas">Todas</button>
       </div>
     </div>
     <div class="list" id="cgList" style="margin-top:0"></div>
@@ -2284,7 +2318,7 @@
        el panel de ganamos, que es donde vive la solicitud. -->
   <div class="card-col view-panel" id="viewPeticiones" style="display:none">
     <div class="comp-head">
-      <b>Cargas del panel</b>
+      <b>Cargas pedidas en el juego</b>
       <span class="cap" id="ptCap"></span>
     </div>
     <div class="subhead">
@@ -4879,9 +4913,9 @@
      Con el hash: F5 te deja donde estabas, atras/adelante funcionan, y un
      link #/retiros se puede pasar por WhatsApp. */
   const RUTA_LABEL = {
-    chats:"Conversaciones", usuarios:"Usuarios", cargas:"Cargas",
+    chats:"Conversaciones", usuarios:"Usuarios", cargas:"Cargas por transferencia",
     transacciones:"Auditoría", finanzas:"Finanzas", retiros:"Retiros",
-    comprobantes:"Comprobantes", peticiones:"Cargas del panel",
+    comprobantes:"Comprobantes", peticiones:"Cargas pedidas en el juego",
     notificaciones:"Notificaciones",
     publicidad:"Publicidad",
     landings:"Landings",
