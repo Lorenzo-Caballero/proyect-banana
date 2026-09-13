@@ -45,6 +45,11 @@ function salir($data, int $code = 200): void
 
 // Version SQL de rl_estado_efectivo() (recargas_lib.php) -- ver docblock arriba.
 const RC_VENCIDA_SQL = "(estado = 'pendiente' AND vence_en < NOW())";
+/* La misma condicion con el alias de la tabla, para la consulta con JOIN. Van
+   como dos constantes y no como un str_replace sobre la primera: un replace de
+   "estado" pisaria tambien el `estado` de `pagos` o de `acciones_saldo` el dia
+   que alguien lo toque, y el bug seria silencioso. */
+const RC_VENCIDA_SQL_R = "(r.estado = 'pendiente' AND r.vence_en < NOW())";
 
 // ============================== GET =========================================
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
@@ -58,14 +63,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $q      = trim((string)($_GET['q'] ?? ''));
             $limit  = min(max((int)($_GET['limit'] ?? 100), 1), 200);
 
+            /* Dos juegos de condiciones: `$where` sin alias (la consulta de
+               respaldo, sin JOIN) y `$whereR` con `r.` (la principal). Se
+               arman juntos para que no puedan divergir. */
             $where  = [];
+            $whereR = [];
             $params = [];
+            $cond = function (string $sin, ?string $con = null) use (&$where, &$whereR) {
+                $where[]  = $sin;
+                $whereR[] = $con ?? $sin;
+            };
             if ($estado === 'pendiente') {
-                $where[] = "estado = 'pendiente' AND vence_en >= NOW()";
+                $cond("estado = 'pendiente' AND vence_en >= NOW()",
+                      "r.estado = 'pendiente' AND r.vence_en >= NOW()");
             } elseif ($estado === 'vencida') {
-                $where[] = "(estado = 'vencida' OR " . RC_VENCIDA_SQL . ")";
+                $cond("(estado = 'vencida' OR " . RC_VENCIDA_SQL . ")",
+                      "(r.estado = 'vencida' OR " . RC_VENCIDA_SQL_R . ")");
             } elseif (in_array($estado, ['acreditada', 'cancelada'], true)) {
-                $where[]  = 'estado = ?';
+                $cond('estado = ?', 'r.estado = ?');
                 $params[] = $estado;
             } elseif ($estado === 'todas') {
                 // El historial completo, vencidas incluidas. Pestaña aparte
@@ -78,34 +93,99 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                    cerraba ni habia forma de entender por que. Mismo criterio
                    que Retiros con las resueltas: el default es lo que importa
                    hoy, el historial esta a un clic. */
-                $where[] = "NOT (estado = 'vencida' OR " . RC_VENCIDA_SQL . ")";
+                $cond("NOT (estado = 'vencida' OR " . RC_VENCIDA_SQL . ")",
+                      "NOT (r.estado = 'vencida' OR " . RC_VENCIDA_SQL_R . ")");
             }
             if ($q !== '') {
-                $where[]  = '(usuario LIKE ? OR referencia = ? OR id = ?)';
+                $cond('(usuario LIKE ? OR referencia = ? OR id = ?)',
+                      '(r.usuario LIKE ? OR r.referencia = ? OR r.id = ?)');
                 $params[] = '%' . $q . '%';
                 $params[] = strtoupper($q);
                 $params[] = (int)(ctype_digit($q) ? $q : 0);
             }
+            // Sin condiciones (pestaña "Todas"): un WHERE vacio es sintaxis invalida.
+            if (!$where)  { $where[]  = '1'; }
+            if (!$whereR) { $whereR[] = '1'; }
 
-            $st = $pdo->prepare(
-                "SELECT id, referencia, usuario, coins, monto_base, monto_pedido, centavos,
-                        estado,
-                        CASE WHEN " . RC_VENCIDA_SQL . " THEN 'vencida' ELSE estado END AS estado_efectivo,
-                        pago_id, mensaje, creada_en, vence_en, acreditada_en,
-                        TIMESTAMPDIFF(SECOND, NOW(), vence_en) AS segundos_para_vencer
-                   FROM recargas
-                  WHERE " . implode(' AND ', $where) . "
-                  ORDER BY creada_en DESC
-                  LIMIT $limit"
-            );
-            $st->execute($params);
+            /* ¿LAS FICHAS LLEGARON AL JUEGO? Es OTRA pregunta que "¿llego la
+               plata?", y es la que de verdad le importa al jugador.
+               `recargas.estado='acreditada'` solo dice que el pago del banco
+               caso. El deposito en el juego es un paso aparte, en
+               `acciones_saldo`, y puede fallar por su cuenta: el 13/9/2026
+               holamiliii550 figuraba ACREDITADA y nunca vio sus fichas -- el
+               WAF habia cortado el deposito. Esta pantalla no tenia forma de
+               mostrarlo, asi que el operador no podia enterarse mirando.
+               Se trae la accion de carga de ese jugador MAS CERCANA en el
+               tiempo a la acreditacion: es la que se creo por esta recarga.
+               LEFT JOIN + subconsulta para no romper si la tabla no existe en
+               una instalacion vieja (se degrada abajo, en el catch).
+
+               El COLLATE del JOIN es obligatorio: `recargas.usuario` quedo en
+               utf8mb4_general_ci y `acciones_saldo.usuario` en
+               utf8mb4_unicode_ci, y sin el MySQL corta con el error de mezcla
+               de collations. Es el choque que avisa CLAUDE.md y muerde en cada
+               JOIN nuevo entre estas tablas. */
+            $sqlBase =
+                "SELECT r.id, r.referencia, r.usuario, r.coins, r.monto_base, r.monto_pedido,
+                        r.estado,
+                        CASE WHEN " . RC_VENCIDA_SQL_R . " THEN 'vencida' ELSE r.estado END AS estado_efectivo,
+                        r.pago_id, r.mensaje, r.creada_en, r.vence_en, r.acreditada_en,
+                        TIMESTAMPDIFF(SECOND, NOW(), r.vence_en) AS segundos_para_vencer,
+                        p.remitente AS pago_remitente, p.cuit AS pago_cuit, p.monto AS pago_monto,
+                        a.id AS accion_id, a.estado AS accion_estado, a.monto AS accion_monto,
+                        a.bono_debitado AS accion_bono, a.mensaje AS accion_mensaje,
+                        a.ejecutada_en AS accion_ejecutada_en
+                   FROM recargas r
+                   LEFT JOIN pagos p ON p.id = r.pago_id
+                   LEFT JOIN acciones_saldo a
+                          ON a.id = (SELECT a2.id FROM acciones_saldo a2
+                                      WHERE a2.usuario = r.usuario COLLATE utf8mb4_unicode_ci
+                                        AND a2.tipo = 'cargar'
+                                        AND a2.creada_en >= r.creada_en
+                                      ORDER BY a2.creada_en ASC LIMIT 1)
+                  WHERE " . implode(' AND ', $whereR) . "
+                  ORDER BY r.creada_en DESC
+                  LIMIT $limit";
+            try {
+                $st = $pdo->prepare($sqlBase);
+                $st->execute($params);
+            } catch (Throwable $e) {
+                /* Sin `pagos` o sin `acciones_saldo` (instalacion vieja): se
+                   sirve lo de siempre. Perder el dato nuevo es aceptable;
+                   dejar la pantalla en blanco, no. */
+                error_log('crm_recargas/listar: sin join, degrado: ' . $e->getMessage());
+                $st = $pdo->prepare(
+                    "SELECT id, referencia, usuario, coins, monto_base, monto_pedido,
+                            estado,
+                            CASE WHEN " . RC_VENCIDA_SQL . " THEN 'vencida' ELSE estado END AS estado_efectivo,
+                            pago_id, mensaje, creada_en, vence_en, acreditada_en,
+                            TIMESTAMPDIFF(SECOND, NOW(), vence_en) AS segundos_para_vencer
+                       FROM recargas
+                      WHERE " . implode(' AND ', $where) . "
+                      ORDER BY creada_en DESC
+                      LIMIT $limit"
+                );
+                $st->execute($params);
+            }
             $items = array_map(function ($r) {
                 $r['id']                   = (int)$r['id'];
                 $r['coins']                = (int)$r['coins'];
                 $r['monto_base']           = (float)$r['monto_base'];
                 $r['monto_pedido']         = (float)$r['monto_pedido'];
-                $r['centavos']             = $r['centavos'] !== null ? (int)$r['centavos'] : null;
                 $r['segundos_para_vencer'] = $r['segundos_para_vencer'] !== null ? (int)$r['segundos_para_vencer'] : null;
+                $r['accion_id']            = isset($r['accion_id']) ? (int)$r['accion_id'] : null;
+                $r['accion_monto']         = isset($r['accion_monto']) ? (float)$r['accion_monto'] : null;
+                $r['accion_bono']          = isset($r['accion_bono']) ? (int)$r['accion_bono'] : null;
+                $r['pago_monto']           = isset($r['pago_monto']) ? (float)$r['pago_monto'] : null;
+                /* El resumen que mira el operador de un vistazo:
+                     'ok'       las fichas estan en el juego
+                     'en_curso' encolado, todavia no salio
+                     'trabado'  fallo o necesita a una persona  <- lo importante
+                     null       no aplica (todavia no se acredito el pago) */
+                $est = $r['accion_estado'] ?? null;
+                $r['fichas'] = $est === null ? null
+                    : ($est === 'hecha' ? 'ok'
+                    : (in_array($est, ['pendiente', 'procesando'], true) ? 'en_curso' : 'trabado'));
                 return $r;
             }, $st->fetchAll(PDO::FETCH_ASSOC));
 
@@ -183,6 +263,86 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $accion = (string)($body['accion'] ?? '');
 
     try {
+        /* ---- destrabar: volver a encolar un deposito que quedo en revisar ----
+           Es la accion que faltaba. Hasta ahora una recarga podia figurar
+           ACREDITADA -- el pago del banco caso bien -- y las fichas no haber
+           llegado nunca al juego, porque el deposito es un paso aparte que
+           puede fallar solo. Pasó el 13/9/2026 con holamiliii550: el WAF corto
+           el deposito y no habia forma de reintentarlo desde el CRM. Habia que
+           cargarle a mano desde el panel.
+
+           SOLO desde 'revisar'. Los otros estados no corresponden:
+             'hecha'                   ya se deposito; reintentar seria pagar dos veces;
+             'error'                   las fichas ya se le devolvieron al jugador, puede
+                                       volver a pedir la carga por el chat;
+             'pendiente'/'procesando'  ya esta en la cola, no hace falta tocar nada.
+
+           Y 'revisar' significa literalmente "no sabemos si entro": por eso la
+           confirmacion del CRM le pide al operador que mire el panel ANTES.
+           Esa decision es suya, no del sistema -- el sistema no reintenta solo
+           en este estado justamente porque no puede saberlo. */
+        if ($accion === 'destrabar') {
+            $id = (int)($body['id'] ?? 0);
+            if (!$id) { salir(['ok' => false, 'error' => 'Falta id'], 400); }
+            if (!crm_rate_limite("destrabar_carga_$operador", 20, 3600)) {
+                salir(['ok' => false, 'error' => 'Demasiados reintentos en poco tiempo. Esperá un rato.'], 429);
+            }
+
+            $st = $pdo->prepare("SELECT id, usuario, creada_en FROM recargas WHERE id = ? LIMIT 1");
+            $st->execute([$id]);
+            $rec = $st->fetch(PDO::FETCH_ASSOC);
+            if (!$rec) { salir(['ok' => false, 'error' => 'Esa recarga no existe'], 404); }
+
+            // La misma accion que muestra el listado: la primera carga de ese
+            // jugador creada despues de la recarga.
+            $sa = $pdo->prepare(
+                "SELECT id, estado, monto FROM acciones_saldo
+                  WHERE usuario = ? COLLATE utf8mb4_unicode_ci AND tipo = 'cargar'
+                    AND creada_en >= ?
+                  ORDER BY creada_en ASC LIMIT 1"
+            );
+            $sa->execute([$rec['usuario'], $rec['creada_en']]);
+            $acc = $sa->fetch(PDO::FETCH_ASSOC);
+            if (!$acc) {
+                salir(['ok' => false, 'error' => 'Esta recarga no tiene un depósito encolado.'], 404);
+            }
+            if ($acc['estado'] !== 'revisar') {
+                salir(['ok' => false, 'error' =>
+                    'Solo se puede reintentar un depósito que quedó en revisar. Este está en: '
+                    . $acc['estado']], 409);
+            }
+
+            $upd = $pdo->prepare(
+                "UPDATE acciones_saldo
+                    SET estado = 'pendiente', tomada_en = NULL, intentos = 0,
+                        mensaje = ?
+                  WHERE id = ? AND estado = 'revisar'"
+            );
+            $msg = mb_substr("reintento pedido por $operador desde el CRM", 0, 300);
+            try {
+                $upd->execute([$msg, (int)$acc['id']]);
+            } catch (Throwable $e) {
+                // Sin la migracion 62 no existe `intentos`.
+                $pdo->prepare(
+                    "UPDATE acciones_saldo SET estado='pendiente', tomada_en=NULL, mensaje=?
+                      WHERE id = ? AND estado = 'revisar'"
+                )->execute([$msg, (int)$acc['id']]);
+            }
+
+            /* Queda en la bitacora: mueve fichas y lo decidio una persona.
+               Si alguien reintenta algo que ya habia entrado, esto es lo que
+               permite reconstruir quien y cuando. */
+            crm_bitacora($pdo, $operador, 'destrabar_deposito', json_encode([
+                'recarga_id' => $id,
+                'accion_id'  => (int)$acc['id'],
+                'usuario'    => $rec['usuario'],
+                'monto'      => (float)$acc['monto'],
+            ], JSON_UNESCAPED_UNICODE));
+
+            salir(['ok' => true, 'accion_id' => (int)$acc['id'],
+                   'mensaje' => 'El depósito volvió a la cola. En un minuto se reintenta.']);
+        }
+
         // ---- cancelar (puntual, solo desde pendiente sin pago vinculado) ----
         if ($accion === 'cancelar') {
             $id   = (int)($body['id'] ?? 0);

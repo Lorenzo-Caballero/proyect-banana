@@ -1171,7 +1171,28 @@
   .carga-row .cg-mid{flex:1;min-width:0}
   .carga-row .cg-user{font-weight:700;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   .carga-row .cg-sub{color:var(--muted);font-size:12px;margin-top:3px}
-  .carga-row .cg-monto{font-weight:800;white-space:nowrap}
+  .carga-row .cg-monto{font-weight:800;white-space:nowrap;font-size:15px}
+  /* Las acciones tienen ancho fijo: si aparecen y desaparecen segun la fila, el
+     monto de al lado se mueve en cada linea y la columna deja de leerse como
+     columna. */
+  .carga-row .cg-acciones{display:flex;gap:6px;justify-content:flex-end;
+    min-width:150px;flex:none}
+  /* Segunda linea de datos: lo que el operador cruza con el comprobante --
+     quien pago de verdad y cuanto bono entro. Antes esto no estaba en ningun
+     lado y habia que abrir el detalle de cada fila para verlo. */
+  .carga-row .cg-datos{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:5px}
+  .carga-row .cg-datos:empty{display:none}
+  .carga-row .cg-dato{display:inline-flex;align-items:center;gap:5px;
+    color:var(--muted);font-size:12px}
+  .carga-row .cg-dato .ico{width:13px;height:13px;opacity:.8}
+  /* ¿LLEGARON LAS FICHAS AL JUEGO? Es distinto de "¿llego el pago?", y es lo
+     que le importa al jugador. El rojo no es decorativo: esa fila necesita que
+     alguien haga algo. */
+  .cg-fichas{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:999px;
+    white-space:nowrap}
+  .cg-fichas.ok{background:rgba(62,224,138,.12);color:#3ee08a}
+  .cg-fichas.en-curso{background:rgba(245,166,35,.14);color:#f5a623}
+  .cg-fichas.trabado{background:rgba(229,89,93,.16);color:#ff7a7e}
   .carga-tag{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap}
   .carga-tag.pendiente{background:var(--panel2);color:var(--muted);border:1px solid var(--line)}
   .carga-tag.acreditada{background:var(--greenSoft);color:var(--green2);border:1px solid var(--green)}
@@ -1186,7 +1207,12 @@
     border-radius:11px;padding:10px 12px;font-size:12.5px;color:var(--muted)}
   .carga-row.open .cg-detalle{display:block}
   .carga-row .cg-detalle .dt-warn{color:var(--orange2);font-weight:700;margin-bottom:6px}
-  .carga-row .cg-detalle .dt-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px 14px}
+  /* minmax mas ancho: los valores ahora son nombres y montos, no numeros
+     sueltos, y con 140px se cortaban. En una pantalla de escritorio entran
+     cuatro columnas y se aprovecha el ancho que antes quedaba vacio. */
+  .carga-row .cg-detalle .dt-grid{display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px 18px}
+  .carga-row .cg-detalle .dt-grid b{color:var(--txt);font-weight:600}
   .char-count{font-size:11px;color:var(--muted);text-align:right;margin-top:-6px}
 
   /* ---- Auditoría (Fase A, Módulo 4 — reemplaza a Transacciones) ----
@@ -7225,7 +7251,11 @@
   let cgEstado = "", cgQ = "", cgItems = [];
   let cancelarCargaId = null;
   const CARGA_TAG_TXT = {pendiente:"Pendiente", acreditada:"Acreditada", vencida:"Vencida", cancelada:"Cancelada"};
-  const CG_TAB_LABEL = {"":"Todos", pendiente:"Pendiente", acreditada:"Acreditada", vencida:"Vencida", cancelada:"Cancelada"};
+  /* ESTA es la fuente de verdad de las etiquetas: actualizarContadoresCargas
+     reescribe cada pestaña con "Etiqueta (n)", asi que lo que diga el HTML se
+     pisa. Cambiarlo alla y no aca no hace nada -- me paso. */
+  const CG_TAB_LABEL = {"":"Activas", pendiente:"Esperando pago", acreditada:"Acreditada",
+                        vencida:"Vencida", cancelada:"Cancelada", todas:"Todas"};
 
   async function actualizarContadoresCargas(){
     try{
@@ -7262,24 +7292,54 @@
     const warnPago = r.pago_id!==null
       ? `<div class="dt-warn">${ico("alerta")} Esta recarga tiene un pago vinculado (id ${esc(r.pago_id)}). No se puede cancelar desde el CRM — contactá al desarrollador o resolvé la relación manualmente en pagos.</div>`
       : "";
+    /* LA SEGUNDA MITAD DE LA VERDAD. `estado` dice si llego el PAGO; esto dice
+       si las FICHAS llegaron al juego, que es otra cosa y es la que le importa
+       al jugador. holamiliii550 figuraba "Acreditada" y no tenia nada: el pago
+       caso bien y el deposito lo corto el WAF. Sin este chip no habia forma de
+       verlo desde el CRM. */
+    const CHIP_FICHAS = {
+      ok:       ["ok",      "Fichas en el juego"],
+      en_curso: ["en-curso","Depositando…"],
+      trabado:  ["trabado", "NO llegaron al juego"],
+    };
+    const cf = r.fichas ? CHIP_FICHAS[r.fichas] : null;
+    const chipFichas = cf ? `<span class="cg-fichas ${cf[0]}">${cf[1]}</span>` : "";
+
+    // Quien pago de verdad, que es lo que el operador cruza con el comprobante.
+    const pagador = r.pago_remitente
+      ? `<span class="cg-dato">${ico("persona")}${esc(r.pago_remitente)}</span>` : "";
+    const bono = r.accion_bono > 0
+      ? `<span class="cg-dato">+${r.accion_bono} bono</span>` : "";
+
+    // Destrabar: solo tiene sentido si el deposito quedo esperando a una persona.
+    const btnDestrabar = r.fichas === "trabado"
+      ? `<button class="btn-mini-accion" data-accion="destrabar" data-id="${r.id}" type="button"
+                 title="Volver a encolar el depósito">Reintentar depósito</button>` : "";
+
     return `<div class="carga-row" data-id="${r.id}">
       <div class="cg-top">
         <div class="cg-mid">
-          <div class="cg-user">@${esc(r.usuario)} <span class="carga-tag ${esc(r.estado_efectivo)}">${CARGA_TAG_TXT[r.estado_efectivo]||r.estado_efectivo}</span>${chipUrgencia(r)}</div>
-          <div class="cg-sub">#${r.id} · ref ${esc(r.referencia)} · ${r.coins} coins · creada ${hace(r.creada_en)}${venceInfo}</div>
+          <div class="cg-user">@${esc(r.usuario)} <span class="carga-tag ${esc(r.estado_efectivo)}">${CARGA_TAG_TXT[r.estado_efectivo]||r.estado_efectivo}</span>${chipFichas}${chipUrgencia(r)}</div>
+          <div class="cg-sub">#${r.id} · ref ${esc(r.referencia)} · ${r.coins} fichas · ${hace(r.creada_en)}${venceInfo}</div>
+          <div class="cg-datos">${pagador}${bono}</div>
           ${nota}
         </div>
         <div class="cg-monto">${money(r.monto_pedido)}</div>
-        <div style="display:flex;gap:6px">${btn}</div>
+        <div class="cg-acciones">${btnDestrabar}${btn}</div>
       </div>
       <div class="cg-detalle">
         ${warnPago}
         <div class="dt-grid">
-          <div>Monto base: ${money(r.monto_base)}</div>
-          <div>Centavos: ${r.centavos!=null ? r.centavos : "—"}</div>
-          <div>Vence: ${r.vence_en ? faltan(r.vence_en) : "—"}</div>
-          <div>Acreditada: ${r.acreditada_en ? hace(r.acreditada_en) : "—"}</div>
+          <div>Pidió: <b>${money(r.monto_pedido)}</b></div>
+          <div>Transfirió: <b>${r.pago_monto!=null ? money(r.pago_monto) : "—"}</b></div>
+          <div>A nombre de: <b>${r.pago_remitente ? esc(r.pago_remitente) : "—"}</b></div>
+          <div>CUIT: <b>${r.pago_cuit ? esc(r.pago_cuit) : "—"}</b></div>
+          <div>Acreditada: <b>${r.acreditada_en ? hace(r.acreditada_en) : "—"}</b></div>
+          <div>Vence: <b>${r.vence_en ? faltan(r.vence_en) : "—"}</b></div>
+          <div>Depósito al juego: <b>${r.accion_estado ? esc(r.accion_estado) : "sin encolar"}</b></div>
+          <div>Fichas + bono: <b>${r.accion_monto!=null ? Math.round(r.accion_monto) : "—"}</b></div>
         </div>
+        ${r.accion_mensaje ? `<div class="dt-warn">${ico("alerta")} Respuesta del depósito: ${esc(String(r.accion_mensaje).slice(0,220))}</div>` : ""}
       </div>
     </div>`;
   }
@@ -7299,8 +7359,15 @@
     $("#cgList").innerHTML = d.items.map(filaCarga).join("");
     $("#cgList").querySelectorAll(".carga-row").forEach(row=>{
       row.addEventListener("click", e=>{
-        if(e.target.closest("[data-accion='cancelar']")) return;
+        if(e.target.closest("[data-accion]")) return;   // los botones no expanden
         row.classList.toggle("open");
+      });
+    });
+    $("#cgList").querySelectorAll("[data-accion='destrabar']").forEach(btn=>{
+      btn.addEventListener("click", e=>{
+        e.stopPropagation();
+        const fila = cgItems.find(x=>x.id===+btn.getAttribute("data-id"));
+        if(fila) destrabarCarga(fila, btn);
       });
     });
     $("#cgList").querySelectorAll("[data-accion='cancelar']:not(:disabled)").forEach(btn=>{
@@ -7310,6 +7377,35 @@
         if(fila) abrirCancelarCarga(fila);
       });
     });
+  }
+
+  /* Reintentar un deposito que quedo trabado. La confirmacion NO es un tramite:
+     'revisar' significa literalmente que el sistema NO SABE si el deposito
+     entro -- por eso no reintenta solo. Si entro y se reintenta, se le
+     deposita dos veces. La unica forma de saberlo es mirar el panel, y eso lo
+     tiene que hacer una persona. */
+  async function destrabarCarga(r, btn){
+    const ok = confirm(
+      `Reintentar el depósito de ${r.coins} fichas a @${r.usuario}.
+
+` +
+      `ANTES fijate en el panel de ganamos que NO se le haya depositado ya.
+` +
+      `El sistema no pudo confirmarlo, y si entró y lo reintentás, le depositás dos veces.
+
+` +
+      `¿Ya lo verificaste?`
+    );
+    if(!ok) return;
+    btn.disabled = true; btn.textContent = "…";
+    const d = await jpost({accion:"destrabar", id:r.id}, API_CG);
+    if(d.ok){
+      toast(d.mensaje || "El depósito volvió a la cola");
+      cargarCargas(); actualizarContadoresCargas();
+    } else {
+      btn.disabled = false; btn.textContent = "Reintentar depósito";
+      toast(d.error || "No se pudo reintentar");
+    }
   }
 
   function abrirCancelarCarga(r){
