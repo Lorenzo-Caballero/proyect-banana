@@ -174,6 +174,19 @@ if (!function_exists('tg_evento')) {
             $esc = static fn($v) => htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
             $txt = '<b>' . $esc($titulo) . '</b>';
             foreach ($lineas as $k => $v) {
+                /* UN VALOR ['code' => 'x'] SALE COMO BLOQUE MONOESPACIADO, que
+                   en Telegram se copia con UN TOQUE. No es cosmetico: el flujo
+                   real de un retiro es leer el aviso, copiar el CBU y pegarlo
+                   en el banco. Sin esto habia que seleccionar 22 digitos a mano
+                   en el celular, o peor, abrir el CRM a buscarlos.
+                   El valor se escapa IGUAL: lo unico que cambia es la etiqueta
+                   que lo envuelve, nunca el contenido. */
+                if (is_array($v)) {
+                    $val = trim((string)($v['code'] ?? ''));
+                    if ($val === '') { continue; }
+                    $txt .= "\n" . $esc($k) . ': <code>' . $esc($val) . '</code>';
+                    continue;
+                }
                 if ($v === null || $v === '') { continue; }
                 $txt .= "\n" . $esc($k) . ': ' . $esc($v);
             }

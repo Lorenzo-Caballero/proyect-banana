@@ -774,13 +774,28 @@ function fichas_pedir_retiro(PDO $pdo, string $usuario, int $monto, string $orig
        Sin clave a proposito: cada pedido de retiro es un evento distinto y hay
        que avisarlos todos, no agruparlos. */
     if (function_exists('tg_evento')) {
-        tg_evento($pdo, 'retiro', '💸 Pedido de retiro', [
-            'Jugador' => $usuario,
-            'Monto'   => number_format($monto, 0, ',', '.') . ($todo ? ' (todo su saldo)' : ''),
-            'Destino' => $destinoFinal !== '' ? $destinoFinal : 'no lo dejó, hay que pedírselo',
-            'Saldo'   => number_format($saldo, 0, ',', '.'),
-            'Qué hacer' => 'CRM → Retiros, para aprobarlo o rechazarlo.',
-        ]);
+        /* EL AVISO TIENE QUE ALCANZAR PARA PAGARLE, sin abrir nada mas. El
+           flujo real es: llega el mensaje, se le sacan las fichas en el panel y
+           se le transfiere al alias. Si el alias no viene en el aviso, hay que
+           abrir el CRM, buscar el chat y leerlo entero -- que es justo lo que
+           Nahuel pidio evitar.
+           El CBU/alias va como bloque de codigo: en Telegram se copia con un
+           toque, en vez de seleccionar 22 digitos a mano en el celular. */
+        $lineas = [
+            'Jugador'   => $usuario,
+            'Quiere'    => '$' . number_format($monto, 0, ',', '.') . ($todo ? ' (todo su saldo)' : ''),
+            'Tiene'     => '$' . number_format($saldo, 0, ',', '.'),
+        ];
+        if ($destinoFinal !== '') {
+            $lineas['CBU/alias'] = ['code' => $destinoFinal];
+            /* El titular no lo pide el chat todavia: si algun dia se guarda, va
+               aca. Sin el, el operador compara contra el nombre que le figure
+               en el banco al pegar el CBU. */
+        } else {
+            $lineas['CBU/alias'] = 'NO LO DEJÓ — pedíselo por el chat antes de pagar';
+        }
+        $lineas['Qué hacer'] = 'Sacale las fichas en el panel y transferile. Después marcalo Pagado en CRM → Retiros.';
+        tg_evento($pdo, 'retiro', '💸 Pedido de retiro (por el chat)', $lineas);
     }
 
     return ['ok' => true, 'id' => $idRetiro, 'monto' => $monto,

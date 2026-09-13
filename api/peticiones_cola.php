@@ -533,13 +533,18 @@ try {
             if ($rid <= 0 || !function_exists('tg_evento')) { continue; }
             $usr = trim((string)($r['username'] ?? ''));
             $mon = (float)($r['amount'] ?? 0);
-            $ok = tg_evento($pdo, 'retiro', '💸 Solicitud de retiro (plataforma)', [
+            /* Mismo criterio que el aviso del chat: el mensaje tiene que
+               alcanzar para pagarle sin abrir nada mas. El CBU va como bloque
+               de codigo para copiarlo de un toque. */
+            $cbu = trim((string)($r['cbu'] ?? ''));
+            $ok = tg_evento($pdo, 'retiro', '💸 Pedido de retiro (desde el juego)', [
                 'Jugador'   => $usr !== '' ? $usr : '(sin nombre)',
-                'Monto'     => number_format($mon, 0, ',', '.'),
-                'Titular'   => trim((string)($r['name'] ?? '')),
-                'Destino'   => trim((string)($r['cbu'] ?? '')),
+                'Quiere'    => '$' . number_format($mon, 0, ',', '.'),
+                'A nombre de' => trim((string)($r['name'] ?? '')),
+                'CBU/alias' => $cbu !== '' ? ['code' => $cbu]
+                                           : 'NO LO DEJÓ — pedíselo antes de pagar',
                 'Pedido'    => trim((string)($r['created_at'] ?? '')),
-                'Qué hacer' => 'Panel de agentes → Retiros, para aprobarlo o rechazarlo.',
+                'Qué hacer' => 'Resolvelo en el panel de agentes. El CRM se entera solo.',
             ], 'retiro_panel:' . $rid);
             if ($ok) { $avisados++; }
 
