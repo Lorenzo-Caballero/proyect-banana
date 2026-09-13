@@ -6885,6 +6885,47 @@
     cerrada:   {t:"Resuelta fuera del CRM",     c:"var(--muted)"},
   };
 
+  /* "hace 1648 min que espera" es un numero que nadie lee. A partir de dos
+     horas se pasa a horas, y de un dia a dias -- que es como uno piensa el
+     tiempo cuando hace rato que algo no se resuelve. */
+  function ptEspera(min){
+    min = Math.max(0, Math.round(min || 0));
+    if(min < 120) return `hace ${min} min`;
+    const h = Math.round(min / 60);
+    if(h < 48) return `hace ${h} h`;
+    const d = Math.round(h / 24);
+    return `hace ${d} ${d === 1 ? "día" : "días"}`;
+  }
+
+  /* EL MOTIVO, EN CASTELLANO. El worker guarda ahi la respuesta CRUDA de la
+     plataforma, y en pantalla quedaba el renglon mas visible de la fila
+     ocupado por {"status":0,"result":{"status":"success"},"error_message":null}
+     -- que no le dice nada a nadie y encima es lo que se ve en las aprobadas,
+     o sea en casi todas.
+     Cuando la respuesta es un exito, el detalle no aporta: se calla. Cuando es
+     un error, se muestra el error_message, que es la unica parte util. Y si el
+     motivo no es JSON (los que escribe nuestro matcher, como "todavia no entro
+     ninguna transferencia por ese monto") se muestra tal cual: esos SI estan
+     escritos para leerse. */
+  function ptMotivo(p){
+    const crudo = (p.motivo || "").trim();
+    if(!crudo) return "";
+    const i = crudo.indexOf("{");
+    if(i < 0) return crudo;                     // texto nuestro, se lee bien
+    const antes = crudo.slice(0, i).trim();
+    try{
+      const j = JSON.parse(crudo.slice(i));
+      if(Number(j.status) === 0) return "";     // exito: el detalle no suma
+      const msg = j.error_message || j.message || "";
+      return msg ? `La plataforma la rechazó: ${msg}` : (antes || crudo);
+    }catch(e){
+      /* No se pudo parsear: puede ser el HTML del WAF o una respuesta rara.
+         Se muestra recortado -- volcar 300 caracteres de HTML es peor que no
+         mostrar nada, pero esconderlo del todo taparia un problema real. */
+      return (antes ? antes + " · " : "") + crudo.slice(i, i + 90) + "…";
+    }
+  }
+
   async function actualizarBadgePeticiones(){
     try{
       const d = await jget({accion:"badge"}, API_PET);
@@ -6918,7 +6959,9 @@
       const e = PET_ESTADO[p.estado] || {t:p.estado, c:"var(--muted)"};
       // "Demorada" no es un estado aparte: sigue esperando y el worker la
       // sigue intentando. Solo se avisa que hace rato que no llega la plata.
-      const dem = p.demorada ? ` · <b style="color:#f1c40f">hace ${p.minutos} min que espera</b>` : "";
+      const dem = p.demorada
+        ? ` · <b style="color:#f1c40f">${ptEspera(p.minutos)} que espera</b>` : "";
+      const motivo = ptMotivo(p);
       return `
       <div class="comp-row">
         <div class="cr-top">
@@ -6929,7 +6972,7 @@
           <b style="color:${e.c}">${esc(e.t)}</b>${dem}
           ${p.titular ? " · a nombre de " + esc(p.titular) : ""}
         </div>
-        ${p.motivo ? `<div class="cr-sub" style="opacity:.8">${esc(p.motivo)}</div>` : ""}
+        ${motivo ? `<div class="cr-sub" style="opacity:.8">${esc(motivo)}</div>` : ""}
       </div>`;
     }).join("");
   }
