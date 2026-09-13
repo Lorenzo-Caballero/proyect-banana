@@ -418,6 +418,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 $params[] = $estado;
             }
 
+            /* LEIDO / NO LEIDO. Es la pregunta que el agente se hace primero al
+               abrir la bandeja ("¿que me falta mirar?") y no se podia filtrar:
+               el contador `no_leidos` ya estaba, pero solo pintaba el globito.
+               NO es un valor del ENUM `estado` -- una conversacion no leida
+               puede estar abierta, pendiente o cerrada -- pero viaja por el
+               mismo parametro porque para el agente es una pestaña mas.
+               'no_leidas' se cruza con archivada = 0 como cualquier otra
+               pestaña de bandeja (las archivadas ya se dan por leidas al
+               archivarse, asi que no habria ninguna igual). */
+            if ($estado === 'no_leidas') {
+                $where[] = 'c.no_leidos > 0';
+            } elseif ($estado === 'leidas') {
+                $where[] = 'COALESCE(c.no_leidos, 0) = 0';
+            }
+
             /* Archivadas: se ven SOLO en su pestaña. Es lo que hace que
                archivar sirva -- si siguieran apareciendo en "Todas", sacarlas
                de la bandeja no sacaria nada.

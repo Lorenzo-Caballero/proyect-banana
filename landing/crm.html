@@ -437,7 +437,6 @@
     text-transform:uppercase;color:var(--muted);margin-right:2px;white-space:nowrap}
   /* La flecha va DENTRO del botón: "Reciente" y "Antiguo" solos se leen como
      dos etiquetas cualquiera, con la flecha se ve para qué lado ordena. */
-  #ordenGrupo .tab{display:inline-flex;align-items:center;gap:5px}
   .orden-ico{flex:none;fill:none;stroke:currentColor;stroke-width:2;
     stroke-linecap:round;stroke-linejoin:round}
   .hide{display:none!important}
@@ -1982,6 +1981,13 @@
         <button class="tab tab-chico" data-e="abierta">Abiertas</button>
         <button class="tab tab-chico" data-e="pendiente">Pendientes</button>
         <button class="tab tab-chico" data-e="cerrada">Cerradas</button>
+        <!-- Leido / No leido: es la primera pregunta al abrir la bandeja
+             ("¿que me falta mirar?"). El contador no_leidos ya existia pero
+             solo pintaba el globito; no se podia filtrar por el. No son
+             estados del ticket -- una no leida puede estar abierta o cerrada --
+             pero para el agente es una pestaña mas, asi que van juntas. -->
+        <button class="tab tab-chico" data-e="no_leidas" title="Las que todavía no abriste">No leídas</button>
+        <button class="tab tab-chico" data-e="leidas" title="Las que ya miraste">Leídas</button>
         <!-- Las archivadas viven SOLO acá: si siguieran saliendo en "Todas",
              archivar no sacaría nada de la bandeja. -->
         <button class="tab tab-chico" data-e="archivadas" id="tabArchivadas">Archivadas</button>
@@ -2013,23 +2019,6 @@
           <button class="tab tab-chico" data-i="15">15d</button>
           <button class="tab tab-chico" data-i="30">30d</button>
           <button class="tab tab-chico" data-i="90">90d</button>
-        </div>
-        <!-- Los tres órdenes en UN grupo, no en botones sueltos: son
-             excluyentes, y un grupo lo dice solo. "Más inactivos" es el
-             tercero y aparece únicamente con un filtro puesto, porque sin
-             filtro ordenaría la lista entera por algo que nadie pidió. -->
-        <div class="inact-tipo" id="ordenGrupo" role="group" aria-label="Orden de la lista">
-          <span class="inact-rot">Orden</span>
-          <button class="tab tab-chico on" data-o="reciente" type="button"
-                  title="El que habló último, arriba">
-            <svg class="orden-ico" viewBox="0 0 24 24" width="12" height="12"><path d="M3 6h11M3 12h7M3 18h4"/><path d="M18 8v10M15 15l3 3 3-3"/></svg>Reciente
-          </button>
-          <button class="tab tab-chico" data-o="antiguo" type="button"
-                  title="El que habló hace más tiempo, arriba">
-            <svg class="orden-ico" viewBox="0 0 24 24" width="12" height="12"><path d="M3 6h4M3 12h7M3 18h11"/><path d="M18 18V8M15 11l3-3 3 3"/></svg>Antiguo
-          </button>
-          <button class="tab tab-chico hide" data-o="inactivos" id="ordenInact" type="button"
-                  title="Los que hace más tiempo que no aparecen, arriba">Más inactivos</button>
         </div>
       </div>
     </div>
@@ -4239,8 +4228,8 @@
   };
 
   const st = { q:"", estado:"todas", inactivos:0, inactivosTipo:"carga",
-               orden:"reciente", convId:0, usuario:"", modo:"ficha",
-               archivada:false, mensajes:0 };
+               convId:0, usuario:"", modo:"ficha",
+               archivada:false, mensajes:0 };   // el orden lo da ordenActual()
   /* La seleccion multiple. Un Set de ids, fuera de `st` porque no es un
      filtro: sobrevive a recargas de la lista (el render la vuelve a pintar)
      pero se limpia al cambiar de pestaña -- una seleccion que cruza pestañas
@@ -5675,7 +5664,7 @@
     try{ d = await jget({accion:"conversaciones", q:st.q, estado:st.estado,
                         inactivos:st.inactivos,
                         inactivos_tipo:st.inactivosTipo,
-                        orden:st.orden}); }
+                        orden:ordenActual()}); }
     catch(e){ $("#list").innerHTML = `<div class="nouser">Error al cargar.<br><small>${esc(e.message)}</small></div>`; return; }
     if(!d.ok){ $("#list").innerHTML = `<div class="nouser">${esc(d.detalle||d.error||"Error")}</div>`; return; }
 
@@ -6512,23 +6501,21 @@
     // La seleccion no cruza pestañas: actuaria sobre cosas ya fuera de vista.
     seleccionLimpiar();
     cargarLista(); });
-  /* "Mas inactivos" solo existe con un filtro puesto: sin filtro ordenaria
-     toda la lista por algo que el agente no pidio. Al sacar el filtro, si ese
-     era el orden elegido se vuelve al de siempre -- dejar la lista ordenada
-     por una opcion que ya no se ve en pantalla es peor que reordenarla. */
-  function pintarOrden(){
-    $("#ordenInact").classList.toggle("hide", !st.inactivos);
-    if(!st.inactivos && st.orden === "inactivos") st.orden = "reciente";
-    document.querySelectorAll("#ordenGrupo .tab").forEach(b=>
-      b.classList.toggle("on", b.getAttribute("data-o") === st.orden));
-  }
+  /* EL ORDEN SE DEDUCE DEL FILTRO, ya no es un control aparte. Habia tres
+     botones ("Reciente", "Antiguo", "Mas inactivos") y sobraban: "Reciente" es
+     lo que uno quiere el 99% del tiempo -- es el orden de WhatsApp y el default
+     de siempre -- y "Antiguo" practicamente no se usaba. "Mas inactivos" si
+     servia, pero solo tenia sentido con un filtro de inactividad puesto... que
+     es exactamente cuando se puede deducir solo: si pediste "sin cargar hace
+     30 dias", querelos ordenados por el que hace mas que no aparece. Un boton
+     menos que tocar y una combinacion menos que pueda quedar mal. */
+  function ordenActual(){ return st.inactivos ? "inactivos" : "reciente"; }
 
   $("#tabsInact").addEventListener("click", e=>{
     const b = e.target.closest(".tab"); if(!b) return;
     document.querySelectorAll("#tabsInact .tab").forEach(x=>x.classList.remove("on"));
     b.classList.add("on");
     st.inactivos = parseInt(b.getAttribute("data-i"), 10) || 0;
-    pintarOrden();
     cargarLista();
   });
 
@@ -6543,14 +6530,6 @@
     if(st.inactivos) cargarLista();
   });
 
-  $("#ordenGrupo").addEventListener("click", e=>{
-    const b = e.target.closest(".tab"); if(!b) return;
-    const o = b.getAttribute("data-o");
-    if(o === st.orden) return;          // ya estaba: no se recarga de gusto
-    st.orden = o;
-    pintarOrden();
-    cargarLista();
-  });
   $("#estbtns").addEventListener("click", async e=>{
     const b=e.target.closest("button"); if(!b||!st.convId)return;
     await jpost({accion:"estado", id:st.convId, estado:b.getAttribute("data-e")});
@@ -7304,18 +7283,27 @@
    *  spec pide fecha/hora absoluta, a diferencia del resto del CRM. */
   function auFechaFmt(iso){
     if(!iso) return "—";
-    const d = new Date(iso.replace(" ","T"));
-    const p = n => String(n).padStart(2,"0");
-    return `${p(d.getDate())}/${p(d.getMonth()+1)}/${String(d.getFullYear()).slice(-2)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    /* fechaDB() y no `new Date(iso.replace(...))`: la base guarda UTC, y sin la
+       "Z" el navegador lo lee como hora LOCAL. Con el operador en Argentina eso
+       mostraba todo 3 horas ADELANTADO -- un alta de las 10:00 figuraba 13:00.
+       Las burbujas del chat ya usaban fechaDB(); esta vista se habia quedado
+       con el parser viejo, asi que las dos horas no coincidian entre si. */
+    return fechaDB(iso).toLocaleString("es-AR", {
+      day:"2-digit", month:"2-digit", year:"2-digit",
+      hour:"2-digit", minute:"2-digit", timeZone: TZ_AR
+    }).replace(",", "");
   }
   /** Mobile: "HH:MM" si es hoy, "DD/MM" si no. */
   function auFechaMobile(iso){
     if(!iso) return "—";
-    const d = new Date(iso.replace(" ","T"));
-    const hoy = new Date();
-    const p = n => String(n).padStart(2,"0");
-    const esHoy = d.getDate()===hoy.getDate() && d.getMonth()===hoy.getMonth() && d.getFullYear()===hoy.getFullYear();
-    return esHoy ? `${p(d.getHours())}:${p(d.getMinutes())}` : `${p(d.getDate())}/${p(d.getMonth()+1)}`;
+    // Mismo arreglo de zona que auFechaFmt, y "hoy" tambien en hora argentina:
+    // comparar contra el dia del navegador fallaba en el borde de medianoche.
+    const d = fechaDB(iso);
+    const dia = x => x.toLocaleDateString("es-AR", {timeZone: TZ_AR});
+    if(dia(d) === dia(new Date())){
+      return d.toLocaleTimeString("es-AR", {hour:"2-digit", minute:"2-digit", timeZone: TZ_AR});
+    }
+    return d.toLocaleDateString("es-AR", {day:"2-digit", month:"2-digit", timeZone: TZ_AR});
   }
 
   function auOperadorHtml(f){
@@ -9276,7 +9264,8 @@ ${cuando}.
   const agIniciales = inic;   // mismo algoritmo que inic(), ver definición arriba
   function agFechaCorta(f){
     if(!f) return "nunca entró";
-    try{ return "último ingreso " + new Date(f.replace(" ","T")).toLocaleString("es-AR", {day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit"}); }
+    // fechaDB(): la base guarda UTC. Sin esto el ultimo ingreso salia +3 h.
+    try{ return "último ingreso " + fechaDB(f).toLocaleString("es-AR", {day:"2-digit",month:"2-digit",year:"2-digit",hour:"2-digit",minute:"2-digit",timeZone: TZ_AR}); }
     catch(e){ return f; }
   }
 
