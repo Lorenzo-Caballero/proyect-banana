@@ -131,13 +131,32 @@ def main() -> int:
         for ruta in CANDIDATOS:
             probar(ctx, ruta)
 
-        # Plan B: lo que el panel muestre en pantalla. Si la API no lo expone,
-        # el numero igual esta a la vista en el header del panel.
-        print("\n=== Numeros visibles en el panel (por si la API no lo da) ===")
+        # Plan B: el numero esta A LA VISTA en el header del panel, arriba a la
+        # derecha, con la etiqueta "Saldo" y al lado el ID y el usuario del
+        # cajero (ej: "Saldo 233.911,10   ID: 20284777 NAHUELWIN26X").
+        #
+        # OJO CON CUAL SE AGARRA: la tabla de jugadores tiene su PROPIA columna
+        # SALDO. Tomar ese numero seria leer el saldo de un jugador suelto en
+        # vez de nuestro stock, y el aviso de bajo stock se dispararia (o no)
+        # por el motivo equivocado. Por eso se busca por la etiqueta y se
+        # descarta todo lo que viva dentro de una <table>.
+        print("\n=== El saldo del CAJERO, como se ve en el panel ===")
         try:
+            enc = page.locator("xpath=//*[not(self::script)][contains(text(),'Saldo')]")
+            for i in range(min(enc.count(), 8)):
+                el = enc.nth(i)
+                try:
+                    if el.locator("xpath=ancestor::table").count():
+                        continue          # es la columna de la tabla, no el header
+                    alrededor = el.locator("xpath=..").inner_text()[:140]
+                except Exception:
+                    continue
+                print("  [etiqueta Saldo] " + alrededor.replace("\n", " | "))
+
+            print("\n  --- otros numeros grandes que NO estan en la tabla ---")
             txt = page.inner_text("body")[:4000]
             for linea in [l.strip() for l in txt.splitlines() if l.strip()]:
-                if re.search(r"\d[\d.,]{3,}", linea) and len(linea) < 80:
+                if re.search(r"\d[\d.]{4,}", linea) and len(linea) < 80:
                     print("  " + linea)
         except Exception as e:
             print(f"  no pude leer la pagina: {e}")

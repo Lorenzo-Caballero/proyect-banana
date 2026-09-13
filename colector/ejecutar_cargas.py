@@ -125,6 +125,12 @@ PANEL_API, USERS_URL = _resolver_panel(bot)
 # agente a mano.
 OP_DEPOSITO = 0
 
+# Cuantas veces se reintenta cuando contesta el WAF en vez de la API, y cuanto
+# se espera entre intentos. Reintentar es seguro SOLO en ese caso: el challenge
+# prueba que la request no llego al backend (ver es_challenge_waf).
+WAF_REINTENTOS = 2
+WAF_ESPERA_SEG = 3
+
 
 def url_cola() -> str:
     """De API_URL (.../api/altas_cola.php) sacamos .../api/acciones_cola.php"""
@@ -160,6 +166,25 @@ def marcar(ctx, id_accion: int, estado: str, mensaje: str) -> None:
         )
     except Exception as e:
         log.error("  no pude marcar la accion %s como %s: %s", id_accion, estado, e)
+
+
+def es_challenge_waf(cuerpo: str) -> bool:
+    """¿Esto es el challenge anti-bot de ServicePipe en vez de la API?
+
+    La firma es inconfundible y esta documentada en CLAUDE.md: una pagina HTML
+    con un <noscript> que redirige a /exhk... Se sirve con codigo 200, que es
+    lo que hacia que pasara por buena.
+
+    IMPORTA DISTINGUIRLO de cualquier otro HTML: un challenge quiere decir que
+    la request NO llego al backend -- el WAF la intercepto y contesto el. O sea
+    que el deposito no ocurrio, con certeza, y por lo tanto REINTENTAR ES
+    SEGURO: no hay forma de depositar dos veces por esta via.
+    """
+    t = (cuerpo or "")[:2000]
+    if "/exhk" in t:
+        return True
+    bajo = t.lower()
+    return "<noscript" in bajo and "http-equiv=\"refresh\"" in bajo
 
 
 def leer_respuesta_deposito(cuerpo: str) -> tuple[str, str]:
@@ -220,20 +245,43 @@ def depositar(ctx, id_ganamos: int, monto: float) -> tuple[str, str]:
     """
     url = f"{PANEL_API}/agent_admin/user/{id_ganamos}/payment/"
     cuerpo = {"operation": OP_DEPOSITO, "amount": int(round(monto))}
-    try:
-        r = ctx.request.post(url, data=cuerpo, timeout=45_000)
-    except Exception as e:
-        # No sabemos si el server lo proceso antes de cortarse.
-        return "revisar", f"no se pudo confirmar el deposito ({e})"
 
-    # El cuerpo COMPLETO para decidir; recortado solo para guardar el detalle.
-    # Antes se recortaba antes de mirarlo, asi que ni se podia parsear.
+    r = None
     cuerpo_full = ""
-    try:
-        cuerpo_full = r.text()
-    except Exception:
-        pass
+    for intento in range(WAF_REINTENTOS + 1):
+        try:
+            r = ctx.request.post(url, data=cuerpo, timeout=45_000)
+        except Exception as e:
+            # No sabemos si el server lo proceso antes de cortarse.
+            return "revisar", f"no se pudo confirmar el deposito ({e})"
+
+        cuerpo_full = ""
+        try:
+            cuerpo_full = r.text()
+        except Exception:
+            pass
+
+        if not es_challenge_waf(cuerpo_full):
+            break
+        # El WAF nos desafio: la request NO llego al backend, asi que se puede
+        # repetir sin riesgo de depositar dos veces. Suele alcanzar con
+        # reintentar -- ServicePipe deja la cookie de clearance en la misma
+        # respuesta del challenge, y ctx.request comparte cookies con el
+        # navegador. Esto es lo que hizo perder la carga de holamiliii550 el
+        # 13/9/2026: un challenge suelto entre 18 depositos que salieron bien.
+        if intento < WAF_REINTENTOS:
+            log.warning("  el WAF nos desafio, reintentando (%d/%d)...",
+                        intento + 1, WAF_REINTENTOS)
+            time.sleep(WAF_ESPERA_SEG)
+
     cuerpo_txt = cuerpo_full[:300]
+
+    if es_challenge_waf(cuerpo_full):
+        # Agotados los reintentos. NUNCA 'error': devolverle las fichas no
+        # corresponde (el jugador no tiene la culpa y el deposito sigue
+        # debiendose), y NUNCA 'hecha': no se deposito nada.
+        return "revisar", ("el WAF corto el deposito (challenge de ServicePipe) "
+                           f"tras {WAF_REINTENTOS + 1} intentos | {cuerpo_txt}")
 
     if r.ok:
         # 2xx NO quiere decir depositado: la plataforma responde 200 igual y
