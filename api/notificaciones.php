@@ -90,27 +90,33 @@ if ($accion === 'registrar') {
     );
     $resp = $ok ? ['ok' => true] : ['ok' => false, 'error' => 'No se pudo registrar'];
 
-    /* Promo "descarga la app", para el jugador LOGUEADO EN EL NAVEGADOR que
-       todavia no la tiene: viaja acá porque este registro es el momento exacto
-       en que el widget sabe quién es (lo llama al adoptar la sesión). El
-       widget decide si mostrar el cartel y cada cuánto; acá solo se dice "a
-       este le corresponde". Desde la app (android) nunca: ya la tiene.
+    /* Promo "descarga la app", para TODO el que entre desde el NAVEGADOR:
+       viaja acá porque este registro corre al cargar la página (el widget lo
+       manda al arrancar, con o sin sesión). El widget decide si mostrar el
+       cartel y cada cuánto; acá solo se dice "a este le corresponde":
+         - desde la app (android) nunca: ya la tiene;
+         - con sesión, solo si su tiene_app es 0 (el que ya la instaló no
+           tiene nada que descargar y las fichas ya las cobró);
+         - anónimo: siempre que la promo esté prendida -- el cartel también
+           vende la app al que todavía no se registró.
        Best-effort: sin config_crm no hay promo y el registro sigue igual. */
-    if ($ok && $usuarioReg !== null && $usuarioReg !== '' && $plataforma !== 'android') {
+    if ($ok && $plataforma !== 'android') {
         try {
             require_once __DIR__ . '/config_crm.php';
             if (cfg_crm_activo($pdo, 'app_promo_activa')) {
                 $fichas = max(0, (int)(cfg_crm($pdo, 'app_bono_fichas') ?? 0));
-                if ($fichas > 0) {
+                $corresponde = ($fichas > 0);
+                if ($corresponde && $usuarioReg !== null && $usuarioReg !== '') {
                     $st = $pdo->prepare("SELECT tiene_app FROM usuarios WHERE username = ?");
                     $st->execute([$usuarioReg]);
                     $fila = $st->fetch();
-                    if ($fila && !(int)$fila['tiene_app']) {
-                        $resp['app_promo'] = [
-                            'fichas' => $fichas,
-                            'url'    => trim((string)(cfg_crm($pdo, 'app_url') ?? '')),
-                        ];
-                    }
+                    $corresponde = $fila && !(int)$fila['tiene_app'];
+                }
+                if ($corresponde) {
+                    $resp['app_promo'] = [
+                        'fichas' => $fichas,
+                        'url'    => trim((string)(cfg_crm($pdo, 'app_url') ?? '')),
+                    ];
                 }
             }
         } catch (Throwable $e) { /* sin promo, el registro ya salió bien */ }

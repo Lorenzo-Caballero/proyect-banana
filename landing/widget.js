@@ -3907,9 +3907,11 @@
         if (APP && APP_TK){
           try { APP.vincular(APP_TK, DEVICE, USUARIO || ""); } catch (e) {}
         }
-        /* El server manda app_promo SOLO si este jugador esta logueado en el
-           navegador y todavia no tiene la app: se le ofrece el modal (con el
-           freno de una vez por dia). */
+        /* El server manda app_promo a todo el que entre desde el NAVEGADOR
+           (anonimo incluido) salvo que ya tenga la app: se le ofrece el modal
+           con el freno de una vez por dia. Como este registro corre al
+           arrancar el widget, el cartel aparece a los segundos de abrir
+           /home. */
         if (d.app_promo) ofrecerPromoApp(d.app_promo);
       })
       .catch(function (){ notifRegistrado = null; });   // reintenta en el proximo sondeo
