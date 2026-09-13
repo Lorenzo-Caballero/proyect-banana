@@ -597,6 +597,11 @@ function rl_crear_recarga(PDO $pdo, string $usuario, int $coins, string $titular
         if ($reuso !== null) {
             // Ya existe: no se inserta nada, se sigue con su referencia.
             $ref = (string)$reuso['referencia'];
+            /* Y con SUS coins: son los que se le van a acreditar cuando entre el
+               pago. Si algun dia cambia RL_COINS_POR_PESO entre el primer pedido
+               y el segundo, devolver los recalculados le prometeria al jugador
+               una cifra distinta de la que va a recibir. */
+            $coins = (int)($reuso['coins'] ?? $coins);
         } else {
             // Insertar, reintentando si la referencia aleatoria choca (muy raro).
             // titular_declarado es de la migracion 45: si todavia no corrio, se

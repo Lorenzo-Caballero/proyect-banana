@@ -1796,9 +1796,10 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
             // desde el PRIMER aviso -- que es el que se ve siempre -- para saber
             // el margen que tiene antes de que la IA vuelva sola.
             $recoMin = function_exists('cfg_crm') ? (int)cfg_crm($pdo, 'ia_reconectar_min') : 30;
-            $nota = $recoMin > 0
-                ? 'El bot lo retoma solo si nadie lo atiende en ' . $recoMin . ' min.'
-                : 'El bot NO lo retoma solo: atendelo desde el CRM.';
+            $nota = 'El bot le sigue atendiendo lo que pueda y se calla apenas le escribas.'
+                  . ($recoMin > 0
+                        ? ' Si despues no volves a escribir en ' . $recoMin . ' min, lo retoma solo.'
+                        : ' Una vez que le escribas, no lo retoma solo: el chat queda tuyo.');
             tg_evento($pdo, 'derivacion', '🙋 Te derivaron una conversación', [
                 'Jugador' => $quien,
                 'Motivo'  => $motivo !== '' ? $motivo : '(no lo dijo)',
@@ -1811,8 +1812,10 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
            seguir intentando resolverlo solo), y decirle que fallo lo empujaria
            a improvisar otra cosa. */
         return ['ok' => true, 'derivada' => true,
-                'mensaje' => 'Listo, un agente lo va a ver. Deciselo al jugador y no sigas '
-                           . 'intentando resolverlo vos.'];
+                'mensaje' => 'Listo, un agente lo va a ver: deciselo al jugador. ESE tema no lo '
+                           . 'sigas vos. Pero NO te vayas: si te pide otra cosa que si podes '
+                           . 'resolver (una carga, el alias, el saldo, leerle un comprobante), '
+                           . 'atendelo igual mientras el agente llega.'];
     }
 
     if ($nombre === 'cargar_al_juego') {
