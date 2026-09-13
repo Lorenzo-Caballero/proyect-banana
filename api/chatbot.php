@@ -141,6 +141,13 @@ const MAX_MENSAJES = 50;
 const MAX_CARACT   = 1500;
 const MAX_TOKENS   = 600;
 const MAX_RONDAS   = 4;   // vueltas de tool-use antes de rendirse
+
+/* Cada cuanto vuelve a sonar el Telegram si el jugador sigue pidiendo un agente
+   y nadie aparecio. Un aviso por derivacion no alcanzaba: si se pasa por alto,
+   no hay segunda oportunidad (13/9/2026, cuatro pedidos en 31 min y un solo
+   ping). Diez minutos es el equilibrio: el que insiste vuelve a sonar, pero
+   escribir cinco mensajes seguidos no dispara cinco avisos. */
+const DERIVACION_REAVISO_MIN = 10;
 // ==========================================================================
 
 // --- Herramientas que el modelo puede llamar ---
@@ -1756,6 +1763,7 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
        la buscaria y no la encontraria. Asi, en el peor caso queda marcada sin
        aviso, que es visible igual al abrir el CRM. */
     if ($nombre === 'pasar_a_agente') {
+        $esperaMin = 0;
         $motivo = trim((string)($args['motivo'] ?? ''));
         $quien  = $usuarioSesion !== '' ? $usuarioSesion : 'un visitante sin cuenta';
 
@@ -1774,15 +1782,48 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
                        siempre recibio la misma frase enlatada. El bot se calla
                        cuando el agente ESCRIBE DE VERDAD (crm.php, accion
                        'responder'), que es cuando hay alguien del otro lado.
-                       Solo si NO estaba ya derivada: si el jugador insiste, no se
-                       pisa la hora original ni se vuelve a avisar. */
-                    $upd = $pdo->prepare(
-                        "UPDATE conversaciones
-                            SET derivada_en = NOW(), derivada_motivo = ?
-                          WHERE id = ? AND derivada_en IS NULL"
-                    );
-                    $upd->execute([mb_substr($motivo, 0, 255), $convId]);
-                    $marcada = $upd->rowCount() > 0;
+                       EL QUE INSISTE VUELVE A SONAR. Antes esto era
+                       "WHERE derivada_en IS NULL": una sola marca y un solo
+                       aviso por derivacion. El 13/9/2026 un jugador pidio
+                       hablar con alguien cuatro veces en 31 minutos y salio un
+                       unico Telegram, el primero; se paso por alto y quedo
+                       esperando con la plata ya transferida. Ahora se reavisa
+                       cada DERIVACION_REAVISO_MIN.
+                       `derivada_en` NO se pisa en el reaviso: es desde cuando
+                       espera, y es lo que el operador mira para priorizar.
+                       `derivada_aviso_en` (migracion 61) lleva la cuenta de los
+                       pings, que es otra cosa. */
+                    $reavisoMin = DERIVACION_REAVISO_MIN;
+                    try {
+                        $upd = $pdo->prepare(
+                            "UPDATE conversaciones
+                                SET derivada_en = COALESCE(derivada_en, NOW()),
+                                    derivada_motivo = ?,
+                                    derivada_aviso_en = NOW()
+                              WHERE id = ?
+                                AND (derivada_aviso_en IS NULL
+                                     OR derivada_aviso_en <= NOW() - INTERVAL ? MINUTE)"
+                        );
+                        $upd->execute([mb_substr($motivo, 0, 255), $convId, $reavisoMin]);
+                        $marcada = $upd->rowCount() > 0;
+                        // Desde cuando espera, para que el aviso lo diga.
+                        $q = $pdo->prepare(
+                            "SELECT TIMESTAMPDIFF(MINUTE, derivada_en, NOW()) FROM conversaciones WHERE id = ?"
+                        );
+                        $q->execute([$convId]);
+                        $esperaMin = (int)$q->fetchColumn();
+                    } catch (Throwable $e) {
+                        /* Sin la migracion 61 no existe derivada_aviso_en: se
+                           cae al comportamiento viejo (un aviso por derivacion),
+                           que es peor pero sigue avisando. */
+                        $upd = $pdo->prepare(
+                            "UPDATE conversaciones
+                                SET derivada_en = NOW(), derivada_motivo = ?
+                              WHERE id = ? AND derivada_en IS NULL"
+                        );
+                        $upd->execute([mb_substr($motivo, 0, 255), $convId]);
+                        $marcada = $upd->rowCount() > 0;
+                    }
                 }
             }
         } catch (Throwable $e) {
@@ -1796,11 +1837,17 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
             // desde el PRIMER aviso -- que es el que se ve siempre -- para saber
             // el margen que tiene antes de que la IA vuelva sola.
             $recoMin = function_exists('cfg_crm') ? (int)cfg_crm($pdo, 'ia_reconectar_min') : 30;
-            $nota = 'El bot le sigue atendiendo lo que pueda y se calla apenas le escribas.'
+            $titulo = $esperaMin >= DERIVACION_REAVISO_MIN
+                ? '⏰ INSISTE: sigue esperando un agente'
+                : '🙋 Te derivaron una conversación';
+            $nota = ($esperaMin >= DERIVACION_REAVISO_MIN
+                        ? 'Espera hace ' . $esperaMin . ' min y volvio a pedirlo. '
+                        : '')
+                  . 'El bot le sigue atendiendo lo que pueda y se calla apenas le escribas.'
                   . ($recoMin > 0
                         ? ' Si despues no volves a escribir en ' . $recoMin . ' min, lo retoma solo.'
                         : ' Una vez que le escribas, no lo retoma solo: el chat queda tuyo.');
-            tg_evento($pdo, 'derivacion', '🙋 Te derivaron una conversación', [
+            tg_evento($pdo, 'derivacion', $titulo, [
                 'Jugador' => $quien,
                 'Motivo'  => $motivo !== '' ? $motivo : '(no lo dijo)',
                 'Nota'    => $nota,

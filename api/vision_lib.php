@@ -102,20 +102,26 @@ function vision_extraer_comprobante(string $ruta): array
             finfo_close($fi);
         }
     }
-    if ($mime === 'application/pdf') {
-        return ['ok' => false, 'codigo' => 'pdf', 'error' =>
-            'El comprobante llego en PDF. Pedile una FOTO o captura de pantalla '
-            . 'del comprobante (imagen), que asi lo puedo leer.'];
-    }
+    /* EL PDF SE LEE IGUAL QUE UNA IMAGEN. Antes se rechazaba, y era el peor
+       lugar para hacerlo: el homebanking argentino comparte el comprobante EN
+       PDF (es el boton "compartir comprobante"), asi que el formato que mas
+       llega era el unico que no se leia. El widget y subir.php siempre lo
+       aceptaron, o sea que el jugador lo subia bien y recien despues le
+       deciamos que no servia. Visto el 13/9/2026: un jugador subio el PDF tres
+       veces, le contestamos "necesito una foto" las tres, dijo "no me deja
+       mandar la foto" y terminamos sin poder verificar una transferencia que
+       ya habia hecho.
+       La API de Anthropic los toma como bloque 'document'. */
+    $esPdf = ($mime === 'application/pdf');
     $permitidos = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-    if (!in_array($mime, $permitidos, true)) {
+    if (!$esPdf && !in_array($mime, $permitidos, true)) {
         return ['ok' => false, 'codigo' => 'formato', 'error' =>
-            'Ese archivo no es una imagen que pueda leer. Pedile una foto o '
-            . 'captura del comprobante (JPG o PNG).'];
+            'Ese archivo no lo puedo leer. Pedile una foto, una captura de '
+            . 'pantalla o el PDF del comprobante.'];
     }
     if (filesize($ruta) > VISION_MAX_BYTES) {
         return ['ok' => false, 'codigo' => 'muy_grande', 'error' =>
-            'La imagen es muy pesada para leerla. Pedile una captura de pantalla '
+            'El archivo es muy pesado para leerlo. Pedile una captura de pantalla '
             . 'del comprobante (pesa menos que la foto).'];
     }
 
@@ -144,9 +150,10 @@ TXT;
         'messages'   => [[
             'role'    => 'user',
             'content' => [
-                ['type' => 'image', 'source' => [
-                    'type' => 'base64', 'media_type' => $mime, 'data' => $b64,
-                ]],
+                [
+                    'type'   => $esPdf ? 'document' : 'image',
+                    'source' => ['type' => 'base64', 'media_type' => $mime, 'data' => $b64],
+                ],
                 ['type' => 'text', 'text' => $instrucciones],
             ],
         ]],

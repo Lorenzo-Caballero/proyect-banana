@@ -1313,10 +1313,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                corrio porque habia un problema que el no podia resolver; que
                vuelva a hablar es una decision del agente, con su switch. */
             if (crm_hay_derivada($pdo)) {
-                $pdo->prepare(
-                    "UPDATE conversaciones SET derivada_en = NULL, derivada_motivo = NULL
-                      WHERE id = ? AND derivada_en IS NOT NULL"
-                )->execute([$id]);
+                /* derivada_aviso_en es de la migracion 61 y esto corre en CADA
+                   respuesta del agente: si la columna no existe todavia, el
+                   UPDATE tira y se lleva puesta la respuesta entera. Por eso el
+                   fallback -- atender un chat no puede depender de una columna
+                   que solo sirve para el ritmo de los avisos. */
+                try {
+                    $pdo->prepare(
+                        "UPDATE conversaciones
+                            SET derivada_en = NULL, derivada_motivo = NULL, derivada_aviso_en = NULL
+                          WHERE id = ? AND derivada_en IS NOT NULL"
+                    )->execute([$id]);
+                } catch (Throwable $e) {
+                    $pdo->prepare(
+                        "UPDATE conversaciones SET derivada_en = NULL, derivada_motivo = NULL
+                          WHERE id = ? AND derivada_en IS NOT NULL"
+                    )->execute([$id]);
+                }
             }
 
             /* ACA se calla el bot, y no al derivar: recien ahora hay una persona

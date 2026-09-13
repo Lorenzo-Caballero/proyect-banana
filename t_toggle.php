@@ -152,7 +152,43 @@ chequear('apagado a mano (sin marca) NO se despierta solo',
          $rec->rowCount() === 0, 'filas=' . $rec->rowCount());
 chequear('y sigue apagado', ia_activa_chatbot($pdo, $SID, $USR) === false);
 
-echo "\n=== 7. El agente vuelve a prender el bot ===\n";
+echo "\n=== 7. El que insiste vuelve a sonar (pero no en cada mensaje) ===\n";
+/* 13/9/2026: un jugador pidio hablar con alguien CUATRO veces en 31 minutos --
+   08:46, 08:52, 09:08 y 09:17 -- y salio un solo Telegram, el primero, porque
+   la marca era "WHERE derivada_en IS NULL". Se paso por alto y el tipo quedo
+   esperando con la plata ya transferida. */
+$pdo->prepare("UPDATE conversaciones
+                  SET derivada_en=NULL, derivada_motivo=NULL, derivada_aviso_en=NULL
+                WHERE id=?")->execute([$idU]);
+/* Mismo UPDATE que pasar_a_agente. Devuelve filas SOLO cuando toca avisar. */
+function pedirAgente(PDO $pdo, int $id, int $reavisoMin): int {
+    $st = $pdo->prepare(
+        "UPDATE conversaciones
+            SET derivada_en = COALESCE(derivada_en, NOW()),
+                derivada_motivo = 'test',
+                derivada_aviso_en = NOW()
+          WHERE id = ?
+            AND (derivada_aviso_en IS NULL
+                 OR derivada_aviso_en <= NOW() - INTERVAL ? MINUTE)");
+    $st->execute([$id, $reavisoMin]);
+    return $st->rowCount();
+}
+chequear('primer pedido: avisa', pedirAgente($pdo, $idU, 10) === 1);
+chequear('insiste al toque: NO vuelve a avisar (no es spam)',
+         pedirAgente($pdo, $idU, 10) === 0);
+/* Pasan los minutos sin que nadie lo atienda, y vuelve a pedirlo. */
+$pdo->prepare("UPDATE conversaciones
+                  SET derivada_aviso_en = NOW() - INTERVAL 11 MINUTE,
+                      derivada_en       = NOW() - INTERVAL 31 MINUTE
+                WHERE id=?")->execute([$idU]);
+chequear('sigue esperando y vuelve a pedirlo: AHI suena de nuevo',
+         pedirAgente($pdo, $idU, 10) === 1);
+$espera = (int)$pdo->query(
+    "SELECT TIMESTAMPDIFF(MINUTE, derivada_en, NOW()) FROM conversaciones WHERE id=$idU")->fetchColumn();
+chequear('el reaviso NO pisa desde cuando espera (el CRM prioriza bien)',
+         $espera >= 31, "espera=$espera min");
+
+echo "\n=== 8. El agente vuelve a prender el bot ===\n";
 $pdo->prepare("UPDATE conversaciones SET ia_activa = 1 WHERE id = ?")->execute([$idU]);
 chequear('con usuario, el bot se ve prendido', ia_activa_chatbot($pdo, $SID, $USR) === true);
 chequear('y anonimo tambien (misma fila)', ia_activa_chatbot($pdo, $SID, '') === true);
