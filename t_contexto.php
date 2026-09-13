@@ -193,11 +193,12 @@ foreach ([
     chequear("la regla de $que sobrevive a un tono editado en contra",
              str_contains($conTonoMalo, $frase), $frase);
 }
-$posTono   = strpos($conTonoMalo, 'Formal, extenso');
-$posEstilo = strpos($conTonoMalo, 'COMO ESCRIBEN LOS OPERADORES DE ACA');
-chequear('y van DESPUES del tono del cliente, asi que mandan',
-         $posTono !== false && $posEstilo !== false && $posEstilo > $posTono,
-         "tono=$posTono estilo=$posEstilo");
+/* Y desde que el tono dejo de ser editable, ni siquiera hay con que discutir:
+   un bot_tono viejo guardado en config_chatbot NO entra al prompt. */
+chequear('un tono editado por el cliente ya NO llega al prompt',
+         !str_contains($conTonoMalo, 'Formal, extenso'));
+chequear('y el tono canonico si esta',
+         str_contains($conTonoMalo, 'como quien atiende por WhatsApp'));
 
 
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);

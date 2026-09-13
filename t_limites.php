@@ -41,6 +41,7 @@ function limpiarLimites(PDO $pdo): void {
     cfg_crm_guardar($pdo, [
         'lim_carga_min' => '100', 'lim_carga_max' => '500000',
         'lim_retiro_min' => '100', 'lim_retiro_max_dia' => '0',
+        'lim_retiro_max' => '0', 'lim_retiro_cant_dia' => '0',
     ], 'test');
 }
 
@@ -122,6 +123,65 @@ $r = fichas_pedir_retiro($pdo, 'test_lim', 5000, 'test');
 chequear('el rechazado no cuenta', !empty($r['ok']), json_encode($r));
 
 // ===========================================================================
+echo "\n=== 6b. Dos retiros de 50.000 por dia (el caso que pidio Nahuel) ===\n";
+/* Los tres numeros juntos: tope por pedido 50.000, tope diario 100.000 y dos
+   pedidos por dia. Con el tope diario SOLO, el jugador se lleva los 100.000 de
+   una; con la cantidad SOLA, hace dos de 100.000. Hacen falta los dos. */
+limpiarLimites($pdo);
+ponerLimite($pdo, 'lim_retiro_max',      '50000');
+ponerLimite($pdo, 'lim_retiro_max_dia',  '100000');
+ponerLimite($pdo, 'lim_retiro_cant_dia', '2');
+prepararJugador($pdo, $ID, 500000);
+
+$r = fichas_pedir_retiro($pdo, 'test_lim', 100000, 'test');
+chequear('pedir los 100.000 de una: lo frena el tope POR RETIRO',
+         empty($r['ok']) && ($r['codigo'] ?? '') === 'monto_alto', json_encode($r));
+chequear('y le dice el numero (50.000)',
+         strpos((string)($r['error'] ?? ''), '50.000') !== false, (string)($r['error'] ?? ''));
+
+$r = fichas_pedir_retiro($pdo, 'test_lim', 50000, 'test');
+chequear('el primero de 50.000 pasa', !empty($r['ok']), json_encode($r));
+$pdo->exec("UPDATE acciones_saldo SET estado='hecha' WHERE usuario='test_lim'");
+$r = fichas_pedir_retiro($pdo, 'test_lim', 50000, 'test');
+chequear('el segundo de 50.000 tambien', !empty($r['ok']), json_encode($r));
+$pdo->exec("UPDATE acciones_saldo SET estado='hecha' WHERE usuario='test_lim'");
+
+/* El tercero choca con los DOS topes a la vez (dos de 50.000 agotan tambien
+   los 100.000 del dia). Gana el de monto porque se evalua antes, y esta bien:
+   los dos mensajes dicen lo mismo -- hoy no hay mas, manana si. Lo que importa
+   es que NO pase, y que se lo diga de una forma accionable. El caso 6c aisla
+   el tope de cantidad, que es el que no existia. */
+$r = fichas_pedir_retiro($pdo, 'test_lim', 10000, 'test');
+chequear('el tercero NO, aunque sea chico', empty($r['ok']), json_encode($r));
+chequear('frenado por un tope del DIA (monto o cantidad)',
+         in_array($r['codigo'] ?? '', ['tope_diario', 'tope_cantidad'], true),
+         (string)($r['codigo'] ?? ''));
+chequear('y le dice que manana puede', stripos((string)($r['error'] ?? ''), 'ana pod') !== false,
+         (string)($r['error'] ?? ''));
+
+echo "\n=== 6c. Cada limite anda solo, sin el otro ===\n";
+limpiarLimites($pdo);
+ponerLimite($pdo, 'lim_retiro_cant_dia', '1');
+prepararJugador($pdo, $ID, 500000);
+$r = fichas_pedir_retiro($pdo, 'test_lim', 90000, 'test');
+chequear('sin tope de monto, un pedido grande pasa', !empty($r['ok']), json_encode($r));
+$pdo->exec("UPDATE acciones_saldo SET estado='hecha' WHERE usuario='test_lim'");
+$r = fichas_pedir_retiro($pdo, 'test_lim', 100, 'test');
+chequear('pero el segundo del dia no', ($r['codigo'] ?? '') === 'tope_cantidad', json_encode($r));
+chequear('y lo dice en singular cuando el limite es 1',
+         strpos((string)($r['error'] ?? ''), 'un retiro por') !== false, (string)($r['error'] ?? ''));
+
+// Un retiro RECHAZADO no gasta cupo de cantidad (mismo criterio que el monto).
+limpiarLimites($pdo);
+ponerLimite($pdo, 'lim_retiro_cant_dia', '1');
+prepararJugador($pdo, $ID, 500000);
+$pdo->prepare("INSERT INTO acciones_saldo (usuario,tipo,monto,estado,creada_en)
+               VALUES ('test_lim','retirar',5000,'rechazada',NOW())")->execute();
+$r = fichas_pedir_retiro($pdo, 'test_lim', 5000, 'test');
+chequear('un retiro rechazado NO consume el cupo de cantidad',
+         !empty($r['ok']), json_encode($r));
+
+
 echo "\n=== 7. El prompt: las REGLAS FIJAS van al final ===\n";
 // Si las indicaciones del operador quedaran despues, le ganarian al
 // procedimiento -- que es exactamente como se rompio el cobro en produccion.

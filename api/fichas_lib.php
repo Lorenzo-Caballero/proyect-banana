@@ -627,6 +627,17 @@ function fichas_pedir_retiro(PDO $pdo, string $usuario, int $monto, string $orig
         return ['ok' => false, 'codigo' => 'monto_bajo', 'saldo' => $saldo, 'minimo' => $minRetiro,
                 'error' => 'El mínimo para retirar es ' . number_format($minRetiro, 0, ',', '.') . ' fichas.'];
     }
+    /* Tope de UN retiro (lim_retiro_max, 0 = sin tope). Va antes del chequeo
+       de saldo a proposito: si pide mas del tope Y no le alcanza, lo que hay
+       que decirle es el tope -- bajar el monto es lo unico que puede hacer. */
+    $topeUno = fichas_limite($pdo, 'lim_retiro_max', 0);
+    if ($topeUno > 0 && $monto > $topeUno) {
+        return ['ok' => false, 'codigo' => 'monto_alto', 'saldo' => $saldo,
+                'maximo' => $topeUno,
+                'error' => 'Por retiro podés pedir hasta ' .
+                    number_format($topeUno, 0, ',', '.') .
+                    '. Si querés sacar más, hacelo en varios pedidos.'];
+    }
     if ($saldo + 0.01 < $monto) {
         return ['ok' => false, 'codigo' => 'sin_saldo', 'saldo' => $saldo,
                 'error' => 'Tu saldo es de ' . number_format($saldo, 0, ',', '.') .
@@ -680,6 +691,39 @@ function fichas_pedir_retiro(PDO $pdo, string $usuario, int $monto, string $orig
                           ' (el tope diario es ' . number_format($topeDia, 0, ',', '.') . ').'
                         : 'Ya llegaste al tope de retiro de hoy (' .
                           number_format($topeDia, 0, ',', '.') . '). Mañana podés seguir.'];
+        }
+    }
+
+    /* Cuantos retiros por dia (lim_retiro_cant_dia, 0 = sin limite). Cuenta
+       PEDIDOS, no plata: es el otro lado del tope diario. Un casino que paga
+       100.000 por dia en tandas de 50.000 necesita los dos numeros, porque con
+       el tope de monto solo el jugador se lleva todo en un pedido.
+       Mismo dia ARGENTINO y mismos estados que el tope de monto: los
+       rechazados y cancelados no gastan cupo. */
+    $cantDia = fichas_limite($pdo, 'lim_retiro_cant_dia', 0);
+    if ($cantDia > 0) {
+        try {
+            $dia = fichas_rango_dia_ar($pdo);
+            $q = $pdo->prepare(
+                "SELECT COUNT(*) FROM acciones_saldo
+                  WHERE usuario = ? AND tipo = 'retirar'
+                    AND estado IN ('pendiente','procesando','revisar','hecha')
+                    AND creada_en >= ? AND creada_en < ?"
+            );
+            $q->execute([$usuario, $dia['desde'], $dia['hasta']]);
+            $hechosHoy = (int)$q->fetchColumn();
+        } catch (Throwable $e) {
+            // Mismo criterio que el tope de monto: si no se puede contar, no se
+            // bloquea. Es una politica comercial, no un control de fraude.
+            error_log('fichas_pedir_retiro: no pude contar los retiros de hoy: ' . $e->getMessage());
+            $hechosHoy = 0;
+        }
+        if ($hechosHoy >= $cantDia) {
+            return ['ok' => false, 'codigo' => 'tope_cantidad', 'saldo' => $saldo,
+                    'cant_dia' => $cantDia, 'hechos_hoy' => $hechosHoy,
+                    'error' => $cantDia === 1
+                        ? 'Se puede pedir un retiro por día. Mañana podés pedir otro.'
+                        : 'Ya pediste los ' . $cantDia . ' retiros de hoy. Mañana podés seguir.'];
         }
     }
 

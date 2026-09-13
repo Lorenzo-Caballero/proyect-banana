@@ -135,9 +135,18 @@ const CFG_CRM_DEFAULTS = [
     // de carga y son negocios distintos (se suele dejar cargar poco y exigir
     // mas para pagar).
     'lim_retiro_min'     => '100',
+    // Tope de UN retiro. Va aparte del tope diario porque resuelven cosas
+    // distintas: muchos casinos pagan hasta 100.000 por dia pero en tandas de
+    // 50.000, para no mover todo junto. Con solo el tope diario, el jugador se
+    // lleva los 100.000 en un pedido. '0' = sin tope.
+    'lim_retiro_max'     => '0',
     // Tope de lo que un jugador puede pedir por dia. '0' = sin tope, que es
     // como venia funcionando (no existia este limite).
     'lim_retiro_max_dia' => '0',
+    // Cuantos retiros puede pedir por dia, contados aparte del monto: con
+    // lim_retiro_max en 50.000, lim_retiro_max_dia en 100.000 y esto en 2,
+    // sale exactamente "dos retiros de 50.000 por dia". '0' = sin limite.
+    'lim_retiro_cant_dia' => '0',
     // Franja horaria en la que NO se puede retirar, en hora ARGENTINA y
     // formato HH:MM. Tipicamente la madrugada, cuando no hay nadie para
     // aprobar. Puede cruzar la medianoche ('23:00' a '06:00').

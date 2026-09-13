@@ -648,10 +648,18 @@ if (!function_exists('chatbot_bloque_limites')) {
         if ($cMin > 0) { $lineas[] = "- Carga MINIMA: {$n($cMin)} fichas. Por debajo de eso no se puede."; }
         if ($cMax > 0) { $lineas[] = "- Carga MAXIMA por operacion: {$n($cMax)} fichas."; }
 
-        $rMin = (int)($lim['retiro_min'] ?? 0);
-        $rDia = (int)($lim['retiro_max_dia'] ?? 0);
+        $rMin  = (int)($lim['retiro_min'] ?? 0);
+        $rMax  = (int)($lim['retiro_max'] ?? 0);
+        $rDia  = (int)($lim['retiro_max_dia'] ?? 0);
+        $rCant = (int)($lim['retiro_cant_dia'] ?? 0);
         if ($rMin > 0) { $lineas[] = "- Retiro MINIMO: {$n($rMin)} fichas."; }
+        if ($rMax > 0) { $lineas[] = "- Retiro MAXIMO por pedido: {$n($rMax)} fichas."; }
         if ($rDia > 0) { $lineas[] = "- Tope de retiro POR DIA: {$n($rDia)} fichas en total."; }
+        if ($rCant > 0) {
+            $lineas[] = $rCant === 1
+                ? "- Se puede pedir UN retiro por dia."
+                : "- Se pueden pedir hasta {$rCant} retiros por dia.";
+        }
 
         // La franja en que no se paga. Se le cuenta al bot para que lo avise
         // ANTES de tomar el pedido, en vez de dejar que el jugador se coma un
@@ -730,8 +738,17 @@ if (!function_exists('chatbot_contexto_dinamico')) {
     function chatbot_contexto_dinamico(array $campos, array $limites = []): string
     {
         $nombre = trim((string)($campos['bot_nombre'] ?? '')) ?: CB_DEF_NOMBRE;
-        $tono   = trim((string)($campos['bot_tono'] ?? '')) ?: CB_DEF_TONO;
         $extra  = trim((string)($campos['reglas_extra'] ?? ''));
+
+        /* EL TONO YA NO SE EDITA. Era un campo del CRM y se saco a pedido de
+           Nahuel: la forma de contestar es el producto, no una preferencia de
+           cada cajero. Salio de comparar los chats del bot con los de las
+           personas que atienden -- corto, en pasado, sin explicar la cocina --
+           y un cliente que escriba "se formal y detallado" reproduce
+           exactamente el problema que eso vino a arreglar.
+           Si en `config_chatbot` quedo un bot_tono viejo, se IGNORA. No se
+           borra la fila (es dato del cliente) pero no entra al prompt. */
+        $tono = CB_DEF_TONO;
 
         /* juego_desc dejó de ser un campo del CRM (pasó al contexto fijo). Si
            un operador lo había personalizado, ese texto NO se tira: se suma

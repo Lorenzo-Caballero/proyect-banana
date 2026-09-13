@@ -3285,19 +3285,6 @@
         <input id="cbNombre" class="cb-input" maxlength="60" placeholder="Camila">
       </div>
 
-      <!-- Tono -->
-      <div class="cb-field">
-        <div class="cb-field-head">
-          <span class="cb-ico"><svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></span>
-          <div>
-            <label class="cb-flabel" for="cbTono">Tono y personalidad</label>
-            <p class="cb-help">Cómo habla: formal o relajado, con vos o usted, cuántos emojis, etc.</p>
-          </div>
-        </div>
-        <textarea id="cbTono" class="cb-area" rows="4"
-          placeholder="Ej: Argentino, profesional y cordial. Habla de vos, sin exagerar ni gritar."></textarea>
-      </div>
-
       <!-- Límites: no se editan acá (los aplica el sistema), pero forman parte
            del contexto dinámico, así que se dice dónde se tocan. -->
       <div class="cb-field">
@@ -3692,9 +3679,19 @@
               <p class="cfg-hint">Es un número aparte del de carga: podés dejar cargar poco y exigir más para pagar.</p>
             </div>
             <div>
+              <label class="cb-flabel">Tope por retiro</label>
+              <input class="cb-input" id="cfgLimRetiroMax" inputmode="numeric" placeholder="0">
+              <p class="cfg-hint">Lo máximo que puede pedir de una vez. <b>0 = sin tope.</b> Sirve para pagar en tandas en vez de todo junto.</p>
+            </div>
+            <div>
               <label class="cb-flabel">Tope de retiro por día</label>
               <input class="cb-input" id="cfgLimRetiroDia" inputmode="numeric" placeholder="0">
               <p class="cfg-hint">Total que un jugador puede pedir en el día. <b>0 = sin tope.</b> Cuenta lo que ya cobró hoy.</p>
+            </div>
+            <div>
+              <label class="cb-flabel">Retiros por día</label>
+              <input class="cb-input" id="cfgLimRetiroCant" inputmode="numeric" placeholder="0">
+              <p class="cfg-hint">Cuántos pedidos puede hacer en el día, sin importar el monto. <b>0 = sin límite.</b> Con tope por retiro 50.000, tope diario 100.000 y acá 2, sale «dos retiros de 50.000 por día».</p>
             </div>
             <div>
               <label class="cb-flabel">Bono por carga (%)</label>
@@ -4929,7 +4926,9 @@
     lim_carga_min:      { el: "#cfgLimCargaMin",  tipo: "texto" },
     lim_carga_max:      { el: "#cfgLimCargaMax",  tipo: "texto" },
     lim_retiro_min:     { el: "#cfgLimRetiroMin", tipo: "texto" },
+    lim_retiro_max:     { el: "#cfgLimRetiroMax",  tipo: "texto" },
     lim_retiro_max_dia: { el: "#cfgLimRetiroDia", tipo: "texto" },
+    lim_retiro_cant_dia:{ el: "#cfgLimRetiroCant", tipo: "texto" },
     lim_bono_carga_pct: { el: "#cfgLimBonoCarga", tipo: "texto" },
     bono_bienvenida_pct:{ el: "#cfgBonoBienvenida", tipo: "texto" },
     app_url:            { el: "#cfgAppUrl",       tipo: "texto" },
@@ -9236,7 +9235,6 @@ ${cuando}.
     if(!d.ok){ msg.className="cb-msg err"; msg.textContent = d.error||"No se pudo cargar."; return; }
     cbDefaults = d.default || {};
     $("#cbNombre").value = d.bot_nombre || "";
-    $("#cbTono").value   = d.bot_tono || "";
     $("#cbReglas").value = d.reglas_extra || "";
     cbSetActivo(!!d.activo);
     msg.textContent = "";
@@ -9249,7 +9247,6 @@ ${cuando}.
     try{
       d = await jpost({ accion:"chatbot_guardar",
                         bot_nombre:   $("#cbNombre").value,
-                        bot_tono:     $("#cbTono").value,
                         reglas_extra: $("#cbReglas").value,
                         activo:       $("#cbActivo").checked });
     }catch(e){ msg.className="cb-msg err"; msg.textContent="No se pudo guardar."; btn.disabled=false; return; }
@@ -9263,7 +9260,6 @@ ${cuando}.
   $("#cbRestaurar").addEventListener("click", ()=>{
     if(confirm("¿Volver a los valores por defecto? Se reemplaza lo que hayas escrito (no se guarda hasta que toques Guardar).")){
       $("#cbNombre").value = cbDefaults.bot_nombre || "";
-      $("#cbTono").value   = cbDefaults.bot_tono || "";
       $("#cbReglas").value = cbDefaults.reglas_extra || "";
     }
   });

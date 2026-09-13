@@ -419,7 +419,9 @@ $contextoBase = ($cfgBot['contexto'] !== '')
         'carga_min'      => fichas_limite($pdo, 'lim_carga_min',  FICHAS_MIN_CARGA),
         'carga_max'      => fichas_limite($pdo, 'lim_carga_max',  FICHAS_MAX_CARGA),
         'retiro_min'     => fichas_limite($pdo, 'lim_retiro_min', FICHAS_MIN_CARGA),
+        'retiro_max'     => fichas_limite($pdo, 'lim_retiro_max', 0),
         'retiro_max_dia' => fichas_limite($pdo, 'lim_retiro_max_dia', 0),
+        'retiro_cant_dia'=> fichas_limite($pdo, 'lim_retiro_cant_dia', 0),
         // La franja horaria NO pasa por fichas_limite(): esa acepta 0 como
         // valor valido, y 0 es una hora legitima. Vacio = sin restriccion.
         'retiro_hora_desde' => (string)(cfg_crm($pdo, 'lim_retiro_hora_desde') ?? ''),
