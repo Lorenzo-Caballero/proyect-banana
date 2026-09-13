@@ -505,11 +505,46 @@ function rl_crear_recarga(PDO $pdo, string $usuario, int $coins, string $titular
     try {
         rl_vencer($pdo);
 
+        /* MISMO JUGADOR, MISMO MONTO: se reusa la pendiente que ya tiene.
+           En el chat de holaJorge443 (12/9) el jugador pidio $2000 cinco veces
+           seguidas -- no sabia si habia entrado, porque el bot no le leia el
+           comprobante -- y cada pedido abria una recarga nueva. Con cinco filas
+           de $2000 abiertas llego al tope de pendientes y no pudo pedir mas, y
+           encima cualquier OTRO jugador que quisiera cargar $2000 se comia el
+           pedido de titular por un choque que era falso.
+           Pedir dos veces lo mismo no es pedir dos cargas: es la misma persona
+           preguntando de nuevo. Se le devuelve la que ya tenia, con el
+           vencimiento renovado, y sigue siendo UNA sola transferencia. */
+        $reuso = null;
+        try {
+            $q = $pdo->prepare(
+                "SELECT * FROM recargas
+                  WHERE usuario = ? AND estado = 'pendiente' AND monto_base = ?
+                  ORDER BY id DESC LIMIT 1"
+            );
+            $q->execute([$usuario, $montoBase]);
+            $reuso = $q->fetch() ?: null;
+        } catch (Throwable $e) { $reuso = null; }
+        if ($reuso !== null) {
+            $pdo->prepare(
+                "UPDATE recargas SET vence_en = DATE_ADD(NOW(), INTERVAL "
+                    . RL_VENCIMIENTO_MIN . " MINUTE) WHERE referencia = ?"
+            )->execute([$reuso['referencia']]);
+            /* Si recien ahora dice de quien es la cuenta, se guarda: es el dato
+               que desempata (migracion 45; si no corrio, se sigue sin el). */
+            if (trim($titular) !== '' && trim((string)($reuso['titular_declarado'] ?? '')) === '') {
+                try {
+                    $pdo->prepare("UPDATE recargas SET titular_declarado = ? WHERE referencia = ?")
+                        ->execute([mb_substr(trim($titular), 0, 120), $reuso['referencia']]);
+                } catch (Throwable $e) { /* sin migracion 45: se pierde el dato, no la recarga */ }
+            }
+        }
+
         // Tope de pendientes por usuario: un jugador con veinte recargas
         // abiertas del mismo monto hace imposible saber cual pago.
         $c = $pdo->prepare("SELECT COUNT(*) FROM recargas WHERE usuario=? AND estado='pendiente'");
         $c->execute([$usuario]);
-        if ((int)$c->fetchColumn() >= RL_MAX_PENDIENTES_USUARIO) {
+        if ($reuso === null && (int)$c->fetchColumn() >= RL_MAX_PENDIENTES_USUARIO) {
             $pdo->rollBack();
             return ['ok' => false, 'error' =>
                 'Ya tenes varias recargas pendientes. Termina o espera que venzan antes de crear otra.'];
@@ -544,7 +579,7 @@ function rl_crear_recarga(PDO $pdo, string $usuario, int $coins, string $titular
            Se compara contra recargas de OTROS usuarios: dos pedidos del mismo
            jugador por el mismo monto no son ambiguos para lo que importa
            (a quien acreditarle). */
-        if (trim($titular) === '') {
+        if ($reuso === null && trim($titular) === '') {
             $choque = $pdo->prepare(
                 "SELECT COUNT(*) FROM recargas
                   WHERE estado = 'pendiente' AND monto_base = ? AND usuario <> ?"
@@ -559,45 +594,50 @@ function rl_crear_recarga(PDO $pdo, string $usuario, int $coins, string $titular
             }
         }
 
-        // Insertar, reintentando si la referencia aleatoria choca (muy raro).
-        // titular_declarado es de la migracion 45: si todavia no corrio, se
-        // inserta sin esa columna y la recarga funciona igual (solo pierde el
-        // desempate por nombre). Mismo criterio de degradado que alta_encolar().
-        $titular = mb_substr(trim($titular), 0, 120);
-        $conTitular = true;
-        $ins = $pdo->prepare(
-            "INSERT INTO recargas (referencia, usuario, coins, monto_base, monto_pedido, centavos,
-                                   titular_declarado, estado, creada_en, vence_en)
-             VALUES (?,?,?,?,?,?,?, 'pendiente', NOW(), DATE_ADD(NOW(), INTERVAL " . RL_VENCIMIENTO_MIN . " MINUTE))"
-        );
-        $insViejo = null;
-        $ref = '';
-        for ($intento = 0; $intento < 5; $intento++) {
-            $ref = rl_referencia();
-            try {
-                if ($conTitular) {
-                    $ins->execute([$ref, $usuario, $coins, $montoBase, $montoPedido, $cent,
-                                   $titular !== '' ? $titular : null]);
-                } else {
-                    $insViejo->execute([$ref, $usuario, $coins, $montoBase, $montoPedido, $cent]);
+        if ($reuso !== null) {
+            // Ya existe: no se inserta nada, se sigue con su referencia.
+            $ref = (string)$reuso['referencia'];
+        } else {
+            // Insertar, reintentando si la referencia aleatoria choca (muy raro).
+            // titular_declarado es de la migracion 45: si todavia no corrio, se
+            // inserta sin esa columna y la recarga funciona igual (solo pierde el
+            // desempate por nombre). Mismo criterio de degradado que alta_encolar().
+            $titular = mb_substr(trim($titular), 0, 120);
+            $conTitular = true;
+            $ins = $pdo->prepare(
+                "INSERT INTO recargas (referencia, usuario, coins, monto_base, monto_pedido, centavos,
+                                       titular_declarado, estado, creada_en, vence_en)
+                 VALUES (?,?,?,?,?,?,?, 'pendiente', NOW(), DATE_ADD(NOW(), INTERVAL " . RL_VENCIMIENTO_MIN . " MINUTE))"
+            );
+            $insViejo = null;
+            $ref = '';
+            for ($intento = 0; $intento < 5; $intento++) {
+                $ref = rl_referencia();
+                try {
+                    if ($conTitular) {
+                        $ins->execute([$ref, $usuario, $coins, $montoBase, $montoPedido, $cent,
+                                       $titular !== '' ? $titular : null]);
+                    } else {
+                        $insViejo->execute([$ref, $usuario, $coins, $montoBase, $montoPedido, $cent]);
+                    }
+                    break;
+                } catch (PDOException $e) {
+                    if (($e->errorInfo[1] ?? 0) == 1062 && $intento < 4) {
+                        continue;   // referencia repetida, probamos otra
+                    }
+                    if ($conTitular && ($e->errorInfo[1] ?? 0) == 1054) {
+                        // "Unknown column": falta la migracion 45.
+                        $conTitular = false;
+                        $insViejo = $pdo->prepare(
+                            "INSERT INTO recargas (referencia, usuario, coins, monto_base, monto_pedido,
+                                                   centavos, estado, creada_en, vence_en)
+                             VALUES (?,?,?,?,?,?, 'pendiente', NOW(), DATE_ADD(NOW(), INTERVAL " . RL_VENCIMIENTO_MIN . " MINUTE))"
+                        );
+                        $intento--;   // este intento no cuenta: se reintenta con la query vieja
+                        continue;
+                    }
+                    throw $e;
                 }
-                break;
-            } catch (PDOException $e) {
-                if (($e->errorInfo[1] ?? 0) == 1062 && $intento < 4) {
-                    continue;   // referencia repetida, probamos otra
-                }
-                if ($conTitular && ($e->errorInfo[1] ?? 0) == 1054) {
-                    // "Unknown column": falta la migracion 45.
-                    $conTitular = false;
-                    $insViejo = $pdo->prepare(
-                        "INSERT INTO recargas (referencia, usuario, coins, monto_base, monto_pedido,
-                                               centavos, estado, creada_en, vence_en)
-                         VALUES (?,?,?,?,?,?, 'pendiente', NOW(), DATE_ADD(NOW(), INTERVAL " . RL_VENCIMIENTO_MIN . " MINUTE))"
-                    );
-                    $intento--;   // este intento no cuenta: se reintenta con la query vieja
-                    continue;
-                }
-                throw $e;
             }
         }
 
@@ -616,7 +656,14 @@ function rl_crear_recarga(PDO $pdo, string $usuario, int $coins, string $titular
            centavos unicos. Una caida de la pasarela no puede dejar a los
            jugadores sin poder cargar. */
         $rHG = null;
-        if (is_file(__DIR__ . '/hgcash_lib.php') && rl_metodo_cobro() === 'hgcash') {
+        /* Si se reuso una recarga que ya tenia checkout de HG, el link sigue
+           siendo el mismo: crear otro seria una segunda intencion de pago. */
+        if ($reuso !== null && trim((string)($reuso['hg_url'] ?? '')) !== '') {
+            $rHG = ['id'  => (string)($reuso['hg_checkout_id'] ?? ''),
+                    'url' => (string)$reuso['hg_url'],
+                    'alias' => '', 'cvu' => '', 'titular' => ''];
+        }
+        if (!$rHG && is_file(__DIR__ . '/hgcash_lib.php') && rl_metodo_cobro() === 'hgcash') {
             require_once __DIR__ . '/hgcash_lib.php';
 
             // Intento 1: HG Cash con las credenciales PROPIAS de este cliente

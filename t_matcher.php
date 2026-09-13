@@ -222,6 +222,52 @@ $r = rl_crear_recarga($pdo, 'test_ana', 2000, '');
 chequear('otro monto no choca: no pregunta', !empty($r['ok']), json_encode($r));
 
 // ===========================================================================
+echo "
+=== 9. Pedir lo mismo dos veces es UNA recarga, no dos ===
+";
+/* holaJorge443 (12/9): el jugador pidio $2000 cinco veces seguidas -- no sabia
+   si su transferencia habia entrado -- y se abrieron cinco recargas. Llego al
+   tope de pendientes, no pudo pedir mas, y de paso cualquier otro jugador que
+   quisiera cargar $2000 se comia el pedido de titular por un choque falso.
+   Preguntar de nuevo no es pedir otra carga. */
+limpiar($pdo);
+crearUsuario($pdo, 'test_ana');
+crearUsuario($pdo, 'test_beto');
+
+$r1 = rl_crear_recarga($pdo, 'test_ana', 1500, '');
+chequear('primera de 1500: ok', !empty($r1['ok']), json_encode($r1));
+$r2 = rl_crear_recarga($pdo, 'test_ana', 1500, '');
+chequear('la vuelve a pedir: misma referencia, no una nueva',
+         ($r2['referencia'] ?? 'x') === ($r1['referencia'] ?? 'y'),
+         ($r1['referencia'] ?? '-') . ' vs ' . ($r2['referencia'] ?? '-'));
+chequear('y le repite el mismo monto a transferir',
+         ($r2['monto_pedido'] ?? '') === ($r1['monto_pedido'] ?? 'x'));
+
+// Insistir no puede agotarle el cupo: antes, a la sexta se quedaba afuera.
+for ($i = 0; $i < 6; $i++) { $rN = rl_crear_recarga($pdo, 'test_ana', 1500, ''); }
+chequear('insistir ocho veces no lo deja sin cupo', !empty($rN['ok']), json_encode($rN));
+$n = (int)$pdo->query("SELECT COUNT(*) FROM recargas
+                        WHERE usuario='test_ana' AND estado='pendiente'")->fetchColumn();
+chequear('sigue habiendo UNA sola pendiente', $n === 1, "pendientes=$n");
+
+// El titular que dice recien a la tercera tambien se guarda: es el desempate.
+rl_crear_recarga($pdo, 'test_ana', 1500, 'ANA PEREZ');
+$tit = $pdo->prepare("SELECT titular_declarado FROM recargas WHERE referencia = ?");
+$tit->execute([$r1['referencia']]);
+chequear('el titular declarado despues se guarda en la misma recarga',
+         (string)$tit->fetchColumn() === 'ANA PEREZ');
+
+// Y el reuso es por jugador: otro que pida lo mismo sigue chocando.
+$r = rl_crear_recarga($pdo, 'test_beto', 1500, '');
+chequear('otro jugador con el mismo monto sigue necesitando titular',
+         ($r['codigo'] ?? '') === 'falta_titular', json_encode($r));
+// Otro monto del mismo jugador si es una recarga distinta.
+$r = rl_crear_recarga($pdo, 'test_ana', 3000, '');
+chequear('otro monto del mismo jugador si abre una nueva',
+         !empty($r['ok']) && ($r['referencia'] ?? '') !== ($r1['referencia'] ?? ''),
+         json_encode($r));
+
+// ===========================================================================
 echo "\n=== Resolver a mano lo que el matcher no pudo ===\n";
 
 /* Estos comprobantes son los que se venian acumulando sin salida: 25 llegaron
