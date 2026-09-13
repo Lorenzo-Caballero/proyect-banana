@@ -205,8 +205,28 @@ Cuatro caminos distintos, con permisos distintos:
      operación. El ancla es `peticiones_carga.primera_vez`.
    - Acá **no se tocan los `coins`**: la plata la acredita la plataforma sobre
      el saldo real, que espeja `sync_usuarios.py`. Solo queda el `movimientos`.
-   - **Nunca rechaza.** Si pasan 15 min sin plata, lo deja marcado para que lo
-     mire una persona. El endpoint de rechazo no está capturado.
+   - **No rechaza por su cuenta.** Si pasan 15 min sin plata, lo deja marcado
+     para que lo mire una persona. Rechazar es siempre una decisión humana: se
+     pide desde el CRM («Rechazar», migración 63) y el worker la ejecuta.
+   - **El endpoint de rechazo, capturado el 13/09/2026** mirando qué hace el
+     botón de cancelar del panel:
+
+         PATCH /api/payment/deposit/{id}   body {"status": 0}
+
+     Es el MISMO que aprueba, con `0` en vez de `1`. Acá decía que no estaba
+     capturado, y por eso no se podía cancelar nada desde el CRM.
+
+     > **Los dos `status` no son lo mismo**, y confundirlos aprueba una carga
+     > que querías rechazar: el del cuerpo que **mandás** es la acción (0
+     > rechaza, 1 aprueba); el del cuerpo que **vuelve** es el código de
+     > resultado (`0` = salió bien). Un 2xx no alcanza para dar nada por hecho:
+     > la plataforma responde 200 igual cuando falla.
+
+   - **Nunca se rechaza una solicitud con transferencia reclamada.** Si el
+     matcher ya le encontró el pago, el jugador pagó: corresponde aprobar.
+     La guarda está repetida en `crm_peticiones.php` (al aceptar el pedido) y en
+     `peticiones_cola.php` (al ejecutarlo), porque entre una cosa y la otra
+     puede entrar la plata y la decisión cambia.
 
    `ganamos_bot.py` y `ganamos_conciliador.py` son la versión vieja de esto y
    **quedaron muertos a propósito**: el primero aprueba sin verificar nada.
