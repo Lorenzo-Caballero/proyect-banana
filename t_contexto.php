@@ -169,5 +169,36 @@ chequear('todas las que nombra el prompt existen en chatbot.php',
          $huerfanas === [],
          'el prompt pide herramientas inexistentes: ' . implode(', ', $huerfanas));
 
+// ===========================================================================
+echo "\n=== El registro de los operadores humanos es FIJO ===\n";
+/* Estas reglas salieron de comparar los chats del bot con los de las personas
+   que atienden este mismo casino. El TONO si es editable, y un cliente puede
+   escribir ahi cualquier cosa -- incluso "se formal y detallado", que es justo
+   lo que producia "¡Listo! Transferi el monto exacto a los datos de aca
+   abajo...". Por eso el registro vive en las FIJAS, que van ultimas y mandan. */
+$conTonoMalo = chatbot_armar_prompt([
+    'bot_nombre'   => 'Test',
+    'bot_tono'     => 'Formal, extenso y muy detallado. Explica todo el proceso.',
+    'juego_desc'   => 'juego',
+    'reglas_extra' => '',
+]);
+foreach ([
+    'no repetirse'          => 'NUNCA MANDES DOS VECES EL MISMO MENSAJE',
+    'una oracion'           => 'UNA ORACION, NO TRES',
+    'hablar en pasado'      => 'HABLA DE LO QUE YA PASO',
+    'no explicar la cocina' => 'NO EXPLIQUES LA COCINA',
+    'resolver, no consolar' => 'NO CONSUELES, RESOLVE',
+    'no delegar el chequeo' => 'NO LE PIDAS AL JUGADOR QUE VERIFIQUE POR VOS',
+] as $que => $frase) {
+    chequear("la regla de $que sobrevive a un tono editado en contra",
+             str_contains($conTonoMalo, $frase), $frase);
+}
+$posTono   = strpos($conTonoMalo, 'Formal, extenso');
+$posEstilo = strpos($conTonoMalo, 'COMO ESCRIBEN LOS OPERADORES DE ACA');
+chequear('y van DESPUES del tono del cliente, asi que mandan',
+         $posTono !== false && $posEstilo !== false && $posEstilo > $posTono,
+         "tono=$posTono estilo=$posEstilo");
+
+
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);
 exit($fail > 0 ? 1 : 0);
