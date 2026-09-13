@@ -631,6 +631,10 @@
   .mbtns{display:flex;gap:9px;margin-top:20px}
   .mbtns button{flex:1;padding:12px;border-radius:11px;border:none;font-weight:700;font-size:14px}
   .mbtns .ok{background:linear-gradient(180deg,var(--violet2),var(--violet));color:var(--onAccent)}
+  /* El boton de RETIRAR no puede verse igual que el de cargar: son acciones
+     opuestas sobre la plata del jugador y el modal es el mismo. El color es la
+     segunda señal, despues del texto. */
+  .mbtns .ok.peligro{background:linear-gradient(180deg,#e5595d,#c94347);color:#fff}
   .mbtns .no{background:transparent;border:1px solid var(--line);color:var(--muted)}
   .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--panel);border:1px solid var(--violet);color:var(--txt);padding:12px 20px;border-radius:12px;z-index:60;opacity:0;transition:.25s;pointer-events:none;box-shadow:var(--shadow)}
   .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
@@ -4279,6 +4283,8 @@
     <input id="mMotivo" type="text" placeholder="Ej: promo, ajuste, regalo…">
     <div class="mbtns">
       <button class="no" id="mCancel">Cancelar</button>
+      <!-- El texto y el color los pone abrirModal(): en el modal de retirar
+           tiene que decir "Retirar", no "Cargar". -->
       <button class="ok" id="mOk">Cargar</button>
     </div>
   </div>
@@ -9184,7 +9190,23 @@
     if(!st.usuario){ toast("Esta conversación no tiene usuario vinculado"); return; }
     st.accion = accion;
     $("#mTitulo").textContent = titulo;
-    $("#mSub").textContent = `Para @${st.usuario}. ` + (ganamos ? "Se encola para ejecutar en ganamos." : "Se acredita al instante.");
+    const esRetiro = accion === "retirar_saldo";
+    /* EL BOTON DECIA "Cargar" SIEMPRE, incluso en el modal de retirar. En una
+       pantalla que mueve plata, que el botón diga lo contrario de lo que hace
+       es el peor error posible: leés "Retirar saldo" arriba y "Cargar" abajo, y
+       no sabés si suma o resta. */
+    $("#mOk").textContent = esRetiro ? "Retirar" : "Cargar";
+    $("#mOk").classList.toggle("peligro", esRetiro);
+    /* Y EL SUBTITULO MENTIA en el caso del retiro: decía "se encola para
+       ejecutar en ganamos", y NO se ejecuta. El worker, al encontrar una acción
+       de tipo 'retirar', la manda a revisar con "retiro: lo resuelve un agente"
+       -- sacar plata nunca fue automático, es una decisión de una persona.
+       Así que el saldo del jugador NO baja solo, y quien leía ese subtítulo se
+       quedaba esperando que bajara. */
+    $("#mSub").textContent = `Para @${st.usuario}. ` + (
+      esRetiro ? "Queda ANOTADO en Retiros pendientes. NO le baja el saldo solo: el retiro lo hacés vos en el panel de ganamos."
+      : ganamos ? "Se encola y el bot lo deposita en ganamos en segundos."
+      : "Se acredita al instante.");
     $("#mMonto").value=""; $("#mMotivo").value="";
     $("#back").classList.add("on"); setTimeout(()=>$("#mMonto").focus(),50);
   }
