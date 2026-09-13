@@ -2307,8 +2307,10 @@
       <span class="cap" id="retCap"></span>
     </div>
     <p class="vista-ayuda">
-      Jugadores que pidieron cobrar. <b>El retiro no es automático</b>: lo pagás
-      vos desde el panel de ganamos y después lo marcás acá.
+      Jugadores que pidieron cobrar, por las dos vías: <b>por el chat</b> (los
+      marcás acá cuando les transferís) y <b>desde el juego</b> (esos se
+      resuelven en el panel de ganamos y se cierran solos).
+      <b>Ningún retiro es automático</b>: la plata la mandás vos.
       Los ya resueltos salen de esta lista y quedan en «Hecha».
     </p>
     <div class="subhead">
@@ -7294,6 +7296,30 @@
 
     $("#retList").innerHTML = d.items.map(r=>{
       const btns = [];
+      /* PEDIDO DESDE EL JUEGO: viene del espejo del panel, no de nuestra cola.
+         No lleva NINGUNA accion nuestra -- se paga y se cierra en ganamos, y el
+         espejo se entera solo en menos de un minuto. Ofrecer "Pagado" o
+         "Cancelar" acá sería mentir: no tocarían nada del otro lado. */
+      if(r.del_juego){
+        const dias = r.espera_min!=null ? Math.floor(r.espera_min/1440) : 0;
+        const chip = dias >= 1
+          ? `<span class="urg-chip ${dias>=3?"crit":"warn"}">${ico("reloj")}Espera hace ${dias} ${dias===1?"día":"días"}</span>` : "";
+        const dst = r.destino
+          ? `<button class="rr-copiar" data-copiar="${esc(r.destino)}" type="button"
+                     title="Copiar para pegarlo en el panel">${ico("copiar")}<code>${esc(r.destino)}</code></button>`
+          : `<span class="rr-dato falta">Sin CBU/alias</span>`;
+        return `<div class="ret-row">
+          <div class="rr-mid">
+            <div class="rr-user">@${esc(r.usuario)}<span class="ret-tag pendiente">Pedido en el juego</span>${chip}</div>
+            <div class="rr-sub">#${r.id} · ${hace(r.creada_en)} · lo resolvés en el panel de ganamos</div>
+            <div class="rr-destino">${dst}
+              ${r.destino_nombre ? `<span class="rr-dato">${esc(r.destino_nombre)}</span>` : ""}
+            </div>
+          </div>
+          <div class="rr-monto">${money(r.monto)}</div>
+          <div class="rr-acciones"></div>
+        </div>`;
+      }
       const esperaAprob = r.estado==="pendiente" && !r.aprobado;
       // Aprobar: un retiro pedido por el jugador NO se ejecuta hasta que un
       // agente lo aprueba. Recién ahí el bot lo toma de la cola.

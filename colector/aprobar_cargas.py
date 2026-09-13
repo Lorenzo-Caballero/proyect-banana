@@ -522,11 +522,17 @@ def avisar_retiros(ctx, retiros: list, solo_ver: bool) -> None:
     Si falla, se loguea y ya: avisar no es parte de aprobar cargas y no puede
     tumbar una pasada que hizo bien lo suyo.
     """
-    if not retiros:
-        return
     if solo_ver:
         log.info("(dry-run) %d retiro(s) en el panel; no se piden avisos", len(retiros))
         return
+    # SE LLAMA AUNQUE NO HAYA NINGUNO. Antes habia un `return` temprano con la
+    # lista vacia, y con el espejo (migracion 64) eso rompe: el server cierra
+    # los retiros que ya no aparecen en el panel, y "no aparece ninguno" es
+    # justamente el caso en que se resolvio el ultimo. Sin esta llamada, ese
+    # ultimo quedaba abierto para siempre en el CRM.
+    # Solo se llama despues de una lectura EXITOSA del panel (traer_solicitudes
+    # devolvio algo), asi que una lista vacia significa "no hay", no "no pude
+    # leer".
     key = os.environ.get("API_KEY", "")
     if not key:
         return

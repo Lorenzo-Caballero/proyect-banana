@@ -135,6 +135,59 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 return $r;
             }, $st->fetchAll(PDO::FETCH_ASSOC));
 
+            /* LOS PEDIDOS DESDE EL JUEGO, en la misma lista. Viven en otra
+               tabla (`retiros_panel`, migracion 64) y NO en `acciones_saldo`,
+               porque esa es la cola que ejecuta nuestro worker: uno del panel
+               metido ahi se pagaria dos veces. Pero para el operador son lo
+               mismo -- gente esperando cobrar -- y tenerlos en dos pantallas
+               distintas es como no tenerlos.
+               Vienen marcados `del_juego` para que el front no ofrezca acciones
+               que no corresponden: estos se resuelven en el panel y el espejo
+               se entera solo. */
+            if ($estado === '' || $estado === 'todas' || $estado === 'pendiente') {
+                try {
+                    /* OJO: `$q` de mas arriba es el TEXTO de busqueda. El
+                       statement va en otra variable -- pisarlo dejaria la
+                       busqueda rota de ahi en adelante. */
+                    $stRP = $pdo->prepare(
+                        "SELECT request_id, username, titular, monto, destino,
+                                primera_vez, estado,
+                                TIMESTAMPDIFF(MINUTE, primera_vez, NOW()) AS espera_min
+                           FROM retiros_panel
+                          WHERE estado = 'abierto'
+                            AND (? = '' OR username LIKE ?)
+                          ORDER BY primera_vez DESC LIMIT 100"
+                    );
+                    $stRP->execute([$q, '%' . $q . '%']);
+                    foreach ($stRP->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                        $items[] = [
+                            'id'             => (int)$r['request_id'],
+                            'usuario'        => (string)$r['username'],
+                            'monto'          => (float)$r['monto'],
+                            'motivo'         => 'pedido desde el juego',
+                            'estado'         => 'pendiente',
+                            'aprobado'       => 1,     // no espera aprobacion nuestra
+                            'mensaje'        => null,
+                            'destino'        => (string)($r['destino'] ?? ''),
+                            'destino_nombre' => (string)($r['titular'] ?? ''),
+                            'destino_cuit'   => '',
+                            'hg_estado'      => '',
+                            'saldo_antes'    => null,
+                            'saldo_despues'  => null,
+                            'creada_en'      => $r['primera_vez'],
+                            'ejecutada_en'   => null,
+                            'espera_min'     => (int)$r['espera_min'],
+                            'del_juego'      => true,
+                        ];
+                    }
+                    // Los mas nuevos arriba, mezclados con los otros.
+                    usort($items, static fn($a, $b) => strcmp((string)$b['creada_en'], (string)$a['creada_en']));
+                } catch (Throwable $e) {
+                    // Sin la migracion 64 no hay espejo: se sirve lo de siempre.
+                    error_log('crm_retiros: sin retiros_panel: ' . $e->getMessage());
+                }
+            }
+
             salir(['ok' => true, 'items' => $items]);
         }
 

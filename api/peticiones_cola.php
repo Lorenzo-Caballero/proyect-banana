@@ -499,6 +499,33 @@ try {
             $tl = __DIR__ . '/telegram_lib.php';
             if (is_file($tl)) { require_once $tl; }
         }
+        /* ESPEJAR, no solo avisar. Hasta ahora esto mandaba el Telegram y no
+           guardaba nada, asi que un retiro pedido dentro del juego existia
+           EXACTAMENTE durante el tiempo que el aviso tardaba en perderse en el
+           grupo. Y es el canal con mas volumen: en produccion el ultimo retiro
+           por chat es del 19/08/2026 y sin embargo llegan pedidos seguido.
+           Ahora quedan en `retiros_panel` (migracion 64) y se ven en el CRM.
+           Best-effort: si la migracion no corrio, se sigue avisando igual --
+           perder el espejo es aceptable, perder el aviso no. */
+        $espejo = null;
+        $vistosRet = [];
+        try {
+            $espejo = $pdo->prepare(
+                "INSERT INTO retiros_panel
+                        (request_id, username, titular, monto, destino, creada_api,
+                         primera_vez, actualizada_en)
+                 VALUES (?,?,?,?,?,?, NOW(), NOW())
+                 ON DUPLICATE KEY UPDATE username = VALUES(username),
+                                         titular  = VALUES(titular),
+                                         monto    = VALUES(monto),
+                                         destino  = VALUES(destino),
+                                         creada_api = VALUES(creada_api),
+                                         actualizada_en = NOW()"
+            );
+        } catch (Throwable $e) {
+            error_log('avisar_retiros: sin espejo (falta la migracion 64): ' . $e->getMessage());
+        }
+
         $avisados = 0;
         foreach ($lista as $r) {
             if (!is_array($r)) { continue; }
@@ -515,8 +542,52 @@ try {
                 'Qué hacer' => 'Panel de agentes → Retiros, para aprobarlo o rechazarlo.',
             ], 'retiro_panel:' . $rid);
             if ($ok) { $avisados++; }
+
+            if ($espejo) {
+                try {
+                    $espejo->execute([$rid, mb_substr($usr, 0, 60),
+                        mb_substr(trim((string)($r['name'] ?? '')), 0, 160) ?: null,
+                        $mon,
+                        mb_substr(trim((string)($r['cbu'] ?? '')), 0, 120) ?: null,
+                        mb_substr(trim((string)($r['created_at'] ?? '')), 0, 40) ?: null]);
+                    $vistosRet[] = $rid;
+                } catch (Throwable $e) {
+                    error_log('avisar_retiros/espejo: ' . $e->getMessage());
+                }
+            }
         }
-        echo json_encode(['ok' => true, 'avisados' => $avisados]);
+
+        /* Los que TENIAMOS abiertos y el panel ya no lista: alguien los pago o
+           los rechazo ahi. Se cierran solos, igual que las cargas del juego.
+
+           SE CIERRA TAMBIEN CON LA LISTA VACIA, y eso es deliberado: que no
+           haya ninguno pendiente es justamente el caso en que TODOS se
+           resolvieron. Es seguro porque el worker solo llama a este endpoint
+           DESPUES de leer el panel con exito -- si la lectura falla, no llama y
+           no se cierra nada. (Por eso tambien se saco el `return` temprano del
+           worker cuando la lista venia vacia: sin esa llamada, el ultimo retiro
+           en resolverse quedaba abierto para siempre.) */
+        if ($espejo) {
+            try {
+                if ($vistosRet) {
+                    $marcas = implode(',', array_fill(0, count($vistosRet), '?'));
+                    $st = $pdo->prepare(
+                        "UPDATE retiros_panel SET estado='cerrado', actualizada_en=NOW()
+                          WHERE estado='abierto' AND request_id NOT IN ($marcas)");
+                    $st->execute($vistosRet);
+                } else {
+                    $st = $pdo->prepare(
+                        "UPDATE retiros_panel SET estado='cerrado', actualizada_en=NOW()
+                          WHERE estado='abierto'");
+                    $st->execute();
+                }
+            } catch (Throwable $e) {
+                error_log('avisar_retiros/cerrar: ' . $e->getMessage());
+            }
+        }
+
+        echo json_encode(['ok' => true, 'avisados' => $avisados,
+                          'espejados' => count($vistosRet)]);
         exit;
     }
 
