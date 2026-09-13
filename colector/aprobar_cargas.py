@@ -92,6 +92,7 @@ otro worker que toque el panel, va con este mismo lock.
 """
 
 import argparse
+import json
 import logging
 import os
 import sys
@@ -484,6 +485,86 @@ def avisar_retiros(ctx, retiros: list, solo_ver: bool) -> None:
         log.warning("no pude pedir los avisos de retiros: %s", e)
 
 
+STOCK_CADA_MIN = 10          # cada cuanto se mira nuestro stock de fichas
+_STOCK_MARCA = "/tmp/gp_stock_visto"
+
+
+def _url_stock() -> str:
+    """De API_URL (.../gp-api/altas_cola.php) sacamos .../gp-api/stock_agente.php"""
+    base = (os.environ.get("API_URL", "") or "").split("?")[0]
+    return base.rsplit("/", 1)[0] + "/stock_agente.php"
+
+
+def _stock_toca() -> bool:
+    """True si paso STOCK_CADA_MIN desde la ultima lectura.
+
+    Este worker arranca de cero cada minuto (lo lanza el cron), asi que el
+    "hace cuanto" no puede vivir en memoria: va en la fecha de un archivo.
+    Se mira cada 10 min y no en cada pasada porque el saldo baja de a poco y
+    la respuesta del panel trae la lista de usuarios entera -- pedirla 1.440
+    veces por dia para ver un numero que casi no se movio es puro gasto.
+    """
+    try:
+        if os.path.isfile(_STOCK_MARCA):
+            if (time.time() - os.path.getmtime(_STOCK_MARCA)) < STOCK_CADA_MIN * 60:
+                return False
+        open(_STOCK_MARCA, "w").close()
+        return True
+    except Exception:
+        return True          # ante la duda, mirar: es una lectura, no un cobro
+
+
+def revisar_stock(ctx, solo_ver: bool) -> None:
+    """Lee NUESTRO saldo de fichas y se lo manda al server, que avisa si esta bajo.
+
+    De donde sale el numero:
+        GET {PANEL_API}/agent_admin/user/  ->  result.source_user.balance
+    `source_user` es el agente que hace la request, o sea nosotros.
+
+    OJO: esa misma respuesta trae `balance_sum` (la suma de los saldos de los
+    JUGADORES) y `users[].balance` (el de uno suelto). Ninguno es nuestro stock
+    y los tres son numeros plausibles -- verificado el 13/9/2026 contra el
+    "Saldo" que muestra el panel en pantalla: source_user.balance = 233.911,10.
+
+    Si algo falla, se loguea y ya. Mirar el stock no es parte de aprobar cargas
+    y no puede tumbar una pasada que hizo bien lo suyo.
+    """
+    if solo_ver or not _stock_toca():
+        return
+    key = os.environ.get("API_KEY", "")
+    if not key:
+        return
+    try:
+        r = ctx.request.get(PANEL_API + "/agent_admin/user/", timeout=20_000)
+        txt = r.text()
+        if txt.strip()[:1] == "<":
+            log.warning("stock: el panel contesto HTML (WAF/login), no leo el saldo")
+            return
+        d = json.loads(txt) or {}
+        saldo = ((d.get("result") or {}).get("source_user") or {}).get("balance")
+        if saldo is None:
+            log.warning("stock: la respuesta no trae result.source_user.balance")
+            return
+    except Exception as e:
+        log.warning("stock: no pude leer el saldo del agente: %s", e)
+        return
+
+    # Un saldo ilegible NO se manda: del otro lado, un 0 inventado dispara el
+    # aviso de "sin fichas" con la cuenta llena, y un aviso falso quema todos
+    # los que vengan despues.
+    try:
+        r = ctx.request.post(_url_stock(), headers={"X-API-Key": key},
+                             data={"saldo": float(saldo)}, timeout=20_000)
+        d = r.json() or {}
+        if d.get("aviso"):
+            log.warning("stock BAJO: %s (avisa bajo %s) -- se mando el aviso",
+                        d.get("saldo"), d.get("umbral"))
+        else:
+            log.info("stock de fichas: %s", d.get("saldo"))
+    except Exception as e:
+        log.warning("stock: no pude reportar el saldo: %s", e)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Aprueba las cargas pedidas desde la plataforma")
     ap.add_argument("--loop", type=int, metavar="SEG", help="repetir cada SEG segundos")
@@ -520,6 +601,7 @@ def main() -> int:
         while True:
             try:
                 n = una_pasada(ctx, args.ver, args.dias)
+                revisar_stock(ctx, args.ver)
                 if n:
                     log.info("%d carga(s) aprobada(s)", n)
             except DesafioWAF as e:

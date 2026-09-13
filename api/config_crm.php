@@ -157,6 +157,25 @@ const CFG_CRM_DEFAULTS = [
     'lim_retiro_hora_desde' => '',
     'lim_retiro_hora_hasta' => '',
 
+    // ----- Stock de fichas de la cuenta de agente -----
+    // Avisar por Telegram cuando NUESTRO saldo en ganamos baja de este numero.
+    // '0' = sin aviso.
+    //
+    // POR QUE EXISTE: el 12/9/2026 la cuenta se quedo sin fichas y la
+    // plataforma empezo a rechazar los depositos. Es una condicion operativa
+    // normal -- se acaba el stock y hay que comprarle mas al proveedor -- pero
+    // se descubria cuando los jugadores reclamaban. El umbral tiene que dar
+    // tiempo a reponer, asi que se pone bastante mas arriba de cero: si el
+    // casino mueve 50.000 por dia, avisar en 50.000 es avisar tarde.
+    //
+    // El default es '0' y no un numero: lo que para un casino es poco, para
+    // otro es mucho, y un umbral inventado o no suena nunca o suena siempre.
+    'lim_stock_aviso'    => '0',
+    // Ultima lectura, para mostrarla en el CRM. Las escribe stock_agente.php,
+    // no se editan a mano.
+    'stock_fichas'       => '',
+    'stock_fichas_en'    => '',
+
     // ----- Credenciales del panel de agentes (agents.ganamosonline.com) -----
     // Las usa el bot del VPS para loguearse y depositar/crear jugadores.
     // VACIAS = el bot sigue con las PANEL_USER/PANEL_PASS de su .env, que es

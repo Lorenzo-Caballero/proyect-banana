@@ -3683,6 +3683,11 @@
               <p class="cfg-hint">Cuántos pedidos puede hacer en el día, sin importar el monto. <b>0 = sin límite.</b> Con tope por retiro 50.000, tope diario 100.000 y acá 2, sale «dos retiros de 50.000 por día».</p>
             </div>
             <div>
+              <label class="cb-flabel">Avisar si el stock baja de</label>
+              <input class="cb-input" id="cfgLimStock" inputmode="numeric" placeholder="0">
+              <p class="cfg-hint">Fichas que te quedan en tu cuenta de agente. Cuando bajen de acá te llega un Telegram para que le compres más al proveedor. <b>0 = sin aviso.</b> Ponelo bastante arriba de cero: si se acaban, la plataforma rechaza los depósitos y los jugadores no reciben sus cargas.</p>
+            </div>
+            <div>
               <label class="cb-flabel">Bono por carga (%)</label>
               <input class="cb-input" id="cfgLimBonoCarga" inputmode="numeric" placeholder="0">
               <p class="cfg-hint">Extra que se le suma al jugador cuando carga desde el botón <b>Depósitos</b> de la plataforma. <b>0 = sin bono</b>, entra el importe exacto que transfirió.</p>
@@ -4918,6 +4923,7 @@
     lim_retiro_max:     { el: "#cfgLimRetiroMax",  tipo: "texto" },
     lim_retiro_max_dia: { el: "#cfgLimRetiroDia", tipo: "texto" },
     lim_retiro_cant_dia:{ el: "#cfgLimRetiroCant", tipo: "texto" },
+    lim_stock_aviso:    { el: "#cfgLimStock",     tipo: "texto" },
     lim_bono_carga_pct: { el: "#cfgLimBonoCarga", tipo: "texto" },
     bono_bienvenida_pct:{ el: "#cfgBonoBienvenida", tipo: "texto" },
     app_url:            { el: "#cfgAppUrl",       tipo: "texto" },
