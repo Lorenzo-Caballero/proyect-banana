@@ -30,6 +30,7 @@ import sys
 # Se puede apuntar a otro lado para probarlo antes de tocar produccion.
 APP = os.environ.get("GP_APP", "/app")
 MARCA = "# [goldpaw] parche cuerpo-del-deposito"
+MARCA_ALTA = "# [goldpaw] reintento del challenge en el alta"
 
 NUEVA_FUNCION = '''
 ''' + MARCA + '''
@@ -140,10 +141,107 @@ def parchar_bot(ver: bool) -> str:
     return "bot_crear_jugador.py: PARCHADO (respaldo en bot_crear_jugador.py.gp-bak)"
 
 
+def parchar_alta_waf(ver: bool) -> str:
+    """El fast-path de altas REINTENTA cuando el WAF contesta el challenge.
+
+    EL PROBLEMA (capturado el 14/09/2026, alta 284 / holaBerni725):
+
+        16:52:28  fast-path 284: HTTP 200 -> al formulario | <!DOCTYPE html>
+                  ... <noscript><meta http-equiv="refresh" url=/exhk
+        16:53:23  FALLO -> No aparecio el formulario de alta
+        16:58:27  fast-path 284: HTTP 200 -> creado id=38850938
+
+    El challenge llega, el bot cae al formulario -- que cruza el MISMO WAF y
+    falla tras 55s de timeout --, espera 5 minutos de backoff, reintenta por
+    API y sale a la primera. Seis minutos para un alta que tarda un segundo.
+    Las otras dos de esa tanda salieron en 1 y 2 segundos: es intermitente.
+
+    POR QUE REINTENTAR ES SEGURO. Que el WAF conteste PRUEBA que la request no
+    llego al backend, asi que repetirla no puede crear dos jugadores. Es la
+    misma razon por la que se puede reintentar un deposito frenado por el
+    challenge y no cualquier otro error.
+
+    POR QUE EL FALLBACK ACTUAL NO SIRVE. El comentario de _fast_path lo explica
+    solo: "Se puede porque agents.ganamosonline.com NO esta detras del WAF...
+    si algun dia SI se protegiera, el reg caeria al formulario". Esa premisa
+    resulto falsa, y el camino elegido pasa por el mismo bloqueo.
+
+    QUE TAN INVASIVO ES. Envuelve la llamada existente en un for de 3 vueltas y
+    corta en la primera respuesta que NO sea el challenge. Si las tres dan
+    challenge, se queda con la ultima y el comportamiento es identico al de
+    hoy: cae al formulario. No cambia ninguna decision, solo reintenta antes de
+    rendirse.
+    """
+    p = os.path.join(APP, "bot_crear_jugador.py")
+    if not os.path.isfile(p):
+        return "FALTA %s" % p
+    src = io.open(p, encoding="utf-8").read()
+    if MARCA_ALTA in src:
+        return "bot_crear_jugador.py (alta/WAF): ya parchado"
+
+    a = ('            resp = req.fetch(\n'
+         '                url, method=metodo, data=cuerpo,\n'
+         '                headers={"content-type": content_type},\n'
+         '                timeout=ALTA_FETCH_TIMEOUT_MS, max_redirects=20,\n'
+         '            )\n'
+         '            st = resp.status\n'
+         '            try:\n'
+         '                txt = resp.text()\n'
+         '            except Exception:\n'
+         '                txt = ""\n'
+         '            final_url = resp.url or ""\n')
+
+    b = ('            ' + MARCA_ALTA + '\n'
+         '            for _gp_intento in range(3):\n'
+         '                resp = req.fetch(\n'
+         '                    url, method=metodo, data=cuerpo,\n'
+         '                    headers={"content-type": content_type},\n'
+         '                    timeout=ALTA_FETCH_TIMEOUT_MS, max_redirects=20,\n'
+         '                )\n'
+         '                st = resp.status\n'
+         '                try:\n'
+         '                    txt = resp.text()\n'
+         '                except Exception:\n'
+         '                    txt = ""\n'
+         '                final_url = resp.url or ""\n'
+         '                _gp_ini = (txt or "")[:2000].lower()\n'
+         '                _gp_challenge = ("/exhk" in _gp_ini or\n'
+         '                                 ("<noscript" in _gp_ini and\n'
+         '                                  \'http-equiv="refresh"\' in _gp_ini))\n'
+         '                if not _gp_challenge or _gp_intento == 2:\n'
+         '                    break\n'
+         '                log.info("  fast-path %s / %s: challenge del WAF,'
+         ' reintento %s de 2",\n'
+         '                         reg.get("id"), reg.get("usuario"), _gp_intento + 1)\n'
+         '                time.sleep(1.5)\n')
+
+    if a not in src:
+        return ("bot_crear_jugador.py (alta/WAF): NO encontre el bloque del "
+                "fast-path -- no toco nada")
+    if src.count(a) != 1:
+        return ("bot_crear_jugador.py (alta/WAF): el bloque aparece %d veces, "
+                "no es seguro -- no toco nada" % src.count(a))
+    if ver:
+        return "bot_crear_jugador.py (alta/WAF): SE PARCHARIA (1 bloque)"
+
+    nuevo = src.replace(a, b, 1)
+    # Un parche que deja el archivo sin compilar es peor que el bug: el bot no
+    # arranca y NO se registra nadie. Se valida ANTES de escribir.
+    try:
+        compile(nuevo, p, "exec")
+    except SyntaxError as e:
+        return ("bot_crear_jugador.py (alta/WAF): el resultado no compila "
+                "(%s) -- no toco nada" % e)
+
+    io.open(p + ".gp-bak-alta", "w", encoding="utf-8").write(src)
+    io.open(p, "w", encoding="utf-8").write(nuevo)
+    return "bot_crear_jugador.py (alta/WAF): PARCHADO (respaldo en .gp-bak-alta)"
+
+
 def main() -> int:
     ver = "--ver" in sys.argv
     print("=== parche cuerpo-del-deposito %s ===" % ("(solo mirar)" if ver else ""))
-    for r in (parchar_alta_api(ver), parchar_bot(ver)):
+    for r in (parchar_alta_api(ver), parchar_bot(ver), parchar_alta_waf(ver)):
         print("  " + r)
     if not ver:
         print("\n  Reinicia el contenedor para que tome el cambio:")
