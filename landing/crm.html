@@ -4097,6 +4097,16 @@
         <div class="cfg-card-body">
           <label class="cb-flabel">Fichas de regalo</label>
           <input class="cb-input" id="cfgAppBono" inputmode="numeric" placeholder="1000">
+          <label class="cb-flabel" style="margin-top:12px">Mostrar el cartel cuando le queden menos de</label>
+          <input class="cb-input" id="cfgAppSaldoBajo" inputmode="numeric" placeholder="0 = apagado">
+          <p class="cfg-hint">
+            Mientras juega, si el saldo le baja de ese número aparece el cartel —
+            sin esperar el intervalo normal, porque ese es el momento que importa.
+            Sale <b>una vez por bajada</b>: para que vuelva a salir, el saldo tiene
+            que subir arriba del número otra vez. A una cuenta recién creada
+            (0 fichas) <b>no</b> le sale: primero tiene que haber jugado con saldo.
+            <b>0 = apagado.</b>
+          </p>
           <p class="cfg-hint">
             El bono va <b>directo al juego</b> (mismo camino que un bono del CRM) y
             queda contado en Usuarios («Bonos por instalar»). Con la promo apagada
@@ -5701,6 +5711,7 @@
     app_url:            { el: "#cfgAppUrl",       tipo: "texto" },
     app_promo_activa:   { el: "#cfgAppPromo",     tipo: "bool"  },
     app_bono_fichas:    { el: "#cfgAppBono",      tipo: "texto" },
+    app_promo_saldo_bajo: { el: "#cfgAppSaldoBajo", tipo: "texto" },
     tg_bot_token:       { el: "#cfgTgToken",      tipo: "texto" },
     tg_chat_id:         { el: "#cfgTgChat",       tipo: "texto" },
     tg_ev_derivacion:   { el: "#cfgTgDeriv",      tipo: "bool"  },

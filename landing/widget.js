@@ -845,6 +845,12 @@
     // el riesgo de agarrar el nodo equivocado. El header queda de respaldo.
     var v = saldoDeReact();
     if (v === null) v = saldoDelHeader();
+    /* El cartel de la app mira el MISMO numero, y se chequea ACA ARRIBA a
+       proposito: abajo hay tres returns tempranos (sin cambios, envio en
+       curso, freno por fallos del server) y ninguno tiene nada que ver con si
+       al jugador se le estan acabando las fichas. Colgado mas abajo, un server
+       caido apagaria tambien el cartel. */
+    mirarSaldoBajo(v);
     // Solo cuando CAMBIA. Sin esto serian 50 requests por minuto por jugador
     // para escribir siempre el mismo numero.
     if (v === null || v === saldoReportado) return;
@@ -1970,6 +1976,37 @@
      tiempo). */
   var PROMO_APP_MIN = 30;
   var ultimaPromoApp = null;   // lo último que mandó el server, para re-ofrecer
+
+  /* ---- "se te están acabando las fichas" ----
+     El mejor momento para ofrecer 1.000 fichas por instalar la app es cuando
+     al jugador le quedan pocas. Pedido de Nahuel (14/09/2026): "que aparezca
+     cuando se están quedando con pocas fichas, por ejemplo 500".
+
+     ARRANCA DESARMADO Y SE ARMA AL VER UN SALDO ALTO. Parece un detalle y es
+     lo que hace que funcione: una cuenta recién creada tiene 0 fichas, o sea
+     que está "por debajo del umbral" desde el primer segundo. Si arrancara
+     armado, el cartel saltaría apenas entra alguien que todavía no cargó nada
+     -- justo al que no tiene nada que perder todavía. Armándose recién cuando
+     el saldo estuvo ARRIBA del umbral, el cartel solo sale después de haber
+     jugado de verdad, que es el momento que se quiso.
+
+     Se re-arma cada vez que vuelve a subir, así sale otra vez en la próxima
+     bajada -- pero nunca dos veces en la misma, que seria acoso. */
+  var promoSaldoArmado = false;
+
+  function mirarSaldoBajo(v){
+    if (!ultimaPromoApp) return;          // el server no le ofrece la app a este
+    var umbral = Number(ultimaPromoApp.saldo_bajo || 0);
+    if (!(umbral > 0) || v === null || isNaN(v)) return;
+    if (v > umbral) { promoSaldoArmado = true; return; }
+    if (!promoSaldoArmado) return;        // o no jugó todavía, o ya se lo mostramos
+    promoSaldoArmado = false;
+    /* Va por mostrarPromoApp() y NO por ofrecerPromoApp(): se saltea el freno
+       de los 30 minutos a propósito. Si el cartel salió al abrir la página y
+       media hora después se está quedando sin fichas, ESE es el momento que
+       importa -- y el freno se lo comería justo ahí. */
+    mostrarPromoApp(ultimaPromoApp);
+  }
 
   function ofrecerPromoApp(promo){
     try {

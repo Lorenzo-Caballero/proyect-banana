@@ -87,6 +87,11 @@ const CFG_CRM_DEFAULTS = [
     // Cuantas fichas regala. '0' = ni modal ni bono aunque la promo este
     // prendida: un cartel ofreciendo 0 fichas es peor que ninguno.
     'app_bono_fichas'  => '1000',
+    /* Umbral de fichas para mostrar el cartel de la app mientras juega.
+       0 = apagado (el cartel sale solo en los momentos de siempre).
+       El widget lee el saldo real del juego en vivo, asi que esto se evalua
+       con el numero que el jugador tiene en pantalla, no con el espejo. */
+    'app_promo_saldo_bajo' => '0',
 
     // ----- Aviso por Telegram cuando el bot deriva a un agente -----
     // Vacios = sin Telegram, y no pasa nada: la derivacion igual queda marcada

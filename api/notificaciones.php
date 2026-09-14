@@ -128,6 +128,14 @@ if ($accion === 'registrar') {
                     $resp['app_promo'] = [
                         'fichas' => $fichas,
                         'url'    => trim((string)(cfg_crm($pdo, 'app_url') ?? '')),
+                        /* Umbral para el cartel "se te estan acabando las
+                           fichas". Viaja al widget porque el saldo lo mira EL
+                           -- lo lee del store del juego, en vivo. Desde acá no
+                           se puede: `usuarios.balance` es un espejo que escribe
+                           sync_usuarios.py cada tanto, y con un numero viejo el
+                           cartel saldria tarde o, peor, le saldria a alguien
+                           que acaba de cargar. 0 = apagado. */
+                        'saldo_bajo' => max(0, (int)(cfg_crm($pdo, 'app_promo_saldo_bajo') ?? 0)),
                     ];
                 }
             }
