@@ -101,6 +101,19 @@ const CFG_CRM_DEFAULTS = [
        VACIO/0 = no se cobra nada, que es el caso de quien opera con
        billeteras virtuales. Es el default a proposito: cobrar una comision
        que no existe le haria ver a alguien una perdida inventada. */
+    /* DESDE CUANDO medir todo lo acumulado: resultado del negocio, lo que
+       deja un jugador, lo que cuesta traerlo, en cuanto se recupera.
+
+       VACIO = automatico, y es el caso normal: el sistema arranca a medir con
+       el primer dato propio, o sea el dia que el cajero lo empezo a usar. Un
+       cajero nuevo no configura nada.
+
+       Se pone a mano cuando la base tiene una etapa anterior que no
+       corresponde mezclar -- un negocio que corrio, cerro, y se reactivo. Sin
+       esto, la pauta de esta semana se reparte entre jugadores de hace un año
+       y el costo de adquisicion sale mucho mas barato de lo que es. */
+    'fin_medir_desde' => '',
+
     'fin_comision_entrada' => '0',
     'fin_comision_salida'  => '0',
 

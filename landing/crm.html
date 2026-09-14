@@ -2762,9 +2762,9 @@
           <div class="fn-kpi-var" id="fnKpiActivosVar">—</div>
         </div>
         <div class="fn-kpi-card">
-          <div class="k">Patrimonio neto <span class="fn-info" data-tip="Cuánto vale tu negocio hoy. Suma lo que tenés (efectivo + fichas en stock) y le resta lo que debés (saldo de los jugadores). Si es positivo, ganás; si es negativo, tenés más deuda que activos."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
-          <div class="v" id="fnKpiPatrimonio">—</div>
-          <div class="fn-kpi-var sin_datos" id="fnKpiPatrimonioSub">—</div>
+          <div class="k">Resultado acumulado <span class="fn-info" data-tip="Cuánto vale tu negocio hoy. Suma lo que tenés (efectivo + fichas en stock) y le resta lo que debés (saldo de los jugadores). Si es positivo, ganás; si es negativo, tenés más deuda que activos."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+          <div class="v" id="fnKpiResultado">—</div>
+          <div class="fn-kpi-var sin_datos" id="fnKpiResultadoSub">—</div>
           <div class="fn-kpi-var fn-kpi-actual">Actual, no depende del período</div>
         </div>
       </div>
@@ -2836,6 +2836,8 @@
           </div>
         </details>
       </div>
+
+      <p class="pb-hist-aviso" id="fnAvisoHueco" style="display:none;margin:0 20px 14px"></p>
 
       <!-- f2) Cómo evoluciona el negocio. Contesta las preguntas que no se
            responden mirando un rango de fechas: cuánto deja un jugador en toda
@@ -4168,6 +4170,29 @@
             <b>Dejalo vacío si no tenés app.</b> El bot entonces no la ofrece y, sobre todo,
             <b>no inventa un link</b> — antes mandaba a los jugadores a buscarla a Play Store,
             donde no está.
+          </p>
+        </div>
+      </div>
+
+      <!-- Desde cuándo medir ------------------------------------------------ -->
+      <div class="cfg-card">
+        <div class="cfg-card-head">
+          <span class="cb-ico"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></span>
+          <div class="cfg-card-txt">
+            <b>Medir desde</b>
+            <span>Desde qué fecha se cuentan los acumulados de Finanzas: el resultado del negocio, lo que deja un jugador, lo que cuesta traerlo y en cuánto se recupera.</span>
+          </div>
+        </div>
+        <div class="cfg-card-body">
+          <input class="cb-input" id="cfgMedirDesde" placeholder="AAAA-MM-DD (vacío = automático)">
+          <p class="cfg-hint">
+            <b>Dejalo vacío.</b> Así el sistema mide desde tu primer dato, o sea desde el día
+            que lo empezaste a usar, y no hay nada que configurar.
+            <br><br>
+            Ponele una fecha solo si <b>el negocio estuvo parado y volvió</b>: sin eso, la
+            publicidad de esta semana se reparte entre jugadores de la etapa anterior y el costo
+            de traer un jugador sale mucho más barato de lo que es. Si Finanzas detecta un parate
+            largo, te avisa arriba y te dice qué fecha poner.
           </p>
         </div>
       </div>
@@ -5827,6 +5852,7 @@
     app_promo_activa:   { el: "#cfgAppPromo",     tipo: "bool"  },
     app_bono_fichas:    { el: "#cfgAppBono",      tipo: "texto" },
     app_promo_saldo_bajo: { el: "#cfgAppSaldoBajo", tipo: "texto" },
+    fin_medir_desde:      { el: "#cfgMedirDesde",   tipo: "texto" },
     fin_comision_entrada: { el: "#cfgComEntrada",   tipo: "texto" },
     fin_comision_salida:  { el: "#cfgComSalida",    tipo: "texto" },
     tg_bot_token:       { el: "#cfgTgToken",      tipo: "texto" },
@@ -9161,24 +9187,40 @@
     let d;
     try{ d = await fnGetJson({accion:"foto"}); }
     catch(e){ return; }
-    if(!d.ok){ toast(d.error || "Error al cargar el patrimonio"); return; }
+    if(!d.ok){ toast(d.error || "Error al cargar el resultado"); return; }
     const f = d.foto;
 
-    $("#fnKpiPatrimonio").textContent = money(f.patrimonio_neto);
-    /* El patrimonio ahora descuenta lo que le pagaste al proveedor por las
-       fichas entregadas. Si el libro del panel no cubre toda la historia, esa
-       resta no se puede hacer y el número sale optimista: hay que decirlo,
-       no mostrarlo como si fuera exacto. */
-    const subPat = $("#fnKpiPatrimonioSub");
-    if(subPat){
-      /* Decir DESDE CUANDO. El patrimonio solo cubre el tramo del que tenemos
-         las dos mitades: los ingresos salen de nuestras tablas y arrancan con
-         el CRM, así que lo que la cuenta de agente haya movido antes no entra.
-         Sin la fecha, el número parece "desde siempre" y no lo es. */
+    /* RESULTADO ACUMULADO, no patrimonio. El patrimonio era el número más caro
+       de calcular bien y el que menos se lee; esto es la misma plata contada de
+       una forma que contesta lo que el cajero pregunta: "desde que arranqué,
+       ¿voy ganando?". */
+    $("#fnKpiResultado").textContent = money(f.resultado);
+    $("#fnKpiResultado").style.color =
+      f.resultado > 0 ? "var(--green2)" : (f.resultado < 0 ? "var(--red)" : "");
+    const subRes = $("#fnKpiResultadoSub");
+    if(subRes){
+      /* SIEMPRE con la fecha. Un acumulado sin decir desde cuándo se lee como
+         "desde siempre", y no lo es. */
       const desde = f.desde ? String(f.desde).slice(0,10).split("-").reverse().join("/") : null;
-      subPat.textContent = f.patrimonio_exacto
-        ? (desde ? "desde el " + desde + " · " : "") + "costo de fichas ya descontado"
-        : "sin descontar el costo de las fichas — falta histórico";
+      subRes.textContent = desde
+        ? "desde el " + desde + (f.fuente === "config" ? " (configurado)" : "")
+        : "todavía no cargó nadie";
+    }
+    /* Si hubo un parate largo, se OFRECE cortar ahí. No se hace solo: mover
+       todos los números sin que nadie lo pida es la clase de magia que después
+       no se puede explicar. */
+    const avisoH = $("#fnAvisoHueco");
+    if(avisoH){
+      if(f.hueco){
+        const fmt = s => String(s).slice(0,10).split("-").reverse().join("/");
+        avisoH.style.display = "";
+        avisoH.innerHTML = "Hay <b>" + f.hueco.dias + " días sin una sola carga</b> entre el " +
+          fmt(f.hueco.desde) + " y el " + fmt(f.hueco.hasta) + ". Si el negocio estuvo parado y " +
+          "volvió, poné <b>" + fmt(f.hueco.hasta) + "</b> en <b>Configuración → Medir desde</b> " +
+          "para que los acumulados no mezclen las dos etapas.";
+      } else {
+        avisoH.style.display = "none";
+      }
     }
     $("#fnMasPasivo").textContent = money(f.fichas_jugadores);
 
@@ -9299,16 +9341,16 @@
     const intro = $("#fnEvoIntro");
     if(intro){
       const fmt = s => String(s).slice(0,10).split("-").reverse().join("/");
-      intro.innerHTML = v
-        ? "Todo lo de arriba mira un rango de fechas. Esto mira <b>desde que empezaste a " +
-          "gastar en publicidad</b> (" + fmt(v.desde) + "): " +
+      const a = d.ancla || {};
+      intro.innerHTML = a.desde
+        ? "Todo lo de arriba mira un rango de fechas. Esto mira <b>desde que usás el sistema</b> " +
+          "(" + fmt(a.desde) + (a.fuente === "config" ? ", configurado" : "") + "): " +
           "<b>" + nf.format(j.jugadores || 0) + " jugadores</b> que aparecieron desde entonces." +
           (j.fuera_de_ventana
-            ? " Quedan afuera " + nf.format(j.fuera_de_ventana) + " que ya cargaban de antes: " +
-              "no los trajo esta pauta, así que promediarlos acá abarataría el costo de adquisición."
+            ? " Quedan afuera " + nf.format(j.fuera_de_ventana) + " de antes de esa fecha: " +
+              "mezclarlos abarataría el costo de adquisición, porque no los trajo esta pauta."
             : "")
-        : "Todavía no cargaste gasto de publicidad, así que acá se mide <b>todo el historial</b>. " +
-          "Cargalo en Publicidad y este bloque pasa a hablar solo de los jugadores que trajo esa pauta.";
+        : "Todavía no cargó ningún jugador, así que no hay nada acumulado que mostrar.";
     }
 
     // --- Las cuatro tarjetas

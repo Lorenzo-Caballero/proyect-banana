@@ -239,91 +239,103 @@ chequear('una fila por transferencia', ($vias['transferencia'] ?? 0) === 1, json
 chequear('y una del juego',            ($vias['juego'] ?? 0) === 1, json_encode($vias));
 
 // ===========================================================================
-echo "\n=== 8. La foto: patrimonio coherente y stock de verdad ===\n";
-/* DOS COSAS ESTABAN MAL (14/09/2026):
+echo "\n=== 8. El ancla: desde cuando mide este modulo ===\n";
+/* EL PROBLEMA QUE RESUELVE (14/09/2026). Cada metrica acumulada tenia su propio
+   criterio de "desde cuando": el patrimonio arrancaba en la primera carga de
+   toda la historia, el costo por jugador en el primer dia con gasto de
+   publicidad, y las fichas en poder de los jugadores no tenian fecha. Tres
+   anclas distintas en la misma pantalla, y ninguna generalizaba a otro cajero.
 
-   1. `stock_fichas` devolvia null con el comentario "pendiente M6.B" y la
-      pantalla decia "N/A - pendiente integracion con bot" -- para un dato que
-      `stock_agente.php` ya venia escribiendo cada 10 minutos desde el worker.
+   Ahora hay UNA: el dia que este cajero empezo a usar el sistema, con override
+   manual para el caso de una reactivacion. */
+$pdo->beginTransaction();
+foreach (['recargas','movimientos','acciones_saldo','operaciones_panel','gasto_diario'] as $tb) {
+    try { $pdo->exec("DELETE FROM $tb"); } catch (Throwable $e) {}
+}
+$pdo->exec("DELETE FROM config_crm WHERE clave = 'fin_medir_desde'");
+$GLOBALS['__cfg_crm_cache'] = null;
 
-   2. El patrimonio era ingresos - retiros - fichas_de_los_jugadores. No
-      descontaba lo que se le paga al proveedor POR LAS FICHAS, o sea que
-      contaba como si las fichas fueran gratis. Es plata de verdad: el 20% de
-      todo lo que se entrego. */
-$pdo->exec("DELETE FROM operaciones_panel WHERE payment_id BETWEEN 970000 AND 979999");
+chequear('sin ningun dato todavia, no hay ancla',
+         fn_medir_desde($pdo)['desde'] === null, json_encode(fn_medir_desde($pdo)));
 
-$foto = fn_foto($pdo, 0.20);
-chequear('sin libro no se puede descontar el costo, y se dice',
-         $foto['patrimonio_exacto'] === false && $foto['costo_historico'] === null,
-         json_encode([$foto['patrimonio_exacto'], $foto['costo_historico']]));
+$recarga(U . 'primero', '2019-03-01 10:00:00', 1000.0);
+$recarga(U . 'segundo', '2019-03-05 10:00:00', 2000.0);
+$a = fn_medir_desde($pdo);
+chequear('automatico: arranca en el primer dato propio',
+         $a['desde'] === '2019-03-01' && $a['fuente'] === 'auto', json_encode($a));
 
-/* Con libro: el costo historico se descuenta.
-   OJO CON EL ORDEN: la primera fila del libro tambien cambia de donde salen
-   los retiros historicos (pasan de `acciones_saldo` al libro). Si se midiera
-   el delta contra la foto sin libro, cambiarian DOS cosas a la vez y el
-   numero no probaria nada. Por eso primero se ancla el libro con un retiro y
-   recien despues se agrega la entrega que se quiere medir. */
-$libro(U . 'h0', '2019-05-01 09:00:00', 1.0, 1);        // ancla: ya hay libro
-$fotoBase = fn_foto($pdo, 0.20);
-$libro(U . 'h1', '2019-05-01 10:00:00', 100000.0, 0);   // fichas entregadas
-$foto2 = fn_foto($pdo, 0.20);
-chequear('con libro, el patrimonio es exacto', $foto2['patrimonio_exacto'] === true);
-chequear('y descuenta el costo de lo entregado',
-         abs(($fotoBase['patrimonio_neto'] - $foto2['patrimonio_neto']) - 20000.0) < 0.01,
-         'antes=' . $fotoBase['patrimonio_neto'] . ' ahora=' . $foto2['patrimonio_neto']);
-chequear('el costo historico es el 20% de lo entregado',
-         abs($foto2['costo_historico'] - 20000.0) < 0.01,
-         (string)$foto2['costo_historico']);
+/* LA MANUAL MANDA. Es el caso de la reactivacion: la base tiene una etapa
+   vieja que no corresponde mezclar. */
+$pdo->exec("INSERT INTO config_crm (clave,valor) VALUES ('fin_medir_desde','2019-03-04')
+            ON DUPLICATE KEY UPDATE valor=VALUES(valor)");
+$GLOBALS['__cfg_crm_cache'] = null;
+$a2 = fn_medir_desde($pdo);
+chequear('la fecha configurada le gana a la automatica',
+         $a2['desde'] === '2019-03-04' && $a2['fuente'] === 'config', json_encode($a2));
 
-/* Un RETIRO del libro no es una ficha entregada: no puede subir el costo. */
-$libro(U . 'h2', '2019-05-02 10:00:00', 50000.0, 1);
-$foto3 = fn_foto($pdo, 0.20);
-chequear('los retiros no cuentan como fichas entregadas',
-         abs($foto3['costo_historico'] - 20000.0) < 0.01,
-         (string)$foto3['costo_historico']);
+/* Una fecha con formato raro se ignora en vez de romper todo el modulo. */
+$pdo->exec("UPDATE config_crm SET valor='el lunes' WHERE clave='fin_medir_desde'");
+$GLOBALS['__cfg_crm_cache'] = null;
+chequear('una fecha ilegible cae al automatico',
+         fn_medir_desde($pdo)['fuente'] === 'auto');
+$pdo->exec("DELETE FROM config_crm WHERE clave = 'fin_medir_desde'");
+$GLOBALS['__cfg_crm_cache'] = null;
 
-echo "\n=== 8a. El patrimonio mide las dos mitades del MISMO periodo ===\n";
-/* EL BUG QUE ESTO FIJA (14/09/2026, encontrado en produccion). Los ingresos
-   salen de NUESTRAS tablas, que empiezan cuando empezo el CRM. El libro del
-   panel arranca mucho antes y trae toda la historia de la cuenta de agente.
-   Restar los gastos del libro entero contra los ingresos del tramo corto dio
-   un patrimonio de -43 MILLONES teniendo $73.438 en manos de los jugadores.
+echo "\n=== 8a. El hueco se AVISA, no se aplica solo ===\n";
+/* Mover todos los numeros sin que nadie lo pida es la clase de magia que
+   despues no se puede explicar. Se detecta y se ofrece; decide una persona. */
+$a3 = fn_medir_desde($pdo);
+chequear('sin parate largo no avisa nada', $a3['hueco'] === null, json_encode($a3['hueco']));
 
-   Un patrimonio solo significa algo si las dos mitades cubren el mismo
-   periodo. Lo que el libro tenga de antes existe, pero sin el lado de los
-   ingresos no se puede opinar. */
-/* Se limpia SOLO lo propio y no con $limpiar(): las secciones de mas abajo
-   reusan los retiros y las cargas que se crearon arriba, y barrerlos aca las
-   dejaba midiendo sobre una base vacia. */
-$pdo->exec("DELETE FROM operaciones_panel WHERE payment_id BETWEEN 970000 AND 979999");
+$recarga(U . 'vuelve', '2019-09-01 10:00:00', 3000.0);   // 180 dias despues
+$a4 = fn_medir_desde($pdo);
+chequear('detecta el parate', $a4['hueco'] !== null, json_encode($a4['hueco']));
+chequear('y dice cuando volvio',
+         ($a4['hueco']['hasta'] ?? '') === '2019-09-01', json_encode($a4['hueco']));
+chequear('pero NO mueve el ancla solo',
+         $a4['desde'] === '2019-03-01', json_encode($a4['desde']));
 
-/* Historia vieja en el libro, ANTERIOR a cualquier carga nuestra. */
-$libro(U . 'viejo', '2018-01-01 10:00:00', 5000000.0, 1);   // retiros enormes
-$libro(U . 'viejo', '2018-01-02 10:00:00', 5000000.0, 0);   // y entregas enormes
+echo "\n=== 8b2. Resultado acumulado, todo del mismo tramo ===\n";
+/* Reemplazo al patrimonio neto. Nahuel: "el dato del patrimonio la verdad que
+   no me interesa demasiado, dudo que a cualquier cajero le interese". Era el
+   numero mas caro de calcular bien -- hacen falta las dos mitades del mismo
+   tramo -- y el que menos se leia; dio dos bugs en un dia. */
+foreach (['recargas','movimientos','acciones_saldo','operaciones_panel'] as $tb) {
+    try { $pdo->exec("DELETE FROM $tb"); } catch (Throwable $e) {}
+}
+/* Etapa vieja: mucha plata, que NO tiene que contar si el ancla es posterior. */
+$recarga(U . 'viejo', '2018-01-01 10:00:00', 900000.0);
+$libro(U . 'viejo',   '2018-01-01 10:05:00', 900000.0, 0);
+/* Etapa nueva: 10.000 de carga, 10.000 de fichas entregadas, 2.000 retirados. */
+$recarga(U . 'nuevo', '2019-06-01 10:00:00', 10000.0);
+$libro(U . 'nuevo',   '2019-06-01 10:05:00', 10000.0, 0);
+$libro(U . 'nuevo',   '2019-06-02 10:00:00',  2000.0, 1);
 
-/* Y la historia que si conocemos: una carga nuestra y su entrega. */
-$recarga(U . 'nuestro', '2019-05-10 10:00:00', 10000.0);
-$libro(U . 'nuestro',   '2019-05-10 10:05:00', 10000.0, 0);
+$pdo->exec("INSERT INTO config_crm (clave,valor) VALUES ('fin_medir_desde','2019-06-01')
+            ON DUPLICATE KEY UPDATE valor=VALUES(valor)");
+$GLOBALS['__cfg_crm_cache'] = null;
 
 $f = fn_foto($pdo, 0.20);
-chequear('el patrimonio arranca en la primera carga nuestra',
-         $f['desde'] !== null && substr((string)$f['desde'], 0, 4) === '2019',
-         json_encode($f['desde']));
-chequear('NO descuenta el millon de fichas anterior al CRM',
-         $f['costo_historico'] !== null && $f['costo_historico'] < 100000.0,
-         json_encode($f['costo_historico']));
-chequear('ni los retiros anteriores',
-         $f['patrimonio_neto'] > -1000000.0, json_encode($f['patrimonio_neto']));
+chequear('la foto dice desde cuando mide', $f['desde'] === '2019-06-01', json_encode($f['desde']));
+chequear('los ingresos son solo los de esta etapa',
+         abs($f['ingresos'] - 10000.0) < 0.01, json_encode($f['ingresos']));
+chequear('el costo de fichas tampoco arrastra lo viejo',
+         abs($f['costo_fichas'] - 2000.0) < 0.01, json_encode($f['costo_fichas']));
+/* 10.000 - 2.000 de retiros - 2.000 de costo = 6.000 */
+chequear('el resultado acumulado cierra',
+         abs($f['resultado'] - 6000.0) < 0.01, json_encode($f['resultado']));
 
-/* Y lo que SI entra en el tramo se descuenta igual. */
-$libro(U . 'nuestro2', '2019-05-11 10:00:00', 50000.0, 0);
+/* Y sin ancla manual, con la etapa vieja adentro, el numero cambia: es la
+   prueba de que el corte hace algo. */
+$pdo->exec("DELETE FROM config_crm WHERE clave = 'fin_medir_desde'");
+$GLOBALS['__cfg_crm_cache'] = null;
 $f2 = fn_foto($pdo, 0.20);
-chequear('una entrega dentro del tramo si sube el costo',
-         abs(($f2['costo_historico'] - $f['costo_historico']) - 10000.0) < 0.01,
-         'antes=' . $f['costo_historico'] . ' ahora=' . $f2['costo_historico']);
+chequear('sin el corte, la etapa vieja entra y el numero es otro',
+         $f2['desde'] === '2018-01-01' && abs($f2['resultado'] - $f['resultado']) > 1000,
+         json_encode([$f2['desde'], $f2['resultado']]));
 
-$pdo->exec("DELETE FROM operaciones_panel WHERE payment_id BETWEEN 970000 AND 979999");
-$pdo->exec("DELETE FROM recargas WHERE usuario = '" . U . "nuestro'");
+$pdo->rollBack();
+$GLOBALS['__cfg_crm_cache'] = null;
 
 echo "\n=== 8b. El stock y para cuantos dias alcanza ===\n";
 /* `dias` es lo que de verdad sirve: un umbral fijo ("avisame bajo 50.000") no
@@ -664,7 +676,7 @@ $v = fn_ventana_pauta($pdo);
 chequear('la ventana arranca el dia del primer gasto',
          $v !== null && $v['desde'] === '2019-05-10', json_encode($v));
 
-$r = fn_recupero($pdo, 0.20, 0.0, 0.0, 30, $v);
+$r = fn_recupero($pdo, 0.20, 0.0, 0.0, 30, $v, $v['desde']);
 chequear('solo cuenta los jugadores de esta etapa', $r['jugadores'] === 2,
          'jugadores=' . $r['jugadores']);
 chequear('el costo por jugador NO se diluye con los viejos',
@@ -702,7 +714,7 @@ $libro(U . 'pico',   '2019-05-11 10:05:00', 5000.0, 0);
 $libro(U . 'pico',   '2019-05-14 10:00:00', 5000.0, 1);
 
 $v3 = fn_ventana_pauta($pdo);
-$r3 = fn_recupero($pdo, 0.20, 0.0, 0.0, 30, $v3);
+$r3 = fn_recupero($pdo, 0.20, 0.0, 0.0, 30, $v3, $v3['desde']);
 chequear('un cruce que no se sostiene NO cuenta como recupero',
          $r3['dia_recupero'] === null, json_encode($r3['dia_recupero']));
 chequear('pero se informa que hubo un pico',
@@ -714,7 +726,7 @@ foreach (['recargas','movimientos','operaciones_panel'] as $tb) {
 }
 $recarga(U . 'firme', '2019-05-11 10:00:00', 5000.0);
 $libro(U . 'firme',   '2019-05-11 10:05:00', 5000.0, 0);
-$r4 = fn_recupero($pdo, 0.20, 0.0, 0.0, 30, $v3);
+$r4 = fn_recupero($pdo, 0.20, 0.0, 0.0, 30, $v3, $v3['desde']);
 chequear('el que no retira si cuenta como recuperado',
          $r4['dia_recupero'] === 0, json_encode($r4['dia_recupero']));
 chequear('y no figura como pico', $r4['cruce_efimero'] === null);

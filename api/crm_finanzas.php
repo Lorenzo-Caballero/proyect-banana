@@ -20,12 +20,14 @@
  *   Fichas en poder de jugadores (pasivo) = SUM(usuarios.balance)
  *     -- OJO: usuarios.coins es un contador residual/experimental, NO
  *     -- representa el pasivo real. Nunca sumarlo acá.
- *   Patrimonio neto = Efectivo neto - Fichas en poder de jugadores
- *     -- En M6.A el stock de fichas propio (activo) todavía no se mide
- *     -- (llega en M6.B con `agencia_estado`), así que este patrimonio es
- *     -- una subestimación a propósito, no un error.
- *   Costo de fichas del período = (Ingresos + Bonos) × FINANZAS_COSTO_POR_FICHA
- *   Ganancia (hoy/período) = Ingresos - Retiros - Costo de fichas
+ *   Resultado acumulado = Ingresos - Retiros - Costo de fichas - Comisiones,
+ *     -- todo DESDE EL ANCLA del modulo (fn_medir_desde): el dia que este
+ *     -- cajero empezo a usar el sistema. Reemplazo al "patrimonio neto", que
+ *     -- era el numero mas caro de calcular bien y el que menos se leia.
+ *   Costo de fichas del período = lo que la plataforma entrego de verdad
+ *     -- (operaciones_panel, tipo=0) × FINANZAS_COSTO_POR_FICHA. La estimacion
+ *     -- (Ingresos + Bonos) queda de respaldo cuando el libro no alcanza.
+ *   Ganancia (período) = Ingresos - Retiros - Costo de fichas - Comisiones
  *
  * POR QUÉ 'hecha' y no cualquier estado de acciones_saldo: confirmado
  * leyendo acciones_cola.php — 'hecha' se escribe SOLO después de que el bot
@@ -49,7 +51,7 @@
  * lleva finanzas_ok con eso, no hace falta nada extra acá.
  *
  * POST { accion:"verificar_password", password }  -> { ok, error? }
- * GET  ?accion=foto                                -> activos/pasivos/patrimonio actuales
+ * GET  ?accion=foto                                -> resultado acumulado + stock, desde el ancla
  * GET  ?accion=hoy                                 -> operación del día (DEPRECADO desde el
  *                                                      rediseño de dashboard unificado -- "Hoy"
  *                                                      ahora es un filtro más de ?accion=rango.
@@ -737,6 +739,83 @@ function fn_jugadores_crudo(PDO $pdo): array
 }
 
 /**
+ * DESDE CUANDO MIDE ESTE MODULO. Es el ancla de todo lo acumulado.
+ *
+ * EL PROBLEMA QUE RESUELVE. Cada métrica acumulada tenía su propio criterio de
+ * "desde cuándo": el patrimonio arrancaba en la primera carga de toda la
+ * historia, el costo por jugador en el primer día con gasto de publicidad, y
+ * las fichas en poder de los jugadores no tenían fecha. Tres anclas distintas
+ * en la misma pantalla, y ninguna generalizaba a otro cajero.
+ *
+ * AHORA HAY UNA SOLA, y sale de dos lugares:
+ *
+ *   `config_crm.fin_medir_desde`  puesta a mano. Manda siempre.
+ *   automático                    el primer dato propio del sistema, o sea el
+ *                                 día que este cajero lo empezó a usar.
+ *
+ * Para un cajero nuevo las dos coinciden y no hay nada que configurar: el
+ * sistema empieza a medir el día uno y de ahí en más acumula. No se importan
+ * históricos de otra plataforma a propósito -- un dato viejo mal migrado
+ * ensucia todas las métricas y nadie se entera.
+ *
+ * La manual existe para el caso de una REACTIVACION: un negocio que corrió,
+ * cerró y volvió. Ahí la base tiene datos viejos que no hay que mezclar, y sin
+ * el corte la pauta de esta semana se reparte entre jugadores de hace un año.
+ *
+ * `hueco` no cambia nada: es una pista para la pantalla. Si adentro del tramo
+ * medido hay un parate largo, se ofrece la fecha de la vuelta, pero la decisión
+ * la toma una persona. Mover números solos es la clase de magia que después
+ * nadie puede explicar.
+ */
+function fn_medir_desde(PDO $pdo): array
+{
+    $manual = '';
+    try { $manual = trim((string)(cfg_crm($pdo, 'fin_medir_desde') ?? '')); }
+    catch (Throwable $e) { /* sin config: automático */ }
+    if ($manual !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $manual)) {
+        return ['desde' => $manual, 'fuente' => 'config', 'hueco' => null];
+    }
+
+    $auto = null;
+    try {
+        $v = $pdo->query("SELECT MIN(cuando) FROM (" . publicidad_sql_cargas() . ") c")
+                 ->fetchColumn();
+        if ($v) { $auto = substr((string)$v, 0, 10); }
+    } catch (Throwable $e) { /* sin cargas todavía */ }
+
+    return ['desde' => $auto, 'fuente' => 'auto', 'hueco' => fn_hueco($pdo, $auto)];
+}
+
+/**
+ * El parate más largo sin una sola carga, si pasa de `minDias`.
+ *
+ * Solo informa. La idea es que la pantalla pueda decir "hay 240 días sin
+ * actividad entre marzo y noviembre, ¿medir solo desde ahí?" y que el operador
+ * decida. Detectarlo y aplicarlo solo movería todos los números sin que nadie
+ * lo haya pedido.
+ */
+function fn_hueco(PDO $pdo, ?string $desde, int $minDias = 45): ?array
+{
+    if ($desde === null) { return null; }
+    try {
+        $filas = $pdo->query(
+            "SELECT DISTINCT DATE(cuando) f FROM (" . publicidad_sql_cargas() . ") c ORDER BY f"
+        )->fetchAll(PDO::FETCH_COLUMN);
+    } catch (Throwable $e) { return null; }
+    if (count($filas) < 2) { return null; }
+
+    $mejor = null;
+    for ($i = 1; $i < count($filas); $i++) {
+        $a = new DateTime($filas[$i - 1]); $b = new DateTime($filas[$i]);
+        $d = (int)$a->diff($b)->days;
+        if ($d >= $minDias && ($mejor === null || $d > $mejor['dias'])) {
+            $mejor = ['dias' => $d, 'desde' => $filas[$i - 1], 'hasta' => $filas[$i]];
+        }
+    }
+    return $mejor;
+}
+
+/**
  * Desde cuándo hay gasto de publicidad cargado, y cuánto suma.
  *
  * ES EL ANCLA DE TODO EL BLOQUE DE EVOLUCION, y existe por un error real
@@ -755,14 +834,19 @@ function fn_jugadores_crudo(PDO $pdo): array
  * aparecieron DESDE que se empezó a gastar en publicidad. Los de antes existen
  * y se cuentan aparte, pero no ensucian el costo de adquisición.
  */
-function fn_ventana_pauta(PDO $pdo): ?array
+function fn_ventana_pauta(PDO $pdo, ?string $ancla = null): ?array
 {
     try {
-        $r = $pdo->query(
+        /* La pauta anterior al ancla no se cuenta: pago jugadores de una etapa
+           que este modulo no mide, asi que cargarla al costo de los de ahora
+           los haria ver carisimos. */
+        $st = $pdo->prepare(
             "SELECT MIN(fecha) desde, MAX(fecha) hasta,
                     COALESCE(SUM(monto),0) total, COUNT(DISTINCT fecha) dias
-               FROM gasto_diario"
-        )->fetch(PDO::FETCH_ASSOC);
+               FROM gasto_diario WHERE fecha >= ?"
+        );
+        $st->execute([$ancla ?? '1970-01-01']);
+        $r = $st->fetch(PDO::FETCH_ASSOC);
         if (!$r || $r['desde'] === null || (float)$r['total'] <= 0) { return null; }
         return ['desde' => (string)$r['desde'], 'hasta' => (string)$r['hasta'],
                 'total' => (float)$r['total'], 'dias' => (int)$r['dias']];
@@ -867,7 +951,8 @@ function fn_por_jugador(PDO $pdo, float $costoPorFicha, float $pctE, float $pctS
  * recupero.
  */
 function fn_recupero(PDO $pdo, float $costoPorFicha, float $pctE, float $pctS,
-                     int $diasMax = 60, ?array $ventana = null): array
+                     int $diasMax = 60, ?array $ventana = null,
+                     ?string $ancla = null): array
 {
     $j = fn_jugadores_crudo($pdo);
     /* El detalle día por día, que es lo que permite acumular. Se pide aparte y
@@ -890,7 +975,10 @@ function fn_recupero(PDO $pdo, float $costoPorFicha, float $pctE, float $pctS,
     $cuant = array_fill(0, $diasMax + 1, 0);
     $n     = 0;
 
-    $desdePrimera = $ventana['desde'] ?? null;
+    /* La cohorte sale del ANCLA del modulo, no de la ventana de pauta: un
+       jugador que llego antes de que se empezara a pagar publicidad, pero ya
+       usando el sistema, es igual de nuestro y cuenta. */
+    $desdePrimera = $ancla;
     foreach ($j as $u => $d) {
         if ($d['cargado'] <= 0 || $d['primera'] === null) { continue; }
         // Solo la cohorte que trajo esta pauta -- ver fn_ventana_pauta().
@@ -1163,99 +1251,77 @@ function fn_stock(PDO $pdo, float $costoPorFicha): array
     ];
 }
 
+/**
+ * La foto del negocio DESDE QUE ESTE CAJERO USA EL SISTEMA.
+ *
+ * ACA VIVIA "PATRIMONIO NETO" Y SE SACO (14/09/2026). Nahuel: "el dato del
+ * patrimonio la verdad que no me interesa demasiado, dudo que a cualquier
+ * cajero le interese". Y tenia razon: era el numero mas caro de calcular bien
+ * --hacen falta las dos mitades del mismo tramo, el costo historico de las
+ * fichas y una deuda que en la practica son centavos dormidos en cuentas que
+ * nadie vuelve a reclamar-- y el que menos se lee. Dio dos bugs en un dia.
+ *
+ * Lo reemplaza RESULTADO ACUMULADO: cuanto lleva ganado o perdido el negocio
+ * desde el ancla. Es la misma plata, contada de una forma que se puede leer de
+ * un vistazo y que contesta lo que el cajero pregunta de verdad: "desde que
+ * arranque, ¿voy ganando?".
+ *
+ * La deuda con los jugadores no desaparece: sigue en "Ver mas metricas", que
+ * es donde corresponde un dato de contexto que casi nunca mueve una decision.
+ */
 function fn_foto(PDO $pdo, float $costoPorFicha = 0.20): array
 {
-    $cargas = publicidad_sql_cargas();
-    /* El histórico sale del libro del panel cuando existe. OJO con el alcance:
-       si el backfill no llegó hasta el primer día del negocio, esto subcuenta
-       los retiros viejos y el patrimonio sale optimista. Es el mismo trueque
-       que en fn_retiros(), y se prefiere el libro porque la cola vieja
-       subcuenta MUCHÍSIMO más (5 retiros contra 44 en la misma ventana). */
-    $retirosSql = fn_libro_desde($pdo) !== null
-        ? "SELECT monto FROM operaciones_panel WHERE tipo = 1"
-        : "SELECT monto FROM acciones_saldo WHERE tipo='retirar' AND estado='hecha'";
-    $row = $pdo->query(
-        "SELECT
-            (SELECT COALESCE(SUM(c.monto),0) FROM ($cargas) c) AS ingresos_historicos,
-            (SELECT COALESCE(SUM(monto),0) FROM ($retirosSql) rr) AS retiros_historicos,
-            (SELECT COALESCE(SUM(balance),0) FROM usuarios) AS fichas_jugadores"
-    )->fetch(PDO::FETCH_ASSOC);
+    $ancla  = fn_medir_desde($pdo);
+    $desde  = $ancla['desde'];
+    $hoy    = date('Y-m-d');
+    $stock  = fn_stock($pdo, $costoPorFicha);
 
-    $fichasJugadores = (float)$row['fichas_jugadores'];
-
-    /* LO QUE PAGASTE AL PROVEEDOR por las fichas entregadas, y LOS RETIROS,
-       ACOTADOS AL MISMO ARRANQUE QUE LOS INGRESOS.
-     
-       ESTE RECORTE ES EL ARREGLO DE UN BUG QUE METI EL 14/09/2026. Sin el, los
-       ingresos salian de NUESTRAS tablas -- que empiezan cuando empezo el CRM --
-       y los retiros y el costo salian del libro del panel, que arranca mucho
-       antes y trae toda la historia de la cuenta de agente. O sea: gastos de
-       una historia larga restados contra ingresos de una historia corta. En
-       produccion eso dio un patrimonio de -43 millones con $73.438 en manos de
-       los jugadores.
-     
-       Un patrimonio solo significa algo si las dos mitades cubren el mismo
-       periodo. Lo que el libro tenga de antes existe, pero no tenemos el lado
-       de los ingresos para ponerle al lado, asi que no se puede opinar. */
-    $arranque = null;
+    $fichasJugadores = 0.0;
     try {
-        $arranque = $pdo->query(
-            "SELECT MIN(cuando) FROM (" . publicidad_sql_cargas() . ") c"
-        )->fetchColumn() ?: null;
-    } catch (Throwable $e) { /* sin cargas: no hay desde cuando medir */ }
+        $fichasJugadores = (float)$pdo->query(
+            "SELECT COALESCE(SUM(balance),0) FROM usuarios")->fetchColumn();
+    } catch (Throwable $e) { /* sin espejo: 0 */ }
 
-    $costoHistorico = null;
-    $retirosHist    = null;
-    if ($arranque !== null) {
-        try {
-            if (fn_libro_desde($pdo) !== null) {
-                $st = $pdo->prepare(
-                    "SELECT COALESCE(SUM(IF(tipo=0, monto, 0)),0) entregado,
-                            COALESCE(SUM(IF(tipo=1, monto, 0)),0) retirado
-                       FROM operaciones_panel WHERE cuando >= ?"
-                );
-                $st->execute([$arranque]);
-                $f = $st->fetch(PDO::FETCH_ASSOC) ?: [];
-                $costoHistorico = (float)($f['entregado'] ?? 0) * $costoPorFicha;
-                $retirosHist    = (float)($f['retirado'] ?? 0);
-            }
-        } catch (Throwable $e) { /* sin libro: no se descuenta, y se avisa */ }
+    if ($desde === null) {
+        /* Todavia no cargo nadie: no hay negocio que medir, y un cero aca es
+           un dato real y no una ausencia. */
+        return ['desde' => null, 'fuente' => $ancla['fuente'], 'hueco' => $ancla['hueco'],
+                'ingresos' => 0.0, 'retiros' => 0.0, 'costo_fichas' => 0.0,
+                'comisiones' => 0.0, 'resultado' => 0.0,
+                'fichas_jugadores' => $fichasJugadores,
+                'stock_fichas' => $stock['fichas'], 'valor_stock' => $stock['valor'],
+                'stock_leido_en' => $stock['leido_en'],
+                'stock_consumo_dia' => $stock['consumo_dia'], 'stock_dias' => $stock['dias']];
     }
 
-    /* `efectivo_neto` es lo que entró menos lo que salió HACIA LOS JUGADORES.
-       No es la caja: falta lo que se le pagó al proveedor, que va aparte para
-       que se vea de dónde sale cada resta. */
-    /* Los retiros del MISMO tramo que los ingresos. `retiros_historicos` de la
-       consulta de arriba abarca todo el libro y por eso no se usa cuando hay
-       un arranque: serviria para el caso sin libro, donde sale de la cola. */
-    $efectivoNeto = (float)$row['ingresos_historicos']
-                  - ($retirosHist ?? (float)$row['retiros_historicos']);
+    /* Las CUATRO partes salen del mismo tramo. Es la unica forma de que la
+       resta signifique algo: mezclar tramos fue lo que dio -43 millones. */
+    $ingresos   = fn_ingresos($pdo, $desde, $hoy);
+    $retiros    = fn_retiros($pdo, $desde, $hoy);
+    $bonos      = fn_bonos($pdo, $desde, $hoy);
+    $costo      = fn_costo_fichas($pdo, $desde, $hoy, $costoPorFicha,
+                                  $ingresos['monto'], $bonos['monto']);
+    $comis      = fn_comisiones($pdo, $desde, $hoy, $ingresos['monto'], $retiros['monto']);
+    $resultado  = $ingresos['monto'] - $retiros['monto'] - $costo - $comis['total'];
 
-    $stock = fn_stock($pdo, $costoPorFicha);
-
-    /* PATRIMONIO = lo que entró - lo que se pagó a jugadores - lo que se pagó
-       al proveedor por las fichas entregadas - lo que les debés a los jugadores
-       que todavía tienen fichas.
-
-       El stock que tenés en el panel NO se suma aparte, y no es un olvido: las
-       fichas en stock se pagaron (sale de la caja) y valen lo que costaron
-       (entra como activo). Los dos términos se cancelan exactamente, así que
-       sumarlo sería contarlo dos veces. Se muestra igual, porque saber cuántas
-       fichas te quedan es operativo, pero no mueve el patrimonio. */
     return [
-        'efectivo_neto'     => $efectivoNeto,
-        'desde'             => $arranque,
-        'costo_historico'   => $costoHistorico === null ? null : round($costoHistorico, 2),
+        'desde'             => $desde,
+        'fuente'            => $ancla['fuente'],
+        'hueco'             => $ancla['hueco'],
+        'ingresos'          => round($ingresos['monto'], 2),
+        'retiros'           => round($retiros['monto'], 2),
+        'costo_fichas'      => round($costo, 2),
+        'comisiones'        => round($comis['total'], 2),
+        'resultado'         => round($resultado, 2),
+        'fichas_jugadores'  => round($fichasJugadores, 2),
         'stock_fichas'      => $stock['fichas'],
         'valor_stock'       => $stock['valor'],
         'stock_leido_en'    => $stock['leido_en'],
         'stock_consumo_dia' => $stock['consumo_dia'],
         'stock_dias'        => $stock['dias'],
-        'fichas_jugadores'  => $fichasJugadores,
-        'patrimonio_neto'   => $efectivoNeto - ($costoHistorico ?? 0) - $fichasJugadores,
-        'patrimonio_exacto' => $costoHistorico !== null,
     ];
 }
+
 
 /**
  * Alertas del período, en una lista plana y autodescriptiva (cada elemento
@@ -1524,16 +1590,21 @@ if ($metodo === 'GET') {
             $pctE = (float)($com['pct_entrada'] ?? 0);
             $pctS = (float)($com['pct_salida'] ?? 0);
 
-            /* TODO el bloque se mide sobre la misma poblacion: los jugadores
-               que aparecieron desde que hay pauta cargada. Sin pauta no hay
-               ventana y se mide todo, que es lo correcto -- no hay costo de
-               adquisicion del cual separarlos. */
-            $ventana = fn_ventana_pauta($pdo);
+            /* TODO el bloque cuelga del MISMO ancla que el resto del modulo:
+               desde cuando este cajero usa el sistema. Antes colgaba del primer
+               dia con gasto de publicidad, que funcionaba para un caso y no
+               generalizaba -- un cajero que nunca carga su gasto volvia a
+               mezclar toda la historia, y uno que lo carga tarde se quedaba sin
+               medir los jugadores que trajo antes. */
+            $ancla   = fn_medir_desde($pdo);
+            $ventana = fn_ventana_pauta($pdo, $ancla['desde']);
             salir(['ok' => true,
+                'ancla'     => $ancla,
                 'ventana'   => $ventana,
                 'jugadores' => fn_por_jugador($pdo, $costoPorFicha, $pctE, $pctS,
-                                              $ventana['desde'] ?? null),
-                'recupero'  => fn_recupero($pdo, $costoPorFicha, $pctE, $pctS, 60, $ventana),
+                                              $ancla['desde']),
+                'recupero'  => fn_recupero($pdo, $costoPorFicha, $pctE, $pctS, 60, $ventana,
+                                           $ancla['desde']),
                 'serie'     => fn_bola_nieve($pdo, $desde, $hasta, $costoPorFicha, $pctE, $pctS),
             ]);
         }
@@ -1793,11 +1864,18 @@ if ($metodo === 'GET') {
                     'retencion_porcentaje' => $retencion['porcentaje'],
                 ],
                 'foto_actual' => [
-                    'efectivo_neto'    => $foto['efectivo_neto'],
+                    /* Desde que este cajero usa el sistema -- ver
+                       fn_medir_desde(). Sin ese `desde`, los numeros de aca no
+                       se pueden interpretar. */
+                    'desde'            => $foto['desde'],
+                    'ingresos'         => $foto['ingresos'],
+                    'retiros'          => $foto['retiros'],
+                    'costo_fichas'     => $foto['costo_fichas'],
+                    'comisiones'       => $foto['comisiones'],
+                    'resultado'        => $foto['resultado'],
                     'fichas_jugadores' => $foto['fichas_jugadores'],
-                    'patrimonio_neto'  => $foto['patrimonio_neto'],
-                    'stock_fichas'     => null,
-                    'notas'            => 'Stock de fichas pendiente de M6.B',
+                    'stock_fichas'     => $foto['stock_fichas'],
+                    'stock_dias'       => $foto['stock_dias'],
                 ],
                 'alertas'       => fn_alertas($pdo, $desde, $hasta, $umbralGrande, $umbralMuyGrande, $umbralGanador),
                 'umbrales'      => [
