@@ -1198,12 +1198,22 @@ function rl_acreditar(PDO $pdo, array &$recarga, string $idUnico, string $conf,
     $bono = 0;
     if ($esPrimera === 1) {
         $bono = rl_bono_bienvenida_aplicar($pdo, (string)$recarga['usuario'], (int)$recarga['coins']);
-        /* Y el plan de referidos, con el MISMO gate de "primera": si a este
-           jugador lo trajo otro cliente con su link, es ahora cuando el que
-           lo trajo cobra. El candado de una-sola-vez vive en el helper
-           (UNIQUE de referidos.referido), igual que el del bono arriba. */
-        if (function_exists('ref_pagar_por_primera_carga')) {
-            ref_pagar_por_primera_carga($pdo, (string)$recarga['usuario']);
+    }
+
+    /* Referidos: FUERA del gate es_primera a proposito. Si la primera carga
+       del amigo entro por el camino A (boton Depositos del juego, que no
+       pasa por aca), con el gate el referidor no cobraba NUNCA; asi cobra en
+       la primera carga por transferencia. Es seguro sin el gate: el candado
+       UNIQUE de `referidos` garantiza UN pago por amigo, y sin ref_codigo en
+       el alta la funcion devuelve 0 en un SELECT. Si pago, el bono del
+       REFERIDOR viaja en $recarga para que rl_cargar_al_juego_auto lo
+       deposite AL JUEGO despues del commit -- antes moria en usuarios.bonus
+       y en la plataforma no aparecia nunca. */
+    if (function_exists('ref_pagar_por_primera_carga')) {
+        $refQuien = null;
+        $refMonto = ref_pagar_por_primera_carga($pdo, (string)$recarga['usuario'], $refQuien);
+        if ($refMonto > 0 && $refQuien !== null && $refQuien !== '') {
+            $recarga['ref_pago'] = ['usuario' => $refQuien, 'monto' => $refMonto];
         }
     }
 
@@ -1480,6 +1490,26 @@ function rl_cargar_al_juego_auto(PDO $pdo, array $recarga): void
         }
     } catch (Throwable $e) {
         error_log('rl_cargar_al_juego_auto: ' . $e->getMessage());
+    }
+
+    /* El bono del REFERIDOR (si esta primera carga se lo gano, ver
+       rl_acreditar): deposito solo-bono AL JUEGO de quien lo trajo, por el
+       mismo camino que todo bono. Corre aca porque este punto es post-commit
+       (fichas_pedir_carga abre su propia transaccion). Si justo el referidor
+       tiene una carga en curso, el bono queda en su contador y lo manda
+       «Bonos al juego» -- misma degradacion que el bono del CRM. */
+    if (!empty($recarga['ref_pago']['monto'])) {
+        try {
+            $rp = $recarga['ref_pago'];
+            $r2 = fichas_pedir_carga($pdo, (string)$rp['usuario'], 0, 'referidos', false,
+                                     (int)$rp['monto']);
+            if (empty($r2['ok'])) {
+                error_log('rl_cargar_al_juego_auto: bono de referido para '
+                    . $rp['usuario'] . ' quedo en el contador: ' . ($r2['codigo'] ?? '?'));
+            }
+        } catch (Throwable $e) {
+            error_log('rl_cargar_al_juego_auto (referido): ' . $e->getMessage());
+        }
     }
 }
 
@@ -2226,11 +2256,19 @@ function rl_acreditar_directo(PDO $pdo, string $idUnico, string $usuario,
             error_log('rl_acreditar_directo: no pude calcular es_primera: ' . $e->getMessage());
         }
         $bono = 0;
+        $refPago = null;
         if ($esPrimera === 1) {
             $bono = rl_bono_bienvenida_aplicar($pdo, $usuario, $coins);
-            // Referidos: mismo gate, mismo motivo que en rl_acreditar().
-            if (function_exists('ref_pagar_por_primera_carga')) {
-                ref_pagar_por_primera_carga($pdo, $usuario);
+        }
+        /* Referidos: FUERA del gate es_primera, igual que en rl_acreditar()
+           (si la primera carga fue por el camino A, con el gate no cobraba
+           nunca). El candado UNIQUE garantiza un solo pago; el deposito al
+           juego del referidor sale post-commit via rl_cargar_al_juego_auto. */
+        if (function_exists('ref_pagar_por_primera_carga')) {
+            $refQuien = null;
+            $refMonto = ref_pagar_por_primera_carga($pdo, $usuario, $refQuien);
+            if ($refMonto > 0 && $refQuien !== null && $refQuien !== '') {
+                $refPago = ['usuario' => $refQuien, 'monto' => $refMonto];
             }
         }
 
@@ -2254,6 +2292,9 @@ function rl_acreditar_directo(PDO $pdo, string $idUnico, string $usuario,
                         'referencia' => 'manual', 'id' => 0, 'bono' => $bono,
                         // Para la invitacion a la app del aviso (solo primera carga).
                         'es_primera' => $esPrimera];
+        // El bono del referidor (si esta primera carga lo gano): al juego
+        // post-commit, igual que en el camino automatico.
+        if (!empty($refPago)) { $comoRecarga['ref_pago'] = $refPago; }
         rl_cargar_al_juego_auto($pdo, $comoRecarga);
         rl_notificar_acreditada($pdo, $comoRecarga);
 

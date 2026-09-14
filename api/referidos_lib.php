@@ -139,16 +139,27 @@ if (!function_exists('ref_pagar_por_primera_carga')) {
      * tragarlo dejaria al caller creyendo que acredito una recarga que
      * InnoDB ya revirtio entera.
      */
-    function ref_pagar_por_primera_carga(PDO $pdo, string $usuario): int
+    function ref_pagar_por_primera_carga(PDO $pdo, string $usuario, ?string &$referidorOut = null): int
     {
+        // $referidorOut: a QUIEN se le pago (solo cuando el retorno es > 0).
+        // Lo usa el caller para depositar el bono AL JUEGO despues de su
+        // commit -- fichas_pedir_carga abre su propia transaccion y no puede
+        // correr aca adentro. Los llamadores viejos que ignoran el retorno
+        // siguen andando igual.
         try {
             $usuario = mb_substr(trim($usuario), 0, 80);
             if ($usuario === '') { return 0; }
 
             // Solo un alta CONCRETADA, igual que el bono de bienvenida: una
-            // fila zombie en 'error' no puede pagarle a nadie.
+            // fila zombie en 'error' no puede pagarle a nadie. Y de las
+            // confirmadas, la ultima QUE TENGA codigo: antes se miraba la
+            // ultima a secas, y un re-alta posterior sin ref (recreado desde
+            // el CRM, el panel) ENMASCARABA a la original con codigo -- el
+            // amigo si fue referido y el bono no salia.
             $sa = $pdo->prepare(
-                "SELECT ref_codigo FROM altas WHERE usuario = ? AND estado = 'ok'
+                "SELECT ref_codigo FROM altas
+                  WHERE usuario = ? AND estado = 'ok'
+                    AND ref_codigo IS NOT NULL AND ref_codigo <> ''
                   ORDER BY id DESC LIMIT 1"
             );
             $sa->execute([$usuario]);
@@ -211,6 +222,23 @@ if (!function_exists('ref_pagar_por_primera_carga')) {
                     'referidos'
                 );
             }
+            /* Ademas de la push, el aviso EN EL CHAT: el referidor que no
+               tiene la app registrada no se enteraba nunca de que cobro.
+               Best-effort: si nunca chateo, crm_avisar_jugador no hace nada. */
+            try {
+                $crmLib = __DIR__ . '/crm_lib.php';
+                if (is_file($crmLib)) { require_once $crmLib; }
+                if (function_exists('crm_avisar_jugador')) {
+                    crm_avisar_jugador($pdo, $referidor,
+                        '🎉 ¡Tu amigo ' . $usuario . ' ya hizo su primera carga! Te acredité '
+                        . number_format($monto, 0, ',', '.')
+                        . ' en bonos por haberlo invitado. Seguí compartiendo tu link.');
+                }
+            } catch (Throwable $e) {
+                error_log('ref_pagar (aviso chat): ' . $e->getMessage());
+            }
+
+            $referidorOut = $referidor;
             return $monto;
         } catch (Throwable $e) {
             if ($pdo->inTransaction() && $e instanceof PDOException
@@ -223,6 +251,43 @@ if (!function_exists('ref_pagar_por_primera_carga')) {
             // queda en el log.
             error_log('ref_pagar_por_primera_carga(' . $usuario . '): ' . $e->getMessage());
             return 0;
+        }
+    }
+}
+
+if (!function_exists('ref_anotar_en_alta')) {
+    /**
+     * Anota con que codigo entro un alta recien encolada (altas.ref_codigo),
+     * validando TODO antes de guardar -- plan activo, formato, que el codigo
+     * exista y que su dueño no sea el mismo que se registra -- porque este
+     * campo despues PAGA plata. Un valor inventado no puede llegar a la base.
+     *
+     * Es EL unico anotador, compartido por los dos caminos de alta que
+     * arrastran el link: el formulario de la landing (crear_cuenta.php) y la
+     * cuenta creada POR EL CHAT (chatbot.php) -- este segundo camino no
+     * capturaba el referido y el amigo que se registraba charlando perdia el
+     * bono de quien lo invito.
+     *
+     * Best-effort a proposito: el alta ya salio bien y no puede morir por
+     * esto (columna de la migracion 53 sin correr, etc.).
+     */
+    function ref_anotar_en_alta(PDO $pdo, int $altaId, string $refCod, string $usuarioNuevo): bool
+    {
+        $refCod = strtolower(trim($refCod));
+        if ($altaId <= 0 || $refCod === '') { return false; }
+        try {
+            if (!function_exists('cfg_crm_activo') || !cfg_crm_activo($pdo, 'ref_activo')) {
+                return false;
+            }
+            if (!preg_match('/^[a-z0-9]{4,16}$/', $refCod)) { return false; }
+            $dueno = ref_usuario_de_codigo($pdo, $refCod);
+            if ($dueno === '' || $dueno === trim($usuarioNuevo)) { return false; }
+            $pdo->prepare("UPDATE altas SET ref_codigo = ? WHERE id = ?")
+                ->execute([$refCod, $altaId]);
+            return true;
+        } catch (Throwable $e) {
+            error_log('ref_anotar_en_alta ' . $refCod . ': ' . $e->getMessage());
+            return false;
         }
     }
 }

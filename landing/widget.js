@@ -1855,6 +1855,10 @@
         mensajes: historial.slice(-MAX_CONTEXTO),
         session_id: sid,
         usuario: USUARIO || undefined,
+        /* El codigo de referido persistido (si esta visita vino de un link
+           compartido): lo usa crear_cuenta del chatbot para anotar quien lo
+           invito. El server lo re-valida entero. */
+        ref_codigo: ls("gp_ref") || undefined,
         /* Cookies del Pixel de Meta. Son lo que ata el evento al click del
            anuncio: sin ellas el backend manda el Contact/Purchase pero Meta
            no puede atribuirlo a ninguna campaña. metaCookies() la define
@@ -3631,6 +3635,17 @@
   var DEV_KEY    = "goldpaw_device";
   var APP        = (typeof window.GoldpawApp !== "undefined") ? window.GoldpawApp : null;
   var APP_TK     = window.__gp_app_tk || "";
+
+  /* Plan de referidos: si esta visita llego con un link compartido
+     (?ref=codigo), el codigo se PERSISTE -- el amigo suele mirar, cerrar y
+     registrarse mas tarde (o por el chat), y el parametro de la URL ya no
+     esta. Se manda con el alta por chat (body ref_codigo); bono.html y
+     registro.html leen esta misma clave como respaldo. El server valida
+     todo de nuevo (ref_anotar_en_alta): guardar basura aca no paga nada. */
+  try {
+    var _ref = (new URLSearchParams(location.search).get("ref") || "").trim().toLowerCase();
+    if (/^[a-z0-9]{4,16}$/.test(_ref)) lss("gp_ref", _ref);
+  } catch (e) {}
 
   var DEVICE = ls(DEV_KEY);
   if (!DEVICE){

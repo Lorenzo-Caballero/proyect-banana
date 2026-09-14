@@ -272,7 +272,17 @@
   const FBCLID = (params.get('fbclid') || '').trim();
   // Plan de referidos: si el link compartido apunta aca en vez de a
   // bono.html, el rastro de quien lo trajo no se pierde igual.
-  const REF = (params.get('ref') || '').trim().toLowerCase();
+  const REF = (function(){
+    /* El ?ref= se PERSISTE: el amigo suele abrir el link, mirar y volver a
+       registrarse despues (o por el chat), cuando el parametro ya no esta.
+       Misma clave gp_ref que usa el widget; el server re-valida todo. */
+    let r = (params.get('ref') || '').trim().toLowerCase();
+    try {
+      if (/^[a-z0-9]{4,16}$/.test(r)) localStorage.setItem('gp_ref', r);
+      else r = (localStorage.getItem('gp_ref') || '');
+    } catch (e) {}
+    return r;
+  })();
 
   // La contraseña la genera el SERVER, una por cuenta, y vuelve en la
   // respuesta del alta. Antes era fija para todas ("12345678"): cómodo, pero

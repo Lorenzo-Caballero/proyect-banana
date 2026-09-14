@@ -298,7 +298,17 @@
      codigo (?ref=abc123). Se arrastra al POST del alta tal cual; el server lo
      valida (codigo real, plan activo) y con eso sabe a quien pagarle cuando
      este amigo haga su primera carga. Vacio si se entro sin link. */
-  const REF = (params.get('ref') || '').trim().toLowerCase();
+  const REF = (function(){
+    /* El ?ref= se PERSISTE: el amigo suele abrir el link, mirar y volver a
+       registrarse despues (o por el chat), cuando el parametro ya no esta.
+       Misma clave gp_ref que usa el widget; el server re-valida todo. */
+    let r = (params.get('ref') || '').trim().toLowerCase();
+    try {
+      if (/^[a-z0-9]{4,16}$/.test(r)) localStorage.setItem('gp_ref', r);
+      else r = (localStorage.getItem('gp_ref') || '');
+    } catch (e) {}
+    return r;
+  })();
 
   /* Identifica ESTE pedido y es lo único que después autoriza a ver la
      contraseña. Sin esto, cualquiera que recorra id=1,2,3... se lleva las

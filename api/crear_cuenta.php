@@ -223,19 +223,13 @@ if ($metodo === 'POST') {
            morir porque una base no migro todavia -- pierde el bono del
            referidor (queda en el log), no la cuenta. */
         if (($r['cuerpo']['ok'] ?? false) && ($r['cuerpo']['id'] ?? 0)) {
-            $refCod = strtolower(trim((string)($body['ref'] ?? '')));
-            if ($refCod !== '' && cfg_crm_activo($pdo, 'ref_activo')
-                && preg_match('/^[a-z0-9]{4,16}$/', $refCod)) {
-                try {
-                    require_once __DIR__ . '/referidos_lib.php';
-                    $dueno = ref_usuario_de_codigo($pdo, $refCod);
-                    if ($dueno !== '' && $dueno !== $usuarioFinal) {
-                        $pdo->prepare("UPDATE altas SET ref_codigo = ? WHERE id = ?")
-                            ->execute([$refCod, (int)$r['cuerpo']['id']]);
-                    }
-                } catch (Throwable $e) {
-                    error_log('crear_cuenta ref ' . $refCod . ': ' . $e->getMessage());
-                }
+            // La validacion vive en ref_anotar_en_alta (compartida con el
+            // alta por chat de chatbot.php): plan activo, formato, dueño
+            // real distinto del que se registra. Best-effort adentro.
+            $refCod = (string)($body['ref'] ?? '');
+            if ($refCod !== '') {
+                require_once __DIR__ . '/referidos_lib.php';
+                ref_anotar_en_alta($pdo, (int)$r['cuerpo']['id'], $refCod, $usuarioFinal);
             }
         }
 

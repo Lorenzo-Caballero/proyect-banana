@@ -2037,6 +2037,22 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
         ]);
 
         if (!empty($r['cuerpo']['ok'])) {
+            /* Plan de referidos: si el amigo llego con un link compartido, el
+               widget arrastro el codigo (?ref= -> localStorage -> body
+               `ref_codigo`) y se anota en el alta -- ANTES este camino no lo
+               capturaba: el que se registraba POR EL CHAT perdia el bono de
+               quien lo invito, aunque hubiera entrado por el link. La
+               validacion completa vive en ref_anotar_en_alta (la misma del
+               formulario de la landing). Best-effort. */
+            $refCod = (string)($body['ref_codigo'] ?? '');
+            if ($refCod !== '' && ($r['cuerpo']['id'] ?? 0)) {
+                try {
+                    require_once __DIR__ . '/referidos_lib.php';
+                    ref_anotar_en_alta($pdo, (int)$r['cuerpo']['id'], $refCod, $u);
+                } catch (Throwable $e) {
+                    error_log('chatbot crear_cuenta ref: ' . $e->getMessage());
+                }
+            }
             // OJO: NO se devuelve la password. A esta altura la cuenta todavia
             // no existe en el panel; el bot la crea despues y puede fallar. El
             // widget sondea alta_estado.php y la muestra cuando este confirmada.
