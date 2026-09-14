@@ -3173,6 +3173,10 @@
   <div class="back" id="backGasto" style="display:none">
     <div class="modal">
       <h3>Cargar gasto</h3>
+      <!-- A QUIEN se le carga. Con publicistas y landings en las mismas
+           solapas, cargarle el gasto al equivocado es facil y no se nota hasta
+           que los numeros no cierran. -->
+      <p id="pgSub" class="cb-help" style="margin:-6px 0 10px"></p>
 
       <label for="pgFecha">Fecha</label>
       <input id="pgFecha" type="date">
@@ -9143,17 +9147,20 @@
   // ---------- gasto diario ----------
   $("#pgCancelar").addEventListener("click", ()=>{ $("#backGasto").style.display = "none"; });
   function pbAbrirModalGasto(fechaSugerida){
-    /* El gasto se carga POR PUBLICISTA: una landing es una página, no una
-       cuenta de Meta con presupuesto. El mensaje lo explica en vez de decir
-       solo que no se puede -- si no, el operador vuelve a intentarlo. */
-    if(!pbActivoId){
-      toast(pbLandingSel
-        ? "El gasto se carga por publicista, no por landing. Elegí el publicista que paga esa campaña."
-        : "Elegí un publicista primero");
-      return;
-    }
+    /* Ahora el gasto va por publicista O POR LANDING (migracion 65). Antes solo
+       por publicista, y eso dejaba sin CPA ni ROAS a quien mide por landing --
+       que es el uso real: comparar dos landings para ver cual convierte y
+       cortar la que no rinde. Sin gasto esas dos metricas quedan en "—", que
+       son justamente las que deciden si escalar o cortar. */
+    if(!pbHaySel()){ toast("Elegí una landing o un publicista primero"); return; }
     $("#pgFecha").value = fechaSugerida || pbFmtFecha(new Date());
     $("#pgMonto").value = "";
+    /* Decir A QUIEN se le carga. Con publicistas y landings mezclados en las
+       mismas solapas, cargarle el gasto al equivocado es facil y no se nota
+       hasta que los numeros no cierran. */
+    const quien = pbLandingSel ? pbLandingSel.nombre : (pbPublicistaActivo()?.nombre || "");
+    const sub = $("#pgSub");
+    if(sub) sub.textContent = quien ? "Gasto de pauta de: " + quien : "";
     $("#pgMsg").textContent = ""; $("#pgMsg").className = "msg";
     $("#backGasto").style.display = "grid";
   }
@@ -9165,7 +9172,12 @@
     if(isNaN(monto) || monto < 0){ msg.className="msg err"; msg.textContent="Poné un monto válido"; return; }
     const btn = $("#pgGuardar"); btn.disabled = true;
     let d;
-    try{ d = await pbPostJson({accion:"gasto_guardar", publicista_id: pbActivoId, fecha, monto}); }
+    /* Uno u otro: el backend rechaza los dos juntos a proposito -- un gasto de
+       un dia pertenece a UNA campaña, y mandarlo dos veces lo contaria dos
+       veces en el ROAS. */
+    const destino = pbLandingSel ? { landing: pbLandingSel.slug }
+                                 : { publicista_id: pbActivoId };
+    try{ d = await pbPostJson({accion:"gasto_guardar", ...destino, fecha, monto}); }
     catch(e){ btn.disabled=false; return; }
     btn.disabled = false;
     if(!d.ok){ msg.className="msg err"; msg.textContent = d.error || "No se pudo guardar"; return; }

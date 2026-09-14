@@ -190,16 +190,25 @@ if ($metodo === 'POST') {
 
         if ($accion === 'gasto_guardar') {
             $publicistaId = (int)($body['publicista_id'] ?? 0);
+            $landing      = trim((string)($body['landing'] ?? ''));
             $fecha        = (string)($body['fecha'] ?? '');
             $monto        = (float)($body['monto'] ?? -1);
 
-            if ($publicistaId <= 0 || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha)) {
+            /* Uno u otro, nunca los dos: el gasto de un dia pertenece a UNA
+               campaña. Si llegaran juntos no habria forma de saber cual paga,
+               y el numero terminaria contado dos veces en el ROAS. */
+            if ($landing !== '' && $publicistaId > 0) {
+                salir(['ok' => false, 'error' =>
+                    'Mandá publicista_id O landing, no los dos.'], 400);
+            }
+            if (($publicistaId <= 0 && $landing === '')
+                || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha)) {
                 salir(['ok' => false, 'error' => 'Faltan datos'], 400);
             }
             if ($monto < 0) {
                 salir(['ok' => false, 'error' => 'El gasto no puede ser negativo'], 400);
             }
-            if (!publicidad_gasto_guardar($pdo, $publicistaId, $fecha, $monto, $operador)) {
+            if (!publicidad_gasto_guardar($pdo, $publicistaId, $fecha, $monto, $operador, $landing)) {
                 salir(['ok' => false, 'error' => 'No se pudo guardar el gasto'], 500);
             }
             salir(['ok' => true]);

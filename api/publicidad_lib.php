@@ -355,17 +355,35 @@ function publicidad_activo_toggle(PDO $pdo, int $id): ?bool
  * equivocado y quiere corregir, no acumular).
  */
 function publicidad_gasto_guardar(PDO $pdo, int $publicistaId, string $fecha,
-                                   float $monto, string $operador = ''): bool
+                                   float $monto, string $operador = '',
+                                   string $landing = ''): bool
 {
-    if ($publicistaId <= 0 || $fecha === '') {
+    /* EL GASTO ES DE UN PUBLICISTA O DE UNA LANDING, nunca de los dos.
+       Empezo siendo solo por publicista, pensando en medir la campaña de otra
+       persona con su propio pixel. Pero el uso real es el contrario: comparar
+       LANDINGS para ver cual convierte mejor y cortar la que no rinde. Sin
+       gasto no hay CPA ni ROAS, asi que las dos metricas que deciden eso
+       estaban siempre vacias para quien no usa publicistas -- que es el caso
+       normal (migracion 65). */
+    $landing = trim($landing);
+    if ($fecha === '' || ($publicistaId <= 0 && $landing === '')) {
         return false;
     }
     try {
-        $pdo->prepare(
-            "INSERT INTO gasto_diario (publicista_id, fecha, monto, operador)
-             VALUES (?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE monto = VALUES(monto), operador = VALUES(operador)"
-        )->execute([$publicistaId, $fecha, $monto, $operador !== '' ? $operador : null]);
+        if ($landing !== '') {
+            $pdo->prepare(
+                "INSERT INTO gasto_diario (landing_slug, fecha, monto, operador)
+                 VALUES (?, ?, ?, ?)
+                 ON DUPLICATE KEY UPDATE monto = VALUES(monto), operador = VALUES(operador)"
+            )->execute([mb_substr($landing, 0, 80), $fecha, $monto,
+                        $operador !== '' ? $operador : null]);
+        } else {
+            $pdo->prepare(
+                "INSERT INTO gasto_diario (publicista_id, fecha, monto, operador)
+                 VALUES (?, ?, ?, ?)
+                 ON DUPLICATE KEY UPDATE monto = VALUES(monto), operador = VALUES(operador)"
+            )->execute([$publicistaId, $fecha, $monto, $operador !== '' ? $operador : null]);
+        }
         return true;
     } catch (Throwable $e) {
         error_log('publicidad_gasto_guardar: ' . $e->getMessage());
@@ -374,30 +392,52 @@ function publicidad_gasto_guardar(PDO $pdo, int $publicistaId, string $fecha,
 }
 
 /** Gasto total de un publicista en [desde, hasta] (fechas 'Y-m-d', inclusive). */
-function publicidad_gasto_periodo(PDO $pdo, int $publicistaId, string $desde, string $hasta): float
+function publicidad_gasto_periodo(PDO $pdo, int $publicistaId, string $desde, string $hasta,
+                                   string $landing = ''): float
 {
+    $landing = trim($landing);
     try {
-        $st = $pdo->prepare(
-            "SELECT COALESCE(SUM(monto), 0) FROM gasto_diario
-              WHERE publicista_id = ? AND fecha BETWEEN ? AND ?"
-        );
-        $st->execute([$publicistaId, $desde, $hasta]);
+        if ($landing !== '') {
+            $st = $pdo->prepare(
+                "SELECT COALESCE(SUM(monto), 0) FROM gasto_diario
+                  WHERE landing_slug = ? AND fecha BETWEEN ? AND ?"
+            );
+            $st->execute([$landing, $desde, $hasta]);
+        } else {
+            $st = $pdo->prepare(
+                "SELECT COALESCE(SUM(monto), 0) FROM gasto_diario
+                  WHERE publicista_id = ? AND fecha BETWEEN ? AND ?"
+            );
+            $st->execute([$publicistaId, $desde, $hasta]);
+        }
         return (float)$st->fetchColumn();
     } catch (Throwable $e) {
+        // Sin la migracion 65 no existe landing_slug: se sigue sin gasto.
         return 0.0;
     }
 }
 
 /** El gasto dia por dia de un publicista en el rango, para que el operador lo edite. */
-function publicidad_gasto_dias(PDO $pdo, int $publicistaId, string $desde, string $hasta): array
+function publicidad_gasto_dias(PDO $pdo, int $publicistaId, string $desde, string $hasta,
+                                string $landing = ''): array
 {
+    $landing = trim($landing);
     try {
-        $st = $pdo->prepare(
-            "SELECT fecha, monto FROM gasto_diario
-              WHERE publicista_id = ? AND fecha BETWEEN ? AND ?
-              ORDER BY fecha ASC"
-        );
-        $st->execute([$publicistaId, $desde, $hasta]);
+        if ($landing !== '') {
+            $st = $pdo->prepare(
+                "SELECT fecha, monto FROM gasto_diario
+                  WHERE landing_slug = ? AND fecha BETWEEN ? AND ?
+                  ORDER BY fecha ASC"
+            );
+            $st->execute([$landing, $desde, $hasta]);
+        } else {
+            $st = $pdo->prepare(
+                "SELECT fecha, monto FROM gasto_diario
+                  WHERE publicista_id = ? AND fecha BETWEEN ? AND ?
+                  ORDER BY fecha ASC"
+            );
+            $st->execute([$publicistaId, $desde, $hasta]);
+        }
         return $st->fetchAll();
     } catch (Throwable $e) {
         return [];
@@ -504,7 +544,12 @@ function publicidad_seg_norm(int|array $seg): array
 {
     if (is_int($seg)) { return ['tipo' => 'publicista', 'id' => $seg]; }
     if (($seg['tipo'] ?? '') === 'landing') {
-        return ['tipo' => 'landing', 'origen' => (string)($seg['origen'] ?? '')];
+        /* El `slug` se conserva: es la clave con la que se guarda el gasto de
+           esa landing (migracion 65). Antes se descartaba aca -- solo hacia
+           falta el `origen` para filtrar altas -- y el gasto quedaba sin
+           forma de encontrarse. */
+        return ['tipo' => 'landing', 'origen' => (string)($seg['origen'] ?? ''),
+                'slug' => (string)($seg['slug'] ?? '')];
     }
     return ['tipo' => 'publicista', 'id' => (int)($seg['id'] ?? 0)];
 }
@@ -632,7 +677,7 @@ function publicidad_metricas(PDO $pdo, int|array $seg, string $desde, string $ha
     // y el ROAS como "-", que es lo correcto: no hay con que calcularlos.
     $gasto = $seg['tipo'] === 'publicista'
         ? publicidad_gasto_periodo($pdo, (int)$seg['id'], $desde, $hasta)
-        : 0.0;
+        : publicidad_gasto_periodo($pdo, 0, $desde, $hasta, (string)($seg['slug'] ?? ''));
 
     return [
         'registros'          => $registros,
@@ -713,12 +758,13 @@ function publicidad_por_dia(PDO $pdo, int|array $seg, string $desde, string $has
         error_log('publicidad_por_dia (cargas): ' . $e->getMessage());
     }
 
-    // El gasto es por publicista (ver publicidad_metricas). Por landing no hay.
-    if ($seg['tipo'] === 'publicista') {
-        foreach (publicidad_gasto_dias($pdo, (int)$seg['id'], $desde, $hasta) as $g) {
-            $f = (string)$g['fecha'];
-            if (isset($porDia[$f])) { $porDia[$f]['gasto'] = round((float)$g['monto'], 2); }
-        }
+    // El gasto va por publicista O por landing (migracion 65).
+    $filas = $seg['tipo'] === 'publicista'
+        ? publicidad_gasto_dias($pdo, (int)$seg['id'], $desde, $hasta)
+        : publicidad_gasto_dias($pdo, 0, $desde, $hasta, (string)($seg['slug'] ?? ''));
+    foreach ($filas as $g) {
+        $f = (string)$g['fecha'];
+        if (isset($porDia[$f])) { $porDia[$f]['gasto'] = round((float)$g['monto'], 2); }
     }
 
     // Mas reciente primero, como en el mockup.
