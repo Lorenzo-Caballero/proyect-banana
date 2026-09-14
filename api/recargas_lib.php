@@ -1509,6 +1509,41 @@ function rl_notificar_acreditada(PDO $pdo, array $recarga): void
         }
         $msg .= ' ¡Gracias por jugar con nosotros, mucha suerte! 🍀';
         crm_avisar_jugador($pdo, $usuario, $msg);
+
+        /* Tras la PRIMERA carga, la invitacion a la app (pedido de Nahuel):
+           recien acreditado es el momento de mas buena onda del jugador, y el
+           bono de la app le duplica el gusto. En su propio globo, DESPUES de
+           la confirmacion, para que la buena noticia no se mezcle.
+
+           Solo si: es su primera carga acreditada (es_primera, lo calcula
+           rl_acreditar -- despues de la segunda seria insistencia), la promo
+           esta prendida y con monto, hay app_url configurada (regla de
+           siempre: sin URL no se inventa un link) y el jugador todavia no
+           tiene la app (tiene_app=0; si ya la tiene, el regalo ya lo cobro y
+           prometerselo seria mentirle). Si instala: el circuito existente
+           acredita solo (notif_registrar_dispositivo). Best-effort total. */
+        try {
+            if (!empty($recarga['es_primera']) && function_exists('cfg_crm_activo')
+                && cfg_crm_activo($pdo, 'app_promo_activa')) {
+                $fichasApp = max(0, (int)(cfg_crm($pdo, 'app_bono_fichas') ?? 0));
+                $urlApp    = trim((string)(cfg_crm($pdo, 'app_url') ?? ''));
+                if ($fichasApp > 0 && $urlApp !== '') {
+                    if (!preg_match('~^https?://~i', $urlApp)) { $urlApp = 'https://' . $urlApp; }
+                    $st = $pdo->prepare("SELECT tiene_app FROM usuarios WHERE username = ?");
+                    $st->execute([$usuario]);
+                    $fila = $st->fetch(PDO::FETCH_ASSOC);
+                    if ($fila && !(int)$fila['tiene_app']) {
+                        crm_avisar_jugador($pdo, $usuario,
+                            '🎁 Ah, y tenés un regalo más esperándote: instalá nuestra app y '
+                            . 'te acredito otras ' . number_format($fichasApp, 0, ',', '.')
+                            . ' fichas, solas, apenas entres con tu cuenta. Bajala de acá: '
+                            . $urlApp);
+                    }
+                }
+            }
+        } catch (Throwable $e) {
+            error_log('rl_notificar_acreditada (invitacion app): ' . $e->getMessage());
+        }
     }
 }
 
@@ -2194,7 +2229,9 @@ function rl_acreditar_directo(PDO $pdo, string $idUnico, string $usuario,
            que no las va a recibir. El bono viaja para que el deposito lo
            incluya, igual que en rl_acreditar(). */
         $comoRecarga = ['usuario' => $usuario, 'coins' => $coins,
-                        'referencia' => 'manual', 'id' => 0, 'bono' => $bono];
+                        'referencia' => 'manual', 'id' => 0, 'bono' => $bono,
+                        // Para la invitacion a la app del aviso (solo primera carga).
+                        'es_primera' => $esPrimera];
         rl_cargar_al_juego_auto($pdo, $comoRecarga);
         rl_notificar_acreditada($pdo, $comoRecarga);
 

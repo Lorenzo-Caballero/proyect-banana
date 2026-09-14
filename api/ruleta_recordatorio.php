@@ -38,6 +38,23 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
 
 exigir_api_key();
 
+/* Con la RULETA APAGADA no se recuerda nada: el aviso promete un giro que
+   ruleta.php va a rechazar -- el jugador toca la notificación, no encuentra
+   la ruleta y queda como una estafa. Este gate faltaba: el cron mandaba
+   "tenés tu giro de hoy" con la ruleta desactivada del CRM. Best-effort en
+   el sentido inverso al habitual: si config_crm no está disponible NO se
+   manda (mejor un recordatorio de menos que prometer un premio apagado). */
+try {
+    require_once __DIR__ . '/config_crm.php';
+    if (!function_exists('cfg_crm_activo') || !cfg_crm_activo($pdo, 'ruleta_activa')) {
+        echo json_encode(['ok' => true, 'avisados' => 0, 'motivo' => 'ruleta apagada']);
+        exit;
+    }
+} catch (Throwable $e) {
+    echo json_encode(['ok' => true, 'avisados' => 0, 'motivo' => 'sin config, no se avisa']);
+    exit;
+}
+
 try {
     // Candidatos: jugadores con app + notificaciones activas, que YA usaron la
     // ruleta alguna vez (tienen al menos un reclamo histórico) pero HOY no

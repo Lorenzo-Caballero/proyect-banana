@@ -2002,6 +2002,7 @@
       <button class="rail-item" data-nav="landings" data-tip="Landings" data-corto="Landings"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><circle cx="6.5" cy="6.5" r=".8" fill="currentColor" stroke="none"/><circle cx="9.5" cy="6.5" r=".8" fill="currentColor" stroke="none"/><path d="M7 13h6M7 16h4"/></svg></button>
       <button class="rail-item" data-nav="chatbot" data-tip="Chatbot (IA)" data-corto="Chatbot"><svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M12 8V4M9 4h6"/><circle cx="8.5" cy="14" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="14" r="1.3" fill="currentColor" stroke="none"/></svg></button>
       <button class="rail-item" id="railAgentes" data-nav="agentes" data-tip="Agentes" data-corto="Agentes" style="display:none"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></button>
+      <button class="rail-item" data-nav="app" data-tip="Instalaciones de la app" data-corto="App"><svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg></button>
       <button class="rail-item" data-nav="suscripcion" data-tip="Mi suscripción" data-corto="Saldo"><svg viewBox="0 0 24 24"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></button>
       <!-- Solo-admin (se muestra en cargarQuienSoy segun ROL, como railAgentes). -->
       <button class="rail-item" id="railRecaudar" data-nav="recaudar" data-tip="Recaudar inactivos" data-corto="Recaudar" style="display:none"><svg viewBox="0 0 24 24"><path d="M12 2v14M6 10l6 6 6-6"/><path d="M4 21h16"/></svg></button>
@@ -2488,6 +2489,7 @@
         <button class="tab" data-f="con_bonos">Con bono histórico</button>
         <button class="tab" data-f="baneados">Baneados</button>
         <button class="tab" data-f="sin_saldo">Sin saldo</button>
+        <button class="tab" data-f="con_app">Con la app</button>
         <!-- Inactividad: misma definición que el push masivo -- sin recarga
              acreditada en N días. Sirve para ver a quién reactivar antes de
              mandarle una promo. -->
@@ -3486,6 +3488,36 @@
     </div>
   </div>
 
+  <!-- ================= APP (instalaciones y promo) ================= -->
+  <div class="card-col view-panel" id="viewApp" style="display:none">
+    <div class="cb-wrap">
+      <div class="cb-head">
+        <div>
+          <h2>Instalaciones de la app</h2>
+          <p class="cb-sub">Quién se instaló la app e inició sesión, y qué pagó la promo de descarga. El bono se acredita solo, una única vez por jugador.</p>
+        </div>
+      </div>
+
+      <div class="us-cards" id="appCards"><p class="cfg-hint">Cargando…</p></div>
+
+      <div class="cb-card">
+        <div class="cb-card-head"><b>Últimas instalaciones</b></div>
+        <div class="cb-card-body">
+          <div style="overflow-x:auto">
+            <table class="us-tabla" style="width:100%">
+              <thead><tr><th>Jugador</th><th>Celular</th><th>Notif.</th><th>Bono</th><th>Instalada</th><th>Última vez</th></tr></thead>
+              <tbody id="appLista"><tr><td colspan="6" class="cfg-hint">—</td></tr></tbody>
+            </table>
+          </div>
+          <p class="cfg-hint" style="margin-top:8px">
+            Se listan los últimos 50 celulares con sesión iniciada. El conteo grande de arriba
+            («Con la app») es por jugador, no por celular.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ================= RECAUDAR (saldo de inactivos) ================= -->
   <!-- Encola un pedido; lo ejecuta el bot del VPS (bot_recaudar.py --demonio)
        contra el panel de agentes. El CRM no puede abrir ese panel. -->
@@ -3696,6 +3728,30 @@
         </div>
       </div>
 
+      <!-- Promo descarga de la app --------------------------------------- -->
+      <div class="cfg-card">
+        <div class="cfg-card-head">
+          <span class="cb-ico"><svg viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M12 18h.01"/></svg></span>
+          <div class="cfg-card-txt">
+            <b>Promo: fichas por instalar la app</b>
+            <span>Tras crear una cuenta por el chat aparece un cartel con la descarga; al primer inicio de sesión desde la app las fichas se acreditan solas, una única vez por jugador.</span>
+          </div>
+          <label class="cb-switch">
+            <input type="checkbox" id="cfgAppPromo">
+            <span class="cb-slider"></span>
+          </label>
+        </div>
+        <div class="cfg-card-body">
+          <label class="cb-flabel">Fichas de regalo</label>
+          <input class="cb-input" id="cfgAppBono" inputmode="numeric" placeholder="1000">
+          <p class="cfg-hint">
+            El bono va <b>directo al juego</b> (mismo camino que un bono del CRM) y
+            queda contado en Usuarios («Bonos por instalar»). Con la promo apagada
+            nadie ve el cartel ni cobra nada, y el chatbot no la menciona.
+          </p>
+        </div>
+      </div>
+
       <!-- Aviso por Telegram --------------------------------------------- -->
       <div class="cfg-card">
         <div class="cfg-card-head">
@@ -3753,6 +3809,7 @@
           <div class="cfg-sub">Para mirar el negocio de reojo</div>
           <label class="cb-check"><input type="checkbox" id="cfgTgAlta"><span>Se registró un jugador nuevo</span></label>
           <label class="cb-check"><input type="checkbox" id="cfgTgPago"><span>Entró una transferencia y se acreditó sola</span></label>
+          <label class="cb-check"><input type="checkbox" id="cfgTgApp"><span>Un jugador instaló la app y entró</span></label>
           <p class="cfg-hint">
             Estos dos no piden que hagas nada: son para seguir el movimiento sin entrar al CRM.
             <b>Con mucho volumen son muchos mensajes por día</b> — si te satura, apagalos y
@@ -4499,6 +4556,37 @@
     pintarCreditosCrm();   // que el box del rail no quede desactualizado
   }
 
+  /* ===================== APP (instalaciones y promo) =====================
+     Vista de consulta: cuántos jugadores tienen la app, cuántas
+     instalaciones nuevas, qué pagó la promo, y los últimos celulares. */
+  async function appCargar(){
+    let d;
+    try{ d = await jget({accion:"app_stats"}); }catch(e){ return; }
+    if(!d || !d.ok) return;
+    const r = d.resumen || {};
+    const pct = r.total_usuarios > 0
+      ? " (" + Math.round((r.con_app||0)*100/r.total_usuarios) + "%)" : "";
+    $("#appCards").innerHTML = [
+      { k:"Con la app",          v:nf.format(r.con_app||0) + pct,            cls:"green" },
+      { k:"Instaladas hoy",      v:nf.format(r.instaladas_hoy||0),           cls:"green" },
+      { k:"Últimos 7 días",      v:nf.format(r.instaladas_semana||0),        cls:"" },
+      { k:"Bonos entregados",    v:nf.format(r.bonos_entregados||0),         cls:"gold" },
+      { k:"Fichas regaladas",    v:nf.format(r.bonos_fichas||0),             cls:"gold" },
+      { k:"Bonos hoy",           v:nf.format(r.bonos_hoy||0),                cls:"gold" },
+    ].map(x=>`<div class="us-stat ${x.cls}"><div class="k">${esc(x.k)}</div><div class="v">${x.v}</div></div>`).join("");
+
+    const filas = d.dispositivos || [];
+    $("#appLista").innerHTML = filas.length ? filas.map(x=>`<tr>
+      <td><b>${esc(x.usuario)}</b></td>
+      <td>${esc(x.modelo || "—")}${x.version ? ` <span class="cfg-hint">v${esc(x.version)}</span>` : ""}</td>
+      <td>${x.permitido ? "✔" : `<span class="us-zero" title="Notificaciones bloqueadas en Android">✕</span>`}</td>
+      <td>${x.bono ? "🎁" : `<span class="us-zero">—</span>`}</td>
+      <td>${x.creado_en ? esc(String(x.creado_en)).slice(0,16) : "—"}</td>
+      <td>${x.visto_en ? hace(x.visto_en) : "—"}</td>
+    </tr>`).join("")
+    : '<tr><td colspan="6" class="cfg-hint">Todavía nadie inició sesión desde la app.</td></tr>';
+  }
+
   /* ===================== RECAUDAR (saldo inactivos) =====================
      El CRM encola el pedido; el bot del VPS lo ejecuta contra el panel. Esta
      vista solo pide y muestra el estado -- no toca plata directamente. */
@@ -4849,7 +4937,7 @@
   // modulos nuevos ocultan esas 3 columnas y muestran su propio contenedor.
   // Se va sumando un nombre a VISTAS + su contenedor a VISTA_CONTENEDOR por
   // cada modulo que se conecte, sin tocar el resto de la funcion.
-  const VISTAS = ["chats", "comprobantes", "peticiones", "retiros", "cargas", "transacciones", "usuarios", "finanzas", "notificaciones", "publicidad", "landings", "chatbot", "agentes", "suscripcion", "recaudar", "config"];
+  const VISTAS = ["chats", "comprobantes", "peticiones", "retiros", "cargas", "transacciones", "usuarios", "finanzas", "notificaciones", "publicidad", "landings", "chatbot", "agentes", "suscripcion", "app", "recaudar", "config"];
   const VISTA_CONTENEDOR = {
     comprobantes: "#viewComprobantes",
     peticiones: "#viewPeticiones",
@@ -4864,6 +4952,7 @@
     chatbot: "#viewChatbot",
     agentes: "#viewAgentes",
     suscripcion: "#viewSuscripcion",
+    app: "#viewApp",
     recaudar: "#viewRecaudar",
     config: "#viewConfig",
   };
@@ -4962,6 +5051,10 @@
     if(nombre==="suscripcion"){
       cargarVistaSuscripcion();
     }
+    // App: vista de consulta, mismo criterio que Usuarios (sin auto-refresh).
+    if(nombre==="app"){
+      appCargar();
+    }
     if(nombre==="recaudar"){
       recaudarCargar();
       // Cola operativa: mientras una corrida esta en curso, refrescar para ver
@@ -4985,7 +5078,7 @@
     publicidad:"Publicidad",
     landings:"Landings",
     chatbot:"Chatbot", agentes:"Agentes", suscripcion:"Mi suscripción",
-    recaudar:"Recaudar", config:"Configuración"
+    app:"App", recaudar:"Recaudar", config:"Configuración"
   };
   let vistaActual = "chats";
 
@@ -5066,6 +5159,8 @@
     lim_bono_carga_pct: { el: "#cfgLimBonoCarga", tipo: "texto" },
     bono_bienvenida_pct:{ el: "#cfgBonoBienvenida", tipo: "texto" },
     app_url:            { el: "#cfgAppUrl",       tipo: "texto" },
+    app_promo_activa:   { el: "#cfgAppPromo",     tipo: "bool"  },
+    app_bono_fichas:    { el: "#cfgAppBono",      tipo: "texto" },
     tg_bot_token:       { el: "#cfgTgToken",      tipo: "texto" },
     tg_chat_id:         { el: "#cfgTgChat",       tipo: "texto" },
     tg_ev_derivacion:   { el: "#cfgTgDeriv",      tipo: "bool"  },
@@ -5074,6 +5169,7 @@
     tg_ev_salud:        { el: "#cfgTgSalud",      tipo: "bool"  },
     tg_ev_alta:         { el: "#cfgTgAlta",       tipo: "bool"  },
     tg_ev_pago:         { el: "#cfgTgPago",       tipo: "bool"  },
+    tg_ev_app:          { el: "#cfgTgApp",        tipo: "bool"  },
     tg_repetir_min:     { el: "#cfgTgRepetir",    tipo: "texto" },
     tg_sin_actividad_hs:{ el: "#cfgTgSinAct",     tipo: "texto" },
     lim_retiro_hora_desde: { el: "#cfgLimRetiroDesde", tipo: "texto" },
@@ -8001,6 +8097,11 @@
   const usSt = { q:"", filtro:"todos", orden:"balance", dir:"desc", pagina:1, porPagina:25 };
 
   function pintarCardsUs(r){
+    /* "Con la app" con el % sobre el total: el numero suelto no dice si la
+       promo convierte. Los bonos entregados salen de movimientos origen
+       'bono_app' (lo efectivamente pagado, no una estimacion). */
+    const pctApp = r.total_usuarios > 0
+      ? " (" + Math.round((r.con_app || 0) * 100 / r.total_usuarios) + "%)" : "";
     const c = [
       { k:"Usuarios",              v:nf.format(r.total_usuarios),     cls:"" },
       { k:"Con saldo",             v:nf.format(r.con_saldo),          cls:"green" },
@@ -8008,6 +8109,9 @@
       { k:"Bono pendiente total",  v:nf.format(r.bono_pendiente_total), cls:"gold" },
       { k:"Bono histórico total",  v:nf.format(r.bonos_total),        cls:"gold" },
       { k:"Baneados",              v:nf.format(r.baneados),           cls:"red" },
+      { k:"Con la app",            v:nf.format(r.con_app || 0) + pctApp, cls:"green" },
+      { k:"Bonos por instalar",    v:nf.format(r.app_bonos_entregados || 0)
+            + (r.app_bonos_fichas ? " · " + nf.format(r.app_bonos_fichas) + " fichas" : ""), cls:"gold" },
     ];
     $("#usCards").innerHTML = c.map(x=>
       `<div class="us-stat ${x.cls}"><div class="k">${esc(x.k)}</div><div class="v">${x.v}</div></div>`).join("");
@@ -8027,8 +8131,12 @@
     const visto = u.ultima_actividad
       ? `<span class="${diasDesde(u.ultima_actividad)>=15?"us-frio":""}">${hace(u.ultima_actividad)}</span>`
       : `<span class="us-zero" title="Sin señales registradas todavía">—</span>`;
+    /* La marca de la app va pegada al nombre y no en una columna propia:
+       agregar una columna obliga a tocar todos los colspan y el CSV, y el
+       dato es un si/no que se lee perfecto como emoji. */
+    const app = u.tiene_app ? ` <span title="Inició sesión desde la app">📱</span>` : "";
     return `<tr>
-      <td><b>${esc(u.username)}</b></td>
+      <td><b>${esc(u.username)}</b>${app}</td>
       <td class="num">${saldo}</td>
       <td class="num">${bonoPen}</td>
       <td class="num">${bonos}</td>

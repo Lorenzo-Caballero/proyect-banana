@@ -59,7 +59,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     }
 
     $limite = (int)($_GET['limite'] ?? NOTIF_MAX_POR_SONDEO);
-    salir(['ok' => true, 'notificaciones' => notif_pendientes($pdo, $deviceId, $limite)]);
+    $resp = ['ok' => true, 'notificaciones' => notif_pendientes($pdo, $deviceId, $limite)];
+    /* El estado de la RULETA viaja en el sondeo para que el APK no invente:
+       sus recordatorios locales (Enganche) tienen textos que prometen un giro,
+       y con la ruleta apagada del CRM esa promesa es falsa. El celular guarda
+       este flag y saltea esos textos. Best-effort: sin config_crm no viaja y
+       el APK asume prendida (el comportamiento de siempre). */
+    try {
+        require_once __DIR__ . '/config_crm.php';
+        if (function_exists('cfg_crm_activo')) {
+            $resp['ruleta'] = cfg_crm_activo($pdo, 'ruleta_activa');
+        }
+    } catch (Throwable $e) { /* sin flag */ }
+    salir($resp);
 }
 
 // ------------------------------- POST --------------------------------------
@@ -76,17 +88,52 @@ if ($accion === 'registrar') {
     if (trim($deviceId) === '') {
         salir(['ok' => false, 'error' => 'Falta device_id'], 400);
     }
+    $usuarioReg = isset($body['usuario']) ? trim((string)$body['usuario']) : null;
+    $plataforma = (string)($body['plataforma'] ?? 'web');
     $ok = notif_registrar_dispositivo(
         $pdo,
         $deviceId,
-        isset($body['usuario']) ? (string)$body['usuario'] : null,
-        (string)($body['plataforma'] ?? 'web'),
+        $usuarioReg !== '' ? $usuarioReg : null,
+        $plataforma,
         isset($body['modelo'])  ? (string)$body['modelo']  : null,
         isset($body['version']) ? (string)$body['version'] : null,
         !isset($body['permitido']) || (bool)$body['permitido'],
         !empty($body['soltar'])
     );
-    salir($ok ? ['ok' => true] : ['ok' => false, 'error' => 'No se pudo registrar'], $ok ? 200 : 500);
+    $resp = $ok ? ['ok' => true] : ['ok' => false, 'error' => 'No se pudo registrar'];
+
+    /* Promo "descarga la app", para TODO el que entre desde el NAVEGADOR:
+       viaja acá porque este registro corre al cargar la página (el widget lo
+       manda al arrancar, con o sin sesión). El widget decide si mostrar el
+       cartel y cada cuánto; acá solo se dice "a este le corresponde":
+         - desde la app (android) nunca: ya la tiene;
+         - con sesión, solo si su tiene_app es 0 (el que ya la instaló no
+           tiene nada que descargar y las fichas ya las cobró);
+         - anónimo: siempre que la promo esté prendida -- el cartel también
+           vende la app al que todavía no se registró.
+       Best-effort: sin config_crm no hay promo y el registro sigue igual. */
+    if ($ok && $plataforma !== 'android') {
+        try {
+            require_once __DIR__ . '/config_crm.php';
+            if (cfg_crm_activo($pdo, 'app_promo_activa')) {
+                $fichas = max(0, (int)(cfg_crm($pdo, 'app_bono_fichas') ?? 0));
+                $corresponde = ($fichas > 0);
+                if ($corresponde && $usuarioReg !== null && $usuarioReg !== '') {
+                    $st = $pdo->prepare("SELECT tiene_app FROM usuarios WHERE username = ?");
+                    $st->execute([$usuarioReg]);
+                    $fila = $st->fetch();
+                    $corresponde = $fila && !(int)$fila['tiene_app'];
+                }
+                if ($corresponde) {
+                    $resp['app_promo'] = [
+                        'fichas' => $fichas,
+                        'url'    => trim((string)(cfg_crm($pdo, 'app_url') ?? '')),
+                    ];
+                }
+            }
+        } catch (Throwable $e) { /* sin promo, el registro ya salió bien */ }
+    }
+    salir($resp, $ok ? 200 : 500);
 }
 
 // ---- la tocó ----

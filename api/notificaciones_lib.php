@@ -153,14 +153,133 @@ if (!function_exists('notif_crear')) {
                visita desde la web no puede marcar tiene_app. Estas dos columnas
                existen desde la migracion 07 y hasta ahora no las escribia nadie. */
             if ($usuario !== null && $plataforma === 'android') {
+                /* La transicion 0 -> 1 en dos pasos A PROPOSITO: el primer
+                   UPDATE (condicionado a tiene_app = 0) es un candado atomico
+                   que gana UNA sola vez en la vida del jugador -- ese rowCount
+                   es "recien instalo la app y entro", el momento del bono de
+                   la promo y del aviso por Telegram. El segundo mantiene
+                   `notificaciones` al dia en cada registro, como siempre.
+                   Quien ya tenia la app antes de la promo no pasa por el
+                   candado: no hay regalo retroactivo masivo el dia del deploy. */
+                $primeraVez = $pdo->prepare(
+                    "UPDATE usuarios SET tiene_app = 1 WHERE username = ? AND tiene_app = 0"
+                );
+                $primeraVez->execute([$usuario]);
                 $pdo->prepare(
-                    "UPDATE usuarios SET tiene_app = 1, notificaciones = ? WHERE username = ?"
+                    "UPDATE usuarios SET notificaciones = ? WHERE username = ?"
                 )->execute([$permitido ? 1 : 0, $usuario]);
+
+                if ($primeraVez->rowCount() === 1) {
+                    /* El bono y el aviso solo si la request viene DE la app de
+                       verdad: el WebView del APK agrega el sufijo GOLDPAW al
+                       User-Agent (MainActivity), y un fetch desde una pagina
+                       de navegador NO puede falsificar ese header. Un script
+                       con curl si -- esto no es criptografia, corta el abuso
+                       facil: el endpoint es publico y `usuario`/`plataforma`
+                       los manda el cliente. tiene_app queda marcado igual (es
+                       un hecho del espejo, no parte del regalo). */
+                    $ua = (string)($_SERVER['HTTP_USER_AGENT'] ?? '');
+                    if (strpos($ua, 'GOLDPAW') !== false) {
+                        // Best-effort SIEMPRE: ni el bono ni el Telegram pueden
+                        // hacer fallar el registro del dispositivo.
+                        try { notif_app_instalada($pdo, $usuario); }
+                        catch (Throwable $e) { error_log('notif_app_instalada: ' . $e->getMessage()); }
+                    }
+                }
             }
             return true;
         } catch (Throwable $e) {
             error_log('notif_registrar_dispositivo: ' . $e->getMessage());
             return false;
+        }
+    }
+
+    /**
+     * El jugador acaba de iniciar sesion desde la app POR PRIMERA VEZ (lo
+     * garantiza el candado tiene_app 0->1 del que llama). Dos efectos, los dos
+     * best-effort:
+     *
+     *   1. El bono de la promo "descarga la app" (config app_promo_activa +
+     *      app_bono_fichas): se suma a usuarios.bonus con su fila en
+     *      `movimientos` (origen 'bono_app') y se manda AL JUEGO en el acto por
+     *      el mismo camino que el bono del CRM (deposito solo-bono via
+     *      fichas_pedir_carga, con bot y devolucion-si-falla). Si justo hay una
+     *      carga en curso, queda en el contador -- igual que en crm.php.
+     *
+     *      La fila de `movimientos` es ademas el SEGUNDO candado: si alguien
+     *      resetea tiene_app a mano, el bono no se paga dos veces.
+     *
+     *   2. El aviso por Telegram (tg_ev_app), que sale aunque la promo este
+     *      apagada: saber quien instala la app es una señal del negocio, no
+     *      parte del regalo.
+     */
+    function notif_app_instalada(PDO $pdo, string $usuario): void
+    {
+        // Config: sin config_crm (migracion sin correr) no hay promo ni aviso
+        // configurable -- y no se rompe nada.
+        foreach (['/config_crm.php', '/telegram_lib.php'] as $opc) {
+            if (is_file(__DIR__ . $opc)) { require_once __DIR__ . $opc; }
+        }
+
+        $fichas = 0;
+        if (function_exists('cfg_crm_activo') && cfg_crm_activo($pdo, 'app_promo_activa')) {
+            $fichas = max(0, (int)(cfg_crm($pdo, 'app_bono_fichas') ?? 0));
+        }
+
+        $acreditado = false;
+        if ($fichas > 0) {
+            try {
+                $pdo->beginTransaction();
+                // Segundo candado (ver arriba). FOR UPDATE: dos registros
+                // simultaneos del mismo jugador esperan aca y el segundo ve la
+                // fila del primero.
+                $ya = $pdo->prepare(
+                    "SELECT id FROM movimientos
+                      WHERE usuario = ? AND origen = 'bono_app' LIMIT 1 FOR UPDATE"
+                );
+                $ya->execute([$usuario]);
+                if (!$ya->fetch()) {
+                    $pdo->prepare(
+                        "UPDATE usuarios SET bonus = bonus + ? WHERE username = ?"
+                    )->execute([$fichas, $usuario]);
+                    $pdo->prepare(
+                        "INSERT INTO movimientos (usuario, tipo, monto, motivo, origen)
+                         VALUES (?, 'bono', ?, 'Bono por instalar la app', 'bono_app')"
+                    )->execute([$usuario, $fichas]);
+                    $acreditado = true;
+                }
+                $pdo->commit();
+            } catch (Throwable $e) {
+                if ($pdo->inTransaction()) { $pdo->rollBack(); }
+                error_log('notif_app_instalada (bono): ' . $e->getMessage());
+            }
+        }
+
+        if ($acreditado) {
+            // Al juego en el acto, como el bono del CRM. Si falla o hay una
+            // carga en curso, queda en el contador y lo manda "Bonos al juego".
+            try {
+                require_once __DIR__ . '/fichas_lib.php';
+                fichas_pedir_carga($pdo, $usuario, 0, 'bono_app', false, $fichas);
+            } catch (Throwable $e) {
+                error_log('notif_app_instalada (al juego): ' . $e->getMessage());
+            }
+            // El festejo en el celular que acaba de instalarla.
+            try {
+                notif_crear($pdo, $usuario, '🎁 ¡Fichas de regalo!',
+                    'Por instalar la app te acreditamos ' . number_format($fichas, 0, ',', '.')
+                    . ' fichas de bono. ¡Que las disfrutes!', 'bono', null, 'app');
+            } catch (Throwable $e) {
+                error_log('notif_app_instalada (notif): ' . $e->getMessage());
+            }
+        }
+
+        if (function_exists('tg_evento')) {
+            $lineas = ['Jugador' => $usuario];
+            $lineas['Bono'] = $acreditado
+                ? number_format($fichas, 0, ',', '.') . ' fichas acreditadas'
+                : 'sin bono (promo apagada o ya cobrado)';
+            tg_evento($pdo, 'app', '📱 Instaló la app', $lineas);
         }
     }
 
