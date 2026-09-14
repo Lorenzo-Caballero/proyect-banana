@@ -8984,6 +8984,16 @@
       btn.addEventListener("click", ()=>{
         const l = pbLandings.find(x=>x.slug===btn.getAttribute("data-slug"));
         pbLandingSel = l ? { slug: l.slug, nombre: l.nombre, activa: !!l.activa } : null;
+        /* SOLTAR EL PUBLICISTA. Faltaba, y era el bug: al elegir una landing
+           quedaba `pbActivoId` con el publicista de antes. Entonces el embudo
+           se cargaba para la LANDING (donde el gasto siempre es 0, porque se
+           carga por publicista) pero el modal de gasto seguia abriendo con el
+           publicista viejo y guardaba AHI. El operador cargaba el gasto, la
+           pantalla volvia a mostrar 0, y parecia que no se guardaba nada --
+           cuando en realidad se habia guardado en otro lado. La pareja
+           publicista/landing es EXCLUYENTE y ahora se respeta en las dos
+           direcciones (elegir un publicista ya soltaba la landing). */
+        pbActivoId = null;
         pbPintarTabs(); pbPintarLandingRow(); pbCargarEmbudo(); pbCargarDiaPorDia();
       });
     });
@@ -9133,7 +9143,15 @@
   // ---------- gasto diario ----------
   $("#pgCancelar").addEventListener("click", ()=>{ $("#backGasto").style.display = "none"; });
   function pbAbrirModalGasto(fechaSugerida){
-    if(!pbActivoId){ toast("Elegí un publicista primero"); return; }
+    /* El gasto se carga POR PUBLICISTA: una landing es una página, no una
+       cuenta de Meta con presupuesto. El mensaje lo explica en vez de decir
+       solo que no se puede -- si no, el operador vuelve a intentarlo. */
+    if(!pbActivoId){
+      toast(pbLandingSel
+        ? "El gasto se carga por publicista, no por landing. Elegí el publicista que paga esa campaña."
+        : "Elegí un publicista primero");
+      return;
+    }
     $("#pgFecha").value = fechaSugerida || pbFmtFecha(new Date());
     $("#pgMonto").value = "";
     $("#pgMsg").textContent = ""; $("#pgMsg").className = "msg";
