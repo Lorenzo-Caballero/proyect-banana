@@ -319,6 +319,36 @@ try {
                 $pdo->prepare("UPDATE usuarios SET balance = ? WHERE username = ?")
                     ->execute([$sDespues, $quien]);
             }
+        } elseif ($estado === 'hecha') {
+            /* EL BOT NO MANDA `saldo_despues`, asi que lo de arriba casi nunca
+               corre: el espejo `usuarios.balance` quedaba viejo hasta la
+               proxima pasada de sync_usuarios, que es cada 5 MINUTOS.
+               Y eso no es cosmetico: el chatbot lee de ahi. Nahuel lo vio
+               probando como jugador -- le cargo 100 fichas para llegar al
+               minimo de retiro y el bot le seguia diciendo que tenia 99, asi
+               que no lo dejaba retirar. El jugador tiene la plata y el sistema
+               le dice que no.
+               Como la operacion ACABA de confirmarse y sabemos el monto exacto,
+               se ajusta el espejo en el acto. Si el numero real difiere por
+               algo que paso en paralelo (el jugador jugando), el sync lo
+               corrige en la proxima pasada: esto adelanta el dato, no lo
+               reemplaza.
+               Va despues del rowCount, asi que un 'marcar' repetido -- el bot
+               reintenta los POST -- no lo suma dos veces. */
+            try {
+                $a2 = $pdo->prepare("SELECT usuario, tipo, monto FROM acciones_saldo WHERE id = ?");
+                $a2->execute([$id]);
+                if ($fa = $a2->fetch(PDO::FETCH_ASSOC)) {
+                    $delta = (float)$fa['monto'] * ($fa['tipo'] === 'retirar' ? -1 : 1);
+                    $pdo->prepare(
+                        "UPDATE usuarios SET balance = GREATEST(0, COALESCE(balance,0) + ?)
+                          WHERE username = ?"
+                    )->execute([$delta, $fa['usuario']]);
+                }
+            } catch (Throwable $e) {
+                // El espejo es una comodidad: si falla, el sync lo arregla.
+                error_log('acciones_cola/espejo saldo: ' . $e->getMessage());
+            }
         }
 
         // Fallo confirmado: el jugador recupera sus fichas.
