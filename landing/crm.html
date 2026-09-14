@@ -2846,7 +2846,7 @@
           <h3>Cómo evoluciona el negocio</h3>
           <span class="fn-salud-origen">no depende del período</span>
         </div>
-        <p class="fn-evo-intro">
+        <p class="fn-evo-intro" id="fnEvoIntro">
           Todo lo de arriba mira un rango de fechas. Esto mira la <b>historia completa</b>:
           cuánto te deja un jugador desde que aparece hasta hoy, y cuánto falta para que
           lo que dejan los que ya tenés alcance para pagar la publicidad de cada día.
@@ -9289,18 +9289,41 @@
     $("#fnBloqueEvo").style.display = "";
 
     const j = d.jugadores || {}, r = d.recupero || {}, serie = d.serie || [];
+    const v = d.ventana;
+
+    /* DE QUE POBLACION HABLA ESTE BLOQUE. No es un detalle: este negocio tuvo
+       dos etapas separadas por más de un año y las cuentas de la vieja siguen
+       en la base. Mezclarlas hacía ver el costo de traer un jugador mucho más
+       barato de lo que es, porque repartía la pauta de esta semana entre
+       jugadores que llegaron cuando no se gastaba un peso. */
+    const intro = $("#fnEvoIntro");
+    if(intro){
+      const fmt = s => String(s).slice(0,10).split("-").reverse().join("/");
+      intro.innerHTML = v
+        ? "Todo lo de arriba mira un rango de fechas. Esto mira <b>desde que empezaste a " +
+          "gastar en publicidad</b> (" + fmt(v.desde) + "): " +
+          "<b>" + nf.format(j.jugadores || 0) + " jugadores</b> que aparecieron desde entonces." +
+          (j.fuera_de_ventana
+            ? " Quedan afuera " + nf.format(j.fuera_de_ventana) + " que ya cargaban de antes: " +
+              "no los trajo esta pauta, así que promediarlos acá abarataría el costo de adquisición."
+            : "")
+        : "Todavía no cargaste gasto de publicidad, así que acá se mide <b>todo el historial</b>. " +
+          "Cargalo en Publicidad y este bloque pasa a hablar solo de los jugadores que trajo esa pauta.";
+    }
 
     // --- Las cuatro tarjetas
     $("#fnEvoLtv").textContent = j.ganancia_promedio == null ? "—" : money(j.ganancia_promedio);
     $("#fnEvoLtv").style.color = (j.ganancia_promedio || 0) < 0 ? "var(--red)" : "";
     $("#fnEvoLtvSub").textContent = j.jugadores
       ? "promedio de " + nf.format(j.jugadores) + " jugadores · " +
-        (j.cargas_promedio || 0).toFixed(1) + " cargas cada uno"
+        (j.cargas_promedio || 0).toFixed(1) + " cargas cada uno" +
+        (v ? " · desde que hay pauta" : "")
       : "todavía no cargó nadie";
 
     $("#fnEvoCpa").textContent = r.cpa == null ? "—" : money(r.cpa);
     $("#fnEvoCpaSub").textContent = r.cpa == null
-      ? "cargá el gasto en Publicidad" : "por cada jugador que carga";
+      ? "cargá el gasto en Publicidad"
+      : money(v ? v.total : 0) + " de pauta ÷ " + nf.format(r.jugadores || 0) + " jugadores";
 
     /* El recupero puede no haber pasado todavía, y eso NO es un error: en una
        campaña joven es lo normal. Decir "todavía no" es más honesto que un
@@ -9309,7 +9332,15 @@
       $("#fnEvoRecupero").textContent = r.dia_recupero === 0
         ? "el mismo día" : r.dia_recupero + (r.dia_recupero === 1 ? " día" : " días");
       $("#fnEvoRecupero").style.color = "var(--green2)";
-      $("#fnEvoRecuperoSub").textContent = "desde su primera carga";
+      $("#fnEvoRecuperoSub").textContent = "desde su primera carga, y se sostiene";
+    } else if(r.cruce_efimero != null){
+      /* Cruzó y volvió a caer: la curva sube el día que el jugador carga y
+         baja cuando retira. Decir que se recuperó por ese pico sería convertir
+         un instante en una conclusión -- y era justo lo que hacía antes. */
+      $("#fnEvoRecupero").textContent = "Todavía no";
+      $("#fnEvoRecupero").style.color = "var(--orange2)";
+      $("#fnEvoRecuperoSub").textContent =
+        "llegó al día " + r.cruce_efimero + " pero después volvió a caer";
     } else if(r.cpa != null){
       $("#fnEvoRecupero").textContent = "Todavía no";
       $("#fnEvoRecupero").style.color = "var(--orange2)";

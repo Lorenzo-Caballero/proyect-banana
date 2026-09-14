@@ -632,6 +632,95 @@ if ($r2['cpa'] === null) {
     chequear('con pauta, el CPA es un numero', $r2['cpa'] > 0, json_encode($r2['cpa']));
 }
 
+echo "\n=== 9g2. El costo por jugador mide UNA sola etapa del negocio ===\n";
+/* EL ERROR QUE ESTO FIJA (14/09/2026, visto en produccion). "Te cuesta traer un
+   jugador" daba $1.125: toda la pauta dividida por TODOS los que alguna vez
+   cargaron. Pero esa pauta se habia gastado dos dias antes, y se repartia entre
+   jugadores que ya estaban desde mucho antes.
+
+   Pesa el doble en este negocio porque corrio hace un año y medio, se cerro, y
+   se esta reactivando ahora: las cuentas de la etapa vieja siguen en la base.
+   Es el mismo error del patrimonio con otra ropa -- comparar dos mitades que no
+   cubren el mismo tiempo.
+
+   VA EN UNA TRANSACCION QUE SE DESHACE. Estas tres funciones miden TODO el
+   negocio, no filtran por usuario: para probarlas hace falta una base con un
+   contenido conocido, y la de tests tiene datos de otras suites. Se vacian las
+   tablas, se arma el escenario, y el rollback deja todo como estaba. */
+$pdo->beginTransaction();
+foreach (['recargas','movimientos','acciones_saldo','operaciones_panel','gasto_diario'] as $tb) {
+    try { $pdo->exec("DELETE FROM $tb"); } catch (Throwable $e) {}
+}
+
+/* La etapa VIEJA: dos jugadores que cargaron hace un año, sin pauta ninguna. */
+$recarga(U . 'viejo1', '2018-06-01 10:00:00', 5000.0);
+$recarga(U . 'viejo2', '2018-06-02 10:00:00', 5000.0);
+/* La etapa NUEVA: pauta cargada y dos jugadores que llegaron despues. */
+publicidad_gasto_guardar($pdo, 0, '2019-05-10', 20000.0, 'test', 't_fin_lp');
+$recarga(U . 'nuevo1', '2019-05-11 10:00:00', 4000.0);
+$recarga(U . 'nuevo2', '2019-05-12 10:00:00', 4000.0);
+
+$v = fn_ventana_pauta($pdo);
+chequear('la ventana arranca el dia del primer gasto',
+         $v !== null && $v['desde'] === '2019-05-10', json_encode($v));
+
+$r = fn_recupero($pdo, 0.20, 0.0, 0.0, 30, $v);
+chequear('solo cuenta los jugadores de esta etapa', $r['jugadores'] === 2,
+         'jugadores=' . $r['jugadores']);
+chequear('el costo por jugador NO se diluye con los viejos',
+         abs($r['cpa'] - 10000.0) < 0.01,
+         'cpa=' . $r['cpa'] . ' (mezclando los 4 daria 5.000)');
+
+$pj = fn_por_jugador($pdo, 0.20, 0.0, 0.0, $v['desde']);
+chequear('el promedio tampoco los mezcla', $pj['jugadores'] === 2,
+         'jugadores=' . $pj['jugadores']);
+chequear('pero dice cuantos quedaron afuera', $pj['fuera_de_ventana'] === 2,
+         'fuera=' . $pj['fuera_de_ventana']);
+
+/* SIN PAUTA no hay de que separarlos: se mide todo, que es lo correcto. */
+$pdo->exec("DELETE FROM gasto_diario");
+$v2 = fn_ventana_pauta($pdo);
+chequear('sin gasto cargado no hay ventana', $v2 === null, json_encode($v2));
+$pj2 = fn_por_jugador($pdo, 0.20, 0.0, 0.0, $v2['desde'] ?? null);
+chequear('y entonces se miden todos', $pj2['jugadores'] === 4,
+         'jugadores=' . $pj2['jugadores']);
+
+echo "\n=== 9g3. El recupero tiene que SOSTENERSE, no ser un pico ===\n";
+/* EL SEGUNDO ERROR DEL MISMO DIA: la pantalla decia "se paga solo EL MISMO DIA"
+   con un jugador que deja $998 de por vida contra un costo de $1.125. La curva
+   sube el dia 0 -- cuando carga -- y despues BAJA, porque los retiros vienen
+   mas tarde. Cruzaba un instante y volvia a caer; buscar el primer cruce a
+   secas convierte un pico en una conclusion. */
+foreach (['recargas','movimientos','operaciones_panel','gasto_diario'] as $tb) {
+    try { $pdo->exec("DELETE FROM $tb"); } catch (Throwable $e) {}
+}
+publicidad_gasto_guardar($pdo, 0, '2019-05-10', 1000.0, 'test', 't_fin_lp');
+
+/* Carga fuerte el dia 0 y retira todo al dia 3: cruza y vuelve a caer. */
+$recarga(U . 'pico', '2019-05-11 10:00:00', 5000.0);
+$libro(U . 'pico',   '2019-05-11 10:05:00', 5000.0, 0);
+$libro(U . 'pico',   '2019-05-14 10:00:00', 5000.0, 1);
+
+$v3 = fn_ventana_pauta($pdo);
+$r3 = fn_recupero($pdo, 0.20, 0.0, 0.0, 30, $v3);
+chequear('un cruce que no se sostiene NO cuenta como recupero',
+         $r3['dia_recupero'] === null, json_encode($r3['dia_recupero']));
+chequear('pero se informa que hubo un pico',
+         $r3['cruce_efimero'] !== null, json_encode($r3['cruce_efimero']));
+
+/* Uno que carga y NO retira: el cruce se sostiene y si cuenta. */
+foreach (['recargas','movimientos','operaciones_panel'] as $tb) {
+    try { $pdo->exec("DELETE FROM $tb"); } catch (Throwable $e) {}
+}
+$recarga(U . 'firme', '2019-05-11 10:00:00', 5000.0);
+$libro(U . 'firme',   '2019-05-11 10:05:00', 5000.0, 0);
+$r4 = fn_recupero($pdo, 0.20, 0.0, 0.0, 30, $v3);
+chequear('el que no retira si cuenta como recuperado',
+         $r4['dia_recupero'] === 0, json_encode($r4['dia_recupero']));
+chequear('y no figura como pico', $r4['cruce_efimero'] === null);
+
+$pdo->rollBack();
+
 echo "\n=== 9h. La bola de nieve ===\n";
 /* Dos lineas por dia: lo que se gasto en pauta y lo que dejaron los jugadores
    que YA estaban. Cuando la segunda supera a la primera, la publicidad se

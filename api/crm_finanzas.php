@@ -737,6 +737,41 @@ function fn_jugadores_crudo(PDO $pdo): array
 }
 
 /**
+ * Desde cuándo hay gasto de publicidad cargado, y cuánto suma.
+ *
+ * ES EL ANCLA DE TODO EL BLOQUE DE EVOLUCION, y existe por un error real
+ * (14/09/2026). "Cuánto te cuesta traer un jugador" se calculaba como toda la
+ * pauta dividida por TODOS los que alguna vez cargaron. En producción eso dio
+ * $1.125 -- pero esa pauta se había gastado hacía dos días, y se estaba
+ * repartiendo entre 20 jugadores, muchos de ellos anteriores a haber gastado
+ * un peso. El costo por jugador salía mucho más barato de lo que es.
+ *
+ * Es el mismo error que el del patrimonio, con otra ropa: comparar dos mitades
+ * que no cubren el mismo tiempo. Acá pesa más porque este negocio tuvo DOS
+ * etapas separadas por más de un año, y las cuentas de la etapa vieja siguen
+ * en la base.
+ *
+ * Con esto, todo el bloque habla de una sola población: los jugadores que
+ * aparecieron DESDE que se empezó a gastar en publicidad. Los de antes existen
+ * y se cuentan aparte, pero no ensucian el costo de adquisición.
+ */
+function fn_ventana_pauta(PDO $pdo): ?array
+{
+    try {
+        $r = $pdo->query(
+            "SELECT MIN(fecha) desde, MAX(fecha) hasta,
+                    COALESCE(SUM(monto),0) total, COUNT(DISTINCT fecha) dias
+               FROM gasto_diario"
+        )->fetch(PDO::FETCH_ASSOC);
+        if (!$r || $r['desde'] === null || (float)$r['total'] <= 0) { return null; }
+        return ['desde' => (string)$r['desde'], 'hasta' => (string)$r['hasta'],
+                'total' => (float)$r['total'], 'dias' => (int)$r['dias']];
+    } catch (Throwable $e) {
+        return null;    // sin gasto cargado no hay costo de adquisición que medir
+    }
+}
+
+/**
  * Cuánto deja un jugador en TODA su vida, y de cuántos depende el resultado.
  *
  * ES EL NUMERO QUE DECIDE CUANTO PODES PAGAR POR TRAER UNO. Sin él solo se
@@ -750,13 +785,23 @@ function fn_jugadores_crudo(PDO $pdo): array
  * $34.580 dio vuelta el día entero. Si el resultado depende de tres jugadores,
  * un mal día de ellos borra el mes, y eso no se ve en ningún promedio.
  */
-function fn_por_jugador(PDO $pdo, float $costoPorFicha, float $pctE, float $pctS): array
+function fn_por_jugador(PDO $pdo, float $costoPorFicha, float $pctE, float $pctS,
+                        ?string $desdePrimera = null): array
 {
     $j = fn_jugadores_crudo($pdo);
 
-    $vivos = [];
+    $vivos = []; $fuera = 0;
     foreach ($j as $u => $d) {
         if ($d['cargado'] <= 0) { continue; }   // nunca pagó: no es un jugador del negocio
+        /* SOLO LOS DE ESTA ETAPA. Sin este recorte, un jugador que cargó hace
+           un año y medio -- cuando el negocio corría antes de cerrar -- se
+           promedia con los de ahora y con una pauta que no lo trajo. Las
+           cuentas viejas no se borran: se cuentan aparte, en `fuera_de_ventana`. */
+        if ($desdePrimera !== null
+            && ($d['primera'] === null || $d['primera'] < $desdePrimera)) {
+            $fuera++;
+            continue;
+        }
         $com  = $d['cargado'] * $pctE / 100 + $d['retirado'] * $pctS / 100;
         $gan  = $d['cargado'] - $d['retirado'] - $d['entregado'] * $costoPorFicha - $com;
         $vivos[] = ['usuario' => $u, 'cargado' => round($d['cargado'], 2),
@@ -764,9 +809,10 @@ function fn_por_jugador(PDO $pdo, float $costoPorFicha, float $pctE, float $pctS
                     'ganancia' => round($gan, 2), 'primera' => $d['primera']];
     }
     if (!$vivos) {
-        return ['jugadores' => 0, 'ganancia_total' => 0.0, 'ganancia_promedio' => null,
-                'cargas_promedio' => null, 'dan_ganancia' => 0, 'dan_perdida' => 0,
-                'top' => [], 'concentracion_top5' => null];
+        return ['jugadores' => 0, 'fuera_de_ventana' => $fuera, 'ganancia_total' => 0.0,
+                'ganancia_promedio' => null, 'cargas_promedio' => null,
+                'dan_ganancia' => 0, 'dan_perdida' => 0,
+                'top' => [], 'peores' => [], 'concentracion_top5' => null];
     }
 
     usort($vivos, fn($a, $b) => $b['ganancia'] <=> $a['ganancia']);
@@ -783,6 +829,10 @@ function fn_por_jugador(PDO $pdo, float $costoPorFicha, float $pctE, float $pctS
 
     return [
         'jugadores'         => $n,
+        /* Los que cargaron ANTES de que hubiera pauta. No entran en ningún
+           promedio de este bloque, pero saber cuántos son evita la pregunta
+           obvia de "¿y mis otros jugadores?". */
+        'fuera_de_ventana'  => $fuera,
         'ganancia_total'    => round($total, 2),
         'ganancia_promedio' => round($total / $n, 2),
         'cargas_promedio'   => round(array_sum(array_column($vivos, 'cargas')) / $n, 2),
@@ -817,10 +867,8 @@ function fn_por_jugador(PDO $pdo, float $costoPorFicha, float $pctE, float $pctS
  * recupero.
  */
 function fn_recupero(PDO $pdo, float $costoPorFicha, float $pctE, float $pctS,
-                     int $diasMax = 60): array
+                     int $diasMax = 60, ?array $ventana = null): array
 {
-    $vacio = ['dias' => [], 'cpa' => null, 'dia_recupero' => null, 'jugadores' => 0];
-
     $j = fn_jugadores_crudo($pdo);
     /* El detalle día por día, que es lo que permite acumular. Se pide aparte y
        no dentro de fn_jugadores_crudo() porque solo esta función lo necesita. */
@@ -842,8 +890,11 @@ function fn_recupero(PDO $pdo, float $costoPorFicha, float $pctE, float $pctS,
     $cuant = array_fill(0, $diasMax + 1, 0);
     $n     = 0;
 
+    $desdePrimera = $ventana['desde'] ?? null;
     foreach ($j as $u => $d) {
         if ($d['cargado'] <= 0 || $d['primera'] === null) { continue; }
+        // Solo la cohorte que trajo esta pauta -- ver fn_ventana_pauta().
+        if ($desdePrimera !== null && $d['primera'] < $desdePrimera) { continue; }
         $n++;
         $primera = new DateTime(substr($d['primera'], 0, 10));
         $antiguedad = (int)$primera->diff($hoy)->days;
@@ -868,24 +919,42 @@ function fn_recupero(PDO $pdo, float $costoPorFicha, float $pctE, float $pctS,
         }
     }
 
-    /* El costo de traer un jugador: toda la pauta dividida por los jugadores
-       que alguna vez cargaron. Es el mismo criterio que Publicidad -- se paga
-       por cargas, no por registros. */
-    $pauta = 0.0;
-    try {
-        $pauta = (float)$pdo->query("SELECT COALESCE(SUM(monto),0) FROM gasto_diario")->fetchColumn();
-    } catch (Throwable $e) { /* sin gasto: sin CPA */ }
+    /* El costo de traer un jugador: la pauta dividida por los jugadores que
+       aparecieron DESDE que se empezó a gastarla. Se paga por cargas y no por
+       registros, y solo por las de esta etapa. */
+    $pauta = (float)($ventana['total'] ?? 0);
     $cpa = ($pauta > 0 && $n > 0) ? round($pauta / $n, 2) : null;
 
-    $curva = []; $cruce = null;
+    $curva = [];
     for ($d0 = 0; $d0 <= $diasMax; $d0++) {
         if ($cuant[$d0] === 0) { continue; }
-        $prom = $sumas[$d0] / $cuant[$d0];
-        $curva[] = ['dia' => $d0, 'ganancia' => round($prom, 2), 'jugadores' => $cuant[$d0]];
-        if ($cruce === null && $cpa !== null && $prom >= $cpa) { $cruce = $d0; }
+        $curva[] = ['dia' => $d0, 'ganancia' => round($sumas[$d0] / $cuant[$d0], 2),
+                    'jugadores' => $cuant[$d0]];
     }
 
-    return ['dias' => $curva, 'cpa' => $cpa, 'dia_recupero' => $cruce, 'jugadores' => $n];
+    /* EL CRUCE TIENE QUE SOSTENERSE, y esto arregla un segundo error del mismo
+       día: la pantalla decía "se paga solo EL MISMO DIA" con un jugador que
+       deja $998 de por vida contra un costo de $1.125. La curva sube el día 0
+       -- cuando carga -- y después BAJA, porque los retiros vienen más tarde.
+       Cruzaba un instante y volvía a caer. Buscar el primer cruce a secas
+       convierte un pico en una conclusión; se busca el primer día desde el que
+       se queda arriba hasta el final de lo medido. */
+    $cruce = null; $cruceEfimero = null;
+    if ($cpa !== null && $curva) {
+        for ($i = count($curva) - 1; $i >= 0; $i--) {
+            if ($curva[$i]['ganancia'] >= $cpa) { $cruce = $curva[$i]['dia']; }
+            else { break; }
+        }
+        if ($cruce === null) {
+            foreach ($curva as $c) {
+                if ($c['ganancia'] >= $cpa) { $cruceEfimero = $c['dia']; break; }
+            }
+        }
+    }
+
+    return ['dias' => $curva, 'cpa' => $cpa, 'dia_recupero' => $cruce,
+            'cruce_efimero' => $cruceEfimero, 'jugadores' => $n,
+            'ventana' => $ventana];
 }
 
 /**
@@ -1455,9 +1524,16 @@ if ($metodo === 'GET') {
             $pctE = (float)($com['pct_entrada'] ?? 0);
             $pctS = (float)($com['pct_salida'] ?? 0);
 
+            /* TODO el bloque se mide sobre la misma poblacion: los jugadores
+               que aparecieron desde que hay pauta cargada. Sin pauta no hay
+               ventana y se mide todo, que es lo correcto -- no hay costo de
+               adquisicion del cual separarlos. */
+            $ventana = fn_ventana_pauta($pdo);
             salir(['ok' => true,
-                'jugadores' => fn_por_jugador($pdo, $costoPorFicha, $pctE, $pctS),
-                'recupero'  => fn_recupero($pdo, $costoPorFicha, $pctE, $pctS),
+                'ventana'   => $ventana,
+                'jugadores' => fn_por_jugador($pdo, $costoPorFicha, $pctE, $pctS,
+                                              $ventana['desde'] ?? null),
+                'recupero'  => fn_recupero($pdo, $costoPorFicha, $pctE, $pctS, 60, $ventana),
                 'serie'     => fn_bola_nieve($pdo, $desde, $hasta, $costoPorFicha, $pctE, $pctS),
             ]);
         }
