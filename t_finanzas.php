@@ -40,17 +40,64 @@ require __DIR__ . '/api/publicidad_lib.php';
    correcto en produccion, pero en el test tapaba lo que se queria probar. */
 require __DIR__ . '/api/config_crm.php';
 
-/* Se queda con todo lo que hay ANTES del despacho HTTP: ahí viven las
-   funciones y nada que mande headers o corte la ejecución. */
+/* Se parte el archivo en dos: las FUNCIONES (todo lo que hay antes del
+   despacho HTTP) y el DESPACHO. Las funciones se evaluan una sola vez; el
+   despacho, una vez por cada accion que se quiera probar.
+
+   POR QUE VALE LA PENA ESTA GIMNASIA. Hasta el 14/09/2026 este test solo
+   probaba las funciones, y por eso se le escapo entera una: el bloque `rango`
+   usaba $prevDesde/$prevHasta, que son variables LOCALES de otras dos
+   funciones y no existen ahi. Con strict_types eso tira TypeError, el bloque
+   se cae y la pantalla queda con los cuatro KPIs en "..." -- mientras los
+   graficos, que salen de otro endpoint, cargan normal y hacen parecer que todo
+   anda. `php -l` no lo ve y ningun test de funciones lo podia ver. */
 $src = file_get_contents(__DIR__ . '/api/crm_finanzas.php');
 $corte = strpos($src, '$metodo = $_SERVER');
 if ($corte === false) { fwrite(STDERR, "No encontré el corte en crm_finanzas.php\n"); exit(1); }
+$DESPACHO = substr($src, $corte);
 $src = substr($src, 0, $corte);
 $src = preg_replace('/^\s*<\?php/', '', $src, 1);
 $src = preg_replace('/^\s*declare\(strict_types=1\);/m', '', $src, 1);
 $src = preg_replace('/^\s*require(_once)?\s+__DIR__[^;]+;/m', '', $src);
 $src = preg_replace('/^\s*\$operador\s*=\s*exigir_operador\(\);/m', '', $src);
+/* salir() manda headers y hace exit: en un test mataria el proceso en la
+   primera accion. Se saca del archivo y se pone una que devuelve el dato. */
+$src = preg_replace('/function salir\(\$data, int \$code = 200\): void\s*\{.*?\n\}/s', '', $src, 1);
 eval($src);
+
+class FinSalir extends Exception {
+    public $data; public $code;
+    public function __construct($data, $code) { parent::__construct('salir'); $this->data = $data; $this->code = $code; }
+}
+/* ANOTA Y DESPUES LANZA, y el orden importa. El despacho envuelve todo en un
+   try/catch(Throwable) que convierte cualquier excepcion en "Error al
+   consultar": si salir() solo lanzara, ese catch se comeria la respuesta BUENA
+   y despues llamaria a salir() otra vez con el error. Anotando primero, la
+   primera salida -- la de verdad -- queda guardada igual. */
+function salir($data, int $code = 200): void {
+    $GLOBALS['__fin_salidas'][] = ['code' => $code, 'body' => $data];
+    throw new FinSalir($data, $code);
+}
+
+/** Corre un endpoint de verdad y devuelve lo que habria contestado. */
+function pedir(string $accion, array $params = []): array {
+    global $DESPACHO, $pdo, $costoPorFicha, $umbralGrande, $umbralMuyGrande, $umbralGanador;
+    $GLOBALS['__fin_salidas'] = [];
+    $_SERVER['REQUEST_METHOD'] = 'GET';
+    $_SESSION['finanzas_ok'] = true;
+    $_GET = array_merge(['accion' => $accion], $params);
+    $fatal = null;
+    try {
+        eval(preg_replace('/^\s*\$metodo = \$_SERVER[^;]+;/m', '$metodo = "GET";', $DESPACHO, 1));
+    } catch (FinSalir $e) {
+        // esperado
+    } catch (Throwable $e) {
+        $fatal = get_class($e) . ': ' . $e->getMessage();
+    }
+    if ($GLOBALS['__fin_salidas']) { return $GLOBALS['__fin_salidas'][0]; }
+    return ['code' => 500, 'body' => ['ok' => false,
+            'error' => $fatal ?? 'el endpoint no contesto nada']];
+}
 
 $ok = 0; $fail = 0;
 function chequear(string $q, bool $c, string $d = ''): void {
@@ -564,6 +611,60 @@ chequear('un dia sin movimiento sale en cero, no falta',
 
 $pdo->exec("DELETE FROM operaciones_panel WHERE payment_id BETWEEN 970000 AND 979999");
 $limpiar();
+
+// ===========================================================================
+echo "\n=== 9i. Los ENDPOINTS contestan de verdad ===\n";
+/* Cada accion se ejecuta completa, con sus variables y su armado de respuesta.
+   Es lo unico que agarra un error del despacho -- una variable que no existe,
+   una clave mal escrita, un tipo que no cierra. */
+$hoyStr = date('Y-m-d');
+$ayer   = date('Y-m-d', strtotime('-7 days'));
+
+foreach ([
+    ['foto',        []],
+    ['hoy',         []],
+    ['rango',       ['desde' => $ayer, 'hasta' => $hoyStr]],
+    ['rango',       ['desde' => $ayer, 'hasta' => $hoyStr, 'filtro' => '7d']],
+    ['graficos',    ['desde' => $ayer, 'hasta' => $hoyStr]],
+    ['salud_pauta', ['desde' => $ayer, 'hasta' => $hoyStr]],
+    ['evolucion',   ['desde' => $ayer, 'hasta' => $hoyStr]],
+    ['export_json', ['desde' => $ayer, 'hasta' => $hoyStr]],
+] as [$accion, $params]) {
+    $r = pedir($accion, $params);
+    $etiqueta = $accion . ($params['filtro'] ?? '' ? ' (con comparacion)' : '');
+    chequear($etiqueta . ' contesta ok',
+             ($r['body']['ok'] ?? false) === true,
+             'code=' . $r['code'] . ' ' . substr((string)($r['body']['error'] ?? ''), 0, 120));
+}
+
+/* EL CASO QUE SE ESCAPO: `rango` con filtro pide ademas el periodo anterior, y
+   ahi vivia el TypeError. Se prueba aparte y con los dos filtros que activan
+   esa rama. */
+foreach (['7d', '30d', 'mes'] as $f) {
+    $r = pedir('rango', ['desde' => $ayer, 'hasta' => $hoyStr, 'filtro' => $f]);
+    chequear("rango filtro=$f trae la comparacion",
+             ($r['body']['ok'] ?? false) === true
+             && array_key_exists('variacion', $r['body']),
+             substr((string)($r['body']['error'] ?? ''), 0, 120));
+}
+
+/* Y que la respuesta traiga lo que la pantalla lee: si falta una clave, el
+   front muestra "undefined" y nadie se entera hasta que alguien lo mira. */
+$r = pedir('rango', ['desde' => $ayer, 'hasta' => $hoyStr]);
+foreach (['ingresos','retiros','bonos','ganancia_bruta','costo_fichas','comisiones',
+          'jugadores_activos','jugadores_nuevos','retencion','fichas_fuera'] as $k) {
+    chequear("rango devuelve `$k`", array_key_exists($k, $r['body']['rango'] ?? []));
+}
+
+$r = pedir('evolucion', ['desde' => $ayer, 'hasta' => $hoyStr]);
+foreach (['jugadores','recupero','serie'] as $k) {
+    chequear("evolucion devuelve `$k`", array_key_exists($k, $r['body'] ?? []));
+}
+
+/* Una fecha invalida tiene que dar 400 y no un 500 con un stack adentro. */
+$r = pedir('rango', ['desde' => 'ayer', 'hasta' => $hoyStr]);
+chequear('una fecha invalida da 400, no un error interno',
+         $r['code'] === 400 && ($r['body']['ok'] ?? true) === false, 'code=' . $r['code']);
 
 // ===========================================================================
 echo "\n=== 10. Un rango vacio da cero en todo y no rompe ===\n";

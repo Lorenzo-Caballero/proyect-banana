@@ -1568,9 +1568,18 @@ if ($metodo === 'GET') {
                 $retirosPrev  = fn_retiros($pdo, $periodoAnterior['desde'], $periodoAnterior['hasta']);
                 $bonosPrev    = fn_bonos($pdo, $periodoAnterior['desde'], $periodoAnterior['hasta']);
                 $activosPrev  = fn_activos($pdo, $periodoAnterior['desde'], $periodoAnterior['hasta']);
-                $costoFichasPrev   = fn_costo_fichas($pdo, $prevDesde, $prevHasta, $costoPorFicha,
+                /* $periodoAnterior y NO $prevDesde/$prevHasta: esos dos son
+                   variables LOCALES de fn_retencion() y fn_periodo_anterior(),
+                   no existen aca. Con strict_types, pasar el null que dejaban
+                   a un parametro `string` tira TypeError y se cae el bloque
+                   entero -- la pantalla queda con los cuatro KPIs en "..."
+                   mientras los graficos, que salen de otro endpoint, cargan
+                   normal y hacen parecer que todo anda. */
+                $costoFichasPrev   = fn_costo_fichas($pdo, $periodoAnterior['desde'],
+                                                     $periodoAnterior['hasta'], $costoPorFicha,
                                                      $ingresosPrev['monto'], $bonosPrev['monto']);
-                $comisionesPrev    = fn_comisiones($pdo, $prevDesde, $prevHasta,
+                $comisionesPrev    = fn_comisiones($pdo, $periodoAnterior['desde'],
+                                                   $periodoAnterior['hasta'],
                                                    $ingresosPrev['monto'], $retirosPrev['monto']);
                 $gananciaBrutaPrev = $ingresosPrev['monto'] - $retirosPrev['monto']
                                    - $costoFichasPrev - $comisionesPrev['total'];
