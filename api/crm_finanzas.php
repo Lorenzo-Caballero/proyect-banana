@@ -73,6 +73,9 @@ require __DIR__ . '/config.php';
 require __DIR__ . '/db.php';
 require __DIR__ . '/crm_lib.php';
 require __DIR__ . '/crm_auth.php';
+/* Para el bloque "salud del negocio": la pauta y el corte entre jugadores
+   nuevos y base acumulada salen de ahi, no se recalculan aca. */
+require_once __DIR__ . '/publicidad_lib.php';
 
 $operador = exigir_operador();
 
@@ -656,6 +659,126 @@ if ($metodo === 'GET') {
                 'costo_fichas'    => $costoFichas,
                 'ganancia'        => $ingresos['monto'] - $retiros['monto'] - $costoFichas,
                 'costo_por_ficha' => $costoPorFicha,
+            ]]);
+        }
+
+        /* ---- SALUD DEL NEGOCIO: la pauta contra lo que deja el casino ----
+           Contesta la unica pregunta que decide si el modelo escala, en las
+           palabras con que la planteo Nahuel: "mi modelo esta en ir
+           adquiriendo jugadores hasta llegar a que mis gastos publicitarios
+           diarios sean menores a las ganancias obtenidas".
+
+           VA APARTE Y NO SUMADO a los numeros de Finanzas, a proposito. Lo de
+           arriba es la CAJA del casino -- entro, salio, cuanto cuestan las
+           fichas. La pauta es una decision de inversion. Mezclarlas haria que
+           un mes de pauta fuerte pareciera un mes malo de casino, que son dos
+           cosas distintas y se arreglan de formas distintas.
+
+           OJO, Y ES EL MOTIVO DE QUE ACA LOS INGRESOS NO DEN IGUAL QUE ARRIBA:
+           fn_ingresos() mira SOLO la tabla `recargas`, o sea el camino del
+           chatbot. La carga que el jugador pide con el boton "Depositos"
+           adentro del juego no crea ninguna fila ahi -- queda en `movimientos`
+           con origen='peticion'. Este bloque usa las DOS vias (es el mismo
+           arreglo que en su momento saco a Publicidad de mostrar cero
+           conversiones con la gente cargando de verdad). Se devuelven abiertas
+           en `dep_transferencia` y `dep_en_el_juego` justamente para que la
+           diferencia con la pantalla de arriba se vea y no parezca un error. */
+        if ($accion === 'salud_pauta') {
+            [$desde, $hasta] = fn_rango_fechas();
+
+            $pauta   = publicidad_gasto_total($pdo, $desde, $hasta);
+            $split   = publicidad_cargas_split($pdo, $desde, $hasta);
+            $retiros = fn_retiros($pdo, $desde, $hasta);
+            $bonos   = fn_bonos($pdo, $desde, $hasta);
+
+            $depositado = (float)$split['depositado'];
+
+            /* La parte que entro por el boton del juego, medida directo y no
+               restando: `recargas` guarda monto_pedido y el UNION suma
+               monto_base, y esa diferencia historica de centavos haria que la
+               resta no cerrara nunca del todo. */
+            $enJuego = 0.0;
+            try {
+                $st = $pdo->prepare(
+                    "SELECT COALESCE(SUM(monto),0) FROM movimientos
+                      WHERE origen='peticion' AND tipo='saldo' AND monto > 0
+                        AND creado_en >= ? AND creado_en < ? + INTERVAL 1 DAY"
+                );
+                $st->execute([$desde, $hasta]);
+                $enJuego = (float)$st->fetchColumn();
+            } catch (Throwable $e) { error_log('salud_pauta juego: ' . $e->getMessage()); }
+
+            $costoFichas  = ($depositado + $bonos['monto']) * $costoPorFicha;
+            $antesDePauta = $depositado - $retiros['monto'] - $costoFichas;
+            $gasto        = (float)$pauta['total'];
+            $sinGasto     = $gasto <= 0;
+
+            /* Dias del periodo, del calendario. Los promedios diarios van los
+               DOS sobre el mismo divisor o no se pueden comparar, y compararlos
+               es todo el punto del indicador. `dias_con_pauta` viaja aparte
+               para que se note si el gasto quedo a medio cargar: si dice 4 de
+               30, el promedio diario esta diluido y el numero miente bajo. */
+            $dias = (int)(new DateTime($hasta))->diff(new DateTime($desde))->days + 1;
+
+            /* MARGEN: de cada peso que carga un jugador, cuanto queda despues
+               de los retiros y del costo de las fichas. Es lo que convierte
+               "deposito" en "ganancia", y sin eso no se puede saber que deja
+               de verdad la base acumulada. Con deposito 0 no existe. */
+            $margen = $depositado > 0 ? $antesDePauta / $depositado : null;
+
+            /* LA BASE: lo que dejan los que YA estaban, sin gastar un peso hoy.
+               Cuando esto por dia supera a la pauta por dia, la publicidad se
+               paga sola con jugadores ya comprados -- que es exactamente la
+               condicion de escalabilidad que describio Nahuel. */
+            $gananciaBase = $margen === null ? 0.0 : (float)$split['dep_repeticion'] * $margen;
+            $basePorDia   = $dias > 0 ? $gananciaBase / $dias : 0.0;
+            $pautaPorDia  = $dias > 0 ? $gasto / $dias : 0.0;
+
+            $nuevos = (int)$split['jugadores_nuevos'];
+
+            salir(['ok' => true, 'salud' => [
+                'desde' => $desde, 'hasta' => $hasta, 'dias' => $dias,
+
+                // --- La pauta
+                'pauta'          => round($gasto, 2),
+                'dias_con_pauta' => (int)$pauta['dias'],
+                'pauta_por_dia'  => round($pautaPorDia, 2),
+
+                // --- Lo que entro, abierto por via y por tipo de jugador
+                'depositado'        => round($depositado, 2),
+                'dep_transferencia' => round($depositado - $enJuego, 2),
+                'dep_en_el_juego'   => round($enJuego, 2),
+                'dep_primeras'      => (float)$split['dep_primeras'],
+                'dep_repeticion'    => (float)$split['dep_repeticion'],
+                'cargas'            => (int)$split['cargas'],
+
+                // --- Los jugadores. `jugadores` NO es nuevos + repiten: quien
+                //     cargo por primera vez y volvio a cargar cuenta en los dos.
+                'jugadores'         => (int)$split['jugadores'],
+                'jugadores_nuevos'  => $nuevos,
+                'jugadores_repiten' => (int)$split['jugadores_repiten'],
+
+                // --- Lo que se va
+                'retiros'      => round($retiros['monto'], 2),
+                'bonos'        => round($bonos['monto'], 2),
+                'costo_fichas' => round($costoFichas, 2),
+
+                // --- El resultado
+                'margen'         => $margen === null ? null : round($margen, 4),
+                'antes_de_pauta' => round($antesDePauta, 2),
+                'ganancia_real'  => round($antesDePauta - $gasto, 2),
+                'cobertura'      => $sinGasto ? null : round($antesDePauta / $gasto, 4),
+
+                // --- La escalabilidad
+                'ganancia_base'  => round($gananciaBase, 2),
+                'base_por_dia'   => round($basePorDia, 2),
+                'autofinanciado' => $sinGasto ? null : ($basePorDia >= $pautaPorDia),
+
+                // --- La adquisicion
+                'costo_por_nuevo'  => ($sinGasto || $nuevos === 0) ? null : round($gasto / $nuevos, 2),
+                'deja_nuevo'       => $nuevos === 0 ? null : round((float)$split['dep_primeras'] / $nuevos, 2),
+                'recupero_primera' => ($sinGasto || $margen === null) ? null
+                                      : round(((float)$split['dep_primeras'] * $margen) / $gasto, 4),
             ]]);
         }
 

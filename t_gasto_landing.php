@@ -79,6 +79,45 @@ $dias = publicidad_gasto_dias($pdo, 0, '2026-09-01', '2026-09-30', 't_lp_bono50'
 chequear('trae los dos dias', count($dias) === 2, json_encode($dias));
 chequear('en orden ascendente', ($dias[0]['fecha'] ?? '') === '2026-09-12');
 
+echo "\n=== 6. Borrar el gasto de un dia ===\n";
+/* POR QUE NO ALCANZA CON GUARDAR 0: la fila en cero sigue existiendo, y una
+   fila existente cuenta como "dia con pauta" en publicidad_gasto_total(), que
+   es el divisor del promedio diario del indicador de salud de Finanzas. Un dia
+   sin pauta metido en ese divisor baja el promedio y hace parecer que la
+   publicidad se paga sola antes de tiempo. */
+publicidad_gasto_guardar($pdo, 0, '2026-09-14', 1234.0, 'test', 't_lp_bono50');
+$n = (int)$pdo->query("SELECT COUNT(*) FROM gasto_diario WHERE landing_slug='t_lp_bono50'")->fetchColumn();
+chequear('estaba cargado', $n === 3, "filas=$n");
+chequear('borra', publicidad_gasto_borrar($pdo, 0, '2026-09-14', 't_lp_bono50'));
+$n = (int)$pdo->query("SELECT COUNT(*) FROM gasto_diario WHERE landing_slug='t_lp_bono50'")->fetchColumn();
+chequear('la fila desaparece, no queda en cero', $n === 2, "filas=$n");
+chequear('y el total del periodo lo refleja',
+         publicidad_gasto_periodo($pdo, 0, '2026-09-01', '2026-09-30', 't_lp_bono50') === 9500.0,
+         (string)publicidad_gasto_periodo($pdo, 0, '2026-09-01', '2026-09-30', 't_lp_bono50'));
+
+/* EL TEST QUE JUSTIFICA EL `IS NULL` DE LA CONSULTA: una landing y un
+   publicista pueden tener gasto el MISMO dia. Sin ese filtro, borrar el de uno
+   se llevaria puesto el del otro -- y nadie lo notaria hasta que el ROAS de la
+   otra campaña no cerrara. */
+publicidad_gasto_guardar($pdo, 0,     '2026-09-15', 800.0, 'test', 't_lp_bono50');
+publicidad_gasto_guardar($pdo, 99002, '2026-09-15', 900.0, 'test');
+publicidad_gasto_borrar($pdo, 0, '2026-09-15', 't_lp_bono50');
+chequear('borrar el de la landing no toca el del publicista',
+         publicidad_gasto_periodo($pdo, 99002, '2026-09-15', '2026-09-15') === 900.0);
+chequear('y el de la landing si se fue',
+         publicidad_gasto_periodo($pdo, 0, '2026-09-15', '2026-09-15', 't_lp_bono50') === 0.0);
+
+echo "\n=== 7. Borrar sin destino o sin fecha no hace nada ===\n";
+/* Mismo guard que al guardar. Un DELETE sin destino borraria por fecha sola:
+   el gasto de TODAS las campañas de ese dia. */
+chequear('sin destino', publicidad_gasto_borrar($pdo, 0, '2026-09-13', '') === false);
+chequear('sin fecha',   publicidad_gasto_borrar($pdo, 0, '', 't_lp_bono50') === false);
+$n = (int)$pdo->query("SELECT COUNT(*) FROM gasto_diario WHERE landing_slug='t_lp_bono50'")->fetchColumn();
+chequear('no se borro nada de mas', $n === 2, "filas=$n");
+
+chequear('borrar un dia que no existe no revienta',
+         publicidad_gasto_borrar($pdo, 0, '2026-01-01', 't_lp_bono50') === true);
+
 $limpiar();
 echo "\n---------------------------------------\n";
 printf("%d OK, %d fallas\n", $ok, $fail);

@@ -1525,6 +1525,35 @@
   .fn-alerta.rojo .fn-alerta-tag{background:rgba(227,91,91,.2);color:var(--red)}
   .fn-alerta.info .fn-alerta-tag{background:var(--panel3);color:var(--muted)}
 
+  /* ---- Salud del negocio (bloque que trae datos de PUBLICIDAD) ----
+     Va con borde y fondo propios A PROPOSITO. Todo lo que hay arriba en
+     Finanzas es la caja del casino; esto es plata de publicidad cruzada
+     contra esa caja. Si se viera igual que el resto, en dos semanas nadie
+     se acuerda de cual numero incluye la pauta y cual no. */
+  .fn-salud{border:1px solid var(--violet);border-radius:14px;margin:0 20px 18px;
+    padding:16px 18px;background:linear-gradient(180deg,var(--violetSoft),transparent 60%)}
+  .fn-salud-head{display:flex;align-items:center;justify-content:space-between;gap:10px;
+    flex-wrap:wrap;margin-bottom:12px}
+  .fn-salud-head h3{margin:0;font-size:14px}
+  .fn-salud-origen{font-size:10.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;
+    padding:3px 9px;border-radius:999px;background:var(--violetSoft);color:var(--violet2);
+    white-space:nowrap}
+  /* El veredicto: lo unico que hay que poder leer de lejos. */
+  .fn-salud-veredicto{border:1px solid var(--line);border-radius:12px;background:var(--panel2);
+    padding:14px 16px;margin-bottom:12px}
+  .fn-salud-veredicto.si{border-color:var(--green);background:var(--greenSoft)}
+  .fn-salud-veredicto.no{border-color:var(--orange);background:rgba(245,166,35,.10)}
+  .fn-salud-titulo{font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)}
+  .fn-salud-resp{font-size:19px;font-weight:800;margin-top:4px}
+  .fn-salud-veredicto.si .fn-salud-resp{color:var(--green2)}
+  .fn-salud-veredicto.no .fn-salud-resp{color:var(--orange2)}
+  .fn-salud-detalle{font-size:12.5px;color:var(--muted);margin-top:6px;line-height:1.5}
+  .fn-salud-barra{height:7px;border-radius:999px;background:var(--panel3);overflow:hidden;margin-top:10px}
+  .fn-salud-barra i{display:block;height:100%;border-radius:999px;background:var(--orange);
+    transition:width .35s ease}
+  .fn-salud-veredicto.si .fn-salud-barra i{background:var(--green)}
+  .fn-salud-nota{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.5}
+
   /* loading: texto placeholder atenuado, sin reflow */
   .fn-kpi-card.fn-cargando .v,.fn-kpi-card.fn-cargando .fn-kpi-var{opacity:.35}
 
@@ -1641,8 +1670,28 @@
   .pb-tabla td:nth-child(4),.pb-tabla td:nth-child(5){font-variant-numeric:tabular-nums}
   .pb-tabla td:nth-child(4){font-weight:700}
   /* La celda de gasto abre el modal de ese dia: que se vea que es clickeable. */
-  .pb-tabla td:nth-child(5){color:var(--muted)}
-  .pb-tabla tbody tr:hover td:nth-child(5){color:var(--violet2);text-decoration:underline}
+  /* El gasto es la UNICA celda que se edita, asi que se ve como un boton y no
+     como un dato. Antes era texto gris que solo se subrayaba al pasar el mouse:
+     en el celular no hay hover, o sea que ahi no habia ninguna pista de que se
+     podia tocar -- y cargar el gasto es justo lo que hace que el CPA y el ROAS
+     dejen de mostrar "-". */
+  .pb-gasto-btn{font:inherit;font-variant-numeric:tabular-nums;cursor:pointer;
+    display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border-radius:8px;
+    border:1px solid var(--line);background:var(--panel2);color:var(--txt);font-weight:700}
+  .pb-gasto-btn:hover{border-color:var(--violet);background:var(--panel3)}
+  .pb-gasto-btn .ico{width:13px;height:13px;opacity:.6}
+  /* Un dia sin gasto se ve VACIO a proposito -- punteado y en gris. Asi el
+     hueco se nota de lejos y se sabe que falta cargarlo. */
+  .pb-gasto-btn.vacio{border-style:dashed;background:transparent;color:var(--muted);font-weight:600}
+  .pb-gasto-btn.vacio:hover{color:var(--txt)}
+  .pb-gasto-del{font:inherit;cursor:pointer;border:none;background:transparent;color:var(--muted);
+    padding:3px 6px;border-radius:7px;line-height:1}
+  .pb-gasto-del:hover{color:var(--red);background:var(--redSoft)}
+  .pb-tabla td:nth-child(6){text-align:right;width:44px}
+  .pb-tabla tfoot td{padding:10px 14px;border-top:1px solid var(--line);font-weight:700;
+    font-variant-numeric:tabular-nums;color:var(--muted)}
+  .pb-tabla tfoot td:nth-child(n+2){text-align:right}
+  .pb-hist-hint{margin:-6px 20px 10px;font-size:12px;color:var(--muted)}
   .pb-tabla td.ag-vacio{text-align:center}
   .pb-tabla-barra{height:5px;border-radius:999px;background:linear-gradient(90deg,var(--violet2),var(--violet))}
 
@@ -2725,6 +2774,82 @@
         </details>
       </div>
 
+      <!-- f) Salud del negocio -- los unicos numeros de esta pantalla que
+           incluyen la PAUTA. Van en su propia caja, con su propio borde y su
+           etiqueta de origen, para que nunca se confundan con la caja del
+           casino de arriba. -->
+      <section class="fn-salud" id="fnBloqueSalud">
+        <div class="fn-salud-head">
+          <h3>Salud del negocio</h3>
+          <span class="fn-salud-origen">datos de Publicidad</span>
+        </div>
+
+        <div class="fn-salud-veredicto" id="fnSaludVeredicto">
+          <div class="fn-salud-titulo">¿La publicidad ya se paga sola?</div>
+          <div class="fn-salud-resp" id="fnSaludResp">—</div>
+          <div class="fn-salud-detalle" id="fnSaludDetalle"></div>
+          <div class="fn-salud-barra"><i id="fnSaludBarra" style="width:0"></i></div>
+        </div>
+
+        <div class="fn-cards">
+            <div class="fn-card">
+              <div class="k">Pauta del período<span class="fn-info" data-tip="Todo lo que cargaste como gasto de publicidad en el período, sumando landings y publicistas. Sale de la pantalla Publicidad."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+              <div class="v" id="fnSalPauta">—</div><div class="sub" id="fnSalPautaSub"></div>
+            </div>
+            <div class="fn-card">
+              <div class="k">Deja el casino, antes de pauta<span class="fn-info" data-tip="Lo que cargaron los jugadores menos los retiros y menos el costo de las fichas. Es el mismo criterio de la ganancia de arriba, pero contando también las cargas pedidas dentro del juego."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+              <div class="v" id="fnSalAntes">—</div><div class="sub" id="fnSalAntesSub"></div>
+            </div>
+            <div class="fn-card">
+              <div class="k">Ganancia real<span class="fn-info" data-tip="Lo que deja el casino menos la pauta. Es el número que te queda en el bolsillo."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+              <div class="v" id="fnSalReal">—</div>
+            </div>
+            <div class="fn-card">
+              <div class="k">Cobertura de la pauta<span class="fn-info" data-tip="Cuántas veces lo que deja el casino paga la publicidad. 1,0 es el punto de equilibrio."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+              <div class="v" id="fnSalCobertura">—</div><div class="sub" id="fnSalCoberturaSub"></div>
+            </div>
+        </div>
+
+        <details class="fn-explicacion" style="margin-top:12px">
+          <summary>Ver el detalle</summary>
+          <div class="fn-cards" style="margin-top:10px">
+            <div class="fn-card">
+              <div class="k">Cargaron en el período<span class="fn-info" data-tip="Todo lo que entró por cargas, sumando las dos vías: las transferencias que maneja el chatbot y el botón Depósitos de adentro del juego."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+              <div class="v" id="fnSalDep">—</div><div class="sub" id="fnSalDepSub"></div>
+            </div>
+            <div class="fn-card">
+              <div class="k">De jugadores nuevos<span class="fn-info" data-tip="La parte que pusieron los que cargaron por PRIMERA VEZ en su historia. Es lo que devuelve la pauta de hoy."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+              <div class="v" id="fnSalDep1">—</div><div class="sub" id="fnSalDep1Sub"></div>
+            </div>
+            <div class="fn-card">
+              <div class="k">De la base ya comprada<span class="fn-info" data-tip="La parte que pusieron jugadores que ya habían cargado antes. Esta plata no te costó publicidad hoy: es el recupero en segundo tiempo."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+              <div class="v" id="fnSalDepRep">—</div><div class="sub" id="fnSalDepRepSub"></div>
+            </div>
+            <div class="fn-card">
+              <div class="k">Jugadores que cargaron<span class="fn-info" data-tip="Distintos jugadores con al menos una carga en el período. No es nuevos + repetidores: quien cargó por primera vez y volvió cuenta en los dos."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+              <div class="v" id="fnSalJug">—</div><div class="sub" id="fnSalJugSub"></div>
+            </div>
+            <div class="fn-card">
+              <div class="k">Costo por jugador nuevo<span class="fn-info" data-tip="Pauta dividida por los jugadores que cargaron por primera vez. Es el costo real de sumar un jugador que paga — no el de un registro, que no deja plata."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+              <div class="v" id="fnSalCpa">—</div>
+            </div>
+            <div class="fn-card">
+              <div class="k">Deja un jugador nuevo<span class="fn-info" data-tip="Cuánto carga en promedio un jugador en su primera vez. Compará contra el costo por jugador nuevo que está al lado."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+              <div class="v" id="fnSalDejaNuevo">—</div>
+            </div>
+            <div class="fn-card">
+              <div class="k">Recupero en la primera carga<span class="fn-info" data-tip="Qué porcentaje de la pauta volvió ya en las primeras cargas. Casi nunca llega a 100% y no tiene por qué: el resto vuelve cuando esos jugadores repiten."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+              <div class="v" id="fnSalRecupero">—</div>
+            </div>
+            <div class="fn-card">
+              <div class="k">Margen sobre lo cargado<span class="fn-info" data-tip="De cada $100 que carga un jugador, cuánto queda después de los retiros y del costo de las fichas. Es lo que convierte una carga en ganancia."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+              <div class="v" id="fnSalMargen">—</div>
+            </div>
+          </div>
+          <div class="fn-salud-nota" id="fnSaludNota"></div>
+        </details>
+      </section>
+
       <!-- f) Alertas -- TODO el bloque oculto si no hay alertas -->
       <section class="fn-bloque" id="fnBloqueAlertas" style="display:none">
         <h3>Alertas</h3>
@@ -3175,12 +3300,17 @@
       </div>
 
       <div class="pb-seccion-titulo">Día por día</div>
+      <p class="pb-hist-hint">
+        El histórico del período. <b>Tocá el gasto de cualquier día</b> para cargarlo o corregirlo,
+        y la <b>×</b> para borrarlo si lo cargaste en la campaña equivocada.
+      </p>
       <div class="pb-tabla-wrap">
         <table class="pb-tabla">
           <thead>
             <tr><th>Día</th><th>Registros</th><th>1ª cargas</th><th>Depositado real</th><th>Gasto</th><th></th></tr>
           </thead>
-          <tbody id="pbDiaPorDia"><tr><td colspan="6" class="ag-vacio">Elegí un publicista</td></tr></tbody>
+          <tbody id="pbDiaPorDia"><tr><td colspan="6" class="ag-vacio">Elegí una landing o un publicista</td></tr></tbody>
+          <tfoot id="pbDiaTotales" style="display:none"></tfoot>
         </table>
       </div>
 
@@ -6105,7 +6235,8 @@
     pausa:   '<path d="M9.5 4.5v15M14.5 4.5v15"/>',
     reloj:   '<circle cx="12" cy="13" r="8"/><path d="M12 9v4.3l2.8 1.7"/><path d="M9 2.5h6"/>',
     billete: '<rect x="2" y="6" width="20" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/><path d="M5.6 12h.01M18.4 12h.01"/>',
-    bajar:   '<path d="M12 3.5v12M7.2 10.8 12 15.6l4.8-4.8"/><path d="M4.5 20h15"/>'
+    bajar:   '<path d="M12 3.5v12M7.2 10.8 12 15.6l4.8-4.8"/><path d="M4.5 20h15"/>',
+    lapiz:   '<path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"/>'
   };
   /** Devuelve el markup de un ícono. `cls` opcional, para tamaño o color. */
   function ico(nombre, cls){
@@ -8848,6 +8979,96 @@
     }
   }
 
+  // ---------- Salud del negocio ----------
+  /* Este bloque contesta UNA pregunta: ¿lo que dejan los jugadores que ya
+     tenés alcanza para pagar la publicidad de cada día? Mientras la respuesta
+     sea "no", cada peso de pauta sale del bolsillo; cuando pasa a "sí", la
+     campaña se financia sola y recién ahí escalarla no arriesga plata propia.
+
+     Se compara BASE contra PAUTA, las dos POR DIA y sobre los mismos días del
+     período. No se compara contra el total del período porque la decisión es
+     diaria: el gasto se sube o se baja todos los días. */
+  function fnPct(x){ return x === null || x === undefined ? "—" : (x*100).toFixed(0) + "%"; }
+
+  function fnRenderSalud(s){
+    const box  = $("#fnSaludVeredicto");
+    const resp = $("#fnSaludResp"), det = $("#fnSaludDetalle"), barra = $("#fnSaludBarra");
+    box.classList.remove("si","no");
+
+    if(s.autofinanciado === null){
+      /* Sin pauta cargada NO se puede contestar, y contestar igual sería
+         peor que no contestar: sin gasto cualquier ganancia parece infinita
+         y el tablero diría "todo bien" con la campaña corriendo. */
+      resp.textContent = "Falta cargar el gasto";
+      det.innerHTML = "No hay gasto de publicidad cargado en este período. " +
+        "Cargalo en <b>Publicidad → Gasto por día</b> y este bloque se completa solo.";
+      barra.style.width = "0";
+    } else {
+      const si = s.autofinanciado === true;
+      box.classList.add(si ? "si" : "no");
+      resp.textContent = si ? "Sí — la base ya paga la pauta"
+                            : "Todavía no — la pauta la estás poniendo vos";
+      det.innerHTML =
+        "Los jugadores que ya tenías dejan <b>" + money(s.base_por_dia) + " por día</b> " +
+        "y estás gastando <b>" + money(s.pauta_por_dia) + " por día</b> en publicidad" +
+        (si ? "." : ". Faltan <b>" + money(s.pauta_por_dia - s.base_por_dia) + " por día</b>.");
+      /* La barra se topea en 100%: pasado el equilibrio el numero exacto ya
+         no cambia la decisión, y una barra que sigue creciendo fuera de la
+         caja no se lee. Si el veredicto ya es "sí", va llena SIN recalcular:
+         el backend decide con los números sin redondear, y una pauta diaria
+         que redondea a $0 dejaría la barra vacía contradiciendo al título. */
+      const r = si ? 1 : (s.pauta_por_dia > 0 ? Math.max(0, s.base_por_dia / s.pauta_por_dia) : 0);
+      barra.style.width = Math.min(100, r*100).toFixed(1) + "%";
+    }
+
+    $("#fnSalPauta").textContent = money(s.pauta);
+    /* Si el gasto está cargado a medias, el promedio diario miente BAJO y el
+       veredicto sale optimista. Se avisa acá y no en una nota al pie. */
+    $("#fnSalPautaSub").textContent = s.pauta > 0
+      ? (s.dias_con_pauta < s.dias
+          ? "cargado en " + s.dias_con_pauta + " de " + s.dias + " días — faltan días"
+          : money(s.pauta_por_dia) + " por día")
+      : "sin gasto cargado";
+
+    $("#fnSalAntes").textContent = money(s.antes_de_pauta);
+    $("#fnSalAntesSub").textContent = "sin descontar la pauta";
+
+    $("#fnSalReal").textContent = money(s.ganancia_real);
+
+    $("#fnSalCobertura").textContent = s.cobertura === null ? "—" : s.cobertura.toFixed(2) + "×";
+    $("#fnSalCoberturaSub").textContent = s.cobertura === null ? "sin gasto cargado"
+      : (s.cobertura >= 1 ? "cubre la pauta" : "no llega a cubrirla");
+
+    $("#fnSalDep").textContent = money(s.depositado);
+    $("#fnSalDepSub").textContent = money(s.dep_transferencia) + " por transferencia · " +
+                                    money(s.dep_en_el_juego) + " desde el juego";
+    $("#fnSalDep1").textContent = money(s.dep_primeras);
+    $("#fnSalDep1Sub").textContent = s.jugadores_nuevos + " jugador" +
+      (s.jugadores_nuevos === 1 ? "" : "es") + " nuevo" + (s.jugadores_nuevos === 1 ? "" : "s");
+    $("#fnSalDepRep").textContent = money(s.dep_repeticion);
+    /* El deposito de la base NO es la ganancia de la base: hay que sacarle los
+       retiros y el costo de las fichas. El numero que tiene que ganarle a la
+       pauta es el segundo, asi que van juntos o se compara contra el que no es. */
+    $("#fnSalDepRepSub").textContent = s.jugadores_repiten + " repitieron · deja " +
+                                       money(s.ganancia_base) + " de ganancia";
+    $("#fnSalJug").textContent = nf.format(s.jugadores);
+    $("#fnSalJugSub").textContent = nf.format(s.cargas) + " carga" + (s.cargas === 1 ? "" : "s");
+
+    $("#fnSalCpa").textContent        = s.costo_por_nuevo === null ? "—" : money(s.costo_por_nuevo);
+    $("#fnSalDejaNuevo").textContent  = s.deja_nuevo === null ? "—" : money(s.deja_nuevo);
+    $("#fnSalRecupero").textContent   = fnPct(s.recupero_primera);
+    $("#fnSalMargen").textContent     = fnPct(s.margen);
+
+    /* La nota explica la UNICA discrepancia que el operador va a notar contra
+       los números de arriba, antes de que la note y piense que algo está roto. */
+    $("#fnSaludNota").innerHTML = s.dep_en_el_juego > 0
+      ? "Los ingresos de arriba cuentan solo las recargas por transferencia. Acá se suman " +
+        "también las <b>" + money(s.dep_en_el_juego) + "</b> que se cargaron con el botón " +
+        "Depósitos de adentro del juego, porque para medir la publicidad cuenta toda la plata " +
+        "que puso el jugador, entre por donde entre. Por eso los dos números no dan igual."
+      : "";
+  }
+
   // ---------- Alertas: todo el bloque se oculta si no hay ninguna ----------
   // Cada tipo arma su propio texto interpolando el umbral REAL que
   // devuelve el backend (umbrales.*) -- nunca un número escrito a mano
@@ -8988,9 +9209,10 @@
     const desde = fnRangoActual.desde, hasta = fnRangoActual.hasta;
     fnSetCargando(true);
 
-    const [rRango, rGraficos] = await Promise.allSettled([
+    const [rRango, rGraficos, rSalud] = await Promise.allSettled([
       fnGetJson({ accion: "rango", desde, hasta, filtro }),
       fnGetJson({ accion: "graficos", desde, hasta }),
+      fnGetJson({ accion: "salud_pauta", desde, hasta }),
     ]);
 
     if(rRango.status === "fulfilled" && rRango.value.ok){
@@ -9011,6 +9233,16 @@
       toast(rGraficos.value.error || "Error al cargar los gráficos");
     } else if(!["sesion_requerida","finanzas_no_verificado"].includes(rGraficos.reason && rGraficos.reason.message)){
       toast("Error al cargar los gráficos.");
+    }
+
+    /* La salud NO tiene toast de error a proposito: es un bloque agregado, y
+       que falle no puede tapar con un cartel los numeros de Finanzas, que son
+       lo que el operador vino a ver. Si no llega, el bloque se esconde. */
+    if(rSalud.status === "fulfilled" && rSalud.value.ok && rSalud.value.salud){
+      $("#fnBloqueSalud").style.display = "";
+      fnRenderSalud(rSalud.value.salud);
+    } else {
+      $("#fnBloqueSalud").style.display = "none";
     }
 
     fnFixTooltips();
@@ -9476,7 +9708,7 @@
 
   // ---------- gasto diario ----------
   $("#pgCancelar").addEventListener("click", ()=>{ $("#backGasto").style.display = "none"; });
-  function pbAbrirModalGasto(fechaSugerida){
+  function pbAbrirModalGasto(fechaSugerida, montoActual){
     /* Ahora el gasto va por publicista O POR LANDING (migracion 65). Antes solo
        por publicista, y eso dejaba sin CPA ni ROAS a quien mide por landing --
        que es el uso real: comparar dos landings para ver cual convierte y
@@ -9484,7 +9716,10 @@
        son justamente las que deciden si escalar o cortar. */
     if(!pbHaySel()){ toast("Elegí una landing o un publicista primero"); return; }
     $("#pgFecha").value = fechaSugerida || pbFmtFecha(new Date());
-    $("#pgMonto").value = "";
+    /* Si ese dia ya tenia gasto, se precarga. Corregir "8000" a "8500" con el
+       campo en blanco obliga a acordarse de cuanto habia, y equivocarse ahi
+       arruina el ROAS del dia sin que nada avise. */
+    $("#pgMonto").value = (montoActual > 0) ? String(montoActual) : "";
     /* Decir A QUIEN se le carga. Con publicistas y landings mezclados en las
        mismas solapas, cargarle el gasto al equivocado es facil y no se nota
        hasta que los numeros no cierran. */
@@ -9528,7 +9763,8 @@
     $("#pfPasoVisitas").style.display = "none";
     $("#pfFlechaVisitas").style.display = "none";
     $("#pbAvisoGasto").style.display = "none";
-    $("#pbDiaPorDia").innerHTML = '<tr><td colspan="6" class="ag-vacio">Elegí un publicista</td></tr>';
+    $("#pbDiaPorDia").innerHTML = '<tr><td colspan="6" class="ag-vacio">Elegí una landing o un publicista</td></tr>';
+    $("#pbDiaTotales").style.display = "none";
   }
 
   // ---------- fix de tooltips (mismo bug/patrón que Finanzas: el popover
@@ -9614,26 +9850,82 @@
     const dias = d.dias || [];
     if(!dias.length){
       $("#pbDiaPorDia").innerHTML = '<tr><td colspan="6" class="ag-vacio">Sin datos en este período</td></tr>';
+      $("#pbDiaTotales").style.display = "none";
       return;
     }
     const maxRegistros = Math.max(1, ...dias.map(x=>x.registros));
-    $("#pbDiaPorDia").innerHTML = dias.map(x=>{
+    /* La barra pasa a vivir DENTRO de la celda de registros, que es lo que
+       mide. La sexta columna queda libre para el borrado del gasto. */
+    $("#pbDiaPorDia").innerHTML = dias.map((x,i)=>{
       const anchoBarra = Math.round((x.registros / maxRegistros) * 100);
+      const hay = x.gasto > 0;
       return `<tr>
-        <td>${esc(x.fecha)}</td>
-        <td>${nf.format(x.registros)}</td>
+        <td>${pbDiaLabel(x.fecha)}</td>
+        <td>${nf.format(x.registros)}<div class="pb-tabla-barra" style="width:${anchoBarra}%;margin:4px 0 0 auto"></div></td>
         <td>${nf.format(x.primeras_cargas)}</td>
         <td>${money(x.depositado)}</td>
-        <td>${x.gasto>0 ? money(x.gasto) : "—"}</td>
-        <td style="width:90px"><div class="pb-tabla-barra" style="width:${anchoBarra}%"></div></td>
+        <td><button type="button" class="pb-gasto-btn ${hay?"":"vacio"}" data-i="${i}"
+              title="${hay?"Corregir el gasto de este día":"Cargar el gasto de este día"}">${
+              hay ? money(x.gasto) + ico("lapiz") : "+ Cargar"}</button></td>
+        <td>${hay ? `<button type="button" class="pb-gasto-del" data-del="${i}" title="Borrar el gasto de este día">✕</button>` : ""}</td>
       </tr>`;
     }).join("");
-    // Click en la celda de gasto: atajo para cargar/editar el gasto de ESE
-    // día sin tener que ir a buscar la fecha en el modal.
-    document.querySelectorAll("#pbDiaPorDia tr").forEach((tr,i)=>{
-      tr.querySelector("td:nth-child(5)").style.cursor = "pointer";
-      tr.querySelector("td:nth-child(5)").addEventListener("click", ()=>pbAbrirModalGasto(dias[i].fecha));
+
+    /* Los totales: el histórico sin un total obliga a sumar a mano para saber
+       cuánto se puso en el período, que es la primera pregunta que se hace. */
+    const tot = dias.reduce((a,x)=>({
+      registros: a.registros + x.registros,
+      primeras:  a.primeras  + x.primeras_cargas,
+      dep:       a.dep       + x.depositado,
+      gasto:     a.gasto     + x.gasto,
+      conGasto:  a.conGasto  + (x.gasto > 0 ? 1 : 0),
+    }), {registros:0, primeras:0, dep:0, gasto:0, conGasto:0});
+    $("#pbDiaTotales").style.display = "";
+    $("#pbDiaTotales").innerHTML = `<tr>
+      <td>Total (${dias.length} día${dias.length===1?"":"s"})</td>
+      <td>${nf.format(tot.registros)}</td>
+      <td>${nf.format(tot.primeras)}</td>
+      <td>${money(tot.dep)}</td>
+      <td>${money(tot.gasto)}</td>
+      <td></td>
+    </tr>${tot.conGasto < dias.length ? `<tr><td colspan="6" style="font-weight:400;border-top:none;padding-top:0">
+      Gasto cargado en ${tot.conGasto} de ${dias.length} días — los que falten bajan el CPA y el ROAS de todo el período.
+    </td></tr>` : ""}`;
+
+    $("#pbDiaPorDia").querySelectorAll(".pb-gasto-btn").forEach(b=>{
+      b.addEventListener("click", ()=>{
+        const x = dias[parseInt(b.dataset.i,10)];
+        pbAbrirModalGasto(x.fecha, x.gasto);
+      });
     });
+    $("#pbDiaPorDia").querySelectorAll(".pb-gasto-del").forEach(b=>{
+      b.addEventListener("click", ()=>pbBorrarGasto(dias[parseInt(b.dataset.del,10)]));
+    });
+  }
+
+  /** "2026-09-13" -> "vie 13/09". La fecha cruda obliga a traducir mentalmente
+   *  cada fila para ubicar un fin de semana, que es justo cuando el gasto y las
+   *  cargas se mueven distinto. */
+  function pbDiaLabel(f){
+    const p = String(f).split("-");
+    if(p.length !== 3) return esc(String(f));
+    const d = new Date(+p[0], +p[1]-1, +p[2]);
+    const dow = ["dom","lun","mar","mié","jue","vie","sáb"][d.getDay()] || "";
+    return `<span style="color:var(--muted)">${dow}</span> ${p[2]}/${p[1]}`;
+  }
+
+  async function pbBorrarGasto(dia){
+    if(!pbHaySel()) return;
+    const quien = pbLandingSel ? pbLandingSel.nombre : (pbPublicistaActivo()?.nombre || "");
+    if(!confirm(`¿Borrar el gasto de ${money(dia.gasto)} del ${dia.fecha}` +
+                (quien ? ` en ${quien}` : "") + `?`)) return;
+    let d;
+    try{ d = await pbPostJson({accion:"gasto_borrar", ...pbSegParams(), fecha: dia.fecha}); }
+    catch(e){ return; }
+    if(!d.ok){ toast(d.error || "No se pudo borrar"); return; }
+    toast("Gasto borrado");
+    pbCargarEmbudo();
+    pbCargarDiaPorDia();
   }
 
   $("#pbPassBtn").addEventListener("click", async ()=>{

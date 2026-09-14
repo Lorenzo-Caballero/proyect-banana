@@ -20,6 +20,7 @@
  *        un alta nueva siempre nace activa, ver publicista_toggle_activo)
  * POST { accion:"publicista_toggle_activo", id }              -> { ok, activo }
  * POST { accion:"gasto_guardar", publicista_id, fecha, monto } -> { ok }
+ * POST { accion:"gasto_borrar",  publicista_id|landing, fecha }  -> { ok }
  *
  * GET ?accion=publicistas                                      -> lista para tabs + admin
  * GET ?accion=embudo&publicista_id=&desde=&hasta=               -> KPIs + rentabilidad
@@ -235,6 +236,29 @@ if ($metodo === 'POST') {
             }
             if (!publicidad_gasto_guardar($pdo, $publicistaId, $fecha, $monto, $operador, $landing)) {
                 salir(['ok' => false, 'error' => 'No se pudo guardar el gasto'], 500);
+            }
+            salir(['ok' => true]);
+        }
+
+        /* Borrar es distinto de guardar 0: el 0 deja la fila, y la fila
+           cuenta como "dia con pauta" en el indicador de salud de Finanzas.
+           Un gasto cargado en la campaña equivocada tiene que poder
+           desaparecer, no quedar en cero. */
+        if ($accion === 'gasto_borrar') {
+            $publicistaId = (int)($body['publicista_id'] ?? 0);
+            $landing      = trim((string)($body['landing'] ?? ''));
+            $fecha        = (string)($body['fecha'] ?? '');
+
+            if ($landing !== '' && $publicistaId > 0) {
+                salir(['ok' => false, 'error' =>
+                    'Mandá publicista_id O landing, no los dos.'], 400);
+            }
+            if (($publicistaId <= 0 && $landing === '')
+                || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha)) {
+                salir(['ok' => false, 'error' => 'Faltan datos'], 400);
+            }
+            if (!publicidad_gasto_borrar($pdo, $publicistaId, $fecha, $landing)) {
+                salir(['ok' => false, 'error' => 'No se pudo borrar el gasto'], 500);
             }
             salir(['ok' => true]);
         }

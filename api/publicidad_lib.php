@@ -391,6 +391,144 @@ function publicidad_gasto_guardar(PDO $pdo, int $publicistaId, string $fecha,
     }
 }
 
+/**
+ * LA PAUTA DE TODO EL NEGOCIO en [desde, hasta]: publicistas Y landings juntos.
+ *
+ * Las otras funciones de gasto contestan "cuanto puso ESTA campaña", que es la
+ * pregunta de Publicidad. Esta contesta "cuanto puse en total", que es la
+ * pregunta de Finanzas, y por eso NO discrimina de donde salio la fila: para
+ * saber si el negocio se banca su propia publicidad da igual si la plata se
+ * cargo contra una landing o contra un publicista -- salio del mismo bolsillo.
+ *
+ * `dias` cuenta fechas DISTINTAS con gasto, no filas: dos landings cargadas el
+ * mismo dia son un dia de pauta, no dos. Es lo que hace que el promedio diario
+ * signifique algo.
+ */
+function publicidad_gasto_total(PDO $pdo, string $desde, string $hasta): array
+{
+    try {
+        $st = $pdo->prepare(
+            "SELECT COALESCE(SUM(monto),0) AS total,
+                    COUNT(DISTINCT fecha)  AS dias
+               FROM gasto_diario
+              WHERE fecha BETWEEN ? AND ?"
+        );
+        $st->execute([$desde, $hasta]);
+        $f = $st->fetch(PDO::FETCH_ASSOC) ?: [];
+        return ['total' => (float)($f['total'] ?? 0), 'dias' => (int)($f['dias'] ?? 0)];
+    } catch (Throwable $e) {
+        error_log('publicidad_gasto_total: ' . $e->getMessage());
+        return ['total' => 0.0, 'dias' => 0];
+    }
+}
+
+/**
+ * Las cargas del periodo partidas en DOS: las de jugadores que cargaron por
+ * primera vez, y las de los que ya habian cargado antes.
+ *
+ * POR QUE ESTE CORTE Y NO OTRO. Es el modelo de negocio tal como lo describio
+ * Nahuel: "puedo no salir con un ROAS positivo en la primera carga, pero si en
+ * la segunda... mi modelo esta en ir adquiriendo jugadores hasta que mis
+ * gastos publicitarios diarios sean menores a las ganancias obtenidas". O sea
+ * que la plata entra en dos tiempos y solo el segundo escala:
+ *
+ *   - Las PRIMERAS cargas son lo que devuelve la pauta de HOY. Que no cubran
+ *     el gasto no es una mala noticia: casi nunca lo cubren, y por eso mirar
+ *     solo el ROAS del dia hace apagar campañas que estaban funcionando.
+ *   - Las de REPETICION son lo que deja la base ya comprada, sin gastar un
+ *     peso mas hoy. Ese es el numero que tiene que superar a la pauta diaria
+ *     para que el negocio se financie solo.
+ *
+ * "Primera" es el MINIMO historico del jugador sobre LAS DOS VIAS (recarga por
+ * transferencia y peticion desde el juego), no la primera dentro del rango:
+ * alguien que venia cargando hace meses no puede aparecer como nuevo porque el
+ * reporte arranque el lunes. Por eso la subconsulta de `primera` no lleva
+ * filtro de fechas -- es a proposito, y sacarselo romperia justo lo que mide.
+ */
+function publicidad_cargas_split(PDO $pdo, string $desde, string $hasta): array
+{
+    $vacio = [
+        'jugadores'        => 0, 'jugadores_nuevos' => 0, 'jugadores_repiten' => 0,
+        'depositado'       => 0.0, 'dep_primeras' => 0.0, 'dep_repeticion' => 0.0,
+        'cargas'           => 0,
+    ];
+    try {
+        $sqlCargas = publicidad_sql_cargas();
+        $st = $pdo->prepare(
+            "SELECT COUNT(*)                                                   AS cargas,
+                    COUNT(DISTINCT c.usuario)                                  AS jugadores,
+                    COUNT(DISTINCT IF(c.cuando = pr.primera, c.usuario, NULL)) AS nuevos,
+                    COUNT(DISTINCT IF(c.cuando > pr.primera, c.usuario, NULL)) AS repiten,
+                    COALESCE(SUM(c.monto),0)                                   AS total,
+                    COALESCE(SUM(IF(c.cuando = pr.primera, c.monto, 0)),0)     AS dep_primeras
+               FROM ($sqlCargas) c
+               JOIN (SELECT usuario, MIN(cuando) AS primera
+                       FROM ($sqlCargas) z GROUP BY usuario) pr
+                 ON pr.usuario = c.usuario
+              WHERE c.cuando BETWEEN ? AND ?"
+        );
+        $st->execute([$desde . ' 00:00:00', $hasta . ' 23:59:59']);
+        $f = $st->fetch(PDO::FETCH_ASSOC) ?: [];
+
+        $total = (float)($f['total'] ?? 0);
+        $dep1  = (float)($f['dep_primeras'] ?? 0);
+        return [
+            'jugadores'         => (int)($f['jugadores'] ?? 0),
+            'jugadores_nuevos'  => (int)($f['nuevos'] ?? 0),
+            'jugadores_repiten' => (int)($f['repiten'] ?? 0),
+            'cargas'            => (int)($f['cargas'] ?? 0),
+            'depositado'        => round($total, 2),
+            'dep_primeras'      => round($dep1, 2),
+            'dep_repeticion'    => round($total - $dep1, 2),
+        ];
+    } catch (Throwable $e) {
+        error_log('publicidad_cargas_split: ' . $e->getMessage());
+        return $vacio;
+    }
+}
+
+/**
+ * Borra el gasto de UN dia de una campaña.
+ *
+ * NO ALCANZA CON GUARDAR 0, y por eso existe. Un 0 deja la fila viva, y la
+ * fila viva cuenta como "dia con pauta" en publicidad_gasto_total() -- que es
+ * lo que divide el promedio diario del indicador de salud. Un dia que nunca
+ * tuvo pauta metido ahi baja el promedio y hace parecer que la publicidad se
+ * paga sola antes de tiempo. Cargar un gasto en la campaña equivocada es facil
+ * (las landings y los publicistas comparten las mismas solapas), asi que tiene
+ * que haber forma de deshacerlo del todo, no de taparlo con un cero.
+ */
+function publicidad_gasto_borrar(PDO $pdo, int $publicistaId, string $fecha,
+                                 string $landing = ''): bool
+{
+    $landing = trim($landing);
+    if ($fecha === '' || ($publicistaId <= 0 && $landing === '')) {
+        return false;
+    }
+    try {
+        /* El `IS NULL` de la otra columna no es decorativo: sin el, borrar el
+           gasto de la landing "promo" un dia se llevaria puesto tambien el del
+           publicista que cargo ese mismo dia. */
+        if ($landing !== '') {
+            $st = $pdo->prepare(
+                "DELETE FROM gasto_diario
+                  WHERE landing_slug = ? AND publicista_id IS NULL AND fecha = ?"
+            );
+            $st->execute([mb_substr($landing, 0, 80), $fecha]);
+        } else {
+            $st = $pdo->prepare(
+                "DELETE FROM gasto_diario
+                  WHERE publicista_id = ? AND landing_slug IS NULL AND fecha = ?"
+            );
+            $st->execute([$publicistaId, $fecha]);
+        }
+        return true;
+    } catch (Throwable $e) {
+        error_log('publicidad_gasto_borrar: ' . $e->getMessage());
+        return false;
+    }
+}
+
 /** Gasto total de un publicista en [desde, hasta] (fechas 'Y-m-d', inclusive). */
 function publicidad_gasto_periodo(PDO $pdo, int $publicistaId, string $desde, string $hasta,
                                    string $landing = ''): float
@@ -680,9 +818,11 @@ function publicidad_metricas(PDO $pdo, int|array $seg, string $desde, string $ha
         error_log('publicidad_metricas (retencion): ' . $e->getMessage());
     }
 
-    // El gasto se carga por PUBLICISTA (una landing es una pagina, no una
-    // cuenta de Meta). Por landing no hay gasto -> 0, y el front muestra el CPA
-    // y el ROAS como "-", que es lo correcto: no hay con que calcularlos.
+    // El gasto va por publicista O por landing (migracion 66). Antes solo por
+    // publicista -- "una landing es una pagina, no una cuenta de Meta" -- y eso
+    // dejaba el CPA y el ROAS en "-" para quien mide por landing, que es el uso
+    // real. Si no hay gasto cargado sigue dando 0 y las dos metricas quedan en
+    // "-", que es lo correcto: no hay con que calcularlas.
     $gasto = $seg['tipo'] === 'publicista'
         ? publicidad_gasto_periodo($pdo, (int)$seg['id'], $desde, $hasta)
         : publicidad_gasto_periodo($pdo, 0, $desde, $hasta, (string)($seg['slug'] ?? ''));
