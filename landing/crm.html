@@ -2787,6 +2787,12 @@
             <div class="fn-card">
               <div class="k">Costo de fichas del período<span class="fn-info" data-tip="..."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
               <div class="v" id="fnMasCostoFichas">—</div>
+              <div class="sub" id="fnMasCostoFichasSub"></div>
+            </div>
+            <div class="fn-card">
+              <div class="k">Fichas fuera del sistema<span class="fn-info" data-tip="Fichas que entregó la plataforma y nuestra cola no registra, o al revés. Las dos direcciones son un problema y hasta ahora ninguna se veía."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+              <div class="v" id="fnMasFichasFuera">—</div>
+              <div class="sub" id="fnMasFichasFueraSub"></div>
             </div>
             <div class="fn-card">
               <div class="k">Recarga promedio<span class="fn-info" data-tip="Monto promedio por recarga acreditada en el período."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
@@ -9059,6 +9065,33 @@
   // ---------- "Ver más métricas" ----------
   function fnRenderMasMetricas(rango){
     $("#fnMasCostoFichas").textContent = money(rango.costo_fichas);
+
+    /* CONTROL: lo que la plataforma entregó contra lo que nuestra cola dice
+       haber mandado. Las dos direcciones importan y hasta el 14/09/2026
+       ninguna se veía:
+         de más  -> el operador cargó fichas a mano desde el panel;
+         de menos-> PEOR: la cola dice "hecha" y la plataforma no tiene registro
+                    de esa entrega. Es el bug del WAF, y cada peso ahí es un
+                    jugador al que le descontamos las fichas sin dárselas. */
+    const ff = rango.fichas_fuera;
+    const elFF = $("#fnMasFichasFuera"), subFF = $("#fnMasFichasFueraSub");
+    if(!ff){
+      elFF.textContent = "—";
+      subFF.textContent = "sin el libro del panel no se puede comparar";
+      elFF.style.color = "";
+    } else if(Math.abs(ff.diferencia) < 1){
+      elFF.textContent = "Todo cuadra";
+      elFF.style.color = "var(--green2)";
+      subFF.textContent = money(ff.libro) + " entregados, todos con respaldo";
+    } else if(ff.diferencia > 0){
+      elFF.textContent = "+" + money(ff.diferencia);
+      elFF.style.color = "var(--orange2)";
+      subFF.textContent = "cargadas a mano desde el panel — nadie las pagó de este lado";
+    } else {
+      elFF.textContent = money(ff.diferencia);
+      elFF.style.color = "var(--red)";
+      subFF.textContent = "marcadas como entregadas que la plataforma NO registra — revisalas";
+    }
     $("#fnMasRecargaProm").textContent = money(rango.ingresos.promedio);
     $("#fnMasRetiroProm").textContent  = money(rango.retiros.promedio);
     $("#fnMasNuevos").textContent = nf.format(rango.jugadores_nuevos);
@@ -9068,8 +9101,20 @@
     // (FINANZAS_COSTO_POR_FICHA), nunca un "0.20" fijo en el HTML.
     const infoCosto = $("#fnMasCostoFichas").closest(".fn-card").querySelector(".fn-info");
     if(infoCosto){
-      infoCosto.dataset.tip = "Lo que te costaron al proveedor las fichas que entregaste " +
-        "(recargas + bonos) × " + fnPesos2(rango.costo_por_ficha) + " por ficha (costo actual configurado).";
+      /* El texto depende de DE DONDE salio el numero. Con el libro del panel
+         es lo que realmente se entrego -- incluidas las cargas a mano, que la
+         estimacion vieja no veia. */
+      const conLibro = !!(rango.fichas_fuera);
+      infoCosto.dataset.tip = conLibro
+        ? "Lo que te costaron al proveedor las fichas que la plataforma entregó de verdad, " +
+          "× " + fnPesos2(rango.costo_por_ficha) + " por ficha. Incluye las cargas hechas a mano " +
+          "desde el panel, que no pasan por ninguna tabla nuestra."
+        : "Estimado: (recargas + bonos) × " + fnPesos2(rango.costo_por_ficha) + " por ficha. " +
+          "Subcuenta lo que se carga a mano desde el panel.";
+    }
+    const subCosto = $("#fnMasCostoFichasSub");
+    if(subCosto){
+      subCosto.textContent = rango.fichas_fuera ? "lo que salió del stock de verdad" : "estimado";
     }
   }
 

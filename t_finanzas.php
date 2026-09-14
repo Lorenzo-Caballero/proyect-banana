@@ -249,6 +249,98 @@ chequear('y el de por hora', ($porHora[10] ?? 0) === 1, 'h10=' . ($porHora[10] ?
 $pdo->exec("DELETE FROM operaciones_panel WHERE payment_id BETWEEN 970000 AND 979999");
 
 // ===========================================================================
+echo "\n=== 9b. El costo de fichas es lo que REALMENTE salio del stock ===\n";
+/* POR QUE (14/09/2026). Se estimaba como (ingresos + bonos) x costo_por_ficha:
+   "el jugador pago $100, entonces entregamos 100 fichas". Esa cuenta deja
+   afuera todo lo que el operador carga A MANO desde el panel, que no pasa por
+   ninguna tabla nuestra.
+
+   Medido ese dia en produccion: la plataforma entrego $53.750 en fichas y
+   nuestra cola solo habia mandado $34.250. Los $19.500 de diferencia fueron
+   tres cargas a mano, una de ellas al jugador del incidente documentado para
+   Fauno -- al que el bot le desconto las fichas sin depositarlas y hubo que
+   cargarselas de nuevo. El costo de ese bug lo pagaba el negocio sin aparecer
+   en ningun numero. */
+$pdo->exec("DELETE FROM operaciones_panel WHERE payment_id BETWEEN 970000 AND 979999");
+
+/* Sin libro: la estimacion de siempre. */
+$c = fn_costo_fichas($pdo, $D, $H, 0.20, 10000.0, 5000.0);
+chequear('sin libro, estima como antes', abs($c - 3000.0) < 0.01, 'costo=' . $c);
+
+/* Con libro que cubre: manda lo que la plataforma entrego. */
+$libro(U . 'viejo',  '2019-04-02 10:00:00',     1.0, 0);   // ancla el inicio
+$libro(U . 'carga1', '2019-05-20 10:00:00', 20000.0, 0);
+$libro(U . 'carga2', '2019-05-21 10:00:00', 30000.0, 0);
+$c = fn_costo_fichas($pdo, $D, $H, 0.20, 10000.0, 5000.0);
+chequear('con libro, cuenta lo entregado de verdad', abs($c - 10000.0) < 0.01,
+         'costo=' . $c);
+
+/* EL PUNTO: una carga a mano SUBE el costo aunque no haya entrado un peso.
+   Con la estimacion vieja era invisible. */
+$libro(U . 'amano', '2019-05-22 10:00:00', 14500.0, 0);
+$c = fn_costo_fichas($pdo, $D, $H, 0.20, 10000.0, 5000.0);
+chequear('una carga a mano se nota en el costo', abs($c - 12900.0) < 0.01,
+         'costo=' . $c);
+
+/* Los RETIROS del libro no son fichas entregadas. */
+$libro(U . 'ret', '2019-05-23 10:00:00', 99999.0, 1);
+$c = fn_costo_fichas($pdo, $D, $H, 0.20, 10000.0, 5000.0);
+chequear('los retiros del libro no cuentan como costo', abs($c - 12900.0) < 0.01,
+         'costo=' . $c);
+
+/* Un periodo que el libro no alcanza vuelve a estimar, no da cero: un costo
+   de cero convertiria un mes viejo en un mes de ganancia perfecta. */
+$c = fn_costo_fichas($pdo, '2019-03-01', '2019-03-31', 0.20, 10000.0, 5000.0);
+chequear('un periodo fuera del libro vuelve a estimar', abs($c - 3000.0) < 0.01,
+         'costo=' . $c);
+
+// ===========================================================================
+echo "\n=== 9c. El control de fichas fuera del sistema ===\n";
+/* Las dos direcciones son un problema y hasta hoy ninguna se veia. */
+$pdo->exec("DELETE FROM acciones_saldo WHERE usuario LIKE '" . U . "%'");
+$cargar = function (string $u, string $cuando, float $monto) use ($pdo) {
+    $pdo->prepare(
+        "INSERT INTO acciones_saldo (usuario, tipo, monto, estado, creada_en, ejecutada_en)
+         VALUES (?, 'cargar', ?, 'hecha', ?, ?)"
+    )->execute([$u, $monto, $cuando, $cuando]);
+};
+
+/* Todo cuadra: la cola mando lo mismo que entrego la plataforma. */
+$pdo->exec("DELETE FROM operaciones_panel WHERE payment_id BETWEEN 970000 AND 979999");
+$libro(U . 'viejo', '2019-04-02 10:00:00', 1.0, 0);
+$libro(U . 'ok',    '2019-05-20 10:00:00', 7500.0, 0);
+$cargar(U . 'ok',   '2019-05-20 10:00:00', 7500.0);
+$f = fn_fichas_fuera($pdo, $D, $H);
+chequear('cuando cuadra, la diferencia es 0', $f && abs($f['diferencia']) < 0.01,
+         json_encode($f));
+
+/* De MAS: el operador cargo a mano. Salio del stock y nadie lo pago. */
+$libro(U . 'amano', '2019-05-21 10:00:00', 14500.0, 0);
+$f = fn_fichas_fuera($pdo, $D, $H);
+chequear('una carga a mano da diferencia POSITIVA',
+         $f && abs($f['diferencia'] - 14500.0) < 0.01, json_encode($f));
+
+/* De MENOS, que es lo grave: la cola dice "hecha" y la plataforma no tiene
+   registro. Es el bug del WAF, y cada peso ahi es un jugador al que le
+   descontamos las fichas sin darselas. */
+$pdo->exec("DELETE FROM operaciones_panel WHERE payment_id BETWEEN 970000 AND 979999");
+$pdo->exec("DELETE FROM acciones_saldo WHERE usuario LIKE '" . U . "%'");
+$libro(U . 'viejo',   '2019-04-02 10:00:00', 1.0, 0);
+$cargar(U . 'fantasma', '2019-05-20 10:00:00', 5000.0);
+$f = fn_fichas_fuera($pdo, $D, $H);
+chequear('una entrega fantasma da diferencia NEGATIVA',
+         $f && $f['diferencia'] < 0 && abs($f['diferencia'] + 5000.0) < 0.01,
+         json_encode($f));
+
+/* Sin libro que cubra, no se afirma nada: la ausencia de filas no prueba un
+   descuadre, prueba que no estamos mirando. */
+chequear('un periodo fuera del libro devuelve null',
+         fn_fichas_fuera($pdo, '2019-03-01', '2019-03-31') === null);
+
+$pdo->exec("DELETE FROM operaciones_panel WHERE payment_id BETWEEN 970000 AND 979999");
+$pdo->exec("DELETE FROM acciones_saldo WHERE usuario LIKE '" . U . "%'");
+
+// ===========================================================================
 echo "\n=== 10. Un rango vacio da cero en todo y no rompe ===\n";
 $v = '2019-02-01';
 chequear('ingresos 0',  fn_ingresos($pdo, $v, $v)['monto'] === 0.0);

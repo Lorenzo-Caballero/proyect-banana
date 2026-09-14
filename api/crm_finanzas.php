@@ -168,6 +168,97 @@ function fn_libro_desde(PDO $pdo): ?string
 }
 
 /**
+ * Lo que costaron las fichas ENTREGADAS en [desde, hasta].
+ *
+ * SALE DEL LIBRO DEL PANEL, y eso cambió el 14/09/2026. Antes se estimaba como
+ * (ingresos + bonos) × costo_por_ficha, o sea: "el jugador pagó $100, entonces
+ * entregamos 100 fichas". Esa cuenta deja afuera todo lo que el operador carga
+ * A MANO desde el panel, que no pasa por ninguna tabla nuestra.
+ *
+ * Medido el 13/09/2026: la plataforma entregó $53.750 en fichas y nuestra cola
+ * solo había mandado $34.250. Los $19.500 de diferencia fueron tres cargas
+ * hechas a mano, una de ellas a `holalourdes220` -- el mismo jugador del
+ * incidente documentado en PARA-FAUNO-deposito.md, al que el bot le descontó
+ * las fichas sin depositarlas y hubo que cargárselas de nuevo. O sea que el
+ * costo de ese bug lo estaba pagando el negocio sin que apareciera en ningún
+ * número.
+ *
+ * Con la estimación vieja ese día daba $7.270 de costo; lo que realmente salió
+ * del stock fueron $10.750. Casi $3.500 por día sin contar.
+ *
+ * Un depósito del libro es una ficha que salió del stock del agente, sin
+ * importar por qué: la carga de una recarga, un bono que el jugador jugó, o
+ * una compensación a mano. Todas cuestan lo mismo al proveedor.
+ */
+function fn_costo_fichas(PDO $pdo, string $desde, string $hasta,
+                         float $costoPorFicha, float $ingresos, float $bonos): float
+{
+    $libroDesde = fn_libro_desde($pdo);
+    if ($libroDesde !== null && $libroDesde <= $desde . ' 00:00:00') {
+        try {
+            $st = $pdo->prepare(
+                "SELECT COALESCE(SUM(monto),0) FROM operaciones_panel
+                  WHERE tipo = 0 AND cuando >= ? AND cuando < ? + INTERVAL 1 DAY"
+            );
+            $st->execute([$desde, $hasta]);
+            return (float)$st->fetchColumn() * $costoPorFicha;
+        } catch (Throwable $e) {
+            error_log('fn_costo_fichas (libro): ' . $e->getMessage());
+        }
+    }
+    // Sin libro que alcance: la estimación de siempre, que subcuenta.
+    return ($ingresos + $bonos) * $costoPorFicha;
+}
+
+/**
+ * Fichas entregadas POR FUERA de nuestro sistema, en pesos de fichas.
+ *
+ * Es lo que la plataforma entregó menos lo que nuestra cola dice haber
+ * mandado. LOS DOS SIGNOS IMPORTAN y hasta hoy los dos eran invisibles:
+ *
+ *   POSITIVO  el operador cargó fichas a mano desde el panel. Salieron del
+ *             stock y no las pagó nadie de este lado. Puede ser legítimo (una
+ *             compensación, un regalo) o puede no serlo, pero tiene que verse.
+ *
+ *   NEGATIVO  PEOR: nuestra cola dice "hecha" y la plataforma no tiene registro
+ *             de esa entrega. Es exactamente el bug del documento para Fauno --
+ *             el depósito que el WAF cortó y quedó marcado como exitoso -- y
+ *             significa que hay un jugador al que le descontamos las fichas sin
+ *             dárselas. Cada peso negativo acá es un reclamo esperando.
+ *
+ * Se compara por TOTALES y no fila por fila porque no hay id compartido: un
+ * depósito directo del agente no nace de ninguna solicitud. Para un indicador
+ * de control alcanza; para perseguir un caso puntual están las dos tablas.
+ */
+function fn_fichas_fuera(PDO $pdo, string $desde, string $hasta): ?array
+{
+    $libroDesde = fn_libro_desde($pdo);
+    if ($libroDesde === null || $libroDesde > $desde . ' 00:00:00') { return null; }
+    try {
+        $st = $pdo->prepare(
+            "SELECT COALESCE(SUM(monto),0) FROM operaciones_panel
+              WHERE tipo = 0 AND cuando >= ? AND cuando < ? + INTERVAL 1 DAY"
+        );
+        $st->execute([$desde, $hasta]);
+        $libro = (float)$st->fetchColumn();
+
+        $st = $pdo->prepare(
+            "SELECT COALESCE(SUM(monto),0) FROM acciones_saldo
+              WHERE tipo = 'cargar' AND estado = 'hecha'
+                AND ejecutada_en >= ? AND ejecutada_en < ? + INTERVAL 1 DAY"
+        );
+        $st->execute([$desde, $hasta]);
+        $cola = (float)$st->fetchColumn();
+
+        return ['libro' => round($libro, 2), 'cola' => round($cola, 2),
+                'diferencia' => round($libro - $cola, 2)];
+    } catch (Throwable $e) {
+        error_log('fn_fichas_fuera: ' . $e->getMessage());
+        return null;
+    }
+}
+
+/**
  * Retiros del período: la plata que SALIÓ.
  *
  * SALE DEL LIBRO DEL PANEL, no de nuestra cola, y eso cambió el 14/09/2026.
@@ -428,6 +519,29 @@ function fn_serie_por_dia(PDO $pdo, string $desde, string $hasta, float $costoPo
     $porActivos = [];
     foreach ($act->fetchAll(PDO::FETCH_ASSOC) as $r) { $porActivos[$r['fecha']] = (int)$r['activos']; }
 
+    /* Las fichas entregadas, por dia, EN UNA SOLA CONSULTA. Llamar a
+       fn_costo_fichas() dentro del bucle serian 90 consultas para un rango de
+       90 dias, cada una para leer un numero. */
+    $porCosto = null;
+    $libroDesde = fn_libro_desde($pdo);
+    if ($libroDesde !== null && $libroDesde <= $desde . ' 00:00:00') {
+        try {
+            $st = $pdo->prepare(
+                "SELECT DATE(cuando) fecha, SUM(monto) monto FROM operaciones_panel
+                  WHERE tipo = 0 AND cuando >= ? AND cuando < ? + INTERVAL 1 DAY
+                  GROUP BY DATE(cuando)"
+            );
+            $st->execute([$desde, $hasta]);
+            $porCosto = [];
+            foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                $porCosto[$r['fecha']] = (float)$r['monto'];
+            }
+        } catch (Throwable $e) {
+            error_log('fn_serie_por_dia (costo): ' . $e->getMessage());
+            $porCosto = null;
+        }
+    }
+
     $serie   = [];
     $cursor  = new DateTime($desde);
     $fin     = new DateTime($hasta);
@@ -436,7 +550,12 @@ function fn_serie_por_dia(PDO $pdo, string $desde, string $hasta, float $costoPo
         $ingresosDia = $porIngresos[$f] ?? 0.0;
         $bonosDia    = $porBonos[$f] ?? 0.0;
         $retirosDia  = $porRetiros[$f] ?? 0.0;
-        $costoDia    = ($ingresosDia + $bonosDia) * $costoPorFicha;
+        /* Mismo criterio que el KPI de arriba, o el grafico contaria una cosa
+           y la tarjeta otra: lo que REALMENTE salio del stock si el libro
+           alcanza, la estimacion vieja si no. */
+        $costoDia    = $porCosto !== null
+            ? ($porCosto[$f] ?? 0.0) * $costoPorFicha
+            : ($ingresosDia + $bonosDia) * $costoPorFicha;
         $serie[] = [
             'fecha'    => $f,
             'ingresos' => $ingresosDia,
@@ -787,7 +906,8 @@ if ($metodo === 'GET') {
             $ingresos = fn_ingresos($pdo, $hoy, $hoy);
             $retiros  = fn_retiros($pdo, $hoy, $hoy);
             $bonos    = fn_bonos($pdo, $hoy, $hoy);
-            $costoFichas = ($ingresos['monto'] + $bonos['monto']) * $costoPorFicha;
+            $costoFichas = fn_costo_fichas($pdo, $hoy, $hoy, $costoPorFicha,
+                                           $ingresos['monto'], $bonos['monto']);
 
             salir(['ok' => true, 'hoy' => [
                 'fecha'           => $hoy,
@@ -848,7 +968,8 @@ if ($metodo === 'GET') {
                 $enJuego = (float)$st->fetchColumn();
             } catch (Throwable $e) { error_log('salud_pauta juego: ' . $e->getMessage()); }
 
-            $costoFichas  = ($depositado + $bonos['monto']) * $costoPorFicha;
+            $costoFichas  = fn_costo_fichas($pdo, $desde, $hasta, $costoPorFicha,
+                                            $depositado, $bonos['monto']);
             $antesDePauta = $depositado - $retiros['monto'] - $costoFichas;
             $gasto        = (float)$pauta['total'];
             $sinGasto     = $gasto <= 0;
@@ -933,7 +1054,8 @@ if ($metodo === 'GET') {
             $nuevos    = fn_nuevos($pdo, $desde, $hasta);
             $activos   = fn_activos($pdo, $desde, $hasta);
             $retencion = fn_retencion($pdo, $desde, $hasta);
-            $costoFichas   = ($ingresos['monto'] + $bonos['monto']) * $costoPorFicha;
+            $costoFichas   = fn_costo_fichas($pdo, $desde, $hasta, $costoPorFicha,
+                                             $ingresos['monto'], $bonos['monto']);
             $gananciaBruta = $ingresos['monto'] - $retiros['monto'] - $costoFichas;
 
             // Comparación contra el período anterior -- null si no
@@ -948,7 +1070,8 @@ if ($metodo === 'GET') {
                 $retirosPrev  = fn_retiros($pdo, $periodoAnterior['desde'], $periodoAnterior['hasta']);
                 $bonosPrev    = fn_bonos($pdo, $periodoAnterior['desde'], $periodoAnterior['hasta']);
                 $activosPrev  = fn_activos($pdo, $periodoAnterior['desde'], $periodoAnterior['hasta']);
-                $costoFichasPrev   = ($ingresosPrev['monto'] + $bonosPrev['monto']) * $costoPorFicha;
+                $costoFichasPrev   = fn_costo_fichas($pdo, $prevDesde, $prevHasta, $costoPorFicha,
+                                                     $ingresosPrev['monto'], $bonosPrev['monto']);
                 $gananciaBrutaPrev = $ingresosPrev['monto'] - $retirosPrev['monto'] - $costoFichasPrev;
 
                 $comparacion = [
@@ -973,6 +1096,10 @@ if ($metodo === 'GET') {
                 'retiros'           => $retiros,
                 'bonos'             => $bonos,
                 'costo_fichas'      => $costoFichas,
+                /* Control: fichas que entrego la plataforma y nuestra cola no
+                   registra (o al reves). Null si el libro no cubre el periodo
+                   -- no se puede afirmar nada sin con que comparar. */
+                'fichas_fuera'      => fn_fichas_fuera($pdo, $desde, $hasta),
                 'ganancia_bruta'    => $gananciaBruta,
                 'costo_por_ficha'   => $costoPorFicha,
                 'jugadores_nuevos'  => $nuevos,
@@ -1028,7 +1155,8 @@ if ($metodo === 'GET') {
             $nuevos    = fn_nuevos($pdo, $desde, $hasta);
             $activos   = fn_activos($pdo, $desde, $hasta);
             $retencion = fn_retencion($pdo, $desde, $hasta);
-            $costoFichas   = ($ingresos['monto'] + $bonos['monto']) * $costoPorFicha;
+            $costoFichas   = fn_costo_fichas($pdo, $desde, $hasta, $costoPorFicha,
+                                             $ingresos['monto'], $bonos['monto']);
             $gananciaBruta = $ingresos['monto'] - $retiros['monto'] - $costoFichas;
             $foto = fn_foto($pdo);
 
