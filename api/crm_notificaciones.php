@@ -30,7 +30,8 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
         $dias = max(0, $dias);
         $st = $pdo->prepare(
             "SELECT COUNT(*) FROM usuarios u
-              WHERE NOT EXISTS (
+              WHERE COALESCE(u.is_banned, 0) = 0
+                AND NOT EXISTS (
                 SELECT 1 FROM recargas r
                  WHERE r.usuario = u.username COLLATE utf8mb4_unicode_ci
                    AND r.estado = 'acreditada'
@@ -78,7 +79,8 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
         $dias = max(0, $dias);
         $st = $pdo->prepare(
             "SELECT u.username FROM usuarios u
-              WHERE NOT EXISTS (
+              WHERE COALESCE(u.is_banned, 0) = 0
+                AND NOT EXISTS (
                 SELECT 1 FROM recargas r
                  WHERE r.usuario = u.username COLLATE utf8mb4_unicode_ci
                    AND r.estado = 'acreditada'
@@ -193,6 +195,13 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
         if ($desde !== '') { $where[] = 'n.creada_en >= ?'; $params[] = $desde . ' 00:00:00'; }
         if ($hasta !== '') { $where[] = 'n.creada_en <= ?'; $params[] = $hasta . ' 23:59:59'; }
         if ($tipo  !== '') { $where[] = 'n.tipo = ?'; $params[] = $tipo; }
+        /* Solo lo MANDADO POR UN OPERADOR: lotes de difusion o filas del CRM.
+           Sin esto el historial mezclaba las difusiones con cada "te
+           respondio" automatico del chat y las promos del sistema -- cientos
+           de filas que entierran lo que el agente mando a mano. */
+        if (!empty($opts['solo_difusiones'])) {
+            $where[] = "(n.lote_id IS NOT NULL OR (n.origen = 'crm' AND n.usuario IS NULL) OR n.origen = 'crm')";
+        }
 
         $whereSql = implode(' AND ', $where);
 

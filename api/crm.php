@@ -1040,6 +1040,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 'hasta'   => (string)($_GET['hasta'] ?? ''),
                 'tipo'    => (string)($_GET['tipo'] ?? ''),
                 'pagina'  => (int)($_GET['pagina'] ?? 1),
+                'solo_difusiones' => !empty($_GET['solo_difusiones']),
             ];
             salir(array_merge(['ok' => true], crmnotif_historial($pdo, $opts)));
         }
@@ -1050,6 +1051,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         // 12 o 1.200 antes de llenar la bandeja.
         if ($accion === 'notif_alcance_sin_chat') {
             salir(['ok' => true, 'alcance' => count(crmnotif_usuarios_sin_chat($pdo))]);
+        }
+
+        // Celulares activos (30 dias) que recibirian una difusion a "Todos".
+        // La vista lo muestra en la tarjeta de audiencia, como los otros dos.
+        if ($accion === 'notif_alcance_todos') {
+            salir(['ok' => true, 'alcance' => notif_alcance($pdo, null)]);
         }
 
         if ($accion === 'notif_alcance_inactivos') {
@@ -1576,16 +1583,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // del push (evita pedir lo mismo dos veces cuando el canal es "ambos").
             $mensajeChat = trim((string)($body['mensaje_chat'] ?? '')) ?: $cuerpo;
 
+            /* La programación se parsea ACA ARRIBA, antes de las ramas por
+               filtro. Antes vivia mas abajo y las ramas de inactivos/sin_chat
+               salian antes de leerla: el operador programaba una difusion
+               para las 19:00, el confirm le mostraba la fecha, y SE MANDABA
+               YA, sin ningun aviso. */
+            $progEn = null;
+            $progRaw = trim((string)($body['programada_en'] ?? ''));
+            if ($progRaw !== '') {
+                $progEn = crm_parse_programada($progRaw);
+                if ($progEn === null) {
+                    salir(['ok' => false, 'error' => 'Fecha/hora de programación inválida'], 400);
+                }
+            }
+
             if ($modoFiltro === 'inactivos') {
-                if ($incluyePush && ($titulo === '' || $cuerpo === '')) {
+                /* Solo push, y RECHAZANDO el resto: antes canal 'chat' llegaba
+                   aca, se respondia ok y no se mandaba nada util. */
+                if ($incluyeChat) {
+                    salir(['ok' => false, 'error' =>
+                        'La difusión a inactivos va solo por push (todavía no hay chat masivo para este filtro)'], 400);
+                }
+                if ($titulo === '' || $cuerpo === '') {
                     salir(['ok' => false, 'error' => 'Falta el título o el mensaje'], 400);
                 }
-                $dias = max(0, (int)($filtro['dias'] ?? 0));
+                // Piso 1: "hace mas de 0 dias" era literalmente TODOS, un
+                // duplicado confuso del destino "Todos".
+                $dias = max(1, (int)($filtro['dias'] ?? 1));
                 $r = crmnotif_enviar_masivo($pdo, ['modo' => 'inactivos', 'dias' => $dias],
                                             $titulo, $cuerpo, (string)($body['tipo'] ?? 'promo'),
-                                            'crm', $operador);
+                                            'crm', $operador, $progEn);
                 if (!$r['ok']) { salir($r, 500); }
-                salir(['ok' => true, 'alcance' => $r['alcance'], 'lote_id' => $r['lote_id'], 'canal' => 'push']);
+                salir(['ok' => true, 'alcance' => $r['alcance'], 'lote_id' => $r['lote_id'],
+                       'canal' => 'push', 'programada_en' => $progEn]);
             }
 
             /* ---- los que nunca escribieron ----
@@ -1604,6 +1634,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($incluyePush && ($titulo === '' || $cuerpo === '')) {
                     salir(['ok' => false, 'error' => 'Falta el título o el mensaje'], 400);
                 }
+                /* La SIEMBRA de chats crea conversaciones en el acto y no
+                   tiene cola: programarla no esta soportado. Antes se
+                   aceptaba la fecha y se sembraba YA, en silencio. */
+                if ($incluyeChat && $progEn) {
+                    salir(['ok' => false, 'error' =>
+                        'La siembra de chats no se puede programar: mandala ahora, o programá solo el push'], 400);
+                }
                 $destinos = crmnotif_usuarios_sin_chat($pdo);
                 if (!$destinos) {
                     salir(['ok' => true, 'alcance' => 0, 'canal' => 'chat',
@@ -1616,19 +1653,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 $alcancePush = 0;
                 if ($incluyePush) {
+                    /* Agrupado por lote, como inactivos: sin esto el historial
+                       mostraba cientos de envios sueltos "@usuario" en vez de
+                       UNA difusion. */
+                    $loteId = crmnotif_uuid();
+                    $filtroJson = json_encode(['modo' => 'sin_chat'], JSON_UNESCAPED_UNICODE);
                     foreach ($destinos as $d) {
-                        if (notif_crear($pdo, $d, $titulo, $cuerpo,
-                                        (string)($body['tipo'] ?? 'promo'), null, 'crm')) {
+                        $nid = notif_crear($pdo, $d, $titulo, $cuerpo,
+                                           (string)($body['tipo'] ?? 'promo'), null, 'crm',
+                                           null, false, $progEn);
+                        if ($nid) {
+                            crmnotif_marcar_lote($pdo, $nid, $loteId, $filtroJson);
                             $alcancePush++;
                         }
                     }
                 }
                 crm_bitacora($pdo, $operador, 'difusion_sin_chat',
-                             'A ' . count($destinos) . ' jugador(es) sin chat: '
+                             'A ' . count($destinos) . ' jugador(es) sin chat'
+                             . ($progEn ? " (push programado $progEn)" : '') . ': '
                              . mb_substr($mensajeChat ?: $cuerpo, 0, 120));
                 salir(['ok' => true, 'alcance' => $incluyeChat ? $alcanceChat : $alcancePush,
                        'alcance_chat' => $alcanceChat, 'alcance_push' => $alcancePush,
-                       'canal' => $incluyeChat ? 'chat' : 'push']);
+                       'canal' => $incluyeChat ? 'chat' : 'push', 'programada_en' => $progEn]);
             }
 
             if (!$todos && $usuario === '') {
@@ -1648,18 +1694,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            // Programación opcional (difusiones a futuro). Llega como
-            // 'programada_en' en formato "YYYY-MM-DD HH:MM" (hora de Argentina,
-            // lo que ve el agente). Se convierte a UTC para guardar y comparar.
-            $progEn = null;
-            $progRaw = trim((string)($body['programada_en'] ?? ''));
-            if ($progRaw !== '') {
-                $progEn = crm_parse_programada($progRaw);
-                if ($progEn === null) {
-                    salir(['ok' => false, 'error' => 'Fecha/hora de programación inválida'], 400);
-                }
-            }
-
+            // ($progEn ya viene parseado arriba, antes de las ramas por filtro.)
             $pushId = null;
             if ($incluyePush) {
                 $pushId = notif_crear($pdo, $usuario, $titulo, $cuerpo,

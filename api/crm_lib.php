@@ -408,8 +408,12 @@ if (!function_exists('crm_difusion_chat_aplicar')) {
             $st->execute([mb_substr($usuario, 0, 50)]);
             $id = $st->fetchColumn();
             if (!$id) { return 0; }
+            /* SIN no_leidos + 1: ese contador es "mensajes del JUGADOR que el
+               agente no leyo" (badge de la bandeja del CRM). Una difusion la
+               escribe el propio agente -- sumarla marcaba como pendiente algo
+               que ya se sabe, y una masiva pintaba la bandeja ENTERA. */
             crm_mensaje($pdo, (int)$id, 'agente', $texto, $meta);
-            $pdo->prepare("UPDATE conversaciones SET preview = ?, no_leidos = no_leidos + 1, actualizada_en = NOW() WHERE id = ?")
+            $pdo->prepare("UPDATE conversaciones SET preview = ?, actualizada_en = NOW() WHERE id = ?")
                 ->execute([mb_substr($texto, 0, 280), $id]);
             return 1;
         }
@@ -420,7 +424,9 @@ if (!function_exists('crm_difusion_chat_aplicar')) {
         // (cientos/pocos miles de chats) esto es instantáneo.
         $ids = $pdo->query("SELECT id FROM conversaciones WHERE usuario IS NOT NULL AND usuario <> ''")
                    ->fetchAll(PDO::FETCH_COLUMN);
-        $upd = $pdo->prepare("UPDATE conversaciones SET preview = ?, no_leidos = no_leidos + 1, actualizada_en = NOW() WHERE id = ?");
+        // Sin no_leidos+1 (mismo motivo que arriba): la masiva marcaba la
+        // bandeja ENTERA como sin leer por un mensaje del propio agente.
+        $upd = $pdo->prepare("UPDATE conversaciones SET preview = ?, actualizada_en = NOW() WHERE id = ?");
         $previewTxt = mb_substr($texto, 0, 280);
         foreach ($ids as $id) {
             crm_mensaje($pdo, (int)$id, 'agente', $texto);

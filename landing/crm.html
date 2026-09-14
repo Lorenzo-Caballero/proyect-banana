@@ -1917,6 +1917,14 @@
   .nv-inactivos-cfg input[type=number]{width:70px;background:var(--panel);border:1px solid var(--line);
     border-radius:9px;padding:7px 9px;color:var(--txt);font-size:13px}
   .nv-alcance{color:var(--violet2);font-weight:700}
+  /* Alcance a la vista en cada audiencia: el numero es la decision. */
+  .nv-alcance-chip{display:inline-block;min-width:26px;text-align:center;padding:1px 8px;margin-left:6px;
+    border-radius:999px;background:var(--greenSoft);color:var(--green);font-size:12px;font-weight:800}
+  .nv-dias-inline{width:58px;background:var(--panel);border:1px solid var(--line);border-radius:7px;
+    color:var(--txt);padding:2px 6px;text-align:center;font:inherit}
+  /* Canal no disponible para la audiencia elegida (ej. inactivos sin chat):
+     se ve y se explica AL ELEGIR, no con un toast al final. */
+  .n-canal-toggle .ag-rol-opt.off{opacity:.42;pointer-events:none;filter:grayscale(1)}
   .nv-presets{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:12px}
   .nv-presets select{flex:1;min-width:140px;background:var(--panel2);border:1px solid var(--line);
     border-radius:9px;padding:8px 10px;color:var(--txt);font-size:12.5px}
@@ -2096,7 +2104,7 @@
       <button class="rail-item" data-nav="retiros" data-tip="Retiros pendientes" data-corto="Retiros"><svg viewBox="0 0 24 24"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg><span class="rail-badge" id="badgeRetiros"></span></button>
       <button class="rail-item" data-nav="comprobantes" data-tip="Comprobantes" data-corto="Compr."><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg><span class="rail-badge" id="badgeComprobantes"></span></button>
       <button class="rail-item" data-nav="peticiones" data-tip="Cargas pedidas dentro del juego" data-corto="Panel"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg><span class="rail-badge" id="badgePeticiones"></span></button>
-      <button class="rail-item" data-nav="push" data-tip="Push & Notificaciones" data-corto="Push"><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></button>
+      <button class="rail-item" data-nav="push" data-tip="Difusión y avisos" data-corto="Difusión"><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></button>
       <button class="rail-item" data-nav="publicidad" data-tip="Publicidad" data-corto="Public."><svg viewBox="0 0 24 24"><path d="M3 11v2a1 1 0 0 0 1 1h3l5 4V6L7 10H4a1 1 0 0 0-1 1z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 6a9 9 0 0 1 0 12"/></svg></button>
       <button class="rail-item" data-nav="landings" data-tip="Landings" data-corto="Landings"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><circle cx="6.5" cy="6.5" r=".8" fill="currentColor" stroke="none"/><circle cx="9.5" cy="6.5" r=".8" fill="currentColor" stroke="none"/><path d="M7 13h6M7 16h4"/></svg></button>
       <button class="rail-item" data-nav="chatbot" data-tip="Chatbot (IA)" data-corto="Chatbot"><svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M12 8V4M9 4h6"/><circle cx="8.5" cy="14" r="1.3" fill="currentColor" stroke="none"/><circle cx="15.5" cy="14" r="1.3" fill="currentColor" stroke="none"/></svg></button>
@@ -2879,18 +2887,69 @@
   <!-- ====================== NOTIFICACIONES (Push) ====================== -->
   <div class="card-col view-panel" id="viewNotificaciones" style="display:none">
     <div class="comp-head">
-      <b>Notificaciones</b>
-      <span class="cap" id="nvCap"></span>
+      <b>Difusiones y avisos</b>
     </div>
     <div class="nv-tabs">
-      <button class="nv-tab on" data-nvtab="enviar">Enviar</button>
+      <!-- Difusion y aviso individual SEPARADOS a pedido de Nahuel: antes
+           convivian en un solo formulario "Enviar" y el modo quedaba
+           escondido en un radio de Destinatarios -- un despiste y el aviso
+           para un jugador salia para todos (o al reves). Las dos pestañas
+           comparten el editor de mensaje (#nvComun): un solo juego de campos
+           y de JS. -->
+      <button class="nv-tab on" data-nvtab="difusion">📢 Difusión</button>
+      <button class="nv-tab" data-nvtab="jugador">👤 A un jugador</button>
       <button class="nv-tab" data-nvtab="historial">Historial</button>
       <button class="nv-tab" data-nvtab="bonos">Bonos pendientes</button>
     </div>
     <div class="nv-body">
 
-      <!-- ---------- Enviar ---------- -->
-      <div class="nv-pane on" id="nvPaneEnviar">
+      <!-- ---------- Difusión: a quiénes ---------- -->
+      <div class="nv-pane on" id="nvPaneDifusion">
+        <div class="nv-sec">¿A quiénes?</div>
+        <div class="nv-audiencia" id="nvAudiencia">
+          <label class="nv-aud-opt on" data-aud="todos">
+            <input type="radio" name="nvAud" value="todos" checked>
+            <b>Todos <span class="nv-alcance-chip" id="nvNTodos">…</span></b>
+            <span>Todos los jugadores. La push llega a los celulares activos (el número);
+                  el chat, a toda conversación con usuario.</span>
+          </label>
+          <label class="nv-aud-opt" data-aud="inactivos">
+            <input type="radio" name="nvAud" value="inactivos">
+            <b>Inactivos <span class="nv-alcance-chip" id="nvNInactivos">…</span></b>
+            <span>Sin ninguna carga por transferencia hace más de
+                  <input type="number" id="nvDias" min="1" value="7" class="nv-dias-inline"> días
+                  (quien nunca cargó, siempre entra). <b>Va solo por push.</b></span>
+          </label>
+          <label class="nv-aud-opt" data-aud="sin_chat">
+            <input type="radio" name="nvAud" value="sin_chat">
+            <b>Nunca escribieron <span class="nv-alcance-chip" id="nvNSinChat">…</span></b>
+            <span>Existen como jugadores y jamás mandaron un mensaje. El chat les queda
+                  esperando y lo ven al abrirlo por primera vez; la push solo les llega
+                  si tienen la app.</span>
+          </label>
+        </div>
+        <div class="nv-presets">
+          <select id="nvPresetSel"><option value="">— Preset guardado —</option></select>
+          <button class="btn-mini-accion" id="nvPresetUsar" type="button">Usar</button>
+          <button class="btn-mini-accion" id="nvPresetGuardar" type="button">Guardar actual…</button>
+          <button class="btn-mini-accion peligro" id="nvPresetBorrar" type="button">Borrar</button>
+        </div>
+      </div>
+
+      <!-- ---------- A un jugador: a quién ---------- -->
+      <div class="nv-pane" id="nvPaneJugador">
+        <div class="nv-sec">¿A quién?</div>
+        <label for="nvUsuarioInput">Jugador</label>
+        <input id="nvUsuarioInput" type="text" autocomplete="off"
+               placeholder="El nombre exacto con el que juega">
+        <p class="ag-modal-hint" id="nvUsuarioHint">
+          Con una conversación abierta se completa solo; también podés tipear
+          cualquier usuario. El server verifica que exista antes de mandar.
+        </p>
+      </div>
+
+      <!-- ---------- Común a las dos: canal, mensaje, cuándo ---------- -->
+      <div id="nvComun">
         <div class="nv-sec">Canal</div>
         <div class="ag-rol-toggle n-canal-toggle">
           <label class="ag-rol-opt on" data-canal="push">
@@ -2946,61 +3005,19 @@
             </div>
           </div>
 
-          <!-- columna derecha: a quién y cuándo -->
+          <!-- columna derecha: cuándo -->
           <div class="n-col">
-            <div class="nv-sec">Destinatarios</div>
-            <div class="nv-audiencia" id="nvAudiencia">
-              <label class="nv-aud-opt on" data-aud="todos">
-                <input type="radio" name="nvAud" value="todos" checked>
-                <b>Todos</b>
-                <span>Todos los jugadores con la app.</span>
-              </label>
-              <label class="nv-aud-opt" data-aud="usuario">
-                <input type="radio" name="nvAud" value="usuario">
-                <b>Un jugador</b>
-                <span id="nvAudUsuarioTxt">El de la conversación abierta.</span>
-              </label>
-              <label class="nv-aud-opt" data-aud="inactivos" style="grid-column:1/-1">
-                <input type="radio" name="nvAud" value="inactivos">
-                <b>Inactivos</b>
-                <span>No cargó fichas hace más de N días (sin ninguna carga = siempre entra).</span>
-              </label>
-              <!-- El único destinatario que NO sale de las conversaciones: sale
-                   de `usuarios`. Son los que existen como jugadores y nunca
-                   escribieron, así que no tienen chat en la bandeja y ninguna
-                   difusión los alcanzaba. -->
-              <label class="nv-aud-opt" data-aud="sin_chat" style="grid-column:1/-1">
-                <input type="radio" name="nvAud" value="sin_chat">
-                <b>Nunca escribieron</b>
-                <span>Existen como jugadores pero jamás mandaron un mensaje. El
-                      chat les queda esperando y lo ven la primera vez que lo
-                      abren; el push solo les llega si tienen la app.
-                      <button class="btn-mini-accion" id="nvVerAlcanceSinChat"
-                              type="button">Ver a cuántos</button></span>
-              </label>
-            </div>
-            <div class="nv-inactivos-cfg" id="nvInactivosCfg">
-              <span>Más de</span>
-              <input type="number" id="nvDias" min="0" value="7">
-              <span>días sin cargar</span>
-              <button class="btn-mini-accion" id="nvVerAlcance" type="button">Ver alcance</button>
-              <span id="nvAlcanceTxt"></span>
-            </div>
-            <div class="nv-presets">
-              <select id="nvPresetSel"><option value="">— Preset guardado —</option></select>
-              <button class="btn-mini-accion" id="nvPresetUsar" type="button">Usar</button>
-              <button class="btn-mini-accion" id="nvPresetGuardar" type="button">Guardar actual…</button>
-              <button class="btn-mini-accion peligro" id="nvPresetBorrar" type="button">Borrar</button>
-            </div>
-
             <div class="nv-sec">Cuándo</div>
             <label class="todos" for="nProgramar">
               <input type="checkbox" id="nProgramar">
-              <span><b>Programar para más tarde</b>En vez de enviarla ahora, elegí cuándo sale (hora de Argentina).</span>
+              <span><b>Programar para más tarde</b>En vez de enviarla ahora, elegí cuándo sale
+                    (<b>hora de Argentina</b>, sin importar dónde esté tu PC).</span>
             </label>
             <div id="nCuando" style="display:none">
-              <label for="nFecha">Fecha y hora</label>
+              <label for="nFecha">Fecha y hora (de Argentina)</label>
               <input id="nFecha" type="datetime-local">
+              <p class="ag-modal-hint">Inactivos también se puede programar. La siembra de chats a
+                 «Nunca escribieron» no: esa sale en el momento.</p>
             </div>
 
             <div class="n-programadas" id="nProgramadasWrap">
@@ -3022,6 +3039,9 @@
           <label class="search">
             <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
             <input id="nvHUsuario" placeholder="Filtrar por usuario…" autocomplete="off">
+          </label>
+          <label class="cb-check" style="margin:0;white-space:nowrap" title="Esconde los avisos automáticos (respuestas del chat, promos del sistema) y deja solo lo que mandó un operador">
+            <input type="checkbox" id="nvHSoloDif" checked><span>Solo difusiones</span>
           </label>
           <select id="nvHTipo">
             <option value="">Todos los tipos</option>
@@ -5576,7 +5596,7 @@
     chats:"Conversaciones", usuarios:"Usuarios", cargas:"Cargas por transferencia",
     transacciones:"Auditoría", finanzas:"Finanzas", retiros:"Retiros",
     comprobantes:"Comprobantes", peticiones:"Cargas pedidas en el juego",
-    notificaciones:"Notificaciones",
+    notificaciones:"Difusiones",
     publicidad:"Publicidad",
     landings:"Landings",
     chatbot:"Chatbot", agentes:"Agentes", suscripcion:"Mi suscripción",
@@ -10244,6 +10264,17 @@
     document.querySelectorAll("#nChips .chip").forEach(x=>x.classList.toggle("on", x===b));
     nTipo = p.tipo; $("#nTitulo").value = p.t; $("#nCuerpo").value = p.c;
   });
+  /* Si despues del chip el operador escribe OTRA cosa, el tipo del chip ya no
+     describe el envio: se vuelve a "promo" y se apaga el chip. Sin esto, el
+     historial clasificaba como "bono" un texto que no tenia nada que ver. */
+  ["nTitulo","nCuerpo"].forEach(id => $("#"+id).addEventListener("input", ()=>{
+    const chipOn = document.querySelector("#nChips .chip.on");
+    if(!chipOn) return;
+    const p = PLANTILLAS[+chipOn.getAttribute("data-i")];
+    if($("#nTitulo").value !== p.t || $("#nCuerpo").value !== p.c){
+      chipOn.classList.remove("on"); nTipo = "promo";
+    }
+  }));
 
   function nSetCanal(canal){
     document.querySelectorAll('input[name="nCanal"]').forEach(r=>{ r.checked = r.value===canal; });
@@ -10264,58 +10295,85 @@
       const tab = btn.getAttribute("data-nvtab");
       document.querySelectorAll(".nv-tab").forEach(b=>b.classList.toggle("on", b===btn));
       document.querySelectorAll(".nv-pane").forEach(p=>p.classList.remove("on"));
-      $("#nvPane" + tab[0].toUpperCase() + tab.slice(1)).classList.add("on");
+      const PANE = { difusion:"#nvPaneDifusion", jugador:"#nvPaneJugador",
+                     historial:"#nvPaneHistorial", bonos:"#nvPaneBonos" };
+      document.querySelector(PANE[tab]).classList.add("on");
+      nvTabActual = tab;
+      // El editor de mensaje es comun a Difusion y A-un-jugador; en las
+      // pestañas de consulta se esconde entero.
+      $("#nvComun").style.display = (tab==="difusion"||tab==="jugador") ? "" : "none";
+      if(tab==="difusion"){ nvCargarAlcances(); }
+      if(tab==="jugador" && st.usuario && !$("#nvUsuarioInput").value.trim()){
+        $("#nvUsuarioInput").value = st.usuario;
+      }
       if(tab==="historial"){ nvHistorialPagina = 1; cargarHistorial(); }
       if(tab==="bonos"){ cargarBonos(); }
+      if(typeof nvPintarResumen==="function") nvPintarResumen();
     });
   });
+  let nvTabActual = "difusion";
+  function nvIrATab(tab){ document.querySelector(`.nv-tab[data-nvtab="${tab}"]`)?.click(); }
 
-  // ---- Audiencia (todos / un jugador / inactivos) ----
+  // ---- Audiencia de la difusion (todos / inactivos / sin_chat) ----
   function nvSetAudiencia(modo){
     document.querySelectorAll('input[name="nvAud"]').forEach(r=>{ r.checked = r.value===modo; });
     document.querySelectorAll(".nv-aud-opt").forEach(el=>{
       el.classList.toggle("on", el.getAttribute("data-aud")===modo);
     });
-    $("#nvInactivosCfg").classList.toggle("on", modo==="inactivos");
-    $("#nvAlcanceTxt").textContent = "";
+    /* Inactivos va SOLO por push (no hay chat masivo para ese filtro): el
+       canal se deshabilita AL ELEGIR la audiencia, con el porque a la vista
+       -- antes te enterabas con un toast al final, con todo ya redactado. */
+    const soloPush = modo === "inactivos";
+    document.querySelectorAll(".n-canal-toggle .ag-rol-opt").forEach(el=>{
+      const c = el.getAttribute("data-canal");
+      el.classList.toggle("off", soloPush && c !== "push");
+    });
+    if(soloPush) nSetCanal("push");
+    if(typeof nvPintarResumen==="function") nvPintarResumen();
   }
   document.querySelectorAll(".nv-aud-opt").forEach(el=>{
-    el.addEventListener("click", ()=> nvSetAudiencia(el.getAttribute("data-aud")));
+    el.addEventListener("click", e=>{
+      if(e.target.id === "nvDias") return;   // tocar el numero no cambia la audiencia
+      nvSetAudiencia(el.getAttribute("data-aud"));
+    });
   });
-  async function nvVerAlcance(){
-    const sinChat = nvAudActual()==="sin_chat";
-    $("#nvAlcanceTxt").textContent = "Calculando…";
-    try{
-      const d = sinChat
-        ? await jget({accion:"notif_alcance_sin_chat"})
-        : await jget({accion:"notif_alcance_inactivos", dias: Math.max(0, +$("#nvDias").value || 0)});
-      $("#nvAlcanceTxt").innerHTML = d.ok
-        ? `<span class="nv-alcance">${d.alcance}</span> jugador${d.alcance===1?"":"es"}`
-        : "Error";
-    } catch(e){ $("#nvAlcanceTxt").textContent = "Error"; }
-  }
-  $("#nvVerAlcance").addEventListener("click", nvVerAlcance);
-  $("#nvVerAlcanceSinChat").addEventListener("click", nvVerAlcance);
 
+  /* Los alcances se cargan SOLOS al entrar: el numero al lado de cada
+     audiencia es la decision ("¿le pego a 12 o a 900?"), no puede vivir
+     detras de un boton que nadie toca. */
+  async function nvCargarAlcances(){
+    const pinta = (id, v)=>{ const el=$("#"+id); if(el) el.textContent = (v===null?"?":nf.format(v)); };
+    try{ const d = await jget({accion:"notif_alcance_todos"});     pinta("nvNTodos", d.ok?d.alcance:null); }catch(e){ pinta("nvNTodos",null); }
+    try{ const d = await jget({accion:"notif_alcance_inactivos", dias: Math.max(1, +$("#nvDias").value||7)}); pinta("nvNInactivos", d.ok?d.alcance:null); }catch(e){ pinta("nvNInactivos",null); }
+    try{ const d = await jget({accion:"notif_alcance_sin_chat"});  pinta("nvNSinChat", d.ok?d.alcance:null); }catch(e){ pinta("nvNSinChat",null); }
+  }
+  // Cambiar los dias re-calcula ese alcance (con un respiro para no pedir por tecla).
+  let nvDiasTimer = null;
+  $("#nvDias").addEventListener("input", ()=>{
+    clearTimeout(nvDiasTimer);
+    nvDiasTimer = setTimeout(async ()=>{
+      try{
+        const d = await jget({accion:"notif_alcance_inactivos", dias: Math.max(1, +$("#nvDias").value||7)});
+        const el=$("#nvNInactivos"); if(el && d.ok) el.textContent = nf.format(d.alcance);
+      }catch(e){}
+    }, 450);
+  });
+
+  let nvIrA = null;   // a que pestaña abrir la vista ("jugador" desde el boton de la conversacion)
   function abrirNotif(){
-    if(st.usuario){
-      $("#nvAudUsuarioTxt").textContent = `@${st.usuario} (conversación abierta)`;
-      nvSetAudiencia("usuario");
-    } else {
-      $("#nvAudUsuarioTxt").textContent = "Abrí una conversación para elegir un jugador puntual.";
-      nvSetAudiencia("todos");
+    /* SIN reset del borrador: cambiar de vista para copiar un dato y volver
+       borraba todo lo redactado. Solo se refrescan los datos vivos. El
+       boton "Notificar" de una conversacion abre la pestaña A-un-jugador
+       con ese jugador puesto; el rail abre siempre Difusion (lo masivo es
+       el proposito de la vista, y el envio individual queda explicito). */
+    if(st.usuario && !$("#nvUsuarioInput").value.trim()){
+      $("#nvUsuarioInput").value = st.usuario;
     }
-    $("#nTitulo").value=""; $("#nCuerpo").value=""; $("#nMensajeChat").value=""; nTipo="promo";
-    document.querySelectorAll("#nChips .chip").forEach(x=>x.classList.remove("on"));
-    nSetCanal("push");
-    $("#nProgramar").checked=false; $("#nCuando").style.display="none"; $("#nFecha").value="";
-    $("#nOk").textContent="Enviar";
+    nvIrATab(nvIrA === "jugador" ? "jugador" : "difusion");
+    nvIrA = null;
     cargarProgramadas();
     cargarPresets();
-    // Preview y resumen al estado recien reseteado (typeof: por si el
-    // bloque de UI todavia no se definio en el orden del archivo).
     if(typeof nvPintarPreview==="function"){ nvPintarPreview(); nvPintarResumen(); }
-    setTimeout(()=>$("#nTitulo").focus(),50);
   }
 
   const N_CANAL_ICO = { push: ico("movil"), chat: ico("globo") };
@@ -10363,9 +10421,12 @@
     const p = nvPresets.find(x=>x.id===id);
     if(!p){ toast("Elegí un preset"); return; }
     const f = p.filtro || {};
+    // Solo audiencias de DIFUSION: un preset "usuario" guardado por una
+    // version vieja no tiene a quien apuntar (no guardaba el nombre).
     if(f.modo==="inactivos"){ nvSetAudiencia("inactivos"); $("#nvDias").value = f.dias ?? 7; }
-    else if(f.modo==="usuario"){ nvSetAudiencia("usuario"); }
+    else if(f.modo==="sin_chat"){ nvSetAudiencia("sin_chat"); }
     else { nvSetAudiencia("todos"); }
+    nvCargarAlcances();
     toast(`Preset "${p.nombre}" aplicado`);
   });
   $("#nvPresetGuardar").addEventListener("click", async ()=>{
@@ -10385,18 +10446,27 @@
     if(d.ok){ toast("Preset borrado"); cargarPresets(); } else { toast(d.error || "No se pudo borrar"); }
   });
 
-  $("#btnNotif").addEventListener("click", ()=> navegar("notificaciones"));
+  // Desde una conversacion, el boton abre directo la pestaña A-un-jugador
+  // con ese jugador puesto; el rail abre Difusion.
+  $("#btnNotif").addEventListener("click", ()=>{ nvIrA = "jugador"; navegar("notificaciones"); });
   $("#nProgramar").addEventListener("change", ()=>{
     const on = $("#nProgramar").checked;
     $("#nCuando").style.display = on ? "block" : "none";
-    $("#nOk").textContent = on ? "Programar" : "Enviar";
     if(on && !$("#nFecha").value){
-      // Sugerir "dentro de 1 hora" como punto de partida (hora local del navegador).
-      const t = new Date(Date.now() + 3600000);
+      /* Sugerir "dentro de 1 hora" EN HORA DE ARGENTINA: el backend siempre
+         interpreta este campo como hora argentina, y sugerirla en la hora
+         local del navegador hacia que una PC en otro huso programara a otra
+         hora sin aviso. */
+      let t;
+      try{
+        t = new Date(new Date(Date.now() + 3600000)
+              .toLocaleString("en-US", { timeZone: "America/Argentina/Buenos_Aires" }));
+      }catch(e){ t = new Date(Date.now() + 3600000); }
       const p = n => String(n).padStart(2,"0");
       $("#nFecha").value = `${t.getFullYear()}-${p(t.getMonth()+1)}-${p(t.getDate())}T${p(t.getHours())}:${p(t.getMinutes())}`;
       $("#nFecha").focus();
     }
+    if(typeof nvPintarResumen==="function") nvPintarResumen();
   });
   /* ---- vista previa + resumen en vivo -------------------------------
      El resumen existe para el "medir dos veces": un push masivo no se
@@ -10421,19 +10491,28 @@
 
   function nvPintarResumen(){
     const canal = {push:"Push", chat:"Chat", ambos:"Push + Chat"}[nvCanalActual()];
-    const aud = nvAudActual()==="inactivos"
-      ? ("inactivos hace " + ($("#nvDias").value||0) + "+ días")
-      : nvAudActual()==="sin_chat" ? "los que nunca escribieron"
-      : (nvAudActual()==="usuario" ? "un jugador" : "todos los jugadores");
+    const esJugador = nvTabActual === "jugador";
+    const quien = ($("#nvUsuarioInput").value||"").trim();
+    const aud = esJugador
+      ? (quien ? "@"+quien : "un jugador (falta el nombre)")
+      : nvAudActual()==="inactivos" ? ("inactivos hace " + ($("#nvDias").value||0) + "+ días")
+      : nvAudActual()==="sin_chat"  ? "los que nunca escribieron"
+      : "todos los jugadores";
     let cuando = "ahora";
     if($("#nProgramar").checked){
       const f = $("#nFecha").value;
-      cuando = f ? ("el " + f.replace("T"," ") + " hs") : "programado (falta la fecha)";
+      cuando = f ? ("el " + f.replace("T"," ") + " hs (Argentina)") : "programado (falta la fecha)";
     }
     $("#nvResumen").innerHTML = "Se envía por <b>"+canal+"</b> a <b>"+aud+"</b> · <b>"+cuando+"</b>";
+    /* El boton dice QUE va a pasar: "Enviar difusión" no se confunde con
+       mandarle a uno. */
+    const prog = $("#nProgramar").checked;
+    $("#nOk").textContent = esJugador
+      ? (prog ? "Programar aviso" : (quien ? "Enviar a @"+quien : "Enviar aviso"))
+      : (prog ? "Programar difusión" : "Enviar difusión");
   }
 
-  ["nTitulo","nCuerpo","nMensajeChat","nvDias","nFecha"].forEach(id=>
+  ["nTitulo","nCuerpo","nMensajeChat","nvDias","nFecha","nvUsuarioInput"].forEach(id=>
     $("#"+id).addEventListener("input", ()=>{ nvPintarPreview(); nvPintarResumen(); }));
   document.querySelectorAll('input[name="nCanal"], input[name="nvAud"]').forEach(r=>
     r.addEventListener("change", ()=>{ nvPintarPreview(); nvPintarResumen(); }));
@@ -10444,14 +10523,24 @@
     const canal = document.querySelector('input[name="nCanal"]:checked').value;
     const incluyePush = canal==="push" || canal==="ambos";
     const incluyeChat = canal==="chat" || canal==="ambos";
-    const modoAud = document.querySelector('input[name="nvAud"]:checked').value;
+    /* La pestaña ES el modo: Difusion manda a la audiencia elegida; A-un-
+       jugador manda al del input. Ya no hay forma de mandarle "a todos"
+       creyendo que era a uno. */
+    const esJugador = nvTabActual === "jugador";
+    const usuarioDest = ($("#nvUsuarioInput").value||"").trim();
+    const modoAud = esJugador ? "usuario"
+                  : document.querySelector('input[name="nvAud"]:checked').value;
 
     const titulo = $("#nTitulo").value.trim(), cuerpo = $("#nCuerpo").value.trim();
     const mensajeChat = $("#nMensajeChat").value.trim();
     if(incluyePush && (!titulo || !cuerpo)){ toast("Poné título y mensaje del push"); return; }
-    if(incluyeChat && !mensajeChat && !cuerpo){ toast("Poné el mensaje de chat"); return; }
-    if(modoAud==="usuario" && !st.usuario){ toast("Abrí una conversación para elegir un jugador puntual"); return; }
-    if(modoAud==="inactivos" && incluyeChat){ toast('El filtro "Inactivos" solo manda por push, no por chat'); return; }
+    /* Canal SOLO chat exige su propio texto: antes aceptaba de sustituto el
+       campo del push (oculto), y salia un residuo de borrador sin que nadie
+       lo viera. Con "Ambos" el cuerpo del push sigue valiendo de respaldo,
+       porque esta a la vista. */
+    if(canal==="chat" && !mensajeChat){ toast("Poné el mensaje de chat"); return; }
+    if(canal==="ambos" && !mensajeChat && !cuerpo){ toast("Poné el mensaje de chat"); return; }
+    if(esJugador && !usuarioDest){ toast("Poné el nombre del jugador"); return; }
 
     const todos = modoAud==="todos";
     const programar = $("#nProgramar").checked;
@@ -10463,8 +10552,8 @@
 
     const cuando = programar ? "PROGRAMAR para " + $("#nFecha").value.replace("T"," ") + " (hora Argentina)" : "ENVIAR ahora";
     let confirmMsg = null;
-    if(todos) confirmMsg = `Se la va a mandar a TODOS los jugadores${incluyeChat?" (push y/o chat)":""}.\n\n${cuando}.\n\n¿Seguro?`;
-    if(modoAud==="inactivos") confirmMsg = `Se la va a mandar a los jugadores inactivos hace más de ${Math.max(0,+$("#nvDias").value||0)} días.\n\n${cuando}.\n\n¿Seguro?`;
+    if(todos) confirmMsg = `DIFUSIÓN a TODOS los jugadores (~${$("#nvNTodos").textContent} celulares activos)${incluyeChat?" y sus chats":""}.\n\n${cuando}.\n\n¿Seguro?`;
+    if(modoAud==="inactivos") confirmMsg = `DIFUSIÓN a los ~${$("#nvNInactivos").textContent} jugadores inactivos hace más de ${Math.max(1,+$("#nvDias").value||1)} días.\n\n${cuando}.\n\n¿Seguro?`;
     // Este avisa de más a propósito: a estos jugadores se les CREA la
     // conversación, así que la bandeja se llena de chats que antes no existían.
     if(modoAud==="sin_chat") confirmMsg = `Se la va a mandar a TODOS los jugadores que nunca escribieron.
@@ -10476,34 +10565,37 @@ ${cuando}.
 ¿Seguro?`;
     if(confirmMsg && !confirm(confirmMsg)) return;
 
-    const filtro = modoAud==="inactivos" ? { modo:"inactivos", dias: Math.max(0, +$("#nvDias").value || 0) }
+    const filtro = modoAud==="inactivos" ? { modo:"inactivos", dias: Math.max(1, +$("#nvDias").value || 1) }
                  : modoAud==="sin_chat"  ? { modo:"sin_chat" }
                  : undefined;
-    const btn=$("#nOk"); btn.disabled=true; const txtBtn=programar?"Programar":"Enviar"; btn.textContent="…";
+    const btn=$("#nOk"); btn.disabled=true; btn.textContent="…";
     // La masiva/inactivos no deja rastro en ningún hilo: no es de esa conversación.
-    const d = await jpost({ accion:"notificar", todos, usuario: modoAud==="usuario" ? st.usuario : undefined,
+    // El destinatario individual: el del input (si coincide con la conversación
+    // abierta, el rastro queda en ese hilo).
+    const d = await jpost({ accion:"notificar", todos, usuario: esJugador ? usuarioDest : undefined,
                             filtro, canal, titulo, cuerpo, mensaje_chat: mensajeChat || undefined, tipo:nTipo,
                             programada_en: programada || undefined,
-                            conversacion_id: modoAud==="usuario" ? st.convId : undefined });
-    btn.disabled=false; btn.textContent=txtBtn;
+                            conversacion_id: (esJugador && st.usuario===usuarioDest) ? st.convId : undefined });
+    btn.disabled=false; nvPintarResumen();
     if(d.ok){
       if(d.programada_en){
-        toast(`Programada — sale el ${$("#nFecha").value.replace("T"," ")}`);
+        toast(`Programada — sale el ${$("#nFecha").value.replace("T"," ")} (hora Argentina)`);
       } else if(modoAud==="inactivos"){
         toast(`Enviado a ${d.alcance} jugador${d.alcance===1?"":"es"} inactivo${d.alcance===1?"":"s"}`);
       } else if(modoAud==="sin_chat"){
-        // Se avisa "esperando" y no "enviado" porque es literal: el mensaje
-        // queda en su chat y lo ve cuando lo abra. Decir "enviado" haría creer
-        // que le sonó el celular.
-        toast(d.alcance ? `Esperando en el chat de ${d.alcance} jugador${d.alcance===1?"":"es"}`
-                        : (d.aviso || "No había ninguno sin chat"));
+        /* El toast dice lo que PASO segun el canal: antes decia "esperando en
+           el chat" aunque solo se hubiera mandado push. */
+        const partes = [];
+        if(incluyeChat) partes.push(d.alcance_chat ? `esperando en el chat de ${d.alcance_chat}` : "sin chats nuevos");
+        if(incluyePush) partes.push(d.alcance_push ? `push a ${d.alcance_push}` : "push a 0 (sin la app)");
+        toast(partes.length ? partes.join(" · ") : (d.aviso || "No había ninguno sin chat"));
       } else {
         const partes = [];
         if(incluyePush) partes.push(d.alcance ? `push a ${d.alcance} celular${d.alcance===1?"":"es"}` : "push encolado");
         if(incluyeChat) partes.push(d.chat_alcance!=null ? `chat en ${d.chat_alcance} conversaci${d.chat_alcance===1?"ón":"ones"}` : "chat enviado");
         toast(partes.join(" · ") || "Enviado");
       }
-      if(st.convId) abrir(st.convId);
+      if(esJugador && st.convId && st.usuario===usuarioDest) abrir(st.convId);
       cargarProgramadas();
     } else { toast(d.error || "No se pudo enviar"); }
   });
@@ -10517,6 +10609,7 @@ ${cuando}.
     const opts = { accion:"notif_historial", pagina: nvHistorialPagina };
     const usuario = $("#nvHUsuario").value.trim(); if(usuario) opts.usuario = usuario;
     const tipo = $("#nvHTipo").value; if(tipo) opts.tipo = tipo;
+    if($("#nvHSoloDif").checked) opts.solo_difusiones = 1;
     const desde = $("#nvHDesde").value; if(desde) opts.desde = desde;
     const hasta = $("#nvHHasta").value; if(hasta) opts.hasta = hasta;
     let d;
@@ -10542,6 +10635,7 @@ ${cuando}.
     $("#nvHPrev").disabled = d.pagina<=1;
     $("#nvHNext").disabled = d.pagina>=totalPag;
   }
+  $("#nvHSoloDif").addEventListener("change", ()=>{ nvHistorialPagina=1; cargarHistorial(); });
   $("#nvHBuscar").addEventListener("click", ()=>{ nvHistorialPagina=1; cargarHistorial(); });
   $("#nvHLimpiar").addEventListener("click", ()=>{
     $("#nvHUsuario").value=""; $("#nvHTipo").value=""; $("#nvHDesde").value=""; $("#nvHHasta").value="";

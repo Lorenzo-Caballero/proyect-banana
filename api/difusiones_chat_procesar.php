@@ -53,14 +53,29 @@ try {
     $procesadas = 0;
     $totalMensajes = 0;
     foreach ($pendientes as $d) {
-        $alcance = crm_difusion_chat_aplicar($pdo, $d['usuario'], $d['texto']);
-        // Marcar procesada SIEMPRE, incluso si $alcance es 0 (usuario sin
-        // conversación todavía): reintentarla de nuevo no cambiaría nada, y
-        // dejarla "pendiente para siempre" ensuciaría el listado del CRM.
-        $marcar->execute([$alcance, (int)$d['id']]);
-        if ($marcar->rowCount() === 1) {
-            $procesadas++;
-            $totalMensajes += $alcance;
+        /* Aplicar y marcar EN UNA transaccion: antes iban sueltos, y si una
+           masiva reventaba a mitad del loop de conversaciones quedaba media
+           difusion insertada SIN marcar -- la proxima pasada la re-aplicaba
+           entera y esos chats recibian el mensaje DOS veces. Con la
+           transaccion: o entra todo y queda marcada, o no entra nada y se
+           reintenta limpia. */
+        try {
+            $pdo->beginTransaction();
+            $alcance = crm_difusion_chat_aplicar($pdo, $d['usuario'], $d['texto']);
+            // Marcar procesada SIEMPRE, incluso si $alcance es 0 (usuario sin
+            // conversación todavía): reintentarla de nuevo no cambiaría nada, y
+            // dejarla "pendiente para siempre" ensuciaría el listado del CRM.
+            $marcar->execute([$alcance, (int)$d['id']]);
+            $fue = $marcar->rowCount() === 1;
+            $pdo->commit();
+            if ($fue) {
+                $procesadas++;
+                $totalMensajes += $alcance;
+            }
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) { $pdo->rollBack(); }
+            error_log('difusiones_chat_procesar (difusion ' . $d['id'] . '): ' . $e->getMessage());
+            // Se sigue con la proxima: una difusion rota no frena la cola.
         }
     }
 
