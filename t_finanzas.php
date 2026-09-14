@@ -876,9 +876,15 @@ foreach (['ingresos','retiros','bonos','ganancia_bruta','costo_fichas','comision
 }
 
 $r = pedir('evolucion', ['desde' => $ayer, 'hasta' => $hoyStr]);
-foreach (['jugadores','recupero','serie'] as $k) {
+foreach (['jugadores','recupero','serie','ancla','dias_medidos'] as $k) {
     chequear("evolucion devuelve `$k`", array_key_exists($k, $r['body'] ?? []));
 }
+/* `dias_medidos` es lo que le permite a la pantalla NO afirmar lo que todavia
+   no se sabe: con el ancla puesta hace dos dias, "todos siguen activos" es que
+   nadie tuvo tiempo de irse, no retencion perfecta. */
+$dm = $r['body']['dias_medidos'] ?? null;
+chequear('dias_medidos es un numero o null, nunca basura',
+         $dm === null || (is_int($dm) && $dm >= 0), json_encode($dm));
 
 /* Una fecha invalida tiene que dar 400 y no un 500 con un stack adentro. */
 $r = pedir('rango', ['desde' => 'ayer', 'hasta' => $hoyStr]);

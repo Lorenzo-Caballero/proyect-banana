@@ -9359,6 +9359,12 @@
 
     const j = d.jugadores || {}, r = d.recupero || {}, serie = d.serie || [];
     const v = d.ventana;
+    /* HACE CUANTO QUE SE MIDE, y si eso alcanza para las métricas que necesitan
+       que pase el tiempo. Con el ancla puesta hace dos días, "todos siguen
+       activos" no es retención perfecta: es que nadie tuvo tiempo de irse. */
+    const dm = d.dias_medidos, corte = j.dias_activo || 30;
+    const joven = (dm != null && dm < corte);
+    const muyJoven = (dm != null && dm < 7);
 
     /* DE QUE POBLACION HABLA ESTE BLOQUE. No es un detalle: este negocio tuvo
        dos etapas separadas por más de un año y las cuentas de la vieja siguen
@@ -9369,6 +9375,13 @@
     if(intro){
       const fmt = s => String(s).slice(0,10).split("-").reverse().join("/");
       const a = d.ancla || {};
+      const avisoJoven = joven
+        ? "<br><br><b>Ojo: hace " + dm + (dm === 1 ? " día" : " días") + " que medís.</b> " +
+          "Los números de abajo ya son correctos, pero los que dependen de que pase el tiempo " +
+          "—cuántos se quedan, en cuánto se recupera lo que gastaste— todavía no pueden decir " +
+          "mucho: nadie tuvo tiempo de irse ni de volver. Van a significar algo a partir de los " +
+          corte + " días."
+        : "";
       intro.innerHTML = a.desde
         ? "Todo lo de arriba mira un rango de fechas. Esto mira <b>desde que usás el sistema</b> " +
           "(" + fmt(a.desde) + (a.fuente === "config" ? ", configurado" : "") + "): " +
@@ -9378,16 +9391,21 @@
               "mezclarlos abarataría el costo de adquisición, porque no los trajo esta pauta."
             : "")
         : "Todavía no cargó ningún jugador, así que no hay nada acumulado que mostrar.";
+      if(a.desde) intro.innerHTML += avisoJoven;
     }
 
     // --- Las cuatro tarjetas
     $("#fnEvoLtv").textContent = j.ganancia_promedio == null ? "—" : money(j.ganancia_promedio);
     $("#fnEvoLtv").style.color = (j.ganancia_promedio || 0) < 0 ? "var(--red)" : "";
+    /* Si todos siguen activos, los dos promedios COINCIDEN y repetir el número
+       hace ruido: se dice por qué coinciden, que es el dato útil. */
+    const mismos = (j.activos === j.jugadores);
     $("#fnEvoLtvSub").textContent = j.jugadores
-      ? "promedio de " + nf.format(j.jugadores) + " · " +
-        (j.ganancia_promedio_activos != null
-          ? money(j.ganancia_promedio_activos) + " los que siguen activos"
-          : (j.cargas_promedio || 0).toFixed(1) + " cargas cada uno")
+      ? "promedio de " + nf.format(j.jugadores) + " jugadores · " +
+        (mismos
+          ? (j.cargas_promedio || 0).toFixed(1) + " cargas cada uno"
+          : money(j.ganancia_promedio_activos) + " los que siguen activos") +
+        (muyJoven ? " · con " + dm + " días de historia" : "")
       : "todavía no cargó nadie";
 
     /* LA BASE ACTIVA, que es de lo que se trata el negocio: de los que trae la
@@ -9395,13 +9413,18 @@
        acumula es la base, no el total histórico de los que alguna vez pagaron. */
     const act = j.activos || 0, tot = j.jugadores || 0;
     $("#fnEvoBase").textContent = nf.format(act);
-    $("#fnEvoBaseSub").textContent = tot
-      ? act + " de " + tot + " siguen jugando · activo = cargó en los últimos " +
-        (j.dias_activo || 30) + " días"
-      : "todavía no cargó nadie";
+    $("#fnEvoBaseSub").textContent = !tot
+      ? "todavía no cargó nadie"
+      : (joven
+          ? "todos siguen activos porque hace " + dm + (dm === 1 ? " día" : " días") +
+            " que medís — nadie pudo irse todavía"
+          : act + " de " + tot + " siguen jugando · activo = cargó en los últimos " +
+            corte + " días");
     /* Menos de la mitad quedándose es una señal: estás pagando por gente que no
-       vuelve. Se pinta, pero solo cuando ya hay con qué comparar. */
-    $("#fnEvoBase").style.color = (tot >= 5 && act / tot < 0.5) ? "var(--orange2)" : "";
+       vuelve. Pero NO se pinta con una medición joven: ahí el 100% es un
+       artefacto del tiempo, no un logro, y el naranja tampoco significaría nada. */
+    $("#fnEvoBase").style.color =
+      (!joven && tot >= 5 && act / tot < 0.5) ? "var(--orange2)" : "";
 
     /* El costo del que SE QUEDA. Siempre más caro que el otro, y es el que
        decide si el modelo cierra: pagar por alguien que carga una vez y se va
@@ -9411,7 +9434,9 @@
     $("#fnEvoCpaActivoSub").textContent = !pauta
       ? "cargá el gasto en Publicidad"
       : (!act ? "ninguno de los que trajiste sigue activo"
-              : money(pauta) + " ÷ " + act + " que siguen");
+              : (joven
+                  ? "igual al de al lado por ahora: todavía no se fue nadie"
+                  : money(pauta) + " ÷ " + act + " que siguen"));
 
     $("#fnEvoCpa").textContent = r.cpa == null ? "—" : money(r.cpa);
     $("#fnEvoCpaSub").textContent = r.cpa == null
@@ -9424,8 +9449,13 @@
     if(r.dia_recupero != null){
       $("#fnEvoRecupero").textContent = r.dia_recupero === 0
         ? "el mismo día" : r.dia_recupero + (r.dia_recupero === 1 ? " día" : " días");
-      $("#fnEvoRecupero").style.color = "var(--green2)";
-      $("#fnEvoRecuperoSub").textContent = "desde su primera carga, y se sostiene";
+      /* Un recupero "sostenido" sobre pocos días no está sostenido: está sin
+         probar. Los retiros llegan más tarde que las cargas, así que los
+         primeros días de cualquier cohorte se ven siempre bien. */
+      $("#fnEvoRecupero").style.color = muyJoven ? "var(--orange2)" : "var(--green2)";
+      $("#fnEvoRecuperoSub").textContent = muyJoven
+        ? "pero con solo " + dm + (dm === 1 ? " día" : " días") + " medidos — falta que retiren"
+        : "desde su primera carga, y se sostiene";
     } else if(r.cruce_efimero != null){
       /* Cruzó y volvió a caer: la curva sube el día que el jugador carga y
          baja cuando retira. Decir que se recuperó por ese pico sería convertir

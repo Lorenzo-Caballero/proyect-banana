@@ -1652,9 +1652,23 @@ if ($metodo === 'GET') {
             $diasActivo = 30;
             try { $diasActivo = max(1, (int)(cfg_crm($pdo, 'fin_dias_activo') ?? 30)); }
             catch (Throwable $e) { /* default */ }
+            /* HACE CUANTO QUE SE MIDE. Sin este dato la pantalla afirma cosas
+               que todavia no se pueden saber: con el ancla puesta hace dos
+               dias, "11 de 11 siguen activos" no es que la retencion sea
+               perfecta, es que nadie tuvo tiempo de irse. Lo mismo con "se
+               paga solo el mismo dia": los retiros llegan mas tarde.
+               Un numero prematuro presentado como conclusion es peor que no
+               mostrarlo, porque se toman decisiones con el. */
+            $diasMedidos = null;
+            if (!empty($ancla['desde'])) {
+                $diasMedidos = (int)(new DateTime($ancla['desde']))
+                    ->diff(new DateTime('today'))->days;
+            }
+
             salir(['ok' => true,
-                'ancla'     => $ancla,
-                'ventana'   => $ventana,
+                'ancla'        => $ancla,
+                'dias_medidos' => $diasMedidos,
+                'ventana'      => $ventana,
                 'jugadores' => fn_por_jugador($pdo, $costoPorFicha, $pctE, $pctS,
                                               $ancla['desde'], $diasActivo),
                 'recupero'  => fn_recupero($pdo, $costoPorFicha, $pctE, $pctS, 60, $ventana,
