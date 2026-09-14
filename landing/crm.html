@@ -1553,6 +1553,11 @@
     transition:width .35s ease}
   .fn-salud-veredicto.si .fn-salud-barra i{background:var(--green)}
   .fn-salud-nota{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.5}
+  /* El desglose de la pauta: chico, pero tiene que poder leerse entero. Un
+     total sin desglose no se puede auditar. */
+  .fn-sal-desglose{margin-top:8px;padding-top:8px;border-top:1px solid var(--line);
+    line-height:1.65}
+  .fn-sal-desglose:empty{display:none}
 
   /* loading: texto placeholder atenuado, sin reflow */
   .fn-kpi-card.fn-cargando .v,.fn-kpi-card.fn-cargando .fn-kpi-var{opacity:.35}
@@ -1692,6 +1697,14 @@
     font-variant-numeric:tabular-nums;color:var(--muted)}
   .pb-tabla tfoot td:nth-child(n+2){text-align:right}
   .pb-hist-hint{margin:-6px 20px 10px;font-size:12px;color:var(--muted)}
+  /* La tabla muestra SOLO el período elegido arriba, y el selector queda fuera
+     de pantalla cuando uno llegó scrolleando hasta acá. Sin decirlo, "no puedo
+     cargar los días anteriores" parece que falta la función. */
+  .pb-dia-periodo{font-weight:400;font-size:12px;color:var(--muted);
+    text-transform:none;letter-spacing:0}
+  .pb-hist-aviso{margin:-4px 20px 10px;font-size:12.5px;line-height:1.5;
+    border:1px solid var(--orange);background:rgba(245,166,35,.10);
+    border-radius:11px;padding:10px 13px;color:var(--txt)}
   .pb-tabla td.ag-vacio{text-align:center}
   .pb-tabla-barra{height:5px;border-radius:999px;background:linear-gradient(90deg,var(--violet2),var(--violet))}
 
@@ -2795,6 +2808,7 @@
             <div class="fn-card">
               <div class="k">Pauta del período<span class="fn-info" data-tip="Todo lo que cargaste como gasto de publicidad en el período, sumando landings y publicistas. Sale de la pantalla Publicidad."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
               <div class="v" id="fnSalPauta">—</div><div class="sub" id="fnSalPautaSub"></div>
+              <div class="sub fn-sal-desglose" id="fnSalPautaDetalle"></div>
             </div>
             <div class="fn-card">
               <div class="k">Deja el casino, antes de pauta<span class="fn-info" data-tip="Lo que cargaron los jugadores menos los retiros y menos el costo de las fichas. Mismo criterio y mismo número que la ganancia de arriba: lo que cambia es que acá abajo se le descuenta la pauta."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
@@ -3299,11 +3313,12 @@
         dijo que transfirió.
       </div>
 
-      <div class="pb-seccion-titulo">Día por día</div>
+      <div class="pb-seccion-titulo">Día por día <span id="pbDiaPeriodo" class="pb-dia-periodo"></span></div>
       <p class="pb-hist-hint">
-        El histórico del período. <b>Tocá el gasto de cualquier día</b> para cargarlo o corregirlo,
-        y la <b>×</b> para borrarlo si lo cargaste en la campaña equivocada.
+        <b>Tocá el gasto de cualquier día</b> para cargarlo o corregirlo, y la <b>×</b> para
+        borrarlo si lo cargaste en la campaña equivocada.
       </p>
+      <p class="pb-hist-aviso" id="pbDiaAviso" style="display:none"></p>
       <div class="pb-tabla-wrap">
         <table class="pb-tabla">
           <thead>
@@ -9029,6 +9044,15 @@
     }
 
     $("#fnSalPauta").textContent = money(s.pauta);
+    /* De dónde sale, abajo del número. Un total que no se puede abrir no se
+       puede auditar: si dice $88.534 y uno cargó $22.500, sin el desglose no
+       hay forma de saber si el resto son otras campañas o un error. */
+    const desglose = s.pauta_detalle || [];
+    $("#fnSalPautaDetalle").innerHTML = desglose.length
+      ? "<b>De dónde sale:</b><br>" + desglose.map(d =>
+          `${esc(d.campana)} <span style="opacity:.6">(${esc(d.clase)}, ${d.dias} día${d.dias===1?"":"s"})</span> — <b>${money(d.total)}</b>`
+        ).join("<br>")
+      : "";
     /* Si el gasto está cargado a medias, el promedio diario miente BAJO y el
        veredicto sale optimista. Se avisa acá y no en una nota al pie. */
     $("#fnSalPautaSub").textContent = s.pauta > 0
@@ -9771,6 +9795,8 @@
     $("#pbAvisoGasto").style.display = "none";
     $("#pbDiaPorDia").innerHTML = '<tr><td colspan="6" class="ag-vacio">Elegí una landing o un publicista</td></tr>';
     $("#pbDiaTotales").style.display = "none";
+    if($("#pbDiaPeriodo")) $("#pbDiaPeriodo").textContent = "";
+    if($("#pbDiaAviso"))   $("#pbDiaAviso").style.display = "none";
   }
 
   // ---------- fix de tooltips (mismo bug/patrón que Finanzas: el popover
@@ -9857,8 +9883,30 @@
     if(!dias.length){
       $("#pbDiaPorDia").innerHTML = '<tr><td colspan="6" class="ag-vacio">Sin datos en este período</td></tr>';
       $("#pbDiaTotales").style.display = "none";
+      if($("#pbDiaPeriodo")) $("#pbDiaPeriodo").textContent = "";
+      if($("#pbDiaAviso"))   $("#pbDiaAviso").style.display = "none";
       return;
     }
+    /* Qué período se está mirando. La tabla depende del selector de arriba, que
+       queda fuera de pantalla cuando uno llegó hasta acá scrolleando — así que
+       lo dice acá mismo, y si es un solo día explica cómo ver los anteriores. */
+    const per = $("#pbDiaPeriodo");
+    if(per) per.textContent = dias.length === 1
+      ? "— solo " + pbDiaLabel(dias[0].fecha).replace(/<[^>]+>/g, "")
+      : "— " + dias.length + " días, del " + pbDiaLabel(dias[0].fecha).replace(/<[^>]+>/g, "") +
+        " al " + pbDiaLabel(dias[dias.length-1].fecha).replace(/<[^>]+>/g, "");
+    const aviso = $("#pbDiaAviso");
+    if(aviso){
+      if(dias.length === 1){
+        aviso.style.display = "";
+        aviso.innerHTML = "Estás viendo <b>un solo día</b>, así que acá abajo aparece uno solo. " +
+          "Para cargar o corregir el gasto de días anteriores, cambiá el período con los botones " +
+          "de arriba (<b>7 días</b>, <b>Este mes</b>, <b>Mes pasado</b>) o poné las fechas a mano.";
+      } else {
+        aviso.style.display = "none";
+      }
+    }
+
     const maxRegistros = Math.max(1, ...dias.map(x=>x.registros));
     /* La barra pasa a vivir DENTRO de la celda de registros, que es lo que
        mide. La sexta columna queda libre para el borrado del gasto. */

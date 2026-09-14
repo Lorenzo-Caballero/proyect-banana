@@ -824,6 +824,9 @@ if ($metodo === 'GET') {
             [$desde, $hasta] = fn_rango_fechas();
 
             $pauta   = publicidad_gasto_total($pdo, $desde, $hasta);
+            /* El desglose viaja SIEMPRE, no solo cuando hay varias campañas:
+               un total sin poder abrirlo no se puede auditar. */
+            $detalle = publicidad_gasto_detalle($pdo, $desde, $hasta);
             $split   = publicidad_cargas_split($pdo, $desde, $hasta);
             $retiros = fn_retiros($pdo, $desde, $hasta);
             $bonos   = fn_bonos($pdo, $desde, $hasta);
@@ -880,6 +883,7 @@ if ($metodo === 'GET') {
                 'pauta'          => round($gasto, 2),
                 'dias_con_pauta' => (int)$pauta['dias'],
                 'pauta_por_dia'  => round($pautaPorDia, 2),
+                'pauta_detalle'  => $detalle,
 
                 // --- Lo que entro, abierto por via y por tipo de jugador
                 'depositado'        => round($depositado, 2),

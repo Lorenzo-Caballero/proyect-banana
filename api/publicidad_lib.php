@@ -423,6 +423,58 @@ function publicidad_gasto_total(PDO $pdo, string $desde, string $hasta): array
 }
 
 /**
+ * DE DONDE sale la pauta del periodo: una fila por campaña, con su nombre.
+ *
+ * POR QUE EXISTE. publicidad_gasto_total() devuelve un solo numero, y un solo
+ * numero sin desglose no se puede auditar: si dice $88.534 y uno se acuerda de
+ * haber cargado $22.500, no hay forma de saber si el resto son otras campañas,
+ * un dia cargado dos veces con distinto destino, o un error de tipeo. Nahuel lo
+ * planteo asi el 14/09/2026: "no entiendo muy bien de donde sale eso".
+ *
+ * Devuelve el NOMBRE, no el slug ni el id: "bono-50" todavia se entiende, pero
+ * "pub:3" no le dice nada a nadie. Los LEFT JOIN son a proposito -- una campaña
+ * borrada despues de cargarle gasto deja su fila igual, y esa plata tiene que
+ * seguir apareciendo o el desglose no sumaria el total.
+ */
+function publicidad_gasto_detalle(PDO $pdo, string $desde, string $hasta): array
+{
+    try {
+        $st = $pdo->prepare(
+            "SELECT COALESCE(l.nombre, p.nombre, g.landing_slug,
+                             CONCAT('Publicista #', g.publicista_id), '(sin campaña)')
+                      AS campana,
+                    IF(g.landing_slug IS NOT NULL, 'landing', 'publicista') AS clase,
+                    COALESCE(SUM(g.monto), 0) AS total,
+                    COUNT(DISTINCT g.fecha)   AS dias,
+                    MIN(g.fecha)              AS primer_dia,
+                    MAX(g.fecha)              AS ultimo_dia
+               FROM gasto_diario g
+               LEFT JOIN landings    l ON l.slug = g.landing_slug
+               LEFT JOIN publicistas p ON p.id   = g.publicista_id
+              WHERE g.fecha BETWEEN ? AND ?
+              GROUP BY campana, clase
+              ORDER BY total DESC"
+        );
+        $st->execute([$desde, $hasta]);
+        $filas = [];
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $f) {
+            $filas[] = [
+                'campana'    => (string)$f['campana'],
+                'clase'      => (string)$f['clase'],
+                'total'      => round((float)$f['total'], 2),
+                'dias'       => (int)$f['dias'],
+                'primer_dia' => (string)$f['primer_dia'],
+                'ultimo_dia' => (string)$f['ultimo_dia'],
+            ];
+        }
+        return $filas;
+    } catch (Throwable $e) {
+        error_log('publicidad_gasto_detalle: ' . $e->getMessage());
+        return [];
+    }
+}
+
+/**
  * Las cargas del periodo partidas en DOS: las de jugadores que cargaron por
  * primera vez, y las de los que ya habian cargado antes.
  *

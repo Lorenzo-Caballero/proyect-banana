@@ -80,6 +80,43 @@ $g0 = publicidad_gasto_total($pdo, '2019-03-01', '2019-03-31');
 chequear('un periodo sin gasto da 0 y no falla', $g0['total'] === 0.0 && $g0['dias'] === 0);
 
 // ===========================================================================
+echo "\n=== 1b. De donde sale la pauta: el desglose ===\n";
+/* POR QUE EXISTE (Nahuel, 14/09/2026): "no entiendo muy bien el gasto que me
+   aparece de la pauta de ochenta y ocho mil pesos, no entiendo de donde sale
+   eso". Un total sin desglose no se puede auditar: si dice $88.534 y uno se
+   acuerda de haber cargado $22.500, no hay forma de saber si el resto son
+   otras campañas, un dia cargado dos veces, o un error de tipeo. */
+$det  = publicidad_gasto_detalle($pdo, '2019-09-01', '2019-09-30');
+$mias = array_values(array_filter($det, fn($d) => str_starts_with($d['campana'], 't_sal')
+                                                 || str_contains($d['campana'], '99777')));
+chequear('trae una fila por campaña', count($mias) === 3,
+         json_encode(array_column($mias, 'campana')));
+
+$porNombre = array_column($det, 'total', 'campana');
+chequear('cada una con lo suyo',
+         ($porNombre['t_sal_lp'] ?? 0) == 4000.0 && ($porNombre['t_sal_lp2'] ?? 0) == 6000.0,
+         json_encode($porNombre));
+
+/* LA INVARIANTE: el desglose tiene que sumar EXACTO el total. Si no cerrara
+   seria peor que no tenerlo -- haria dudar del numero bueno. */
+$sumaDet = array_sum(array_column($mias, 'total'));
+chequear('el desglose suma el total', abs($sumaDet - 15000.0) < 0.01, 'suma=' . $sumaDet);
+
+/* Un publicista sin ficha en la tabla igual tiene que aparecer: la plata se
+   gasto, y una fila que se cae del desglose lo descuadra contra el total. */
+$pub = array_values(array_filter($det, fn($d) => $d['clase'] === 'publicista'));
+chequear('el gasto del publicista figura aunque no exista su ficha',
+         count($pub) >= 1 && abs((float)$pub[0]['total'] - 5000.0) < 0.01,
+         json_encode($pub));
+
+chequear('dice cuantos dias abarca cada una',
+         ($porNombre['t_sal_lp'] ?? null) !== null
+         && (array_column($det, 'dias', 'campana')['t_sal_lp'] ?? 0) === 1);
+
+chequear('un periodo sin gasto da lista vacia',
+         publicidad_gasto_detalle($pdo, '2019-03-01', '2019-03-31') === []);
+
+// ===========================================================================
 echo "\n=== 2. Nuevo vs. repetido: la primera es la HISTORICA, no la del rango ===\n";
 /* ESTE ES EL TEST QUE SOSTIENE TODO EL INDICADOR. Si "primera carga" se
    calculara dentro del rango, un jugador que viene cargando hace meses
