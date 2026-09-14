@@ -201,5 +201,28 @@ chequear('y el tono canonico si esta',
          str_contains($conTonoMalo, 'como quien atiende por WhatsApp'));
 
 
+// ===========================================================================
+echo "\n=== El bot no puede decir 'ya esta' sin registrar el retiro ===\n";
+/* 13/9/2026, conversacion real: el jugador pidio retirar todo, dio su alias, y
+   el bot contesto "Perfecto, ya esta. Un agente lo va a revisar" SIN haber
+   llamado a retirar_del_juego. No quedo nada: ni el pedido, ni el aviso.
+   Es peor que el mismo error con una carga -- alla el mail del banco termina
+   apareciendo solo; un retiro que no se registro no aparece nunca, y el
+   jugador espera plata que nadie sabe que pidio. */
+$pPelado = chatbot_armar_prompt([
+    'bot_nombre' => 'Test', 'juego_desc' => 'juego', 'reglas_extra' => '',
+]);
+chequear('la regla existe y no depende del campo del operador',
+         str_contains($pPelado, 'NUNCA DES POR HECHO UN RETIRO QUE NO REGISTRO LA HERRAMIENTA'));
+chequear('dice QUE hacer en vez de solo prohibir (llamar a la herramienta)',
+         str_contains($pPelado, 'LLAMALA'));
+chequear('y que sin CBU se registra igual, que es lo que destraba el caso',
+         str_contains($pPelado, 'llamala IGUAL sin cbu_o_alias'));
+/* La regla de las cargas tiene que seguir existiendo: la nueva se inserto
+   JUSTO ARRIBA y un error de corte se la habria llevado puesta. */
+chequear('la regla equivalente de las cargas sigue en pie',
+         str_contains($pPelado, 'NUNCA DES POR HECHA UNA CARGA QUE NO CONFIRMO LA HERRAMIENTA'));
+
+
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);
 exit($fail > 0 ? 1 : 0);
