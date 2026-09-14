@@ -2006,6 +2006,7 @@
       <button class="rail-item" data-nav="suscripcion" data-tip="Mi suscripción" data-corto="Saldo"><svg viewBox="0 0 24 24"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></button>
       <!-- Solo-admin (se muestra en cargarQuienSoy segun ROL, como railAgentes). -->
       <button class="rail-item" id="railRecaudar" data-nav="recaudar" data-tip="Recaudar inactivos" data-corto="Recaudar" style="display:none"><svg viewBox="0 0 24 24"><path d="M12 2v14M6 10l6 6 6-6"/><path d="M4 21h16"/></svg></button>
+      <button class="rail-item" id="railFid" data-nav="fidelizacion" data-tip="Fidelización" data-corto="Fideliza" style="display:none"><svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></button>
     </div>
     <div class="grp">
       <button class="rail-item" data-nav="config" data-tip="Configuración" data-corto="Config"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
@@ -3488,6 +3489,54 @@
     </div>
   </div>
 
+  <!-- ================= FIDELIZACION (bonos por inactividad) ================= -->
+  <div class="card-col view-panel" id="viewFid" style="display:none">
+    <div class="cb-wrap">
+      <div class="cb-head">
+        <div>
+          <h2>Campaña de fidelización</h2>
+          <p class="cb-sub">Al jugador que deja de jugar se le promete solo un % extra sobre su próxima carga — push en el celular + mensaje del chat — y el bono se acredita automáticamente cuando transfiere. Cuanto más tiempo sin jugar, más grande el bono.</p>
+        </div>
+      </div>
+
+      <div class="cfg-card">
+        <div class="cfg-card-head">
+          <span class="cb-ico"><svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></span>
+          <div class="cfg-card-txt">
+            <b>Campaña activa</b>
+            <span>Apagada no se manda nada; los escalones quedan guardados. El proceso corre solo cada hora y avisa <b>una única vez por escalón</b> por racha de inactividad.</span>
+          </div>
+          <label class="cb-switch">
+            <input type="checkbox" id="fidActiva">
+            <span class="cb-slider"></span>
+          </label>
+        </div>
+        <div class="cfg-card-body">
+          <label class="cb-flabel">Escalones (días sin jugar → % de bono)</label>
+          <div id="fidTramos" class="rc-lista" style="margin-top:6px"></div>
+          <div class="rc-acciones">
+            <button class="btn-sec" id="fidAgregar" type="button">+ Agregar escalón</button>
+            <button class="btn-peligro" id="fidGuardar" type="button" style="background:linear-gradient(145deg,#9a8cff,#7c6cf0);box-shadow:0 8px 20px rgba(124,108,240,.35)">Guardar campaña</button>
+          </div>
+          <p class="cfg-hint" style="margin-top:8px">
+            Al cruzar cada escalón el bono <b>se mejora, no se suma</b>: siempre vale el % más alto alcanzado.
+            «Giro de ruleta» regala además un giro de cortesía (independiente del giro diario).
+            Si el jugador vuelve a jugar, el ciclo arranca de cero.
+          </p>
+        </div>
+      </div>
+
+      <div class="us-cards" id="fidCards"></div>
+
+      <div class="cb-card">
+        <div class="cb-card-head"><b>Últimos avisos enviados</b></div>
+        <div class="cb-card-body">
+          <div id="fidUltimos" class="rc-lista"><p class="cfg-hint">—</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ================= APP (instalaciones y promo) ================= -->
   <div class="card-col view-panel" id="viewApp" style="display:none">
     <div class="cb-wrap">
@@ -4556,6 +4605,84 @@
     pintarCreditosCrm();   // que el box del rail no quede desactualizado
   }
 
+  /* ===================== FIDELIZACION =====================
+     Editor de escalones (dias -> % -> giro) + estado de la campaña. El motor
+     corre por cron en el server (fidelizacion.php); aca solo se configura y
+     se mira el rendimiento. */
+  let fidTramos = [];   // [{dias,pct,ruleta}] — el estado del editor
+
+  function fidPintarTramos(){
+    const cont = $("#fidTramos"); if(!cont) return;
+    if(!fidTramos.length){
+      cont.innerHTML = '<p class="cfg-hint">Sin escalones. Agregá al menos uno.</p>';
+      return;
+    }
+    cont.innerHTML = fidTramos.map((t,i)=>`
+      <div class="rc-row" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span class="cfg-hint" style="min-width:14px">${i+1}.</span>
+        <label class="cfg-hint">Días</label>
+        <input class="cb-input" style="width:70px" inputmode="numeric" data-i="${i}" data-k="dias" value="${t.dias}">
+        <label class="cfg-hint">Bono %</label>
+        <input class="cb-input" style="width:70px" inputmode="numeric" data-i="${i}" data-k="pct" value="${t.pct}">
+        <label class="cb-check" style="margin:0"><input type="checkbox" data-i="${i}" data-k="ruleta" ${t.ruleta?"checked":""}><span>🎰 Giro de ruleta</span></label>
+        <button class="btn-sec" type="button" data-quitar="${i}" style="margin-left:auto;padding:6px 10px">✕</button>
+      </div>`).join("");
+    cont.querySelectorAll("input[data-k]").forEach(el=>{
+      el.addEventListener("change", ()=>{
+        const i = +el.dataset.i, k = el.dataset.k;
+        if(k==="ruleta") fidTramos[i].ruleta = el.checked ? 1 : 0;
+        else fidTramos[i][k] = parseInt(el.value,10) || 0;
+      });
+    });
+    cont.querySelectorAll("[data-quitar]").forEach(el=>{
+      el.addEventListener("click", ()=>{ fidTramos.splice(+el.dataset.quitar,1); fidPintarTramos(); });
+    });
+  }
+
+  async function fidCargar(){
+    let d;
+    try{ d = await jget({accion:"fid_estado"}); }catch(e){ return; }
+    if(!d || !d.ok) return;
+    $("#fidActiva").checked = !!d.activa;
+    fidTramos = (d.tramos||[]).map(t=>({dias:+t.dias, pct:+t.pct, ruleta:t.ruleta?1:0}));
+    fidPintarTramos();
+
+    const s = d.stats || {};
+    $("#fidCards").innerHTML = [
+      { k:"Avisos (30 días)",  v:nf.format(s.avisos_30d||0),     cls:"" },
+      { k:"Bonos cobrados",    v:nf.format(s.bonos_cobrados||0), cls:"gold" },
+      { k:"Giros regalados",   v:nf.format(s.giros_dados||0),    cls:"gold" },
+    ].map(x=>`<div class="us-stat ${x.cls}"><div class="k">${esc(x.k)}</div><div class="v">${x.v}</div></div>`).join("");
+
+    const u = s.ultimos || [];
+    $("#fidUltimos").innerHTML = u.length ? u.map(a=>`
+      <div class="rc-row">
+        <div class="rc-top">
+          <span><b>${esc(a.usuario)}</b> · ${a.dias} días sin jugar → <b>${a.pct}%</b>${a.ruleta==1?" + 🎰":""}</span>
+          <span class="cfg-hint">${esc(String(a.enviado_en||"")).slice(0,16)}</span>
+        </div>
+      </div>`).join("")
+    : '<p class="cfg-hint">Todavía no se mandó ningún aviso.</p>';
+  }
+
+  $("#fidAgregar")?.addEventListener("click", ()=>{
+    const ultimo = fidTramos[fidTramos.length-1];
+    fidTramos.push({ dias:(ultimo? ultimo.dias+1 : 2), pct:(ultimo? Math.min(200,ultimo.pct+5) : 20), ruleta:0 });
+    fidPintarTramos();
+  });
+  $("#fidGuardar")?.addEventListener("click", async ()=>{
+    const btn = $("#fidGuardar");
+    btn.disabled = true;
+    const d = await jpost({accion:"fid_guardar", activa: $("#fidActiva").checked, tramos: fidTramos});
+    btn.disabled = false;
+    if(d.ok){
+      toast(d.activa ? "Campaña guardada y ACTIVA" : "Campaña guardada (apagada)");
+      fidTramos = d.tramos; fidPintarTramos();
+    } else {
+      toast(d.error || "No se pudo guardar");
+    }
+  });
+
   /* ===================== APP (instalaciones y promo) =====================
      Vista de consulta: cuántos jugadores tienen la app, cuántas
      instalaciones nuevas, qué pagó la promo, y los últimos celulares. */
@@ -4694,6 +4821,9 @@
     // Recaudar mueve plata de cuentas en masa: solo admin, como Agentes.
     const railRc = $("#railRecaudar");
     if(railRc) railRc.style.display = (ROL === "admin") ? "" : "none";
+    // Fidelizacion configura una promo que regala plata: solo admin.
+    const railFd = $("#railFid");
+    if(railFd) railFd.style.display = (ROL === "admin") ? "" : "none";
   }
 
   function iniciarPolling(){
@@ -4937,7 +5067,7 @@
   // modulos nuevos ocultan esas 3 columnas y muestran su propio contenedor.
   // Se va sumando un nombre a VISTAS + su contenedor a VISTA_CONTENEDOR por
   // cada modulo que se conecte, sin tocar el resto de la funcion.
-  const VISTAS = ["chats", "comprobantes", "peticiones", "retiros", "cargas", "transacciones", "usuarios", "finanzas", "notificaciones", "publicidad", "landings", "chatbot", "agentes", "suscripcion", "app", "recaudar", "config"];
+  const VISTAS = ["chats", "comprobantes", "peticiones", "retiros", "cargas", "transacciones", "usuarios", "finanzas", "notificaciones", "publicidad", "landings", "chatbot", "agentes", "suscripcion", "app", "recaudar", "fidelizacion", "config"];
   const VISTA_CONTENEDOR = {
     comprobantes: "#viewComprobantes",
     peticiones: "#viewPeticiones",
@@ -4954,6 +5084,7 @@
     suscripcion: "#viewSuscripcion",
     app: "#viewApp",
     recaudar: "#viewRecaudar",
+    fidelizacion: "#viewFid",
     config: "#viewConfig",
   };
 
@@ -5055,6 +5186,9 @@
     if(nombre==="app"){
       appCargar();
     }
+    if(nombre==="fidelizacion"){
+      fidCargar();
+    }
     if(nombre==="recaudar"){
       recaudarCargar();
       // Cola operativa: mientras una corrida esta en curso, refrescar para ver
@@ -5078,7 +5212,7 @@
     publicidad:"Publicidad",
     landings:"Landings",
     chatbot:"Chatbot", agentes:"Agentes", suscripcion:"Mi suscripción",
-    app:"App", recaudar:"Recaudar", config:"Configuración"
+    app:"App", recaudar:"Recaudar", fidelizacion:"Fidelización", config:"Configuración"
   };
   let vistaActual = "chats";
 

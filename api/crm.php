@@ -856,6 +856,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             salir(['ok' => true, 'recaudaciones' => $filas]);
         }
 
+        // ---- campaña de fidelizacion (vista Fidelizacion del CRM) ----
+        // Config + numeros de rendimiento. Sin la migracion 65 degrada a
+        // stats vacias para que la vista abra igual.
+        if ($accion === 'fid_estado') {
+            require_once __DIR__ . '/fidelizacion_lib.php';
+            $tramos = fid_tramos($pdo);
+            $stats  = ['avisos_30d' => 0, 'por_tramo' => [], 'bonos_cobrados' => 0,
+                       'giros_dados' => 0, 'ultimos' => []];
+            try {
+                $stats['avisos_30d'] = (int)$pdo->query(
+                    "SELECT COUNT(*) FROM fidelizacion_avisos
+                      WHERE enviado_en >= DATE_SUB(NOW(), INTERVAL 30 DAY)"
+                )->fetchColumn();
+                foreach ($pdo->query(
+                    "SELECT dias, COUNT(*) n FROM fidelizacion_avisos
+                      WHERE enviado_en >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                      GROUP BY dias ORDER BY dias"
+                ) as $f) {
+                    $stats['por_tramo'][(int)$f['dias']] = (int)$f['n'];
+                }
+                $stats['ultimos'] = $pdo->query(
+                    "SELECT usuario, dias, pct, ruleta, enviado_en
+                       FROM fidelizacion_avisos ORDER BY id DESC LIMIT 20"
+                )->fetchAll(PDO::FETCH_ASSOC);
+            } catch (Throwable $e) { /* sin migracion 65 */ }
+            try {
+                // Lo COBRADO de verdad: bonos de la campaña que una recarga aplico.
+                $stats['bonos_cobrados'] = (int)$pdo->query(
+                    "SELECT COUNT(*) FROM bonos_pendientes
+                      WHERE prometido_por = 'fidelizacion' AND estado = 'aplicado'"
+                )->fetchColumn();
+                $stats['giros_dados'] = (int)$pdo->query(
+                    "SELECT COUNT(*) FROM bonos_pendientes
+                      WHERE prometido_por = 'fidelizacion' AND tipo = 'giro'"
+                )->fetchColumn();
+            } catch (Throwable $e) { /* sin migracion 33 */ }
+            salir(['ok' => true,
+                   'activa' => cfg_crm_activo($pdo, 'fid_activa'),
+                   'tramos' => $tramos,
+                   'stats'  => $stats]);
+        }
+
         // ---- instalaciones de la app (vista App del CRM) ----
         // Numeros de la promo "descarga la app": cuantos la tienen, cuantos
         // entraron por primera vez hoy / esta semana, y los bonos EFECTIVAMENTE
@@ -1310,6 +1352,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
            SOLO ADMIN: retira plata de cuentas de jugadores en masa, no es una
            accion de mostrador. Los topes viajan con el pedido; por defecto es
            una PRUEBA (dry_run) que lista a quien tocaria sin retirar nada. */
+        // ---- campaña de fidelizacion: guardar config (solo admin) ----
+        if ($accion === 'fid_guardar') {
+            exigir_admin();
+            require_once __DIR__ . '/fidelizacion_lib.php';
+            $activa = !empty($body['activa']) ? '1' : '0';
+            // La MISMA validacion que usa el motor: lo que se guarda siempre
+            // parsea, y un JSON invalido se rechaza aca con detalle en vez de
+            // degradar en silencio al default.
+            $tramos = fid_parsear_tramos(json_encode($body['tramos'] ?? []));
+            if ($tramos === null) {
+                salir(['ok' => false,
+                       'error' => 'Escalones inválidos: entre 1 y 10, días 1-365 sin repetir, % de 1 a 200'], 400);
+            }
+            cfg_crm_guardar($pdo, [
+                'fid_activa' => $activa,
+                'fid_tramos' => json_encode($tramos),
+            ], $operador);
+            crm_bitacora($pdo, $operador, 'fid_guardar',
+                ($activa === '1' ? 'activa' : 'apagada') . ' · ' . count($tramos) . ' escalones: '
+                . implode(', ', array_map(fn($t) => $t['dias'] . 'd=' . $t['pct'] . '%'
+                    . ($t['ruleta'] ? '+giro' : ''), $tramos)));
+            salir(['ok' => true, 'tramos' => $tramos, 'activa' => $activa === '1']);
+        }
+
         if ($accion === 'recaudar_pedir') {
             exigir_admin();
             $dry  = !isset($body['si']) || !$body['si'];   // sin 'si' explicito = prueba

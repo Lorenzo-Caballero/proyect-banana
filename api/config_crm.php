@@ -133,6 +133,17 @@ const CFG_CRM_DEFAULTS = [
     // la app convierte, y el volumen es el de instalaciones, no el de pagos.
     'tg_ev_app'        => '1',   // un jugador instalo la app y entro
 
+    // ----- Campaña de fidelizacion (bonos escalonados por inactividad) -----
+    // Apagada por defecto, como toda promo que regala plata: la prende el
+    // admin desde la vista Fidelizacion del CRM.
+    'fid_activa'  => '0',
+    // Los escalones: al cumplir `dias` sin jugar, se promete `pct` % sobre la
+    // proxima carga; `ruleta` regala ademas un giro de cortesia. JSON editable
+    // desde el CRM (config_crm.valor es TEXT, entra sobrado). El default es
+    // la campaña que pidio Nahuel. Un JSON roto = se usa este default:
+    // una config ilegible no puede apagar la campaña a la mitad.
+    'fid_tramos'  => '[{"dias":2,"pct":20},{"dias":3,"pct":25},{"dias":4,"pct":30},{"dias":7,"pct":40},{"dias":8,"pct":50,"ruleta":1}]',
+
     // ----- Limites de carga y retiro, por cliente -----
     // Cada agencia tiene los suyos ("no cargo menos de 500", "no pago mas de
     // 100.000 por dia"). Antes eran constantes en fichas_lib.php, iguales

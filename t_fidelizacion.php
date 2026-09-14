@@ -1,0 +1,167 @@
+<?php
+/**
+ * t_fidelizacion.php — La campaña de fidelización, de punta a punta.
+ *
+ * Lo que garantiza:
+ *   1. Al cruzar un escalón: bono pct pendiente + push + mensaje de chat +
+ *      candado en fidelizacion_avisos. Una sola vez por escalón y racha.
+ *   2. Al cruzar el siguiente escalón: el bono SE MEJORA (misma fila, % más
+ *      alto), no se apila. Escalón con ruleta regala el giro de cortesía.
+ *   3. Si vuelve a jugar (ultima_actividad cambia), la próxima racha avisa
+ *      de nuevo.
+ *   4. Campaña apagada / jugador activo / sin ultima_actividad: nada.
+ *   5. La acreditación: crmnotif_bono_aplicar_en_recarga devuelve el MONTO
+ *      (pct sobre la carga), marca 'aplicado', avisa por push, y rl_acreditar
+ *      lo manda al juego vía $recarga['bono'] (se prueba la pieza, el viaje
+ *      completo carga→juego ya lo cubren t_bono/t_bono_e2e).
+ *   6. fid_parsear_tramos rechaza basura (días repetidos, % fuera de rango).
+ *
+ *     T_PORT=3399 php t_fidelizacion.php
+ */
+declare(strict_types=1);
+
+$pdo = new PDO(
+    'mysql:host=' . (getenv('T_HOST') ?: '127.0.0.1')
+        . ';port=' . (getenv('T_PORT') ?: '3306')
+        . ';dbname=' . (getenv('T_DB') ?: 'goldpaw_demo') . ';charset=utf8mb4',
+    getenv('T_USER') ?: 'root', getenv('T_PASS') ?: '',
+    [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]
+);
+$GLOBALS['pdo'] = $pdo;
+if (!function_exists('cfg')) { function cfg($c, $d = '') { return $d; } }
+require_once __DIR__ . '/api/config_crm.php';
+require_once __DIR__ . '/api/crm_lib.php';
+require_once __DIR__ . '/api/crm_notificaciones.php';
+require_once __DIR__ . '/api/notificaciones_lib.php';
+require_once __DIR__ . '/api/fidelizacion_lib.php';
+
+$fallas = 0;
+function ok(bool $c, string $m): void
+{
+    global $fallas;
+    echo ($c ? '  OK   ' : '  FALLA ') . $m . "\n";
+    if (!$c) { $fallas++; }
+}
+
+$U = 't_fid_1';
+$limpiar = function () use ($pdo, $U): void {
+    foreach (['usuarios' => 'username', 'movimientos' => 'usuario', 'bonos_pendientes' => 'usuario',
+              'fidelizacion_avisos' => 'usuario', 'ruleta_giros_cortesia' => 'usuario',
+              'notificaciones' => 'usuario'] as $t => $col) {
+        try { $pdo->prepare("DELETE FROM $t WHERE $col = ?")->execute([$U]); } catch (Throwable $e) {}
+    }
+    $pdo->prepare("DELETE m FROM mensajes m JOIN conversaciones c ON c.id = m.conversacion_id WHERE c.clave = ?")->execute([$U]);
+    $pdo->prepare("DELETE FROM conversaciones WHERE clave = ?")->execute([$U]);
+};
+$limpiar();
+$pdo->prepare("INSERT INTO usuarios (id, username, balance, coins, bonus, tiene_app, ultima_actividad)
+               VALUES (990501, ?, 0, 0, 0, 0, DATE_SUB(NOW(), INTERVAL 3 DAY))")->execute([$U]);
+$pdo->prepare("INSERT INTO conversaciones (clave, usuario, session_id) VALUES (?,?,?)")->execute([$U, $U, 't-sess-fid']);
+cfg_crm_guardar($pdo, [
+    'fid_activa' => '1',
+    'fid_tramos' => '[{"dias":2,"pct":20},{"dias":3,"pct":25},{"dias":4,"pct":30},{"dias":7,"pct":40},{"dias":8,"pct":50,"ruleta":1}]',
+], 'test');
+
+$bono = function () use ($pdo, $U): ?array {
+    $st = $pdo->prepare("SELECT id, tipo, valor, estado FROM bonos_pendientes
+                          WHERE usuario = ? AND prometido_por = 'fidelizacion' AND tipo = 'pct'
+                          ORDER BY id DESC LIMIT 1");
+    $st->execute([$U]);
+    return $st->fetch() ?: null;
+};
+$mensajes = function () use ($pdo, $U): array {
+    $st = $pdo->prepare("SELECT m.texto FROM mensajes m JOIN conversaciones c ON c.id = m.conversacion_id
+                          WHERE c.clave = ? ORDER BY m.id");
+    $st->execute([$U]);
+    return array_column($st->fetchAll(), 'texto');
+};
+$avisos = function () use ($pdo, $U): int {
+    $st = $pdo->prepare("SELECT COUNT(*) FROM fidelizacion_avisos WHERE usuario = ?");
+    $st->execute([$U]);
+    return (int)$st->fetchColumn();
+};
+
+// ---- 1. jugador inactivo 3 dias: escalon del 25% -----------------------------
+echo "1. Inactivo hace 3 días (escalón 25%)\n";
+$r = fid_correr($pdo);
+ok(($r['avisados'] ?? 0) >= 1, 'la pasada avisó a alguien (' . ($r['avisados'] ?? '?') . ')');
+$b = $bono();
+ok($b !== null && (int)$b['valor'] === 25 && $b['estado'] === 'pendiente', 'bono pct 25 pendiente');
+$m = $mensajes();
+ok(count($m) === 1 && strpos($m[0], '25%') !== false, 'mensaje de Camila en el chat con el 25%');
+$st = $pdo->prepare("SELECT COUNT(*) FROM notificaciones WHERE usuario = ? AND origen = 'fidelizacion'");
+$st->execute([$U]);
+ok((int)$st->fetchColumn() === 1, 'push encolada');
+ok($avisos() === 1, 'candado reservado');
+
+// ---- 2. correr de nuevo: nada nuevo ------------------------------------------
+echo "2. Segunda pasada del cron (mismo día)\n";
+fid_correr($pdo);
+ok($avisos() === 1 && count($mensajes()) === 1, 'no duplica ni aviso ni mensaje');
+
+// ---- 3. sigue inactivo: 8 dias -> mejora a 50% + giro ------------------------
+echo "3. Llega a 8 días (50% + giro de ruleta)\n";
+$pdo->prepare("UPDATE usuarios SET ultima_actividad = DATE_SUB(NOW(), INTERVAL 8 DAY) WHERE username = ?")->execute([$U]);
+// misma racha: los candados viejos apuntan a OTRO actividad_ref, este es nuevo
+fid_correr($pdo);
+$b = $bono();
+ok($b !== null && (int)$b['valor'] === 50 && $b['estado'] === 'pendiente', 'el MISMO bono mejorado a 50 (no hay dos)');
+$st = $pdo->prepare("SELECT COUNT(*) FROM bonos_pendientes WHERE usuario = ? AND tipo = 'pct' AND prometido_por = 'fidelizacion'");
+$st->execute([$U]);
+ok((int)$st->fetchColumn() === 1, 'sigue habiendo UN solo bono de fidelización');
+$st = $pdo->prepare("SELECT COUNT(*) FROM ruleta_giros_cortesia WHERE usuario = ? AND estado = 'pendiente'");
+$st->execute([$U]);
+ok((int)$st->fetchColumn() === 1, 'giro de cortesía regalado');
+$m = $mensajes();
+ok(count($m) === 2 && strpos($m[1], '50%') !== false && strpos($m[1], 'ruleta') !== false,
+   'el chat cuenta el 50% y el giro');
+
+// ---- 4. transfiere: el bono se aplica, con monto y push ----------------------
+echo "4. Hace una carga de 1000 (se aplica el 50%)\n";
+$monto = crmnotif_bono_aplicar_en_recarga($pdo, $U, 12345, 1000);
+ok($monto === 500, 'devuelve el monto para el deposito al juego (500 = 50% de 1000), dio ' . var_export($monto, true));
+$b = $bono();
+ok($b !== null && $b['estado'] === 'aplicado', 'el bono quedó aplicado');
+$st = $pdo->prepare("SELECT COUNT(*) FROM notificaciones WHERE usuario = ? AND origen = 'crm_bono'");
+$st->execute([$U]);
+ok((int)$st->fetchColumn() === 1, 'push de "bono aplicado"');
+$st = $pdo->prepare("SELECT bonus FROM usuarios WHERE username = ?");
+$st->execute([$U]);
+ok((int)$st->fetchColumn() === 500, 'el contador bonus recibió los 500 (el depósito después los debita)');
+
+// ---- 5. vuelve a jugar y se inactiva de nuevo: nueva racha -------------------
+echo "5. Jugó de nuevo y volvió a inactivarse (nueva racha)\n";
+$pdo->prepare("UPDATE usuarios SET ultima_actividad = DATE_SUB(NOW(), INTERVAL 2 DAY) WHERE username = ?")->execute([$U]);
+fid_correr($pdo);
+$b = $bono();
+ok($b !== null && (int)$b['valor'] === 20 && $b['estado'] === 'pendiente', 'nueva racha: bono nuevo del 20%');
+
+// ---- 6. campaña apagada / activo / sin dato ----------------------------------
+echo "6. Los que NO deben recibir nada\n";
+cfg_crm_guardar($pdo, ['fid_activa' => '0'], 'test');
+$r = fid_correr($pdo);
+ok(($r['avisados'] ?? -1) === 0 && ($r['motivo'] ?? '') === 'campaña apagada', 'apagada: no corre');
+cfg_crm_guardar($pdo, ['fid_activa' => '1'], 'test');
+$pdo->prepare("UPDATE usuarios SET ultima_actividad = NOW() WHERE username = ?")->execute([$U]);
+$antes = $avisos();
+fid_correr($pdo);
+ok($avisos() === $antes, 'jugador activo: sin aviso');
+$pdo->prepare("UPDATE usuarios SET ultima_actividad = NULL WHERE username = ?")->execute([$U]);
+fid_correr($pdo);
+ok($avisos() === $antes, 'sin ultima_actividad (no sabemos): sin aviso');
+
+// ---- 7. la validacion de escalones -------------------------------------------
+echo "7. fid_parsear_tramos\n";
+ok(fid_parsear_tramos('[{"dias":2,"pct":20},{"dias":2,"pct":30}]') === null, 'días repetidos: rechazado');
+ok(fid_parsear_tramos('[{"dias":2,"pct":0}]') === null, '0%: rechazado');
+ok(fid_parsear_tramos('[{"dias":400,"pct":20}]') === null, '400 días: rechazado');
+ok(fid_parsear_tramos('basura') === null, 'JSON roto: rechazado');
+$t = fid_parsear_tramos('[{"dias":7,"pct":40},{"dias":2,"pct":20}]');
+ok(is_array($t) && $t[0]['dias'] === 2, 'ordena por días ascendente');
+
+// ---- limpiar ------------------------------------------------------------------
+cfg_crm_guardar($pdo, ['fid_activa' => '0'], 'test');
+$limpiar();
+
+echo $fallas === 0 ? "\nTODO OK\n" : "\n$fallas FALLAS\n";
+exit($fallas === 0 ? 0 : 1);
