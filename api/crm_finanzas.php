@@ -76,6 +76,8 @@ require __DIR__ . '/crm_auth.php';
 /* Para el bloque "salud del negocio": la pauta y el corte entre jugadores
    nuevos y base acumulada salen de ahi, no se recalculan aca. */
 require_once __DIR__ . '/publicidad_lib.php';
+/* Para leer el stock de fichas que reporta el worker (stock_agente.php). */
+require_once __DIR__ . '/config_crm.php';
 
 $operador = exigir_operador();
 
@@ -661,7 +663,58 @@ function fn_hg(string $desde, string $hasta): ?array
     }
 }
 
-function fn_foto(PDO $pdo): array
+/**
+ * Cuántas fichas tenemos para vender, y para cuántos días alcanzan.
+ *
+ * EL NÚMERO YA EXISTÍA Y LA PANTALLA DECÍA "N/A · pendiente integración con
+ * bot". Lo escribe `stock_agente.php` cada 10 minutos desde el worker, que lee
+ * `result.source_user.balance` del panel. Quedó sin conectar de este lado.
+ *
+ * `dias` es lo que de verdad sirve: un umbral fijo ("avisame bajo 50.000") no
+ * sabe si eso son dos días o dos meses. Se calcula con el ritmo REAL de
+ * entrega de los últimos 14 días, sacado del libro del panel. Es la métrica
+ * que habría evitado el 12/09/2026, cuando la cuenta se quedó sin fichas y la
+ * plataforma empezó a rechazar depósitos en silencio.
+ *
+ * Todo best-effort: sin config_crm, sin migración 67 o sin lecturas, devuelve
+ * null y la pantalla lo dice. Nunca inventa un cero -- un stock de cero
+ * inventado es una alarma falsa, y una alarma falsa quema a todas las que
+ * vengan después.
+ */
+function fn_stock(PDO $pdo, float $costoPorFicha): array
+{
+    $stock = null; $leidoEn = null;
+    try {
+        $v = cfg_crm($pdo, 'stock_fichas');
+        if ($v !== null && $v !== '' && is_numeric($v)) { $stock = (float)$v; }
+        $leidoEn = cfg_crm($pdo, 'stock_fichas_en') ?: null;
+    } catch (Throwable $e) { /* sin config_crm: sin stock */ }
+
+    /* El ritmo: fichas entregadas por día en las últimas dos semanas. Dos
+       semanas y no dos días porque el consumo es irregular -- un fin de semana
+       fuerte haría parecer que el stock se acaba mañana. */
+    $porDia = null;
+    try {
+        $st = $pdo->prepare(
+            "SELECT COALESCE(SUM(monto),0) FROM operaciones_panel
+              WHERE tipo = 0 AND cuando >= ?"
+        );
+        $st->execute([date('Y-m-d 00:00:00', strtotime('-14 days'))]);
+        $entregado = (float)$st->fetchColumn();
+        if ($entregado > 0) { $porDia = $entregado / 14; }
+    } catch (Throwable $e) { /* sin libro: sin ritmo */ }
+
+    return [
+        'fichas'      => $stock,
+        'valor'       => $stock === null ? null : round($stock * $costoPorFicha, 2),
+        'leido_en'    => $leidoEn,
+        'consumo_dia' => $porDia === null ? null : round($porDia, 2),
+        'dias'        => ($stock === null || $porDia === null || $porDia <= 0)
+                         ? null : round($stock / $porDia, 1),
+    ];
+}
+
+function fn_foto(PDO $pdo, float $costoPorFicha = 0.20): array
 {
     $cargas = publicidad_sql_cargas();
     /* El histórico sale del libro del panel cuando existe. OJO con el alcance:
@@ -679,15 +732,49 @@ function fn_foto(PDO $pdo): array
             (SELECT COALESCE(SUM(balance),0) FROM usuarios) AS fichas_jugadores"
     )->fetch(PDO::FETCH_ASSOC);
 
-    $efectivoNeto    = (float)$row['ingresos_historicos'] - (float)$row['retiros_historicos'];
     $fichasJugadores = (float)$row['fichas_jugadores'];
 
+    /* LO QUE PAGASTE AL PROVEEDOR por todas las fichas que se entregaron.
+       FALTABA, y es plata de verdad: el patrimonio daba como si las fichas
+       fueran gratis. Sale del libro del panel, que es el registro de todo lo
+       que salió del stock; sin libro no se puede saber y queda null. */
+    $costoHistorico = null;
+    try {
+        if (fn_libro_desde($pdo) !== null) {
+            $entregado = (float)$pdo->query(
+                "SELECT COALESCE(SUM(monto),0) FROM operaciones_panel WHERE tipo = 0"
+            )->fetchColumn();
+            $costoHistorico = $entregado * $costoPorFicha;
+        }
+    } catch (Throwable $e) { /* sin libro: no se descuenta, y se avisa */ }
+
+    /* `efectivo_neto` es lo que entró menos lo que salió HACIA LOS JUGADORES.
+       No es la caja: falta lo que se le pagó al proveedor, que va aparte para
+       que se vea de dónde sale cada resta. */
+    $efectivoNeto = (float)$row['ingresos_historicos'] - (float)$row['retiros_historicos'];
+
+    $stock = fn_stock($pdo, $costoPorFicha);
+
+    /* PATRIMONIO = lo que entró - lo que se pagó a jugadores - lo que se pagó
+       al proveedor por las fichas entregadas - lo que les debés a los jugadores
+       que todavía tienen fichas.
+
+       El stock que tenés en el panel NO se suma aparte, y no es un olvido: las
+       fichas en stock se pagaron (sale de la caja) y valen lo que costaron
+       (entra como activo). Los dos términos se cancelan exactamente, así que
+       sumarlo sería contarlo dos veces. Se muestra igual, porque saber cuántas
+       fichas te quedan es operativo, pero no mueve el patrimonio. */
     return [
-        'efectivo_neto'    => $efectivoNeto,
-        'stock_fichas'     => null,   // pendiente M6.B (agencia_estado)
-        'valor_stock'      => null,   // pendiente M6.B
-        'fichas_jugadores' => $fichasJugadores,
-        'patrimonio_neto'  => $efectivoNeto - $fichasJugadores,
+        'efectivo_neto'     => $efectivoNeto,
+        'costo_historico'   => $costoHistorico === null ? null : round($costoHistorico, 2),
+        'stock_fichas'      => $stock['fichas'],
+        'valor_stock'       => $stock['valor'],
+        'stock_leido_en'    => $stock['leido_en'],
+        'stock_consumo_dia' => $stock['consumo_dia'],
+        'stock_dias'        => $stock['dias'],
+        'fichas_jugadores'  => $fichasJugadores,
+        'patrimonio_neto'   => $efectivoNeto - ($costoHistorico ?? 0) - $fichasJugadores,
+        'patrimonio_exacto' => $costoHistorico !== null,
     ];
 }
 
@@ -898,7 +985,7 @@ if ($metodo === 'GET') {
 
     try {
         if ($accion === 'foto') {
-            salir(['ok' => true, 'foto' => fn_foto($pdo)]);
+            salir(['ok' => true, 'foto' => fn_foto($pdo, $costoPorFicha)]);
         }
 
         if ($accion === 'hoy') {
@@ -1158,7 +1245,7 @@ if ($metodo === 'GET') {
             $costoFichas   = fn_costo_fichas($pdo, $desde, $hasta, $costoPorFicha,
                                              $ingresos['monto'], $bonos['monto']);
             $gananciaBruta = $ingresos['monto'] - $retiros['monto'] - $costoFichas;
-            $foto = fn_foto($pdo);
+            $foto = fn_foto($pdo, $costoPorFicha);
 
             salir(['ok' => true,
                 'periodo' => ['desde' => $desde, 'hasta' => $hasta],

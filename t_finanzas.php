@@ -34,6 +34,11 @@ $GLOBALS['pdo'] = $pdo;
 
 function cfg($clave, $default = '') { return $default; }
 require __DIR__ . '/api/publicidad_lib.php';
+/* Los `require __DIR__` del endpoint se recortan mas abajo, asi que las
+   librerias que usa hay que traerlas aca. Sin esta, fn_stock() no encuentra
+   cfg_crm(), lo captura como Throwable y devuelve null -- que es el degradado
+   correcto en produccion, pero en el test tapaba lo que se queria probar. */
+require __DIR__ . '/api/config_crm.php';
 
 /* Se queda con todo lo que hay ANTES del despacho HTTP: ahí viven las
    funciones y nada que mande headers o corte la ejecución. */
@@ -187,10 +192,103 @@ chequear('una fila por transferencia', ($vias['transferencia'] ?? 0) === 1, json
 chequear('y una del juego',            ($vias['juego'] ?? 0) === 1, json_encode($vias));
 
 // ===========================================================================
-echo "\n=== 8. La foto historica no tiene filtro de fecha ===\n";
-$foto = fn_foto($pdo);
-chequear('el efectivo neto sale sin explotar', is_float($foto['efectivo_neto']));
-chequear('y el patrimonio tambien',            is_float($foto['patrimonio_neto']));
+echo "\n=== 8. La foto: patrimonio coherente y stock de verdad ===\n";
+/* DOS COSAS ESTABAN MAL (14/09/2026):
+
+   1. `stock_fichas` devolvia null con el comentario "pendiente M6.B" y la
+      pantalla decia "N/A - pendiente integracion con bot" -- para un dato que
+      `stock_agente.php` ya venia escribiendo cada 10 minutos desde el worker.
+
+   2. El patrimonio era ingresos - retiros - fichas_de_los_jugadores. No
+      descontaba lo que se le paga al proveedor POR LAS FICHAS, o sea que
+      contaba como si las fichas fueran gratis. Es plata de verdad: el 20% de
+      todo lo que se entrego. */
+$pdo->exec("DELETE FROM operaciones_panel WHERE payment_id BETWEEN 970000 AND 979999");
+
+$foto = fn_foto($pdo, 0.20);
+chequear('sin libro no se puede descontar el costo, y se dice',
+         $foto['patrimonio_exacto'] === false && $foto['costo_historico'] === null,
+         json_encode([$foto['patrimonio_exacto'], $foto['costo_historico']]));
+
+/* Con libro: el costo historico se descuenta.
+   OJO CON EL ORDEN: la primera fila del libro tambien cambia de donde salen
+   los retiros historicos (pasan de `acciones_saldo` al libro). Si se midiera
+   el delta contra la foto sin libro, cambiarian DOS cosas a la vez y el
+   numero no probaria nada. Por eso primero se ancla el libro con un retiro y
+   recien despues se agrega la entrega que se quiere medir. */
+$libro(U . 'h0', '2019-05-01 09:00:00', 1.0, 1);        // ancla: ya hay libro
+$fotoBase = fn_foto($pdo, 0.20);
+$libro(U . 'h1', '2019-05-01 10:00:00', 100000.0, 0);   // fichas entregadas
+$foto2 = fn_foto($pdo, 0.20);
+chequear('con libro, el patrimonio es exacto', $foto2['patrimonio_exacto'] === true);
+chequear('y descuenta el costo de lo entregado',
+         abs(($fotoBase['patrimonio_neto'] - $foto2['patrimonio_neto']) - 20000.0) < 0.01,
+         'antes=' . $fotoBase['patrimonio_neto'] . ' ahora=' . $foto2['patrimonio_neto']);
+chequear('el costo historico es el 20% de lo entregado',
+         abs($foto2['costo_historico'] - 20000.0) < 0.01,
+         (string)$foto2['costo_historico']);
+
+/* Un RETIRO del libro no es una ficha entregada: no puede subir el costo. */
+$libro(U . 'h2', '2019-05-02 10:00:00', 50000.0, 1);
+$foto3 = fn_foto($pdo, 0.20);
+chequear('los retiros no cuentan como fichas entregadas',
+         abs($foto3['costo_historico'] - 20000.0) < 0.01,
+         (string)$foto3['costo_historico']);
+
+echo "\n=== 8b. El stock y para cuantos dias alcanza ===\n";
+/* `dias` es lo que de verdad sirve: un umbral fijo ("avisame bajo 50.000") no
+   sabe si eso son dos dias o dos meses. Es la metrica que habria evitado el
+   12/09/2026, cuando la cuenta se quedo sin fichas y la plataforma empezo a
+   rechazar depositos en silencio. */
+$pdo->exec("DELETE FROM config_crm WHERE clave IN ('stock_fichas','stock_fichas_en')");
+$GLOBALS['__cfg_crm_cache'] = null;
+$s = fn_stock($pdo, 0.20);
+chequear('sin lectura del worker, el stock es null (no cero)', $s['fichas'] === null);
+chequear('y los dias tampoco se inventan', $s['dias'] === null);
+
+/* cfg_crm() cachea en $GLOBALS por request -- correcto en produccion, donde
+   cada request arranca limpio. Aca hay que vaciarlo a mano o se sigue leyendo
+   lo de antes de escribir. */
+$pdo->prepare("INSERT INTO config_crm (clave, valor) VALUES ('stock_fichas', '80000')
+               ON DUPLICATE KEY UPDATE valor = VALUES(valor)")->execute();
+$GLOBALS['__cfg_crm_cache'] = null;
+$s = fn_stock($pdo, 0.20);
+chequear('con lectura, trae el stock', abs((float)$s['fichas'] - 80000.0) < 0.01,
+         json_encode($s['fichas']));
+chequear('y lo que costo', abs((float)$s['valor'] - 16000.0) < 0.01, json_encode($s['valor']));
+
+/* El ritmo sale de las ultimas dos semanas del libro. Se cargan entregas
+   RECIENTES (no las de 2019, que quedan fuera de la ventana). */
+$pdo->exec("DELETE FROM operaciones_panel WHERE payment_id BETWEEN 970000 AND 979999");
+$s = fn_stock($pdo, 0.20);
+chequear('sin entregas recientes no hay ritmo, y los dias son null',
+         $s['dias'] === null, json_encode($s));
+
+$libro(U . 'r1', date('Y-m-d H:i:s', strtotime('-2 days')), 70000.0, 0);
+$s = fn_stock($pdo, 0.20);
+chequear('con entregas, calcula el consumo diario',
+         $s['consumo_dia'] !== null && abs((float)$s['consumo_dia'] - 5000.0) < 0.01,
+         json_encode($s['consumo_dia']));
+chequear('y cuantos dias aguanta el stock',
+         $s['dias'] !== null && abs((float)$s['dias'] - 16.0) < 0.1,
+         json_encode($s['dias']));
+
+/* Dos semanas de ventana y no dos dias: el consumo es irregular y un fin de
+   semana fuerte haria parecer que el stock se acaba mañana. */
+$libro(U . 'r2', date('Y-m-d H:i:s', strtotime('-1 day')), 70000.0, 0);
+$s = fn_stock($pdo, 0.20);
+chequear('la ventana promedia, no toma el ultimo dia',
+         abs((float)$s['consumo_dia'] - 10000.0) < 0.01, json_encode($s['consumo_dia']));
+
+/* Una lectura que no es un numero NO se toma como cero: un stock de cero
+   inventado es una alarma falsa, y una alarma falsa quema a las que vengan. */
+$pdo->prepare("UPDATE config_crm SET valor = 'sin datos' WHERE clave = 'stock_fichas'")->execute();
+$GLOBALS['__cfg_crm_cache'] = null;
+$s = fn_stock($pdo, 0.20);
+chequear('una lectura ilegible da null, no cero', $s['fichas'] === null, json_encode($s['fichas']));
+
+$pdo->exec("DELETE FROM config_crm WHERE clave IN ('stock_fichas','stock_fichas_en')");
+$pdo->exec("DELETE FROM operaciones_panel WHERE payment_id BETWEEN 970000 AND 979999");
 
 // ===========================================================================
 echo "\n=== 9. Los retiros salen del LIBRO del panel, no de nuestra cola ===\n";

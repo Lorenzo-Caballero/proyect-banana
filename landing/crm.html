@@ -2751,6 +2751,7 @@
         <div class="fn-kpi-card">
           <div class="k">Patrimonio neto <span class="fn-info" data-tip="Cuánto vale tu negocio hoy. Suma lo que tenés (efectivo + fichas en stock) y le resta lo que debés (saldo de los jugadores). Si es positivo, ganás; si es negativo, tenés más deuda que activos."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
           <div class="v" id="fnKpiPatrimonio">—</div>
+          <div class="fn-kpi-var sin_datos" id="fnKpiPatrimonioSub">—</div>
           <div class="fn-kpi-var fn-kpi-actual">Actual, no depende del período</div>
         </div>
       </div>
@@ -2815,7 +2816,7 @@
               <div class="v" id="fnMasPasivo">—</div>
             </div>
             <div class="fn-card">
-              <div class="k">Stock de fichas<span class="fn-info" data-tip="Fichas que tenés en tu panel de ganamos para vender."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+              <div class="k">Stock de fichas<span class="fn-info" data-tip="Fichas que te quedan en el panel de ganamos para vender, y para cuántos días alcanzan al ritmo de entrega de las últimas dos semanas. Lo reporta el worker cada 10 minutos."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
               <div class="v" id="fnMasStock">—</div>
               <div class="sub" id="fnMasStockSub"></div>
             </div>
@@ -9047,17 +9048,40 @@
     const f = d.foto;
 
     $("#fnKpiPatrimonio").textContent = money(f.patrimonio_neto);
+    /* El patrimonio ahora descuenta lo que le pagaste al proveedor por las
+       fichas entregadas. Si el libro del panel no cubre toda la historia, esa
+       resta no se puede hacer y el número sale optimista: hay que decirlo,
+       no mostrarlo como si fuera exacto. */
+    const subPat = $("#fnKpiPatrimonioSub");
+    if(subPat){
+      subPat.textContent = f.patrimonio_exacto
+        ? "ya descontado el costo de las fichas"
+        : "sin descontar el costo de las fichas — falta histórico";
+    }
     $("#fnMasPasivo").textContent = money(f.fichas_jugadores);
 
-    // Dinámico según lo que devuelva el backend (no hardcodeado "N/A" en
-    // el HTML) -- listo para cuando M6.B empiece a mandar un número real,
-    // sin tocar el HTML.
+    /* STOCK DE FICHAS. Decía "N/A · pendiente integración con bot" para un dato
+       que el worker ya venía escribiendo cada 10 minutos. */
     if(f.stock_fichas === null || f.stock_fichas === undefined){
-      $("#fnMasStock").textContent = "N/A";
-      $("#fnMasStockSub").textContent = "Pendiente integración con bot";
+      $("#fnMasStock").textContent = "—";
+      $("#fnMasStockSub").textContent = "el worker todavía no reportó el stock";
     } else {
       $("#fnMasStock").textContent = nf.format(f.stock_fichas);
-      $("#fnMasStockSub").textContent = "";
+      /* LOS DÍAS son lo que de verdad sirve: un umbral fijo no sabe si 50.000
+         fichas son dos días o dos meses. Es la métrica que habría evitado
+         quedarse sin fichas con los depósitos fallando en silencio. */
+      let sub = f.valor_stock != null ? "te costaron " + money(f.valor_stock) : "";
+      if(f.stock_dias != null){
+        const d = f.stock_dias;
+        const txt = d < 1 ? "menos de un día" : (d < 2 ? "~1 día" : "~" + Math.round(d) + " días");
+        sub = "alcanza para " + txt + " al ritmo de las últimas 2 semanas" +
+              (f.valor_stock != null ? " · te costaron " + money(f.valor_stock) : "");
+      }
+      $("#fnMasStockSub").textContent = sub;
+      /* Rojo abajo de 3 días: a ese ritmo, un fin de semana fuerte te deja sin
+         fichas y la plataforma empieza a rechazar depósitos. */
+      $("#fnMasStock").style.color =
+        (f.stock_dias != null && f.stock_dias < 3) ? "var(--red)" : "";
     }
     fnFixTooltips();
   }
