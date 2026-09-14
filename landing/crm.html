@@ -2790,7 +2790,7 @@
               <div class="sub" id="fnMasCostoFichasSub"></div>
             </div>
             <div class="fn-card">
-              <div class="k">Fichas fuera del sistema<span class="fn-info" data-tip="Fichas que entregó la plataforma y nuestra cola no registra, o al revés. Las dos direcciones son un problema y hasta ahora ninguna se veía."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+              <div class="k">Fichas fuera del sistema<span class="fn-info" data-tip="Compara lo que la plataforma entregó contra lo que registró nuestra cola. De más es normal: son cargas hechas a mano desde el panel, y desde ahora sí cuentan en el costo. De MENOS es grave: la cola dice que entregó y la plataforma no tiene registro, o sea que hay un jugador con las fichas descontadas y sin recibirlas."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
               <div class="v" id="fnMasFichasFuera">—</div>
               <div class="sub" id="fnMasFichasFueraSub"></div>
             </div>
@@ -9084,9 +9084,16 @@
       elFF.style.color = "var(--green2)";
       subFF.textContent = money(ff.libro) + " entregados, todos con respaldo";
     } else if(ff.diferencia > 0){
+      /* NO es una alarma: cargar fichas a mano desde el panel es una operación
+         normal (comprarle stock al proveedor y acreditárselo a un jugador que
+         ya pagó, por ejemplo). Se muestra porque esas fichas salieron del stock
+         y hasta ahora no figuraban en ningún costo, no porque haya algo mal.
+         Pintarlo de naranja todos los días convertiría la tarjeta en una alarma
+         que se ignora, y entonces el caso ROJO -- que sí es grave -- pasaría
+         desapercibido con ella. */
       elFF.textContent = "+" + money(ff.diferencia);
-      elFF.style.color = "var(--orange2)";
-      subFF.textContent = "cargadas a mano desde el panel — nadie las pagó de este lado";
+      elFF.style.color = "";
+      subFF.textContent = "cargadas a mano desde el panel (ya contadas en el costo)";
     } else {
       elFF.textContent = money(ff.diferencia);
       elFF.style.color = "var(--red)";
