@@ -427,8 +427,15 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
      * Nunca lanza: la llama rl_acreditar() y un problema acá no puede hacer
      * que la recarga (ya efectivamente acreditada) parezca fallida.
      */
-    function crmnotif_bono_aplicar_en_recarga(PDO $pdo, string $usuario, int $recargaId, int $montoRecarga): void
+    function crmnotif_bono_aplicar_en_recarga(PDO $pdo, string $usuario, int $recargaId, int $montoRecarga): int
     {
+        /* Devuelve el MONTO acreditado (0 si no habia bono): el caller lo suma
+           a $recarga['bono'] para que rl_cargar_al_juego_auto lo deposite EN
+           EL JUEGO junto con las fichas, igual que el bono de bienvenida.
+           Antes devolvia void y el bono quedaba solo en usuarios.bonus -- el
+           jugador cobraba un numero en el chat que en la plataforma no
+           aparecia nunca. El deposito solo-bono despues DEBITA ese mismo
+           monto del contador (bono_debitado), asi que no se juega dos veces. */
         try {
             $st = $pdo->prepare(
                 "SELECT id, tipo, valor FROM bonos_pendientes
@@ -437,21 +444,35 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
             );
             $st->execute([$usuario]);
             $b = $st->fetch(PDO::FETCH_ASSOC);
-            if (!$b) { return; }
+            if (!$b) { return 0; }
 
             $monto = $b['tipo'] === 'pct'
                 ? (int)round($montoRecarga * ((int)$b['valor']) / 100)
                 : (int)$b['valor'];
-            if ($monto <= 0) { return; }
+            if ($monto <= 0) { return 0; }
 
-            if (!function_exists('crm_cargar')) { return; }
+            if (!function_exists('crm_cargar')) { return 0; }
             $r = crm_cargar($pdo, $usuario, 'bono', $monto, 'Bono prometido', 'crm_bono');
-            if (!$r['ok']) { return; }
+            if (!$r['ok']) { return 0; }
 
             $pdo->prepare(
                 "UPDATE bonos_pendientes SET estado='aplicado', aplicado_en=NOW(), recarga_id=?
                   WHERE id=? AND estado='pendiente'"
             )->execute([$recargaId, $b['id']]);
+
+            // El festejo: hasta ahora el bono se aplicaba en silencio y el
+            // jugador no tenia forma de enterarse de que lo cobro.
+            if (function_exists('notif_crear')) {
+                try {
+                    $det = $b['tipo'] === 'pct'
+                        ? 'tu bono del ' . (int)$b['valor'] . '%'
+                        : 'tu bono prometido';
+                    notif_crear($pdo, $usuario, '🎁 ¡Bono aplicado!',
+                        'Se sumó ' . $det . ': +' . number_format($monto, 0, ',', '.')
+                        . ' fichas junto con tu carga.', 'bono', null, 'crm_bono');
+                } catch (Throwable $e) { /* el aviso nunca frena el bono */ }
+            }
+            return $monto;
         } catch (Throwable $e) {
             /* "Nunca lanza" tiene UNA excepcion: un deadlock (1213) dentro de
                la transaccion del caller ya la revirtio ENTERA del lado del
@@ -466,5 +487,6 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
             }
             error_log('crmnotif_bono_aplicar_en_recarga: ' . $e->getMessage());
         }
+        return 0;
     }
 }

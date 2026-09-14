@@ -1163,8 +1163,13 @@ function rl_acreditar(PDO $pdo, array &$recarga, string $idUnico, string $conf,
     // reclamar premio, no rompe nada nuevo. Nunca lanza: un problema ahi no
     // puede hacer que esta recarga (ya efectivamente acreditada arriba)
     // parezca fallida.
+    $bonoPrometido = 0;
     if (function_exists('crmnotif_bono_aplicar_en_recarga')) {
-        crmnotif_bono_aplicar_en_recarga($pdo, (string)$recarga['usuario'], (int)$recarga['id'], (int)$recarga['coins']);
+        // Devuelve el monto acreditado: se suma abajo a $recarga['bono'] para
+        // que rl_cargar_al_juego_auto lo deposite EN EL JUEGO junto con las
+        // fichas, igual que el de bienvenida. (El deposito debita el contador,
+        // asi que no se cobra doble.)
+        $bonoPrometido = crmnotif_bono_aplicar_en_recarga($pdo, (string)$recarga['usuario'], (int)$recarga['id'], (int)$recarga['coins']);
     }
 
     /* Bono de bienvenida (landing bono.html y las landings del CRM): en la
@@ -1209,7 +1214,11 @@ function rl_acreditar(PDO $pdo, array &$recarga, string $idUnico, string $conf,
     // numero en el chat (el bug del "transferi 3000 con bono 50% y en la
     // plataforma me aparecieron 3000").
     $recarga['es_primera'] = $esPrimera;
-    $recarga['bono']       = $bono;
+    // Bienvenida + prometido (fidelizacion / promesa manual del CRM): los dos
+    // viajan juntos al deposito. En la practica no se pisan: bienvenida es
+    // solo primera carga, el prometido suele ser para inactivos que ya
+    // cargaron antes.
+    $recarga['bono']       = $bono + max(0, $bonoPrometido);
 }
 
 /**
@@ -1505,7 +1514,11 @@ function rl_notificar_acreditada(PDO $pdo, array $recarga): void
     if (function_exists('crm_avisar_jugador')) {
         $msg = '¡Listo! Ya te acredité tus ' . number_format($coins, 0, ',', '.') . ' fichas 🎉';
         if ($bono > 0) {
-            $msg .= ' Y te sumé ' . number_format($bono, 0, ',', '.') . ' de bono de bienvenida.';
+            /* "de bienvenida" solo en la primera carga; en las demas el bono
+               es de fidelizacion o una promesa del CRM, y decirle "bienvenida"
+               a un jugador viejo suena a error. */
+            $cual = !empty($recarga['es_primera']) ? ' de bono de bienvenida.' : ' de bono.';
+            $msg .= ' Y te sumé ' . number_format($bono, 0, ',', '.') . $cual;
         }
         $msg .= ' ¡Gracias por jugar con nosotros, mucha suerte! 🍀';
         crm_avisar_jugador($pdo, $usuario, $msg);
@@ -2219,6 +2232,15 @@ function rl_acreditar_directo(PDO $pdo, string $idUnico, string $usuario,
             if (function_exists('ref_pagar_por_primera_carga')) {
                 ref_pagar_por_primera_carga($pdo, $usuario);
             }
+        }
+
+        /* El bono PROMETIDO (fidelizacion o promesa manual): este camino se
+           lo salteaba -- un comprobante resuelto a mano no aplicaba el bono
+           pendiente nunca, y quedaba esperando una recarga automatica que
+           quizas no llegaba mas. Mismo enganche que rl_acreditar; recarga_id
+           0 porque aca no hay fila de `recargas`. */
+        if (function_exists('crmnotif_bono_aplicar_en_recarga')) {
+            $bono += max(0, crmnotif_bono_aplicar_en_recarga($pdo, $usuario, 0, $coins));
         }
 
         $pdo->commit();
