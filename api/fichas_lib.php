@@ -570,6 +570,55 @@ if (!function_exists('fichas_ventana_retiro')) {
  * en el panel de agentes. Desde el chat se PIDE; no se ejecuta solo. Los BONOS
  * (usuarios.bonus) NO se retiran y no se miran acá.
  */
+/**
+ * El aviso de Telegram de UN retiro, leyendo la fila -- no los parametros.
+ *
+ * Se llama desde DOS momentos y por eso lee de la base: cuando el retiro se
+ * crea CON destino, y cuando el destino se completa en un segundo mensaje del
+ * jugador. En los dos casos tiene que salir el mismo aviso, con el CBU adentro.
+ *
+ * EL AVISO NO SALE SIN DESTINO, y esa es la regla: el mensaje existe para poder
+ * pagarle, y sin CBU no se puede pagar. Nahuel lo reporto asi -- "el mensaje me
+ * llega antes de que el cliente complete ese dato, con lo cual siempre viene
+ * vacio". El pedido SI queda registrado igual (se ve en Retiros pendientes
+ * marcado en rojo "Sin CBU/alias"): lo que se posterga es el aviso, no el
+ * registro.
+ */
+function fichas_avisar_retiro(PDO $pdo, string $usuario, int $idRetiro): bool
+{
+    if (!function_exists('tg_evento')) { return false; }
+    try {
+        $st = $pdo->prepare(
+            "SELECT monto, COALESCE(destino,'') destino FROM acciones_saldo
+              WHERE id = ? AND tipo = 'retirar' LIMIT 1"
+        );
+        $st->execute([$idRetiro]);
+        $r = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$r) { return false; }
+        $destino = trim((string)$r['destino']);
+        if ($destino === '') { return false; }   // sin CBU no hay nada que avisar
+
+        $saldo = null;
+        try {
+            $b = $pdo->prepare("SELECT balance FROM usuarios WHERE username = ?");
+            $b->execute([$usuario]);
+            $v = $b->fetchColumn();
+            if ($v !== false && $v !== null) { $saldo = (float)$v; }
+        } catch (Throwable $e) { /* el saldo es contexto, no bloquea el aviso */ }
+
+        return tg_evento($pdo, 'retiro', '💸 Pedido de retiro (por el chat)', [
+            'Jugador'   => $usuario,
+            'Quiere'    => '$' . number_format((float)$r['monto'], 0, ',', '.'),
+            'Tiene'     => $saldo !== null ? '$' . number_format($saldo, 0, ',', '.') : null,
+            'CBU/alias' => ['code' => $destino],
+            'Qué hacer' => 'Aprobalo en CRM → Retiros (le saca las fichas) y transferile.',
+        ]);
+    } catch (Throwable $e) {
+        error_log('fichas_avisar_retiro: ' . $e->getMessage());
+        return false;
+    }
+}
+
 function fichas_pedir_retiro(PDO $pdo, string $usuario, int $monto, string $origen = 'chatbot',
                              bool $todo = false, string $destino = ''): array
 {
@@ -651,7 +700,43 @@ function fichas_pedir_retiro(PDO $pdo, string $usuario, int $monto, string $orig
     );
     $enCurso->execute([$usuario]);
     if ($idPrevio = $enCurso->fetchColumn()) {
-        return ['ok' => false, 'codigo' => 'en_curso', 'id' => (int)$idPrevio,
+        /* YA TIENE UNO PEDIDO. Antes se cortaba acá y listo, pero eso dejaba
+           un caso muy común sin salida: el bot registra el retiro apenas sabe
+           el monto -- para no perderlo si el jugador abandona -- y el CBU llega
+           en el mensaje SIGUIENTE. Ese segundo llamado caía acá y el dato se
+           perdía: el pedido quedaba sin destino y el aviso de Telegram salía
+           vacío, que es justo lo que reportó Nahuel.
+           Si el retiro que ya existe NO tiene destino y ahora sí lo trae, se
+           completa. Y RECIÉN AHÍ suena el Telegram, con el dato adentro: el
+           aviso sirve para pagar, y sin CBU no se puede pagar. */
+        $idPrevio = (int)$idPrevio;
+        if ($destino !== '') {
+            try {
+                $upd = $pdo->prepare(
+                    "UPDATE acciones_saldo
+                        SET destino = ?
+                      WHERE id = ? AND tipo = 'retirar'
+                        AND estado IN ('pendiente','revisar')
+                        AND COALESCE(destino,'') = ''"
+                );
+                $upd->execute([mb_substr($destino, 0, 64), $idPrevio]);
+                if ($upd->rowCount() > 0) {
+                    // Se guarda tambien para la proxima vez que retire.
+                    try {
+                        $pdo->prepare("UPDATE usuarios SET cobro_destino = ? WHERE username = ?")
+                            ->execute([mb_substr($destino, 0, 64), $usuario]);
+                    } catch (Throwable $e) { /* sin migracion 43 */ }
+                    fichas_avisar_retiro($pdo, $usuario, $idPrevio);
+                    return ['ok' => true, 'id' => $idPrevio, 'destino' => $destino,
+                            'falta_destino' => false, 'completado' => true,
+                            'mensaje' => 'Listo, ya quedó registrado con tu alias. '
+                                       . 'Lo aprueba un agente y te avisamos por el chat.'];
+                }
+            } catch (Throwable $e) {
+                error_log('fichas_pedir_retiro/completar destino: ' . $e->getMessage());
+            }
+        }
+        return ['ok' => false, 'codigo' => 'en_curso', 'id' => $idPrevio,
                 'error' => 'Ya tenés un retiro pedido. Un agente lo está viendo.'];
     }
 
@@ -774,28 +859,10 @@ function fichas_pedir_retiro(PDO $pdo, string $usuario, int $monto, string $orig
        Sin clave a proposito: cada pedido de retiro es un evento distinto y hay
        que avisarlos todos, no agruparlos. */
     if (function_exists('tg_evento')) {
-        /* EL AVISO TIENE QUE ALCANZAR PARA PAGARLE, sin abrir nada mas. El
-           flujo real es: llega el mensaje, se le sacan las fichas en el panel y
-           se le transfiere al alias. Si el alias no viene en el aviso, hay que
-           abrir el CRM, buscar el chat y leerlo entero -- que es justo lo que
-           Nahuel pidio evitar.
-           El CBU/alias va como bloque de codigo: en Telegram se copia con un
-           toque, en vez de seleccionar 22 digitos a mano en el celular. */
-        $lineas = [
-            'Jugador'   => $usuario,
-            'Quiere'    => '$' . number_format($monto, 0, ',', '.') . ($todo ? ' (todo su saldo)' : ''),
-            'Tiene'     => '$' . number_format($saldo, 0, ',', '.'),
-        ];
-        if ($destinoFinal !== '') {
-            $lineas['CBU/alias'] = ['code' => $destinoFinal];
-            /* El titular no lo pide el chat todavia: si algun dia se guarda, va
-               aca. Sin el, el operador compara contra el nombre que le figure
-               en el banco al pegar el CBU. */
-        } else {
-            $lineas['CBU/alias'] = 'NO LO DEJÓ — pedíselo por el chat antes de pagar';
-        }
-        $lineas['Qué hacer'] = 'Sacale las fichas en el panel y transferile. Después marcalo Pagado en CRM → Retiros.';
-        tg_evento($pdo, 'retiro', '💸 Pedido de retiro (por el chat)', $lineas);
+        /* Una sola via para el aviso: fichas_avisar_retiro(). Si todavia no
+           hay destino NO manda nada -- el pedido ya quedo registrado y se ve en
+           Retiros pendientes; el aviso sale cuando el jugador da el CBU. */
+        fichas_avisar_retiro($pdo, $usuario, $idRetiro);
     }
 
     return ['ok' => true, 'id' => $idRetiro, 'monto' => $monto,

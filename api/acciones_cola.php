@@ -484,7 +484,39 @@ try {
                 /* La notificacion dice lo que FUE: un deposito que es todo
                    bono no es "te cargamos fichas" (suena a que pago y no
                    pago), es un regalo acreditado. */
-                if ($esRegalo) {
+                /* UN RETIRO NO ES UNA CARGA, y hasta ahora caia en la misma
+                   rama: al jugador al que le acabamos de SACAR las fichas le
+                   llegaba "Ya te cargamos 199 fichas". Le decia exactamente lo
+                   contrario de lo que paso. Paso apenas el retiro empezo a
+                   ejecutarse de verdad (13/9/2026), porque antes ninguna accion
+                   de tipo 'retirar' llegaba a 'hecha'. */
+                if (($a['tipo'] ?? '') === 'retirar') {
+                    notif_crear(
+                        $pdo,
+                        $a['usuario'],
+                        '✅ Retiro aprobado',
+                        'Te descontamos ' . $cuanto . ' fichas del juego.' . $saldo
+                            . ' La transferencia sale en breve.',
+                        'fichas',
+                        null,
+                        'retiro'
+                    );
+                    /* Y por el CHAT, que es donde lo pidio y donde esta
+                       mirando. La notificacion del celular se pierde entre
+                       otras; el chat es el hilo de ESTA conversacion. */
+                    try {
+                        require_once __DIR__ . '/crm_lib.php';
+                        if (function_exists('crm_difusion_chat_aplicar')) {
+                            crm_difusion_chat_aplicar($pdo, (string)$a['usuario'],
+                                '✅ Listo, se aprobó tu retiro de ' . $cuanto
+                                . ' fichas. Ya te las descontamos del juego y la '
+                                . 'transferencia sale en breve.',
+                                ['efimero' => 600]);
+                        }
+                    } catch (Throwable $e) {
+                        error_log('aviso de retiro por chat: ' . $e->getMessage());
+                    }
+                } elseif ($esRegalo) {
                     notif_crear(
                         $pdo,
                         $a['usuario'],
