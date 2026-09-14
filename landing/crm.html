@@ -8230,7 +8230,15 @@
    *  centavos. money() redondea a entero (bien para pesos grandes, mal
    *  para esto). */
   function fnPesos2(n){ return "$" + Number(n).toFixed(2).replace(".", ","); }
-  function fnFmtFecha(d){ return d.toISOString().slice(0, 10); }
+  /* MISMO BUG que tenia pbFmtFecha, en Finanzas: toISOString() pasa a UTC y en
+     Argentina, despues de las 21:00, "hoy" ya es mañana. Los rangos rapidos
+     (Hoy, Ayer, 7d, Mes) salian corridos un dia a partir de esa hora, y "Mes
+     actual" arrancaba el ultimo dia del mes anterior. Va con componentes
+     locales, que es la fecha que el operador ve en su calendario. */
+  function fnFmtFecha(d){
+    const p = n => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+  }
 
   /** Traduce cada botón rápido a {desde,hasta}. "custom" no pasa por acá
    *  -- se lee directo de los <input type=date>, ver fnAplicarRangoCustom. */
@@ -8740,7 +8748,22 @@
     }
   }
 
-  function pbFmtFecha(d){ return d.toISOString().slice(0, 10); }
+  /* LA FECHA, EN HORA LOCAL. Antes era `d.toISOString().slice(0,10)`, que
+     convierte a UTC: en Argentina (UTC-3), DESPUES DE LAS 21:00 eso devuelve la
+     fecha de MAÑANA. O sea que a partir de esa hora "Hoy" consultaba un día que
+     todavía no empezó -- sin registros ni cargas -- y el embudo se vaciaba: ni
+     costo por carga, ni CPA, ni ROAS. Reportado por Nahuel a las 21:41.
+     Peor todavía, era intermitente: antes de las 21 andaba bien, así que parecía
+     que "se reiniciaba solo".
+     Y desfasaba los rangos armados con componentes locales: "Mes actual"
+     empezaba el día 1 a las 00:00 local, que en UTC es el ÚLTIMO día del mes
+     anterior.
+     Se arma con los componentes locales, que es lo que el operador ve en el
+     calendario de su pantalla. */
+  function pbFmtFecha(d){
+    const p = n => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+  }
 
   /** Traduce cada botón rápido a {desde,hasta}. "custom" se lee directo de
    *  los <input type=date>, ver pbAplicarRangoCustom. */
