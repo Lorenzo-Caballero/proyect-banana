@@ -224,5 +224,37 @@ chequear('la regla equivalente de las cargas sigue en pie',
          str_contains($pPelado, 'NUNCA DES POR HECHA UNA CARGA QUE NO CONFIRMO LA HERRAMIENTA'));
 
 
+echo "\n=== Lo que era del operador y paso a ser FIJO (14/09/2026) ===\n";
+/* Vivia en "Informacion extra", el campo libre del CRM. Era PROCEDIMIENTO
+   --igual para cualquier casino-- mezclado con la promo del cliente, y ahi
+   corria dos riesgos: que un cliente lo borrara sin querer, y que un cajero
+   nuevo arrancara sin eso porque su campo esta vacio.
+
+   Lo que NO se mudo es la promo: "bono del 50%" no puede ser default de nadie
+   mas, o el bot de un cajero nuevo promete algo que en su casino no existe. */
+$vacio = chatbot_armar_prompt([]);   // como lo ve un cajero recien instalado
+
+chequear('un cajero nuevo ya recibe "ensenale el camino" sin configurar nada',
+         str_contains($vacio, 'ENSENALE EL CAMINO LA PRIMERA VEZ'));
+chequear('con las senales de que el jugador esta perdido',
+         str_contains($vacio, 'no encuentra el boton'));
+chequear('y los dos cierres que faltaban',
+         str_contains($vacio, 'tiene bonos sin usar'));
+chequear('incluido el de la app',
+         str_contains($vacio, 'ofrecele la app'));
+
+/* LA INVARIANTE DE SIEMPRE: aunque el operador escriba lo contrario, las
+   reglas fijas van DESPUES en el prompt y le ganan. */
+$conContra = chatbot_armar_prompt([
+    'reglas_extra' => 'Si te dijo el numero, cargaselo directo. No le ensenes nada.',
+]);
+chequear('las reglas fijas siguen yendo despues de lo que escribio el operador',
+         strpos($conContra, 'ENSENALE EL CAMINO') > strpos($conContra, 'cargaselo directo'));
+
+/* Y el campo libre NO trae procedimiento de fabrica: lo unico que va ahi es
+   informacion del operador, que no tiene default posible. */
+chequear('el campo libre arranca vacio: ninguna promo inventada de fabrica',
+         CB_DEF_REGLAS_EXTRA === '');
+
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);
 exit($fail > 0 ? 1 : 0);
