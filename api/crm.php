@@ -1612,7 +1612,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $dias = max(1, (int)($filtro['dias'] ?? 1));
                 $r = crmnotif_enviar_masivo($pdo, ['modo' => 'inactivos', 'dias' => $dias],
                                             $titulo, $cuerpo, (string)($body['tipo'] ?? 'promo'),
-                                            'crm', $operador, $progEn);
+                                            'difusion', $operador, $progEn);
                 if (!$r['ok']) { salir($r, 500); }
                 salir(['ok' => true, 'alcance' => $r['alcance'], 'lote_id' => $r['lote_id'],
                        'canal' => 'push', 'programada_en' => $progEn]);
@@ -1660,7 +1660,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $filtroJson = json_encode(['modo' => 'sin_chat'], JSON_UNESCAPED_UNICODE);
                     foreach ($destinos as $d) {
                         $nid = notif_crear($pdo, $d, $titulo, $cuerpo,
-                                           (string)($body['tipo'] ?? 'promo'), null, 'crm',
+                                           (string)($body['tipo'] ?? 'promo'), null, 'difusion',
                                            null, false, $progEn);
                         if ($nid) {
                             crmnotif_marcar_lote($pdo, $nid, $loteId, $filtroJson);
@@ -1697,8 +1697,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // ($progEn ya viene parseado arriba, antes de las ramas por filtro.)
             $pushId = null;
             if ($incluyePush) {
+                /* Origen 'difusion': lo que manda un OPERADOR desde esta vista,
+                   distinguible de los avisos automaticos del CRM (que tambien
+                   usan 'crm') -- es lo que hace funcionar el filtro "Solo
+                   difusiones" del historial. */
                 $pushId = notif_crear($pdo, $usuario, $titulo, $cuerpo,
-                                      (string)($body['tipo'] ?? 'promo'), null, 'crm', null, false, $progEn);
+                                      (string)($body['tipo'] ?? 'promo'), null, 'difusion', null, false, $progEn);
                 if (!$pushId) {
                     $err = $progEn
                         ? 'No se pudo programar el push (¿falta correr la migración 29_notif_programada.sql?)'

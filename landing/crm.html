@@ -2008,6 +2008,10 @@
   .nv-badge{display:inline-block;font-size:10.5px;font-weight:700;text-transform:uppercase;
     letter-spacing:.03em;padding:2px 8px;border-radius:20px;background:var(--violetSoft);color:var(--violet2)}
   .nv-badge.masivo{background:var(--panel);border:1px solid var(--line);color:var(--muted)}
+  .nv-badge.difusion{background:var(--violetSoft);border:1px solid var(--line2);color:var(--violet2)}
+  .nv-hist-cuerpo{font-size:12px;color:var(--muted);margin-top:2px;overflow:hidden;
+    text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical}
+  .nv-hist-tipo svg{width:12px;height:12px;vertical-align:-2px;margin-right:3px}
   .nv-badge.pendiente{background:var(--violetSoft);color:var(--violet2)}
   .nv-badge.aplicado{background:var(--greenSoft,rgba(34,197,94,.12));color:var(--green2)}
   .nv-badge.cancelado{background:var(--redSoft);color:var(--red)}
@@ -10633,13 +10637,23 @@ ${cuando}.
     if(!items.length){ cont.innerHTML = `<div class="ag-vacio">Sin envíos en este rango.</div>`; }
     else {
       cont.innerHTML = items.map(it=>{
+        /* Destino en palabras del operador: a quien le llego y cuantos. */
         const destino = it.masivo
-          ? `<span class="nv-badge masivo">Masivo${it.filtro && it.filtro.dias!=null ? " · inactivos "+it.filtro.dias+"d" : ""} · ${it.alcance_filas} jugador${it.alcance_filas===1?"":"es"}</span>`
-          : (it.usuario ? `@${esc(it.usuario)}` : "a todos");
+          ? `<span class="nv-badge difusion">Difusión${it.filtro && it.filtro.modo==="sin_chat" ? " · nunca escribieron"
+              : (it.filtro && it.filtro.dias!=null ? " · inactivos "+it.filtro.dias+"d" : "")}</span>
+             <b>${nf.format(it.alcance_filas||0)} jugador${it.alcance_filas===1?"":"es"}</b>`
+          : (it.usuario ? `<b>@${esc(it.usuario)}</b>` : `<span class="nv-badge difusion">Difusión</span> <b>a todos</b>`);
+        const f = String(it.creada_en||"");                    // "2026-09-13 22:38:10"
+        const fecha = f ? `${f.slice(8,10)}/${f.slice(5,7)} ${f.slice(11,16)}` : "";
+        /* El label del tipo trae el SVG del icono: NO pasa por esc() -- es
+           una constante nuestra, y escaparla imprimia el codigo del icono
+           como texto (el "inentendible" de la captura de Nahuel). Lo que si
+           se escapa siempre es lo que escribio una persona (titulo/cuerpo). */
         return `<div class="nv-hist-item">
           <div class="nv-hist-info">
-            <div class="nv-hist-titulo">${esc(NV_TIPO_LABEL[it.tipo] || it.tipo)} — ${esc(it.titulo)}</div>
-            <div class="nv-hist-meta">${esc(it.creada_en)} · ${destino}</div>
+            <div class="nv-hist-titulo">${esc(it.titulo)}</div>
+            ${it.cuerpo ? `<div class="nv-hist-cuerpo">${esc(it.cuerpo)}</div>` : ""}
+            <div class="nv-hist-meta"><span class="nv-hist-tipo">${NV_TIPO_LABEL[it.tipo] || esc(it.tipo)}</span> · ${destino} · <span title="${esc(f)}">${fecha}</span></div>
           </div>
         </div>`;
       }).join("");

@@ -195,12 +195,14 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
         if ($desde !== '') { $where[] = 'n.creada_en >= ?'; $params[] = $desde . ' 00:00:00'; }
         if ($hasta !== '') { $where[] = 'n.creada_en <= ?'; $params[] = $hasta . ' 23:59:59'; }
         if ($tipo  !== '') { $where[] = 'n.tipo = ?'; $params[] = $tipo; }
-        /* Solo lo MANDADO POR UN OPERADOR: lotes de difusion o filas del CRM.
-           Sin esto el historial mezclaba las difusiones con cada "te
-           respondio" automatico del chat y las promos del sistema -- cientos
-           de filas que entierran lo que el agente mando a mano. */
+        /* Solo lo MANDADO POR UN OPERADOR desde la vista Difusiones. El
+           origen 'crm' NO sirve de discriminador: tambien lo llevan los
+           avisos automaticos del CRM ("Un agente te respondio", el push de
+           cargar fichas). Lo que si es inequivoco: un lote (masiva por
+           filtro), un broadcast (usuario NULL: nadie mas manda a todos), y
+           el origen 'difusion' que ahora estampa la accion notificar. */
         if (!empty($opts['solo_difusiones'])) {
-            $where[] = "(n.lote_id IS NOT NULL OR (n.origen = 'crm' AND n.usuario IS NULL) OR n.origen = 'crm')";
+            $where[] = "(n.lote_id IS NOT NULL OR n.usuario IS NULL OR n.origen = 'difusion')";
         }
 
         $whereSql = implode(' AND ', $where);
