@@ -1927,10 +1927,39 @@
   }
 
   /* ================== PROMO "DESCARGÁ LA APP" ==================
-     Modal que aparece UNA vez, justo después de entregar las credenciales de
-     una cuenta recién creada: es el momento de mayor atención del jugador y
-     el único en que el server manda `app_promo` (ver alta_estado.php). El
-     server decide si hay promo y cuántas fichas; acá solo se dibuja.
+     ESTE COMENTARIO DECÍA "aparece UNA vez, justo después de entregar las
+     credenciales... el único momento en que el server manda `app_promo`".
+     Quedó viejo y era engañoso: hoy sale en cuatro momentos distintos, y dos
+     de ellos son en cada carga de página. Si te estás preguntando "¿cuándo
+     carajo sale este cartel?", es acá:
+
+       1. Al ENTREGAR LAS CREDENCIALES de una cuenta recién creada
+          (alta_estado.php manda app_promo). Llama a mostrarPromoApp() DIRECTO,
+          o sea que se saltea el freno de los 30 minutos -- es el momento de
+          mayor atención del jugador y no se quiere perder.
+
+       2. Al REGISTRAR EL DISPOSITIVO (notificaciones.php manda app_promo).
+          Eso corre al cargar CUALQUIER página con el widget, con sesión o sin
+          ella. O sea: también al anónimo que todavía no se registró.
+
+       3. Cada 25 s en el SONDEO (mirarNotif), mientras la pestaña siga
+          abierta. Es lo que lo hace reaparecer solo a los 30 minutos.
+
+       4. Al INICIAR SESIÓN: se borra `gp_app_promo_visto`, lo que RESETEA el
+          freno, y el notifRegistrar() que va justo después lo muestra al
+          instante. Pedido explícito de Nahuel: que aparezca cada vez que
+          cierra y vuelve a iniciar sesión.
+
+     A QUIÉN le corresponde lo decide el server, no esto:
+       - la promo tiene que estar prendida (`app_promo_activa`) Y con fichas
+         (`app_bono_fichas` > 0). Por defecto viene APAGADA;
+       - con sesión, solo si `usuarios.tiene_app = 0` -- el que ya la instaló
+         no tiene nada que descargar y el regalo ya lo cobró;
+       - anónimo: siempre, porque el cartel también vende la app al que
+         todavía no se registró.
+
+     CERRARLO NO LO APAGA, a propósito: solo marca el timestamp y vuelve a los
+     PROMO_APP_MIN minutos. Es insistente por pedido, no por descuido.
 
      NUNCA dentro del APK (APP): ahí la app ya está instalada y el bono se
      acredita solo al iniciar sesión (notif_registrar_dispositivo). */
