@@ -439,6 +439,133 @@ $pdo->exec("DELETE FROM operaciones_panel WHERE payment_id BETWEEN 970000 AND 97
 $pdo->exec("DELETE FROM acciones_saldo WHERE usuario LIKE '" . U . "%'");
 
 // ===========================================================================
+echo "\n=== 9d. La comision de la pasarela ===\n";
+/* Quien cobra por transferencia se lleva un % de cada movimiento, y distinto
+   segun la direccion: ~4% de lo que entra, ~1% de lo que sale. Con billeteras
+   virtuales no se cobra nada, y ese es el default a proposito: cobrar una
+   comision que no existe le haria ver a alguien una perdida inventada. */
+$pdo->exec("DELETE FROM config_crm WHERE clave LIKE 'fin_comision%'");
+$GLOBALS['__cfg_crm_cache'] = null;
+$c = fn_comisiones($pdo, $D, $H, 100000.0, 50000.0);
+chequear('sin configurar no descuenta nada', $c['total'] === 0.0, json_encode($c));
+chequear('y lo dice', $c['fuente'] === 'ninguna', (string)$c['fuente']);
+
+$pdo->exec("INSERT INTO config_crm (clave,valor) VALUES ('fin_comision_entrada','4'),('fin_comision_salida','1')
+            ON DUPLICATE KEY UPDATE valor=VALUES(valor)");
+$GLOBALS['__cfg_crm_cache'] = null;
+$c = fn_comisiones($pdo, $D, $H, 100000.0, 50000.0);
+chequear('cobra distinto por entrada y por salida',
+         abs($c['entrada'] - 4000.0) < 0.01 && abs($c['salida'] - 500.0) < 0.01, json_encode($c));
+chequear('y el total suma las dos', abs($c['total'] - 4500.0) < 0.01, json_encode($c['total']));
+
+/* Un porcentaje negativo no puede REGALAR plata. */
+$pdo->exec("UPDATE config_crm SET valor='-5' WHERE clave='fin_comision_entrada'");
+$GLOBALS['__cfg_crm_cache'] = null;
+$c = fn_comisiones($pdo, $D, $H, 100000.0, 50000.0);
+chequear('un porcentaje negativo se ignora', $c['entrada'] === 0.0, json_encode($c));
+$pdo->exec("DELETE FROM config_crm WHERE clave LIKE 'fin_comision%'");
+$GLOBALS['__cfg_crm_cache'] = null;
+
+// ===========================================================================
+echo "\n=== 9e. Lo que deja un jugador en toda su vida ===\n";
+/* ES EL NUMERO QUE DECIDE CUANTO SE PUEDE PAGAR POR TRAER UNO. Sin el solo se
+   sabe lo que deja en su primera carga, que casi nunca cubre el costo -- y por
+   eso mirarlo solo lleva a apagar campañas que funcionaban. */
+$limpiar();
+$pdo->exec("DELETE FROM operaciones_panel WHERE payment_id BETWEEN 970000 AND 979999");
+
+/* Uno que deja plata: pago 10.000, se llevo 2.000, recibio 10.000 en fichas. */
+$recarga(U . 'bueno', '2019-05-01 10:00:00', 10000.0);
+$libro(U . 'bueno',   '2019-05-01 10:05:00', 10000.0, 0);
+$libro(U . 'bueno',   '2019-05-02 10:00:00',  2000.0, 1);
+/* Uno que gana: pago 1.000 y se llevo 9.000. */
+$recarga(U . 'gana',  '2019-05-01 11:00:00',  1000.0);
+$libro(U . 'gana',    '2019-05-01 11:05:00',  1000.0, 0);
+$libro(U . 'gana',    '2019-05-03 10:00:00',  9000.0, 1);
+
+$pj = fn_por_jugador($pdo, 0.20, 0.0, 0.0);
+$mios = array_values(array_filter($pj['top'], fn($x) => str_starts_with($x['usuario'], U)));
+chequear('cuenta los dos jugadores', $pj['jugadores'] >= 2, (string)$pj['jugadores']);
+
+$porU = array_column(array_merge($pj['top'], $pj['peores']), 'ganancia', 'usuario');
+chequear('el que deja plata da ganancia positiva',
+         ($porU[U . 'bueno'] ?? 0) > 0, json_encode($porU[U . 'bueno'] ?? null));
+chequear('y descuenta el costo de sus fichas',
+         abs(($porU[U . 'bueno'] ?? 0) - 6000.0) < 0.01, json_encode($porU[U . 'bueno'] ?? null));
+chequear('el que gana da NEGATIVO', ($porU[U . 'gana'] ?? 0) < 0,
+         json_encode($porU[U . 'gana'] ?? null));
+
+/* La comision baja la ganancia de cada jugador. */
+$pj2 = fn_por_jugador($pdo, 0.20, 4.0, 1.0);
+$porU2 = array_column(array_merge($pj2['top'], $pj2['peores']), 'ganancia', 'usuario');
+chequear('con comision, el jugador deja menos',
+         ($porU2[U . 'bueno'] ?? 0) < ($porU[U . 'bueno'] ?? 0),
+         json_encode([$porU[U . 'bueno'] ?? null, $porU2[U . 'bueno'] ?? null]));
+
+/* Quien nunca pago no es un jugador del negocio: una carga a mano no lo
+   convierte en cliente. */
+$libro(U . 'regalado', '2019-05-01 12:00:00', 5000.0, 0);
+$pj3 = fn_por_jugador($pdo, 0.20, 0.0, 0.0);
+$nombres = array_column(array_merge($pj3['top'], $pj3['peores']), 'usuario');
+chequear('el que nunca pago no cuenta como jugador',
+         !in_array(U . 'regalado', $nombres, true), json_encode($nombres));
+
+echo "\n=== 9f. Concentracion: de cuantos jugadores depende el resultado ===\n";
+/* El 13/09/2026 un solo retiro de $34.580 dio vuelta el dia entero. Si el
+   resultado depende de tres jugadores, un mal dia de ellos borra el mes. */
+chequear('mide la concentracion de los 5 mejores',
+         $pj['concentracion_top5'] !== null && $pj['concentracion_top5'] > 0
+         && $pj['concentracion_top5'] <= 100, json_encode($pj['concentracion_top5']));
+chequear('separa los que dejan de los que ganan',
+         $pj['dan_ganancia'] >= 1 && $pj['dan_perdida'] >= 1,
+         json_encode([$pj['dan_ganancia'], $pj['dan_perdida']]));
+
+echo "\n=== 9g. A los cuantos dias se paga solo un jugador ===\n";
+$r = fn_recupero($pdo, 0.20, 0.0, 0.0, 30);
+chequear('arma la curva dia por dia', count($r['dias']) > 0, json_encode(count($r['dias'])));
+chequear('el dia 0 existe', ($r['dias'][0]['dia'] ?? -1) === 0, json_encode($r['dias'][0] ?? null));
+
+/* LA CURVA ES ACUMULADA: nunca puede "olvidarse" de lo que ya paso. Con los
+   datos de arriba, el dia 0 tiene solo las cargas y despues bajan por los
+   retiros: lo que importa es que sea coherente, no que suba siempre. */
+$g0 = $r['dias'][0]['ganancia'];
+$ult = end($r['dias'])['ganancia'];
+chequear('el acumulado del final incluye los retiros posteriores', $ult <= $g0,
+         'dia0=' . $g0 . ' final=' . $ult);
+
+/* Sin pauta cargada no hay con que comparar: el recupero es null, no cero. */
+$pdo->exec("DELETE FROM gasto_diario WHERE landing_slug LIKE 't_fin%'");
+$r2 = fn_recupero($pdo, 0.20, 0.0, 0.0, 30);
+if ($r2['cpa'] === null) {
+    chequear('sin pauta no se inventa un dia de recupero', $r2['dia_recupero'] === null);
+} else {
+    chequear('con pauta, el CPA es un numero', $r2['cpa'] > 0, json_encode($r2['cpa']));
+}
+
+echo "\n=== 9h. La bola de nieve ===\n";
+/* Dos lineas por dia: lo que se gasto en pauta y lo que dejaron los jugadores
+   que YA estaban. Cuando la segunda supera a la primera, la publicidad se
+   financia sola. */
+$serie = fn_bola_nieve($pdo, '2019-05-01', '2019-05-05', 0.20, 0.0, 0.0);
+chequear('trae un punto por dia del rango', count($serie) === 5, (string)count($serie));
+chequear('los acumulados solo crecen o se mantienen',
+         $serie[4]['acum_pauta'] >= $serie[0]['acum_pauta'], json_encode(array_column($serie, 'acum_pauta')));
+
+/* La primera carga de un jugador NO es base: no puede contarse como plata que
+   llego sin gastar publicidad hoy. */
+$dia1 = $serie[0];
+chequear('el dia de las primeras cargas no suma a la base',
+         abs($dia1['base']) < 0.01, json_encode($dia1));
+
+/* Un dia sin nada no rompe ni deja huecos. */
+chequear('un dia sin movimiento sale en cero, no falta',
+         $serie[3]['fecha'] === '2019-05-04' && $serie[3]['ganancia'] == 0,
+         json_encode($serie[3]));
+
+$pdo->exec("DELETE FROM operaciones_panel WHERE payment_id BETWEEN 970000 AND 979999");
+$limpiar();
+
+// ===========================================================================
 echo "\n=== 10. Un rango vacio da cero en todo y no rompe ===\n";
 $v = '2019-02-01';
 chequear('ingresos 0',  fn_ingresos($pdo, $v, $v)['monto'] === 0.0);

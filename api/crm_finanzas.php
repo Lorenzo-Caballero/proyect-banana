@@ -333,14 +333,37 @@ function fn_bonos(PDO $pdo, string $desde, string $hasta): array
     return ['cantidad' => (int)$r['cantidad'], 'monto' => (float)$r['monto']];
 }
 
-/** Jugadores nuevos: alta en ganamos (usuarios.creation_date) dentro del período. */
+/**
+ * Jugadores nuevos: los que cargaron por PRIMERA VEZ en el período.
+ *
+ * ANTES CONTABA REGISTROS (`usuarios.creation_date`) y eso medía otra cosa.
+ * Nahuel lo dijo así: "yo no gano dinero por los registros, yo gano por las
+ * cargas". Un registro que nunca carga es costo, no resultado -- y encima esa
+ * tarjeta convivía en la misma pantalla con el bloque de Salud del negocio,
+ * donde el mismo concepto ya estaba bien medido. Dos números con el mismo
+ * nombre diciendo cosas distintas es peor que no tener ninguno.
+ *
+ * "Primera" es el mínimo histórico del jugador sobre las dos vías de carga, no
+ * la primera dentro del rango: alguien que viene cargando hace meses no puede
+ * aparecer como nuevo porque el reporte arranque el lunes.
+ */
 function fn_nuevos(PDO $pdo, string $desde, string $hasta): int
 {
-    $st = $pdo->prepare(
-        "SELECT COUNT(*) FROM usuarios WHERE creation_date >= ? AND creation_date < ? + INTERVAL 1 DAY"
-    );
-    $st->execute([$desde, $hasta]);
-    return (int)$st->fetchColumn();
+    try {
+        $cargas = publicidad_sql_cargas();
+        $st = $pdo->prepare(
+            "SELECT COUNT(DISTINCT c.usuario)
+               FROM ($cargas) c
+               JOIN (SELECT usuario, MIN(cuando) AS primera FROM ($cargas) z GROUP BY usuario) pr
+                 ON pr.usuario = c.usuario AND c.cuando = pr.primera
+              WHERE c.cuando >= ? AND c.cuando < ? + INTERVAL 1 DAY"
+        );
+        $st->execute([$desde, $hasta]);
+        return (int)$st->fetchColumn();
+    } catch (Throwable $e) {
+        error_log('fn_nuevos: ' . $e->getMessage());
+        return 0;
+    }
 }
 
 /**
@@ -661,6 +684,363 @@ function fn_hg(string $desde, string $hasta): ?array
     } catch (Throwable $e) {
         return null;    // libro sin migrar: Finanzas sigue andando
     }
+}
+
+/**
+ * TODO lo que movio cada jugador en su vida, en una sola pasada.
+ *
+ * Se trae crudo y se agrega en PHP a proposito. La alternativa era un SQL con
+ * tres subconsultas agrupadas y un FULL OUTER JOIN que MySQL no tiene; con
+ * unos pocos miles de filas, agregarlo aca es mas simple de leer, mas facil de
+ * cambiar, y permite calcular la curva de recupero -- que necesita el detalle
+ * dia por dia -- sin volver a consultar.
+ *
+ * Devuelve, por usuario: `cargado` (lo que pago), `entregado` (las fichas que
+ * la plataforma le dio), `retirado` (lo que se llevo), y `primera` / `ultima`
+ * fecha de carga.
+ *
+ * `entregado` sale del libro del panel y NO de lo que pago: la diferencia son
+ * los bonos y las cargas a mano, y son fichas que costaron plata igual.
+ */
+function fn_jugadores_crudo(PDO $pdo): array
+{
+    $j = [];
+    $tocar = function (string $u) use (&$j) {
+        if (!isset($j[$u])) {
+            $j[$u] = ['usuario' => $u, 'cargado' => 0.0, 'entregado' => 0.0,
+                      'retirado' => 0.0, 'cargas' => 0, 'primera' => null, 'ultima' => null];
+        }
+        return $u;
+    };
+
+    try {
+        $cargas = publicidad_sql_cargas();
+        foreach ($pdo->query("SELECT usuario, cuando, monto FROM ($cargas) c") as $r) {
+            $u = $tocar((string)$r['usuario']);
+            $j[$u]['cargado'] += (float)$r['monto'];
+            $j[$u]['cargas']++;
+            $f = (string)$r['cuando'];
+            if ($j[$u]['primera'] === null || $f < $j[$u]['primera']) { $j[$u]['primera'] = $f; }
+            if ($j[$u]['ultima']  === null || $f > $j[$u]['ultima'])  { $j[$u]['ultima']  = $f; }
+        }
+    } catch (Throwable $e) { error_log('fn_jugadores_crudo (cargas): ' . $e->getMessage()); }
+
+    try {
+        foreach ($pdo->query("SELECT username, tipo, monto FROM operaciones_panel") as $r) {
+            $u = $tocar((string)$r['username']);
+            if ((int)$r['tipo'] === 0) { $j[$u]['entregado'] += (float)$r['monto']; }
+            else                       { $j[$u]['retirado']  += (float)$r['monto']; }
+        }
+    } catch (Throwable $e) { /* sin migración 67: se sigue con lo que hay */ }
+
+    return $j;
+}
+
+/**
+ * Cuánto deja un jugador en TODA su vida, y de cuántos depende el resultado.
+ *
+ * ES EL NUMERO QUE DECIDE CUANTO PODES PAGAR POR TRAER UNO. Sin él solo se
+ * sabe lo que deja en su primera carga -- que casi nunca cubre el costo de
+ * adquirirlo, y por eso mirarlo solo lleva a apagar campañas que funcionaban.
+ *
+ * `ganancia` de un jugador = lo que pagó, menos lo que se llevó, menos lo que
+ * costaron las fichas que recibió, menos la comisión de la pasarela.
+ *
+ * LA CONCENTRACION VA JUNTO Y NO ES UN ADORNO: el 13/09/2026 un solo retiro de
+ * $34.580 dio vuelta el día entero. Si el resultado depende de tres jugadores,
+ * un mal día de ellos borra el mes, y eso no se ve en ningún promedio.
+ */
+function fn_por_jugador(PDO $pdo, float $costoPorFicha, float $pctE, float $pctS): array
+{
+    $j = fn_jugadores_crudo($pdo);
+
+    $vivos = [];
+    foreach ($j as $u => $d) {
+        if ($d['cargado'] <= 0) { continue; }   // nunca pagó: no es un jugador del negocio
+        $com  = $d['cargado'] * $pctE / 100 + $d['retirado'] * $pctS / 100;
+        $gan  = $d['cargado'] - $d['retirado'] - $d['entregado'] * $costoPorFicha - $com;
+        $vivos[] = ['usuario' => $u, 'cargado' => round($d['cargado'], 2),
+                    'retirado' => round($d['retirado'], 2), 'cargas' => $d['cargas'],
+                    'ganancia' => round($gan, 2), 'primera' => $d['primera']];
+    }
+    if (!$vivos) {
+        return ['jugadores' => 0, 'ganancia_total' => 0.0, 'ganancia_promedio' => null,
+                'cargas_promedio' => null, 'dan_ganancia' => 0, 'dan_perdida' => 0,
+                'top' => [], 'concentracion_top5' => null];
+    }
+
+    usort($vivos, fn($a, $b) => $b['ganancia'] <=> $a['ganancia']);
+    $total  = array_sum(array_column($vivos, 'ganancia'));
+    $n      = count($vivos);
+    $ganan  = count(array_filter($vivos, fn($x) => $x['ganancia'] > 0));
+
+    /* CONCENTRACION: qué parte del resultado positivo aportan los 5 mejores.
+       Se mide contra la suma de los POSITIVOS y no contra el total neto: con
+       un total cercano a cero (o negativo) el porcentaje se dispara o cambia
+       de signo, y deja de significar nada. */
+    $positivos = array_sum(array_map(fn($x) => max(0, $x['ganancia']), $vivos));
+    $top5      = array_sum(array_map(fn($x) => max(0, $x['ganancia']), array_slice($vivos, 0, 5)));
+
+    return [
+        'jugadores'         => $n,
+        'ganancia_total'    => round($total, 2),
+        'ganancia_promedio' => round($total / $n, 2),
+        'cargas_promedio'   => round(array_sum(array_column($vivos, 'cargas')) / $n, 2),
+        'dan_ganancia'      => $ganan,
+        'dan_perdida'       => $n - $ganan,
+        'top'               => array_slice($vivos, 0, 5),
+        'peores'            => array_slice(array_reverse($vivos), 0, 3),
+        'concentracion_top5' => $positivos > 0 ? round(100 * $top5 / $positivos, 1) : null,
+    ];
+}
+
+/**
+ * ¿A los cuántos días se paga solo un jugador?
+ *
+ * LA PREGUNTA QUE CONTESTA, en las palabras de Nahuel: "va a haber un momento
+ * en el que la ganancia que nos estén dejando todos los jugadores acumulados
+ * va a ser superior a nuestro gasto diario de publicidad; ahí es cuando con esa
+ * propia ganancia vamos a poder empezar a financiar nuestra publicidad".
+ *
+ * Mientras eso no pasa, cada jugador nuevo se paga con plata propia. Saber en
+ * cuántos días se recupera dice CUÁNTO CAPITAL hay que bancar mientras tanto --
+ * que es la diferencia entre una campaña que tarda y una que no cierra nunca.
+ *
+ * Cómo se arma la curva: a cada jugador se le mira el día 0 (su primera carga)
+ * y se acumula su ganancia día a día. Después se promedia entre todos los que
+ * ya llevan al menos esos días. Ese último recorte es importante: sin él, el
+ * día 60 se calcularía con los pocos jugadores viejos que llegaron hasta ahí y
+ * la curva se iría a cualquier lado al final.
+ *
+ * Se compara contra el costo de traer un jugador (la pauta dividida por los
+ * jugadores nuevos del mismo período). El día en que la curva lo cruza es el
+ * recupero.
+ */
+function fn_recupero(PDO $pdo, float $costoPorFicha, float $pctE, float $pctS,
+                     int $diasMax = 60): array
+{
+    $vacio = ['dias' => [], 'cpa' => null, 'dia_recupero' => null, 'jugadores' => 0];
+
+    $j = fn_jugadores_crudo($pdo);
+    /* El detalle día por día, que es lo que permite acumular. Se pide aparte y
+       no dentro de fn_jugadores_crudo() porque solo esta función lo necesita. */
+    $mov = [];
+    try {
+        $cargas = publicidad_sql_cargas();
+        foreach ($pdo->query("SELECT usuario, DATE(cuando) f, SUM(monto) m FROM ($cargas) c GROUP BY usuario, f") as $r) {
+            $mov[(string)$r['usuario']][(string)$r['f']]['cargado'] = (float)$r['m'];
+        }
+        foreach ($pdo->query("SELECT username, tipo, DATE(cuando) f, SUM(monto) m
+                                FROM operaciones_panel GROUP BY username, tipo, f") as $r) {
+            $k = (int)$r['tipo'] === 0 ? 'entregado' : 'retirado';
+            $mov[(string)$r['username']][(string)$r['f']][$k] = (float)$r['m'];
+        }
+    } catch (Throwable $e) { error_log('fn_recupero: ' . $e->getMessage()); }
+
+    $hoy   = new DateTime('today');
+    $sumas = array_fill(0, $diasMax + 1, 0.0);
+    $cuant = array_fill(0, $diasMax + 1, 0);
+    $n     = 0;
+
+    foreach ($j as $u => $d) {
+        if ($d['cargado'] <= 0 || $d['primera'] === null) { continue; }
+        $n++;
+        $primera = new DateTime(substr($d['primera'], 0, 10));
+        $antiguedad = (int)$primera->diff($hoy)->days;
+
+        /* Acumulado día a día desde su día 0. */
+        $acum = 0.0;
+        $porDia = $mov[$u] ?? [];
+        ksort($porDia);
+        $idx = [];
+        foreach ($porDia as $f => $v) {
+            $off = (int)$primera->diff(new DateTime($f))->days;
+            if ($off < 0) { $off = 0; }
+            $com = ($v['cargado'] ?? 0) * $pctE / 100 + ($v['retirado'] ?? 0) * $pctS / 100;
+            $idx[$off] = ($idx[$off] ?? 0)
+                       + ($v['cargado'] ?? 0) - ($v['retirado'] ?? 0)
+                       - ($v['entregado'] ?? 0) * $costoPorFicha - $com;
+        }
+        for ($d0 = 0; $d0 <= $diasMax; $d0++) {
+            $acum += ($idx[$d0] ?? 0);
+            // Solo cuenta para los días que el jugador YA vivió.
+            if ($d0 <= $antiguedad) { $sumas[$d0] += $acum; $cuant[$d0]++; }
+        }
+    }
+
+    /* El costo de traer un jugador: toda la pauta dividida por los jugadores
+       que alguna vez cargaron. Es el mismo criterio que Publicidad -- se paga
+       por cargas, no por registros. */
+    $pauta = 0.0;
+    try {
+        $pauta = (float)$pdo->query("SELECT COALESCE(SUM(monto),0) FROM gasto_diario")->fetchColumn();
+    } catch (Throwable $e) { /* sin gasto: sin CPA */ }
+    $cpa = ($pauta > 0 && $n > 0) ? round($pauta / $n, 2) : null;
+
+    $curva = []; $cruce = null;
+    for ($d0 = 0; $d0 <= $diasMax; $d0++) {
+        if ($cuant[$d0] === 0) { continue; }
+        $prom = $sumas[$d0] / $cuant[$d0];
+        $curva[] = ['dia' => $d0, 'ganancia' => round($prom, 2), 'jugadores' => $cuant[$d0]];
+        if ($cruce === null && $cpa !== null && $prom >= $cpa) { $cruce = $d0; }
+    }
+
+    return ['dias' => $curva, 'cpa' => $cpa, 'dia_recupero' => $cruce, 'jugadores' => $n];
+}
+
+/**
+ * LA BOLA DE NIEVE: lo que gastás en pauta contra lo que deja la base, día a día.
+ *
+ * Es el gráfico del modelo de negocio tal como lo describió Nahuel: "hasta ese
+ * momento es todo inversión en publicidad, pero no vemos ninguna ganancia real.
+ * Por eso es tan importante mantener la retención de los jugadores... nuestro
+ * negocio está en la fidelización, para acortar este proceso".
+ *
+ * Dos líneas por día:
+ *   `pauta`  lo que se gastó en publicidad ese día.
+ *   `base`   lo que dejaron los jugadores que YA estaban -- los que cargaron ese
+ *            día pero NO por primera vez. Esa plata no costó publicidad hoy.
+ *
+ * Cuando la segunda supera a la primera de forma sostenida, la publicidad se
+ * financia sola. Ese es el punto que hay que ver venir.
+ *
+ * Y los acumulados, que contestan la otra mitad: cuánto se lleva invertido en
+ * total y cuánto se recuperó. La distancia entre las dos es el capital que hay
+ * puesto ahora mismo.
+ */
+function fn_bola_nieve(PDO $pdo, string $desde, string $hasta, float $costoPorFicha,
+                       float $pctE, float $pctS): array
+{
+    $porDia = [];
+    $cursor = new DateTime($desde); $fin = new DateTime($hasta);
+    while ($cursor <= $fin) {
+        $porDia[$cursor->format('Y-m-d')] = ['fecha' => $cursor->format('Y-m-d'),
+            'pauta' => 0.0, 'base' => 0.0, 'nuevos' => 0.0];
+        $cursor->modify('+1 day');
+    }
+
+    try {
+        $st = $pdo->prepare("SELECT fecha, SUM(monto) m FROM gasto_diario
+                              WHERE fecha BETWEEN ? AND ? GROUP BY fecha");
+        $st->execute([$desde, $hasta]);
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            if (isset($porDia[$r['fecha']])) { $porDia[$r['fecha']]['pauta'] = (float)$r['m']; }
+        }
+    } catch (Throwable $e) { error_log('fn_bola_nieve (pauta): ' . $e->getMessage()); }
+
+    /* Lo cargado, separando primeras cargas de repeticiones. Misma definición
+       de "primera" que en Publicidad: el mínimo histórico del jugador sobre las
+       dos vías, no la primera dentro del rango. */
+    try {
+        $cargas = publicidad_sql_cargas();
+        $st = $pdo->prepare(
+            "SELECT DATE(c.cuando) f,
+                    COALESCE(SUM(IF(c.cuando =  pr.primera, c.monto, 0)),0) nuevos,
+                    COALESCE(SUM(IF(c.cuando <> pr.primera, c.monto, 0)),0) base
+               FROM ($cargas) c
+               JOIN (SELECT usuario, MIN(cuando) AS primera FROM ($cargas) z GROUP BY usuario) pr
+                 ON pr.usuario = c.usuario
+              WHERE c.cuando >= ? AND c.cuando < ? + INTERVAL 1 DAY
+              GROUP BY f"
+        );
+        $st->execute([$desde, $hasta]);
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            if (!isset($porDia[$r['f']])) { continue; }
+            $porDia[$r['f']]['base']   = (float)$r['base'];
+            $porDia[$r['f']]['nuevos'] = (float)$r['nuevos'];
+        }
+    } catch (Throwable $e) { error_log('fn_bola_nieve (cargas): ' . $e->getMessage()); }
+
+    /* Lo entregado y lo retirado, para pasar de "cargado" a GANANCIA. Sin esto
+       las dos lineas compararian plata bruta contra plata gastada, que no es
+       la misma unidad y haria ver el cruce mucho antes de que pase. */
+    $entregado = []; $retirado = [];
+    try {
+        $st = $pdo->prepare("SELECT DATE(cuando) f, tipo, SUM(monto) m FROM operaciones_panel
+                              WHERE cuando >= ? AND cuando < ? + INTERVAL 1 DAY
+                              GROUP BY f, tipo");
+        $st->execute([$desde, $hasta]);
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            if ((int)$r['tipo'] === 0) { $entregado[$r['f']] = (float)$r['m']; }
+            else                       { $retirado[$r['f']]  = (float)$r['m']; }
+        }
+    } catch (Throwable $e) { /* sin libro: se estima abajo */ }
+
+    $serie = []; $accPauta = 0.0; $accGan = 0.0;
+    foreach ($porDia as $f => $d) {
+        $cargadoDia = $d['base'] + $d['nuevos'];
+        $ent = $entregado[$f] ?? $cargadoDia;      // sin libro, se estima
+        $ret = $retirado[$f]  ?? 0.0;
+        $com = $cargadoDia * $pctE / 100 + $ret * $pctS / 100;
+        $ganDia = $cargadoDia - $ret - $ent * $costoPorFicha - $com;
+
+        /* La ganancia se reparte entre nuevos y base en proporción a lo que
+           cargó cada grupo: no hay forma de atribuir un retiro a uno u otro sin
+           mirar jugador por jugador, y para una serie diaria no hace falta. */
+        $pesoBase = $cargadoDia > 0 ? $d['base'] / $cargadoDia : 0.0;
+        $ganBase  = $ganDia * $pesoBase;
+
+        $accPauta += $d['pauta'];
+        $accGan   += $ganDia;
+        $serie[] = [
+            'fecha'          => $f,
+            'pauta'          => round($d['pauta'], 2),
+            'base'           => round($ganBase, 2),
+            'ganancia'       => round($ganDia, 2),
+            'acum_pauta'     => round($accPauta, 2),
+            'acum_ganancia'  => round($accGan, 2),
+        ];
+    }
+    return $serie;
+}
+
+/**
+ * Lo que se lleva la pasarela de pago en [desde, hasta].
+ *
+ * Quien cobra por transferencia se lleva un porcentaje de cada movimiento, y
+ * distinto según la dirección: típicamente ~4% de lo que ENTRA y ~1% de lo que
+ * SALE. Eso sale de la ganancia y hasta el 14/09/2026 no se contaba en ningún
+ * lado.
+ *
+ * DOS FUENTES, y la primera manda:
+ *
+ *   1. Si HG Cash está integrado, la comisión REAL de su libro
+ *      (`hg_transacciones.comision`). Es lo que efectivamente se cobró, no una
+ *      estimación, así que le gana a cualquier porcentaje configurado.
+ *   2. Si no, los porcentajes de `config_crm`, aplicados a lo que entró y a lo
+ *      que salió.
+ *
+ * Con los dos en cero -- el caso de quien opera con billeteras virtuales -- no
+ * descuenta nada, que es lo correcto. Es el default a propósito: cobrar una
+ * comisión que no existe le haría ver a alguien una pérdida inventada.
+ */
+function fn_comisiones(PDO $pdo, string $desde, string $hasta,
+                       float $ingresos, float $retiros): array
+{
+    $hg = fn_hg($desde, $hasta);
+    if ($hg !== null && (float)($hg['comision'] ?? 0) > 0) {
+        return [
+            'total'   => round((float)$hg['comision'], 2),
+            'entrada' => null, 'salida' => null,
+            'pct_entrada' => (float)($hg['comision_pct'] ?? 0), 'pct_salida' => null,
+            'fuente'  => 'hg',
+        ];
+    }
+
+    $pe = 0.0; $ps = 0.0;
+    try {
+        $pe = max(0.0, (float)(cfg_crm($pdo, 'fin_comision_entrada') ?? 0));
+        $ps = max(0.0, (float)(cfg_crm($pdo, 'fin_comision_salida') ?? 0));
+    } catch (Throwable $e) { /* sin config: sin comisión */ }
+
+    $ce = $ingresos * $pe / 100;
+    $cs = $retiros  * $ps / 100;
+    return [
+        'total'   => round($ce + $cs, 2),
+        'entrada' => round($ce, 2), 'salida' => round($cs, 2),
+        'pct_entrada' => $pe, 'pct_salida' => $ps,
+        'fuente'  => ($pe > 0 || $ps > 0) ? 'config' : 'ninguna',
+    ];
 }
 
 /**
@@ -1027,6 +1407,31 @@ if ($metodo === 'GET') {
            caja y la de arriba es la PAUTA, que es justamente lo que esta caja
            agrega. `dep_transferencia` y `dep_en_el_juego` quedan igual: sirven
            para saber por donde entra la plata, no para explicar un descalce. */
+        /* ---- LA EVOLUCION DEL NEGOCIO ----
+           Las tres preguntas que no se podian contestar con las tarjetas del
+           periodo, porque ninguna se responde mirando un rango de fechas:
+
+             1. Cuanto deja un jugador en TODA su vida (no en su primera carga).
+             2. A los cuantos dias se paga solo el costo de haberlo traido.
+             3. Cuando la plata que dejan los jugadores que ya estan va a
+                alcanzar para pagar la publicidad de cada dia.
+
+           Van juntas en un endpoint aparte y no en `rango` porque son caras
+           --recorren todo el historial-- y porque no dependen del filtro de
+           fechas salvo la serie, que si. */
+        if ($accion === 'evolucion') {
+            [$desde, $hasta] = fn_rango_fechas();
+            $com  = fn_comisiones($pdo, $desde, $hasta, 0, 0);
+            $pctE = (float)($com['pct_entrada'] ?? 0);
+            $pctS = (float)($com['pct_salida'] ?? 0);
+
+            salir(['ok' => true,
+                'jugadores' => fn_por_jugador($pdo, $costoPorFicha, $pctE, $pctS),
+                'recupero'  => fn_recupero($pdo, $costoPorFicha, $pctE, $pctS),
+                'serie'     => fn_bola_nieve($pdo, $desde, $hasta, $costoPorFicha, $pctE, $pctS),
+            ]);
+        }
+
         if ($accion === 'salud_pauta') {
             [$desde, $hasta] = fn_rango_fechas();
 
@@ -1143,7 +1548,13 @@ if ($metodo === 'GET') {
             $retencion = fn_retencion($pdo, $desde, $hasta);
             $costoFichas   = fn_costo_fichas($pdo, $desde, $hasta, $costoPorFicha,
                                              $ingresos['monto'], $bonos['monto']);
-            $gananciaBruta = $ingresos['monto'] - $retiros['monto'] - $costoFichas;
+            /* La pasarela de pago se lleva lo suyo de cada movimiento, y hasta
+               el 14/09/2026 no se descontaba en ningún lado. Con billeteras
+               virtuales da 0 y no cambia nada. */
+            $comisiones    = fn_comisiones($pdo, $desde, $hasta,
+                                           $ingresos['monto'], $retiros['monto']);
+            $gananciaBruta = $ingresos['monto'] - $retiros['monto'] - $costoFichas
+                           - $comisiones['total'];
 
             // Comparación contra el período anterior -- null si no
             // corresponde (filtro=todo, o el auto-detectado en
@@ -1159,7 +1570,10 @@ if ($metodo === 'GET') {
                 $activosPrev  = fn_activos($pdo, $periodoAnterior['desde'], $periodoAnterior['hasta']);
                 $costoFichasPrev   = fn_costo_fichas($pdo, $prevDesde, $prevHasta, $costoPorFicha,
                                                      $ingresosPrev['monto'], $bonosPrev['monto']);
-                $gananciaBrutaPrev = $ingresosPrev['monto'] - $retirosPrev['monto'] - $costoFichasPrev;
+                $comisionesPrev    = fn_comisiones($pdo, $prevDesde, $prevHasta,
+                                                   $ingresosPrev['monto'], $retirosPrev['monto']);
+                $gananciaBrutaPrev = $ingresosPrev['monto'] - $retirosPrev['monto']
+                                   - $costoFichasPrev - $comisionesPrev['total'];
 
                 $comparacion = [
                     'periodo_anterior'  => $periodoAnterior,
@@ -1187,6 +1601,7 @@ if ($metodo === 'GET') {
                    registra (o al reves). Null si el libro no cubre el periodo
                    -- no se puede afirmar nada sin con que comparar. */
                 'fichas_fuera'      => fn_fichas_fuera($pdo, $desde, $hasta),
+                'comisiones'        => $comisiones,
                 'ganancia_bruta'    => $gananciaBruta,
                 'costo_por_ficha'   => $costoPorFicha,
                 'jugadores_nuevos'  => $nuevos,

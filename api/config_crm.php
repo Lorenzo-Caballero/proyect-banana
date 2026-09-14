@@ -93,6 +93,17 @@ const CFG_CRM_DEFAULTS = [
        con el numero que el jugador tiene en pantalla, no con el espejo. */
     'app_promo_saldo_bajo' => '0',
 
+    /* COMISIONES DE LA PASARELA DE PAGO, en porcentaje.
+       Quien cobra por transferencia (HG Cash y similares) se lleva un % de
+       cada movimiento, y distinto segun la direccion: tipicamente ~4% de lo
+       que ENTRA y ~1% de lo que SALE. Eso sale de la ganancia y hasta ahora
+       no se contaba en ningun lado.
+       VACIO/0 = no se cobra nada, que es el caso de quien opera con
+       billeteras virtuales. Es el default a proposito: cobrar una comision
+       que no existe le haria ver a alguien una perdida inventada. */
+    'fin_comision_entrada' => '0',
+    'fin_comision_salida'  => '0',
+
     // ----- Aviso por Telegram cuando el bot deriva a un agente -----
     // Vacios = sin Telegram, y no pasa nada: la derivacion igual queda marcada
     // en el CRM. Esto es el aviso que suena en el celular cuando nadie tiene

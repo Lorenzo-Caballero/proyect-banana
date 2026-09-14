@@ -1553,6 +1553,19 @@
     transition:width .35s ease}
   .fn-salud-veredicto.si .fn-salud-barra i{background:var(--green)}
   .fn-salud-nota{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.5}
+  /* "Cómo evoluciona el negocio": mismo trato visual que Salud del negocio --
+     es la otra mitad de la misma historia y se lee junto. */
+  .fn-evo{border:1px solid var(--line);border-radius:14px;margin:0 20px 18px;padding:16px 18px}
+  .fn-evo-head{display:flex;align-items:center;justify-content:space-between;gap:10px;
+    flex-wrap:wrap;margin-bottom:4px}
+  .fn-evo-head h3{margin:0;font-size:14px}
+  .fn-evo-intro{font-size:12.5px;color:var(--muted);line-height:1.6;margin:0 0 14px}
+  .fn-evo-graf{margin-top:16px}
+  .fn-evo-graf h4{margin:0 0 3px;font-size:12.5px;font-weight:700}
+  .fn-evo-graf p{margin:0 0 8px;font-size:12px;color:var(--muted);line-height:1.5}
+  .fn-evo-wrap{position:relative;height:210px}
+  .fn-evo-lista{margin-top:14px;font-size:12.5px;line-height:1.7;color:var(--muted)}
+  .fn-evo-lista b{color:var(--txt)}
   /* El desglose de la pauta: chico, pero tiene que poder leerse entero. Un
      total sin desglose no se puede auditar. */
   .fn-sal-desglose{margin-top:8px;padding-top:8px;border-top:1px solid var(--line);
@@ -2824,6 +2837,77 @@
         </details>
       </div>
 
+      <!-- f2) Cómo evoluciona el negocio. Contesta las preguntas que no se
+           responden mirando un rango de fechas: cuánto deja un jugador en toda
+           su vida, a los cuántos días se paga solo, y cuándo la plata de los
+           jugadores que ya están va a alcanzar para pagar la publicidad. -->
+      <section class="fn-evo" id="fnBloqueEvo">
+        <div class="fn-evo-head">
+          <h3>Cómo evoluciona el negocio</h3>
+          <span class="fn-salud-origen">no depende del período</span>
+        </div>
+        <p class="fn-evo-intro">
+          Todo lo de arriba mira un rango de fechas. Esto mira la <b>historia completa</b>:
+          cuánto te deja un jugador desde que aparece hasta hoy, y cuánto falta para que
+          lo que dejan los que ya tenés alcance para pagar la publicidad de cada día.
+        </p>
+
+        <div class="fn-cards">
+            <div class="fn-card">
+              <div class="k">Te deja un jugador, en toda su vida<span class="fn-info" data-tip="Promedio de lo que deja cada jugador desde su primera carga hasta hoy: lo que pagó, menos lo que retiró, menos lo que costaron sus fichas y la comisión. Es el número que decide cuánto podés pagar por traer uno."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+              <div class="v" id="fnEvoLtv">—</div>
+              <div class="sub" id="fnEvoLtvSub"></div>
+            </div>
+            <div class="fn-card">
+              <div class="k">Te cuesta traer un jugador<span class="fn-info" data-tip="Toda la publicidad que cargaste, dividida por los jugadores que alguna vez cargaron. Se divide por los que CARGAN y no por los que se registran: un registro que nunca carga es costo, no resultado."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+              <div class="v" id="fnEvoCpa">—</div>
+              <div class="sub" id="fnEvoCpaSub"></div>
+            </div>
+            <div class="fn-card">
+              <div class="k">Tarda en pagarse solo<span class="fn-info" data-tip="Cuántos días pasan desde la primera carga de un jugador hasta que lo que dejó cubre lo que costó traerlo. Mientras tanto, esa diferencia la ponés vos: es el capital que tenés que bancar."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+              <div class="v" id="fnEvoRecupero">—</div>
+              <div class="sub" id="fnEvoRecuperoSub"></div>
+            </div>
+            <div class="fn-card">
+              <div class="k">De cuántos jugadores dependés<span class="fn-info" data-tip="Qué parte de tu ganancia aportan los 5 mejores. Si es muy alta, un mal día de ellos te borra el mes: no es un promedio lo que te sostiene, son unos pocos."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+              <div class="v" id="fnEvoConc">—</div>
+              <div class="sub" id="fnEvoConcSub"></div>
+            </div>
+        </div>
+
+        <div class="fn-evo-graf">
+          <h4>¿Cuándo la publicidad se paga sola?</h4>
+          <p>
+            En violeta, lo que gastás en publicidad cada día. En verde, lo que te dejan los
+            jugadores que <b>ya tenías</b> — plata que no te costó publicidad hoy.
+            Cuando el verde queda arriba del violeta de forma sostenida, la bola de nieve
+            empezó a girar sola.
+          </p>
+          <div class="fn-evo-wrap"><canvas id="fnChartBola"></canvas></div>
+        </div>
+
+        <div class="fn-evo-graf">
+          <h4>Lo invertido contra lo recuperado</h4>
+          <p>
+            Los dos acumulados desde el inicio del período. La distancia entre las líneas es
+            <b>el capital que tenés puesto ahora mismo</b>. Que se achique es lo que hay que ver;
+            el día que se cruzan, recuperaste todo lo invertido.
+          </p>
+          <div class="fn-evo-wrap"><canvas id="fnChartAcum"></canvas></div>
+        </div>
+
+        <div class="fn-evo-graf">
+          <h4>Cuánto tarda un jugador en devolver lo que costó</h4>
+          <p>
+            Día 0 es su primera carga. La línea verde es lo que deja en promedio acumulado;
+            la punteada, lo que costó traerlo. Donde se cruzan, se pagó solo.
+          </p>
+          <div class="fn-evo-wrap"><canvas id="fnChartRecupero"></canvas></div>
+        </div>
+
+        <div class="fn-evo-lista" id="fnEvoLista"></div>
+      </section>
+
       <!-- f) Salud del negocio -- los unicos numeros de esta pantalla que
            incluyen la PAUTA. Van en su propia caja, con su propio borde y su
            etiqueta de origen, para que nunca se confundan con la caja del
@@ -4084,6 +4168,30 @@
             <b>Dejalo vacío si no tenés app.</b> El bot entonces no la ofrece y, sobre todo,
             <b>no inventa un link</b> — antes mandaba a los jugadores a buscarla a Play Store,
             donde no está.
+          </p>
+        </div>
+      </div>
+
+      <!-- Comisión de la pasarela ----------------------------------------- -->
+      <div class="cfg-card">
+        <div class="cfg-card-head">
+          <span class="cb-ico"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/><path d="M5.6 12h.01M18.4 12h.01"/></svg></span>
+          <div class="cfg-card-txt">
+            <b>Comisión de la pasarela de pago</b>
+            <span>Si cobrás con una pasarela que se queda un porcentaje (HG Cash y similares), poné acá cuánto se lleva. Sale de tu ganancia y hasta ahora no se descontaba en ningún lado.</span>
+          </div>
+        </div>
+        <div class="cfg-card-body">
+          <label class="cb-flabel">% sobre lo que ENTRA (cargas)</label>
+          <input class="cb-input" id="cfgComEntrada" inputmode="decimal" placeholder="0">
+          <label class="cb-flabel" style="margin-top:12px">% sobre lo que SALE (retiros)</label>
+          <input class="cb-input" id="cfgComSalida" inputmode="decimal" placeholder="0">
+          <p class="cfg-hint">
+            Suele ser distinto en cada dirección: por ejemplo <b>4%</b> de lo que entra y
+            <b>1%</b> de lo que sale. Si cobrás por billetera virtual, dejá los dos en
+            <b>0</b> — es el default, y así no se te descuenta una comisión que no pagás.
+            Si HG Cash está integrado, manda la comisión real de su libro y estos dos números
+            se ignoran.
           </p>
         </div>
       </div>
@@ -5719,6 +5827,8 @@
     app_promo_activa:   { el: "#cfgAppPromo",     tipo: "bool"  },
     app_bono_fichas:    { el: "#cfgAppBono",      tipo: "texto" },
     app_promo_saldo_bajo: { el: "#cfgAppSaldoBajo", tipo: "texto" },
+    fin_comision_entrada: { el: "#cfgComEntrada",   tipo: "texto" },
+    fin_comision_salida:  { el: "#cfgComSalida",    tipo: "texto" },
     tg_bot_token:       { el: "#cfgTgToken",      tipo: "texto" },
     tg_chat_id:         { el: "#cfgTgChat",       tipo: "texto" },
     tg_ev_derivacion:   { el: "#cfgTgDeriv",      tipo: "bool"  },
@@ -8847,6 +8957,13 @@
   let fnFiltroActual = "hoy";
   let fnRangoActual = null;
   const fnCharts = {};
+  /* Los gráficos de "Cómo evoluciona el negocio" viven en su PROPIO objeto y no
+     en fnCharts. Motivo concreto: fnDestruirCharts() borra todo lo que haya en
+     fnCharts, y lo llama fnRenderGraficos(). Los dos bloques se cargan con
+     fetch independientes, así que si el de evolución resolviera primero, el
+     otro le borraría los gráficos recién dibujados y quedarían en blanco hasta
+     el siguiente cambio de período. Separados, no se pueden pisar. */
+  const fnChartsEvo = {};
 
   async function fnFetch(url, options){
     const opts = Object.assign({}, options || {});
@@ -9149,6 +9266,133 @@
     }
   }
 
+  // ---------- Cómo evoluciona el negocio ----------
+  /* Las tres preguntas que no se contestan mirando un rango de fechas, y que
+     son las que definen si el modelo cierra:
+       1. cuánto deja un jugador en TODA su vida (no en su primera carga);
+       2. a los cuántos días se paga solo lo que costó traerlo;
+       3. cuándo lo que dejan los que ya están va a pagar la publicidad diaria.
+     Nada de siglas en pantalla: quien usa esto no tiene por qué saber qué es
+     un CPA o un LTV, y una métrica que hay que ir a buscar a un glosario no se
+     mira nunca. */
+  async function fnCargarEvolucion(){
+    const desde = fnRangoActual.desde, hasta = fnRangoActual.hasta;
+    let d;
+    try{ d = await fnGetJson({ accion: "evolucion", desde, hasta }); }
+    catch(e){ $("#fnBloqueEvo").style.display = "none"; return; }
+    if(!d.ok){ $("#fnBloqueEvo").style.display = "none"; return; }
+    $("#fnBloqueEvo").style.display = "";
+
+    const j = d.jugadores || {}, r = d.recupero || {}, serie = d.serie || [];
+
+    // --- Las cuatro tarjetas
+    $("#fnEvoLtv").textContent = j.ganancia_promedio == null ? "—" : money(j.ganancia_promedio);
+    $("#fnEvoLtv").style.color = (j.ganancia_promedio || 0) < 0 ? "var(--red)" : "";
+    $("#fnEvoLtvSub").textContent = j.jugadores
+      ? "promedio de " + nf.format(j.jugadores) + " jugadores · " +
+        (j.cargas_promedio || 0).toFixed(1) + " cargas cada uno"
+      : "todavía no cargó nadie";
+
+    $("#fnEvoCpa").textContent = r.cpa == null ? "—" : money(r.cpa);
+    $("#fnEvoCpaSub").textContent = r.cpa == null
+      ? "cargá el gasto en Publicidad" : "por cada jugador que carga";
+
+    /* El recupero puede no haber pasado todavía, y eso NO es un error: en una
+       campaña joven es lo normal. Decir "todavía no" es más honesto que un
+       guión, que se lee como "falta un dato". */
+    if(r.dia_recupero != null){
+      $("#fnEvoRecupero").textContent = r.dia_recupero === 0
+        ? "el mismo día" : r.dia_recupero + (r.dia_recupero === 1 ? " día" : " días");
+      $("#fnEvoRecupero").style.color = "var(--green2)";
+      $("#fnEvoRecuperoSub").textContent = "desde su primera carga";
+    } else if(r.cpa != null){
+      $("#fnEvoRecupero").textContent = "Todavía no";
+      $("#fnEvoRecupero").style.color = "var(--orange2)";
+      const ult = (r.dias || []).length ? r.dias[r.dias.length-1] : null;
+      $("#fnEvoRecuperoSub").textContent = ult
+        ? "a los " + ult.dia + " días va " + money(ult.ganancia) + " de " + money(r.cpa)
+        : "sin datos suficientes";
+    } else {
+      $("#fnEvoRecupero").textContent = "—";
+      $("#fnEvoRecuperoSub").textContent = "sin gasto de publicidad no hay nada que recuperar";
+    }
+
+    $("#fnEvoConc").textContent = j.concentracion_top5 == null
+      ? "—" : j.concentracion_top5.toFixed(0) + "%";
+    $("#fnEvoConc").style.color = (j.concentracion_top5 || 0) > 70 ? "var(--orange2)" : "";
+    $("#fnEvoConcSub").textContent = j.jugadores
+      ? "lo aportan los 5 mejores · " + j.dan_ganancia + " te dejan plata, " +
+        j.dan_perdida + " te ganan"
+      : "";
+
+    // --- El detalle en palabras, abajo de los gráficos
+    const lista = [];
+    if(j.top && j.top.length){
+      lista.push("<b>Los que más te dejan:</b> " + j.top.slice(0,3)
+        .map(x => esc(x.usuario) + " (" + money(x.ganancia) + ")").join(" · "));
+    }
+    if(j.peores && j.peores.length && j.peores[0].ganancia < 0){
+      lista.push("<b>Los que más te ganaron:</b> " + j.peores.slice(0,3)
+        .filter(x => x.ganancia < 0)
+        .map(x => esc(x.usuario) + " (" + money(x.ganancia) + ")").join(" · "));
+    }
+    $("#fnEvoLista").innerHTML = lista.join("<br>");
+
+    fnRenderGraficosEvo(serie, r);
+    fnFixTooltips();
+  }
+
+  function fnRenderGraficosEvo(serie, r){
+    if(typeof Chart === "undefined") return;
+    Object.keys(fnChartsEvo).forEach(k=>{
+      if(fnChartsEvo[k]){ try{ fnChartsEvo[k].destroy(); }catch(e){} delete fnChartsEvo[k]; }
+    });
+    const dias = serie.map(s => s.fecha);
+
+    fnChartsEvo.bola = new Chart($("#fnChartBola"), {
+      type: "line",
+      data: { labels: dias, datasets: [
+        { label:"Gasto en publicidad", data: serie.map(s=>s.pauta),
+          borderColor: fnColor("--violet2"), backgroundColor: fnColor("--violet2"),
+          tension:.25, pointRadius:2 },
+        { label:"Deja la base que ya tenías", data: serie.map(s=>s.base),
+          borderColor: fnColor("--green2"), backgroundColor: fnColor("--green2"),
+          tension:.25, pointRadius:2 },
+      ]},
+      options: fnChartOpts({ leyenda: true }),
+    });
+
+    fnChartsEvo.acum = new Chart($("#fnChartAcum"), {
+      type: "line",
+      data: { labels: dias, datasets: [
+        { label:"Invertido en publicidad", data: serie.map(s=>s.acum_pauta),
+          borderColor: fnColor("--violet2"), backgroundColor: fnColor("--violet2"),
+          tension:.2, pointRadius:0 },
+        { label:"Recuperado de los jugadores", data: serie.map(s=>s.acum_ganancia),
+          borderColor: fnColor("--green2"), backgroundColor: fnColor("--green2"),
+          tension:.2, pointRadius:0 },
+      ]},
+      options: fnChartOpts({ leyenda: true }),
+    });
+
+    /* La línea del costo es PUNTEADA y plana a propósito: no es una serie, es
+       la meta. Dibujarla como una curva más haría creer que cambia con los
+       días, y lo que cambia es la otra. */
+    const curva = r.dias || [];
+    fnChartsEvo.recupero = new Chart($("#fnChartRecupero"), {
+      type: "line",
+      data: { labels: curva.map(x => "día " + x.dia), datasets: [
+        { label:"Deja el jugador (acumulado)", data: curva.map(x=>x.ganancia),
+          borderColor: fnColor("--green2"), backgroundColor: fnColor("--green2"),
+          tension:.25, pointRadius:0 },
+        ...(r.cpa != null ? [{ label:"Lo que costó traerlo",
+          data: curva.map(()=>r.cpa), borderColor: fnColor("--orange2"),
+          borderDash:[6,4], pointRadius:0, fill:false }] : []),
+      ]},
+      options: fnChartOpts({ leyenda: true }),
+    });
+  }
+
   // ---------- Salud del negocio ----------
   /* Este bloque contesta UNA pregunta: ¿lo que dejan los jugadores que ya
      tenés alcanza para pagar la publicidad de cada día? Mientras la respuesta
@@ -9422,6 +9666,10 @@
     } else {
       $("#fnBloqueSalud").style.display = "none";
     }
+
+    /* Aparte de las otras tres y sin toast: recorre todo el historial, así que
+       es la más lenta, y que tarde o falle no puede demorar los KPIs. */
+    fnCargarEvolucion();
 
     fnFixTooltips();
     fnSetCargando(false);
