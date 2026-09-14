@@ -2797,7 +2797,7 @@
               <div class="v" id="fnSalPauta">—</div><div class="sub" id="fnSalPautaSub"></div>
             </div>
             <div class="fn-card">
-              <div class="k">Deja el casino, antes de pauta<span class="fn-info" data-tip="Lo que cargaron los jugadores menos los retiros y menos el costo de las fichas. Es el mismo criterio de la ganancia de arriba, pero contando también las cargas pedidas dentro del juego."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+              <div class="k">Deja el casino, antes de pauta<span class="fn-info" data-tip="Lo que cargaron los jugadores menos los retiros y menos el costo de las fichas. Mismo criterio y mismo número que la ganancia de arriba: lo que cambia es que acá abajo se le descuenta la pauta."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
               <div class="v" id="fnSalAntes">—</div><div class="sub" id="fnSalAntesSub"></div>
             </div>
             <div class="fn-card">
@@ -8314,14 +8314,19 @@
   const AU_TIPO_TXT   = { deposito:"Depósito", retiro:"Retiro", bono:"Bono", ajuste:"Ajuste" };
   const AU_ESTADO_COLOR = {
     acreditada:"verde", pagado:"verde", hecha:"verde", aplicado:"verde",
-    pendiente:"", procesando:"azul",
+    pendiente:"", procesando:"azul", abierto:"",
     cancelada:"rojo", vencida:"rojo", error:"rojo",
     revision:"naranja", revisar:"naranja",
+    /* Naranja y NO verde: un retiro que desapareció del panel puede haberse
+       pagado o rechazado, y no tenemos forma de saber cuál. Pintarlo de verde
+       sería afirmar que salió plata. */
+    resuelto_panel:"naranja",
   };
   const AU_ESTADO_TXT = {
     acreditada:"Acreditado", pendiente:"Pendiente", cancelada:"Cancelado",
     vencida:"Vencido", revision:"En revisión", revisar:"Revisar",
     procesando:"Procesando", hecha:"Pagado", error:"Error", aplicado:"Aplicado",
+    abierto:"Sin resolver", resuelto_panel:"Resuelto en el panel",
   };
   /* El punto de color de cada tipo. Un <span> pintado por CSS en vez de un
      emoji de círculo: el emoji cambia de tamaño según el sistema y movía
@@ -9059,14 +9064,13 @@
     $("#fnSalRecupero").textContent   = fnPct(s.recupero_primera);
     $("#fnSalMargen").textContent     = fnPct(s.margen);
 
-    /* La nota explica la UNICA discrepancia que el operador va a notar contra
-       los números de arriba, antes de que la note y piense que algo está roto. */
-    $("#fnSaludNota").innerHTML = s.dep_en_el_juego > 0
-      ? "Los ingresos de arriba cuentan solo las recargas por transferencia. Acá se suman " +
-        "también las <b>" + money(s.dep_en_el_juego) + "</b> que se cargaron con el botón " +
-        "Depósitos de adentro del juego, porque para medir la publicidad cuenta toda la plata " +
-        "que puso el jugador, entre por donde entre. Por eso los dos números no dan igual."
-      : "";
+    /* Lo que el operador necesita tener claro al comparar con la pantalla de
+       arriba: lo cargado es el MISMO número; la única diferencia es la pauta. */
+    $("#fnSaludNota").innerHTML =
+      "Lo cargado acá es el mismo número que arriba — las dos pantallas cuentan las dos vías, " +
+      "la transferencia por el chat y el botón Depósitos de adentro del juego. " +
+      "<b>Lo único que este bloque agrega es la pauta</b>, que los números de arriba no descuentan: " +
+      "esos son la caja del casino, y la publicidad es una decisión de inversión aparte.";
   }
 
   // ---------- Alertas: todo el bloque se oculta si no hay ninguna ----------

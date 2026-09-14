@@ -614,15 +614,33 @@ function publicidad_gasto_dias(PDO $pdo, int $publicistaId, string $desde, strin
  */
 function publicidad_sql_cargas(): string
 {
-    return "SELECT r.usuario COLLATE utf8mb4_unicode_ci AS usuario,
-                   r.acreditada_en                      AS cuando,
-                   r.monto_base                         AS monto
+    /* ES LA DEFINICION UNICA DE "UNA CARGA" EN TODO EL CRM: la usan Publicidad,
+       Finanzas y el indicador de salud. Si cada pantalla armara la suya, dos
+       pantallas mostrarian plata distinta el mismo dia y no habria forma de
+       saber cual esta bien.
+
+       SUMA monto_pedido Y NO monto_base: `monto_pedido` es lo que el jugador
+       efectivamente transfirio; `monto_base` es el numero redondo que pidio.
+       Hoy son iguales (los centavos unicos se sacaron), pero en las recargas
+       viejas difieren hasta en 99 centavos, y la plata que entro a la caja es
+       la primera.
+
+       `via` distingue las dos: 'transferencia' es el camino del chatbot y
+       'juego' el boton Depositos de adentro de la plataforma. Se devuelve para
+       que cada pantalla pueda abrir el numero sin volver a consultar. */
+    return "SELECT r.usuario COLLATE utf8mb4_unicode_ci      AS usuario,
+                   r.acreditada_en                           AS cuando,
+                   r.monto_pedido                            AS monto,
+                   'transferencia' COLLATE utf8mb4_unicode_ci AS via,
+                   r.referencia COLLATE utf8mb4_unicode_ci   AS referencia
               FROM recargas r
              WHERE r.estado = 'acreditada' AND r.acreditada_en IS NOT NULL
             UNION ALL
             SELECT m.usuario COLLATE utf8mb4_unicode_ci,
                    m.creado_en,
-                   m.monto
+                   m.monto,
+                   'juego' COLLATE utf8mb4_unicode_ci,
+                   NULL
               FROM movimientos m
              WHERE m.origen = 'peticion' AND m.tipo = 'saldo' AND m.monto > 0";
 }

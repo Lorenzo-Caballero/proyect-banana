@@ -108,13 +108,32 @@ function fn_rango_fechas(): array
     return [$desde, $hasta];
 }
 
-/** Ingresos: recargas acreditadas en [desde, hasta] (inclusive). */
+/**
+ * Ingresos: TODA la plata que cargaron los jugadores en [desde, hasta].
+ *
+ * LAS DOS VIAS, y esto es nuevo (13/09/2026). Hasta hoy esta consulta -- y otras
+ * ocho de este archivo -- miraban solo la tabla `recargas`, o sea el camino del
+ * chatbot. La carga que el jugador pide con el boton "Depositos" de adentro del
+ * juego no crea ninguna fila ahi: la acredita la plataforma sobre el saldo real
+ * y de este lado queda solo la linea en `movimientos` (origen='peticion').
+ *
+ * O sea que Finanzas venia mostrando un negocio mas chico del que es. Medido en
+ * esta base el 13/09/2026: $88.901 por transferencia contra $10.100 desde el
+ * juego, un 10% que no figuraba en los ingresos, ni en la ganancia, ni en los
+ * jugadores activos, ni en la retencion, ni en ningun grafico.
+ *
+ * El mismo agujero ya se habia arreglado en Publicidad, que por esto mostraba
+ * cero conversiones con la gente cargando de verdad. Ahora las dos pantallas
+ * usan la MISMA definicion (publicidad_sql_cargas), para que no puedan volver a
+ * separarse.
+ */
 function fn_ingresos(PDO $pdo, string $desde, string $hasta): array
 {
+    $cargas = publicidad_sql_cargas();
     $st = $pdo->prepare(
-        "SELECT COUNT(*) cantidad, COALESCE(SUM(monto_pedido),0) monto, COALESCE(AVG(monto_pedido),0) promedio
-           FROM recargas
-          WHERE estado='acreditada' AND acreditada_en >= ? AND acreditada_en < ? + INTERVAL 1 DAY"
+        "SELECT COUNT(*) cantidad, COALESCE(SUM(monto),0) monto, COALESCE(AVG(monto),0) promedio
+           FROM ($cargas) c
+          WHERE c.cuando >= ? AND c.cuando < ? + INTERVAL 1 DAY"
     );
     $st->execute([$desde, $hasta]);
     $r = $st->fetch(PDO::FETCH_ASSOC);
@@ -157,12 +176,16 @@ function fn_nuevos(PDO $pdo, string $desde, string $hasta): int
     return (int)$st->fetchColumn();
 }
 
-/** Jugadores activos: recargó (acreditada) al menos una vez en el período -- opción A confirmada. */
+/**
+ * Jugadores activos: cargó al menos una vez en el período (opción A confirmada),
+ * por CUALQUIERA de las dos vías -- ver fn_ingresos() sobre por qué.
+ */
 function fn_activos(PDO $pdo, string $desde, string $hasta): int
 {
+    $cargas = publicidad_sql_cargas();
     $st = $pdo->prepare(
-        "SELECT COUNT(DISTINCT usuario) FROM recargas
-          WHERE estado='acreditada' AND acreditada_en >= ? AND acreditada_en < ? + INTERVAL 1 DAY"
+        "SELECT COUNT(DISTINCT c.usuario) FROM ($cargas) c
+          WHERE c.cuando >= ? AND c.cuando < ? + INTERVAL 1 DAY"
     );
     $st->execute([$desde, $hasta]);
     return (int)$st->fetchColumn();
@@ -186,12 +209,17 @@ function fn_retencion(PDO $pdo, string $desde, string $hasta): array
                 'periodo_anterior' => ['desde' => $prevDesde, 'hasta' => $prevHasta]];
     }
 
+    /* Las dos vias tambien aca, y es donde mas se notaba: el recorrido natural
+       es cargar la primera vez por el chat y las siguientes con el boton de
+       adentro del juego, que esta mas a mano. Mirando solo `recargas`, ese
+       jugador -- el que mejor se retuvo -- figuraba como perdido. */
+    $cargas = publicidad_sql_cargas();
     $st = $pdo->prepare(
         "SELECT COUNT(DISTINCT act.usuario)
-           FROM (SELECT DISTINCT usuario FROM recargas
-                  WHERE estado='acreditada' AND acreditada_en >= ? AND acreditada_en < ? + INTERVAL 1 DAY) act
-           JOIN (SELECT DISTINCT usuario FROM recargas
-                  WHERE estado='acreditada' AND acreditada_en >= ? AND acreditada_en < ? + INTERVAL 1 DAY) prev
+           FROM (SELECT DISTINCT c.usuario FROM ($cargas) c
+                  WHERE c.cuando >= ? AND c.cuando < ? + INTERVAL 1 DAY) act
+           JOIN (SELECT DISTINCT c.usuario FROM ($cargas) c
+                  WHERE c.cuando >= ? AND c.cuando < ? + INTERVAL 1 DAY) prev
              ON act.usuario = prev.usuario"
     );
     $st->execute([$desde, $hasta, $prevDesde, $prevHasta]);
@@ -279,10 +307,11 @@ function fn_variacion(float $actual, float $previo): array
  */
 function fn_serie_por_dia(PDO $pdo, string $desde, string $hasta, float $costoPorFicha): array
 {
+    $cargas = publicidad_sql_cargas();
     $ing = $pdo->prepare(
-        "SELECT DATE(acreditada_en) fecha, SUM(monto_pedido) monto FROM recargas
-          WHERE estado='acreditada' AND acreditada_en >= ? AND acreditada_en < ? + INTERVAL 1 DAY
-          GROUP BY DATE(acreditada_en)"
+        "SELECT DATE(c.cuando) fecha, SUM(c.monto) monto FROM ($cargas) c
+          WHERE c.cuando >= ? AND c.cuando < ? + INTERVAL 1 DAY
+          GROUP BY DATE(c.cuando)"
     );
     $ing->execute([$desde, $hasta]);
     $porIngresos = [];
@@ -307,9 +336,9 @@ function fn_serie_por_dia(PDO $pdo, string $desde, string $hasta, float $costoPo
     foreach ($bon->fetchAll(PDO::FETCH_ASSOC) as $r) { $porBonos[$r['fecha']] = (float)$r['monto']; }
 
     $act = $pdo->prepare(
-        "SELECT DATE(acreditada_en) fecha, COUNT(DISTINCT usuario) activos FROM recargas
-          WHERE estado='acreditada' AND acreditada_en >= ? AND acreditada_en < ? + INTERVAL 1 DAY
-          GROUP BY DATE(acreditada_en)"
+        "SELECT DATE(c.cuando) fecha, COUNT(DISTINCT c.usuario) activos FROM ($cargas) c
+          WHERE c.cuando >= ? AND c.cuando < ? + INTERVAL 1 DAY
+          GROUP BY DATE(c.cuando)"
     );
     $act->execute([$desde, $hasta]);
     $porActivos = [];
@@ -348,10 +377,11 @@ function fn_serie_por_hora(PDO $pdo, string $desde, string $hasta): array
 {
     $horas = array_fill(0, 24, 0);
 
+    $cargas = publicidad_sql_cargas();
     $ing = $pdo->prepare(
-        "SELECT HOUR(acreditada_en) hora, COUNT(*) cantidad FROM recargas
-          WHERE estado='acreditada' AND acreditada_en >= ? AND acreditada_en < ? + INTERVAL 1 DAY
-          GROUP BY HOUR(acreditada_en)"
+        "SELECT HOUR(c.cuando) hora, COUNT(*) cantidad FROM ($cargas) c
+          WHERE c.cuando >= ? AND c.cuando < ? + INTERVAL 1 DAY
+          GROUP BY HOUR(c.cuando)"
     );
     $ing->execute([$desde, $hasta]);
     foreach ($ing->fetchAll(PDO::FETCH_ASSOC) as $r) { $horas[(int)$r['hora']] += (int)$r['cantidad']; }
@@ -424,9 +454,10 @@ function fn_hg(string $desde, string $hasta): ?array
 
 function fn_foto(PDO $pdo): array
 {
+    $cargas = publicidad_sql_cargas();
     $row = $pdo->query(
         "SELECT
-            (SELECT COALESCE(SUM(monto_pedido),0) FROM recargas WHERE estado='acreditada') AS ingresos_historicos,
+            (SELECT COALESCE(SUM(c.monto),0) FROM ($cargas) c) AS ingresos_historicos,
             (SELECT COALESCE(SUM(monto),0) FROM acciones_saldo WHERE tipo='retirar' AND estado='hecha') AS retiros_historicos,
             (SELECT COALESCE(SUM(balance),0) FROM usuarios) AS fichas_jugadores"
     )->fetch(PDO::FETCH_ASSOC);
@@ -463,18 +494,22 @@ function fn_alertas(
     // recargas <-> acciones_saldo, distinta collation -- ver docblock
     // arriba). El piso evita ensuciar la alerta con diferencias chicas
     // que no ameritan revisarse (ver FINANZAS_UMBRAL_ALERTA_JUGADOR_GANADOR). ----
+    /* Las cargas van por las dos vias: sin eso, un jugador que carga con el
+       boton del juego y retira por el chat aparecia como ganador puro -- una
+       alerta falsa sobre alguien que en realidad estaba pagando. */
+    $cargas = publicidad_sql_cargas();
     $st = $pdo->prepare(
         "SELECT u.usuario, COALESCE(rec.total, 0) AS recargas, COALESCE(ret.total, 0) AS retiros
            FROM (
-                 SELECT usuario COLLATE utf8mb4_unicode_ci AS usuario FROM recargas
-                  WHERE estado='acreditada' AND acreditada_en >= ? AND acreditada_en < ? + INTERVAL 1 DAY
+                 SELECT c.usuario FROM ($cargas) c
+                  WHERE c.cuando >= ? AND c.cuando < ? + INTERVAL 1 DAY
                  UNION
                  SELECT usuario COLLATE utf8mb4_unicode_ci AS usuario FROM acciones_saldo
                   WHERE tipo='retirar' AND estado='hecha' AND ejecutada_en >= ? AND ejecutada_en < ? + INTERVAL 1 DAY
                 ) u
            LEFT JOIN (
-                 SELECT usuario COLLATE utf8mb4_unicode_ci AS usuario, SUM(monto_pedido) AS total FROM recargas
-                  WHERE estado='acreditada' AND acreditada_en >= ? AND acreditada_en < ? + INTERVAL 1 DAY GROUP BY usuario
+                 SELECT c.usuario, SUM(c.monto) AS total FROM ($cargas) c
+                  WHERE c.cuando >= ? AND c.cuando < ? + INTERVAL 1 DAY GROUP BY c.usuario
                 ) rec ON rec.usuario = u.usuario
            LEFT JOIN (
                  SELECT usuario, SUM(monto) AS total FROM acciones_saldo
@@ -524,21 +559,22 @@ function fn_alertas(
  */
 function fn_top_jugadores(PDO $pdo, string $desde, string $hasta): array
 {
+    $cargas = publicidad_sql_cargas();
     $st = $pdo->prepare(
         "SELECT u.usuario,
                 COALESCE(rec.monto, 0) AS recargas_monto, COALESCE(rec.cantidad, 0) AS recargas_cantidad,
                 COALESCE(ret.monto, 0) AS retiros_monto, COALESCE(ret.cantidad, 0) AS retiros_cantidad
            FROM (
-                 SELECT usuario COLLATE utf8mb4_unicode_ci AS usuario FROM recargas
-                  WHERE estado='acreditada' AND acreditada_en >= ? AND acreditada_en < ? + INTERVAL 1 DAY
+                 SELECT c.usuario FROM ($cargas) c
+                  WHERE c.cuando >= ? AND c.cuando < ? + INTERVAL 1 DAY
                  UNION
                  SELECT usuario COLLATE utf8mb4_unicode_ci AS usuario FROM acciones_saldo
                   WHERE tipo='retirar' AND estado='hecha' AND ejecutada_en >= ? AND ejecutada_en < ? + INTERVAL 1 DAY
                 ) u
            LEFT JOIN (
-                 SELECT usuario COLLATE utf8mb4_unicode_ci AS usuario, SUM(monto_pedido) AS monto, COUNT(*) AS cantidad
-                   FROM recargas WHERE estado='acreditada' AND acreditada_en >= ? AND acreditada_en < ? + INTERVAL 1 DAY
-                  GROUP BY usuario
+                 SELECT c.usuario, SUM(c.monto) AS monto, COUNT(*) AS cantidad
+                   FROM ($cargas) c WHERE c.cuando >= ? AND c.cuando < ? + INTERVAL 1 DAY
+                  GROUP BY c.usuario
                 ) rec ON rec.usuario = u.usuario
            LEFT JOIN (
                  SELECT usuario, SUM(monto) AS monto, COUNT(*) AS cantidad
@@ -571,11 +607,15 @@ function fn_top_jugadores(PDO $pdo, string $desde, string $hasta): array
  */
 function fn_detalle_periodo(PDO $pdo, string $desde, string $hasta): array
 {
+    /* En el CSV la via viaja en `estado`, que para una carga acreditada no
+       aportaba nada (siempre decia 'acreditada'). Asi cada fila dice de donde
+       salio la plata sin agregar una columna que rompa las planillas viejas. */
+    $cargas = publicidad_sql_cargas();
     $st = $pdo->prepare(
-        "SELECT acreditada_en AS fecha, 'recarga' AS tipo, usuario COLLATE utf8mb4_unicode_ci AS usuario,
-                monto_pedido AS monto, estado, NULL AS operador, referencia
-           FROM recargas
-          WHERE estado='acreditada' AND acreditada_en >= ? AND acreditada_en < ? + INTERVAL 1 DAY
+        "SELECT c.cuando AS fecha, 'recarga' AS tipo, c.usuario AS usuario,
+                c.monto AS monto, c.via AS estado, NULL AS operador, c.referencia AS referencia
+           FROM ($cargas) c
+          WHERE c.cuando >= ? AND c.cuando < ? + INTERVAL 1 DAY
          UNION ALL
          SELECT ejecutada_en AS fecha, 'retiro' AS tipo, usuario AS usuario,
                 monto, estado, NULL AS operador, NULL AS referencia
@@ -674,15 +714,14 @@ if ($metodo === 'GET') {
            un mes de pauta fuerte pareciera un mes malo de casino, que son dos
            cosas distintas y se arreglan de formas distintas.
 
-           OJO, Y ES EL MOTIVO DE QUE ACA LOS INGRESOS NO DEN IGUAL QUE ARRIBA:
-           fn_ingresos() mira SOLO la tabla `recargas`, o sea el camino del
-           chatbot. La carga que el jugador pide con el boton "Depositos"
-           adentro del juego no crea ninguna fila ahi -- queda en `movimientos`
-           con origen='peticion'. Este bloque usa las DOS vias (es el mismo
-           arreglo que en su momento saco a Publicidad de mostrar cero
-           conversiones con la gente cargando de verdad). Se devuelven abiertas
-           en `dep_transferencia` y `dep_en_el_juego` justamente para que la
-           diferencia con la pantalla de arriba se vea y no parezca un error. */
+           Lo cargado SI da igual que arriba, y eso es nuevo: hasta el 13/09/2026
+           fn_ingresos() miraba solo la tabla `recargas` -- el camino del
+           chatbot -- y este bloque ya contaba las dos vias, asi que los dos
+           numeros no cerraban. Ahora Finanzas usa la misma definicion
+           (publicidad_sql_cargas), de modo que la unica diferencia entre esta
+           caja y la de arriba es la PAUTA, que es justamente lo que esta caja
+           agrega. `dep_transferencia` y `dep_en_el_juego` quedan igual: sirven
+           para saber por donde entra la plata, no para explicar un descalce. */
         if ($accion === 'salud_pauta') {
             [$desde, $hasta] = fn_rango_fechas();
 

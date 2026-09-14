@@ -231,6 +231,58 @@ Cuatro caminos distintos, con permisos distintos:
    `ganamos_bot.py` y `ganamos_conciliador.py` son la versión vieja de esto y
    **quedaron muertos a propósito**: el primero aprueba sin verificar nada.
 
+## Medir la plata: hay UNA definición de «una carga»
+
+**El error costó dos pantallas y se repitió dos veces**, así que vale tenerlo
+presente: la plata entra por **dos caminos** (el 3 y el 4 de arriba) y solo uno
+deja fila en `recargas`.
+
+| Camino | Dónde queda | Tabla |
+|---|---|---|
+| Transferencia (chatbot) | fila propia | `recargas` (`estado='acreditada'`) |
+| Botón «Depósitos» del juego | solo el registro | `movimientos` (`origen='peticion'`, `tipo='saldo'`, `monto>0`) |
+
+Cualquier consulta que mida ingresos mirando **solo `recargas`** subcuenta el
+negocio. Pasó dos veces:
+
+- **Publicidad** mostraba *cero conversiones* con la gente cargando de verdad —
+  o sea CPA infinito y ROAS en cero, que llevan a apagar una campaña que
+  funcionaba. Arreglado el 3/9/2026.
+- **Finanzas** (nueve consultas: ingresos, ganancia, activos, retención, los
+  gráficos, la foto histórica, las alertas, el top y el CSV). Medido el
+  13/9/2026 en producción: **$88.901 por transferencia contra $10.100 desde el
+  juego**, un 10% invisible. Arreglado ese día.
+
+> **La definición única es `publicidad_sql_cargas()`** (`api/publicidad_lib.php`).
+> Devuelve `usuario, cuando, monto, via, referencia` y la usan Publicidad,
+> Finanzas y el indicador de salud. **No escribas otra**: dos pantallas con dos
+> definiciones muestran plata distinta el mismo día y no hay forma de saber cuál
+> está bien. Suma `monto_pedido` (lo que el jugador transfirió), no `monto_base`
+> (el número redondo que pidió) — difieren hasta en 99 centavos en las recargas
+> viejas, de cuando los centavos eran únicos.
+
+Con los **retiros** pasa lo simétrico, y ahí **todavía falta un dato**:
+
+| Camino | Dónde queda | ¿Cuenta en Finanzas? |
+|---|---|---|
+| Pedido por el chat | `acciones_saldo` (`tipo='retirar'`) | Sí, cuando queda `hecha` |
+| Pedido dentro del juego | `retiros_panel` (espejo, migración 64) | **No** |
+
+El espejo se refresca cada minuto con lo que el panel todavía lista. Cuando un
+pedido desaparece, alguien lo resolvió — pero **el panel deja de listarlo tanto
+si lo pagó como si lo rechazó**, y el endpoint que los distingue no está
+capturado. Por eso:
+
+- **Auditoría sí los muestra** (cuarta rama del UNION), con el subtipo
+  `resuelto_panel` y el texto *«no sabemos si se pagó o se rechazó»*. Decir
+  «pagado» ahí sería inventar un movimiento de plata en la única pantalla que
+  existe para no tener que creerle a nadie.
+- **Finanzas NO los resta**, así que la ganancia queda **sobrestimada** en lo
+  que se haya pagado por ese canal.
+- Para cerrarlo: `colector/sondear_retiros.py` (solo GETs, no toca nada) prueba
+  las variantes del endpoint de historial hasta encontrar el campo con el estado
+  final. Correrla y pegar la salida es lo único que falta.
+
 ## Chatbot y CRM
 
 - `api/chatbot.php` — proxy a **Qwen** (`qwen-vl-max`, endpoint internacional de

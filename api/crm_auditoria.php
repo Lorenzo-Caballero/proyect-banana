@@ -3,13 +3,21 @@
  * crm_auditoria.php — Backend del módulo "Auditoría" (reemplaza al módulo
  * "Transacciones" de crm_movimientos.php, que queda deprecado pero vivo).
  *
- * Unifica TRES fuentes de solo lectura en una sola vista cronológica:
+ * Unifica CUATRO fuentes de solo lectura en una sola vista cronológica:
  *   - recargas         (depósitos por transferencia, Módulo 3)
- *   - acciones_saldo   (retiros del panel de ganamos, Módulo 2, tipo='retirar')
+ *   - acciones_saldo   (retiros PEDIDOS POR EL CHAT, que ejecuta nuestro worker)
  *   - movimientos      (fichas/bono/saldo cargados a mano, ruleta, chatbot)
+ *   - retiros_panel    (retiros pedidos DENTRO del juego -- espejo, migración 64)
  *
  * Todo vía UNION ALL con las mismas 9 columnas en el mismo orden para las
- * tres ramas. Es 100% lectura -- no hay POST en este archivo.
+ * cuatro ramas. Es 100% lectura -- no hay POST en este archivo.
+ *
+ * LOS RETIROS VIENEN POR DOS CANALES DISTINTOS y por eso hacen falta dos
+ * ramas: el del chat crea una fila en `acciones_saldo` (nuestra cola) y el del
+ * botón de adentro del juego no toca esa tabla -- la solicitud vive del lado de
+ * ganamos. Meterlos en la misma tabla se pagaría dos veces (lo dice la
+ * migración 64). Hasta el 13/09/2026 el segundo canal, que es el de MÁS
+ * volumen, no figuraba en esta pantalla.
  *
  * OJO OPERADOR/ACTOR: ninguna de las 3 tablas tiene una columna "operador"
  * uniforme. Cada una expone el dato distinto:
@@ -150,6 +158,60 @@ function au_query_base(): string
         m.id                                                                   AS referencia,
         'movimientos' COLLATE utf8mb4_unicode_ci                               AS fuente
       FROM movimientos m
+
+      UNION ALL
+
+      /* ---- RETIROS PEDIDOS DENTRO DEL JUEGO (espejo del panel) ----
+         Era el canal con MAS volumen y el unico invisible en Auditoria. Los
+         retiros de `acciones_saldo` son los que pide el jugador por el chat y
+         ejecuta nuestro worker; el boton Retirar de adentro de la plataforma
+         no toca esa tabla -- la solicitud vive del lado de ganamos y de este
+         lado solo queda el espejo `retiros_panel` (migracion 64).
+
+         LA FECHA NO PUEDE SER `actualizada_en` A SECAS: el espejo se refresca
+         cada minuto y esa columna se pisa con NOW() en cada pasada, asi que un
+         retiro abierto saltaria al tope de la auditoria una vez por minuto. Se
+         ancla en `primera_vez` mientras esta abierto -- que es cuando paso el
+         hecho -- y recien al cerrarse se mueve al momento en que lo notamos.
+
+         DE UNO CERRADO NO SABEMOS SI SE PAGO O SE RECHAZO, y el detalle lo dice
+         con esas palabras. El panel deja de listarlo en los dos casos y no
+         tenemos capturado el endpoint que distingue uno del otro. Escribir
+         que se pago ahi seria inventar un movimiento de plata en la unica pantalla
+         que existe para no tener que creerle a nadie. */
+      SELECT
+        IF(rp.estado = 'cerrado',
+           COALESCE(rp.actualizada_en, rp.primera_vez),
+           rp.primera_vez)                                                     AS fecha_orden,
+        IF(rp.estado = 'cerrado',
+           COALESCE(rp.actualizada_en, rp.primera_vez),
+           rp.primera_vez)                                                     AS fecha,
+        'retiro'                                                               AS tipo,
+        IF(rp.estado = 'cerrado', 'resuelto_panel', 'abierto')
+          COLLATE utf8mb4_unicode_ci                                           AS subtipo,
+        rp.username COLLATE utf8mb4_unicode_ci                                 AS usuario,
+        rp.monto                                                               AS monto,
+        /* Lo resolvio una persona, pero del lado de ganamos: sabemos QUE fue
+           humano y no podemos saber QUIEN. Decirlo asi es mas honesto que
+           dejarlo en blanco (parece que no lo toco nadie) o inventar un
+           nombre. Mientras esta abierto todavia no actuo nadie. */
+        IF(rp.estado = 'cerrado', 'Panel de ganamos', NULL)
+          COLLATE utf8mb4_unicode_ci                                           AS operador,
+        IF(rp.estado = 'cerrado', 'humano', 'sistema')
+          COLLATE utf8mb4_unicode_ci                                           AS actor_tipo,
+        CONCAT(
+          'Retiro pedido desde el juego — \$', FORMAT(rp.monto, 0),
+          CASE WHEN rp.titular IS NOT NULL AND rp.titular <> ''
+               THEN CONCAT(' | a nombre de ', rp.titular) ELSE '' END,
+          CASE WHEN rp.destino IS NOT NULL AND rp.destino <> ''
+               THEN CONCAT(' | ', rp.destino) ELSE '' END,
+          CASE WHEN rp.estado = 'cerrado'
+               THEN ' | resuelto en el panel — no sabemos si se pagó o se rechazó'
+               ELSE ' | todavía sin resolver en el panel' END
+        ) COLLATE utf8mb4_unicode_ci                                           AS detalle,
+        rp.request_id                                                          AS referencia,
+        'retiros_panel' COLLATE utf8mb4_unicode_ci                             AS fuente
+      FROM retiros_panel rp
     ";
 }
 
