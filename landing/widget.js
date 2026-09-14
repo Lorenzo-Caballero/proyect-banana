@@ -1969,12 +1969,13 @@
 
      NUNCA dentro del APK (APP): ahí la app ya está instalada y el bono se
      acredita solo al iniciar sesión (notif_registrar_dispositivo). */
-  /* Cada cuántos MINUTOS se puede repetir el cartel de la app. Cerrarlo no lo
-     apaga: Nahuel lo quiere insistente -- vuelve en cada carga de página, en
-     cada login, al volver a la pestaña, y cada tanto si la deja abierta. El
-     freno solo evita la ametralladora (el registro y el sondeo corren todo el
-     tiempo). */
-  var PROMO_APP_MIN = 30;
+  /* Cada cuántos MINUTOS se puede repetir el cartel al cargar una página.
+     ERA 30, AHORA ES UN DÍA (14/09/2026, pedido de Nahuel: "que no sea
+     demasiado spam"). Con 30 minutos y el sondeo cada 25 s, alguien con la
+     pestaña abierta se comía hasta 48 carteles por día.
+     Los dos momentos que valen -- cuenta recién creada y saldo bajo -- NO
+     pasan por acá: llaman a mostrarPromoApp() directo y no tienen freno. */
+  var PROMO_APP_MIN = 24 * 60;
   var ultimaPromoApp = null;   // lo último que mandó el server, para re-ofrecer
 
   /* ---- "se te están acabando las fichas" ----
@@ -2008,6 +2009,29 @@
     mostrarPromoApp(ultimaPromoApp);
   }
 
+  /* ---- "este ya la tiene, no lo molestes más" ----
+     Dos señales, las dos permanentes en ESTE navegador:
+
+       `gp_app_tiene`  el server confirmó que el jugador tiene `tiene_app = 1`.
+                       Se recuerda acá y no solo en el server porque el mismo
+                       navegador puede volver ANÓNIMO, y ahí el server no tiene
+                       a quién mirarle nada: sin esto, cerrar sesión hacía
+                       reaparecer el cartel al que ya la había instalado.
+
+       `gp_app_bajada` tocó "Descargar". Todavía no sabemos si la instaló, pero
+                       ofrecérsela de nuevo no aporta: o la instaló —y el
+                       server lo va a confirmar cuando entre— o decidió que no.
+                       En los dos casos el cartel ya cumplió.
+
+     Se guardan en localStorage, así que limpiar el navegador las borra. Es
+     aceptable: el precio es un cartel de más, y la alternativa (preguntarle al
+     server en cada tick) no vale. */
+  function promoAppSuprimida(){
+    try {
+      return ls("gp_app_tiene") === "1" || ls("gp_app_bajada") === "1";
+    } catch (e) { return false; }
+  }
+
   function ofrecerPromoApp(promo){
     try {
       var visto = parseInt(ls("gp_app_promo_visto") || "0", 10);
@@ -2018,6 +2042,11 @@
 
   function mostrarPromoApp(promo){
     if (APP) return;                              // ya está en la app
+    /* El guard va ACÁ y no en ofrecerPromoApp() porque los dos caminos que
+       importan -- credenciales y saldo bajo -- se saltean el freno llamando
+       directo. Puesto allá, al que ya tiene la app le seguiría saltando justo
+       en esos dos momentos. */
+    if (promoAppSuprimida()) return;
     if (!promo || !(promo.fichas > 0)) return;
     if (document.getElementById("gpa-ov")) return;   // ya hay uno abierto
     lss("gp_app_promo_visto", String(Date.now()));
@@ -2073,6 +2102,11 @@
     ov.querySelector(".gpa-x").addEventListener("click", cerrar);
     ov.addEventListener("click", function(e){ if (e.target === ov) cerrar(); });
     ov.querySelector(".gpa-btn").addEventListener("click", function(){
+      /* Tocó Descargar: no se le ofrece más en este navegador. O la instala
+         --y el server lo confirma con tiene_app cuando entre-- o decidió que
+         no; en los dos casos el cartel ya cumplió, y volver a mostrárselo al
+         que YA la bajó es exactamente el spam que se quiso sacar. */
+      try { lss("gp_app_bajada", "1"); } catch (e) {}
       // La descarga arrancó: se despide con la instrucción que falta y listo.
       var sub = ov.querySelector(".gpa-sub");
       if (sub) sub.textContent = "¡Descargando! Instalala, entrá con tu cuenta y las fichas se acreditan solas.";
@@ -2597,14 +2631,11 @@
       } else {
         reiniciarCharla();
       }
-      /* Login nuevo = el cartel de la app vuelve a corresponder AHORA, sin
-         esperar el freno de PROMO_APP_MIN (pedido de Nahuel: mostrarlo cada
-         vez que cierra e inicia sesion). Esta rama corre SOLO en el cambio
-         de identidad -- una recarga de pagina con la sesion ya puesta no
-         pasa por aca, asi que el freno sigue mandando en la navegacion
-         normal. La respuesta del registrar de abajo trae app_promo (si no
-         tiene la app) y el ofrecer ya no encuentra el freno. */
-      lsd("gp_app_promo_visto");
+      /* ACÁ SE RESETEABA EL FRENO para que el cartel saliera en cada inicio
+         de sesión, y se sacó el 14/09/2026 junto con el resto del spam. Quien
+         entra y sale varias veces por día no necesita que se lo recuerden
+         cada vez; si le corresponde, lo va a ver igual al cargar la página
+         (una vez por día) o cuando se le acaben las fichas. */
       notifRegistrar();     // este celular ahora es de este jugador
     }
 
@@ -4004,6 +4035,9 @@
            (anonimo incluido) salvo que ya tenga la app. Se guarda para poder
            re-ofrecerlo cada tanto (mirarNotif); si el server dejo de mandarlo
            (ya instalo, o se apago la promo), se deja de insistir. */
+        /* El server confirma que ya la instaló: se anota para siempre en
+           este navegador, así tampoco le sale cuando navegue anónimo. */
+        if (d.app_instalada) { try { lss("gp_app_tiene", "1"); } catch (e) {} }
         if (d.app_promo) { ultimaPromoApp = d.app_promo; ofrecerPromoApp(d.app_promo); }
         else ultimaPromoApp = null;
       })
@@ -4020,11 +4054,12 @@
     // en revisarSesion, que corre muchisimo mas seguido.
     if (notifRegistrado !== (USUARIO || "")) { notifRegistrar(); }
 
-    /* Con la pestaña abierta un buen rato, el cartel de la app vuelve solo
-       cada PROMO_APP_MIN minutos (el freno vive en ofrecerPromoApp). Si el
-       server dejo de mandar la promo, ultimaPromoApp quedo en null y no se
-       insiste mas. */
-    if (ultimaPromoApp) ofrecerPromoApp(ultimaPromoApp);
+    /* ACÁ SE RE-OFRECÍA EL CARTEL CADA 25 SEGUNDOS y se sacó el 14/09/2026.
+       El freno de PROMO_APP_MIN lo contenía, pero era el motor del spam: con
+       la pestaña abierta todo el día devolvía un cartel cada media hora sin
+       que pasara nada que lo justificara.
+       `ultimaPromoApp` se sigue guardando y hace falta: es lo que mira
+       mirarSaldoBajo() para saber si a este jugador le corresponde la app. */
 
     fetch(API_NOTIF + "?accion=pendientes&device_id=" + encodeURIComponent(DEVICE))
       .then(function (r){ return r.json(); })

@@ -122,7 +122,17 @@ if ($accion === 'registrar') {
                     $st = $pdo->prepare("SELECT tiene_app FROM usuarios WHERE username = ?");
                     $st->execute([$usuarioReg]);
                     $fila = $st->fetch();
-                    $corresponde = $fila && !(int)$fila['tiene_app'];
+                    $yaLaTiene = $fila && (int)$fila['tiene_app'];
+                    $corresponde = $fila && !$yaLaTiene;
+                    /* Se dice EXPLICITAMENTE que ya la tiene, en vez de dejar
+                       que el widget lo deduzca de la ausencia de `app_promo`.
+                       No es lo mismo: la promo tambien falta cuando esta
+                       apagada o con 0 fichas, y si el widget confundiera los
+                       dos casos, prender la promo de nuevo no le llegaria
+                       nunca mas a ese navegador. Ademas le sirve para callarse
+                       tambien cuando ese mismo navegador navega ANONIMO, donde
+                       el server no tiene a quien mirarle el tiene_app. */
+                    if ($yaLaTiene) { $resp['app_instalada'] = true; }
                 }
                 if ($corresponde) {
                     $resp['app_promo'] = [
