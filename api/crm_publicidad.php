@@ -21,6 +21,7 @@
  * POST { accion:"publicista_toggle_activo", id }              -> { ok, activo }
  * POST { accion:"gasto_guardar", publicista_id, fecha, monto } -> { ok }
  * POST { accion:"gasto_borrar",  publicista_id|landing, fecha }  -> { ok }
+ * GET  ?accion=gasto_todo&desde=&hasta=          -> { gastos:[...] } todas las campañas
  *
  * GET ?accion=publicistas                                      -> lista para tabs + admin
  * GET ?accion=embudo&publicista_id=&desde=&hasta=               -> KPIs + rentabilidad
@@ -327,6 +328,14 @@ if ($metodo === 'GET') {
                 ]),
                 'rentabilidad' => pub_rentabilidad($m),
             ]);
+        }
+
+        /* TODO el gasto del periodo, de TODAS las campañas. No usa
+           pub_segmento() a proposito: la gracia es justamente poder ver y
+           corregir el de una campaña que ya no se mira. */
+        if ($accion === 'gasto_todo') {
+            [$desde, $hasta] = pub_rango_fechas();
+            salir(['ok' => true, 'gastos' => publicidad_gasto_todo($pdo, $desde, $hasta)]);
         }
 
         if ($accion === 'dia_por_dia') {

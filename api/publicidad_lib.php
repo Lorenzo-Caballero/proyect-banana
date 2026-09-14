@@ -423,6 +423,61 @@ function publicidad_gasto_total(PDO $pdo, string $desde, string $hasta): array
 }
 
 /**
+ * TODAS las filas de gasto del periodo, de TODAS las campañas, para editarlas.
+ *
+ * POR QUE EXISTE (Nahuel, 14/09/2026): "desde el CRM publicista dia uno hay un
+ * gasto de sesenta y seis mil pesos, eso fue una campaña que hicimos mal... los
+ * datos estan un poco sucios, me gustaria ver si hay alguna forma de editarlo".
+ *
+ * Hasta hoy el dia por dia mostraba SOLO la campaña seleccionada, asi que para
+ * corregir el gasto de una vieja habia que acordarse de que existia, encontrar
+ * su solapa y recien ahi editar dia por dia. Una campaña que ya no se usa es
+ * justamente la que uno no va a ir a buscar -- y es la que ensucia el total.
+ *
+ * Devuelve el destino (landing_slug / publicista_id) en cada fila porque es lo
+ * que hace falta para poder editarla o borrarla: el gasto pertenece a UNA
+ * campaña, y sin saber a cual no se puede tocar la fila correcta.
+ */
+function publicidad_gasto_todo(PDO $pdo, string $desde, string $hasta): array
+{
+    try {
+        $st = $pdo->prepare(
+            "SELECT g.fecha,
+                    g.monto,
+                    g.operador,
+                    g.landing_slug,
+                    g.publicista_id,
+                    COALESCE(l.nombre, p.nombre, g.landing_slug,
+                             CONCAT('Publicista #', g.publicista_id), '(sin campaña)')
+                      AS campana,
+                    IF(g.landing_slug IS NOT NULL, 'landing', 'publicista') AS clase
+               FROM gasto_diario g
+               LEFT JOIN landings    l ON l.slug = g.landing_slug
+               LEFT JOIN publicistas p ON p.id   = g.publicista_id
+              WHERE g.fecha BETWEEN ? AND ?
+              ORDER BY g.fecha DESC, g.monto DESC"
+        );
+        $st->execute([$desde, $hasta]);
+        $filas = [];
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $f) {
+            $filas[] = [
+                'fecha'         => (string)$f['fecha'],
+                'monto'         => round((float)$f['monto'], 2),
+                'operador'      => $f['operador'] !== null ? (string)$f['operador'] : null,
+                'campana'       => (string)$f['campana'],
+                'clase'         => (string)$f['clase'],
+                'landing'       => $f['landing_slug'] !== null ? (string)$f['landing_slug'] : null,
+                'publicista_id' => $f['publicista_id'] !== null ? (int)$f['publicista_id'] : null,
+            ];
+        }
+        return $filas;
+    } catch (Throwable $e) {
+        error_log('publicidad_gasto_todo: ' . $e->getMessage());
+        return [];
+    }
+}
+
+/**
  * DE DONDE sale la pauta del periodo: una fila por campaña, con su nombre.
  *
  * POR QUE EXISTE. publicidad_gasto_total() devuelve un solo numero, y un solo

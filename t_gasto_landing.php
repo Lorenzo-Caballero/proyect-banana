@@ -118,6 +118,68 @@ chequear('no se borro nada de mas', $n === 2, "filas=$n");
 chequear('borrar un dia que no existe no revienta',
          publicidad_gasto_borrar($pdo, 0, '2026-01-01', 't_lp_bono50') === true);
 
+echo "\n=== 8. Todo el gasto junto, de TODAS las campañas ===\n";
+/* POR QUE EXISTE (Nahuel, 14/09/2026): "desde el CRM publicista dia uno hay un
+   gasto de sesenta y seis mil pesos, eso fue una campaña que hicimos mal... los
+   datos estan un poco sucios, me gustaria ver si hay alguna forma de editarlo".
+
+   El dia por dia muestra SOLO la campaña seleccionada, asi que para corregir el
+   gasto de una vieja habia que acordarse de que existia y encontrar su solapa.
+   Una campaña que ya no se usa es justamente la que nadie va a ir a buscar -- y
+   la que ensucia el total sin que se note. */
+$limpiar();
+publicidad_gasto_guardar($pdo, 0,     '2026-09-10', 4000.0, 'nahuel', 't_lp_bono50');
+publicidad_gasto_guardar($pdo, 0,     '2026-09-11', 6000.0, 'nahuel', 't_lp_otra');
+publicidad_gasto_guardar($pdo, 99002, '2026-09-11', 66000.0, 'nahuel');
+
+$todo = publicidad_gasto_todo($pdo, '2026-09-01', '2026-09-30');
+$mios = array_values(array_filter($todo, fn($g) =>
+    ($g['landing'] ?? '') === 't_lp_bono50' || ($g['landing'] ?? '') === 't_lp_otra'
+    || ($g['publicista_id'] ?? 0) === 99002));
+chequear('trae las tres filas, sin importar la campaña', count($mios) === 3,
+         (string)count($mios));
+
+/* LO QUE HACE POSIBLE EDITARLAS: cada fila tiene que decir a que campaña
+   pertenece. Sin eso, corregir el gasto de una vieja se lo cargaria a la
+   campaña que este abierta -- creando plata donde no la hay y borrandola donde
+   si. Es el bug mas caro que podria tener esta pantalla. */
+$conDestino = array_filter($mios, fn($g) => $g['landing'] !== null || $g['publicista_id'] !== null);
+chequear('cada fila sabe a que campaña pertenece', count($conDestino) === 3);
+
+$delPub = array_values(array_filter($mios, fn($g) => $g['clase'] === 'publicista'));
+chequear('la del publicista se distingue', count($delPub) === 1 && $delPub[0]['landing'] === null,
+         json_encode($delPub));
+chequear('y trae su id para poder borrarla',
+         ($delPub[0]['publicista_id'] ?? 0) === 99002);
+
+/* Ordenado por fecha descendente: lo mas reciente arriba, que es lo que uno
+   viene a corregir. */
+chequear('viene ordenado por fecha, lo nuevo primero',
+         $mios[0]['fecha'] >= $mios[count($mios) - 1]['fecha'],
+         $mios[0]['fecha'] . ' -> ' . $mios[count($mios) - 1]['fecha']);
+
+chequear('guarda quien lo cargo', ($mios[0]['operador'] ?? '') === 'nahuel',
+         (string)($mios[0]['operador'] ?? 'null'));
+
+/* LA INVARIANTE: esta lista tiene que sumar lo mismo que la Pauta del periodo
+   de Finanzas. Si no coincidieran, el operador borraria filas persiguiendo un
+   numero que nunca va a cerrar. */
+$sumaTodo  = array_sum(array_column($mios, 'monto'));
+$sumaTotal = publicidad_gasto_total($pdo, '2026-09-01', '2026-09-30')['total'];
+chequear('suma lo mismo que el total de la pauta',
+         abs($sumaTodo - $sumaTotal) < 0.01, "lista=$sumaTodo total=$sumaTotal");
+
+/* Y que se pueda borrar la fila del publicista con lo que la lista devuelve,
+   que es el caso concreto de Nahuel: la campaña que salio mal. */
+chequear('se puede borrar con lo que devuelve la lista',
+         publicidad_gasto_borrar($pdo, (int)$delPub[0]['publicista_id'], $delPub[0]['fecha'], ''));
+$despues = publicidad_gasto_total($pdo, '2026-09-01', '2026-09-30')['total'];
+chequear('y el total baja exactamente lo borrado',
+         abs($despues - ($sumaTotal - 66000.0)) < 0.01, "ahora=$despues");
+
+chequear('un periodo sin gasto da lista vacia',
+         publicidad_gasto_todo($pdo, '2026-01-01', '2026-01-31') === []);
+
 $limpiar();
 echo "\n---------------------------------------\n";
 printf("%d OK, %d fallas\n", $ok, $fail);

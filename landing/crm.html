@@ -1702,6 +1702,10 @@
      cargar los días anteriores" parece que falta la función. */
   .pb-dia-periodo{font-weight:400;font-size:12px;color:var(--muted);
     text-transform:none;letter-spacing:0}
+  .pb-gasto-campana{display:inline-flex;align-items:center;gap:7px}
+  .pb-gasto-chip{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;
+    padding:2px 7px;border-radius:999px;background:var(--panel3);color:var(--muted);white-space:nowrap}
+  .pb-gasto-total{font-weight:800}
   .pb-hist-aviso{margin:-4px 20px 10px;font-size:12.5px;line-height:1.5;
     border:1px solid var(--orange);background:rgba(245,166,35,.10);
     border-radius:11px;padding:10px 13px;color:var(--txt)}
@@ -3326,6 +3330,25 @@
           </thead>
           <tbody id="pbDiaPorDia"><tr><td colspan="6" class="ag-vacio">Elegí una landing o un publicista</td></tr></tbody>
           <tfoot id="pbDiaTotales" style="display:none"></tfoot>
+        </table>
+      </div>
+
+      <!-- Todo el gasto, de TODAS las campañas. La tabla de arriba muestra
+           solo la campaña seleccionada, así que el gasto de una vieja -- que es
+           justo el que ensucia el total de Finanzas -- quedaba escondido detrás
+           de una solapa que nadie va a ir a buscar. -->
+      <div class="pb-seccion-titulo">Todo el gasto cargado <span id="pbGtPeriodo" class="pb-dia-periodo"></span></div>
+      <p class="pb-hist-hint">
+        Todas las campañas juntas, incluidas las que ya no usás. Es lo que suma
+        <b>Pauta del período</b> en Finanzas. Tocá el monto para corregirlo, o la <b>×</b> para borrar la fila.
+      </p>
+      <div class="pb-tabla-wrap">
+        <table class="pb-tabla">
+          <thead>
+            <tr><th>Día</th><th>Campaña</th><th>Cargado por</th><th>Gasto</th><th></th></tr>
+          </thead>
+          <tbody id="pbGastoTodo"><tr><td colspan="5" class="ag-vacio">—</td></tr></tbody>
+          <tfoot id="pbGastoTodoTot" style="display:none"></tfoot>
         </table>
       </div>
 
@@ -9495,6 +9518,7 @@
     $("#pbDesde").value = pbRangoActual.desde;
     $("#pbHasta").value = pbRangoActual.hasta;
     pbCargarEmbudo();
+    pbCargarGastoTodo();
   }
 
   function pbAplicarRangoCustom(){
@@ -9505,6 +9529,7 @@
     document.querySelectorAll("#pbFiltrosRapidos .fn-filtro-btn").forEach(b=>b.classList.remove("on"));
     pbRangoActual = { desde, hasta };
     pbCargarEmbudo();
+    pbCargarGastoTodo();
   }
 
   // ---------- publicistas: tabs + link + modal alta/edición ----------
@@ -9553,6 +9578,7 @@
     pbPintarLandingRow();
     pbFiltroRapido(pbFiltroActual);
     pbCargarDiaPorDia();
+    pbCargarGastoTodo();
   }
 
   function pbPintarTabs(){
@@ -9737,14 +9763,25 @@
   });
 
   // ---------- gasto diario ----------
-  $("#pgCancelar").addEventListener("click", ()=>{ $("#backGasto").style.display = "none"; });
-  function pbAbrirModalGasto(fechaSugerida, montoActual){
+  /* A qué campaña se le carga. null = la de la solapa seleccionada; con valor,
+     la fila concreta que se tocó en "Todo el gasto". */
+  let pgDestino = null;
+  $("#pgCancelar").addEventListener("click", ()=>{
+    $("#backGasto").style.display = "none";
+    pgDestino = null;
+  });
+  function pbAbrirModalGasto(fechaSugerida, montoActual, destinoFijo, nombreFijo){
     /* Ahora el gasto va por publicista O POR LANDING (migracion 65). Antes solo
        por publicista, y eso dejaba sin CPA ni ROAS a quien mide por landing --
        que es el uso real: comparar dos landings para ver cual convierte y
        cortar la que no rinde. Sin gasto esas dos metricas quedan en "—", que
        son justamente las que deciden si escalar o cortar. */
-    if(!pbHaySel()){ toast("Elegí una landing o un publicista primero"); return; }
+    /* `destinoFijo` viene de la tabla de "Todo el gasto": ahí cada fila sabe a
+       qué campaña pertenece, y usar la solapa seleccionada le cargaría el gasto
+       a la campaña equivocada. Sin destino fijo se cae al comportamiento de
+       siempre, que es el de la tabla de arriba. */
+    pgDestino = destinoFijo || null;
+    if(!pgDestino && !pbHaySel()){ toast("Elegí una landing o un publicista primero"); return; }
     $("#pgFecha").value = fechaSugerida || pbFmtFecha(new Date());
     /* Si ese dia ya tenia gasto, se precarga. Corregir "8000" a "8500" con el
        campo en blanco obliga a acordarse de cuanto habia, y equivocarse ahi
@@ -9753,7 +9790,8 @@
     /* Decir A QUIEN se le carga. Con publicistas y landings mezclados en las
        mismas solapas, cargarle el gasto al equivocado es facil y no se nota
        hasta que los numeros no cierran. */
-    const quien = pbLandingSel ? pbLandingSel.nombre : (pbPublicistaActivo()?.nombre || "");
+    const quien = nombreFijo
+      || (pbLandingSel ? pbLandingSel.nombre : (pbPublicistaActivo()?.nombre || ""));
     const sub = $("#pgSub");
     if(sub) sub.textContent = quien ? "Gasto de pauta de: " + quien : "";
     $("#pgMsg").textContent = ""; $("#pgMsg").className = "msg";
@@ -9770,16 +9808,18 @@
     /* Uno u otro: el backend rechaza los dos juntos a proposito -- un gasto de
        un dia pertenece a UNA campaña, y mandarlo dos veces lo contaria dos
        veces en el ROAS. */
-    const destino = pbLandingSel ? { landing: pbLandingSel.slug }
-                                 : { publicista_id: pbActivoId };
+    const destino = pgDestino
+      || (pbLandingSel ? { landing: pbLandingSel.slug } : { publicista_id: pbActivoId });
     try{ d = await pbPostJson({accion:"gasto_guardar", ...destino, fecha, monto}); }
     catch(e){ btn.disabled=false; return; }
     btn.disabled = false;
     if(!d.ok){ msg.className="msg err"; msg.textContent = d.error || "No se pudo guardar"; return; }
     $("#backGasto").style.display = "none";
     toast("Gasto guardado");
+    pgDestino = null;
     pbCargarEmbudo();
     pbCargarDiaPorDia();
+    pbCargarGastoTodo();
   });
 
   // ---------- embudo + rentabilidad ----------
@@ -9870,6 +9910,76 @@
     $("#pbRoasPrimera").textContent = r.roas_primera==null ? "—" : (r.roas_primera.toFixed(2) + "x");
     $("#pbRoas").textContent = r.roas==null ? "—" : r.roas.toFixed(2) + "x";
     $("#pbGanancia").textContent = r.ganancia==null ? "—" : money(r.ganancia);
+  }
+
+  /* ---------- Todo el gasto cargado, de todas las campañas ----------
+     Existe porque el día por día de arriba muestra SOLO la campaña
+     seleccionada. Para corregir el gasto de una que ya no se usa había que
+     acordarse de que existía, encontrar su solapa y recién ahí editarlo — y
+     una campaña que ya no se mira es justamente la que ensucia el total sin
+     que nadie se dé cuenta. */
+  async function pbCargarGastoTodo(){
+    if(!pbRangoActual) return;
+    let d;
+    try{
+      d = await pbGetJson({accion:"gasto_todo", desde: pbRangoActual.desde, hasta: pbRangoActual.hasta});
+    }catch(e){ return; }
+    if(!d.ok) return;
+    const gs = d.gastos || [];
+    const per = $("#pbGtPeriodo");
+    if(per) per.textContent = gs.length ? "— " + gs.length + " carga" + (gs.length===1?"":"s") : "";
+
+    if(!gs.length){
+      $("#pbGastoTodo").innerHTML =
+        '<tr><td colspan="5" class="ag-vacio">No hay gasto cargado en este período</td></tr>';
+      $("#pbGastoTodoTot").style.display = "none";
+      return;
+    }
+
+    $("#pbGastoTodo").innerHTML = gs.map((g,i)=>`<tr>
+      <td>${pbDiaLabel(g.fecha)}</td>
+      <td><span class="pb-gasto-campana">${esc(g.campana)}<span class="pb-gasto-chip">${esc(g.clase)}</span></span></td>
+      <td style="color:var(--muted)">${esc(g.operador || "—")}</td>
+      <td><button type="button" class="pb-gasto-btn" data-gt="${i}"
+            title="Corregir este gasto">${money(g.monto) + ico("lapiz")}</button></td>
+      <td><button type="button" class="pb-gasto-del" data-gtdel="${i}" title="Borrar esta carga de gasto">✕</button></td>
+    </tr>`).join("");
+
+    /* El total tiene que coincidir con "Pauta del período" de Finanzas: si no
+       coincide, alguno de los dos está mal y hay que poder darse cuenta. */
+    const tot = gs.reduce((a,g)=>a+g.monto, 0);
+    const campanas = new Set(gs.map(g=>g.campana)).size;
+    $("#pbGastoTodoTot").style.display = "";
+    $("#pbGastoTodoTot").innerHTML = `<tr>
+      <td colspan="3">Total — ${campanas} campaña${campanas===1?"":"s"}</td>
+      <td class="pb-gasto-total">${money(tot)}</td><td></td>
+    </tr>`;
+
+    /* El destino sale de la FILA, no de la solapa seleccionada: si usara la
+       solapa, corregir el gasto de una campaña vieja se lo cargaría a la que
+       está abierta — creando plata donde no la hay y borrándola donde sí. */
+    const destinoDe = g => g.landing ? {landing: g.landing} : {publicista_id: g.publicista_id};
+
+    $("#pbGastoTodo").querySelectorAll(".pb-gasto-btn").forEach(b=>{
+      b.addEventListener("click", ()=>{
+        const g = gs[parseInt(b.dataset.gt,10)];
+        pbAbrirModalGasto(g.fecha, g.monto, destinoDe(g), g.campana);
+      });
+    });
+    $("#pbGastoTodo").querySelectorAll(".pb-gasto-del").forEach(b=>{
+      b.addEventListener("click", async ()=>{
+        const g = gs[parseInt(b.dataset.gtdel,10)];
+        if(!confirm(`¿Borrar el gasto de ${money(g.monto)} del ${g.fecha} en "${g.campana}"?\n\n` +
+                    `Ojo: si esa plata se gastó de verdad, borrarla hace que la salud del ` +
+                    `negocio en Finanzas se vea mejor de lo que es.`)) return;
+        let d2;
+        try{ d2 = await pbPostJson({accion:"gasto_borrar", ...destinoDe(g), fecha: g.fecha}); }
+        catch(e){ return; }
+        if(!d2.ok){ toast(d2.error || "No se pudo borrar"); return; }
+        toast("Gasto borrado");
+        pbCargarEmbudo(); pbCargarDiaPorDia(); pbCargarGastoTodo();
+      });
+    });
   }
 
   async function pbCargarDiaPorDia(){
