@@ -3090,9 +3090,19 @@
           <div class="sub">CPA</div>
         </div>
         <div class="fn-card">
-          <div class="k">Deja cada jugador <span class="fn-info" data-tip="Cuánto deposita en promedio cada jugador que vino de esta landing. Usa el valor comercial redondo de la recarga, sin los centavos que identifican la transferencia -- por eso da unos centavos menos que «Ingresos» en Finanzas, que cuenta la plata exacta que entró al banco. Las dos están bien: acá interesa el valor, allá la caja."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+          <div class="k">Deja en su 1ª carga <span class="fn-info" data-tip="De cada jugador que cargó, cuánto puso la PRIMERA vez. Es lo que recuperás en el acto. Si este número ya cubre el CPA, la campaña se paga sola desde el día uno y podés escalar sin poner plata de tu bolsillo."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+          <div class="v" id="pbDejaPrimera">—</div>
+          <div class="sub">1ª carga / jugadores que cargaron</div>
+        </div>
+        <div class="fn-card">
+          <div class="k">Deja en total <span class="fn-info" data-tip="Todo lo que depositó cada jugador que cargó, incluidas las veces que volvió. Mismo divisor que el CPA, así que restarlos da plata de verdad. Este número CRECE con el tiempo: los jugadores que trajiste esta semana van a seguir cargando el mes que viene."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
           <div class="v" id="pbDejaJugador">—</div>
-          <div class="sub">depositado / registros</div>
+          <div class="sub">depositado / jugadores que cargaron</div>
+        </div>
+        <div class="fn-card">
+          <div class="k">ROAS 1ª carga <span class="fn-info" data-tip="Cuánto volvió por cada peso de pauta contando SOLO las primeras cargas. Arriba de 1 = recuperás en el acto. Abajo de 1 no significa que la campaña sea mala: significa que recuperás cuando el jugador vuelve, y ahí lo que importa es cuánto aguante tenés."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+          <div class="v" id="pbRoasPrimera">—</div>
+          <div class="sub">1ª carga / gasto</div>
         </div>
         <div class="fn-card">
           <div class="k">ROAS</div>
@@ -3107,14 +3117,25 @@
       </div>
 
       <div class="fn-explicacion" style="margin:0 20px 14px">
-        La comparación que decide escalar o cortar es <b>Deja cada jugador</b> contra
-        <b>Costo x registro</b>: los dos se dividen por la MISMA gente (los registros), así que la resta
-        es plata de verdad. Si deja más de lo que cuesta, cada peso de pauta vuelve con algo encima.
+        <b>Acá se gana por cargas, no por registros.</b> Un registro que nunca carga es costo, no
+        resultado, así que la cuenta que importa es contra los jugadores que SÍ pusieron plata.
         <br><br>
-        <b>No lo compares con el CPA.</b> El CPA se divide por los que CARGARON, que son muchos menos
-        que los registros, así que al lado de un número por registro siempre va a parecer enorme — y te
-        haría cortar una campaña que está ganando. El <b>ROAS</b> y la <b>Ganancia</b> no tienen ese
-        problema: miran la plata total contra el gasto total.
+        <b>Mirá las dos en este orden:</b>
+        <br>
+        1) <b>Deja en su 1ª carga</b> contra el <b>CPA</b>. Si ya lo cubre, la campaña se paga sola
+        desde el día uno: podés escalar sin poner plata de tu bolsillo.
+        <br>
+        2) Si no lo cubre, mirá <b>Deja en total</b> contra el <b>CPA</b>. Que recuperes recién cuando
+        el jugador vuelve es <b>normal y sano</b> — no es una campaña mala, es una campaña que tarda.
+        Lo que hay que medir ahí es <i>cuánto</i> tarda, porque ese es el capital que tenés que bancar
+        mientras tanto.
+        <br><br>
+        <b>Deja en total crece con el tiempo</b>: los jugadores que trajiste esta semana van a seguir
+        cargando el mes que viene, y ese número se va a ver mejor cada vez que lo mires. Por eso una
+        campaña de pocos días SIEMPRE parece peor de lo que es. No la cortes por el número del primer día.
+        <br><br>
+        El modelo se vuelve escalable cuando lo que dejan los jugadores que ya trajiste alcanza para
+        pagar la pauta de hoy. Hasta ahí, la diferencia la ponés vos.
         <br><br>
         Ojo: <b>Depositado real</b> cuenta solo las cargas que el casino confirmó — no lo que el jugador
         dijo que transfirió.
@@ -9334,6 +9355,7 @@
   function pbLimpiarEmbudo(){
     ["pbGasto","pbRegistros","pbPrimerasCargas","pbCargasTotales","pbCargasPorJugador",
      "pbDepositado","pbTicketPromedio","pbVolvioACargar","pbCpr","pbCpa","pbDejaJugador",
+     "pbDejaPrimera","pbRoasPrimera",
      "pbRoas","pbGanancia","pfRegistros","pfPrimerasCargas","pfVolvieron",
      "pfConvRegACarga","pfConvCargaVolvio","pfVisitas","pfConvVisitasReg"]
       .forEach(id=>{ const el=$("#"+id); if(el) el.textContent = "—"; });
@@ -9410,6 +9432,8 @@
     $("#pbCpr").textContent = r.costo_por_registro==null ? "—" : money(r.costo_por_registro);
     $("#pbCpa").textContent = r.costo_por_carga==null ? "—" : money(r.costo_por_carga);
     $("#pbDejaJugador").textContent = r.deja_por_jugador==null ? "—" : money(r.deja_por_jugador);
+    $("#pbDejaPrimera").textContent = r.deja_primera==null ? "—" : money(r.deja_primera);
+    $("#pbRoasPrimera").textContent = r.roas_primera==null ? "—" : (r.roas_primera.toFixed(2) + "x");
     $("#pbRoas").textContent = r.roas==null ? "—" : r.roas.toFixed(2) + "x";
     $("#pbGanancia").textContent = r.ganancia==null ? "—" : money(r.ganancia);
   }

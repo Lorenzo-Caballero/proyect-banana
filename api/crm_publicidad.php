@@ -97,12 +97,37 @@ function pub_rentabilidad(array $m): array
 {
     $gasto = (float)$m['gasto'];
     $sinGasto = $gasto <= 0;
+    /* EL NEGOCIO SE MIDE EN JUGADORES QUE CARGAN, no en registros.
+       Nahuel: "yo no gano dinero por los registros, yo gano por las cargas...
+       los que se registran y se van generalmente no vuelven". Un registro que
+       no carga es COSTO, no resultado, asi que todas las comparaciones se
+       anclan en `primeras_cargas` -- la cantidad de jugadores que efectivamente
+       pusieron plata.
+
+       Y se separa el recupero INMEDIATO del ACUMULADO, que es la otra mitad de
+       su modelo: "puedo no salir con un ROAS positivo en la primera carga de
+       ese jugador, pero si en la segunda". Con un solo numero no hay forma de
+       distinguir "esta campaña no sirve" de "esta campaña tarda", y son
+       decisiones opuestas. */
+    $jug   = (int)$m['primeras_cargas'];          // jugadores que cargaron
+    $dep1  = (float)($m['depositado_primeras'] ?? 0);
+    $depT  = (float)$m['depositado'];
+
     return [
         'costo_por_registro' => ($sinGasto || $m['registros'] === 0) ? null : round($gasto / $m['registros'], 2),
-        'costo_por_carga'    => ($sinGasto || $m['primeras_cargas'] === 0) ? null : round($gasto / $m['primeras_cargas'], 2),
-        'deja_por_jugador'   => $m['registros'] === 0 ? null : round($m['depositado'] / $m['registros'], 2),
-        'roas'               => $sinGasto ? null : round($m['depositado'] / $gasto, 4),
-        'ganancia'           => $sinGasto ? null : round($m['depositado'] - $gasto, 2),
+        'costo_por_carga'    => ($sinGasto || $jug === 0) ? null : round($gasto / $jug, 2),
+        // Lo que deja cada JUGADOR QUE CARGO -- el mismo divisor que el CPA,
+        // asi que restarlos da plata de verdad.
+        'deja_por_jugador'   => $jug === 0 ? null : round($depT / $jug, 2),
+        // Solo su PRIMERA carga: lo que vuelve en el acto.
+        'deja_primera'       => $jug === 0 ? null : round($dep1 / $jug, 2),
+        // ¿Se recupera el CPA con la primera carga, o hay que esperar a que vuelva?
+        'roas_primera'       => $sinGasto ? null : round($dep1 / $gasto, 4),
+        'roas'               => $sinGasto ? null : round($depT / $gasto, 4),
+        'ganancia'           => $sinGasto ? null : round($depT - $gasto, 2),
+        // Cuanto de lo depositado llego DESPUES de la primera carga. Es el
+        // aguante que hay que bancar hasta que la campaña se paga sola.
+        'depositado_repeticion' => round($depT - $dep1, 2),
     ];
 }
 

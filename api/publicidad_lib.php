@@ -590,7 +590,7 @@ function publicidad_metricas(PDO $pdo, int|array $seg, string $desde, string $ha
 
     // Cargas de jugadores que pertenecen a este publicista (por su alta),
     // acreditadas en el rango -- sin importar cuando se registraron.
-    $primeras = 0; $totalCargas = 0; $depositado = 0.0;
+    $primeras = 0; $totalCargas = 0; $depositado = 0.0; $depPrimeras = 0.0;
     try {
         // monto_base y NO monto_pedido, a proposito y NO es un bug:
         // monto_pedido = monto_base + los centavos que identifican la
@@ -620,7 +620,14 @@ function publicidad_metricas(PDO $pdo, int|array $seg, string $desde, string $ha
             "SELECT
                 COUNT(DISTINCT IF(c.cuando = pr.primera, c.usuario, NULL)) AS primeras,
                 COUNT(*)                        AS total_cargas,
-                COALESCE(SUM(c.monto), 0)       AS depositado
+                COALESCE(SUM(c.monto), 0)       AS depositado,
+                /* La plata de las PRIMERAS cargas, separada del total. Es lo
+                   que se recupera EN EL ACTO de cada jugador nuevo; el resto
+                   llega cuando vuelve. Sin separarlas no hay forma de saber si
+                   una campaña recupera enseguida o recien con la segunda carga
+                   -- y esa diferencia es la que decide cuanto aguante hace
+                   falta para bancarla. */
+                COALESCE(SUM(IF(c.cuando = pr.primera, c.monto, 0)), 0) AS dep_primeras
                FROM ($union) c
                JOIN altas a
                  ON a.usuario COLLATE utf8mb4_unicode_ci = c.usuario
@@ -635,6 +642,7 @@ function publicidad_metricas(PDO $pdo, int|array $seg, string $desde, string $ha
         $primeras    = (int)($fila['primeras'] ?? 0);
         $totalCargas = (int)($fila['total_cargas'] ?? 0);
         $depositado  = (float)($fila['depositado'] ?? 0);
+        $depPrimeras = (float)($fila['dep_primeras'] ?? 0);
     } catch (Throwable $e) {
         error_log('publicidad_metricas (cargas): ' . $e->getMessage());
     }
@@ -684,6 +692,7 @@ function publicidad_metricas(PDO $pdo, int|array $seg, string $desde, string $ha
         'primeras_cargas'    => $primeras,
         'cargas_totales'     => $totalCargas,
         'depositado'         => round($depositado, 2),
+        'depositado_primeras' => round($depPrimeras, 2),
         'gasto'              => round($gasto, 2),
         'jugadores_con_carga'    => $jugadoresConCarga,
         'jugadores_volvieron'    => $jugadoresQueVolvieron,
