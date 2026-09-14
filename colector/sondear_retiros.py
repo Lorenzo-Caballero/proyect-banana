@@ -14,17 +14,31 @@ que restar en Finanzas; uno rechazado no. Hasta que no se sepa, Auditoria los
 muestra como "resuelto en el panel -- no sabemos si se pago o se rechazo", que
 es lo honesto pero deja la ganancia sobrestimada.
 
-QUE HACE ESTA SONDA
-Prueba el endpoint de historial con distintas combinaciones de parametros hasta
-encontrar la que devuelve retiros YA RESUELTOS con su estado final, y muestra
-los campos de cada uno para poder elegir cual leer. Es el mismo metodo que uso
-`sondear_saldo_agente.py` para encontrar `source_user.balance`.
+QUE SE APRENDIO EN LA PRIMERA VUELTA (13/09/2026)
+    - La ruta es /agent_admin/payment/requests/history/. Las otras dan 404.
+    - `type` FILTRA y vale: 0 = deposito, 1 = retiro.
+    - `status` SE IGNORA: pedir status=0 y status=1 devuelve lo mismo, y las
+      50 filas de la primera pagina traian todas status=1.
+    - Todos los retiros traian comment="direct withdrawal", que es como se
+      llama un retiro hecho con operation:1 -- o sea lo que hace nuestro
+      worker. Y varios eran cuentas de prueba en una ventana de 3 minutos:
+      nuestra propia sesion de testeo.
+
+LA HIPOTESIS QUE FALTA CONFIRMAR
+Que este historial NO sea "las solicitudes y como terminaron" sino EL LIBRO DE
+LO QUE SE EJECUTO. Si es asi, un retiro rechazado nunca se ejecuto y por lo
+tanto no figura: estar en la lista ES la prueba de que la plata salio, y no
+hace falta ningun campo de estado.
+
+Confirmarla importa porque si es falsa Finanzas va a restar plata que nunca
+salio. Esta vuelta pagina la ventana entera y lista todo, para poder cruzarlo
+contra lo que tenemos de nuestro lado (`retiros_panel` y `acciones_saldo`).
 
 NO TOCA NADA: solo hace GETs. Se puede correr cuando sea, con la cola llena y
 con los jugadores jugando. No aprueba, no rechaza, no escribe en la base.
 
     docker exec ganamos-bot-creador python /colector/sondear_retiros.py
-    docker exec ganamos-bot-creador python /colector/sondear_retiros.py --dias 30
+    docker exec ganamos-bot-creador python /colector/sondear_retiros.py --dias 60
 """
 import argparse
 import json
@@ -98,6 +112,30 @@ def _items(data):
     cuerpo = data.get("result") if isinstance(data.get("result"), dict) else data
     items = cuerpo.get("items") if isinstance(cuerpo, dict) else None
     return items if isinstance(items, list) else None
+
+
+def pedir_todo(ctx, ruta: str, params: dict, max_paginas: int = 40):
+    """Todas las paginas, no solo la primera. Sin esto la muestra se corta en
+    `count` filas y una conclusion sobre "ninguna fila tiene status distinto"
+    no valdria nada: podrian estar todas en la pagina 2."""
+    filas, pagina = [], 0
+    while pagina < max_paginas:
+        p = dict(params)
+        p["page"] = pagina
+        url = PANEL_API + ruta
+        try:
+            r = ctx.request.get(url, params=p, timeout=30_000)
+            items = _items(json.loads(r.text()))
+        except Exception as e:
+            print(f"      pagina {pagina} fallo: {e}")
+            break
+        if not items:
+            break
+        filas += items
+        if len(items) < int(params.get("count", 50)):
+            break        # ultima pagina
+        pagina += 1
+    return filas
 
 
 def pedir(ctx, ruta: str, params: dict):
@@ -223,25 +261,64 @@ def main() -> int:
             if items:
                 resumir(items)
 
-        # 3) El detalle de los retiros, que es lo que hay que leer.
+        # 3) La ventana ENTERA, paginada. Es lo que permite afirmar algo.
         print("\n" + "=" * 72)
-        print("3. COMO SE VE UN RETIRO, ENTERO")
+        print("3. TODOS LOS RETIROS DE LA VENTANA (paginado)")
         print("=" * 72)
         params = dict(base)
         params["type"] = TIPO_RETIRO_PROBABLE
-        _, items = pedir(ctx, viva, params)
-        if not items:
-            # Sin filtro: puede que el server lo ignore y haya que filtrar aca.
-            _, items = pedir(ctx, viva, dict(base))
-        if items:
-            resumir(items)
-            mostrar_retiros(items)
+        retiros = pedir_todo(ctx, viva, params)
+        print(f"  {len(retiros)} retiros en {args.dias} dias\n")
+        if retiros:
+            resumir(retiros)
+            # Todos los valores que toma cada campo. Si `status` es siempre 1
+            # sobre una ventana larga, la hipotesis se sostiene; si aparece
+            # otro valor, ESE es el campo que distingue pagado de rechazado.
+            print("\n  VALORES DISTINTOS POR CAMPO (lo que decide todo):")
+            campos = {}
+            for it in retiros:
+                if isinstance(it, dict):
+                    for k, v in it.items():
+                        if isinstance(v, (str, int, float, bool, type(None))):
+                            campos.setdefault(k, set()).add(str(v)[:40])
+            for k in sorted(campos):
+                vals = sorted(campos[k])
+                if len(vals) <= 6:
+                    print(f"    {k:14s} = {vals}")
+                else:
+                    print(f"    {k:14s} = {len(vals)} valores distintos, ej: {vals[:4]}")
+
+            print("\n  UNO POR LINEA, para cruzar contra nuestra base:")
+            print(f"    {'id':>12s}  {'fecha':16s} {'usuario':22s} {'monto':>10s}  st cbu")
+            for it in sorted(retiros, key=lambda x: str(x.get("created_at") or "")):
+                if not isinstance(it, dict):
+                    continue
+                print(f"    {str(it.get('id')):>12s}  {str(it.get('created_at') or ''):16s} "
+                      f"{str(it.get('username') or ''):22s} {str(it.get('amount') or 0):>10s}  "
+                      f"{str(it.get('status')):>2s} {str(it.get('cbu') or '-')[:24]}")
+
+        # 4) Los depositos, para el mismo control cruzado: de esos SI sabemos
+        #    cuales rechazamos nosotros desde el CRM.
+        print("\n" + "=" * 72)
+        print("4. LOS DEPOSITOS DE LA MISMA VENTANA (para el control cruzado)")
+        print("=" * 72)
+        params = dict(base)
+        params["type"] = 0
+        deps = pedir_todo(ctx, viva, params)
+        print(f"  {len(deps)} depositos en {args.dias} dias")
+        if deps:
+            resumir(deps)
+            print("\n  IDs (para ver si los que rechazamos figuran o no):")
+            ids = [str(it.get("id")) for it in deps if isinstance(it, dict)]
+            for i in range(0, len(ids), 8):
+                print("    " + " ".join(f"{x:>11s}" for x in ids[i:i + 8]))
 
         print("\n" + "=" * 72)
         print("LISTO. Pegame TODO lo de arriba.")
-        print("Lo que hay que encontrar: un campo que distinga un retiro PAGADO")
-        print("de uno RECHAZADO. Con eso, Finanzas puede contar la plata que")
-        print("realmente salio y dejar de sobrestimar la ganancia.")
+        print("Se busca confirmar o tumbar UNA cosa: que este historial sea el")
+        print("libro de lo EJECUTADO y no el de las solicitudes. Si es asi,")
+        print("estar en la lista prueba que la plata salio -- y Finanzas puede")
+        print("por fin restar los retiros del juego sin inventar nada.")
         print("=" * 72 + "\n")
         browser.close()
     return 0
