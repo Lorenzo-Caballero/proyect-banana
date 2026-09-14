@@ -619,6 +619,39 @@
   .rc-badge.hecha{background:#1f5133;color:#8ff0b5}
   .rc-badge.error{background:#5a2327;color:#ffb0b3}
   .rc-det{color:var(--muted,#8b8fa3);margin-top:6px;white-space:pre-wrap}
+  /* Vista Fidelizacion */
+  .fid-tl-wrap{overflow-x:auto;padding:8px 2px 16px}
+  .fid-tl{display:flex;align-items:flex-start;min-width:max-content}
+  .fid-paso{display:flex;flex-direction:column;align-items:center;min-width:104px;position:relative;cursor:pointer;user-select:none}
+  .fid-paso:not(:first-child)::before{content:"";position:absolute;top:17px;right:50%;width:100%;height:2px;background:var(--line2);z-index:0}
+  .fid-nodo{width:36px;height:36px;border-radius:50%;background:var(--panel3);border:2px solid var(--line2);
+    display:grid;place-items:center;font:700 11px inherit;color:var(--muted);position:relative;z-index:1;transition:.15s}
+  .fid-paso.sel .fid-nodo{border-color:var(--green);color:var(--txt);box-shadow:0 0 0 4px var(--greenSoft)}
+  .fid-pct{margin-top:7px;font:800 16px inherit;color:var(--green)}
+  .fid-dias{font-size:11px;color:var(--muted)}
+  .fid-extra{font-size:11px;margin-top:2px;color:var(--orange)}
+  .fid-alcance{font-size:10.5px;margin-top:3px;color:var(--muted2)}
+  .fid-editor{border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-top:4px}
+  .fid-cab,.fid-fila{display:grid;grid-template-columns:30px 150px 120px 1fr 44px;gap:8px;align-items:center;padding:9px 12px}
+  .fid-cab{background:var(--panel2);font:700 10.5px inherit;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+  .fid-fila{border-top:1px solid var(--line)}
+  .fid-fila.mal{background:var(--redSoft)}
+  .fid-num{color:var(--muted2);font-size:12px}
+  .fid-in{display:flex;align-items:center;gap:6px}
+  .fid-in input{width:64px;text-align:center}
+  .fid-in .suf{color:var(--muted);font-size:12px;white-space:nowrap}
+  .fid-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;border:1px solid var(--line2);
+    background:none;color:var(--muted);cursor:pointer;font:600 12px inherit;transition:.15s}
+  .fid-chip.on{border-color:var(--orange);color:var(--orange);background:rgba(245,166,35,.1)}
+  .fid-x{background:none;border:1px solid var(--line);border-radius:9px;color:var(--muted);cursor:pointer;padding:6px 10px;transition:.15s}
+  .fid-x:hover{color:var(--red);border-color:var(--red)}
+  .fid-guardar{border:0;border-radius:11px;padding:10px 18px;cursor:pointer;font:700 13px inherit;color:#fff;
+    background:linear-gradient(145deg,var(--green2),var(--green));box-shadow:0 8px 20px var(--greenSoft)}
+  .fid-guardar:disabled{opacity:.5;cursor:not-allowed}
+  .fid-prev{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+  .fid-push{border:1px solid var(--line2);border-radius:14px;padding:12px 14px;background:var(--panel2);box-shadow:var(--shadow-sm);font-size:13px;line-height:1.45}
+  .fid-push-app{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:5px}
+  .fid-burbuja{border:1px solid var(--line);border-radius:14px 14px 14px 4px;padding:12px 14px;background:var(--panel3);font-size:13px;line-height:1.5}
   @media (prefers-reduced-motion:reduce){ .pel-ico svg{animation:none} }
   .modal{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:24px;width:100%;max-width:370px;
          box-shadow:var(--shadow);max-height:calc(100vh - 40px);max-height:calc(100dvh - 40px);overflow-y:auto}
@@ -3546,17 +3579,48 @@
           </label>
         </div>
         <div class="cfg-card-body">
-          <label class="cb-flabel">Escalones (días sin jugar → % de bono)</label>
-          <div id="fidTramos" class="rc-lista" style="margin-top:6px"></div>
+          <!-- La campaña dibujada: se lee de un vistazo cuanto crece el bono.
+               Cada parada es clickeable y alimenta la vista previa de abajo. -->
+          <div class="fid-tl-wrap"><div class="fid-tl" id="fidTimeline"></div></div>
+
+          <div class="fid-editor">
+            <div class="fid-cab">
+              <span></span><span>Días sin jugar</span><span>Bono</span><span>Regalo extra</span><span></span>
+            </div>
+            <div id="fidTramos"></div>
+          </div>
+          <p class="cfg-hint" id="fidValid" style="display:none;color:var(--red);margin-top:6px"></p>
           <div class="rc-acciones">
             <button class="btn-sec" id="fidAgregar" type="button">+ Agregar escalón</button>
-            <button class="btn-peligro" id="fidGuardar" type="button" style="background:linear-gradient(145deg,#9a8cff,#7c6cf0);box-shadow:0 8px 20px rgba(124,108,240,.35)">Guardar campaña</button>
+            <button class="fid-guardar" id="fidGuardar" type="button">Guardar campaña</button>
+            <span class="cfg-hint" id="fidMotor" style="margin-left:auto;align-self:center"></span>
           </div>
           <p class="cfg-hint" style="margin-top:8px">
             Al cruzar cada escalón el bono <b>se mejora, no se suma</b>: siempre vale el % más alto alcanzado.
             «Giro de ruleta» regala además un giro de cortesía (independiente del giro diario).
             Si el jugador vuelve a jugar, el ciclo arranca de cero.
           </p>
+        </div>
+      </div>
+
+      <!-- Lo que le llega al jugador, tal cual: saca la duda antes de prender. -->
+      <div class="cb-card">
+        <div class="cb-card-head"><b>Lo que recibe el jugador</b> <span class="cfg-hint" id="fidPrevCual"></span></div>
+        <div class="cb-card-body">
+          <div class="fid-prev">
+            <div class="fid-prev-col">
+              <div class="cfg-hint" style="margin-bottom:6px">📱 Push en el celular</div>
+              <div class="fid-push">
+                <div class="fid-push-app">🅖 GANAMOS · ahora</div>
+                <b id="fidPrevPushT"></b>
+                <div id="fidPrevPushC"></div>
+              </div>
+            </div>
+            <div class="fid-prev-col">
+              <div class="cfg-hint" style="margin-bottom:6px">💬 Mensaje de Camila en el chat</div>
+              <div class="fid-burbuja" id="fidPrevChat"></div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -4643,34 +4707,130 @@
      Editor de escalones (dias -> % -> giro) + estado de la campaña. El motor
      corre por cron en el server (fidelizacion.php); aca solo se configura y
      se mira el rendimiento. */
-  let fidTramos = [];   // [{dias,pct,ruleta}] — el estado del editor
+  let fidTramos = [];    // [{dias,pct,ruleta}] — el estado del editor
+  let fidAlcance = {};   // {dias: jugadores hoy en esa banda}
+  let fidSel = 0;        // escalón seleccionado (alimenta la vista previa)
+
+  /* Los MISMOS textos que arma el server (fidelizacion_lib): la vista previa
+     no inventa — si se cambia el mensaje allá, hay que reflejarlo acá. */
+  function fidTextos(t){
+    const dias = t.dias, pct = t.pct, giro = !!t.ruleta;
+    let push = "Hace " + dias + " días que no te vemos. Tu próxima carga viene con un "
+             + pct + "% extra de regalo, cargues lo que cargues.";
+    if (giro) push += " Y tenés un giro gratis de la ruleta esperándote.";
+    let chat = "¡Hola! Hace " + dias + " días que no te vemos por acá 😢 Te dejé un "
+             + pct + "% extra para tu próxima carga: cargás lo que quieras y te sumo el bono al toque, solo.";
+    if (giro) chat += " Y de paso te regalé un giro de la ruleta, entrá y giralo cuando quieras 🎰";
+    return { pushT: "🎁 Un " + pct + "% extra te espera", pushC: push, chat };
+  }
+
+  function fidPrever(){
+    const orden = fidTramos.slice().sort((a,b)=>a.dias-b.dias);
+    if(!orden.length){ $("#fidPrevCual").textContent=""; return; }
+    if(fidSel >= orden.length) fidSel = orden.length-1;
+    const t = orden[fidSel];
+    const x = fidTextos(t);
+    $("#fidPrevCual").textContent = "· escalón de " + t.dias + " días (" + t.pct + "%)"
+      + " — tocá otra parada de la línea para cambiar";
+    $("#fidPrevPushT").textContent = x.pushT;
+    $("#fidPrevPushC").textContent = x.pushC;
+    $("#fidPrevChat").textContent  = x.chat;
+  }
+
+  function fidPintarTimeline(){
+    const tl = $("#fidTimeline"); if(!tl) return;
+    const orden = fidTramos.slice().sort((a,b)=>a.dias-b.dias);
+    tl.innerHTML = orden.map((t,i)=>{
+      const alc = fidAlcance[t.dias];
+      return `<div class="fid-paso ${i===fidSel?"sel":""}" data-paso="${i}">
+        <div class="fid-nodo">${t.dias}d</div>
+        <div class="fid-pct">+${t.pct}%</div>
+        <div class="fid-dias">${t.dias} día${t.dias===1?"":"s"} sin jugar</div>
+        ${t.ruleta ? '<div class="fid-extra">🎰 + giro</div>' : ''}
+        ${alc !== undefined ? `<div class="fid-alcance">${nf.format(alc)} hoy</div>` : ''}
+      </div>`;
+    }).join("");
+    tl.querySelectorAll("[data-paso]").forEach(el=>{
+      el.addEventListener("click", ()=>{ fidSel = +el.dataset.paso; fidPintarTimeline(); fidPrever(); });
+    });
+  }
+
+  /* Valida en vivo lo mismo que rechaza el server: días repetidos o fuera de
+     rango. Devuelve el texto del problema (o "") y marca las filas malas. */
+  function fidValidar(){
+    const vistos = {};
+    let prob = "";
+    fidTramos.forEach((t,i)=>{
+      let mal = false;
+      if(!(t.dias>=1 && t.dias<=365)){ mal=true; prob = "Los días van de 1 a 365."; }
+      if(!(t.pct>=1 && t.pct<=200)){ mal=true; prob = "El % va de 1 a 200."; }
+      if(vistos[t.dias] !== undefined){ mal=true; prob = "Hay dos escalones con " + t.dias + " días."; }
+      vistos[t.dias] = i;
+      const fila = document.querySelector(`.fid-fila[data-fila="${i}"]`);
+      if(fila) fila.classList.toggle("mal", mal);
+    });
+    if(!fidTramos.length) prob = "Agregá al menos un escalón.";
+    const v = $("#fidValid");
+    v.style.display = prob ? "" : "none";
+    v.textContent = prob;
+    $("#fidGuardar").disabled = !!prob;
+    return !prob;
+  }
 
   function fidPintarTramos(){
     const cont = $("#fidTramos"); if(!cont) return;
-    if(!fidTramos.length){
-      cont.innerHTML = '<p class="cfg-hint">Sin escalones. Agregá al menos uno.</p>';
-      return;
-    }
     cont.innerHTML = fidTramos.map((t,i)=>`
-      <div class="rc-row" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <span class="cfg-hint" style="min-width:14px">${i+1}.</span>
-        <label class="cfg-hint">Días</label>
-        <input class="cb-input" style="width:70px" inputmode="numeric" data-i="${i}" data-k="dias" value="${t.dias}">
-        <label class="cfg-hint">Bono %</label>
-        <input class="cb-input" style="width:70px" inputmode="numeric" data-i="${i}" data-k="pct" value="${t.pct}">
-        <label class="cb-check" style="margin:0"><input type="checkbox" data-i="${i}" data-k="ruleta" ${t.ruleta?"checked":""}><span>🎰 Giro de ruleta</span></label>
-        <button class="btn-sec" type="button" data-quitar="${i}" style="margin-left:auto;padding:6px 10px">✕</button>
+      <div class="fid-fila" data-fila="${i}">
+        <span class="fid-num">${i+1}</span>
+        <span class="fid-in">
+          <input class="cb-input" inputmode="numeric" data-i="${i}" data-k="dias" value="${t.dias}">
+          <span class="suf">días</span>
+        </span>
+        <span class="fid-in">
+          <input class="cb-input" inputmode="numeric" data-i="${i}" data-k="pct" value="${t.pct}">
+          <span class="suf">%</span>
+        </span>
+        <span>
+          <button type="button" class="fid-chip ${t.ruleta?"on":""}" data-i="${i}" data-k="ruleta">
+            🎰 Giro de ruleta ${t.ruleta ? "· SÍ" : "· no"}
+          </button>
+        </span>
+        <button class="fid-x" type="button" data-quitar="${i}" title="Quitar escalón">✕</button>
       </div>`).join("");
+
+    const refrescar = ()=>{ fidPintarTimeline(); fidPrever(); fidValidar(); };
     cont.querySelectorAll("input[data-k]").forEach(el=>{
-      el.addEventListener("change", ()=>{
-        const i = +el.dataset.i, k = el.dataset.k;
-        if(k==="ruleta") fidTramos[i].ruleta = el.checked ? 1 : 0;
-        else fidTramos[i][k] = parseInt(el.value,10) || 0;
+      el.addEventListener("input", ()=>{
+        const i = +el.dataset.i;
+        fidTramos[i][el.dataset.k] = parseInt(el.value,10) || 0;
+        refrescar();
+      });
+    });
+    cont.querySelectorAll("button[data-k='ruleta']").forEach(el=>{
+      el.addEventListener("click", ()=>{
+        const i = +el.dataset.i;
+        fidTramos[i].ruleta = fidTramos[i].ruleta ? 0 : 1;
+        fidPintarTramos(); refrescar();
       });
     });
     cont.querySelectorAll("[data-quitar]").forEach(el=>{
-      el.addEventListener("click", ()=>{ fidTramos.splice(+el.dataset.quitar,1); fidPintarTramos(); });
+      el.addEventListener("click", ()=>{
+        fidTramos.splice(+el.dataset.quitar,1);
+        fidPintarTramos(); refrescar();
+      });
     });
+    fidValidar();
+  }
+
+  function fidPintarMotor(ultima){
+    const el = $("#fidMotor"); if(!el) return;
+    if(!ultima){
+      el.innerHTML = '<span style="color:var(--red)">● El motor nunca corrió — falta el cron</span>';
+      return;
+    }
+    const min = Math.round((Date.now() - new Date(ultima.replace(" ","T")).getTime())/60000);
+    if(min <= 90) el.innerHTML = '<span style="color:var(--green)">● Motor al día</span> <span class="cfg-hint">(corrió hace ' + (min<1?"un instante":min+" min") + ')</span>';
+    else el.innerHTML = '<span style="color:var(--orange)">● Motor atrasado</span> <span class="cfg-hint">(última pasada hace ' + Math.round(min/60) + ' h — revisá el cron)</span>';
   }
 
   async function fidCargar(){
@@ -4678,11 +4838,16 @@
     try{ d = await jget({accion:"fid_estado"}); }catch(e){ return; }
     if(!d || !d.ok) return;
     $("#fidActiva").checked = !!d.activa;
-    fidTramos = (d.tramos||[]).map(t=>({dias:+t.dias, pct:+t.pct, ruleta:t.ruleta?1:0}));
-    fidPintarTramos();
+    fidTramos  = (d.tramos||[]).map(t=>({dias:+t.dias, pct:+t.pct, ruleta:t.ruleta?1:0}));
+    fidAlcance = d.alcance || {};
+    fidSel = Math.max(0, fidTramos.length-1);   // arranca mostrando el escalón más alto
+    fidPintarTramos(); fidPintarTimeline(); fidPrever();
+    fidPintarMotor(d.ultima_pasada || "");
 
     const s = d.stats || {};
+    const alcTotal = Object.values(fidAlcance).reduce((a,b)=>a+(+b||0), 0);
     $("#fidCards").innerHTML = [
+      { k:"Califican hoy",     v:nf.format(alcTotal),            cls:"" },
       { k:"Avisos (30 días)",  v:nf.format(s.avisos_30d||0),     cls:"" },
       { k:"Bonos cobrados",    v:nf.format(s.bonos_cobrados||0), cls:"gold" },
       { k:"Giros regalados",   v:nf.format(s.giros_dados||0),    cls:"gold" },
@@ -4692,7 +4857,7 @@
     $("#fidUltimos").innerHTML = u.length ? u.map(a=>`
       <div class="rc-row">
         <div class="rc-top">
-          <span><b>${esc(a.usuario)}</b> · ${a.dias} días sin jugar → <b>${a.pct}%</b>${a.ruleta==1?" + 🎰":""}</span>
+          <span><b>${esc(a.usuario)}</b> · ${a.dias} días sin jugar → <b>+${a.pct}%</b>${a.ruleta==1?" + 🎰":""}</span>
           <span class="cfg-hint">${esc(String(a.enviado_en||"")).slice(0,16)}</span>
         </div>
       </div>`).join("")
@@ -4702,16 +4867,17 @@
   $("#fidAgregar")?.addEventListener("click", ()=>{
     const ultimo = fidTramos[fidTramos.length-1];
     fidTramos.push({ dias:(ultimo? ultimo.dias+1 : 2), pct:(ultimo? Math.min(200,ultimo.pct+5) : 20), ruleta:0 });
-    fidPintarTramos();
+    fidPintarTramos(); fidPintarTimeline(); fidPrever();
   });
   $("#fidGuardar")?.addEventListener("click", async ()=>{
+    if(!fidValidar()) return;
     const btn = $("#fidGuardar");
-    btn.disabled = true;
+    btn.disabled = true; const txt = btn.textContent; btn.textContent = "Guardando…";
     const d = await jpost({accion:"fid_guardar", activa: $("#fidActiva").checked, tramos: fidTramos});
-    btn.disabled = false;
+    btn.disabled = false; btn.textContent = txt;
     if(d.ok){
-      toast(d.activa ? "Campaña guardada y ACTIVA" : "Campaña guardada (apagada)");
-      fidTramos = d.tramos; fidPintarTramos();
+      toast(d.activa ? "Campaña guardada y ACTIVA ✓" : "Campaña guardada (apagada)");
+      fidCargar();   // re-trae todo: tramos ordenados, alcance por banda nueva
     } else {
       toast(d.error || "No se pudo guardar");
     }

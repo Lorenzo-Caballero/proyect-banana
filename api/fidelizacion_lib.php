@@ -87,6 +87,15 @@ if (!function_exists('fid_tramos')) {
      */
     function fid_correr(PDO $pdo, int $tope = 300): array
     {
+        // Latido ANTES del gate: aun con la campaña apagada, la pasada del
+        // cron queda registrada -- asi la vista del CRM puede distinguir
+        // "el cron no corre" de "la campaña esta apagada". Best-effort.
+        try {
+            if (function_exists('cfg_crm_guardar')) {
+                cfg_crm_guardar($pdo, ['fid_visto_en' => date('Y-m-d H:i:s')], 'fidelizacion');
+            }
+        } catch (Throwable $e) { /* el latido nunca frena la campaña */ }
+
         if (!function_exists('cfg_crm_activo') || !cfg_crm_activo($pdo, 'fid_activa')) {
             return ['ok' => true, 'avisados' => 0, 'motivo' => 'campaña apagada'];
         }

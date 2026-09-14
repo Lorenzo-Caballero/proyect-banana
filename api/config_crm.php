@@ -143,6 +143,10 @@ const CFG_CRM_DEFAULTS = [
     // la campaña que pidio Nahuel. Un JSON roto = se usa este default:
     // una config ilegible no puede apagar la campaña a la mitad.
     'fid_tramos'  => '[{"dias":2,"pct":20},{"dias":3,"pct":25},{"dias":4,"pct":30},{"dias":7,"pct":40},{"dias":8,"pct":50,"ruleta":1}]',
+    // Latido del motor: fid_correr() lo sella en CADA pasada (aun apagada).
+    // La vista Fidelizacion lo muestra para responder de un vistazo "¿el cron
+    // esta corriendo?" -- mismo patron que bot_cargas_visto_en.
+    'fid_visto_en' => '',
 
     // ----- Limites de carga y retiro, por cliente -----
     // Cada agencia tiene los suyos ("no cargo menos de 500", "no pago mas de

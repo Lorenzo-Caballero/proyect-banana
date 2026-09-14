@@ -892,9 +892,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                       WHERE prometido_por = 'fidelizacion' AND tipo = 'giro'"
                 )->fetchColumn();
             } catch (Throwable $e) { /* sin migracion 33 */ }
+            /* ALCANCE: cuantos jugadores estan HOY en la banda de cada
+               escalon (entre sus dias y los del siguiente; el ultimo es
+               "o mas"). Le responde al admin "¿a cuanta gente le va a llegar
+               esto?" ANTES de prender el switch. */
+            $alcance = [];
+            try {
+                foreach ($tramos as $i => $t) {
+                    $desde = (int)$t['dias'];
+                    $hasta = isset($tramos[$i + 1]) ? (int)$tramos[$i + 1]['dias'] : null;
+                    $sql = "SELECT COUNT(*) FROM usuarios
+                             WHERE ultima_actividad IS NOT NULL AND is_banned = 0
+                               AND ultima_actividad <= DATE_SUB(NOW(), INTERVAL $desde DAY)";
+                    if ($hasta !== null) {
+                        $sql .= " AND ultima_actividad > DATE_SUB(NOW(), INTERVAL $hasta DAY)";
+                    }
+                    $alcance[$desde] = (int)$pdo->query($sql)->fetchColumn();
+                }
+            } catch (Throwable $e) { /* sin dato, la vista muestra guiones */ }
+
             salir(['ok' => true,
                    'activa' => cfg_crm_activo($pdo, 'fid_activa'),
                    'tramos' => $tramos,
+                   'alcance' => $alcance,
+                   'ultima_pasada' => (string)(cfg_crm($pdo, 'fid_visto_en') ?? ''),
                    'stats'  => $stats]);
         }
 
