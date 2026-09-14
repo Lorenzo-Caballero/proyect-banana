@@ -133,6 +133,54 @@ volvía a mirar. Los jugadores reclamaron y hubo que cargarles a mano.
 
 ---
 
+## El MISMO WAF también está rompiendo las altas (14/09/2026)
+
+Esto es nuevo y sube la prioridad: **el challenge no solo arruina depósitos,
+también hace que un alta tarde 6 minutos en vez de 1 segundo.**
+
+Capturado en producción, alta 284 (`holaBerni725`):
+
+```
+16:52:28  fast-path 284 / holaBerni725: HTTP 200 -> al formulario
+          cuerpo: <!DOCTYPE html> ... <noscript><meta http-equiv="refresh" content="0; url=/exhk
+16:53:23  Excepcion en 284 / holaBerni725
+          FALLO -> No aparecio el formulario de alta en .../user/create-player
+16:58:27  fast-path 284 / holaBerni725: HTTP 200 -> creado id=38850938
+```
+
+La secuencia:
+
+1. El fast-path por API recibe el challenge del WAF (HTTP 200 con HTML).
+2. El bot lo detecta y **cae al formulario** — que cruza el MISMO WAF, así que
+   también falla, después de 55 segundos de timeout.
+3. Backoff de 5 minutos.
+4. Reintenta por API y **sale a la primera**.
+
+Los otros dos altas de esa misma tanda salieron en 1 y 2 segundos. O sea que el
+challenge es intermitente, igual que con los depósitos.
+
+**El fallback al formulario es la decisión equivocada para este caso.** El
+comentario de `_fast_path` (`bot_crear_jugador.py:1519`) explica por qué está
+así:
+
+> *"Se puede porque agents.ganamosonline.com NO esta detras del WAF (ver
+> CLAUDE.md). Si algun dia SI se protegiera, la request fallaria limpio (o
+> devolveria el challenge HTML) y el reg caeria al formulario."*
+
+Esa premisa es falsa y ya está corregida en CLAUDE.md. El día llegó, y el
+fallback elegido no ayuda: manda la operación por el mismo camino bloqueado.
+
+**Lo que sí funciona, y está probado por el propio log: reintentar la API.** El
+reintento de las 16:58 salió instantáneo. Un challenge prueba que la request no
+llegó al backend, así que repetirla es seguro — no puede crear dos jugadores
+por esa vía, igual que no puede depositar dos veces.
+
+**Costo de no arreglarlo:** una de cada tres altas de esa tanda tardó 6 minutos.
+Para tráfico pagado, seis minutos esperando en la pantalla de registro es
+conversión perdida: el jugador ya se fue.
+
+---
+
 ## El arreglo
 
 ### 1. Decidir por el cuerpo, no por el código HTTP
@@ -163,7 +211,7 @@ txt = txt_full[:300]           # recortado, solo para el mensaje
 estado = alta_api.evaluar_deposito(st, txt_full)
 ```
 
-### 3. Reintentar el challenge del WAF — y no esperar salvarse cambiando de dominio
+### 3. Reintentar el challenge del WAF — el arreglo que sirve para las DOS cosas
 
 **Importante, verificado el 13/09/2026:** el challenge llega en
 `agents.ganamosonline.com`, el mismo host donde el bot está logueado. Se
@@ -182,6 +230,11 @@ Se reconoce por `/exhk` en el cuerpo, o por un `<noscript>` con
 `http-equiv="refresh"`. Con dos o tres reintentos y una pausa corta suele
 alcanzar: ServicePipe deja la cookie de clearance en la respuesta del propio
 challenge, y `page.context.request` comparte cookies con el navegador.
+
+**El mismo reconocimiento sirve en los dos lugares**: en `_depositar_una()`
+para no dar por hecho un depósito, y en el fast-path de altas para reintentar
+en vez de caer al formulario (que cruza el mismo WAF). Conviene una sola
+función `es_challenge(cuerpo) -> bool` y usarla en ambos.
 
 El challenge aparece **de a ratos**. Por eso el bug es tan traicionero: funciona
 casi siempre.
