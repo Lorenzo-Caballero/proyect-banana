@@ -95,10 +95,27 @@ try {
         // Los RETIROS necesitan aprobacion de un agente (aprobado=1) antes de
         // ejecutarse; las cargas se toman igual que siempre. Ver migracion
         // sql/24_retiro_aprobar.sql y crm_retiros.php?accion=aprobar.
+        /* QUE TIPO SE ENTREGA. Hasta ahora se entregaba todo junto, y el
+           worker de depositos (bot_crear_jugador) al encontrar un 'retirar' lo
+           mandaba a 'revisar' con "lo resuelve un agente" -- o sea que un
+           retiro aprobado nunca se ejecutaba, solo cambiaba de estado.
+           Ahora el default entrega SOLO cargas, asi que ese worker deja de
+           tocar los retiros sin que haya que modificarlo (es de otro repo), y
+           quien quiera ejecutarlos los pide explicitamente con ?tipo=retirar.
+           Esa separacion es lo que permite que los retiros se ejecuten de
+           verdad sin que los dos workers se peleen la misma fila. */
+        $tipoPedido = (string)($_GET['tipo'] ?? 'cargar');
+        if ($tipoPedido === 'retirar') {
+            // aprobado = 1 sigue siendo obligatorio: sacar plata es una
+            // decision de una persona, nunca del worker.
+            $filtroTipo = "tipo = 'retirar' AND aprobado = 1";
+        } else {
+            $filtroTipo = "tipo = 'cargar'";
+        }
         $sel = $pdo->prepare(
             "SELECT id FROM acciones_saldo
               WHERE estado = 'pendiente'
-                AND (tipo <> 'retirar' OR aprobado = 1)
+                AND $filtroTipo
               ORDER BY id ASC
               LIMIT $limite
               FOR UPDATE"

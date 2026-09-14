@@ -307,6 +307,130 @@ def fijar_bono(ctx, request_id: int, pct: float) -> bool:
     return True
 
 
+# operation 1 es RETIRO en la API del panel: saca del saldo del jugador y lo
+# manda al del agente. Capturado el 13/9/2026 de un retiro real de $1, y la
+# respuesta lo confirma sin ambiguedad -- trae from_user_id = el jugador y
+# to_user_id = nosotros. El 0 (deposito) ya se conocia; este faltaba, y por eso
+# el retiro nunca se habia podido automatizar.
+OP_RETIRO = 1
+
+
+def url_acciones() -> str:
+    """De API_URL sacamos .../acciones_cola.php (la cola de saldo)."""
+    base = (os.environ.get("API_URL", "") or "").split("?")[0]
+    return base.rsplit("/", 1)[0] + "/acciones_cola.php"
+
+
+def retirar_del_jugador(ctx, id_ganamos: int, monto: float) -> tuple[str, str]:
+    """Saca fichas del jugador y las manda a nuestro saldo. (estado, detalle).
+
+    ACA SE MUEVE PLATA EN LA DIRECCION MAS DELICADA: se le quita al jugador. Un
+    falso 'hecha' le descuenta algo que nunca salio; un reintento de mas se lo
+    descuenta dos veces. Por eso la semantica es la mas conservadora de todas:
+    ante CUALQUIER duda -> 'revisar', que no devuelve ni descuenta nada y lo
+    mira una persona.
+    """
+    url = f"{PANEL_API}/agent_admin/user/{int(id_ganamos)}/payment/"
+    try:
+        r = ctx.request.post(url, data={"operation": OP_RETIRO, "amount": int(round(monto))},
+                             timeout=45_000)
+    except Exception as e:
+        return "revisar", f"no se pudo confirmar el retiro ({e})"
+
+    try:
+        cuerpo = r.text()
+    except Exception:
+        cuerpo = ""
+    corto = cuerpo[:300]
+
+    # Mismo detector de challenge que usa _json() en este archivo.
+    cabeza = cuerpo.lstrip()[:500].lower()
+    if cabeza.startswith("<!doctype html") or "servicepipe" in cabeza or "/exhk" in cuerpo[:2000]:
+        # El WAF contesto el: la request NO llego al backend, asi que no se
+        # descontó nada. Se devuelve a la cola para reintentar -- no es
+        # 'revisar' justamente porque aca SI sabemos que no paso nada.
+        return "reintentar", f"el WAF corto el retiro | {corto}"
+
+    if not r.ok:
+        return "revisar", f"el panel respondio {r.status} | {corto}"
+
+    # 2xx no alcanza: el resultado viene en el cuerpo (ver el deposito).
+    try:
+        d = json.loads(cuerpo)
+    except Exception:
+        return "revisar", f"respuesta ilegible del panel | {corto}"
+    if not isinstance(d, dict) or d.get("status") not in (0, "0"):
+        msg = (d.get("error_message") if isinstance(d, dict) else "") or ""
+        return "revisar", f"la plataforma no hizo el retiro {msg} | {corto}".strip()
+
+    return "hecha", f"retiro por API ({r.status}) {corto}".strip()
+
+
+def una_pasada_retiros(ctx, solo_ver: bool) -> int:
+    """Ejecuta los retiros que un operador YA APROBO en el CRM.
+
+    POR QUE ACA Y NO EN EL WORKER DE DEPOSITOS: ese vive en otro repo y, al
+    encontrar una accion de tipo 'retirar', la mandaba a 'revisar' con "lo
+    resuelve un agente" -- o sea que un retiro aprobado cambiaba de estado y
+    nunca se ejecutaba. La cola ahora entrega por tipo (?tipo=retirar), asi que
+    los dos workers no se pelean la misma fila y este no necesita tocarse.
+
+    La cola solo entrega retiros con aprobado = 1: sacarle plata a alguien es
+    una decision de una persona, nunca de este worker.
+    """
+    key = os.environ.get("API_KEY", "")
+    if not key:
+        return 0
+    try:
+        r = ctx.request.get(url_acciones() + "?accion=pendientes&tipo=retirar&limite=10",
+                            headers={"X-API-Key": key}, timeout=20_000)
+        d = r.json() or {}
+    except Exception as e:
+        log.warning("retiros: no pude leer la cola: %s", e)
+        return 0
+    acciones = d.get("datos") or []
+    if not acciones:
+        return 0
+
+    def marcar(id_accion, estado, msg):
+        try:
+            ctx.request.post(url_acciones() + "?accion=marcar",
+                             headers={"X-API-Key": key},
+                             data={"id": id_accion, "estado": estado, "mensaje": (msg or "")[:300]},
+                             timeout=20_000)
+        except Exception as e:
+            log.error("retiros: no pude marcar %s como %s: %s", id_accion, estado, e)
+
+    hechos = 0
+    for a in acciones:
+        idA   = int(a.get("id") or 0)
+        usr   = (a.get("usuario") or "").strip()
+        monto = float(a.get("monto") or 0)
+        gid   = a.get("usuario_id")
+
+        if not gid:
+            # Sin el id de ganamos no hay a quien sacarle. NO es 'error': el
+            # problema es nuestro (espejado), no del pedido.
+            marcar(idA, "revisar", "sin id de ganamos: no se pudo identificar al jugador")
+            continue
+        if monto <= 0:
+            marcar(idA, "revisar", "monto invalido")
+            continue
+
+        if solo_ver or MODE == "DRY_RUN":
+            log.info("  [ver] retiro #%s %s $%s -> RETIRARIA", idA, usr, monto)
+            continue
+
+        estado, detalle = retirar_del_jugador(ctx, int(gid), monto)
+        if estado == "hecha":
+            log.info("  retiro #%s %s: -%s fichas del jugador", idA, usr, monto)
+            hechos += 1
+        else:
+            log.warning("  retiro #%s %s: %s -> %s", idA, usr, estado, detalle)
+        marcar(idA, estado, detalle)
+    return hechos
+
+
 def rechazar(ctx, request_id: int) -> tuple[str, str]:
     """Cancela la solicitud EN GANAMOS. Devuelve (estado, detalle).
 
@@ -664,6 +788,10 @@ def main() -> int:
         while True:
             try:
                 n = una_pasada(ctx, args.ver, args.dias)
+                # Los retiros aprobados en el CRM, en la misma vuelta.
+                nr = una_pasada_retiros(ctx, args.ver)
+                if nr:
+                    log.info("%d retiro(s) ejecutado(s)", nr)
                 revisar_stock(ctx, args.ver)
                 if n:
                     log.info("%d carga(s) aprobada(s)", n)
