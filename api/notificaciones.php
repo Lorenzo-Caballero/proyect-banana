@@ -102,28 +102,73 @@ if ($accion === 'registrar') {
     );
     $resp = $ok ? ['ok' => true] : ['ok' => false, 'error' => 'No se pudo registrar'];
 
-    /* Promo "descarga la app", para TODO el que entre desde el NAVEGADOR:
-       viaja acá porque este registro corre al cargar la página (el widget lo
-       manda al arrancar, con o sin sesión). El widget decide si mostrar el
-       cartel y cada cuánto; acá solo se dice "a este le corresponde":
+    /* Promo "descarga la app". El widget decide CUÁNDO mostrarla; acá solo se
+       dice "a este le corresponde":
          - desde la app (android) nunca: ya la tiene;
-         - con sesión, solo si su tiene_app es 0 (el que ya la instaló no
-           tiene nada que descargar y las fichas ya las cobró);
-         - anónimo: siempre que la promo esté prendida -- el cartel también
-           vende la app al que todavía no se registró.
+         - solo si su tiene_app es 0 (el que ya la instaló no tiene nada que
+           descargar y las fichas ya las cobró);
+         - Y SOLO SI YA CARGÓ AL MENOS UNA VEZ.
+
+       Esa última condición es del 14/09/2026 y cambió el criterio anterior,
+       que era "a todo el que entre desde el navegador, anónimo incluido".
+       Nahuel: "me creo usuario y cuando entro ya me sale eso, no lo quiero ahí
+       porque bloquea la primera carga".
+
+       Tenía razón, y el motivo es de plata: lo que sigue a crear la cuenta es
+       la PRIMERA CARGA, que es la acción más valiosa que ese jugador va a
+       hacer. Ponerle un modal encima para regalarle fichas por instalar una
+       app cambia una carga real por un regalo, y encima al que todavía no
+       demostró que paga. El anónimo queda afuera por lo mismo: todavía no es
+       cliente.
+
+       Al que ya cargó se le sigue ofreciendo, y el mejor momento lo resuelve
+       el widget: cuando se le están acabando las fichas jugando.
        Best-effort: sin config_crm no hay promo y el registro sigue igual. */
     if ($ok && $plataforma !== 'android') {
         try {
             require_once __DIR__ . '/config_crm.php';
             if (cfg_crm_activo($pdo, 'app_promo_activa')) {
                 $fichas = max(0, (int)(cfg_crm($pdo, 'app_bono_fichas') ?? 0));
-                $corresponde = ($fichas > 0);
-                if ($corresponde && $usuarioReg !== null && $usuarioReg !== '') {
+                /* Sin sesión no hay a quién mirarle nada, y un anónimo no
+                   cargó nunca: no le corresponde. */
+                $corresponde = ($fichas > 0 && $usuarioReg !== null && $usuarioReg !== '');
+                if ($corresponde) {
                     $st = $pdo->prepare("SELECT tiene_app FROM usuarios WHERE username = ?");
                     $st->execute([$usuarioReg]);
                     $fila = $st->fetch();
                     $yaLaTiene = $fila && (int)$fila['tiene_app'];
                     $corresponde = $fila && !$yaLaTiene;
+
+                    /* ¿Ya cargó alguna vez? Las DOS vías: la transferencia que
+                       maneja el chatbot y el botón Depósitos de adentro del
+                       juego. Mirar solo `recargas` dejaría afuera a quien carga
+                       siempre por el juego -- que es el recorrido natural una
+                       vez que está adentro. */
+                    if ($corresponde) {
+                        try {
+                            $q = $pdo->prepare(
+                                "SELECT 1 FROM recargas
+                                  WHERE usuario = ? AND estado = 'acreditada' LIMIT 1"
+                            );
+                            $q->execute([$usuarioReg]);
+                            $cargo = (bool)$q->fetchColumn();
+                            if (!$cargo) {
+                                $q = $pdo->prepare(
+                                    "SELECT 1 FROM movimientos
+                                      WHERE usuario = ? AND origen = 'peticion'
+                                        AND tipo = 'saldo' AND monto > 0 LIMIT 1"
+                                );
+                                $q->execute([$usuarioReg]);
+                                $cargo = (bool)$q->fetchColumn();
+                            }
+                            $corresponde = $cargo;
+                        } catch (Throwable $e) {
+                            /* Ante la duda NO se ofrece: el costo de no mostrar
+                               el cartel es cero, y el de mostrarlo encima de la
+                               primera carga es una carga perdida. */
+                            $corresponde = false;
+                        }
+                    }
                     /* Se dice EXPLICITAMENTE que ya la tiene, en vez de dejar
                        que el widget lo deduzca de la ausencia de `app_promo`.
                        No es lo mismo: la promo tambien falta cuando esta

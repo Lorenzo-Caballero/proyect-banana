@@ -1933,36 +1933,27 @@
   }
 
   /* ================== PROMO "DESCARGÁ LA APP" ==================
-     ESTE COMENTARIO DECÍA "aparece UNA vez, justo después de entregar las
-     credenciales... el único momento en que el server manda `app_promo`".
-     Quedó viejo y era engañoso: hoy sale en cuatro momentos distintos, y dos
-     de ellos son en cada carga de página. Si te estás preguntando "¿cuándo
-     carajo sale este cartel?", es acá:
+     Si te estás preguntando "¿cuándo sale este cartel?", es acá. Llegó a salir
+     en cuatro momentos distintos y se fue podando: hoy son dos, y ninguno se
+     cruza delante de algo que el jugador estaba por hacer.
 
-       1. Al ENTREGAR LAS CREDENCIALES de una cuenta recién creada
-          (alta_estado.php manda app_promo). Llama a mostrarPromoApp() DIRECTO,
-          o sea que se saltea el freno de los 30 minutos -- es el momento de
-          mayor atención del jugador y no se quiere perder.
-
-       2. Al REGISTRAR EL DISPOSITIVO (notificaciones.php manda app_promo).
+       1. Al REGISTRAR EL DISPOSITIVO (notificaciones.php manda app_promo).
           Eso corre al cargar CUALQUIER página con el widget, con sesión o sin
           ella. O sea: también al anónimo que todavía no se registró.
 
-       3. Cada 25 s en el SONDEO (mirarNotif), mientras la pestaña siga
-          abierta. Es lo que lo hace reaparecer solo a los 30 minutos.
-
-       4. Al INICIAR SESIÓN: se borra `gp_app_promo_visto`, lo que RESETEA el
-          freno, y el notifRegistrar() que va justo después lo muestra al
-          instante. Pedido explícito de Nahuel: que aparezca cada vez que
-          cierra y vuelve a iniciar sesión.
+       2. Cuando se le están acabando las fichas JUGANDO (mirarSaldoBajo).
+          Es el momento bueno: ya cargó, está jugando, y ofrecerle fichas ahí
+          no compite con nada.
 
      A QUIÉN le corresponde lo decide el server, no esto:
        - la promo tiene que estar prendida (`app_promo_activa`) Y con fichas
          (`app_bono_fichas` > 0). Por defecto viene APAGADA;
-       - con sesión, solo si `usuarios.tiene_app = 0` -- el que ya la instaló
-         no tiene nada que descargar y el regalo ya lo cobró;
-       - anónimo: siempre, porque el cartel también vende la app al que
-         todavía no se registró.
+       - solo si `usuarios.tiene_app = 0` -- el que ya la instaló no tiene nada
+         que descargar y el regalo ya lo cobró;
+       - y SOLO A QUIEN YA CARGÓ AL MENOS UNA VEZ. Al recién registrado no se
+         le ofrece: lo que sigue a crear la cuenta es la primera carga, y un
+         modal encima cambia una carga real por un regalo. Al anónimo tampoco,
+         por lo mismo -- todavía no es cliente.
 
      CERRARLO NO LO APAGA, a propósito: solo marca el timestamp y vuelve a los
      PROMO_APP_MIN minutos. Es insistente por pedido, no por descuido.
@@ -2215,11 +2206,17 @@
               "Contraseña: " + d.password
             ], function (){
               decir("Guardala bien, no te la voy a poder repetir. "
-                  + "Ya podés iniciar sesión con esos datos.", function (){
-                /* Cuenta nueva recién entregada: el momento de la promo de la
-                   app. El server decide si viene (app_promo) y cuánto regala. */
-                if (d.app_promo) setTimeout(function (){ mostrarPromoApp(d.app_promo); }, 1200);
-              });
+                  + "Ya podés iniciar sesión con esos datos.");
+              /* ACA SALTABA EL CARTEL DE LA APP y se saco el 14/09/2026.
+                 Nahuel: "me creo usuario y cuando entro ya me sale eso, no lo
+                 quiero ahi porque bloquea la primera carga".
+                 Tenia razon: lo que sigue a recibir las credenciales es cargar
+                 por primera vez, que es la accion mas valiosa que ese jugador
+                 va a hacer. Ponerle un modal encima para ofrecerle fichas
+                 gratis por instalar una app cambia una carga real por un
+                 regalo -- y encima al que todavia no demostro que paga.
+                 El momento bueno ya existe y es el contrario: cuando se le
+                 estan acabando las fichas jugando (ver mirarSaldoBajo). */
             });
             return;
           }
@@ -4031,10 +4028,12 @@
         if (APP && APP_TK){
           try { APP.vincular(APP_TK, DEVICE, USUARIO || ""); } catch (e) {}
         }
-        /* El server manda app_promo a todo el que entre desde el NAVEGADOR
-           (anonimo incluido) salvo que ya tenga la app. Se guarda para poder
-           re-ofrecerlo cada tanto (mirarNotif); si el server dejo de mandarlo
-           (ya instalo, o se apago la promo), se deja de insistir. */
+        /* El server manda app_promo solo a quien YA CARGO al menos una vez y
+           todavia no tiene la app. Al recien registrado y al anonimo no: lo
+           que sigue a crear la cuenta es la primera carga, y el cartel no se
+           le cruza delante. Se guarda para que mirarSaldoBajo() sepa si a este
+           jugador le corresponde; si el server dejo de mandarlo (ya instalo, o
+           se apago la promo), se deja de insistir. */
         /* El server confirma que ya la instaló: se anota para siempre en
            este navegador, así tampoco le sale cuando navegue anónimo. */
         if (d.app_instalada) { try { lss("gp_app_tiene", "1"); } catch (e) {} }

@@ -57,25 +57,19 @@ try {
     if (empty($e['listo']) && empty($e['fallo'])) {
         try { alta_avisar_trabadas($pdo); } catch (Throwable $ex) {}
     }
-    /* Promo "descarga la app": viaja en la MISMA respuesta que entrega las
-       credenciales, porque ese es el unico momento en que el widget muestra el
-       modal (cuenta recien creada). Asi no hace falta otro endpoint ni cachear
-       config en el cliente. `url` vacia => el widget usa /ganamos.apk, que la
-       replica sirve en su raiz. Best-effort: sin config_crm no hay promo. */
-    if (!empty($e['listo'])) {
-        try {
-            require_once __DIR__ . '/config_crm.php';
-            if (cfg_crm_activo($pdo, 'app_promo_activa')) {
-                $fichas = max(0, (int)(cfg_crm($pdo, 'app_bono_fichas') ?? 0));
-                if ($fichas > 0) {
-                    $e['app_promo'] = [
-                        'fichas' => $fichas,
-                        'url'    => trim((string)(cfg_crm($pdo, 'app_url') ?? '')),
-                    ];
-                }
-            }
-        } catch (Throwable $ex) { /* sin promo, el alta sigue igual */ }
-    }
+    /* ACA VIAJABA LA PROMO DE LA APP junto con las credenciales, y se saco el
+       14/09/2026. Nahuel: "me creo usuario y cuando entro ya me sale eso, no
+       lo quiero ahi porque bloquea la primera carga".
+
+       Lo que sigue a recibir el usuario y la contraseña es la PRIMERA CARGA,
+       que es la accion mas valiosa que ese jugador va a hacer. Un modal encima
+       ofreciendole fichas gratis por instalar una app cambia una carga real
+       por un regalo, y encima al que todavia no demostro que paga.
+
+       La promo no desaparecio: la sigue mandando notificaciones.php, pero solo
+       a quien YA cargo al menos una vez, y el widget elige el momento bueno --
+       cuando se le estan acabando las fichas jugando. No hace falta mandarla
+       aca, y mandarla igual seria dejar un dato que nadie lee. */
     echo json_encode($e, JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
     // El detalle al log, nunca a la respuesta: acá contesta cualquiera.
