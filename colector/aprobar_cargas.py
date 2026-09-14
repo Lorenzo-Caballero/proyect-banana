@@ -752,11 +752,145 @@ def revisar_stock(ctx, solo_ver: bool) -> None:
         log.warning("stock: no pude reportar el saldo: %s", e)
 
 
+# ---------------------------------------------------------------------------
+# El LIBRO: lo que la plataforma ejecuto de verdad
+# ---------------------------------------------------------------------------
+LIBRO_CADA_MIN = 15          # cada cuanto se sincroniza
+LIBRO_DIAS     = 30          # ventana de la sincronizacion rutinaria
+_LIBRO_MARCA   = "/tmp/gp_libro_visto"
+HISTORIAL      = f"{PANEL_API}/agent_admin/payment/requests/history/"
+
+
+def _url_libro() -> str:
+    """De API_URL (.../gp-api/altas_cola.php) sacamos .../gp-api/operaciones_panel.php"""
+    base = (os.environ.get("API_URL", "") or "").split("?")[0]
+    return base.rsplit("/", 1)[0] + "/operaciones_panel.php"
+
+
+def _libro_toca() -> bool:
+    """True si paso LIBRO_CADA_MIN desde la ultima sincronizacion.
+
+    Mismo mecanismo que _stock_toca(): este worker arranca de cero cada minuto
+    (lo lanza el cron), asi que el "hace cuanto" va en la fecha de un archivo y
+    no en memoria. Cada 15 min y no en cada pasada porque son varias paginas y
+    lo que mide -- plata que ya se movio -- no cambia de un minuto al otro.
+    """
+    try:
+        if os.path.isfile(_LIBRO_MARCA):
+            if (time.time() - os.path.getmtime(_LIBRO_MARCA)) < LIBRO_CADA_MIN * 60:
+                return False
+        open(_LIBRO_MARCA, "w").close()
+        return True
+    except Exception:
+        return True          # ante la duda, sincronizar: es una lectura
+
+
+def _libro_paginas(ctx, tipo: int, dias: int, max_paginas: int = 60) -> list:
+    """Todas las paginas del historial para un tipo (0 deposito, 1 retiro).
+
+    PAGINAR NO ES OPCIONAL: el endpoint devuelve `count` filas por pagina, asi
+    que sin esto una ventana con mas movimiento se corta en la primera y el
+    libro quedaria con un agujero silencioso justo en los meses mas activos.
+    """
+    hoy = datetime.now().date()
+    filas, pagina = [], 0
+    while pagina < max_paginas:
+        params = {
+            "type": tipo,
+            "date_from": (hoy - timedelta(days=dias)).isoformat(),
+            # +1 dia de margen, mismo motivo que en una_pasada(): el server
+            # agrupa por fecha con un desfasaje respecto del reloj local.
+            "date_to": (hoy + timedelta(days=1)).isoformat(),
+            "count": 50,
+            "page": pagina,
+        }
+        r = ctx.request.get(HISTORIAL, params=params, timeout=30_000)
+        txt = r.text()
+        if txt.strip()[:1] == "<":
+            # El challenge de ServicePipe contesta 200 con HTML. Cortar y
+            # reintentar en la proxima vuelta es lo correcto: seguir paginando
+            # guardaria un libro incompleto como si estuviera completo.
+            raise DesafioWAF("el panel contesto HTML al leer el libro")
+        data = json.loads(txt) or {}
+        cuerpo = data.get("result") if isinstance(data.get("result"), dict) else data
+        items = cuerpo.get("items") if isinstance(cuerpo, dict) else None
+        if not isinstance(items, list) or not items:
+            break
+        filas += [x for x in items if isinstance(x, dict)]
+        if len(items) < 50:
+            break
+        pagina += 1
+    return filas
+
+
+def sincronizar_libro(ctx, solo_ver: bool, dias: int = LIBRO_DIAS,
+                      forzar: bool = False) -> None:
+    """Espeja en nuestra base lo que la plataforma EJECUTO de verdad.
+
+    POR QUE HACE FALTA. Finanzas contaba los retiros desde `acciones_saldo`,
+    que es NUESTRA cola: solo tiene los que el jugador pide por el chat. El
+    retiro pedido con el boton de adentro del juego, y el que el operador hace
+    directo desde el panel, no pasan por ahi. Medido el 14/09/2026 sobre 60
+    dias: el libro tenia 44 retiros por $157.630 y Finanzas veia 5 por $692.
+
+    POR QUE SE PUEDE CONFIAR EN ESTE LIBRO. El endpoint ignora el parametro
+    `status` y devuelve todo con status=1 porque no lista solicitudes con su
+    resultado: lista OPERACIONES EJECUTADAS. Verificado buscando un deposito
+    que rechazamos a mano (request_id 234314468) -- no esta, y sus ids vecinos
+    si. Asi que estar en el libro prueba que la operacion se hizo.
+
+    Se mandan las dos clases. Los depositos no se usan todavia para sumar, pero
+    son el control cruzado de los que el bot marco 'hecha' sin que la
+    plataforma los registre -- que es el bug del documento para Fauno.
+
+    Si algo falla se loguea y ya: esto no es parte de aprobar cargas y no puede
+    tumbar una pasada que hizo bien lo suyo.
+    """
+    if solo_ver or (not forzar and not _libro_toca()):
+        return
+    key = os.environ.get("API_KEY", "")
+    if not key:
+        return
+
+    try:
+        ops = _libro_paginas(ctx, 1, dias) + _libro_paginas(ctx, 0, dias)
+    except DesafioWAF as e:
+        log.warning("libro: %s. Lo sincronizo en la proxima vuelta.", e)
+        return
+    except Exception as e:
+        log.warning("libro: no pude leer el historial: %s", e)
+        return
+
+    if not ops:
+        log.info("libro: el panel no devolvio operaciones en %d dias", dias)
+        return
+
+    # Se manda la ventana ENTERA, no solo lo nuevo: del otro lado `payment_id`
+    # es PK con upsert, asi que una pasada perdida se recupera sola en la
+    # siguiente sin ningun estado que mantener de este lado.
+    try:
+        r = ctx.request.post(_url_libro(), headers={"X-API-Key": key},
+                             data={"operaciones": ops}, timeout=60_000)
+        d = r.json() or {}
+        if not d.get("ok"):
+            log.warning("libro: el server rechazo la sincronizacion: %s",
+                        str(d.get("error"))[:120])
+            return
+        log.info("libro: %s operaciones (%s guardadas, %s ignoradas), desde %s",
+                 d.get("recibidas"), d.get("guardadas"), d.get("ignoradas"),
+                 d.get("libro_desde"))
+    except Exception as e:
+        log.warning("libro: no pude reportar las operaciones: %s", e)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Aprueba las cargas pedidas desde la plataforma")
     ap.add_argument("--loop", type=int, metavar="SEG", help="repetir cada SEG segundos")
     ap.add_argument("--ver", action="store_true", help="mostrar sin aprobar")
     ap.add_argument("--con-ventana", action="store_true", help="navegador a la vista")
+    ap.add_argument("--libro", type=int, metavar="DIAS",
+                    help="sincronizar el libro de operaciones ejecutadas hacia atras "
+                         "DIAS dias y salir (para el backfill inicial)")
     ap.add_argument("--dias", type=int, default=int(os.environ.get("DIAS_VENTANA", "2")),
                     help="dias hacia atras que se miran (default 2)")
     args = ap.parse_args()
@@ -785,6 +919,14 @@ def main() -> int:
                 return 1
             bot.guardar_sesion(ctx, page)
 
+        # Backfill del libro y afuera. Va DESPUES del login y ANTES del loop:
+        # no aprueba ni rechaza nada, solo lee el historial y lo espeja, asi
+        # que se puede correr con la cola llena y los jugadores jugando.
+        if args.libro:
+            sincronizar_libro(ctx, args.ver, dias=args.libro, forzar=True)
+            browser.close()
+            return 0
+
         while True:
             try:
                 n = una_pasada(ctx, args.ver, args.dias)
@@ -793,6 +935,7 @@ def main() -> int:
                 if nr:
                     log.info("%d retiro(s) ejecutado(s)", nr)
                 revisar_stock(ctx, args.ver)
+                sincronizar_libro(ctx, args.ver)
                 if n:
                     log.info("%d carga(s) aprobada(s)", n)
             except DesafioWAF as e:

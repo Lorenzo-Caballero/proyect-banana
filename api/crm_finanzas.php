@@ -140,9 +140,82 @@ function fn_ingresos(PDO $pdo, string $desde, string $hasta): array
     return ['cantidad' => (int)$r['cantidad'], 'monto' => (float)$r['monto'], 'promedio' => (float)$r['promedio']];
 }
 
-/** Retiros: acciones_saldo tipo=retirar CONFIRMADAS ('hecha') en [desde, hasta]. */
+/**
+ * ¿Hasta dónde atrás llega el libro del panel (`operaciones_panel`)?
+ *
+ * Existe porque el libro se llena hacia atrás con un backfill y después se
+ * mantiene con una ventana móvil. Si alguien mira un período ANTERIOR a lo que
+ * el libro alcanza, el libro va a decir "cero retiros" — y cero no es un dato,
+ * es una ausencia. Mostrarlo como si fuera un dato convertiría un mes viejo en
+ * un mes de ganancia récord.
+ *
+ * Devuelve null si la tabla no existe, está vacía, o no llega tan atrás.
+ *
+ * SIN CACHÉ, aunque se llame varias veces por request. La migración 67 le puso
+ * un índice propio a `cuando` justamente para esto: MIN() sobre una columna
+ * indexada es leer una fila del índice, más barato que cualquier caché. Y un
+ * caché estático acá sería peor que inútil — no se puede invalidar, así que
+ * cualquier test que llene el libro a mitad de camino vería el valor viejo.
+ */
+function fn_libro_desde(PDO $pdo): ?string
+{
+    try {
+        $v = $pdo->query("SELECT MIN(cuando) FROM operaciones_panel")->fetchColumn();
+        return $v ? (string)$v : null;
+    } catch (Throwable $e) {
+        return null;            // sin migración 67: se sigue como antes
+    }
+}
+
+/**
+ * Retiros del período: la plata que SALIÓ.
+ *
+ * SALE DEL LIBRO DEL PANEL, no de nuestra cola, y eso cambió el 14/09/2026.
+ * `acciones_saldo` es NUESTRA cola: solo tiene los retiros que el jugador pide
+ * por el chat y ejecuta el worker. El que pide con el botón de adentro del
+ * juego, y el que el operador hace directo desde el panel, no pasan por ahí.
+ *
+ * Medido ese día contra el panel, sobre 60 días:
+ *     el libro del panel  : 44 retiros por $157.630
+ *     lo que veía Finanzas:  5 retiros por      $692
+ *
+ * O sea que la ganancia venía sobrestimada en casi todo lo que sale. No es un
+ * error de redondeo: es el 99% del dinero saliente.
+ *
+ * `operaciones_panel` solo tiene operaciones EJECUTADAS (ver la migración 67:
+ * se verificó buscando un depósito que rechazamos a mano y no figura, con sus
+ * ids vecinos sí presentes). Así que sumar todo lo de tipo=1 es exactamente la
+ * plata que salió, sin tener que decidir nada.
+ *
+ * EL LIBRO REEMPLAZA A LA COLA, NO SE SUMA A ELLA. Los retiros que ejecuta
+ * nuestro worker también quedan registrados en el libro (verificado: las
+ * acciones 98, 39 y 29 aparecen con el mismo minuto y monto), así que contar
+ * las dos fuentes los contaría dos veces.
+ *
+ * `fuente` viaja en la respuesta para que la pantalla pueda decir de dónde
+ * salió el número. Un período que el libro no alcanza cae a la cola vieja, que
+ * subcuenta — pero subcontar avisando es mejor que inventar un cero.
+ */
 function fn_retiros(PDO $pdo, string $desde, string $hasta): array
 {
+    $libroDesde = fn_libro_desde($pdo);
+    if ($libroDesde !== null && $libroDesde <= $desde . ' 00:00:00') {
+        try {
+            $st = $pdo->prepare(
+                "SELECT COUNT(*) cantidad, COALESCE(SUM(monto),0) monto,
+                        COALESCE(AVG(monto),0) promedio
+                   FROM operaciones_panel
+                  WHERE tipo = 1 AND cuando >= ? AND cuando < ? + INTERVAL 1 DAY"
+            );
+            $st->execute([$desde, $hasta]);
+            $r = $st->fetch(PDO::FETCH_ASSOC);
+            return ['cantidad' => (int)$r['cantidad'], 'monto' => (float)$r['monto'],
+                    'promedio' => (float)$r['promedio'], 'fuente' => 'panel'];
+        } catch (Throwable $e) {
+            error_log('fn_retiros (libro): ' . $e->getMessage());
+        }
+    }
+
     $st = $pdo->prepare(
         "SELECT COUNT(*) cantidad, COALESCE(SUM(monto),0) monto, COALESCE(AVG(monto),0) promedio
            FROM acciones_saldo
@@ -150,7 +223,8 @@ function fn_retiros(PDO $pdo, string $desde, string $hasta): array
     );
     $st->execute([$desde, $hasta]);
     $r = $st->fetch(PDO::FETCH_ASSOC);
-    return ['cantidad' => (int)$r['cantidad'], 'monto' => (float)$r['monto'], 'promedio' => (float)$r['promedio']];
+    return ['cantidad' => (int)$r['cantidad'], 'monto' => (float)$r['monto'],
+            'promedio' => (float)$r['promedio'], 'fuente' => 'cola'];
 }
 
 /** Bonos regalados (positivos únicamente -- un monto negativo es un ajuste, no un regalo). */
@@ -317,10 +391,20 @@ function fn_serie_por_dia(PDO $pdo, string $desde, string $hasta, float $costoPo
     $porIngresos = [];
     foreach ($ing->fetchAll(PDO::FETCH_ASSOC) as $r) { $porIngresos[$r['fecha']] = (float)$r['monto']; }
 
-    $ret = $pdo->prepare(
-        "SELECT DATE(ejecutada_en) fecha, SUM(monto) monto FROM acciones_saldo
-          WHERE tipo='retirar' AND estado='hecha' AND ejecutada_en >= ? AND ejecutada_en < ? + INTERVAL 1 DAY
-          GROUP BY DATE(ejecutada_en)"
+    /* Del libro del panel si alcanza, de la cola vieja si no -- misma regla
+       que fn_retiros(), o el gráfico contaría una cosa y el KPI de arriba
+       otra, que es peor que los dos equivocados igual. */
+    $libroDesde = fn_libro_desde($pdo);
+    $usaLibro   = $libroDesde !== null && $libroDesde <= $desde . ' 00:00:00';
+    $ret = $usaLibro
+        ? $pdo->prepare(
+            "SELECT DATE(cuando) fecha, SUM(monto) monto FROM operaciones_panel
+              WHERE tipo = 1 AND cuando >= ? AND cuando < ? + INTERVAL 1 DAY
+              GROUP BY DATE(cuando)")
+        : $pdo->prepare(
+            "SELECT DATE(ejecutada_en) fecha, SUM(monto) monto FROM acciones_saldo
+              WHERE tipo='retirar' AND estado='hecha' AND ejecutada_en >= ? AND ejecutada_en < ? + INTERVAL 1 DAY
+              GROUP BY DATE(ejecutada_en)"
     );
     $ret->execute([$desde, $hasta]);
     $porRetiros = [];
@@ -386,10 +470,16 @@ function fn_serie_por_hora(PDO $pdo, string $desde, string $hasta): array
     $ing->execute([$desde, $hasta]);
     foreach ($ing->fetchAll(PDO::FETCH_ASSOC) as $r) { $horas[(int)$r['hora']] += (int)$r['cantidad']; }
 
-    $ret = $pdo->prepare(
-        "SELECT HOUR(ejecutada_en) hora, COUNT(*) cantidad FROM acciones_saldo
-          WHERE tipo='retirar' AND estado='hecha' AND ejecutada_en >= ? AND ejecutada_en < ? + INTERVAL 1 DAY
-          GROUP BY HOUR(ejecutada_en)"
+    $libroDesde = fn_libro_desde($pdo);
+    $ret = ($libroDesde !== null && $libroDesde <= $desde . ' 00:00:00')
+        ? $pdo->prepare(
+            "SELECT HOUR(cuando) hora, COUNT(*) cantidad FROM operaciones_panel
+              WHERE tipo = 1 AND cuando >= ? AND cuando < ? + INTERVAL 1 DAY
+              GROUP BY HOUR(cuando)")
+        : $pdo->prepare(
+            "SELECT HOUR(ejecutada_en) hora, COUNT(*) cantidad FROM acciones_saldo
+              WHERE tipo='retirar' AND estado='hecha' AND ejecutada_en >= ? AND ejecutada_en < ? + INTERVAL 1 DAY
+              GROUP BY HOUR(ejecutada_en)"
     );
     $ret->execute([$desde, $hasta]);
     foreach ($ret->fetchAll(PDO::FETCH_ASSOC) as $r) { $horas[(int)$r['hora']] += (int)$r['cantidad']; }
@@ -455,10 +545,18 @@ function fn_hg(string $desde, string $hasta): ?array
 function fn_foto(PDO $pdo): array
 {
     $cargas = publicidad_sql_cargas();
+    /* El histórico sale del libro del panel cuando existe. OJO con el alcance:
+       si el backfill no llegó hasta el primer día del negocio, esto subcuenta
+       los retiros viejos y el patrimonio sale optimista. Es el mismo trueque
+       que en fn_retiros(), y se prefiere el libro porque la cola vieja
+       subcuenta MUCHÍSIMO más (5 retiros contra 44 en la misma ventana). */
+    $retirosSql = fn_libro_desde($pdo) !== null
+        ? "SELECT monto FROM operaciones_panel WHERE tipo = 1"
+        : "SELECT monto FROM acciones_saldo WHERE tipo='retirar' AND estado='hecha'";
     $row = $pdo->query(
         "SELECT
             (SELECT COALESCE(SUM(c.monto),0) FROM ($cargas) c) AS ingresos_historicos,
-            (SELECT COALESCE(SUM(monto),0) FROM acciones_saldo WHERE tipo='retirar' AND estado='hecha') AS retiros_historicos,
+            (SELECT COALESCE(SUM(monto),0) FROM ($retirosSql) rr) AS retiros_historicos,
             (SELECT COALESCE(SUM(balance),0) FROM usuarios) AS fichas_jugadores"
     )->fetch(PDO::FETCH_ASSOC);
 

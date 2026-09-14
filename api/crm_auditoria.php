@@ -73,6 +73,19 @@ function au_salir($data, int $code = 200): void
  */
 function au_query_base(): string
 {
+    /* ¿Se puede afirmar algo sobre un retiro cerrado? Solo si el libro existe y
+       tiene datos. Sin él, la ausencia de una fila no prueba un rechazo: prueba
+       que no estamos mirando. Se resuelve una vez acá y viaja como literal SQL
+       (0/1) para no tener que pasar un parámetro por cada rama del UNION. */
+    $libro = '0';
+    try {
+        $pdo = $GLOBALS['pdo'] ?? null;
+        if ($pdo instanceof PDO
+            && (int)$pdo->query("SELECT COUNT(*) FROM operaciones_panel")->fetchColumn() > 0) {
+            $libro = '1';
+        }
+    } catch (Throwable $e) { /* sin migración 67: no se afirma nada */ }
+
     return "
       SELECT
         COALESCE(r.acreditada_en, r.creada_en)                                 AS fecha_orden,
@@ -187,7 +200,19 @@ function au_query_base(): string
            COALESCE(rp.actualizada_en, rp.primera_vez),
            rp.primera_vez)                                                     AS fecha,
         'retiro'                                                               AS tipo,
-        IF(rp.estado = 'cerrado', 'resuelto_panel', 'abierto')
+        /* ACA SE RESUELVE LO QUE ANTES NO SE PODIA SABER. El panel deja de
+           listar un pedido tanto si lo pago como si lo rechazo, asi que hasta
+           el 14/09/2026 esto decia 'resuelto_panel' y el detalle aclaraba que
+           no sabiamos cual. Ahora se cruza contra `operaciones_panel`, que solo
+           tiene operaciones EJECUTADAS (migracion 67): si el request_id figura
+           ahi, la plata salio; si no figura, lo rechazaron.
+           El LEFT JOIN de abajo hace el cruce; si falta la migracion 67 nunca
+           matchea y todo vuelve a decir 'resuelto_panel', que es el degradado
+           correcto -- no sabemos, y lo decimos. */
+        CASE WHEN rp.estado <> 'cerrado'  THEN 'abierto'
+             WHEN op.payment_id IS NOT NULL THEN 'pagado'
+             WHEN $libro                  THEN 'rechazado'
+             ELSE 'resuelto_panel' END
           COLLATE utf8mb4_unicode_ci                                           AS subtipo,
         rp.username COLLATE utf8mb4_unicode_ci                                 AS usuario,
         rp.monto                                                               AS monto,
@@ -205,13 +230,16 @@ function au_query_base(): string
                THEN CONCAT(' | a nombre de ', rp.titular) ELSE '' END,
           CASE WHEN rp.destino IS NOT NULL AND rp.destino <> ''
                THEN CONCAT(' | ', rp.destino) ELSE '' END,
-          CASE WHEN rp.estado = 'cerrado'
-               THEN ' | resuelto en el panel — no sabemos si se pagó o se rechazó'
-               ELSE ' | todavía sin resolver en el panel' END
+          CASE WHEN rp.estado <> 'cerrado' THEN ' | todavía sin resolver en el panel'
+               WHEN op.payment_id IS NOT NULL  THEN ' | PAGADO — figura en el libro de operaciones del panel'
+               WHEN $libro THEN ' | RECHAZADO — se resolvió en el panel y no figura en el libro de operaciones'
+               ELSE ' | resuelto en el panel — no sabemos si se pagó o se rechazó' END
         ) COLLATE utf8mb4_unicode_ci                                           AS detalle,
         rp.request_id                                                          AS referencia,
         'retiros_panel' COLLATE utf8mb4_unicode_ci                             AS fuente
       FROM retiros_panel rp
+      LEFT JOIN operaciones_panel op
+             ON op.payment_id = rp.request_id AND op.tipo = 1
     ";
 }
 

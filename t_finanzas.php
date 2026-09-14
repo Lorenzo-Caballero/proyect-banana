@@ -59,6 +59,8 @@ $limpiar = function () use ($pdo) {
     $pdo->exec("DELETE FROM recargas    WHERE usuario LIKE '" . U . "%'");
     $pdo->exec("DELETE FROM movimientos WHERE usuario LIKE '" . U . "%'");
     $pdo->exec("DELETE FROM acciones_saldo WHERE usuario LIKE '" . U . "%'");
+    try { $pdo->exec("DELETE FROM operaciones_panel WHERE username LIKE '" . U . "%'"); }
+    catch (Throwable $e) { /* sin migración 67 */ }
 };
 $limpiar();
 
@@ -76,6 +78,13 @@ $enJuego = function (string $u, string $cuando, float $monto) use ($pdo) {
         "INSERT INTO movimientos (usuario, tipo, monto, motivo, origen, creado_en)
          VALUES (?, 'saldo', ?, 'test', 'peticion', ?)"
     )->execute([$u, (int)$monto, $cuando]);
+};
+$libro = function (string $u, string $cuando, float $monto, int $tipo = 1) use ($pdo) {
+    static $id = 970000;
+    $pdo->prepare(
+        "INSERT INTO operaciones_panel (payment_id, tipo, username, monto, cuando)
+         VALUES (?,?,?,?,?)"
+    )->execute([++$id, $tipo, $u, $monto, $cuando]);
 };
 $retiro = function (string $u, string $cuando, float $monto) use ($pdo) {
     $pdo->prepare(
@@ -133,9 +142,16 @@ chequear('el dia trae las dos cargas juntas',
 chequear('y los dos jugadores como activos', $serie[0]['activos'] === 2,
          'activos=' . $serie[0]['activos']);
 
+/* fn_serie_por_hora() devuelve [['hora'=>0,'cantidad'=>N], ...], no un mapa.
+   Comparar $horas[10] (un array) contra 1 daba true siempre: en PHP un array
+   es "mayor" que cualquier entero, asi que estas aserciones no probaban nada
+   hasta que se corrigieron. */
 $horas = fn_serie_por_hora($pdo, '2019-05-10', '2019-05-10');
-chequear('la carga por transferencia cae en su hora', ($horas[10] ?? 0) >= 1);
-chequear('la carga del juego tambien',                ($horas[11] ?? 0) >= 1);
+$porHora = array_column($horas, 'cantidad', 'hora');
+chequear('la carga por transferencia cae en su hora', ($porHora[10] ?? 0) >= 1,
+         'h10=' . ($porHora[10] ?? 0));
+chequear('la carga del juego tambien', ($porHora[11] ?? 0) >= 1,
+         'h11=' . ($porHora[11] ?? 0));
 
 // ===========================================================================
 echo "\n=== 5. Alertas: no acusar de ganador a quien paga por el juego ===\n";
@@ -177,7 +193,63 @@ chequear('el efectivo neto sale sin explotar', is_float($foto['efectivo_neto']))
 chequear('y el patrimonio tambien',            is_float($foto['patrimonio_neto']));
 
 // ===========================================================================
-echo "\n=== 9. Un rango vacio da cero en todo y no rompe ===\n";
+echo "\n=== 9. Los retiros salen del LIBRO del panel, no de nuestra cola ===\n";
+/* POR QUE (14/09/2026). `acciones_saldo` es NUESTRA cola: solo tiene los
+   retiros que el jugador pide por el chat. El que pide con el boton de adentro
+   del juego, y el que el operador hace directo desde el panel, no pasan por
+   ahi. Medido contra el panel sobre 60 dias: el libro tenia 44 retiros por
+   $157.630 y Finanzas veia 5 por $692. O sea que la ganancia venia
+   sobrestimada en casi todo lo que sale. */
+$pdo->exec("DELETE FROM operaciones_panel WHERE payment_id BETWEEN 970000 AND 979999");
+
+/* Sin libro: se sigue usando la cola, como toda la vida. Es el degradado
+   correcto mientras el backfill no corrio. */
+$r = fn_retiros($pdo, $D, $H);
+chequear('sin libro usa la cola', ($r['fuente'] ?? '') === 'cola', json_encode($r));
+chequear('y suma lo de la cola', abs($r['monto'] - 49000.0) < 0.01, 'monto=' . $r['monto']);
+
+/* Con libro que CUBRE el periodo: manda el libro. */
+$libro(U . 'juegoret', '2019-05-18 10:00:00', 80000.0);
+$libro(U . 'viejo',    '2019-04-02 10:00:00',     1.0);   // ancla el inicio del libro
+$r = fn_retiros($pdo, $D, $H);
+chequear('con libro que cubre, manda el libro', ($r['fuente'] ?? '') === 'panel', json_encode($r));
+chequear('suma SOLO lo del libro, no las dos fuentes',
+         abs($r['monto'] - 80000.0) < 0.01, 'monto=' . $r['monto']);
+
+/* EL PUNTO MAS IMPORTANTE: los retiros que ejecuta nuestro worker TAMBIEN
+   quedan en el libro (verificado en produccion: las acciones 98, 39 y 29
+   aparecen con el mismo minuto y monto). Si Finanzas sumara las dos fuentes
+   los contaria dos veces, que es peor que subcontar. */
+chequear('no suma la cola encima del libro',
+         abs($r['monto'] - 80000.0) < 0.01 && $r['cantidad'] === 1,
+         'cant=' . $r['cantidad'] . ' monto=' . $r['monto']);
+
+/* Un DEPOSITO en el libro no es un retiro. */
+$libro(U . 'dep', '2019-05-19 10:00:00', 5000.0, 0);
+$r = fn_retiros($pdo, $D, $H);
+chequear('los depositos del libro no cuentan como retiro',
+         abs($r['monto'] - 80000.0) < 0.01, 'monto=' . $r['monto']);
+
+/* Un periodo ANTERIOR a donde llega el libro cae a la cola. Cero no es un
+   dato, es una ausencia: darlo por bueno convertiria un mes viejo en un mes
+   de ganancia record. */
+$r = fn_retiros($pdo, '2019-03-01', '2019-03-31');
+chequear('un periodo que el libro no alcanza vuelve a la cola',
+         ($r['fuente'] ?? '') === 'cola', json_encode($r));
+
+/* El grafico por dia tiene que mirar lo mismo que el KPI, o la pantalla se
+   contradice consigo misma. */
+$serie = fn_serie_por_dia($pdo, '2019-05-18', '2019-05-18', 0.20);
+chequear('el grafico por dia tambien sale del libro',
+         abs($serie[0]['retiros'] - 80000.0) < 0.01, json_encode($serie[0]));
+$porHora = array_column(fn_serie_por_hora($pdo, '2019-05-18', '2019-05-18'),
+                        'cantidad', 'hora');
+chequear('y el de por hora', ($porHora[10] ?? 0) === 1, 'h10=' . ($porHora[10] ?? 0));
+
+$pdo->exec("DELETE FROM operaciones_panel WHERE payment_id BETWEEN 970000 AND 979999");
+
+// ===========================================================================
+echo "\n=== 10. Un rango vacio da cero en todo y no rompe ===\n";
 $v = '2019-02-01';
 chequear('ingresos 0',  fn_ingresos($pdo, $v, $v)['monto'] === 0.0);
 chequear('activos 0',   fn_activos($pdo, $v, $v) === 0);

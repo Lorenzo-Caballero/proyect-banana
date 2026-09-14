@@ -8316,10 +8316,11 @@
     acreditada:"verde", pagado:"verde", hecha:"verde", aplicado:"verde",
     pendiente:"", procesando:"azul", abierto:"",
     cancelada:"rojo", vencida:"rojo", error:"rojo",
-    revision:"naranja", revisar:"naranja",
-    /* Naranja y NO verde: un retiro que desapareció del panel puede haberse
-       pagado o rechazado, y no tenemos forma de saber cuál. Pintarlo de verde
-       sería afirmar que salió plata. */
+    revision:"naranja", revisar:"naranja", rechazado:"rojo",
+    /* Naranja y NO verde: es el caso en que NO SABEMOS si se pagó o se rechazó
+       — cuando el libro de operaciones del panel todavía no tiene datos. Con
+       el libro cargado esto no aparece: sale 'pagado' o 'rechazado'. Pintarlo
+       de verde sería afirmar que salió plata sin haberlo comprobado. */
     resuelto_panel:"naranja",
   };
   const AU_ESTADO_TXT = {
@@ -8327,6 +8328,7 @@
     vencida:"Vencido", revision:"En revisión", revisar:"Revisar",
     procesando:"Procesando", hecha:"Pagado", error:"Error", aplicado:"Aplicado",
     abierto:"Sin resolver", resuelto_panel:"Resuelto en el panel",
+    pagado:"Pagado", rechazado:"Rechazado",
   };
   /* El punto de color de cada tipo. Un <span> pintado por CSS en vez de un
      emoji de círculo: el emoji cambia de tamaño según el sistema y movía

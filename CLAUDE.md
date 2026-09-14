@@ -261,27 +261,59 @@ negocio. Pasó dos veces:
 > (el número redondo que pidió) — difieren hasta en 99 centavos en las recargas
 > viejas, de cuando los centavos eran únicos.
 
-Con los **retiros** pasa lo simétrico, y ahí **todavía falta un dato**:
+### Los retiros salen del LIBRO del panel, no de nuestra cola
 
-| Camino | Dónde queda | ¿Cuenta en Finanzas? |
+Con los retiros pasaba lo simétrico y era **mucho peor**. `acciones_saldo` es
+NUESTRA cola: solo tiene los que el jugador pide por el chat. El que pide con el
+botón de adentro del juego, y el que el operador hace directo desde el panel, no
+pasan por ahí. Medido el 14/9/2026 sobre 60 días:
+
+| | retiros | monto |
 |---|---|---|
-| Pedido por el chat | `acciones_saldo` (`tipo='retirar'`) | Sí, cuando queda `hecha` |
-| Pedido dentro del juego | `retiros_panel` (espejo, migración 64) | **No** |
+| El libro del panel | 44 | **$157.630** |
+| Lo que veía Finanzas | 5 | $692 |
 
-El espejo se refresca cada minuto con lo que el panel todavía lista. Cuando un
-pedido desaparece, alguien lo resolvió — pero **el panel deja de listarlo tanto
-si lo pagó como si lo rechazó**, y el endpoint que los distingue no está
-capturado. Por eso:
+> **El libro es `operaciones_panel`** (migración 67), que espeja
+>
+>     GET /api/agent_admin/payment/requests/history/?type=0|1&date_from=&date_to=
+>
+> `type` filtra: **0 = depósito, 1 = retiro**. El parámetro `status` **se
+> ignora** (pedir 0 y 1 devuelve lo mismo) y todo vuelve con `status: 1`. Eso no
+> es un bug: **ese endpoint no lista solicitudes con su resultado, lista
+> operaciones EJECUTADAS.**
 
-- **Auditoría sí los muestra** (cuarta rama del UNION), con el subtipo
-  `resuelto_panel` y el texto *«no sabemos si se pagó o se rechazó»*. Decir
-  «pagado» ahí sería inventar un movimiento de plata en la única pantalla que
-  existe para no tener que creerle a nadie.
-- **Finanzas NO los resta**, así que la ganancia queda **sobrestimada** en lo
-  que se haya pagado por ese canal.
-- Para cerrarlo: `colector/sondear_retiros.py` (solo GETs, no toca nada) prueba
-  las variantes del endpoint de historial hasta encontrar el campo con el estado
-  final. Correrla y pegar la salida es lo único que falta.
+Verificado de la única forma que prueba algo: se buscó un depósito que
+rechazamos a mano desde el CRM (`request_id` 234314468) y **no está**, mientras
+que sus ids vecinos (234312811, 234322596) sí. De ahí la regla:
+
+> **Estar en el libro es la prueba de que la operación se ejecutó, y no estar es
+> la prueba de que no.**
+
+Con eso se resolvió lo que faltaba: un retiro de `retiros_panel` que quedó
+`cerrado` se **pagó** si su `request_id` figura en el libro y se **rechazó** si
+no figura. Auditoría ya lo muestra así.
+
+Cosas que hay que tener presentes al tocar esto:
+
+- **El libro REEMPLAZA a la cola, no se suma a ella.** Los retiros que ejecuta
+  nuestro worker también quedan registrados en el libro (verificado: las
+  acciones 98, 39 y 29 aparecen con el mismo minuto y monto). Sumar las dos
+  fuentes los contaría dos veces.
+- **`fn_retiros()` cae a la cola vieja para períodos que el libro no alcanza**
+  (`fn_libro_desde()`). El libro se llena hacia atrás con un backfill
+  (`aprobar_cargas.py --libro 400`) y después se mantiene con una ventana móvil
+  de 30 días. Para un mes anterior al backfill, el libro diría «cero retiros», y
+  cero no es un dato: es una ausencia.
+- **Las fechas del panel vienen en nuestra misma zona** — verificado con dos
+  cruces exactos contra `acciones_saldo` y `retiros_panel`. No hay conversión
+  que hacer.
+- El worker **reenvía la ventana entera** cada 15 min, no solo lo nuevo: así una
+  pasada perdida se recupera sola sin estado que mantener. Por eso `payment_id`
+  es PK con upsert — acá se suma plata y una fila duplicada es un retiro contado
+  dos veces.
+- También se guardan los **depósitos** (`tipo=0`). Todavía no se usan para
+  sumar, pero son el control cruzado de los que el bot marcó `hecha` sin que la
+  plataforma los registre, que es el bug de `PARA-FAUNO-deposito.md`.
 
 ## Chatbot y CRM
 

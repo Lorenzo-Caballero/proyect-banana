@@ -30,16 +30,26 @@ $pdo = new PDO(
     [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]
 );
 
-/* Se saca la SQL del archivo en vez de incluirlo: `crm_auditoria.php` es un
-   endpoint y al requerirlo exige sesión y responde HTTP. Lo que importa probar
-   es la consulta, y así se prueba la que realmente corre en producción. */
+/* Se recorta el archivo antes del despacho HTTP y se evalúa: `crm_auditoria.php`
+   es un endpoint, no una librería —al requerirlo exige sesión y contesta— pero
+   arriba tiene las funciones y nada que mande headers.
+   ANTES esto sacaba la SQL con un regex sobre `return "..."`. Dejó de servir el
+   14/09/2026, cuando au_query_base() pasó a tener código antes del return (la
+   consulta al libro de operaciones). Llamar a la función de verdad es más
+   robusto: no puede quedar desincronizado con el archivo, y prueba también el
+   armado, no solo el string. */
 $src = file_get_contents(__DIR__ . '/api/crm_auditoria.php');
-if (!preg_match('/function au_query_base\(\): string\s*\{\s*return "(.*?)";\s*\}/s', $src, $m)) {
-    fwrite(STDERR, "No pude extraer au_query_base() de crm_auditoria.php\n");
-    exit(1);
-}
-// Deshacer los escapes del string PHP (\$ y \\) para recuperar la SQL literal.
-$SQL = str_replace(['\\$', '\\\\'], ['$', '\\'], $m[1]);
+$corte = strpos($src, "if (\$_SERVER['REQUEST_METHOD'] !== 'GET')");
+if ($corte === false) { fwrite(STDERR, "No encontré el corte en crm_auditoria.php\n"); exit(1); }
+$src = substr($src, 0, $corte);
+$src = preg_replace('/^\s*<\?php/', '', $src, 1);
+$src = preg_replace('/^\s*declare\(strict_types=1\);/m', '', $src, 1);
+$src = preg_replace('/^\s*require(_once)?\s+__DIR__[^;]+;/m', '', $src);
+$src = preg_replace('/^\s*\$operador\s*=\s*exigir_operador\(\);/m', '', $src);
+$src = preg_replace('/^\s*header\([^;]+\);/m', '', $src);
+eval($src);
+
+$SQL = au_query_base();
 
 $ok = 0; $fail = 0;
 function chequear(string $q, bool $c, string $d = ''): void {
@@ -61,10 +71,26 @@ $poner = function (int $id, string $user, float $monto, string $estado,
     )->execute([$id, $user, $titular, $monto, $destino, $estado, $primeraVez, $actualizada]);
 };
 
-$filas = function (?string $fuente = null) use ($pdo, $SQL) {
+/* La SQL se rearma en cada llamada a propósito: au_query_base() mira si el
+   libro tiene filas para decidir si puede afirmar "rechazado", y este test
+   llena el libro a mitad de camino justamente para probar las dos ramas. */
+$filas = function (?string $fuente = null) use ($pdo) {
+    $sql = au_query_base();
     $w = $fuente ? " WHERE fuente = " . $pdo->quote($fuente) : '';
-    return $pdo->query("SELECT * FROM ($SQL) x$w ORDER BY fecha_orden")->fetchAll();
+    return $pdo->query("SELECT * FROM ($sql) x$w ORDER BY fecha_orden")->fetchAll();
 };
+
+$libroPoner = function (int $paymentId, string $user, float $monto,
+                        string $cuando, int $tipo = 1) use ($pdo) {
+    $pdo->prepare(
+        "INSERT INTO operaciones_panel (payment_id, tipo, username, monto, cuando)
+         VALUES (?,?,?,?,?)
+         ON DUPLICATE KEY UPDATE monto = VALUES(monto)"
+    )->execute([$paymentId, $tipo, $user, $monto, $cuando]);
+};
+$libroLimpiar = fn() => $pdo->exec(
+    "DELETE FROM operaciones_panel WHERE payment_id BETWEEN 990000 AND 990099");
+$libroLimpiar();
 
 // ===========================================================================
 echo "\n=== 1. La query corre: ninguna collation choca ===\n";
@@ -124,9 +150,10 @@ chequear('los dos actor_tipo son de los que la pantalla sabe filtrar',
          && in_array($ce['actor_tipo'], ['humano','bot','sistema'], true));
 
 // ===========================================================================
-echo "\n=== 4. No se afirma que la plata salio ===\n";
-/* El panel deja de listar el pedido tanto si se pagó como si se rechazó, y no
-   tenemos capturado el endpoint que los distingue. */
+echo "\n=== 4. Sin libro NO se afirma nada ===\n";
+/* El panel deja de listar el pedido tanto si se pagó como si se rechazó. Sin
+   el libro de operaciones, la ausencia de una fila no prueba un rechazo:
+   prueba que no estamos mirando. */
 chequear('el detalle dice que no sabemos',
          $ce && str_contains((string)$ce['detalle'], 'no sabemos si se pagó o se rechazó'),
          (string)($ce['detalle'] ?? ''));
@@ -134,6 +161,47 @@ chequear('el subtipo no dice "pagado"', $ce && $ce['subtipo'] === 'resuelto_pane
          (string)($ce['subtipo'] ?? ''));
 chequear('el abierto dice que falta resolverlo',
          $ab && str_contains((string)$ab['detalle'], 'todavía sin resolver'));
+
+// ===========================================================================
+echo "\n=== 4b. Con el libro SI se distingue pagado de rechazado ===\n";
+/* `operaciones_panel` solo tiene operaciones EJECUTADAS (migración 67,
+   verificado contra un depósito que rechazamos a mano y no figura). Así que
+   estar en el libro prueba que la plata salió, y no estar prueba lo contrario.
+   El 990002 se paga: se le mete su fila. El 990010 nace cerrado y sin fila. */
+$poner(990010, 't_au_rech', 5000, 'cerrado', '2019-05-04 10:00:00', '2019-05-04 11:00:00');
+$libroPoner(990002, 't_au_ce', 8000, '2019-05-01 12:00:00');
+$libroPoner(990050, 't_au_otro', 1, '2019-05-01 12:00:00');   // para que el libro no esté vacío
+
+$rp4 = $filas('retiros_panel');
+$pagado = $rechazado = $abierto = null;
+foreach ($rp4 as $f) {
+    if ($f['usuario'] === 't_au_ce')   { $pagado = $f; }
+    if ($f['usuario'] === 't_au_rech') { $rechazado = $f; }
+    if ($f['usuario'] === 't_au_ab')   { $abierto = $f; }
+}
+chequear('el que figura en el libro sale PAGADO',
+         $pagado && $pagado['subtipo'] === 'pagado', (string)($pagado['subtipo'] ?? ''));
+chequear('y el detalle lo dice',
+         $pagado && str_contains((string)$pagado['detalle'], 'PAGADO'));
+chequear('el cerrado que NO figura sale RECHAZADO',
+         $rechazado && $rechazado['subtipo'] === 'rechazado', (string)($rechazado['subtipo'] ?? ''));
+chequear('y el detalle explica por qué',
+         $rechazado && str_contains((string)$rechazado['detalle'], 'no figura en el libro'));
+chequear('el que sigue abierto no se toca',
+         $abierto && $abierto['subtipo'] === 'abierto', (string)($abierto['subtipo'] ?? ''));
+
+/* El cruce es por request_id Y por tipo: un DEPÓSITO con el mismo id no puede
+   hacer pasar por pagado a un retiro. */
+$libroLimpiar();
+$libroPoner(990002, 't_au_ce', 8000, '2019-05-01 12:00:00', 0);   // tipo 0 = depósito
+$libroPoner(990050, 't_au_otro', 1, '2019-05-01 12:00:00');
+$rp5 = $filas('retiros_panel');
+$pagado2 = null;
+foreach ($rp5 as $f) { if ($f['usuario'] === 't_au_ce') { $pagado2 = $f; } }
+chequear('un deposito con el mismo id NO lo da por pagado',
+         $pagado2 && $pagado2['subtipo'] === 'rechazado', (string)($pagado2['subtipo'] ?? ''));
+
+$libroLimpiar();
 
 // ===========================================================================
 echo "\n=== 5. El detalle trae con que pagar sin abrir el chat ===\n";
@@ -159,8 +227,9 @@ $tipos = array_unique(array_column($filas('retiros_panel'), 'tipo'));
 chequear('todas son tipo retiro', $tipos === ['retiro'], json_encode(array_values($tipos)));
 
 $n = (int)$pdo->query("SELECT COUNT(*) FROM ($SQL) x WHERE tipo='retiro' AND fuente='retiros_panel'")->fetchColumn();
-chequear('el filtro tipo=retiro las agarra', $n === 3, "n=$n");
+chequear('el filtro tipo=retiro las agarra', $n === 4, "n=$n");
 
 $limpiar();
+$libroLimpiar();
 echo "\n---------------------------------------\n$ok OK, $fail fallas\n";
 exit($fail > 0 ? 1 : 0);
