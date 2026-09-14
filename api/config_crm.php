@@ -114,6 +114,14 @@ const CFG_CRM_DEFAULTS = [
        y el costo de adquisicion sale mucho mas barato de lo que es. */
     'fin_medir_desde' => '',
 
+    /* Cuantos dias sin cargar hacen que un jugador deje de contar como ACTIVO.
+       El negocio es acumular jugadores que vuelven, asi que "cuantos tengo
+       jugando" es mas importante que "cuantos cargaron alguna vez": de los que
+       trae la publicidad, algunos vuelven y otros cargan una sola vez y se van.
+       30 dias es el default; un casino con jugadores de fin de semana puede
+       querer 45, y uno de mucha frecuencia 15. */
+    'fin_dias_activo' => '30',
+
     'fin_comision_entrada' => '0',
     'fin_comision_salida'  => '0',
 

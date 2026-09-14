@@ -2866,6 +2866,16 @@
               <div class="sub" id="fnEvoCpaSub"></div>
             </div>
             <div class="fn-card">
+              <div class="k">Tu base de jugadores activos<span class="fn-info" data-tip="Los que cargaron al menos una vez en los últimos días (se configura en Configuración → «Días para considerar activo»). Es la base que sostiene el negocio: los que ya trajiste y siguen jugando, sin gastar publicidad de nuevo."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+              <div class="v" id="fnEvoBase">—</div>
+              <div class="sub" id="fnEvoBaseSub"></div>
+            </div>
+            <div class="fn-card">
+              <div class="k">Te cuesta un jugador que SE QUEDA<span class="fn-info" data-tip="La publicidad dividida por los que siguen activos, no por los que cargaron una vez. Es el costo real de hacer crecer tu base: el que carga y no vuelve te costó igual, pero no suma. Siempre es más caro que el otro número, y es el que decide."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+              <div class="v" id="fnEvoCpaActivo">—</div>
+              <div class="sub" id="fnEvoCpaActivoSub"></div>
+            </div>
+            <div class="fn-card">
               <div class="k">Tarda en pagarse solo<span class="fn-info" data-tip="Cuántos días pasan desde la primera carga de un jugador hasta que lo que dejó cubre lo que costó traerlo. Mientras tanto, esa diferencia la ponés vos: es el capital que tenés que bancar."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
               <div class="v" id="fnEvoRecupero">—</div>
               <div class="sub" id="fnEvoRecuperoSub"></div>
@@ -2886,6 +2896,16 @@
             empezó a girar sola.
           </p>
           <div class="fn-evo-wrap"><canvas id="fnChartBola"></canvas></div>
+        </div>
+
+        <div class="fn-evo-graf">
+          <h4>Tu base de jugadores activos</h4>
+          <p>
+            Cuántos jugadores tenías jugando cada día. <b>Es la línea que dice si el negocio
+            acumula</b>: si sube, cada peso de publicidad deja algo que queda; si está plana,
+            estás reponiendo a los que se van y pagando de nuevo por lo mismo.
+          </p>
+          <div class="fn-evo-wrap"><canvas id="fnChartBase"></canvas></div>
         </div>
 
         <div class="fn-evo-graf">
@@ -4185,6 +4205,8 @@
         </div>
         <div class="cfg-card-body">
           <input class="cb-input" id="cfgMedirDesde" placeholder="AAAA-MM-DD (vacío = automático)">
+          <label class="cb-flabel" style="margin-top:12px">Días sin cargar para dejar de contar como activo</label>
+          <input class="cb-input" id="cfgDiasActivo" inputmode="numeric" placeholder="30">
           <p class="cfg-hint">
             <b>Dejalo vacío.</b> Así el sistema mide desde tu primer dato, o sea desde el día
             que lo empezaste a usar, y no hay nada que configurar.
@@ -4193,6 +4215,10 @@
             publicidad de esta semana se reparte entre jugadores de la etapa anterior y el costo
             de traer un jugador sale mucho más barato de lo que es. Si Finanzas detecta un parate
             largo, te avisa arriba y te dice qué fecha poner.
+            <br><br>
+            Lo de <b>días para dejar de contar como activo</b> define tu base: un jugador que no
+            carga hace más de eso deja de sumar. <b>30</b> sirve para casi todos; subilo si tu
+            gente juega salteado, bajalo si juega seguido.
           </p>
         </div>
       </div>
@@ -5853,6 +5879,7 @@
     app_bono_fichas:    { el: "#cfgAppBono",      tipo: "texto" },
     app_promo_saldo_bajo: { el: "#cfgAppSaldoBajo", tipo: "texto" },
     fin_medir_desde:      { el: "#cfgMedirDesde",   tipo: "texto" },
+    fin_dias_activo:      { el: "#cfgDiasActivo",   tipo: "texto" },
     fin_comision_entrada: { el: "#cfgComEntrada",   tipo: "texto" },
     fin_comision_salida:  { el: "#cfgComSalida",    tipo: "texto" },
     tg_bot_token:       { el: "#cfgTgToken",      tipo: "texto" },
@@ -9357,10 +9384,34 @@
     $("#fnEvoLtv").textContent = j.ganancia_promedio == null ? "—" : money(j.ganancia_promedio);
     $("#fnEvoLtv").style.color = (j.ganancia_promedio || 0) < 0 ? "var(--red)" : "";
     $("#fnEvoLtvSub").textContent = j.jugadores
-      ? "promedio de " + nf.format(j.jugadores) + " jugadores · " +
-        (j.cargas_promedio || 0).toFixed(1) + " cargas cada uno" +
-        (v ? " · desde que hay pauta" : "")
+      ? "promedio de " + nf.format(j.jugadores) + " · " +
+        (j.ganancia_promedio_activos != null
+          ? money(j.ganancia_promedio_activos) + " los que siguen activos"
+          : (j.cargas_promedio || 0).toFixed(1) + " cargas cada uno")
       : "todavía no cargó nadie";
+
+    /* LA BASE ACTIVA, que es de lo que se trata el negocio: de los que trae la
+       publicidad, algunos vuelven y otros cargan una vez y se van. Lo que
+       acumula es la base, no el total histórico de los que alguna vez pagaron. */
+    const act = j.activos || 0, tot = j.jugadores || 0;
+    $("#fnEvoBase").textContent = nf.format(act);
+    $("#fnEvoBaseSub").textContent = tot
+      ? act + " de " + tot + " siguen jugando · activo = cargó en los últimos " +
+        (j.dias_activo || 30) + " días"
+      : "todavía no cargó nadie";
+    /* Menos de la mitad quedándose es una señal: estás pagando por gente que no
+       vuelve. Se pinta, pero solo cuando ya hay con qué comparar. */
+    $("#fnEvoBase").style.color = (tot >= 5 && act / tot < 0.5) ? "var(--orange2)" : "";
+
+    /* El costo del que SE QUEDA. Siempre más caro que el otro, y es el que
+       decide si el modelo cierra: pagar por alguien que carga una vez y se va
+       no hace crecer nada. */
+    const pauta = v ? v.total : 0;
+    $("#fnEvoCpaActivo").textContent = (!pauta || !act) ? "—" : money(pauta / act);
+    $("#fnEvoCpaActivoSub").textContent = !pauta
+      ? "cargá el gasto en Publicidad"
+      : (!act ? "ninguno de los que trajiste sigue activo"
+              : money(pauta) + " ÷ " + act + " que siguen");
 
     $("#fnEvoCpa").textContent = r.cpa == null ? "—" : money(r.cpa);
     $("#fnEvoCpaSub").textContent = r.cpa == null
@@ -9438,6 +9489,16 @@
           tension:.25, pointRadius:2 },
       ]},
       options: fnChartOpts({ leyenda: true }),
+    });
+
+    fnChartsEvo.base = new Chart($("#fnChartBase"), {
+      type: "line",
+      data: { labels: dias, datasets: [
+        { label:"Jugadores activos", data: serie.map(s=>s.activos),
+          borderColor: fnColor("--violet2"), backgroundColor: fnColor("--violetSoft"),
+          tension:.25, pointRadius:2, fill:true },
+      ]},
+      options: fnChartOpts({ leyenda: false }),
     });
 
     fnChartsEvo.acum = new Chart($("#fnChartAcum"), {

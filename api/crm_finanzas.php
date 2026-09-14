@@ -870,9 +870,21 @@ function fn_ventana_pauta(PDO $pdo, ?string $ancla = null): ?array
  * un mal día de ellos borra el mes, y eso no se ve en ningún promedio.
  */
 function fn_por_jugador(PDO $pdo, float $costoPorFicha, float $pctE, float $pctS,
-                        ?string $desdePrimera = null): array
+                        ?string $desdePrimera = null, int $diasActivo = 30): array
 {
     $j = fn_jugadores_crudo($pdo);
+
+    /* EL CORTE DE "ACTIVO", que es de lo que se trata el negocio. Nahuel:
+       "de esos jugadores que cargan, van a haber algunos que van a volver a
+       jugar y otros que son jugadores de una sola vez... me interesa calcular
+       sobre la base de jugadores que realmente están jugando y que realmente le
+       están dando dinero".
+
+       No es lo mismo pagar para que alguien cargue UNA vez que pagar para sumar
+       a alguien a la base. Lo segundo es lo que acumula; lo primero puede ser
+       plata tirada si el jugador no vuelve. */
+    $corteActivo = date('Y-m-d H:i:s', strtotime('-' . max(1, $diasActivo) . ' days'));
+    $activos = 0;
 
     $vivos = []; $fuera = 0;
     foreach ($j as $u => $d) {
@@ -888,14 +900,18 @@ function fn_por_jugador(PDO $pdo, float $costoPorFicha, float $pctE, float $pctS
         }
         $com  = $d['cargado'] * $pctE / 100 + $d['retirado'] * $pctS / 100;
         $gan  = $d['cargado'] - $d['retirado'] - $d['entregado'] * $costoPorFicha - $com;
+        $sigue = ($d['ultima'] !== null && $d['ultima'] >= $corteActivo);
+        if ($sigue) { $activos++; }
         $vivos[] = ['usuario' => $u, 'cargado' => round($d['cargado'], 2),
                     'retirado' => round($d['retirado'], 2), 'cargas' => $d['cargas'],
-                    'ganancia' => round($gan, 2), 'primera' => $d['primera']];
+                    'ganancia' => round($gan, 2), 'primera' => $d['primera'],
+                    'ultima' => $d['ultima'], 'activo' => $sigue];
     }
     if (!$vivos) {
-        return ['jugadores' => 0, 'fuera_de_ventana' => $fuera, 'ganancia_total' => 0.0,
-                'ganancia_promedio' => null, 'cargas_promedio' => null,
-                'dan_ganancia' => 0, 'dan_perdida' => 0,
+        return ['jugadores' => 0, 'activos' => 0, 'dias_activo' => $diasActivo,
+                'fuera_de_ventana' => $fuera, 'ganancia_total' => 0.0,
+                'ganancia_promedio' => null, 'ganancia_promedio_activos' => null,
+                'cargas_promedio' => null, 'dan_ganancia' => 0, 'dan_perdida' => 0,
                 'top' => [], 'peores' => [], 'concentracion_top5' => null];
     }
 
@@ -911,8 +927,17 @@ function fn_por_jugador(PDO $pdo, float $costoPorFicha, float $pctE, float $pctS
     $positivos = array_sum(array_map(fn($x) => max(0, $x['ganancia']), $vivos));
     $top5      = array_sum(array_map(fn($x) => max(0, $x['ganancia']), array_slice($vivos, 0, 5)));
 
+    /* Lo que deja un jugador QUE SE QUEDA. Es distinto del promedio general y
+       suele ser mucho mas alto: el que carga una vez y se va arrastra el
+       promedio hacia abajo y no es el que sostiene el negocio. */
+    $ganActivos = 0.0; $nAct = 0;
+    foreach ($vivos as $x) { if ($x['activo']) { $ganActivos += $x['ganancia']; $nAct++; } }
+
     return [
         'jugadores'         => $n,
+        'activos'           => $activos,
+        'dias_activo'       => $diasActivo,
+        'ganancia_promedio_activos' => $nAct > 0 ? round($ganActivos / $nAct, 2) : null,
         /* Los que cargaron ANTES de que hubiera pauta. No entran en ningún
            promedio de este bloque, pero saber cuántos son evita la pregunta
            obvia de "¿y mis otros jugadores?". */
@@ -1066,7 +1091,7 @@ function fn_recupero(PDO $pdo, float $costoPorFicha, float $pctE, float $pctS,
  * puesto ahora mismo.
  */
 function fn_bola_nieve(PDO $pdo, string $desde, string $hasta, float $costoPorFicha,
-                       float $pctE, float $pctS): array
+                       float $pctE, float $pctS, int $diasActivo = 30): array
 {
     $porDia = [];
     $cursor = new DateTime($desde); $fin = new DateTime($hasta);
@@ -1123,6 +1148,23 @@ function fn_bola_nieve(PDO $pdo, string $desde, string $hasta, float $costoPorFi
         }
     } catch (Throwable $e) { /* sin libro: se estima abajo */ }
 
+    /* LA BASE ACTIVA, DIA POR DIA. Es la linea que muestra si el negocio
+       acumula: un jugador cuenta el dia D si cargo alguna vez en los
+       `diasActivo` anteriores. Se calcula en PHP sobre una sola consulta --
+       hacerlo en SQL serian tantas consultas como dias del rango. */
+    $cargasPorDia = [];
+    try {
+        $cargas2 = publicidad_sql_cargas();
+        $st = $pdo->prepare(
+            "SELECT c.usuario u, DATE(c.cuando) f FROM ($cargas2) c
+              WHERE c.cuando >= ? AND c.cuando < ? + INTERVAL 1 DAY GROUP BY u, f"
+        );
+        $st->execute([date('Y-m-d', strtotime($desde . ' -' . $diasActivo . ' days')), $hasta]);
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $cargasPorDia[$r['f']][] = (string)$r['u'];
+        }
+    } catch (Throwable $e) { error_log('fn_bola_nieve (activos): ' . $e->getMessage()); }
+
     $serie = []; $accPauta = 0.0; $accGan = 0.0;
     foreach ($porDia as $f => $d) {
         $cargadoDia = $d['base'] + $d['nuevos'];
@@ -1137,10 +1179,19 @@ function fn_bola_nieve(PDO $pdo, string $desde, string $hasta, float $costoPorFi
         $pesoBase = $cargadoDia > 0 ? $d['base'] / $cargadoDia : 0.0;
         $ganBase  = $ganDia * $pesoBase;
 
+        /* Quien cargo en los ultimos `diasActivo` dias contados desde $f. */
+        $ventanaAct = [];
+        $cur = new DateTime($f);
+        for ($k = 0; $k < $diasActivo; $k++) {
+            foreach ($cargasPorDia[$cur->format('Y-m-d')] ?? [] as $u) { $ventanaAct[$u] = true; }
+            $cur->modify('-1 day');
+        }
+
         $accPauta += $d['pauta'];
         $accGan   += $ganDia;
         $serie[] = [
             'fecha'          => $f,
+            'activos'        => count($ventanaAct),
             'pauta'          => round($d['pauta'], 2),
             'base'           => round($ganBase, 2),
             'ganancia'       => round($ganDia, 2),
@@ -1598,14 +1649,18 @@ if ($metodo === 'GET') {
                medir los jugadores que trajo antes. */
             $ancla   = fn_medir_desde($pdo);
             $ventana = fn_ventana_pauta($pdo, $ancla['desde']);
+            $diasActivo = 30;
+            try { $diasActivo = max(1, (int)(cfg_crm($pdo, 'fin_dias_activo') ?? 30)); }
+            catch (Throwable $e) { /* default */ }
             salir(['ok' => true,
                 'ancla'     => $ancla,
                 'ventana'   => $ventana,
                 'jugadores' => fn_por_jugador($pdo, $costoPorFicha, $pctE, $pctS,
-                                              $ancla['desde']),
+                                              $ancla['desde'], $diasActivo),
                 'recupero'  => fn_recupero($pdo, $costoPorFicha, $pctE, $pctS, 60, $ventana,
                                            $ancla['desde']),
-                'serie'     => fn_bola_nieve($pdo, $desde, $hasta, $costoPorFicha, $pctE, $pctS),
+                'serie'     => fn_bola_nieve($pdo, $desde, $hasta, $costoPorFicha,
+                                             $pctE, $pctS, $diasActivo),
             ]);
         }
 

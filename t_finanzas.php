@@ -733,6 +733,81 @@ chequear('y no figura como pico', $r4['cruce_efimero'] === null);
 
 $pdo->rollBack();
 
+echo "\n=== 9g4. La base ACTIVA: los que se quedan ===\n";
+/* POR QUE EXISTE (Nahuel, 14/09/2026): "de esos jugadores que cargan, van a
+   haber algunos que van a volver a jugar y otros que son jugadores de una sola
+   vez, que se van y no vuelven... me interesa calcular sobre la base de
+   jugadores que realmente están jugando y que realmente le están dando dinero.
+   El negocio se basa en la acumulación de clientes".
+
+   No es lo mismo pagar para que alguien cargue UNA vez que pagar para sumar a
+   alguien a la base. Lo segundo es lo que acumula; lo primero puede ser plata
+   tirada. El costo por jugador dividia por TODOS los que cargaron, y por eso
+   salia mas barato de lo que cuesta hacer crecer el negocio. */
+$pdo->beginTransaction();
+foreach (['recargas','movimientos','acciones_saldo','operaciones_panel','gasto_diario'] as $tb) {
+    try { $pdo->exec("DELETE FROM $tb"); } catch (Throwable $e) {}
+}
+$pdo->exec("DELETE FROM config_crm WHERE clave IN ('fin_medir_desde','fin_dias_activo')");
+$GLOBALS['__cfg_crm_cache'] = null;
+
+$hace = fn($d) => date('Y-m-d H:i:s', strtotime("-$d days"));
+
+/* Tres que cargaron: uno sigue jugando, dos se fueron hace rato. */
+$recarga(U . 'fiel',  $hace(40), 5000.0);
+$recarga(U . 'fiel',  $hace(2),  5000.0);     // volvio hace dos dias
+$recarga(U . 'ido1',  $hace(50), 3000.0);
+$recarga(U . 'ido2',  $hace(45), 3000.0);
+
+$pj = fn_por_jugador($pdo, 0.20, 0.0, 0.0, null, 30);
+chequear('cuenta los tres que cargaron', $pj['jugadores'] === 3, (string)$pj['jugadores']);
+chequear('pero solo UNO sigue activo', $pj['activos'] === 1, (string)$pj['activos']);
+
+/* EL NUMERO QUE CAMBIA LA DECISION: con $9.000 de pauta, dividir por 3 da
+   $3.000 y dividir por el que se quedo da $9.000. Tres veces mas caro, y es
+   el costo real de hacer crecer la base. */
+$costoPorCarga  = 9000 / $pj['jugadores'];
+$costoPorQueda  = 9000 / max(1, $pj['activos']);
+chequear('el costo del que se queda es MUCHO mayor',
+         $costoPorQueda > $costoPorCarga * 2,
+         "por carga=$costoPorCarga por quedarse=$costoPorQueda");
+
+/* El corte se configura: con 60 dias, los tres siguen contando. */
+$pj60 = fn_por_jugador($pdo, 0.20, 0.0, 0.0, null, 60);
+chequear('con el corte en 60 dias, los tres estan activos',
+         $pj60['activos'] === 3, (string)$pj60['activos']);
+chequear('y el corte viaja en la respuesta', $pj60['dias_activo'] === 60);
+
+/* Lo que deja un jugador ACTIVO se informa aparte: el que carga una vez y se
+   va arrastra el promedio general hacia abajo y no es el que sostiene nada. */
+chequear('hay promedio propio de los activos',
+         $pj['ganancia_promedio_activos'] !== null, json_encode($pj['ganancia_promedio_activos']));
+chequear('y no es el mismo que el promedio general',
+         abs($pj['ganancia_promedio_activos'] - $pj['ganancia_promedio']) > 0.01,
+         json_encode([$pj['ganancia_promedio_activos'], $pj['ganancia_promedio']]));
+
+echo "\n=== 9g5. La base activa dia por dia (el grafico) ===\n";
+/* Es la linea que dice si el negocio acumula. Si sube, cada peso de publicidad
+   deja algo que queda; si esta plana, se repone a los que se van. */
+$hoyS = date('Y-m-d');
+$serie = fn_bola_nieve($pdo, date('Y-m-d', strtotime('-5 days')), $hoyS, 0.20, 0.0, 0.0, 30);
+chequear('cada dia trae cuantos activos habia',
+         array_key_exists('activos', $serie[0] ?? []), json_encode($serie[0] ?? null));
+/* Con 30 dias solo queda el que volvio hace dos: los otros cargaron hace 45 y
+   50 dias. Es EXACTAMENTE lo que tiene que pasar, y coincide con lo que dijo
+   fn_por_jugador() arriba -- las dos vias del mismo dato no pueden discrepar. */
+chequear('con corte de 30 dias, hoy hay 1 activo',
+         end($serie)['activos'] === 1, json_encode(end($serie)));
+chequear('y coincide con la tarjeta', end($serie)['activos'] === $pj['activos']);
+
+/* Con el corte mas largo entran los tres. */
+$serie60 = fn_bola_nieve($pdo, date('Y-m-d', strtotime('-5 days')), $hoyS, 0.20, 0.0, 0.0, 60);
+chequear('con corte de 60 dias, los tres',
+         end($serie60)['activos'] === 3, json_encode(end($serie60)));
+
+$pdo->rollBack();
+$GLOBALS['__cfg_crm_cache'] = null;
+
 echo "\n=== 9h. La bola de nieve ===\n";
 /* Dos lineas por dia: lo que se gasto en pauta y lo que dejaron los jugadores
    que YA estaban. Cuando la segunda supera a la primera, la publicidad se
