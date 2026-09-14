@@ -9171,8 +9171,13 @@
        no mostrarlo como si fuera exacto. */
     const subPat = $("#fnKpiPatrimonioSub");
     if(subPat){
+      /* Decir DESDE CUANDO. El patrimonio solo cubre el tramo del que tenemos
+         las dos mitades: los ingresos salen de nuestras tablas y arrancan con
+         el CRM, así que lo que la cuenta de agente haya movido antes no entra.
+         Sin la fecha, el número parece "desde siempre" y no lo es. */
+      const desde = f.desde ? String(f.desde).slice(0,10).split("-").reverse().join("/") : null;
       subPat.textContent = f.patrimonio_exacto
-        ? "ya descontado el costo de las fichas"
+        ? (desde ? "desde el " + desde + " · " : "") + "costo de fichas ya descontado"
         : "sin descontar el costo de las fichas — falta histórico";
     }
     $("#fnMasPasivo").textContent = money(f.fichas_jugadores);

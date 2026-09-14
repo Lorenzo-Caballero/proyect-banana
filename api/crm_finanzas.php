@@ -1114,24 +1114,53 @@ function fn_foto(PDO $pdo, float $costoPorFicha = 0.20): array
 
     $fichasJugadores = (float)$row['fichas_jugadores'];
 
-    /* LO QUE PAGASTE AL PROVEEDOR por todas las fichas que se entregaron.
-       FALTABA, y es plata de verdad: el patrimonio daba como si las fichas
-       fueran gratis. Sale del libro del panel, que es el registro de todo lo
-       que salió del stock; sin libro no se puede saber y queda null. */
-    $costoHistorico = null;
+    /* LO QUE PAGASTE AL PROVEEDOR por las fichas entregadas, y LOS RETIROS,
+       ACOTADOS AL MISMO ARRANQUE QUE LOS INGRESOS.
+     
+       ESTE RECORTE ES EL ARREGLO DE UN BUG QUE METI EL 14/09/2026. Sin el, los
+       ingresos salian de NUESTRAS tablas -- que empiezan cuando empezo el CRM --
+       y los retiros y el costo salian del libro del panel, que arranca mucho
+       antes y trae toda la historia de la cuenta de agente. O sea: gastos de
+       una historia larga restados contra ingresos de una historia corta. En
+       produccion eso dio un patrimonio de -43 millones con $73.438 en manos de
+       los jugadores.
+     
+       Un patrimonio solo significa algo si las dos mitades cubren el mismo
+       periodo. Lo que el libro tenga de antes existe, pero no tenemos el lado
+       de los ingresos para ponerle al lado, asi que no se puede opinar. */
+    $arranque = null;
     try {
-        if (fn_libro_desde($pdo) !== null) {
-            $entregado = (float)$pdo->query(
-                "SELECT COALESCE(SUM(monto),0) FROM operaciones_panel WHERE tipo = 0"
-            )->fetchColumn();
-            $costoHistorico = $entregado * $costoPorFicha;
-        }
-    } catch (Throwable $e) { /* sin libro: no se descuenta, y se avisa */ }
+        $arranque = $pdo->query(
+            "SELECT MIN(cuando) FROM (" . publicidad_sql_cargas() . ") c"
+        )->fetchColumn() ?: null;
+    } catch (Throwable $e) { /* sin cargas: no hay desde cuando medir */ }
+
+    $costoHistorico = null;
+    $retirosHist    = null;
+    if ($arranque !== null) {
+        try {
+            if (fn_libro_desde($pdo) !== null) {
+                $st = $pdo->prepare(
+                    "SELECT COALESCE(SUM(IF(tipo=0, monto, 0)),0) entregado,
+                            COALESCE(SUM(IF(tipo=1, monto, 0)),0) retirado
+                       FROM operaciones_panel WHERE cuando >= ?"
+                );
+                $st->execute([$arranque]);
+                $f = $st->fetch(PDO::FETCH_ASSOC) ?: [];
+                $costoHistorico = (float)($f['entregado'] ?? 0) * $costoPorFicha;
+                $retirosHist    = (float)($f['retirado'] ?? 0);
+            }
+        } catch (Throwable $e) { /* sin libro: no se descuenta, y se avisa */ }
+    }
 
     /* `efectivo_neto` es lo que entró menos lo que salió HACIA LOS JUGADORES.
        No es la caja: falta lo que se le pagó al proveedor, que va aparte para
        que se vea de dónde sale cada resta. */
-    $efectivoNeto = (float)$row['ingresos_historicos'] - (float)$row['retiros_historicos'];
+    /* Los retiros del MISMO tramo que los ingresos. `retiros_historicos` de la
+       consulta de arriba abarca todo el libro y por eso no se usa cuando hay
+       un arranque: serviria para el caso sin libro, donde sale de la cola. */
+    $efectivoNeto = (float)$row['ingresos_historicos']
+                  - ($retirosHist ?? (float)$row['retiros_historicos']);
 
     $stock = fn_stock($pdo, $costoPorFicha);
 
@@ -1146,6 +1175,7 @@ function fn_foto(PDO $pdo, float $costoPorFicha = 0.20): array
        fichas te quedan es operativo, pero no mueve el patrimonio. */
     return [
         'efectivo_neto'     => $efectivoNeto,
+        'desde'             => $arranque,
         'costo_historico'   => $costoHistorico === null ? null : round($costoHistorico, 2),
         'stock_fichas'      => $stock['fichas'],
         'valor_stock'       => $stock['valor'],

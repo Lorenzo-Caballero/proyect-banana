@@ -282,6 +282,49 @@ chequear('los retiros no cuentan como fichas entregadas',
          abs($foto3['costo_historico'] - 20000.0) < 0.01,
          (string)$foto3['costo_historico']);
 
+echo "\n=== 8a. El patrimonio mide las dos mitades del MISMO periodo ===\n";
+/* EL BUG QUE ESTO FIJA (14/09/2026, encontrado en produccion). Los ingresos
+   salen de NUESTRAS tablas, que empiezan cuando empezo el CRM. El libro del
+   panel arranca mucho antes y trae toda la historia de la cuenta de agente.
+   Restar los gastos del libro entero contra los ingresos del tramo corto dio
+   un patrimonio de -43 MILLONES teniendo $73.438 en manos de los jugadores.
+
+   Un patrimonio solo significa algo si las dos mitades cubren el mismo
+   periodo. Lo que el libro tenga de antes existe, pero sin el lado de los
+   ingresos no se puede opinar. */
+/* Se limpia SOLO lo propio y no con $limpiar(): las secciones de mas abajo
+   reusan los retiros y las cargas que se crearon arriba, y barrerlos aca las
+   dejaba midiendo sobre una base vacia. */
+$pdo->exec("DELETE FROM operaciones_panel WHERE payment_id BETWEEN 970000 AND 979999");
+
+/* Historia vieja en el libro, ANTERIOR a cualquier carga nuestra. */
+$libro(U . 'viejo', '2018-01-01 10:00:00', 5000000.0, 1);   // retiros enormes
+$libro(U . 'viejo', '2018-01-02 10:00:00', 5000000.0, 0);   // y entregas enormes
+
+/* Y la historia que si conocemos: una carga nuestra y su entrega. */
+$recarga(U . 'nuestro', '2019-05-10 10:00:00', 10000.0);
+$libro(U . 'nuestro',   '2019-05-10 10:05:00', 10000.0, 0);
+
+$f = fn_foto($pdo, 0.20);
+chequear('el patrimonio arranca en la primera carga nuestra',
+         $f['desde'] !== null && substr((string)$f['desde'], 0, 4) === '2019',
+         json_encode($f['desde']));
+chequear('NO descuenta el millon de fichas anterior al CRM',
+         $f['costo_historico'] !== null && $f['costo_historico'] < 100000.0,
+         json_encode($f['costo_historico']));
+chequear('ni los retiros anteriores',
+         $f['patrimonio_neto'] > -1000000.0, json_encode($f['patrimonio_neto']));
+
+/* Y lo que SI entra en el tramo se descuenta igual. */
+$libro(U . 'nuestro2', '2019-05-11 10:00:00', 50000.0, 0);
+$f2 = fn_foto($pdo, 0.20);
+chequear('una entrega dentro del tramo si sube el costo',
+         abs(($f2['costo_historico'] - $f['costo_historico']) - 10000.0) < 0.01,
+         'antes=' . $f['costo_historico'] . ' ahora=' . $f2['costo_historico']);
+
+$pdo->exec("DELETE FROM operaciones_panel WHERE payment_id BETWEEN 970000 AND 979999");
+$pdo->exec("DELETE FROM recargas WHERE usuario = '" . U . "nuestro'");
+
 echo "\n=== 8b. El stock y para cuantos dias alcanza ===\n";
 /* `dias` es lo que de verdad sirve: un umbral fijo ("avisame bajo 50.000") no
    sabe si eso son dos dias o dos meses. Es la metrica que habria evitado el
