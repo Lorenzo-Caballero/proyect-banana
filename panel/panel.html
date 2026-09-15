@@ -324,9 +324,14 @@
 
     <label style="margin-top:22px">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-      Chatbot y notas
+      Notas
     </label>
-    <input id="fCohere" class="field" placeholder="Cohere API key">
+    <!-- Acá hubo un campo de clave de IA por cliente. Se sacó (15/09/2026):
+         el chatbot de todos los clientes habla con la MISMA clave de
+         Anthropic del servidor (ANTHROPIC_API_KEY en config.local.php), la
+         que ya usa ganamoscrm.online. No hay nada que cargar por cliente; si
+         algún día uno necesita clave propia, existe clientes.ia_key en la
+         base y api/ia_key.php ya la resuelve primero. -->
     <textarea id="fNotas" class="field" rows="2" placeholder="Notas (opcional)" style="margin-top:10px"></textarea>
 
     <div id="crMsg" class="msg"></div>
@@ -438,8 +443,9 @@
       <div><input id="edCpp" class="field" type="number" step="0.0001" placeholder="Coins por peso"></div>
     </div>
 
-    <label style="margin-top:22px">Chatbot y notas</label>
-    <input id="edCohere" class="field" placeholder="Cohere API key (vacío = no cambiar)">
+    <label style="margin-top:22px">Notas</label>
+    <!-- El campo de clave de IA se sacó igual que en el alta: la clave es la
+         ANTHROPIC_API_KEY global del server para todos los clientes. -->
     <textarea id="edNotas" class="field" rows="2" placeholder="Notas (opcional)" style="margin-top:10px"></textarea>
 
     <div class="hint">
@@ -787,7 +793,7 @@
     $("edMsg").className = "msg"; $("edMsg").textContent = "cargando...";
     // Las claves NUNCA se precargan: el server no las devuelve y un vacío acá
     // significa "dejala como está".
-    $("edAgPass").value = ""; $("edCohere").value = "";
+    $("edAgPass").value = "";
     $("ovEd").classList.add("on");
 
     api("ver", { id:c.id }).then(function(res){
@@ -822,7 +828,6 @@
       cobro_cbu: $("edCbu").value.trim(),
       cobro_titular: $("edTit").value.trim(),
       coins_por_peso: parseFloat($("edCpp").value) || 1,
-      cohere_key: $("edCohere").value.trim(),
       notas: $("edNotas").value.trim()
     }).then(function(res){
       $("edGuardar").disabled = false;
@@ -1027,7 +1032,7 @@
   }
 
   function limpiar(){
-    ["fNombre","fSlug","fAgUser","fAgPass","fAlias","fCbu","fTit","fCohere","fNotas"].forEach(function(i){$(i).value="";});
+    ["fNombre","fSlug","fAgUser","fAgPass","fAlias","fCbu","fTit","fNotas"].forEach(function(i){$(i).value="";});
     $("fCpp").value = "1";
     slugEditadoAMano = false;
   }
@@ -1042,7 +1047,7 @@
       nombre:$("fNombre").value, slug: slug,
       agente_usuario:$("fAgUser").value, agente_password:$("fAgPass").value,
       cobro_alias:$("fAlias").value, cobro_cbu:$("fCbu").value, cobro_titular:$("fTit").value,
-      coins_por_peso:$("fCpp").value, cohere_key:$("fCohere").value, notas:$("fNotas").value
+      coins_por_peso:$("fCpp").value, notas:$("fNotas").value
     }).then(function(res){
       if (res.j.ok){
         msg.className="msg ok"; msg.textContent="¡Cliente creado!";
@@ -1053,7 +1058,17 @@
           '<dt>URL del CRM</dt><dd><a href="'+esc(res.j.url)+'" target="_blank" rel="noopener">'+
             '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>'+
             esc(res.j.url)+'</a></dd>'+
-          '<dt>Bot API key</dt><dd>'+esc(res.j.bot_api_key)+'</dd>'+
+          /* Se genera y se guarda, pero HOY NO SE USA, y decirlo acá evita que
+             alguien la copie a un .env creyendo que habilita algo. La API valida
+             con la BOT_API_KEY global del VPS (exigir_api_key() en
+             api/config.php) y el tenant lo decide el dominio, así que
+             provisionar.php le pasa la global al contenedor de este cliente.
+             Queda reservada para cuando la auth sea por cliente. */
+          '<dt>Bot API key</dt><dd>'+esc(res.j.bot_api_key)+
+            '<div class="hint" style="margin-top:4px">'+
+            '<span>Reservada. Hoy los bots usan la clave global del servidor; '+
+            'esta se guarda para cuando la autenticación sea por cliente.</span>'+
+            '</div></dd>'+
           '</dl>';
         limpiar();
         cargar();

@@ -42,6 +42,13 @@ function chequear(string $q, bool $c, string $d = ''): void {
     else     { $fail++; printf("  FALLA %s   %s\n", $q, $d); }
 }
 function limpiar(PDO $pdo): void {
+    /* `acciones_saldo` va primera y no estaba: es la carga al juego que deja
+       cada acreditacion. Sin borrarla, la corrida siguiente arranca con una
+       carga en curso, el auto-canje se bloquea y las fichas se quedan en el
+       contador -- que es justo lo que hacia pasar este test con basura y
+       fallar en base limpia. */
+    $pdo->exec("DELETE FROM acciones_saldo WHERE usuario LIKE 'tdec\\_%'");
+    $pdo->exec("DELETE FROM movimientos WHERE usuario LIKE 'tdec\\_%'");
     $pdo->exec("DELETE FROM recargas WHERE usuario LIKE 'tdec\\_%'");
     $pdo->exec("DELETE FROM pagos WHERE id_unico LIKE 'TDEC-%'");
     $pdo->exec("DELETE FROM huellas_pagador WHERE usuario LIKE 'tdec\\_%'");
@@ -62,6 +69,27 @@ function recarga(PDO $pdo, string $usuario, float $monto): int {
 function pagoRevision(PDO $pdo, string $id, float $monto, string $remitente): void {
     $pdo->prepare("INSERT INTO pagos (id_unico, monto, remitente, estado)
                    VALUES (?,?,?, 'revision')")->execute([$id, $monto, $remitente]);
+}
+/* LAS FICHAS ACREDITADAS, ESTEN DONDE ESTEN.
+
+   `usuarios.coins` solo NO sirve para medir esto, y era un test flaky de
+   manual: cuando la recarga se acredita, rl_cargar_al_juego_auto encola el
+   deposito al juego y fichas_pedir_carga DEBITA los coins del contador para
+   meterlos en la carga (los guarda en acciones_saldo.coins_debitados). O sea
+   que coins=0 despues de acreditar es el resultado CORRECTO.
+
+   Con `coins` a secas, estas aserciones solo pasaban cuando una corrida
+   anterior habia dejado una carga 'en_curso' que bloqueaba el auto-canje:
+   verdes con basura, rojas en base limpia. Lo que se quiere comprobar es que
+   la plata llego al jugador, no en cual de los dos bolsillos quedo. */
+function acreditado(PDO $pdo, string $u): int {
+    return coins($pdo, $u) + al_juego($pdo, $u);
+}
+function al_juego(PDO $pdo, string $u): int {
+    $st = $pdo->prepare("SELECT COALESCE(SUM(coins_debitados),0) FROM acciones_saldo
+                          WHERE usuario = ? AND tipo = 'cargar'");
+    $st->execute([$u]);
+    return (int)$st->fetchColumn();
 }
 function coins(PDO $pdo, string $u): int {
     $st = $pdo->prepare("SELECT coins FROM usuarios WHERE username=?");
@@ -100,8 +128,9 @@ pagoRevision($pdo, 'TDEC-1', 1000.00, 'ANA GOMEZ');   // el pago es de ana
 
 $r = rl_declarar_pago($pdo, 'tdec_ana', 'ANA GOMEZ');
 chequear('se acredita a ana al declarar su titular', ($r['estado'] ?? '') === 'acreditada', json_encode($r));
-chequear('ana recibio las fichas',   coins($pdo, 'tdec_ana')  === 1000);
-chequear('beto NO recibio nada',      coins($pdo, 'tdec_beto') === 0);
+chequear('ana recibio las fichas',   acreditado($pdo, 'tdec_ana')  === 1000,
+         'coins=' . coins($pdo, 'tdec_ana') . ' al_juego=' . al_juego($pdo, 'tdec_ana'));
+chequear('beto NO recibio nada',      acreditado($pdo, 'tdec_beto') === 0);
 
 // ===========================================================================
 echo "\n=== 3. Declarar el titular EQUIVOCADO no acredita a nadie ===\n";
@@ -123,7 +152,9 @@ chequear('nadie recibio fichas todavia',
 // y cuando ceci declara el suyo, SI se acredita (y solo a ella)
 $r = rl_declarar_pago($pdo, 'tdec_ceci', 'CECILIA ROMERO');
 chequear('ceci declara y se acredita', ($r['estado'] ?? '') === 'acreditada', json_encode($r));
-chequear('solo ceci recibio', coins($pdo, 'tdec_ceci') === 1500 && coins($pdo, 'tdec_dani') === 0);
+chequear('solo ceci recibio',
+         acreditado($pdo, 'tdec_ceci') === 1500 && acreditado($pdo, 'tdec_dani') === 0,
+         'ceci=' . acreditado($pdo, 'tdec_ceci') . ' dani=' . acreditado($pdo, 'tdec_dani'));
 
 // ===========================================================================
 echo "\n=== 4. Sin recarga pendiente ===\n";
@@ -144,7 +175,8 @@ recarga($pdo, 'tdec_fabi', 3000.00);
 pagoRevision($pdo, 'TDEC-3', 3000.00, 'EVELYN CRUZ');
 $r = rl_declarar_pago($pdo, 'tdec_evi', 'EVELYN CRUZ');   // sin numero de operacion
 chequear('acredita solo con el titular, sin nro de operacion',
-         ($r['estado'] ?? '') === 'acreditada' && coins($pdo, 'tdec_evi') === 3000, json_encode($r));
+         ($r['estado'] ?? '') === 'acreditada' && acreditado($pdo, 'tdec_evi') === 3000,
+         json_encode($r) . ' acreditado=' . acreditado($pdo, 'tdec_evi'));
 
 limpiar($pdo);
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);

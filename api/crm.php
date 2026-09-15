@@ -1174,6 +1174,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 salir(['ok' => false, 'error' => 'Datos invalidos'], 400);
             }
             $pdo->prepare("UPDATE conversaciones SET estado = ? WHERE id = ?")->execute([$estado, $id]);
+            /* Cerrar tambien baja el «Te necesita». Un ticket cerrado no puede
+               seguir diciendo que alguien lo espera: quedaba arriba de la
+               bandeja y sumando al badge del rail, y desde aca no habia forma
+               de sacarlo. Solo al CERRAR -- pasar a 'pendiente' o reabrir no
+               resuelve nada, y borrar la marca ahi escondería el pedido. */
+            if ($estado === 'cerrada') { crm_bajar_derivada($pdo, [$id]); }
             salir(['ok' => true]);
         }
 
@@ -1211,6 +1217,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                       WHERE id IN ($ph)"
                 );
                 $st->execute(array_merge([$operador], $ids));
+                /* Y se baja el «Te necesita»: archivar es "sacame esto de la
+                   bandeja", y una marca que sigue puesta reaparece en «Todo» y
+                   en cualquier busqueda. Solo al ARCHIVAR -- desarchivar la
+                   devuelve a la bandeja, pero el pedido del bot ya fue visto. */
+                crm_bajar_derivada($pdo, $ids);
             } else {
                 $st = $pdo->prepare(
                     "UPDATE conversaciones
@@ -1568,25 +1579,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                Solo la marca: `ia_activa` NO se vuelve a prender sola. El bot se
                corrio porque habia un problema que el no podia resolver; que
                vuelva a hablar es una decision del agente, con su switch. */
-            if (crm_hay_derivada($pdo)) {
-                /* derivada_aviso_en es de la migracion 61 y esto corre en CADA
-                   respuesta del agente: si la columna no existe todavia, el
-                   UPDATE tira y se lleva puesta la respuesta entera. Por eso el
-                   fallback -- atender un chat no puede depender de una columna
-                   que solo sirve para el ritmo de los avisos. */
-                try {
-                    $pdo->prepare(
-                        "UPDATE conversaciones
-                            SET derivada_en = NULL, derivada_motivo = NULL, derivada_aviso_en = NULL
-                          WHERE id = ? AND derivada_en IS NOT NULL"
-                    )->execute([$id]);
-                } catch (Throwable $e) {
-                    $pdo->prepare(
-                        "UPDATE conversaciones SET derivada_en = NULL, derivada_motivo = NULL
-                          WHERE id = ? AND derivada_en IS NOT NULL"
-                    )->execute([$id]);
-                }
-            }
+            crm_bajar_derivada($pdo, [$id]);
 
             /* ACA se calla el bot, y no al derivar: recien ahora hay una persona
                del otro lado. Derivar solo avisa; mientras el agente no aparece,
@@ -1874,8 +1867,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$id) { salir(['ok' => false, 'error' => 'Falta id'], 400); }
             // El agente que atiende/suelta es SIEMPRE el logueado, nunca uno que
             // venga por el body: así nadie asigna/desasigna en nombre de otro.
-            if ($accion === 'atender') { crm_agente_tomar($pdo, $id, $operador); }
-            else                       { crm_agente_soltar($pdo, $id, $operador); }
+            if ($accion === 'atender') {
+                crm_agente_tomar($pdo, $id, $operador);
+                /* Atender ES la respuesta al «Te necesita»: el bot pidio una
+                   persona y la persona aparecio. Sin esto, el unico camino que
+                   bajaba la marca era responder, asi que tomar el chat no
+                   cambiaba nada en la bandeja ni en el badge.
+                   `soltar` NO la vuelve a subir: el pedido del bot ya fue
+                   atendido; si hace falta de nuevo, lo vuelve a derivar el. */
+                crm_bajar_derivada($pdo, [$id]);
+            } else {
+                crm_agente_soltar($pdo, $id, $operador);
+            }
             salir(['ok' => true, 'agentes' => crm_agentes_de($pdo, $id)]);
         }
 

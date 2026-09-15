@@ -412,16 +412,22 @@ retirar lo avisa; y la pantalla de Retiros marca al jugador que tiene más de un
 
 ## Chatbot y CRM
 
-- `api/chatbot.php` — proxy a **Qwen** (`qwen-vl-max`, endpoint internacional de
-  DashScope, en modo compatible con OpenAI) con *tool use*. Herramientas:
+- `api/chatbot.php` — el chat corre sobre **Claude** (`CHAT_MODEL=claude-...` +
+  `ANTHROPIC_API_KEY` en config.local.php, por el endpoint de Anthropic
+  compatible con OpenAI) con **Qwen de respaldo** si Claude falla, y otros
+  modelos Qwen / Cohere como últimos recursos. Todo con *tool use*. Herramientas:
   `identificar_usuario`, `crear_recarga`, `consultar_recarga`, `consultar_saldo`,
   `cargar_al_juego`, `retirar_del_juego`, `crear_cuenta`, `pasar_a_agente`,
-  `verificar_comprobante` (lee con visión la última imagen subida al chat) e
+  `verificar_comprobante` (lee con visión la última imagen subida al chat, con
+  **Claude Haiku** vía `api/vision_lib.php`) e
   `informar_transferencia` (titular / nro. de operación por texto).
   Si llega un JWT propio válido, ese usuario **manda** sobre el `usuario` suelto.
-  > Venía de Cohere (`command-r-08-2024`). Al leer la respuesta, ojo: Qwen la
-  > devuelve en `choices[0].message` y los errores en `error.message`; Cohere
-  > usaba `message` en los dos casos.
+  > Historia de proveedores: Cohere → Qwen (ago 2026) → Claude primario
+  > (sept 2026). Medido el 15/09/2026: **la cuota gratis de Qwen está agotada**
+  > (403 `AllocationQuota.FreeTierOnly`), o sea que hoy el chat vive SOLO del
+  > camino Claude — el "respaldo" Qwen no responde hasta pagar esa cuenta.
+  > Al leer la respuesta, ojo: el formato es OpenAI-compat en todos los caminos
+  > (`choices[0].message`, errores en `error.message`).
 - **El procedimiento del bot no es editable.** Las reglas fijas van **últimas**
   en el prompt (`chatbot_armar_prompt`) para que ganen sobre las indicaciones
   del operador. Es por un incidente real: alguien escribió *"si te dijo el
@@ -560,20 +566,103 @@ jugadores.
   navegador. En el VPS (`ganamoscrm.online`, API bajo `/gp-api/`) no hay WAF.
 - **Choque de collations:** `usuarios` quedó en `uca1400`, las tablas del CRM en
   `utf8mb4_unicode_ci`. Todo JOIN entre ellas necesita `COLLATE` explícito.
-- **`crm.php` y `admin_usuarios.php` no tienen login.** Están abiertos a propósito
-  (acceso directo por URL). Tenerlo presente antes de exponer el dominio.
+- **`crm.php` y `admin_usuarios.php` SÍ piden sesión** (medido el 15/09/2026:
+  `crm.php`, `admin_usuarios.php`, `crm_retiros.php` y `crm_finanzas.php`
+  contestan `{"ok":false,"error":"Sesión requerida"}` a un GET pelado). Acá
+  decía lo contrario —que estaban abiertos a propósito— y eso venía de antes
+  del login de operadores. El costo de creerlo: no se puede consultar
+  producción desde afuera para diagnosticar, hay que entrar al CRM. El único
+  endpoint público que sirve para mirar desde afuera es
+  **`/gp-api/salud_bot.php`** (latidos del bot, cola de altas y de cargas,
+  última falla, y si corrió la migración 56).
 - **`cola_panel.php` devuelve contraseñas en claro** (legacy). Sin `BOT_API_KEY`
   configurada responde 500 a propósito.
 - **Sin build:** `landing/` es HTML+CSS+JS a mano, se sube por FTP/administrador
   de archivos. No hay npm, ni bundler, ni deploy automático.
 
+## Los juegos y el dominio: por qué no abren desde la réplica
+
+Medido el 15/09/2026 leyendo el bundle del SPA
+(`ganamoscrm.online/assets/index-*.js`). Para pedir el link de un juego de
+**Pragmatic**, el SPA arma el header **en el navegador**:
+
+```js
+"x-actual-domain": `https://${location.host}/`
+```
+
+`location.host` es el dominio de la barra de direcciones. Entrando por la
+réplica eso es `ganamoscrm.online` y no `ganamos7.com` — y `x-actual-domain`
+es el campo por el que los proveedores validan desde qué dominio se lanza el
+juego, que va **por licencia y por contrato**. Otros nueve lanzamientos mandan
+`home_url` / `return_url` / `lobby_url` / `close_url` = `location.origin`.
+
+> **Lo que descarta las hipótesis fáciles:** el **listado** de juegos vuelve
+> perfecto por la réplica —
+> `curl 'https://ganamoscrm.online/api/site/pragmatic/gamelist?partner_name=ganamos'`
+> devuelve `{"status":0,...}`— así que el proxy, el login y la sesión andan.
+> Se cae SOLO el lanzamiento, que es el único paso donde viaja el dominio. No
+> es `Accept-Encoding` (ya está en `""` y es lo que necesita `sub_filter`), ni
+> que los juegos sean iframes de terceros: eso es cierto pero es posterior.
+
+Como la request pasa por nuestro Nginx camino a la plataforma, el header se
+reescribe ahí (`proxy_set_header x-actual-domain "https://ganamos7.com/";` en
+el `location /` de `replica/nginx-replica.conf`), y la réplica queda
+comportándose igual que una visita directa.
+
+> **Falta confirmarlo contra un proveedor.** Probado está que el SPA manda el
+> dominio del navegador; que el proveedor rechace POR ESO es la hipótesis. La
+> prueba que la cierra: abrir un juego, pestaña Red, buscar la request a
+> `.../game/link` y leer **el cuerpo** de la respuesta. Un minuto, y evita
+> probar a ciegas. El detalle completo está en `PARA-FAUNO-juegos.md`.
+
 ## Configuración
 
 Nada de secretos en el repo. `api/config.local.php` (gitignored) lleva
-`BOT_API_KEY`, `ADMIN_PASS`, `JWT_SECRET`, `COHERE_API_KEY` y los datos de la
-base; `.env` en la raíz lleva `PANEL_USER`/`PANEL_PASS` del agente; el worker
-usa su propio `.env` en `colector/` con `SESSION_COOKIE`. `BOT_API_KEY` tiene
-que ser idéntica en el server y en todos los clientes Python.
+`BOT_API_KEY`, `ADMIN_PASS`, `JWT_SECRET`, `ANTHROPIC_API_KEY` + `CHAT_MODEL`
+(el chat sobre Claude), `QWEN_API_KEY` (el respaldo) y los datos de la base;
+`.env` en la raíz lleva `PANEL_USER`/`PANEL_PASS` del agente; el worker usa su
+propio `.env` en `colector/` con `SESSION_COOKIE`. `BOT_API_KEY` tiene que ser
+idéntica en el server y en todos los clientes Python.
 
-La cuenta de cobro (alias, CBU, titular, `RL_COINS_POR_PESO`) se configura
-arriba de `api/recargas_lib.php`.
+> **Cada clave va en SU lugar** (`api/ia_key.php` es la única fuente):
+> `ia_key_anthropic()` para Claude y la visión; `ia_key_qwen()` para el
+> respaldo Qwen y el lector de comprobantes del CRM. `COHERE_API_KEY` sigue
+> aceptándose pero es **el nombre viejo de la clave de Qwen**, no otra opción.
+> Cruzar claves de proveedor deja el chat mudo "con la clave cargada" (401) —
+> la trampa que diagnostica `api/chatbot_diag.php`, que ahora también hace una
+> llamada real a Claude.
+
+### Lo que se configura POR CLIENTE, y dónde
+
+Esto es lo que hace multi-tenant al sistema, y la regla es una sola: **lo del
+cliente vive en `goldpaw_control.clientes`, lo del código es el respaldo.**
+
+| Qué | Columna en `clientes` | Lo carga | Respaldo si falta |
+|---|---|---|---|
+| Cuenta de cobro | `cobro_alias` / `cobro_cbu` / `cobro_titular` | panel del dueño | las constantes `RL_*` de `recargas_lib.php` |
+| Cuántos coins vale un peso | `coins_por_peso` | panel del dueño | `RL_COINS_POR_PESO` |
+| Clave de IA del chatbot | `ia_key` (migración 07 del control) | **nadie: el panel ya no la pide** | `ANTHROPIC_API_KEY` global |
+
+Los resuelven `rl_cuenta_cobro()`, `rl_coins_por_peso()` e `ia_key_anthropic()`
+(`api/ia_key.php`). **Todos degradan HACIA ARRIBA**: si el plano de control no
+responde, se usa el valor global y el sistema sigue andando. Nunca al revés —
+quedarse sin chatbot o sin poder crear una recarga porque una base secundaria
+no contesta sería cambiar un problema chico por uno grande.
+
+> **La clave de IA es LA MISMA para todos los clientes** (15/09/2026): la
+> `ANTHROPIC_API_KEY` global del server, la que ya usa `ganamoscrm.online`. El
+> panel dejó de pedirla en el alta y la edición. `clientes.ia_key` queda como
+> override sin UI — si algún día un cliente necesita clave propia se carga en
+> la base y `ia_key_anthropic()` ya la prefiere — pero hoy está vacía en todos.
+
+> **Las constantes `RL_ALIAS` / `RL_CBU` / `RL_TITULAR` / `RL_COINS_POR_PESO` de
+> `recargas_lib.php` NO son la fuente.** Editarlas en el VPS no sirve: el deploy
+> pisa el archivo, y de todas formas la fila del cliente les gana. Son el último
+> recurso para que un control caído no frene una recarga.
+
+> **`clientes.bot_api_key` se genera y se guarda, pero hoy NO SE USA.**
+> `exigir_api_key()` compara contra la `BOT_API_KEY` **global** y el tenant lo
+> decide el dominio, así que `provisionar.php` le pasa la global al contenedor
+> de cada cliente. Queda reservada para cuando la auth sea por cliente; el panel
+> lo aclara al crear para que nadie la copie a un `.env` creyendo que habilita
+> algo.

@@ -25,7 +25,17 @@ ALTER TABLE clientes
 -- "dominio"); si tu instancia le puso otro nombre, revisá con:
 --   SHOW INDEX FROM clientes WHERE Column_name = 'dominio' AND Non_unique = 0;
 -- y ajustá el DROP INDEX de abajo antes de correr esto.
-ALTER TABLE clientes DROP INDEX dominio;
+--
+-- IF EXISTS porque en una instalación NUEVA ese índice no existe: 01_control.sql
+-- ya crea la tabla con uk_dominio_slug. Sin esto, correr las migraciones de
+-- control en orden sobre una base limpia cortaba acá con
+-- "ERROR 1091: Can't DROP INDEX `dominio`" y el resto del archivo no se
+-- aplicaba — lo que deja a cualquiera que provisione de cero preguntándose si
+-- la migración corrió o no.
+ALTER TABLE clientes DROP INDEX IF EXISTS dominio;
 
+-- IF NOT EXISTS por lo mismo que el DROP de arriba: en una instalación nueva
+-- 01_control.sql ya lo creó, y sin esto cortaba con
+-- "ERROR 1061: Duplicate key name 'uk_dominio_slug'".
 ALTER TABLE clientes
-  ADD UNIQUE KEY uk_dominio_slug (dominio, slug);
+  ADD UNIQUE KEY IF NOT EXISTS uk_dominio_slug (dominio, slug);

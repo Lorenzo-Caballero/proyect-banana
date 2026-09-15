@@ -55,7 +55,13 @@ function chequear(string $q, bool $c, string $d = ''): void {
 }
 
 function limpiar(PDO $pdo): void {
-    foreach (["DELETE FROM movimientos WHERE usuario LIKE 'tbono%'",
+    /* `acciones_saldo` va PRIMERA y no estaba: es la que dejaba la corrida
+       anterior con una carga 'en_curso', que bloquea el auto-canje al juego y
+       hacia que el bono se quedara en el contador. Con esa basura el test
+       pasaba; en base limpia fallaba. Una corrida no puede depender de la
+       anterior. */
+    foreach (["DELETE FROM acciones_saldo WHERE usuario LIKE 'tbono%'",
+              "DELETE FROM movimientos WHERE usuario LIKE 'tbono%'",
               "DELETE FROM recargas WHERE usuario LIKE 'tbono%'",
               "DELETE FROM pagos WHERE id_unico LIKE 'tbono%'",
               "DELETE FROM altas WHERE usuario LIKE 'tbono%'",
@@ -105,6 +111,30 @@ function bonus(PDO $pdo, string $u): int {
 }
 function movs_bono(PDO $pdo, string $u): int {
     $st = $pdo->prepare("SELECT COUNT(*) FROM movimientos WHERE usuario = ? AND origen = 'bono_bienvenida'");
+    $st->execute([$u]);
+    return (int)$st->fetchColumn();
+}
+/* CUANTO BONO SE PAGO, sin importar donde quedo.
+   `usuarios.bonus` NO sirve para esto y ese fue un test flaky de manual: desde
+   la migracion 56, cuando la recarga se auto-canjea al juego
+   (rl_cargar_al_juego_auto -> fichas_pedir_carga) el bono se DEBITA del
+   contador y se suma al deposito -- entra una sola carga por el total, con
+   `acciones_saldo.bono_debitado` guardando la parte que era bono. O sea que
+   bonus=0 es el resultado CORRECTO, no un bono perdido.
+   Con `bonus` las aserciones de abajo solo pasaban cuando una corrida anterior
+   habia dejado una carga 'en_curso' que bloqueaba el auto-canje: verdes con
+   basura, rojas en base limpia. El movimiento es el invariante: se escribe
+   siempre, y ES el candado de una-sola-vez. */
+function bono_pagado(PDO $pdo, string $u): int {
+    $st = $pdo->prepare("SELECT COALESCE(SUM(monto),0) FROM movimientos
+                          WHERE usuario = ? AND origen = 'bono_bienvenida'");
+    $st->execute([$u]);
+    return (int)$st->fetchColumn();
+}
+/* Lo que se fue AL JUEGO como bono dentro de un deposito (migracion 56). */
+function bono_al_juego(PDO $pdo, string $u): int {
+    $st = $pdo->prepare("SELECT COALESCE(SUM(bono_debitado),0) FROM acciones_saldo
+                          WHERE usuario = ? AND tipo = 'cargar'");
     $st->execute([$u]);
     return (int)$st->fetchColumn();
 }
@@ -185,14 +215,17 @@ alta($pdo, 'tbonoSeis', 'lp:tbono-mega');      // la landing sigue pausada: da i
 pago($pdo, 'tbono-p7', 2000, 'revision');
 $res = rl_acreditar_directo($pdo, 'tbono-p7', 'tbonoSeis', 2000, 'tester');
 chequear('directo: acredita', ($res['resultado'] ?? '') === 'acreditada', json_encode($res));
-chequear('directo: paga el 40% de bienvenida', bonus($pdo, 'tbonoSeis') === 800,
-         'bonus=' . bonus($pdo, 'tbonoSeis'));
+chequear('directo: paga el 40% de bienvenida', bono_pagado($pdo, 'tbonoSeis') === 800,
+         'pagado=' . bono_pagado($pdo, 'tbonoSeis') . ' bonus=' . bonus($pdo, 'tbonoSeis'));
+// Y termino donde tiene que terminar: adentro del deposito, no en el contador.
+chequear('...y viaja al juego dentro del deposito', bono_al_juego($pdo, 'tbonoSeis') === 800,
+         'bono_debitado=' . bono_al_juego($pdo, 'tbonoSeis'));
 $r = recarga($pdo, 'tbonoSeis', 1000, 'tb7');
 pago($pdo, 'tbono-p8', 1000);
 acreditar($pdo, $r, 'tbono-p8');
 chequear('la recarga posterior cuenta como primera (sin fila previa)...', ($r['es_primera'] ?? null) === 1);
-chequear('...pero el candado evita el SEGUNDO bono', bonus($pdo, 'tbonoSeis') === 800,
-         'bonus=' . bonus($pdo, 'tbonoSeis'));
+chequear('...pero el candado evita el SEGUNDO bono', bono_pagado($pdo, 'tbonoSeis') === 800,
+         'pagado=' . bono_pagado($pdo, 'tbonoSeis'));
 chequear('un solo movimiento bono_bienvenida entre los dos caminos', movs_bono($pdo, 'tbonoSeis') === 1);
 
 echo "-- el helper pelado (camino HG Cash, autocommit): una sola vez --\n";

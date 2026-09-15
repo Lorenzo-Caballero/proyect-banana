@@ -76,7 +76,7 @@ function correr_sync(array $usuarios): array {
     /* La linea ENTERA: el Content-Type lleva un ";" adentro del string
        ("application/json; charset=utf-8"), asi que cortar en el primer punto y
        coma parte la llamada al medio y deja basura que no compila. */
-    $src = preg_replace('/^[ 	]*header\(.*\);[ 	]*$/m', '', $src);
+    $src = preg_replace("/^[ 	]*header\(.*\);[ 	]*$/m", '', $src);
 
     $GLOBALS['__cuerpo'] = ['usuarios' => $usuarios];
     $_SERVER['REQUEST_METHOD'] = 'POST';

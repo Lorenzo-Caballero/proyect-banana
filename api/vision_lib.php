@@ -26,10 +26,13 @@ const VISION_MODELO = 'claude-haiku-4-5-20251001';
 // Límite de la API de Anthropic por imagen (5 MB); subir.php ya corta en 8 MB.
 const VISION_MAX_BYTES = 5 * 1024 * 1024;
 
-/** ¿Está configurada la key de Anthropic? */
+/** ¿Está configurada la key de Anthropic? La del cliente cuenta: es el mismo
+ *  lugar que usa el chat (ver api/ia_key.php). */
 function vision_disponible(): bool
 {
-    return function_exists('cfg') && strlen((string)cfg('ANTHROPIC_API_KEY', '')) > 20;
+    if (!function_exists('cfg')) { return false; }
+    require_once __DIR__ . '/ia_key.php';
+    return strlen(ia_key_anthropic()) > 20;
 }
 
 /**
@@ -230,9 +233,13 @@ if (!function_exists('vision_headers')) {
      *  mandarlo vacio seria peor. */
     function vision_headers(): array
     {
+        // La clave del cliente si cargo una, si no la global del server: la
+        // MISMA resolucion que el chat sobre Claude (api/ia_key.php). Asi la
+        // vision de cada cliente gasta su propia cuota, igual que su chat.
+        require_once __DIR__ . '/ia_key.php';
         $h = [
             'Content-Type: application/json',
-            'x-api-key: ' . cfg('ANTHROPIC_API_KEY'),
+            'x-api-key: ' . ia_key_anthropic(),
             'anthropic-version: 2023-06-01',
         ];
         $ws = trim((string)cfg('ANTHROPIC_WORKSPACE_ID', ''));

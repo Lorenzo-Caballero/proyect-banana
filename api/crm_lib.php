@@ -222,6 +222,61 @@ if (!function_exists('crm_conversacion_id')) {
         return $porConexion[$k];
     }
 
+    /**
+     * Baja la marca de derivacion -- el cartel «Te necesita» de la bandeja.
+     *
+     * ESTO VIVIA INLINE ADENTRO DE LA ACCION `responder`, Y ESE ERA EL BUG:
+     * responder era el UNICO camino de toda la API que la bajaba. Atender el
+     * chat, cerrarlo o archivarlo la dejaban puesta, y como la lista ordena por
+     * `(derivada_en IS NOT NULL) DESC` y el badge del rail cuenta
+     * `SUM(derivada_en IS NOT NULL)`, la conversacion quedaba clavada arriba de
+     * todo y sumando al numero para siempre. Desde el CRM no habia forma de
+     * sacarla salvo escribirle al jugador. Ahora los cuatro caminos llaman aca.
+     *
+     * NO toca `ia_activa` a proposito: que el bot vuelva a hablar es una
+     * decision aparte, con su switch. Y NO toca `ia_silencio_en`, que es el
+     * ancla de la reconexion automatica (migracion 60) justamente porque tiene
+     * que sobrevivir a que se baje esta marca -- si se anclara en `derivada_en`,
+     * atender un chat dejaria al bot mudo para siempre.
+     *
+     * Best-effort en las dos migraciones: sin la 49 no hay nada que bajar, y
+     * sin la 61 no existe `derivada_aviso_en`. En los dos casos se sigue de
+     * largo, porque atender un chat no puede depender de una columna que solo
+     * le pone ritmo a los avisos.
+     *
+     * Devuelve cuantas conversaciones cambiaron.
+     */
+    function crm_bajar_derivada(PDO $pdo, array $ids): int
+    {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+        if (!$ids || !crm_hay_derivada($pdo)) { return 0; }
+        $ph = implode(',', array_fill(0, count($ids), '?'));
+
+        // El `AND derivada_en IS NOT NULL` es lo que hace que rowCount() diga
+        // cuantas ESTABAN derivadas, y no cuantas se tocaron.
+        try {
+            $st = $pdo->prepare(
+                "UPDATE conversaciones
+                    SET derivada_en = NULL, derivada_motivo = NULL, derivada_aviso_en = NULL
+                  WHERE id IN ($ph) AND derivada_en IS NOT NULL"
+            );
+            $st->execute($ids);
+            return $st->rowCount();
+        } catch (Throwable $e) {
+            try {
+                $st = $pdo->prepare(
+                    "UPDATE conversaciones SET derivada_en = NULL, derivada_motivo = NULL
+                      WHERE id IN ($ph) AND derivada_en IS NOT NULL"
+                );
+                $st->execute($ids);
+                return $st->rowCount();
+            } catch (Throwable $e2) {
+                error_log('crm_bajar_derivada: ' . $e2->getMessage());
+                return 0;
+            }
+        }
+    }
+
     /** Guarda un turno del chatbot. Nunca rompe el chat: si falla, solo loguea.
      *  Devuelve el id del MENSAJE DEL BOT insertado (0 si no hubo): el chat lo
      *  manda al widget (mensaje_id) y es lo que permite RETRAER esa burbuja

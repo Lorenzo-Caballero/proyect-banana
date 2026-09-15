@@ -163,7 +163,19 @@ const CFG_CRM_DEFAULTS = [
     // el agente para siempre, como era antes). El aviso de Telegram al
     // jugador que reescribe derivado dice este numero, asi el operador sabe
     // en cuanto lo va a retomar el bot.
-    'ia_reconectar_min' => '30',
+    // BAJADO DE 30 A 10 (15/09/2026). Media hora es demasiado para un jugador
+    // que pregunta por una carga: si el agente no aparece, el chat queda mudo
+    // media hora y el jugador se va. Diez minutos le dan margen real al agente
+    // y no dejan a nadie hablando con una pared.
+    //
+    // OJO, ESTO ES EL DEFAULT: rige en una base que nunca guardo el valor. Si
+    // config_crm ya tiene la fila, GANA la fila -- en una instalacion andando
+    // hay que cambiarlo en Configuracion del CRM, no aca.
+    //
+    // Y OJO CON LO QUE MIDE: no es un cron. El bot se vuelve a prender cuando
+    // el JUGADOR escribe de nuevo pasados estos minutos (chatbot.php:457). Si
+    // no vuelve a escribir, no pasa nada -- no hay a quien contestarle.
+    'ia_reconectar_min' => '10',
     'tg_ev_alta'       => '0',   // se registro un jugador (o no se pudo)
     'tg_ev_pago'       => '0',   // entro una transferencia y se acredito sola
     // Prendido por defecto a pedido de Nahuel: es la señal de que la promo de
