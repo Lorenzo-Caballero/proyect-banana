@@ -7696,6 +7696,10 @@
     // en esta respuesta: pedirla de nuevo al exportar seria otra vuelta al
     // server para traer exactamente lo mismo que esta en pantalla.
     st.msgs = d.mensajes;
+    /* Cambiar de conversación resetea el "hay cambios sin guardar": lo que
+       estabas escribiendo era de OTRO jugador, y arrastrarlo haría que la nota
+       de uno tape la del siguiente. */
+    if (!esRefresco) { st.notaServer = undefined; }
     pintarMenuMas();
     st.iaActiva = (c.ia_activa !== false);
     pintarBtnIA();
@@ -7946,7 +7950,33 @@
     if(u.ganamos_id) flags.push(`<span class="flag">ID ${esc(u.ganamos_id)}</span>`);
     $("#uFlags").innerHTML = flags.join("");
 
-    $("#notas").value = notas || "";
+    /* LA NOTA NO SE PISA MIENTRAS LA ESTAS ESCRIBIENDO.
+       EL BUG (Nahuel, 15/09/2026): "cuando intento agregar una nota, al momento
+       en el que la escribo, inmediatamente se borra. Si la escribo muy rápido y
+       le doy guardar, ahí sí funciona".
+
+       Era el sondeo. La conversación abierta se refresca cada 9 segundos, cada
+       refresco repinta la ficha, y esta línea reescribía el textarea con lo que
+       hay GUARDADO en el server. O sea que todo lo tipeado desde el último
+       guardado se perdía en el siguiente tick -- y tipear rápido "funcionaba"
+       porque ganabas la carrera.
+
+       Ahora sólo se pisa si no hay nada en juego: ni el foco puesto, ni cambios
+       sin guardar. `st.notaServer` es lo último que mandó el server; si lo que
+       hay en pantalla no coincide, son ediciones del operador y mandan ellas.
+
+       La contracara vale la pena decirla: si otro agente edita la nota
+       mientras vos tenés cambios sin guardar, no vas a ver los suyos hasta que
+       guardes. Es lo correcto -- perder lo que alguien está escribiendo es peor
+       que mostrarle un dato un rato viejo. */
+    const _nt = $("#notas");
+    if (_nt){
+      const delServer = notas || "";
+      const editando  = document.activeElement === _nt;
+      const sinGuardar = _nt.value !== (st.notaServer ?? _nt.value);
+      if (!editando && !sinGuardar) { _nt.value = delServer; }
+      st.notaServer = delServer;
+    }
     if(!movs || !movs.length){
       $("#movs").innerHTML = `<div style="color:var(--muted);font-size:12.5px">Sin movimientos.</div>`;
     } else {
@@ -8034,8 +8064,26 @@
   $("#cerrarDrawer").addEventListener("click", cerrarInfo);
   $("#btnNota").addEventListener("click", async ()=>{
     if(!st.convId) return;
-    const d = await jpost({accion:"nota", id:st.convId, notas:$("#notas").value});
+    const texto = $("#notas").value;
+    const d = await jpost({accion:"nota", id:st.convId, notas:texto});
     toast(d.ok ? "Nota guardada" : "No se pudo guardar");
+    if (d.ok){
+      /* Lo guardado pasa a ser "lo del server": sin esto el textarea queda
+         para siempre con cambios-sin-guardar y el sondeo no lo refresca nunca
+         mas, ni cuando de verdad convenga. */
+      st.notaServer = texto;
+      /* Y el cartel de la cabecera, en el acto. Antes había que esperar al
+         siguiente sondeo para ver la nota que acabás de escribir. */
+      const elNota = $("#chatNota");
+      if (elNota){
+        const n = texto.trim();
+        elNota.style.display = n ? "" : "none";
+        if (n){
+          elNota.innerHTML = `<b>Nota</b><span>${esc(n.replace(/\s+/g, " "))}</span>`;
+          elNota.title = n + "\n\n(Tocá para abrir la ficha y editarla)";
+        }
+      }
+    }
   });
 
   // ---------- anclar ----------
