@@ -22,10 +22,15 @@
  * login de un sitio de terceros, no un hash nuestro). Lo que SÍ: nunca se
  * devuelve por la API — solo el usuario y el booleano "cargada".
  *
- * Solo ADMIN del CRM (exigir_admin): son las llaves de la caja del cliente.
+ * PERMISOS PARTIDOS A PROPÓSITO (15/09/2026): el ESTADO lo lee cualquier
+ * operador — es lo que alimenta el aviso «Integrá tu panel de ganamos» del
+ * CRM, y con exigir_admin un agente logueado recibía 403 y el aviso
+ * PRIORITARIO desaparecía en silencio (se vio en producción: solo quedaba el
+ * de la cuenta de cobro, que sí es legible por operador). GUARDAR sigue
+ * siendo solo admin: son las llaves de la caja del cliente.
  *
- * GET  ?accion=estado         -> { ok, usuario, cargada }
- * POST { accion:"guardar", usuario, password }
+ * GET  ?accion=estado         -> { ok, usuario, cargada, usuarios }
+ * POST { accion:"guardar", usuario, password }        (solo admin)
  *        password vacío con credenciales ya cargadas = "no la cambies"
  *        (mismo contrato que el resto de los secretos del CRM).
  */
@@ -37,7 +42,8 @@ require __DIR__ . '/crm_auth.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
-$operador = exigir_admin();
+$operador = exigir_operador();
+if ($_SERVER['REQUEST_METHOD'] === 'POST') { $operador = exigir_admin(); }
 
 function salir($data, int $code = 200): void
 {

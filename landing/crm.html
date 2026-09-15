@@ -6678,8 +6678,10 @@
 
   let gpAvisoTimer = null;
   async function gpAvisosRevisar(){
-    // Integración con ganamos: solo la ve/resuelve un admin — un 403 acá
-    // significa "no es tu tarea" y no se muestra nada.
+    // El estado de la integración lo lee CUALQUIER operador (guardar sigue
+    // siendo de admin): el aviso prioritario tiene que verse siempre — con
+    // el endpoint solo-admin, a un agente logueado le desaparecía en
+    // silencio y solo quedaba el de cobro, en el orden equivocado.
     let integ = null, cobro = null;
     try{ integ = await jget({accion:"estado"}, API_INTEG); }catch(e){}
     try{ cobro = await jget({accion:"estado"}, API_COBRO); }catch(e){}
