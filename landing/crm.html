@@ -6570,14 +6570,19 @@
      Es un cartel fijo arriba al centro (no toca el layout del shell, que es
      un flex), clickeable cuando lleva a una sección que lo resuelve, y no se
      puede "cerrar" a propósito: es plata. Desaparece al resolverse. */
-  function gpAvisoPintar(html, tipo, alClick){
-    let el = document.getElementById("gpAviso");
-    if(!html){ if(el) el.remove(); return; }
-    if(!el){
-      el = document.createElement("div");
-      el.id = "gpAviso";
-      document.body.appendChild(el);
-      // El spin del spinner, una sola vez.
+  /* El contenedor apilado: los avisos van en columna, arriba al centro, en
+     ORDEN de prioridad (el de credenciales SIEMPRE primero). Se ven TODOS
+     los pendientes a la vez — antes se mostraba de a uno y el cliente
+     descubría el siguiente recién al resolver el anterior. */
+  function gpAvisosContenedor(){
+    let cont = document.getElementById("gpAvisos");
+    if(!cont){
+      cont = document.createElement("div");
+      cont.id = "gpAvisos";
+      cont.style.cssText = "position:fixed;top:10px;left:50%;transform:translateX(-50%);" +
+        "z-index:1200;display:flex;flex-direction:column;gap:8px;align-items:center;" +
+        "max-width:min(620px,92vw)";
+      document.body.appendChild(cont);
       if(!document.getElementById("gpAvisoCss")){
         const st = document.createElement("style");
         st.id = "gpAvisoCss";
@@ -6588,9 +6593,22 @@
         document.head.appendChild(st);
       }
     }
+    return cont;
+  }
+
+  function gpAvisoPintar(id, html, tipo, alClick){
+    const cont = gpAvisosContenedor();
+    let el = document.getElementById(id);
+    if(!html){ if(el) el.remove(); return; }
+    if(!el){
+      el = document.createElement("div");
+      el.id = id;
+      // El de integración va SIEMPRE primero, aunque se pinte después de
+      // que el de cobro ya esté en pantalla.
+      if(id === "gpAvisoInteg"){ cont.prepend(el); } else { cont.appendChild(el); }
+    }
     const rojo = tipo !== "info";
-    el.style.cssText = "position:fixed;top:10px;left:50%;transform:translateX(-50%);" +
-      "z-index:1200;max-width:min(620px,92vw);background:var(--panel2,#231d2c);" +
+    el.style.cssText = "background:var(--panel2,#231d2c);width:100%;" +
       "border:1px solid " + (rojo ? "#c0392b" : "#2c6e8f") + ";" +
       "border-left:4px solid " + (rojo ? "#e74c3c" : "#3aa0d8") + ";" +
       "border-radius:10px;padding:10px 16px;font-size:13px;color:var(--txt,#eee);" +
@@ -6610,31 +6628,31 @@
 
     if(gpAvisoTimer){ clearTimeout(gpAvisoTimer); gpAvisoTimer = null; }
 
-    // ---- 1. Falta integrar el panel de ganamos: manda sobre todo lo demás.
-    if(integ && integ.ok && !integ.cargada){
-      gpAvisoPintar(
-        '<b>⚠️ Integrá tu panel de ganamos</b> — sin esto no se crean cuentas, ' +
-        'no se cargan fichas y tus jugadores no se espejan. <u>Cargar credenciales</u>',
-        "rojo",
-        ()=>{ navegar("config", true); setTimeout(()=>{ const c=$("#gnCard"); if(c) c.scrollIntoView({behavior:"smooth", block:"center"}); }, 250); });
-      return;
-    }
+    // ---- 1. PRIORITARIO, siempre arriba: las credenciales del panel de
+    //         ganamos. El contenedor pinta en orden de inserción, y este
+    //         cartel (o su reemplazo, el spinner de la primera pasada del
+    //         espejo) se pinta SIEMPRE primero.
+    const sinCreds = integ && integ.ok && !integ.cargada;
+    const espejando = integ && integ.ok && integ.cargada && (integ.usuarios || 0) === 0;
 
-    // ---- 2. Integrado pero el espejo todavía vacío: el bot está haciendo
-    //         su primera pasada. Informativo, con spinner, y se re-mira solo.
-    if(integ && integ.ok && integ.cargada && (integ.usuarios || 0) === 0){
-      gpAvisoPintar(
-        '<span class="gp-spin"></span><b>Trayendo tus jugadores desde ganamos…</b> ' +
-        'La primera sincronización puede demorar unos minutos. ' +
-        'La lista se va a llenar sola — no hace falta hacer nada.',
-        "info", null);
-      gpAvisoTimer = setTimeout(gpAvisosRevisar, 30000);
-      return;
-    }
+    gpAvisoPintar("gpAvisoInteg",
+      sinCreds
+        ? '<b>⚠️ Integrá tu panel de ganamos</b> — sin esto no se crean cuentas, ' +
+          'no se cargan fichas y tus jugadores no se espejan. <u>Cargar credenciales</u>'
+        : (espejando
+          ? '<span class="gp-spin"></span><b>Trayendo tus jugadores desde ganamos…</b> ' +
+            'La primera sincronización puede demorar unos minutos. ' +
+            'La lista se va a llenar sola — no hace falta hacer nada.'
+          : ""),
+      sinCreds ? "rojo" : "info",
+      sinCreds
+        ? ()=>{ navegar("config", true); setTimeout(()=>{ const c=$("#gnCard"); if(c) c.scrollIntoView({behavior:"smooth", block:"center"}); }, 250); }
+        : null);
+    if(espejando){ gpAvisoTimer = setTimeout(gpAvisosRevisar, 30000); }
 
-    // ---- 3. Cuenta de cobro: por transferencia sin NINGUNA cuenta usable,
-    //         o HG Cash sin token. Sin esto el jugador no tiene a dónde
-    //         transferir.
+    // ---- 2. Cuenta de cobro, debajo del anterior: por transferencia sin
+    //         NINGUNA cuenta usable, o HG Cash sin token. Sin esto el
+    //         jugador no tiene a dónde transferir.
     let faltaCobro = false;
     if(cobro && cobro.ok){
       if(cobro.metodo_cobro === "hgcash"){
@@ -6646,16 +6664,13 @@
         faltaCobro = !hayPr && !hayExtra;
       }
     }
-    if(faltaCobro){
-      gpAvisoPintar(
-        '<b>⚠️ Cargá tu cuenta de cobro</b> — tus jugadores no tienen a dónde ' +
-        'transferir hasta que agregues un CBU/alias. <u>Cargar cuenta</u>',
-        "rojo",
-        ()=>{ navegar("config", true); setTimeout(()=>{ const c=$("#cobroCard"); if(c) c.scrollIntoView({behavior:"smooth", block:"center"}); }, 250); });
-      return;
-    }
-
-    gpAvisoPintar("", "", null);   // todo resuelto: sin cartel
+    gpAvisoPintar("gpAvisoCobro",
+      faltaCobro
+        ? '<b>⚠️ Cargá tu cuenta de cobro</b> — tus jugadores no tienen a dónde ' +
+          'transferir hasta que agregues un CBU/alias. <u>Cargar cuenta</u>'
+        : "",
+      "rojo",
+      ()=>{ navegar("config", true); setTimeout(()=>{ const c=$("#cobroCard"); if(c) c.scrollIntoView({behavior:"smooth", block:"center"}); }, 250); });
   }
 
   /** Hash simple de string -> entero, compartido por colorDe()/agColorDe()
