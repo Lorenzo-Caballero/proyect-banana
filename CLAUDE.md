@@ -698,3 +698,33 @@ no contesta sería cambiar un problema chico por uno grande.
 > de cada cliente. Queda reservada para cuando la auth sea por cliente; el panel
 > lo aclara al crear para que nadie la copie a un `.env` creyendo que habilita
 > algo.
+
+### El JUGADOR de un cliente por path (15/09/2026)
+
+La cadena completa para `ganamoscrm.online/<slug>/` (cliente sin dominio
+propio), y quién resuelve qué:
+
+1. **nginx** ya servía las páginas propias por slug (`/<slug>/crm.html`,
+   `registro`, `bono`, `lp`...) y la API en `/<slug>/gp-api/*.php`, mandando
+   el slug a PHP como `X-Tenant-Slug`. `db.php` elige la base de ESE cliente;
+   un slug inexistente muere con 404 «Dominio no registrado».
+2. **El widget** (inyectado dentro de la plataforma proxeada) captura el slug
+   de la URL de ENTRADA (`/casinotest/`), lo **valida** contra
+   `/<slug>/gp-api/tenant_info.php` y lo recuerda en `localStorage` — porque
+   el SPA navega enseguida a `/home` y el slug desaparece de la URL. Con eso
+   TODAS sus llamadas van a `/<slug>/gp-api/`: el chat del jugador cae en el
+   CRM del cliente y el bot contesta con la config y las promos del cliente.
+   Antes de esto (el bug del 15/09), el chat de `/casinotest/` le pegaba a
+   nuestra base: promos nuestras en la plataforma del cliente y su CRM vacío.
+3. **Los links que arma el server llevan el slug**: `ref_link()` (referidos →
+   `/<slug>/bono.html?ref=`), los `successUrl` de HG Cash (→ `/<slug>/?pago=ok`)
+   — igual que ya hacían `crm_cobro`, `hgcash_lib` (webhook) y `suscripcion`.
+   Si armás un link nuevo hacia una página del jugador, sumale
+   `$GLOBALS['TENANT_SLUG']` o queda apuntando a nuestra plataforma.
+4. **bono.html / registro.html** mandan al recién registrado a `/<slug>/`
+   (la plataforma real), no ya al desvío `chat.html`.
+
+> **Límite asumido:** `localStorage` es por ORIGEN, así que un mismo navegador
+> pertenece a UN cliente a la vez — el último link de entrada que validó gana.
+> Es la naturaleza del path-tenant una vez que el SPA pisa la URL; el cliente
+> que necesite aislamiento total va con dominio propio.

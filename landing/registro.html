@@ -457,14 +457,15 @@
     // widget con el chatbot inyectado en "/" HOY NO resuelve el slug desde
     // ahí (limitación conocida y documentada en landing/widget.js -- el
     // proxy no preserva el path al reenviar a la plataforma). Para no
-    // mandar al jugador a un juego sin SU chatbot, en ese caso se ofrece
-    // volver al /<slug>/chat.html propio en vez de la raíz. esPorPath/
-    // partesRuta ya se calcularon arriba, junto con BASE_API.
+    // El cliente por-path va a /<slug>/ — la MISMA plataforma que la raíz:
+    // el widget captura el slug de esa URL de entrada (15/09/2026, ver
+    // widget.js) y el chat del jugador va a la base de SU cliente. Antes se
+    // desviaba a chat.html porque el widget no resolvía el slug.
     // #gp-chat: widget.js lo lee al cargar y abre el chat solo. El recien
     // registrado aterriza en el juego CON el chat abierto -- su proximo paso
     // natural es hablar (cargar fichas, preguntar) y el globito solo en una
-    // esquina se lo pierde. En el cliente por-path el destino YA es el chat.
-    const destino = esPorPath ? '/' + partesRuta[0] + '/chat.html' : '/#gp-chat';
+    // esquina se lo pierde.
+    const destino = esPorPath ? '/' + partesRuta[0] + '/#gp-chat' : '/#gp-chat';
     // SIN olvidar() acá: el pedido guardado (con listo:true) es lo único que
     // permite volver a esta página y ver los datos de nuevo. Borrarlo antes
     // de navegar hacía que el que volvía se encontrara con el formulario

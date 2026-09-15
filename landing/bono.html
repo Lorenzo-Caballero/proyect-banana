@@ -471,13 +471,15 @@
       setTimeout(()=> $('btnCopiar').textContent = 'Copiar datos', 1500);
     };
     /* "Entrar a jugar": raíz del dominio ACTUAL. Ahí el proxy replica/ sirve
-       el juego real con el chatbot ya inyectado y el login persiste. Para el
-       cliente por-path se manda al chat propio: el widget inyectado en "/" hoy
-       no resuelve el slug (limitación documentada en widget.js).
+       el juego real con el chatbot ya inyectado y el login persiste. El
+       cliente por-path va a /<slug>/ — la MISMA plataforma: el widget captura
+       el slug de esa URL de entrada (15/09/2026, ver widget.js) y todo su
+       chat va a la base del cliente. Antes iba a chat.html porque el widget
+       no resolvía el slug; ya no hace falta ese desvío.
        SIN olvidar() antes de navegar (la lección de registro.html): el pedido
        guardado es lo único que permite volver y ver los datos de nuevo;
        borrarlo hacía que el que volvía se creara una SEGUNDA cuenta. */
-    const destino = esPorPath ? '/' + partesRuta[0] + '/chat.html' : '/';
+    const destino = esPorPath ? '/' + partesRuta[0] + '/' : '/';
     $('btnJugar').onclick = async ()=>{
       /* Si tocó "Entrar" antes de que el auto-login terminara, se lo espera
          un toque (máx ~1,2s). Después se navega igual: con sesión (lo

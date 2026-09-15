@@ -90,17 +90,41 @@
   // listarlos uno por uno. REPLICAS queda para dominios de cliente que NO
   // cuelguen de faunotattoo.com (uno propio que apunte al VPS).
   //
-  // PENDIENTE: clientes SIN dominio propio (path-tenant, ganamoscrm.online/
-  // <slug>/...) no están soportados acá todavía. Este widget se inyecta DENTRO
-  // de ganamos7.com vía sub_filter, así que location.pathname es el de la
-  // plataforma (/home), no el nuestro — no hay forma de leer el slug desde acá
-  // sin que el proxy hacia la plataforma también lo preserve en el path de
-  // cada pedido (cambio grande, deliberadamente no hecho todavía). Por ahora
-  // los clientes por-path solo usan crm.html/admin.html/chat.html.
   var REPLICAS = ["ganamos.faunotattoo.com", "ganamoscrm.online", "www.ganamoscrm.online"];
   var MISMO_ORIGEN =
     /(^|\.)(faunotattoo\.com|ganamoscrm\.online)$/i.test(location.hostname) ||
     REPLICAS.indexOf(location.hostname) !== -1;
+
+  /* ---- CLIENTES SIN DOMINIO PROPIO (path-tenant): ganamoscrm.online/<slug>/
+   *
+   * El jugador de un cliente entra por /casinotest/ pero el SPA de la
+   * plataforma navega en seguida a /home, /slots... y el slug desaparece de
+   * la URL. Este widget corre inyectado DENTRO de esas páginas, así que la
+   * única forma de no perder al cliente es CAPTURAR el slug en la URL de
+   * entrada y recordarlo en localStorage. Con el slug, TODAS las llamadas
+   * van a /<slug>/gp-api/ (nginx manda ese slug a PHP como X-Tenant-Slug y
+   * db.php elige la base de ESE cliente): su chat cae en SU CRM, su bot
+   * contesta con SU config y SUS promos — no con las nuestras, que era el
+   * bug (15/09/2026: el chat de /casinotest/ mandaba el link de referidos de
+   * ganamoscrm.online a secas y aparecía en NUESTRO CRM).
+   *
+   * Cómo se decide que un path es un slug y no una ruta de la plataforma
+   * (/home también es "un segmento solo"):
+   *   - Solo se considera candidato un path de UN segmento (^/algo o /algo/).
+   *   - Se VALIDA contra la API (/<cand>/gp-api/tenant_info.php): db.php
+   *     contesta ok solo si ese slug existe como cliente activo. /home da
+   *     404 y queda negado en sessionStorage (no se repregunta en esta tab).
+   *   - Con barra final (/casinotest/ — la forma del link que se comparte)
+   *     se adopta OPTIMISTA de inmediato y se revierte si la validación
+   *     falla; sin barra, se adopta recién al validar.
+   *
+   * Límite asumido y documentado: localStorage es por ORIGEN, así que un
+   * mismo navegador es de UN cliente a la vez — el último link de entrada
+   * que validó gana. Es la naturaleza del path-tenant una vez que el SPA
+   * pisa la URL; el que quiera aislamiento total usa dominio propio.
+   * ------------------------------------------------------------------- */
+  var TENANT_SLUG = "";
+  try { TENANT_SLUG = localStorage.getItem("gp_tenant_slug") || ""; } catch (e) {}
 
   /* OJO CON EL PREFIJO: en la replica es /gp-api, NO /api.
      /api/ es de la plataforma (ahi estan /api/user/login y /api/user/check).
@@ -108,17 +132,53 @@
      a Hostinger y el sitio no podria loguear.
      Hostinger ya no tiene backend propio: fuera de una réplica esto no tiene
      a dónde ir (MISMO_ORIGEN debería ser siempre true en producción). */
-  var BASE_API = MISMO_ORIGEN ? "/gp-api" : "/api";
+  var BASE_API, API_CHAT, API_CARGA, API_ALTA, API_SUBIR, API_MIS,
+      API_RULETA, API_NOTIF, API_SALDO, API_COBRO;
 
-  var API_CHAT   = BASE_API + "/chatbot.php";
-  var API_CARGA  = BASE_API + "/carga_estado.php";
-  var API_ALTA   = BASE_API + "/alta_estado.php";
-  var API_SUBIR  = BASE_API + "/subir.php";
-  var API_MIS    = BASE_API + "/mis_mensajes.php";
-  var API_RULETA = BASE_API + "/ruleta.php";
-  var API_NOTIF  = BASE_API + "/notificaciones.php";
-  var API_SALDO  = BASE_API + "/saldo_reportar.php";
-  var API_COBRO  = BASE_API + "/datos_cobro.php";
+  // Se llama al arrancar y de nuevo si la validación cambia el slug: las
+  // llamadas usan estas vars EN el momento del fetch, así que reasignarlas
+  // alcanza para que todo lo que siga vaya al cliente correcto.
+  function gpArmarApi() {
+    var pref = (MISMO_ORIGEN && TENANT_SLUG) ? "/" + TENANT_SLUG : "";
+    BASE_API   = MISMO_ORIGEN ? (pref + "/gp-api") : "/api";
+    API_CHAT   = BASE_API + "/chatbot.php";
+    API_CARGA  = BASE_API + "/carga_estado.php";
+    API_ALTA   = BASE_API + "/alta_estado.php";
+    API_SUBIR  = BASE_API + "/subir.php";
+    API_MIS    = BASE_API + "/mis_mensajes.php";
+    API_RULETA = BASE_API + "/ruleta.php";
+    API_NOTIF  = BASE_API + "/notificaciones.php";
+    API_SALDO  = BASE_API + "/saldo_reportar.php";
+    API_COBRO  = BASE_API + "/datos_cobro.php";
+  }
+
+  (function () {
+    var m = MISMO_ORIGEN && location.pathname.match(/^\/([a-z0-9-]{2,60})\/?$/i);
+    var cand = m ? m[1].toLowerCase() : "";
+    if (!cand || cand === TENANT_SLUG) { gpArmarApi(); return; }
+    var negadas = {};
+    try { negadas = JSON.parse(sessionStorage.getItem("gp_tenant_no") || "{}"); } catch (e) {}
+    if (negadas[cand]) { gpArmarApi(); return; }
+
+    if (/\/$/.test(location.pathname)) { TENANT_SLUG = cand; }   // optimista
+    gpArmarApi();
+    fetch("/" + cand + "/gp-api/tenant_info.php", { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || !d.ok) { throw 0; }
+        TENANT_SLUG = cand;
+        try { localStorage.setItem("gp_tenant_slug", cand); } catch (e) {}
+      })
+      .catch(function () {
+        negadas[cand] = 1;
+        try { sessionStorage.setItem("gp_tenant_no", JSON.stringify(negadas)); } catch (e) {}
+        if (TENANT_SLUG === cand) {
+          TENANT_SLUG = "";
+          try { localStorage.removeItem("gp_tenant_slug"); } catch (e) {}
+        }
+      })
+      .then(gpArmarApi, gpArmarApi);
+  })();
 
   /* La API de la PLATAFORMA. Del bundle:
        Nn = { additionalBaseURL:"/api/user", loginUniversal:"/login",

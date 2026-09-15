@@ -115,7 +115,14 @@ if (!function_exists('ref_link')) {
     function ref_link(string $codigo): string
     {
         $host = (string)($GLOBALS['TENANT_HOST'] ?? $_SERVER['HTTP_HOST'] ?? 'ganamoscrm.online');
-        return 'https://' . $host . '/bono.html?ref=' . rawurlencode($codigo);
+        /* Cliente por-path: su bono.html vive en /<slug>/bono.html (nginx lo
+           sirve ahí y el registro que sigue queda en SU base). Sin el slug,
+           el link de referidos de un cliente mandaba al registro de NUESTRA
+           plataforma — el amigo se registraba con nosotros y el que refería
+           nunca cobraba. Mismo patrón que crm_cobro.php y suscripcion.php. */
+        $slug = (string)($GLOBALS['TENANT_SLUG'] ?? '');
+        return 'https://' . $host . ($slug !== '' ? '/' . $slug : '')
+             . '/bono.html?ref=' . rawurlencode($codigo);
     }
 }
 

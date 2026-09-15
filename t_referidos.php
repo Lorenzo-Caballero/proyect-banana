@@ -73,6 +73,18 @@ ok($cod !== '' && preg_match('/^[a-z0-9]{4,16}$/', $cod) === 1, "codigo generado
 ok(ref_usuario_de_codigo($pdo, $cod) === $A, 'el codigo resuelve de vuelta al padrino');
 ok(strpos(ref_link($cod), 'bono.html?ref=' . $cod) !== false, 'el link apunta a bono.html?ref=');
 
+/* Multi-tenant por path (15/09/2026): el link de un cliente por-path tiene
+   que llevar SU slug — sin él, el amigo se registraba en NUESTRA plataforma
+   y el padrino del cliente nunca cobraba. */
+$GLOBALS['TENANT_HOST'] = 'ganamoscrm.online';
+$GLOBALS['TENANT_SLUG'] = 'casinotest';
+ok(ref_link($cod) === 'https://ganamoscrm.online/casinotest/bono.html?ref=' . $cod,
+   'cliente por-path: el link lleva el slug (' . ref_link($cod) . ')');
+$GLOBALS['TENANT_SLUG'] = '';
+ok(strpos(ref_link($cod), '/casinotest/') === false,
+   'dominio propio: el link queda sin slug');
+unset($GLOBALS['TENANT_HOST']);
+
 // ---- 2. el amigo se registra con el codigo (lo que hace crear_cuenta.php) ----
 echo "2. El amigo entra con el link\n";
 $pdo->prepare("INSERT INTO altas (usuario, estado, ref_codigo) VALUES (?, 'ok', ?)")
