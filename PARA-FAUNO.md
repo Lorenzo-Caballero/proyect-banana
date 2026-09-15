@@ -516,6 +516,33 @@ con dos o tres reintentos y una pausa corta suele alcanzar.
 
 ## 9. Contexto: por qué los juegos quedan cargando
 
+> **CERRADO EL 15/09/2026, Y NO ERA NINGUNA DE LAS DOS HIPOTESIS.**
+>
+> El caso que disparó todo esto era el iPhone de Nahuel, y la causa resultó ser
+> el **Modo de bloqueo de iOS** (Lockdown Mode) activado en ese teléfono. Ese
+> modo desactiva la compilación rápida de JavaScript y bloquea WebAssembly a
+> propósito: un juego de casino no puede correr bajo él, y falla en silencio
+> dejando el logo girando.
+>
+> La prueba que lo aisló: **mismo teléfono**, Safari abría el juego y Chrome no.
+> En iOS todos los navegadores usan el mismo motor, así que una diferencia
+> entre dos navegadores del mismo teléfono no puede venir del servidor. Con el
+> Modo de bloqueo apagado, funcionó.
+>
+> **Qué queda en pie de las dos hipótesis anteriores:**
+> - El `x-actual-domain`: **sin confirmar**. Se desplegó y los juegos andan,
+>   pero andaban también en Android y en iOS Safari antes de saberlo. Se deja
+>   porque es inofensivo y el razonamiento es sólido, pero **no está probado
+>   que haga falta**. No lo cuenten como arreglado.
+> - El `playerSession` de un solo uso: **verificado** (un token falso devuelve
+>   200 y el HTML completo del launcher), pero no era el síntoma de este caso.
+>
+> **Para la próxima vez que alguien reporte "el juego queda cargando":** lo
+> primero que hay que preguntar es si tiene el **Modo de bloqueo** de iOS
+> prendido. Es gratis de descartar y fue la respuesta.
+
+### El detalle técnico de las dos hipótesis
+
 Esto **no es del bot** — va como contexto, porque es lo que hay que reportarle a
 la plataforma y se estuvo debuggeando del lado equivocado.
 
