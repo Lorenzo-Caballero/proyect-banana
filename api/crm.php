@@ -1240,6 +1240,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         };
 
         // ---- archivar / desarchivar (uno o varios) ----
+        /* MARCAR COMO LEIDAS, en lote.
+           El globito de "99+" se apagaba de a una, abriendo cada conversacion.
+           Con 2.946 chats --y la mayoria difusiones que nadie contesto-- ese
+           numero no dice nada y se vuelve invisible, que es lo peor que le
+           puede pasar a un contador: el dia que hay tres de verdad, no se ven.
+
+           Dos modos, y la diferencia importa: `ids` marca lo SELECCIONADO;
+           `todas: true` marca TODAS las que tengan sin leer. El segundo existe
+           porque Ctrl+A solo alcanza lo que esta cargado en pantalla (LIMIT
+           200), asi que con miles de conversaciones el operador tendria que
+           repetir la operacion quince veces sin entender por que el numero no
+           baja.
+
+           NO toca ninguna otra cosa: ni archiva, ni cierra, ni baja el
+           «Te necesita». Marcar leido es decir "ya lo vi", no "ya lo resolvi". */
+        if ($accion === 'marcar_leidas') {
+            if (!empty($body['todas'])) {
+                $st = $pdo->query("UPDATE conversaciones SET no_leidos = 0 WHERE no_leidos > 0");
+                $n = $st->rowCount();
+                crm_bitacora($pdo, $operador, 'marcar_leidas_todas', "$n conversaciones");
+            } else {
+                $ids = $lote($body);
+                if (!$ids) { salir(['ok' => false, 'error' => 'Falta id'], 400); }
+                $ph = implode(',', array_fill(0, count($ids), '?'));
+                $st = $pdo->prepare(
+                    "UPDATE conversaciones SET no_leidos = 0 WHERE id IN ($ph) AND no_leidos > 0"
+                );
+                $st->execute($ids);
+                $n = $st->rowCount();
+                crm_bitacora($pdo, $operador, 'marcar_leidas', "$n de " . count($ids));
+            }
+            salir(['ok' => true, 'afectadas' => $n]);
+        }
+
         if ($accion === 'archivar') {
             if (!crm_hay_archivada($pdo)) {
                 salir(['ok' => false, 'error' => 'Falta correr la migración 41 en esta base.'], 409);
