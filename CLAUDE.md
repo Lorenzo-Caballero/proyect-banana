@@ -487,12 +487,54 @@ jugadores.
   navegador. En el VPS (`ganamoscrm.online`, API bajo `/gp-api/`) no hay WAF.
 - **Choque de collations:** `usuarios` quedó en `uca1400`, las tablas del CRM en
   `utf8mb4_unicode_ci`. Todo JOIN entre ellas necesita `COLLATE` explícito.
-- **`crm.php` y `admin_usuarios.php` no tienen login.** Están abiertos a propósito
-  (acceso directo por URL). Tenerlo presente antes de exponer el dominio.
+- **`crm.php` y `admin_usuarios.php` SÍ piden sesión** (medido el 15/09/2026:
+  `crm.php`, `admin_usuarios.php`, `crm_retiros.php` y `crm_finanzas.php`
+  contestan `{"ok":false,"error":"Sesión requerida"}` a un GET pelado). Acá
+  decía lo contrario —que estaban abiertos a propósito— y eso venía de antes
+  del login de operadores. El costo de creerlo: no se puede consultar
+  producción desde afuera para diagnosticar, hay que entrar al CRM. El único
+  endpoint público que sirve para mirar desde afuera es
+  **`/gp-api/salud_bot.php`** (latidos del bot, cola de altas y de cargas,
+  última falla, y si corrió la migración 56).
 - **`cola_panel.php` devuelve contraseñas en claro** (legacy). Sin `BOT_API_KEY`
   configurada responde 500 a propósito.
 - **Sin build:** `landing/` es HTML+CSS+JS a mano, se sube por FTP/administrador
   de archivos. No hay npm, ni bundler, ni deploy automático.
+
+## Los juegos y el dominio: por qué no abren desde la réplica
+
+Medido el 15/09/2026 leyendo el bundle del SPA
+(`ganamoscrm.online/assets/index-*.js`). Para pedir el link de un juego de
+**Pragmatic**, el SPA arma el header **en el navegador**:
+
+```js
+"x-actual-domain": `https://${location.host}/`
+```
+
+`location.host` es el dominio de la barra de direcciones. Entrando por la
+réplica eso es `ganamoscrm.online` y no `ganamos7.com` — y `x-actual-domain`
+es el campo por el que los proveedores validan desde qué dominio se lanza el
+juego, que va **por licencia y por contrato**. Otros nueve lanzamientos mandan
+`home_url` / `return_url` / `lobby_url` / `close_url` = `location.origin`.
+
+> **Lo que descarta las hipótesis fáciles:** el **listado** de juegos vuelve
+> perfecto por la réplica —
+> `curl 'https://ganamoscrm.online/api/site/pragmatic/gamelist?partner_name=ganamos'`
+> devuelve `{"status":0,...}`— así que el proxy, el login y la sesión andan.
+> Se cae SOLO el lanzamiento, que es el único paso donde viaja el dominio. No
+> es `Accept-Encoding` (ya está en `""` y es lo que necesita `sub_filter`), ni
+> que los juegos sean iframes de terceros: eso es cierto pero es posterior.
+
+Como la request pasa por nuestro Nginx camino a la plataforma, el header se
+reescribe ahí (`proxy_set_header x-actual-domain "https://ganamos7.com/";` en
+el `location /` de `replica/nginx-replica.conf`), y la réplica queda
+comportándose igual que una visita directa.
+
+> **Falta confirmarlo contra un proveedor.** Probado está que el SPA manda el
+> dominio del navegador; que el proveedor rechace POR ESO es la hipótesis. La
+> prueba que la cierra: abrir un juego, pestaña Red, buscar la request a
+> `.../game/link` y leer **el cuerpo** de la respuesta. Un minuto, y evita
+> probar a ciegas. El detalle completo está en `PARA-FAUNO-juegos.md`.
 
 ## Configuración
 

@@ -41,6 +41,22 @@ if (iniSup < 0 || finSup < 0) {
 }
 const CODIGO_SUP = src.slice(iniSup, finSup + 4);
 
+/* EL FRENO DIARIO, y por que esta aca desde el 15/09/2026.
+   mirarSaldoBajo() ya no llama a mostrarPromoApp() directo: pasa por
+   ofrecerPromoApp(), que respeta PROMO_APP_MIN. Ese cambio dejo este test
+   tirando "ofrecerPromoApp is not defined" -- el arnes solo stubbeaba
+   mostrarPromoApp. Se extrae de la misma fuente que el resto, y no se copia,
+   por el motivo de la cabecera: una copia deja de proteger justo cuando
+   alguien toca el original. */
+const mMin = src.match(/var PROMO_APP_MIN = [^;]+;/);
+const iniOfr = src.indexOf("function ofrecerPromoApp(promo){");
+const finOfr = src.indexOf("\n  }", iniOfr);
+if (!mMin || iniOfr < 0 || finOfr < 0) {
+  console.error("No pude extraer ofrecerPromoApp()/PROMO_APP_MIN de landing/widget.js");
+  process.exit(1);
+}
+const CODIGO_OFR = mMin[0] + "\n" + src.slice(iniOfr, finOfr + 4);
+
 let ok = 0, fail = 0;
 function chequear(q, c, d) {
   if (c) { ok++; console.log("  OK    " + q); }
@@ -63,6 +79,9 @@ function escenario(promo, guardadoInicial) {
      ESTE scope, que es lo que se quiere: cada escenario tiene su propio estado
      y no puede contaminar al de al lado. Declararlos aca arriba con let
      chocaria con la declaracion que trae el codigo extraido. */
+  /* Orden: primero ofrecerPromoApp() (y PROMO_APP_MIN), que es a quien
+     mirarSaldoBajo() le delega, y recien despues el codigo que lo llama. */
+  eval(CODIGO_OFR);
   eval(CODIGO);
   return {
     saldo: v => mirarSaldoBajo(v),
@@ -163,6 +182,29 @@ console.log("\n=== 4. Si vuelve a cargar, se re-arma ===");
   chequear("volver a subir no muestra nada", e.veces() === 1);
   e.saldo(100);                        // se volvio a quedar sin
   chequear("la segunda bajada si muestra", e.veces() === 2, "veces=" + e.veces());
+}
+
+console.log("\n=== 4b. EL FRENO DIARIO (el cambio del 15/09/2026) ===");
+/* Antes este camino se salteaba el freno "porque era EL momento". Hoy EL
+   momento es cuando se acreditan las fichas, asi que los dos carteles se
+   pisarian el mismo dia. Ahora mirarSaldoBajo() pasa por ofrecerPromoApp() y
+   respeta PROMO_APP_MIN -- y esto es lo que deja clavado el cambio: si
+   alguien vuelve a llamar a mostrarPromoApp() directo, estos dos fallan. */
+{
+  const e = escenario(PROMO, { gp_app_promo_visto: String(Date.now() - 60 * 1000) });
+  e.saldo(5000);
+  e.saldo(100);
+  chequear("visto hace un minuto: NO vuelve a salir", e.veces() === 0,
+           "veces=" + e.veces());
+}
+{
+  /* Pasado el dia, si: es un freno, no un apagado. */
+  const ayer = Date.now() - 25 * 60 * 60 * 1000;
+  const e = escenario(PROMO, { gp_app_promo_visto: String(ayer) });
+  e.saldo(5000);
+  e.saldo(100);
+  chequear("visto hace mas de un dia: sale de nuevo", e.veces() === 1,
+           "veces=" + e.veces());
 }
 
 console.log("\n=== 5. El borde exacto del umbral ===");

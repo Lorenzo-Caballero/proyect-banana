@@ -286,15 +286,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // ---- liberar (masivo, acotado a retiros) ----
         if ($accion === 'liberar') {
+            /* MINUTOS DE GRACIA: este boton dice "trabados", y uno que el bot
+               tomo hace diez segundos no esta trabado, esta EJECUTANDOSE. Sin
+               este freno, apretarlo mientras el bot corre devolvia esa accion a
+               'pendiente' y el bot la podia tomar de nuevo: un retiro pagado
+               dos veces, con un solo click y sin aviso.
+               Una pasada del bot son segundos; 10 minutos es holgado de sobra
+               para lo que de verdad quedo colgado. `tomada_en` NULL en
+               'procesando' ya es una fila inconsistente: esa se libera igual. */
+            $GRACIA_MIN = 10;
             $st = $pdo->prepare(
                 "UPDATE acciones_saldo
                     SET estado = 'pendiente', tomada_en = NULL
-                  WHERE estado = 'procesando' AND tipo = 'retirar'"
+                  WHERE estado = 'procesando' AND tipo = 'retirar'
+                    AND (tomada_en IS NULL OR tomada_en <= NOW() - INTERVAL ? MINUTE)"
             );
-            $st->execute();
+            $st->execute([$GRACIA_MIN]);
             $liberadas = $st->rowCount();
-            crm_bitacora($pdo, $operador, 'liberar_retiros_trabados', "$liberadas liberados");
-            salir(['ok' => true, 'liberadas' => $liberadas]);
+
+            // Los que se saltearon por recientes: decirlo, si no el operador
+            // ve "0 liberados" y cree que el boton no anda.
+            $recientes = (int)$pdo->query(
+                "SELECT COUNT(*) FROM acciones_saldo
+                  WHERE estado = 'procesando' AND tipo = 'retirar'"
+            )->fetchColumn();
+
+            crm_bitacora($pdo, $operador, 'liberar_retiros_trabados',
+                "$liberadas liberados" . ($recientes ? ", $recientes en curso sin tocar" : ''));
+            salir(['ok' => true, 'liberadas' => $liberadas, 'en_curso' => $recientes]);
         }
 
         // ---- reintentar (puntual, solo desde error) ----
@@ -477,7 +496,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $pdo->rollBack();
                     salir(['ok' => false, 'error' => 'Ese retiro no existe'], 404);
                 }
-                if (!in_array($fila['estado'], ['pendiente', 'error'], true)) {
+                /* 'revisar' ENTRA, y es el agujero que faltaba cerrar: el
+                   bot no supo como termino, asi que la unica salida que habia
+                   era «Pagado» -- o sea que para cerrar uno que decidiste NO
+                   pagar tenias que declarar que lo pagaste. Quedaban abiertos
+                   para siempre (habia uno de 26 dias).
+                   Es seguro: 'revisar' significa que el bot YA solto la accion,
+                   no que la este ejecutando -- ese es 'procesando', que sigue
+                   afuera. Y la nota obligatoria deja dicho por que.
+                   OJO con lo que significa: si el retiro SI habia entrado, el
+                   jugador ya cobro y cancelar solo cierra la fila; si no habia
+                   entrado, no cobra. Por eso lo decide una persona. */
+                if (!in_array($fila['estado'], ['pendiente', 'error', 'revisar'], true)) {
                     $pdo->rollBack();
                     salir(['ok' => false, 'error' => 'No se puede cancelar un retiro en estado: ' . $fila['estado']], 409);
                 }

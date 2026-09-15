@@ -8162,9 +8162,12 @@
       if(r.estado==="hecha" && /pagado a mano por [^:]+:/.test(r.mensaje||"")){
         btns.push(`<button class="btn-mini-accion" data-accion="deshacer" data-id="${r.id}" type="button" title="Volver a dejarlo pendiente">Deshacer</button>`);
       }
-      // Cancelar: solo desde pendiente o error -- nunca desde 'procesando'
-      // (el bot podria estar ejecutandolo en este instante).
-      if(r.estado==="pendiente" || r.estado==="error"){
+      /* Cancelar: desde pendiente, error o revisar -- nunca desde
+         'procesando' (el bot podria estar ejecutandolo en este instante).
+         'revisar' se sumó porque era el estado sin salida: el único botón era
+         «Pagado», o sea que para cerrar uno que decidiste NO pagar había que
+         declarar que lo pagaste. */
+      if(r.estado==="pendiente" || r.estado==="error" || r.estado==="revisar"){
         btns.push(`<button class="btn-mini-accion peligro" data-accion="cancelar" data-id="${r.id}" type="button">Cancelar</button>`);
       }
       const notaColor = r.estado==="cancelada" ? "var(--muted)" : "var(--red)";
@@ -8348,14 +8351,23 @@
     debounce = setTimeout(()=>{ retQ = e.target.value.trim(); cargarRetiros(); }, 300);
   });
   $("#btnLiberarRetiros").addEventListener("click", async ()=>{
-    if(!confirm('¿Liberar los retiros trabados en "procesando"? Solo hacé esto si estás seguro de que el bot no los está ejecutando ahora mismo — si lo estaba, podría reintentar en paralelo.')) return;
+    if(!confirm('¿Liberar los retiros trabados en "procesando"?
+
+Los que el bot tomó hace menos de 10 minutos NO se tocan: esos todavía pueden estar ejecutándose.')) return;
     const btn = $("#btnLiberarRetiros");
     const txtOriginal = btn.textContent;
     btn.disabled = true; btn.textContent = "…";
     const d = await jpost({accion:"liberar"}, API_RET);
     btn.disabled = false; btn.textContent = txtOriginal;
     if(d.ok){
-      toast(d.liberadas>0 ? `${d.liberadas} retiro(s) liberado(s)` : "No había ninguno trabado");
+      /* `en_curso` son los que el server NO tocó por recientes (menos de 10
+         min tomados): decirlo, o un "no había ninguno trabado" con uno a la
+         vista en «Procesando» parece que el botón está roto. */
+      toast(d.liberadas>0
+        ? `${d.liberadas} retiro(s) liberado(s)`
+        : (d.en_curso>0
+            ? `Ninguno liberado: ${d.en_curso} en curso hace menos de 10 min. Esperá y reintentá.`
+            : "No había ninguno trabado"));
       cargarRetiros(); actualizarBadgeRetiros();
     } else { toast(d.error || "No se pudo liberar"); }
   });

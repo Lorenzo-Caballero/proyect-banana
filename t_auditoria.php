@@ -92,6 +92,38 @@ $libroLimpiar = fn() => $pdo->exec(
     "DELETE FROM operaciones_panel WHERE payment_id BETWEEN 990000 AND 990099");
 $libroLimpiar();
 
+/* LAS TRES FUENTES VIEJAS, SEMBRADAS POR ESTE TEST.
+   Antes no se sembraban: la asercion "las tres viejas siguen ahi" se apoyaba
+   en filas que dejaban OTROS tests de la suite. O sea que pasaba o fallaba
+   segun el orden en que se corriera, y en una base limpia fallaba siempre --
+   justo lo contrario de lo que se quiere de un test que cuida que un refactor
+   no se lleve puesta una rama del UNION.
+   Fechas viejas (2019) y usuarios con prefijo t_au_ para no pisar nada ni
+   aparecer en ninguna ventana real. */
+$viejasLimpiar = function () use ($pdo) {
+    $pdo->exec("DELETE FROM recargas       WHERE usuario  LIKE 't_au_%'");
+    $pdo->exec("DELETE FROM acciones_saldo WHERE usuario  LIKE 't_au_%'");
+    $pdo->exec("DELETE FROM movimientos    WHERE usuario  LIKE 't_au_%'");
+};
+$viejasLimpiar();
+$viejasPoner = function () use ($pdo) {
+    $pdo->prepare(
+        "INSERT INTO recargas (referencia, usuario, coins, monto_base, monto_pedido,
+                               estado, creada_en, vence_en)
+         VALUES ('t_au_r1', 't_au_rec', 1000, 1000, 1000, 'acreditada',
+                 '2019-05-03 10:00:00', '2019-05-04 10:00:00')"
+    )->execute();
+    $pdo->prepare(
+        "INSERT INTO acciones_saldo (usuario, tipo, monto, estado, creada_en)
+         VALUES ('t_au_ret', 'retirar', 5000, 'pendiente', '2019-05-03 11:00:00')"
+    )->execute();
+    $pdo->prepare(
+        "INSERT INTO movimientos (usuario, tipo, monto, motivo, origen, creado_en)
+         VALUES ('t_au_mov', 'ficha', 250, 'test auditoria', 'crm', '2019-05-03 12:00:00')"
+    )->execute();
+};
+$viejasPoner();
+
 // ===========================================================================
 echo "\n=== 1. La query corre: ninguna collation choca ===\n";
 /* Un choque acá tumba TODA la pantalla, no solo la rama nueva. */
@@ -105,8 +137,13 @@ chequear('el UNION ALL de las 4 fuentes ejecuta', is_array($todas) && count($tod
 $porFuente = array_count_values(array_column($todas, 'fuente'));
 chequear('la fuente nueva aparece', ($porFuente['retiros_panel'] ?? 0) === 2,
          json_encode($porFuente));
+/* Cada una tiene AL MENOS la fila que sembro este test. Se compara con >= y no
+   con == porque la base puede traer datos de otros lados; lo que se cuida es
+   que ninguna rama del UNION desaparezca en un refactor. */
 chequear('las tres viejas siguen ahi',
-         isset($porFuente['recargas'], $porFuente['acciones_saldo'], $porFuente['movimientos']),
+         ($porFuente['recargas'] ?? 0) >= 1
+         && ($porFuente['acciones_saldo'] ?? 0) >= 1
+         && ($porFuente['movimientos'] ?? 0) >= 1,
          json_encode($porFuente));
 
 // ===========================================================================
@@ -231,5 +268,6 @@ chequear('el filtro tipo=retiro las agarra', $n === 4, "n=$n");
 
 $limpiar();
 $libroLimpiar();
+$viejasLimpiar();   // el test se lleva TODO lo suyo, incluidas las tres viejas
 echo "\n---------------------------------------\n$ok OK, $fail fallas\n";
 exit($fail > 0 ? 1 : 0);
