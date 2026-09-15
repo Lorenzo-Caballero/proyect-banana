@@ -108,6 +108,34 @@ function ficha_usuario(PDO $pdo, string $usuario): ?array
        sobre eso se decide cuanto pagarle en un retiro.
        Se manda en segundos y el texto lo arma el front, que es el que sabe
        cuando lo esta pintando. null = nunca lo leimos (o falta la migracion). */
+    /* EL SALDO QUE EL JUGADOR ESTA VIENDO AHORA (`balance_web`, migracion 17).
+       Lo reporta el widget desde el navegador del propio jugador, leyendolo del
+       juego en vivo, y solo cuando cambia. Existe desde hace meses y NO LO
+       LEIA NADIE.
+       Es GRATIS: no cuesta una sola request al panel. Y suele ser mucho mas
+       fresco que el espejo, que se lee cada 5 minutos.
+       PERO NO AUTORIZA PLATA, y esa linea no se cruza: `saldo_reportar.php` es
+       un endpoint PUBLICO y sin sesion -- un jugador puede mandar el numero que
+       quiera. Sirve para MIRAR (y sobre todo para notar una diferencia), nunca
+       para decidir cuanto pagarle. Lo que decide sigue siendo `balance`. */
+    $r['saldo_web'] = null;
+    $r['saldo_web_hace'] = null;
+    try {
+        $w = $pdo->prepare(
+            "SELECT balance_web, TIMESTAMPDIFF(SECOND, balance_web_en, NOW()) hace
+               FROM usuarios WHERE username = ? LIMIT 1"
+        );
+        $w->execute([$usuario]);
+        if ($f = $w->fetch(PDO::FETCH_ASSOC)) {
+            if ($f['balance_web'] !== null && $f['hace'] !== null) {
+                $r['saldo_web']      = (float)$f['balance_web'];
+                $r['saldo_web_hace'] = max(0, (int)$f['hace']);
+            }
+        }
+    } catch (Throwable $e) {
+        // Sin la migracion 17 no hay columna: la ficha sale igual.
+    }
+
     $r['saldo_visto_hace'] = null;
     try {
         $v = $pdo->prepare(
