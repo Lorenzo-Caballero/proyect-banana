@@ -42,10 +42,17 @@ echo "error_log    : " . (ini_get('error_log') ?: '(el del php-fpm/servidor)') .
 // COHERE_API_KEY. Ese fallback es la trampa mas probable: si en el server solo
 // esta la key de Cohere, se le manda a Qwen y Qwen la rechaza (401).
 // ---------------------------------------------------------------------------
+require_once __DIR__ . '/ia_key.php';
 $keyQwen   = (string)cfg('QWEN_API_KEY');
 $keyCohere = (string)cfg('COHERE_API_KEY');
-$key = $keyQwen !== '' ? $keyQwen : $keyCohere;
-$cual = $keyQwen !== '' ? 'QWEN_API_KEY' : ($keyCohere !== '' ? 'COHERE_API_KEY (fallback viejo)' : 'NINGUNA');
+// Se resuelve con la MISMA funcion que usa el chat, no con una copia: una
+// copia es justo lo que hace que el diagnostico diga una cosa y el chat haga
+// otra. Incluye el escalon nuevo: la clave propia del cliente.
+$key    = ia_key();
+$origen = ia_key_origen();
+$cual   = $origen === 'cliente'         ? 'la clave PROPIA de este cliente (clientes.ia_key)'
+        : ($origen === 'QWEN_API_KEY'   ? 'QWEN_API_KEY (la global del server)'
+        : ($origen === 'COHERE_API_KEY' ? 'COHERE_API_KEY (fallback viejo)' : 'NINGUNA'));
 
 $base   = rtrim((string)cfg('QWEN_BASE_URL', QWEN_BASE_DEF), '/');
 $modelo = (string)cfg('QWEN_MODEL', QWEN_MODEL_DEF);
@@ -53,11 +60,15 @@ $modelo = (string)cfg('QWEN_MODEL', QWEN_MODEL_DEF);
 echo "\n=== CONFIG DEL MODELO ===\n";
 echo "QWEN_API_KEY   : " . ($keyQwen !== '' ? 'cargada (' . strlen($keyQwen) . ' chars)' : 'VACIA') . "\n";
 echo "COHERE_API_KEY : " . ($keyCohere !== '' ? 'cargada (' . strlen($keyCohere) . ' chars)' : 'VACIA') . "\n";
+// La clave del cliente NO se imprime nunca, ni recortada: este endpoint se
+// abre para diagnosticar y una clave filtrada no se puede desfiltrar. Solo
+// se dice SI la tiene, que es lo unico que hace falta saber.
+echo "clientes.ia_key: " . (ia_key_del_cliente() !== '' ? 'cargada' : 'vacia (usa la del server)') . "\n";
 echo "SE USA         : $cual\n";
 echo "QWEN_BASE_URL  : $base\n";
 echo "QWEN_MODEL     : $modelo\n";
 
-if ($keyQwen === '' && $keyCohere !== '') {
+if ($origen === 'COHERE_API_KEY') {
     echo "\n  >> OJO: no hay QWEN_API_KEY y se esta cayendo a la de Cohere.\n";
     echo "     Esa key NO sirve contra Qwen (DashScope): da 401 y el chat 502.\n";
     echo "     Arreglo: agregar 'QWEN_API_KEY' => 'sk-...' en api/config.local.php\n";

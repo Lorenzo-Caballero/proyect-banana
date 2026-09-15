@@ -71,8 +71,9 @@ if ($bytes === false) {
     salir(['ok' => false, 'error' => 'No pude leer el archivo'], 500);
 }
 
-$key = cfg('QWEN_API_KEY');
-if ($key === '') { $key = cfg('COHERE_API_KEY'); }
+// Misma resolucion que el chatbot: la del cliente si tiene, si no la global.
+require_once __DIR__ . '/ia_key.php';
+$key = ia_key();
 if ($key === '' || strlen($key) < 20) {
     salir(['ok' => false, 'error' => 'La IA no esta configurada (falta QWEN_API_KEY)'], 500);
 }

@@ -348,12 +348,13 @@ $TOOLS = [
     ]],
 ];
 
-// --- La key vive en el server ---
-// Se acepta COHERE_API_KEY como nombre viejo para no dejar el chat mudo entre
-// que se despliega esto y alguien edita config.local.php. Cuando este cargada
-// QWEN_API_KEY, la vieja se puede borrar.
-$key = cfg('QWEN_API_KEY');
-if ($key === '') { $key = cfg('COHERE_API_KEY'); }
+// --- La key: primero la del CLIENTE, despues la del server ---
+// ia_key() resuelve clientes.ia_key (plano de control, por tenant) -> 
+// QWEN_API_KEY -> COHERE_API_KEY (el nombre viejo). Ver api/ia_key.php: antes
+// esto eran dos lineas copiadas en tres archivos y la clave POR CLIENTE que
+// pedia el panel del dueño no la leia nadie.
+require_once __DIR__ . '/ia_key.php';
+$key = ia_key();
 if ($key === '' || strlen($key) < 20) {
     http_response_code(500);
     error_log('chatbot: falta QWEN_API_KEY en api/config.local.php');

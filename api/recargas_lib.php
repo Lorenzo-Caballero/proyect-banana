@@ -169,7 +169,7 @@ function rl_cliente_actual(): ?array
     if (!$ctl || $db === '') { return $c = null; }
     try {
         $st = $ctl->prepare(
-            'SELECT id, metodo_cobro, cobro_alias, cobro_cbu, cobro_titular,
+            'SELECT id, metodo_cobro, coins_por_peso, cobro_alias, cobro_cbu, cobro_titular,
                     cobro_modo, cobro_fija_id,
                     hg_propio_activo, hg_propio_token, hg_propio_account_id,
                     hg_propio_webhook_secret, hg_propio_modo
@@ -182,6 +182,29 @@ function rl_cliente_actual(): ?array
         $c = null;
     }
     return $c;
+}
+
+/**
+ * CUANTOS COINS VALE UN PESO PARA ESTE CLIENTE.
+ *
+ * El panel del dueño pedia este numero desde siempre (campo «Coins por peso»)
+ * y lo guardaba en goldpaw_control.clientes.coins_por_peso... y nadie lo leia:
+ * el calculo usaba la constante RL_COINS_POR_PESO, la misma para todos. O sea
+ * que un cliente que ponia 2 seguia cobrando 1 a 1, sin un solo error.
+ *
+ * Mismo patron que la cuenta de cobro: el cliente manda, la constante es el
+ * respaldo de ultima instancia si el control no responde o no hay nada
+ * cargado. Una base maestra caida no puede frenar una recarga.
+ *
+ * GUARDA CONTRA EL 0: es un DECIMAL con default 1.0000, pero un 0 o un
+ * negativo cargado a mano en la base haria una division por cero justo en el
+ * calculo del monto a cobrar. Cualquier valor no positivo cae al respaldo.
+ */
+function rl_coins_por_peso(): float
+{
+    $c = rl_cliente_actual();
+    $v = $c !== null ? (float)($c['coins_por_peso'] ?? 0) : 0.0;
+    return $v > 0 ? $v : (float)RL_COINS_POR_PESO;
 }
 
 /**
@@ -499,7 +522,7 @@ function rl_crear_recarga(PDO $pdo, string $usuario, int $coins, string $titular
             . 'decime y te la creo en el momento.'];
     }
 
-    $montoBase = (int)round($coins / RL_COINS_POR_PESO);   // pesos enteros
+    $montoBase = (int)round($coins / rl_coins_por_peso());   // pesos enteros, a la tasa del cliente
 
     $pdo->beginTransaction();
     try {
@@ -598,7 +621,7 @@ function rl_crear_recarga(PDO $pdo, string $usuario, int $coins, string $titular
             // Ya existe: no se inserta nada, se sigue con su referencia.
             $ref = (string)$reuso['referencia'];
             /* Y con SUS coins: son los que se le van a acreditar cuando entre el
-               pago. Si algun dia cambia RL_COINS_POR_PESO entre el primer pedido
+               pago. Si algun dia cambia la tasa (rl_coins_por_peso) entre el primer pedido
                y el segundo, devolver los recalculados le prometeria al jugador
                una cifra distinta de la que va a recibir. */
             $coins = (int)($reuso['coins'] ?? $coins);

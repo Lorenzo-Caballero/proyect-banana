@@ -539,10 +539,41 @@ comportándose igual que una visita directa.
 ## Configuración
 
 Nada de secretos en el repo. `api/config.local.php` (gitignored) lleva
-`BOT_API_KEY`, `ADMIN_PASS`, `JWT_SECRET`, `COHERE_API_KEY` y los datos de la
+`BOT_API_KEY`, `ADMIN_PASS`, `JWT_SECRET`, `QWEN_API_KEY` y los datos de la
 base; `.env` en la raíz lleva `PANEL_USER`/`PANEL_PASS` del agente; el worker
 usa su propio `.env` en `colector/` con `SESSION_COOKIE`. `BOT_API_KEY` tiene
 que ser idéntica en el server y en todos los clientes Python.
 
-La cuenta de cobro (alias, CBU, titular, `RL_COINS_POR_PESO`) se configura
-arriba de `api/recargas_lib.php`.
+> `COHERE_API_KEY` sigue aceptándose, pero es **el nombre viejo del mismo
+> campo**, no otra opción: el valor se le manda a Qwen igual. Una clave de
+> Cohere de verdad ahí da 401 y deja el chat mudo "con la clave cargada" — es
+> la trampa que diagnostica `api/chatbot_diag.php`.
+
+### Lo que se configura POR CLIENTE, y dónde
+
+Esto es lo que hace multi-tenant al sistema, y la regla es una sola: **lo del
+cliente vive en `goldpaw_control.clientes`, lo del código es el respaldo.**
+
+| Qué | Columna en `clientes` | Lo carga | Respaldo si falta |
+|---|---|---|---|
+| Cuenta de cobro | `cobro_alias` / `cobro_cbu` / `cobro_titular` | panel del dueño | las constantes `RL_*` de `recargas_lib.php` |
+| Cuántos coins vale un peso | `coins_por_peso` | panel del dueño | `RL_COINS_POR_PESO` |
+| Clave de IA del chatbot | `ia_key` (migración 07 del control) | panel del dueño | `QWEN_API_KEY` global |
+
+Los resuelven `rl_cuenta_cobro()`, `rl_coins_por_peso()` e `ia_key()`
+(`api/ia_key.php`). **Todos degradan HACIA ARRIBA**: si el plano de control no
+responde, se usa el valor global y el sistema sigue andando. Nunca al revés —
+quedarse sin chatbot o sin poder crear una recarga porque una base secundaria
+no contesta sería cambiar un problema chico por uno grande.
+
+> **Las constantes `RL_ALIAS` / `RL_CBU` / `RL_TITULAR` / `RL_COINS_POR_PESO` de
+> `recargas_lib.php` NO son la fuente.** Editarlas en el VPS no sirve: el deploy
+> pisa el archivo, y de todas formas la fila del cliente les gana. Son el último
+> recurso para que un control caído no frene una recarga.
+
+> **`clientes.bot_api_key` se genera y se guarda, pero hoy NO SE USA.**
+> `exigir_api_key()` compara contra la `BOT_API_KEY` **global** y el tenant lo
+> decide el dominio, así que `provisionar.php` le pasa la global al contenedor
+> de cada cliente. Queda reservada para cuando la auth sea por cliente; el panel
+> lo aclara al crear para que nadie la copie a un `.env` creyendo que habilita
+> algo.

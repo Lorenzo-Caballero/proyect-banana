@@ -53,6 +53,34 @@ try {
 }
 
 // ---- helpers ----
+
+/**
+ * ¿Corrió ya la migración 07 del control (clientes.ia_key)?
+ *
+ * EL DEPLOY VA EN DOS PASOS Y ESTE ES EL HUECO: el código se publica con
+ * `git pull` y las migraciones del control las corre una persona a mano. Entre
+ * una cosa y la otra, un INSERT que nombre `ia_key` tira "Unknown column" y
+ * CREAR UN CLIENTE deja de funcionar del todo — que es la acción principal de
+ * este panel. Con este chequeo, mientras tanto sigue escribiendo en la columna
+ * vieja y no se rompe nada; cuando la migración corre, pasa sola a la nueva
+ * (la 07 copia los valores que hubiera).
+ *
+ * Mismo patrón y mismo porqué que crm_hay_derivada() del lado de la API. El
+ * nombre sale de un par fijo, nunca del request: se interpola en SQL.
+ */
+function col_ia(PDO $pdo): string {
+    static $col = null;
+    if ($col === null) {
+        try {
+            $pdo->query('SELECT ia_key FROM clientes LIMIT 0');
+            $col = 'ia_key';
+        } catch (Throwable $e) {
+            $col = 'cohere_key';
+        }
+    }
+    return $col;
+}
+
 function b64u(string $s): string { return rtrim(strtr(base64_encode($s), '+/', '-_'), '='); }
 function b64u_dec(string $s): string { return (string) base64_decode(strtr($s, '-_', '+/')); }
 
@@ -165,7 +193,25 @@ switch ($accion) {
         $st = $pdo->prepare('SELECT * FROM clientes WHERE id = ?');
         $st->execute([$id]);
         $c = $st->fetch();
-        $c ? salida(['ok' => true, 'cliente' => $c]) : salida(['ok' => false, 'error' => 'no existe'], 404);
+        if (!$c) salida(['ok' => false, 'error' => 'no existe'], 404);
+        /* LOS SECRETOS NO SALEN DE ACA. El formulario de edicion ya decia
+           'las claves NUNCA se precargan: el server no las devuelve'... y no
+           era cierto: este SELECT * las mandaba todas al navegador (la
+           password del agente en ganamos, la clave de IA, la API key del bot,
+           el token y el webhook secret de HG Cash). Nadie las usaba del otro
+           lado, asi que el unico efecto era exponerlas: quedan en el historial
+           del navegador, en cualquier proxy corporativo y en las devtools de
+           quien tenga la pantalla abierta.
+           Se reemplazan por un booleano `<campo>_cargada`, que es lo unico que
+           el formulario necesita saber para decir 'vacio = no cambiar'. */
+        $secretos = ['agente_password', 'ia_key', 'cohere_key', 'bot_api_key',
+                     'hg_propio_token', 'hg_propio_webhook_secret'];
+        foreach ($secretos as $sx) {
+            if (!array_key_exists($sx, $c)) { continue; }
+            $c[$sx . '_cargada'] = trim((string) $c[$sx]) !== '';
+            unset($c[$sx]);
+        }
+        salida(['ok' => true, 'cliente' => $c]);
 
     case 'crear':
         $nombre = trim($in['nombre'] ?? '');
@@ -185,11 +231,13 @@ switch ($accion) {
         // en un CREATE DATABASE del worker. gp_ de prefijo para no chocar con
         // otras bases del hosting.
         $dbNombre = 'gp_' . preg_replace('/[^a-z0-9]/', '_', $slug);
+        $iaKey = trim((string) ($in['ia_key'] ?? ($in['cohere_key'] ?? '')));
+        if ($iaKey === '') { $iaKey = null; }   // vacio = usa la clave del sistema
         try {
             $st = $pdo->prepare(
                 'INSERT INTO clientes
                  (nombre,slug,dominio,path_tenant,db_nombre,agente_usuario,agente_password,cobro_alias,cobro_cbu,
-                  cobro_titular,coins_por_peso,cohere_key,bot_api_key,notas,suscripcion_estado,trial_hasta)
+                  cobro_titular,coins_por_peso,' . col_ia($pdo) . ',bot_api_key,notas,suscripcion_estado,trial_hasta)
                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
             );
             // Todo cliente nuevo arranca con 14 días de cortesía: el cron de
@@ -200,7 +248,12 @@ switch ($accion) {
                 $in['agente_usuario'] ?? null, $in['agente_password'] ?? null,
                 $in['cobro_alias'] ?? null, $in['cobro_cbu'] ?? null, $in['cobro_titular'] ?? null,
                 (float) ($in['coins_por_peso'] ?? 1),
-                $in['cohere_key'] ?? null, $botKey,
+                // `ia_key`: la clave del proveedor de IA del chatbot (hoy Qwen).
+                // Se acepta `cohere_key` como nombre viejo del MISMO campo para
+                // no romper a un llamador que no se actualizo -- el nombre del
+                // proveedor salio de la columna a proposito (migracion 07 del
+                // control): este campo ya cambio de proveedor una vez.
+                $iaKey, $botKey,
                 $in['notas'] ?? null,
                 'trial', date('Y-m-d', strtotime('+14 days')),
             ]);
@@ -339,8 +392,9 @@ switch ($accion) {
         // "dejala como esta", no "borrala".
         $agPass = (string) ($in['agente_password'] ?? '');
         if ($agPass !== '') $campos['agente_password'] = $agPass;
-        $cohere = (string) ($in['cohere_key'] ?? '');
-        if ($cohere !== '') $campos['cohere_key'] = $cohere;
+        // Idem en la edicion: nombre nuevo, y el viejo se sigue aceptando.
+        $iaKey = trim((string) ($in['ia_key'] ?? ($in['cohere_key'] ?? '')));
+        if ($iaKey !== '') $campos[col_ia($pdo)] = $iaKey;
 
         $sets = [];
         $vals = [];
