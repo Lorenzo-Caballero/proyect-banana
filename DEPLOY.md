@@ -168,8 +168,14 @@ Los que hay hoy:
 > arranque de la pasada siguiente (el `flock` la hace esperar). Si molesta,
 > `USUARIOS_CADA_MIN` en el `.env` del colector la espacia.
 >
-> Para verificar a mano que el espejo anda:
-> `python aprobar_cargas.py --usuarios` — lee y guarda una vez, y sale.
+> Para verificar a mano que el espejo anda — **con el mismo `flock`**, o son dos
+> logins simultáneos sobre la cuenta del panel:
+>
+> ```bash
+> docker exec -w /colector ganamos-bot-creador >   flock /tmp/gp_panel.lock python aprobar_cargas.py --usuarios
+> ```
+>
+> Lee y guarda una vez, y sale.
 
 Los tres primeros se disparan por HTTP con `curl` y necesitan el header
 `X-Api-Key` con la `BOT_API_KEY` real (la de `config.local.php`). Si ves
