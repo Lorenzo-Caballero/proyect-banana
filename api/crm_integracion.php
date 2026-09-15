@@ -69,10 +69,20 @@ $cargada = trim((string)($cliente['agente_usuario'] ?? '')) !== ''
         && trim((string)($cliente['agente_password'] ?? '')) !== '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['accion'] ?? '') === 'estado') {
+    /* Cuántos jugadores ya espejó el sync en la base de ESTE cliente ($pdo,
+       la tenant que resolvió db.php). Es lo que le permite al CRM distinguir
+       "recién integrado, el bot todavía está trayendo los datos" (cargada +
+       0 usuarios -> cartel con spinner) de "andando" — la primera pasada del
+       espejo tarda unos minutos y sin esto parecía que no había funcionado. */
+    $usuarios = 0;
+    try {
+        $usuarios = (int)$GLOBALS['pdo']->query('SELECT COUNT(*) FROM usuarios')->fetchColumn();
+    } catch (Throwable $e) { /* tabla aún sin crear: 0, que es la verdad */ }
     salir([
-        'ok'      => true,
-        'usuario' => (string)($cliente['agente_usuario'] ?? ''),
-        'cargada' => $cargada,
+        'ok'       => true,
+        'usuario'  => (string)($cliente['agente_usuario'] ?? ''),
+        'cargada'  => $cargada,
+        'usuarios' => $usuarios,
     ]);
 }
 
