@@ -775,6 +775,23 @@
     return null;
   }
 
+  /* Por que NO salio el cartel de la app, desde la consola: __gp_promo().
+     Tiene seis condiciones y todas tienen que dar bien; sin esto, descubrir
+     cual fallo es prueba y error sobre un jugador real. */
+  try { window.__gp_promo = function (){
+    var sup = null; try { sup = promoAppSuprimida(); } catch (e) { sup = "?"; }
+    return {
+      dentroDeLaApp:     APP ? "si (ahi nunca sale, es correcto)" : "no",
+      elServerLaOfrece:  ultimaPromoApp ? "si" : "NO -- o no cargaste nunca, o ya tenes la app, o la promo esta apagada",
+      fichasQueRegala:   ultimaPromoApp ? ultimaPromoApp.fichas : null,
+      umbralDeSaldoBajo: ultimaPromoApp ? (ultimaPromoApp.saldo_bajo || 0) : null,
+      armado:            promoSaldoArmado ? "si (ya te vio con saldo arriba del umbral)" : "NO -- todavia no te vio con saldo alto",
+      suprimidoEnEsteNavegador: sup,
+      saldoQueLee:       (function(){ var v = saldoDeReact(); return v === null ? saldoDelHeader() : v; })(),
+      usuario:           USUARIO || null
+    };
+  }; } catch (e) {}
+
   /* Para diagnosticar desde la consola: __gp_saldo() */
   try { window.__gp_saldo = function (){
     return { store: saldoDeReact(), header: saldoDelHeader(),
@@ -838,19 +855,24 @@
   var esperarHasta  = 0;
 
   function reportarSaldo(){
-    if (saldoEnviando || !USUARIO) return;
-    if (Date.now() < esperarHasta) return;
+    /* EL SALDO SE LEE SIEMPRE, aunque no se pueda reportar, y el cartel de la
+       app se evalua con esa lectura ANTES de cualquier guarda.
 
-    // El store da el numero sin pasar por texto: ni separadores, ni moneda, ni
-    // el riesgo de agarrar el nodo equivocado. El header queda de respaldo.
+       Esto estaba mal hasta el 15/09/2026: el chequeo vivia debajo de
+       `saldoEnviando`, de `!USUARIO` y del freno por fallos del server, y el
+       comentario decia --equivocado-- que estaba arriba de los tres. Con el
+       endpoint de saldo caido, el backoff llega a 5 minutos, y durante todo
+       ese rato al jugador se le podian acabar las fichas sin que el cartel
+       siquiera se evaluara. Reportar el saldo y decidir si mostrar el cartel
+       son dos cosas distintas: que falle la primera no puede apagar la otra.
+
+       Leer es gratis y no tiene efectos: son dos accesos al store de React. */
     var v = saldoDeReact();
     if (v === null) v = saldoDelHeader();
-    /* El cartel de la app mira el MISMO numero, y se chequea ACA ARRIBA a
-       proposito: abajo hay tres returns tempranos (sin cambios, envio en
-       curso, freno por fallos del server) y ninguno tiene nada que ver con si
-       al jugador se le estan acabando las fichas. Colgado mas abajo, un server
-       caido apagaria tambien el cartel. */
     mirarSaldoBajo(v);
+
+    if (saldoEnviando || !USUARIO) return;
+    if (Date.now() < esperarHasta) return;
     // Solo cuando CAMBIA. Sin esto serian 50 requests por minuto por jugador
     // para escribir siempre el mismo numero.
     if (v === null || v === saldoReportado) return;
