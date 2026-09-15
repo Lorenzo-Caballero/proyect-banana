@@ -215,13 +215,18 @@ Cuatro caminos distintos, con permisos distintos:
    (`informar_transferencia`: titular y número de operación). **Regla de oro:
    la foto solo DECLARA; el único que confirma plata es el mail del banco.**
 
-   > **Esta mitad está a medio aterrizar (sept 2026).** Las dos herramientas
-   > llaman a `rl_declarar_pago()`, que **todavía no existe en
-   > `recargas_lib.php`**: las dos preguntan con `function_exists` y devuelven
-   > *"falta actualizar recargas_lib.php"*. `titular_declarado` sí se usa (lo
-   > escribe `rl_crear_recarga`, degradando si la migración 45 no corrió);
-   > `trx_declarada` y la Capa 0 por número de operación no están. Si el bot
-   > pide el comprobante y después no hace nada con él, es esto.
+   > **Esta mitad YA ESTÁ (verificado el 15/09/2026).** `rl_declarar_pago()`
+   > existe (`recargas_lib.php:1995`) y hace tres cosas: guarda
+   > `titular_declarado` y `trx_declarada` sobre la recarga pendiente más
+   > reciente, **re-intenta los pagos en `revision` de ese monto** (con el
+   > titular recién declarado, uno trabado por ambigüedad puede desempatar), y
+   > contesta `acreditada` sólo si el rematch acreditó la recarga **de ese
+   > usuario**. Hasta el 14/09 esto no existía y las dos herramientas devolvían
+   > *"falta actualizar recargas_lib.php"*.
+   >
+   > Lo único que sigue sin estar es la **Capa 0 por número de operación**:
+   > `trx_declarada` se guarda pero el matcher no casa por ella. Lo que
+   > desempata hoy es el titular.
 
 4. **Camino A: el botón «Depósitos» de la plataforma.**
 
