@@ -113,9 +113,30 @@ las columnas propias. Tres saldos distintos que no hay que confundir:
 
 | Columna | Qué es | Quién la escribe |
 |---|---|---|
-| `balance` | Saldo **real** en ganamos | Solo `sync_usuarios.py` (espejo, read-only) |
+| `balance` | Saldo **real** en ganamos | `aprobar_cargas.py` (espejo, cada 5 min) + el ajuste de `acciones_cola.php` |
 | `coins` | **Fichas**, contador propio | CRM (`crm.php`), recargas |
 | `bonus` | **Bonos**, contador propio | CRM, ruleta |
+
+> **`balance` es un ESPEJO, no la verdad, y por eso lleva `saldo_visto_en`**
+> (migración 68): *cuándo lo leímos*. No confundirla con `actualizado_en`, que
+> es `ON UPDATE CURRENT_TIMESTAMP` y mide cuándo **cambió** — MySQL no la
+> dispara si la fila queda igual, así que un saldo quieto figura visto por
+> última vez hace una semana aunque se haya leído recién. La ficha del CRM
+> muestra esa edad al lado del número y la pone en ámbar pasados 10 minutos.
+>
+> **Lo escribía sólo `sync_usuarios.py`, y ese contenedor está apagado**:
+> `bot/docker-compose.yml` lo deja detrás de `profiles: ["sync"]` porque usa su
+> propio `estado_sesion.json` — un segundo login con la misma cuenta de agente,
+> que se patea la sesión con el creador. O sea que la opción era «saldos al
+> día» **o** «altas funcionando». Peor: el chequeo de `scripts/deploy-bot.sh`
+> sólo avisa si ese contenedor **existe** y está caído; si nunca se creó, no
+> dice nada. El espejo podía estar muerto desde siempre en silencio.
+>
+> Desde el 15/09/2026 lo hace **`colector/aprobar_cargas.py`**
+> (`sincronizar_usuarios()`), que ya está logueado con la sesión del creador y
+> ya corre cada minuto: es una lectura más, como el libro y el stock, y no
+> agrega ningún login. Cadencia en `USUARIOS_CADA_MIN` (5). A mano:
+> `python aprobar_cargas.py --usuarios`.
 
 Resto: `recargas` + `pagos` (transferencias), `conversaciones` + `mensajes`
 (chat/CRM), `movimientos` (historial de fichas/bonos/saldo), `acciones_saldo`

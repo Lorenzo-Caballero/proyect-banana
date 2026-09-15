@@ -86,6 +86,9 @@ function salir($data, int $code = 200): void
  *  lo que se expone como `bono_pendiente`. */
 function ficha_usuario(PDO $pdo, string $usuario): ?array
 {
+    /* `saldo_visto_en` es de la migracion 68 y puede no estar todavia: se pide
+       en un SELECT aparte para que una base sin migrar siga devolviendo la
+       ficha entera en vez de 500. */
     $st = $pdo->prepare(
         "SELECT id AS ganamos_id, username AS nombre_usuario,
                 COALESCE(balance,0) AS saldo,
@@ -98,6 +101,25 @@ function ficha_usuario(PDO $pdo, string $usuario): ?array
     $st->execute([$usuario]);
     $r = $st->fetch(PDO::FETCH_ASSOC);
     if (!$r) { return null; }
+
+    /* HACE CUANTO QUE ESE SALDO ES VERDAD. El numero sale de un espejo, y entre
+       una lectura y la siguiente el jugador apuesta: mostrarlo sin la edad hacia
+       que un saldo de hace horas se leyera igual que uno de hace un segundo, y
+       sobre eso se decide cuanto pagarle en un retiro.
+       Se manda en segundos y el texto lo arma el front, que es el que sabe
+       cuando lo esta pintando. null = nunca lo leimos (o falta la migracion). */
+    $r['saldo_visto_hace'] = null;
+    try {
+        $v = $pdo->prepare(
+            "SELECT TIMESTAMPDIFF(SECOND, saldo_visto_en, NOW())
+               FROM usuarios WHERE username = ? LIMIT 1"
+        );
+        $v->execute([$usuario]);
+        $seg = $v->fetchColumn();
+        if ($seg !== null && $seg !== false) { $r['saldo_visto_hace'] = max(0, (int)$seg); }
+    } catch (Throwable $e) {
+        // Sin la migracion 68 no hay columna: la ficha sale igual, sin la edad.
+    }
 
     // El contador de bonos SIN depositar (usuarios.bonus). Antes la ficha no
     // lo mostraba en ningun lado: el agente cargaba un bono, el numero caia

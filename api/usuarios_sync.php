@@ -38,16 +38,33 @@ if (!$usuarios) {
 // OJO: `bonus` y `coins` NO se actualizan en el UPDATE: ahora son nuestros
 // bonos/fichas internos (ruleta, CRM, recargas), no vienen de ganamos. En un
 // alta nueva entran en 0 (VALUES(bonus)=0); en updates se preservan.
-$sql = "INSERT INTO usuarios
-          (id, username, balance, bonus, total_deposits, role, is_banned, creation_date)
-        VALUES (?,?,?,?,?,?,?,?)
-        ON DUPLICATE KEY UPDATE
-          username       = VALUES(username),
+/* `saldo_visto_en` = CUANDO leimos este saldo, no cuando cambio (migracion
+   68). Se escribe SIEMPRE, aunque el balance venga igual: el dato que hace
+   falta del otro lado es la edad de la lectura, y una lectura que confirma el
+   mismo numero es igual de fresca que una que lo cambia.
+   `actualizado_en` no sirve para eso: es ON UPDATE CURRENT_TIMESTAMP, y MySQL
+   no lo dispara cuando la fila queda identica -- un jugador con el saldo
+   quieto figuraba visto por ultima vez hace una semana.
+   Si la migracion todavia no corrio se cae al INSERT sin la columna: el
+   espejo tiene que seguir entrando igual (mismo patron que crm_mensaje). */
+$cols = "(id, username, balance, bonus, total_deposits, role, is_banned, creation_date";
+$vals = "VALUES (?,?,?,?,?,?,?,?";
+$upd  = "username       = VALUES(username),
           balance        = VALUES(balance),
           total_deposits = VALUES(total_deposits),
           role           = VALUES(role),
           is_banned      = VALUES(is_banned),
           creation_date  = VALUES(creation_date)";
+
+$hayVisto = true;
+try { $pdo->query("SELECT saldo_visto_en FROM usuarios LIMIT 0"); }
+catch (Throwable $e) { $hayVisto = false; }
+
+$sql = "INSERT INTO usuarios " . $cols . ($hayVisto ? ", saldo_visto_en)" : ")")
+     . " " . $vals . ($hayVisto ? ", NOW())" : ")")
+     . " ON DUPLICATE KEY UPDATE " . $upd
+     . ($hayVisto ? ",
+          saldo_visto_en = NOW()" : "");
 
 $num = function ($v): float {
     return is_numeric($v) ? (float)$v : 0.0;

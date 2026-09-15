@@ -554,6 +554,11 @@
   .sbox.fichas .v{color:var(--green2)} .sbox.bono .v{color:var(--violet2)} .sbox.saldo .v{color:var(--txt)}
   .sbox::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;opacity:.85}
   .sbox.saldo::after{background:var(--blue)} .sbox.fichas::after{background:var(--green)} .sbox.bono::after{background:var(--violet)}
+  /* Edad del saldo. El saldo es un ESPEJO: si nadie lo leyó hace rato, el
+     número que se ve no es el que el jugador tiene. En ámbar arriba de los
+     10 min, que es donde deja de servir para decidir un retiro. */
+  .sbox .edad{font-size:9.5px;color:var(--muted);margin-top:3px;letter-spacing:.2px}
+  .sbox .edad.viejo{color:var(--amber,#f0a02a);font-weight:700}
   .sec{padding:4px 16px 18px}
   .sec h4{margin:16px 0 9px;font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px}
   .acts{display:flex;flex-direction:column;gap:9px}
@@ -669,6 +674,13 @@
      segunda señal, despues del texto. */
   .mbtns .ok.peligro{background:linear-gradient(180deg,#e5595d,#c94347);color:#fff}
   .mbtns .no{background:transparent;border:1px solid var(--line);color:var(--muted)}
+  /* "Retirar todo": un atajo, no la accion. Va discreto -- borde y no relleno --
+     porque el boton que mueve la plata sigue siendo el de abajo; este solo
+     escribe el numero en el campo y el operador todavia puede corregirlo. */
+  .modal .todo{width:100%;margin-top:8px;padding:9px;border-radius:10px;background:transparent;
+               border:1px dashed var(--line);color:var(--muted);font-weight:700;font-size:12.5px;cursor:pointer}
+  .modal .todo:hover{border-color:var(--violet);color:var(--txt)}
+  .modal .todo-aviso{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.45}
   .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--panel);border:1px solid var(--violet);color:var(--txt);padding:12px 20px;border-radius:12px;z-index:60;opacity:0;transition:.25s;pointer-events:none;box-shadow:var(--shadow)}
   .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
   .sp{display:inline-block;width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--violet);border-radius:50%;animation:sp .7s linear infinite}
@@ -2376,7 +2388,7 @@
            bonos_pendientes sin acreditar todavía (lo prometido, no lo
            histórico acumulado) -- ver bono_pendiente_total() en crm.php. -->
       <div class="saldos saldos2">
-        <div class="sbox saldo"><div class="k">Saldo</div><div class="v" id="uSaldo">$0</div></div>
+        <div class="sbox saldo" id="uSaldoBox"><div class="k">Saldo</div><div class="v" id="uSaldo">$0</div><div class="edad" id="uSaldoEdad"></div></div>
         <div class="sbox bono" id="uBonoBox" title="Bonos prometidos, aún no acreditados"><div class="k">Bono pendiente</div><div class="v" id="uBonos">0</div></div>
       </div>
       <div class="sec">
@@ -4867,6 +4879,10 @@
     <p id="mSub">Se acredita al instante en la cuenta del jugador.</p>
     <label for="mMonto">Cantidad</label>
     <input id="mMonto" type="number" inputmode="numeric" placeholder="Ej: 500">
+    <!-- Solo en el modal de RETIRAR, y solo si hay saldo: lo prende abrirModal().
+         Tipear a mano el saldo entero es justo donde se come un dígito. -->
+    <button type="button" class="todo" id="mTodo" style="display:none"></button>
+    <div class="todo-aviso" id="mTodoAviso" style="display:none"></div>
     <label for="mMotivo">Motivo (opcional)</label>
     <input id="mMotivo" type="text" placeholder="Ej: promo, ajuste, regalo…">
     <div class="mbtns">
@@ -4959,6 +4975,10 @@
 
   const st = { q:"", estado:"todas", inactivos:0, inactivosTipo:"carga",
                convId:0, usuario:"", modo:"ficha",
+               // Saldo del jugador de la ficha abierta: el numero CRUDO (lo usa
+               // "Retirar todo") y hace cuantos segundos se leyo del panel.
+               // Arrancan en "no se nada" a proposito -- ver pintarUsuario().
+               saldo:0, saldoHace:null,
                archivada:false, mensajes:0 };   // el orden lo da ordenActual()
   /* La seleccion multiple. Un Set de ids, fuera de `st` porque no es un
      filtro: sobrevive a recargas de la lista (el render la vuelve a pintar)
@@ -7426,9 +7446,45 @@
   }
 
   // ---------- ficha ----------
+  /* HACE CUANTO QUE EL SALDO ES VERDAD.
+     `usuarios.balance` es un ESPEJO del saldo real en ganamos: lo escribe el
+     sync cuando pasa, y el ajuste optimista cuando una operación nuestra se
+     confirma. Entre una cosa y la otra el jugador apuesta, gana y pierde, y
+     nosotros seguimos mostrando el número viejo.
+     Eso estaba invisible -- "$4.280" se veía igual con dos segundos que con dos
+     días -- y sobre ese número se decide cuánto pagarle en un retiro. Ahora la
+     edad se dice, y arriba de 10 minutos se pone en ámbar: no es un error, es
+     un "andá a mirarlo al panel antes de pagar".
+     Sin dato (`null`) el cartel dice que nunca se leyó, que es el síntoma de
+     tener el espejo caído -- y callarlo sería peor que mostrarlo. */
+  const SALDO_VIEJO_SEG = 600;
+  function pintarEdadSaldo(){
+    const el = $("#uSaldoEdad"); if(!el) return;
+    const s = st.saldoHace;
+    if(s === null || s === undefined){
+      el.textContent = "sin leer del panel";
+      el.classList.add("viejo");
+      el.title = "Nunca leímos este saldo desde ganamos. Puede que el espejo de usuarios esté caído.";
+      return;
+    }
+    let txt;
+    if(s < 90) txt = "recién leído";
+    else if(s < 5400) txt = `leído hace ${Math.round(s/60)} min`;
+    else if(s < 172800) txt = `leído hace ${Math.round(s/3600)} h`;
+    else txt = `leído hace ${Math.round(s/86400)} días`;
+    el.textContent = txt;
+    el.classList.toggle("viejo", s >= SALDO_VIEJO_SEG);
+    el.title = s >= SALDO_VIEJO_SEG
+      ? "Este saldo puede haber cambiado: el jugador estuvo jugando desde que lo leímos. Confirmalo en el panel antes de pagar un retiro."
+      : "Saldo leído hace poco desde ganamos.";
+  }
+
   function pintarUsuario(u, movs, notas){
     if(!$("#userCard")) return;
     if(!u){
+      /* SIN FICHA NO HAY SALDO. Si no se limpia, el saldo del jugador anterior
+         queda en `st` y "Retirar todo" ofreceria la plata de otro. */
+      st.saldo = 0; st.saldoHace = null;
       $("#userCard").style.display="none";
       $("#noUser").style.display="block";
       $("#noUser").textContent = st.usuario ? `El usuario "${st.usuario}" no está en la base de usuarios.` : "Esta conversación todavía no tiene un usuario vinculado.";
@@ -7441,6 +7497,13 @@
     $("#uNombre").textContent = ((u.nombre||"")+" "+(u.apellido||"")).trim() || u.nombre_usuario;
     $("#uUser").textContent = "@"+u.nombre_usuario;
     $("#uSaldo").textContent = money(u.saldo);
+    /* EL NUMERO CRUDO, para "Retirar todo". El textContent ya sale con "$" y
+       separadores de miles, y volver a parsear eso es como se cuela un error de
+       un cero. */
+    st.saldo = Number(u.saldo) || 0;
+    st.saldoHace = (u.saldo_visto_hace === null || u.saldo_visto_hace === undefined)
+                 ? null : Number(u.saldo_visto_hace);
+    pintarEdadSaldo();
     // Bono pendiente: fichas fijas prometidas (en coins) + cuántas promesas
     // de % y de giro de ruleta sin acreditar todavía -- ver
     // bono_pendiente_total() en crm.php. No es el acumulado histórico.
@@ -10726,6 +10789,37 @@
       : ganamos ? "Se encola y el bot lo deposita en ganamos en segundos."
       : "Se acredita al instante.");
     $("#mMonto").value=""; $("#mMotivo").value="";
+
+    /* "RETIRAR TODO" (pedido de Nahuel, 15/09/2026). El caso más común es sacar
+       el saldo entero, y tipearlo a mano es justo donde se come un dígito.
+       Llena el campo con el saldo CRUDO -- no con el texto de la tarjeta -- y
+       no dispara nada: el operador sigue teniendo que apretar "Retirar", y
+       puede corregir el número antes.
+       Solo en el retiro y solo si hay saldo: en una carga no significa nada, y
+       con saldo 0 sería un botón que no hace nada. */
+    const btnTodo = $("#mTodo"), avisoTodo = $("#mTodoAviso");
+    const hayTodo = esRetiro && st.saldo > 0;
+    if(btnTodo){
+      btnTodo.style.display = hayTodo ? "" : "none";
+      btnTodo.textContent = hayTodo ? `Retirar todo (${money(Math.floor(st.saldo))})` : "";
+      btnTodo.onclick = hayTodo ? ()=>{ $("#mMonto").value = Math.floor(st.saldo); $("#mMonto").focus(); } : null;
+    }
+    /* Y SE DICE DE CUÁNDO ES ESE SALDO. El botón invita a confiar en el número,
+       así que al lado tiene que estar su edad: si el jugador siguió jugando
+       desde la última lectura, "todo" ya no es todo. Es el mismo dato de la
+       ficha, repetido acá a propósito -- en el modal no se ve la tarjeta. */
+    if(avisoTodo){
+      avisoTodo.style.display = hayTodo ? "" : "none";
+      if(hayTodo){
+        const s = st.saldoHace;
+        avisoTodo.textContent = (s === null || s === undefined)
+          ? "Ojo: nunca leímos este saldo desde ganamos. Confirmalo en el panel antes de pagar."
+          : (s >= SALDO_VIEJO_SEG
+              ? `Ojo: este saldo lo leímos hace ${s < 5400 ? Math.round(s/60)+" min" : Math.round(s/3600)+" h"}. Si siguió jugando, ya cambió.`
+              : "Saldo leído hace instantes desde ganamos.");
+      }
+    }
+
     $("#back").classList.add("on"); setTimeout(()=>$("#mMonto").focus(),50);
   }
   $("#btnSaldo").addEventListener("click", ()=>abrirModal("cargar_saldo","Cargar saldo",true));
@@ -10750,7 +10844,12 @@
     if(!monto || monto<=0){ toast("Poné una cantidad válida"); return; }
     const btn=$("#mOk"); btn.disabled=true; btn.textContent="…";
     const d = await jpost({accion:st.accion, usuario:st.usuario, monto, motivo:$("#mMotivo").value, conversacion_id:st.convId});
-    btn.disabled=false; btn.textContent="Cargar";
+    /* VOLVÍA A DECIR "Cargar" SIEMPRE, también en el modal de retirar: es el
+       mismo bug que ya se había arreglado al ABRIR el modal y que sobrevivió en
+       el camino de vuelta. Si el retiro fallaba, el botón quedaba diciendo
+       "Cargar" en una pantalla titulada "Retirar saldo". */
+    btn.disabled=false;
+    btn.textContent = st.accion === "retirar_saldo" ? "Retirar" : "Cargar";
     if(d.ok){
       $("#back").classList.remove("on");
       if(st.accion==="cargar_bono"){

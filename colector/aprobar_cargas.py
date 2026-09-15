@@ -883,6 +883,175 @@ def sincronizar_libro(ctx, solo_ver: bool, dias: int = LIBRO_DIAS,
         log.warning("libro: no pude reportar las operaciones: %s", e)
 
 
+# ---------------------------------------------------------------------------
+# El ESPEJO DE SALDOS: cuanta plata tiene cada jugador AHORA
+# ---------------------------------------------------------------------------
+# POR QUE ESTA ACA Y NO EN sync_usuarios.py.
+#
+# `usuarios.balance` es el saldo real del jugador en ganamos, y de ahi salen el
+# numero de la ficha del CRM, el que mira el chatbot para dejar retirar, y el
+# que el operador usa para decidir cuanto pagar. Lo escribia UNA sola cosa: el
+# contenedor `ganamos-bot-sync` (sync_usuarios.py, --loop 300).
+#
+# Ese contenedor esta APAGADO POR DEFECTO, y con razon: en el compose lleva
+# `profiles: ["sync"]` porque usa su propio estado_sesion.json, o sea un SEGUNDO
+# login con la misma cuenta de agente -- y los dos se patean la sesion. La
+# eleccion era "saldos al dia" o "altas funcionando", nunca las dos.
+#
+# Peor: el chequeo de scripts/deploy-bot.sh solo avisa si ese contenedor EXISTE
+# y esta caido. Si nunca se creo, no dice nada. O sea que el espejo podia estar
+# muerto desde siempre en silencio, y el unico sintoma era el que reporto
+# Nahuel el 15/09/2026: "el saldo del jugador tarda en actualizarse o no se
+# actualiza".
+#
+# Este worker YA esta logueado -- con la sesion del creador, la misma -- y ya
+# corre cada minuto. Leer el listado de usuarios es una lectura mas, como las
+# que ya hace para el libro y para el stock: no agrega ningun login, asi que el
+# problema de las dos sesiones desaparece.
+USUARIOS_CADA_MIN = int(os.environ.get("USUARIOS_CADA_MIN", "5"))
+USUARIOS_POR_PAGINA = 50     # lo que usaba sync_usuarios.py contra este endpoint
+USUARIOS_POR_POST = 300      # tamano del lote hacia nuestro server
+USUARIOS_MAX_PAGINAS = 200   # 10.000 jugadores: freno duro, no un limite real
+_USUARIOS_MARCA = "/tmp/gp_usuarios_visto"
+
+
+def _url_usuarios() -> str:
+    """De API_URL (.../gp-api/altas_cola.php) sacamos .../gp-api/usuarios_sync.php"""
+    base = (os.environ.get("API_URL", "") or "").split("?")[0]
+    if "/api/" in base:
+        return base.rsplit("/api/", 1)[0] + "/api/usuarios_sync.php"
+    return base.rsplit("/", 1)[0] + "/usuarios_sync.php"
+
+
+def _usuarios_toca() -> bool:
+    """True si paso USUARIOS_CADA_MIN desde el ultimo espejo.
+
+    Mismo mecanismo que _libro_toca() y _stock_toca(): el worker arranca de cero
+    en cada pasada del cron, asi que el "hace cuanto" vive en la fecha de un
+    archivo y no en memoria. Cada 5 minutos y no cada minuto porque son varias
+    paginas; lo que se gana es "el saldo tiene como mucho 5 minutos", que es
+    exactamente lo que prometia el sync viejo con --loop 300.
+    """
+    try:
+        if os.path.isfile(_USUARIOS_MARCA):
+            if (time.time() - os.path.getmtime(_USUARIOS_MARCA)) < USUARIOS_CADA_MIN * 60:
+                return False
+        open(_USUARIOS_MARCA, "w").close()
+        return True
+    except Exception:
+        return True          # ante la duda, espejar: es una lectura
+
+
+def _usuario_normalizado(u: dict) -> dict:
+    """Las mismas claves que espera usuarios_sync.php (y que mandaba el sync).
+
+    `bonus` viaja pero del otro lado NO se pisa en un update: `usuarios.bonus`
+    paso a ser nuestro contador interno (ruleta, CRM) y no tiene nada que ver
+    con ningun campo del panel.
+    """
+    return {
+        "id": u.get("id"),
+        "username": u.get("username"),
+        "balance": u.get("balance") or 0,
+        "bonus": u.get("bonus_balance") or u.get("bonus") or 0,
+        "total_deposits": u.get("total_deposits") or 0,
+        "role": u.get("role"),
+        "is_banned": bool(u.get("is_banned")),
+        "creation_date": u.get("creation_date"),
+    }
+
+
+def _usuarios_items(data):
+    """El listado viene anidado distinto segun la version del panel."""
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        for k in ("users", "items", "result", "data"):
+            v = data.get(k)
+            if isinstance(v, list):
+                return v
+            if isinstance(v, dict):
+                r = _usuarios_items(v)
+                if r is not None:
+                    return r
+    return None
+
+
+def _usuarios_paginas(ctx) -> list:
+    """Todos los jugadores del agente, paginados.
+
+    Levanta DesafioWAF si el WAF se mete en el medio, y eso corta la pasada
+    entera a proposito: media lista espejada se veria igual que una completa y
+    dejaria saldos viejos marcados como recien leidos, que es justo la mentira
+    que este espejo viene a sacar.
+    """
+    me = _json(ctx.request.get(f"{PANEL_API}/user/check", timeout=30_000))
+    agent_id = ((me or {}).get("result") or {}).get("id")
+    if not agent_id:
+        raise DesafioWAF("el panel no dijo quienes somos (sin agent_id)")
+
+    todos, pagina = [], 0
+    while pagina < USUARIOS_MAX_PAGINAS:
+        url = (f"{PANEL_API}/agent_admin/user/?count={USUARIOS_POR_PAGINA}&page={pagina}"
+               f"&user_id={agent_id}&is_banned=false&is_direct_structure=false")
+        items = _usuarios_items(_json(ctx.request.get(url, timeout=45_000))) or []
+        if not items:
+            break
+        todos += [_usuario_normalizado(u) for u in items if isinstance(u, dict)]
+        if len(items) < USUARIOS_POR_PAGINA:
+            break
+        pagina += 1
+        time.sleep(0.4)      # gentil con el WAF, igual que el sync viejo
+    return todos
+
+
+def sincronizar_usuarios(ctx, solo_ver: bool, forzar: bool = False) -> None:
+    """Espeja el saldo de todos los jugadores en la tabla `usuarios`.
+
+    Best-effort, como el libro y el stock: si falla se loguea y la pasada sigue.
+    Aprobar cargas es lo que no puede fallar; esto es una comodidad que se
+    arregla sola en la vuelta siguiente.
+    """
+    if solo_ver or (not forzar and not _usuarios_toca()):
+        return
+    key = os.environ.get("API_KEY", "")
+    if not key:
+        return
+
+    try:
+        usuarios = _usuarios_paginas(ctx)
+    except DesafioWAF as e:
+        log.warning("espejo de saldos: %s. Lo reintento en la proxima vuelta.", e)
+        return
+    except Exception as e:
+        log.warning("espejo de saldos: no pude leer el listado: %s", e)
+        return
+
+    if not usuarios:
+        log.warning("espejo de saldos: el panel no devolvio jugadores")
+        return
+
+    guardados = 0
+    try:
+        for i in range(0, len(usuarios), USUARIOS_POR_POST):
+            r = ctx.request.post(_url_usuarios(), headers={"X-API-Key": key},
+                                 data={"usuarios": usuarios[i:i + USUARIOS_POR_POST]},
+                                 timeout=60_000)
+            d = r.json() or {}
+            if not d.get("ok"):
+                log.warning("espejo de saldos: el server rechazo el lote: %s",
+                            str(d.get("error"))[:120])
+                return
+            guardados += int(d.get("guardados") or 0)
+    except Exception as e:
+        log.warning("espejo de saldos: no pude guardar (%s guardados antes): %s",
+                    guardados, e)
+        return
+
+    log.info("espejo de saldos: %d jugadores leidos, %d guardados",
+             len(usuarios), guardados)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Aprueba las cargas pedidas desde la plataforma")
     ap.add_argument("--loop", type=int, metavar="SEG", help="repetir cada SEG segundos")
@@ -891,6 +1060,9 @@ def main() -> int:
     ap.add_argument("--libro", type=int, metavar="DIAS",
                     help="sincronizar el libro de operaciones ejecutadas hacia atras "
                          "DIAS dias y salir (para el backfill inicial)")
+    ap.add_argument("--usuarios", action="store_true",
+                    help="espejar AHORA el saldo de todos los jugadores y salir "
+                         "(para verificar que el espejo anda)")
     ap.add_argument("--dias", type=int, default=int(os.environ.get("DIAS_VENTANA", "2")),
                     help="dias hacia atras que se miran (default 2)")
     args = ap.parse_args()
@@ -927,6 +1099,13 @@ def main() -> int:
             browser.close()
             return 0
 
+        # Igual que --libro: solo lee el panel y espeja, asi que se puede correr
+        # con la cola llena y los jugadores jugando.
+        if args.usuarios:
+            sincronizar_usuarios(ctx, args.ver, forzar=True)
+            browser.close()
+            return 0
+
         while True:
             try:
                 n = una_pasada(ctx, args.ver, args.dias)
@@ -936,6 +1115,10 @@ def main() -> int:
                     log.info("%d retiro(s) ejecutado(s)", nr)
                 revisar_stock(ctx, args.ver)
                 sincronizar_libro(ctx, args.ver)
+                # El saldo de los jugadores. Va ULTIMO a proposito: es lo unico
+                # de la pasada que no decide nada -- si tarda o falla, las
+                # cargas y los retiros ya se resolvieron.
+                sincronizar_usuarios(ctx, args.ver)
                 if n:
                     log.info("%d carga(s) aprobada(s)", n)
             except DesafioWAF as e:

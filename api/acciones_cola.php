@@ -316,8 +316,17 @@ try {
             $u = $pdo->prepare("SELECT usuario FROM acciones_saldo WHERE id = ?");
             $u->execute([$id]);
             if ($quien = $u->fetchColumn()) {
-                $pdo->prepare("UPDATE usuarios SET balance = ? WHERE username = ?")
-                    ->execute([$sDespues, $quien]);
+                /* `saldo_visto_en` (migracion 68) marca la EDAD del dato, que es
+                   lo que el CRM muestra al lado del saldo. Este caso es el mejor
+                   de todos: el numero lo acaba de leer el bot EN EL PANEL. Si la
+                   migracion no corrio se cae al UPDATE de siempre. */
+                try {
+                    $pdo->prepare("UPDATE usuarios SET balance = ?, saldo_visto_en = NOW() WHERE username = ?")
+                        ->execute([$sDespues, $quien]);
+                } catch (Throwable $e) {
+                    $pdo->prepare("UPDATE usuarios SET balance = ? WHERE username = ?")
+                        ->execute([$sDespues, $quien]);
+                }
             }
         } elseif ($estado === 'hecha') {
             /* EL BOT NO MANDA `saldo_despues`, asi que lo de arriba casi nunca
@@ -340,10 +349,25 @@ try {
                 $a2->execute([$id]);
                 if ($fa = $a2->fetch(PDO::FETCH_ASSOC)) {
                     $delta = (float)$fa['monto'] * ($fa['tipo'] === 'retirar' ? -1 : 1);
-                    $pdo->prepare(
-                        "UPDATE usuarios SET balance = GREATEST(0, COALESCE(balance,0) + ?)
-                          WHERE username = ?"
-                    )->execute([$delta, $fa['usuario']]);
+                    /* Aca el saldo no se LEE, se calcula -- asi que marcarlo como
+                       recien visto es una licencia. Se hace igual porque la
+                       alternativa es peor: el CRM diria "saldo de hace 40 min"
+                       justo despues de una operacion que acabamos de hacer
+                       nosotros, y el operador dejaria de creerle al indicador.
+                       El margen de error es lo que el jugador haya jugado en los
+                       segundos que tardo la operacion. */
+                    try {
+                        $pdo->prepare(
+                            "UPDATE usuarios SET balance = GREATEST(0, COALESCE(balance,0) + ?),
+                                    saldo_visto_en = NOW()
+                              WHERE username = ?"
+                        )->execute([$delta, $fa['usuario']]);
+                    } catch (Throwable $e) {
+                        $pdo->prepare(
+                            "UPDATE usuarios SET balance = GREATEST(0, COALESCE(balance,0) + ?)
+                              WHERE username = ?"
+                        )->execute([$delta, $fa['usuario']]);
+                    }
                 }
             } catch (Throwable $e) {
                 // El espejo es una comodidad: si falla, el sync lo arregla.
