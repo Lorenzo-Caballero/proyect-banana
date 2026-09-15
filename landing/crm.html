@@ -3499,6 +3499,16 @@
         <b>Tocá el gasto de cualquier día y escribí el monto.</b> Enter guarda, Esc cancela.
         La <b>×</b> lo borra.
       </p>
+      <!-- Las dos columnas se leen como si midieran lo mismo y no: una va por
+           la fecha del registro y la otra por la de la carga. Nahuel lo
+           preguntó el 15/09 mirando "3 registros, 2 primeras cargas" un día en
+           que, para él, la landing no había traído cargas -- y tenía razón: una
+           de esas dos era de alguien registrado el día anterior. -->
+      <p class="pb-hist-hint">
+        <b>Registros</b> cuenta por el día en que se creó la cuenta; <b>1ª cargas</b>, por el día
+        en que esa persona cargó por primera vez. No tienen por qué ser el mismo día — y que no lo
+        sean es normal: mucha gente se registra un día y carga al siguiente.
+      </p>
       <p class="pb-hist-aviso" id="pbDiaAviso" style="display:none"></p>
       <div class="pb-tabla-wrap">
         <table class="pb-tabla">
@@ -3507,7 +3517,10 @@
                  pbCargarDiaPorDia). Sin eso, con publicistas y landings en las
                  mismas solapas, no habia forma de saber a quien se le estaba
                  cargando la plata mirando la tabla. -->
-            <tr><th>Día</th><th>Registros</th><th>1ª cargas</th><th>Depositado real</th><th id="pbThGasto">Gasto</th><th></th></tr>
+            <tr><th>Día</th>
+                <th title="Cuentas CREADAS ese día desde esta campaña. No dice si cargaron.">Registros</th>
+                <th title="Jugadores cuya PRIMERA carga cayó ese día. Se cuenta por la fecha de la CARGA, no la del registro: alguien que se registró la semana pasada y cargó hoy por primera vez, suma hoy.">1ª cargas</th>
+                <th>Depositado real</th><th id="pbThGasto">Gasto</th><th></th></tr>
           </thead>
           <tbody id="pbDiaPorDia"><tr><td colspan="6" class="ag-vacio">Elegí una landing o un publicista</td></tr></tbody>
           <tfoot id="pbDiaTotales" style="display:none"></tfoot>
