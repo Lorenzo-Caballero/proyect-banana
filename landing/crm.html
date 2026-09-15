@@ -683,6 +683,14 @@
   .modal .todo-aviso{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.45}
   /* El aviso de "ya tiene un retiro abierto": en ámbar y con borde, porque es
      lo único de este modal que puede terminar en un pago doble. */
+  /* La celda del gasto, editable en el lugar. El input hereda el ancho de la
+     celda para que la fila no salte al entrar y salir de edicion -- un salto
+     ahi hace perder de vista el dia que estabas cargando. */
+  .pb-gasto-in{width:100%;max-width:130px;padding:6px 8px;border-radius:8px;text-align:right;
+               background:var(--panel2);border:1px solid var(--violet);color:var(--txt);
+               font-size:13px;font-weight:700;font-family:inherit}
+  .pb-gasto-in:focus{outline:none;box-shadow:0 0 0 3px var(--violetSoft)}
+  .pb-gasto-ayuda{font-size:10.5px;color:var(--muted);margin-top:3px;white-space:nowrap}
   .modal .ret-abiertos{margin-top:14px;padding:10px 12px;border-radius:10px;font-size:12px;
                        line-height:1.5;color:var(--txt);
                        background:rgba(240,160,42,.10);border:1px solid rgba(240,160,42,.45)}
@@ -3487,14 +3495,18 @@
 
       <div class="pb-seccion-titulo">Día por día <span id="pbDiaPeriodo" class="pb-dia-periodo"></span></div>
       <p class="pb-hist-hint">
-        <b>Tocá el gasto de cualquier día</b> para cargarlo o corregirlo, y la <b>×</b> para
-        borrarlo si lo cargaste en la campaña equivocada.
+        <b>Tocá el gasto de cualquier día y escribí el monto.</b> Enter guarda, Esc cancela.
+        La <b>×</b> lo borra.
       </p>
       <p class="pb-hist-aviso" id="pbDiaAviso" style="display:none"></p>
       <div class="pb-tabla-wrap">
         <table class="pb-tabla">
           <thead>
-            <tr><th>Día</th><th>Registros</th><th>1ª cargas</th><th>Depositado real</th><th>Gasto</th><th></th></tr>
+            <!-- El encabezado del gasto lleva el nombre de la campaña (lo pone
+                 pbCargarDiaPorDia). Sin eso, con publicistas y landings en las
+                 mismas solapas, no habia forma de saber a quien se le estaba
+                 cargando la plata mirando la tabla. -->
+            <tr><th>Día</th><th>Registros</th><th>1ª cargas</th><th>Depositado real</th><th id="pbThGasto">Gasto</th><th></th></tr>
           </thead>
           <tbody id="pbDiaPorDia"><tr><td colspan="6" class="ag-vacio">Elegí una landing o un publicista</td></tr></tbody>
           <tfoot id="pbDiaTotales" style="display:none"></tfoot>
@@ -3505,10 +3517,11 @@
            solo la campaña seleccionada, así que el gasto de una vieja -- que es
            justo el que ensucia el total de Finanzas -- quedaba escondido detrás
            de una solapa que nadie va a ir a buscar. -->
-      <div class="pb-seccion-titulo">Todo el gasto cargado <span id="pbGtPeriodo" class="pb-dia-periodo"></span></div>
-      <p class="pb-hist-hint">
-        Todas las campañas juntas, incluidas las que ya no usás. Es lo que suma
-        <b>Pauta del período</b> en Finanzas. Tocá el monto para corregirlo, o la <b>×</b> para borrar la fila.
+      <div class="pb-seccion-titulo" id="pbGtTitulo" style="display:none">Gasto de otras campañas <span id="pbGtPeriodo" class="pb-dia-periodo"></span></div>
+      <p class="pb-hist-hint" id="pbGtHint" style="display:none">
+        Gasto cargado en campañas <b>distintas</b> de la que estás viendo arriba — incluidas
+        las que ya no usás. También suma a <b>Pauta del período</b> en Finanzas, así que si
+        acá hay algo que no esperabas, ahí está la diferencia.
       </p>
       <div class="pb-tabla-wrap">
         <table class="pb-tabla">
@@ -10573,16 +10586,34 @@
       d = await pbGetJson({accion:"gasto_todo", desde: pbRangoActual.desde, hasta: pbRangoActual.hasta});
     }catch(e){ return; }
     if(!d.ok) return;
-    const gs = d.gastos || [];
-    const per = $("#pbGtPeriodo");
-    if(per) per.textContent = gs.length ? "— " + gs.length + " carga" + (gs.length===1?"":"s") : "";
+    /* ESTA TABLA MOSTRABA TAMBIEN EL GASTO DE LA CAMPAÑA DE ARRIBA, y eso era
+       la mitad de la confusion de la pantalla: el mismo importe aparecia dos
+       veces, con dos totales distintos --uno filtrado por la solapa y el otro
+       no-- y sin nada que dijera que eran la misma plata contada una sola vez.
+       Ahora muestra SOLO lo que la tabla de arriba no puede mostrar: el gasto
+       de las OTRAS campañas, que es el que ensucia el total de Finanzas sin que
+       nadie lo vea. Si no hay ninguno, la seccion entera desaparece. */
+    const selLanding = pbLandingSel ? pbLandingSel.slug : null;
+    const selPub     = pbLandingSel ? null : pbActivoId;
+    const esDeLaDeArriba = g => selLanding
+      ? (g.landing === selLanding)
+      : (selPub && String(g.publicista_id) === String(selPub));
 
-    if(!gs.length){
-      $("#pbGastoTodo").innerHTML =
-        '<tr><td colspan="5" class="ag-vacio">No hay gasto cargado en este período</td></tr>';
-      $("#pbGastoTodoTot").style.display = "none";
-      return;
-    }
+    /* Las filas en CERO tampoco aportan: son campañas que existen pero no
+       gastaron. Ocupaban un renglon y hacian dudar de si faltaba cargar algo. */
+    const gs = (d.gastos || []).filter(g => g.monto > 0 && !esDeLaDeArriba(g));
+
+    const secc = $("#pbGastoTodo").closest(".pb-tabla-wrap");
+    const tit  = document.getElementById("pbGtTitulo");
+    const hint = document.getElementById("pbGtHint");
+    const hayOtras = gs.length > 0;
+    if(secc) secc.style.display = hayOtras ? "" : "none";
+    if(tit)  tit.style.display  = hayOtras ? "" : "none";
+    if(hint) hint.style.display = hayOtras ? "" : "none";
+    if(!hayOtras){ $("#pbGastoTodoTot").style.display = "none"; return; }
+
+    const per = $("#pbGtPeriodo");
+    if(per) per.textContent = "— " + gs.length + " carga" + (gs.length===1?"":"s");
 
     $("#pbGastoTodo").innerHTML = gs.map((g,i)=>`<tr>
       <td>${pbDiaLabel(g.fecha)}</td>
@@ -10593,13 +10624,14 @@
       <td><button type="button" class="pb-gasto-del" data-gtdel="${i}" title="Borrar esta carga de gasto">✕</button></td>
     </tr>`).join("");
 
-    /* El total tiene que coincidir con "Pauta del período" de Finanzas: si no
-       coincide, alguno de los dos está mal y hay que poder darse cuenta. */
+    /* El total dice QUE esta sumando. Antes decia "Total" a secas al pie de una
+       tabla que incluia la campaña de arriba, asi que no se podia saber si ese
+       numero ya estaba contado en el de arriba o no. */
     const tot = gs.reduce((a,g)=>a+g.monto, 0);
     const campanas = new Set(gs.map(g=>g.campana)).size;
     $("#pbGastoTodoTot").style.display = "";
     $("#pbGastoTodoTot").innerHTML = `<tr>
-      <td colspan="3">Total — ${campanas} campaña${campanas===1?"":"s"}</td>
+      <td colspan="3">En otras ${campanas} campaña${campanas===1?"":"s"} — se suma aparte del total de arriba</td>
       <td class="pb-gasto-total">${money(tot)}</td><td></td>
     </tr>`;
 
@@ -10665,6 +10697,18 @@
       }
     }
 
+    /* QUIEN se lleva el gasto de esta tabla, en el encabezado. Los publicistas
+       y las landings comparten las mismas solapas, asi que sin el nombre a la
+       vista no habia forma de saber a quien se le estaba cargando la plata --
+       y equivocarse no se nota hasta que los numeros no cierran. */
+    const thG = $("#pbThGasto");
+    if(thG){
+      const quienTabla = pbLandingSel ? pbLandingSel.nombre : (pbPublicistaActivo()?.nombre || "");
+      thG.innerHTML = quienTabla
+        ? 'Gasto <span style="font-weight:400;color:var(--muted)">· ' + esc(quienTabla) + '</span>'
+        : 'Gasto';
+    }
+
     const maxRegistros = Math.max(1, ...dias.map(x=>x.registros));
     /* La barra pasa a vivir DENTRO de la celda de registros, que es lo que
        mide. La sexta columna queda libre para el borrado del gasto. */
@@ -10676,8 +10720,8 @@
         <td>${nf.format(x.registros)}<div class="pb-tabla-barra" style="width:${anchoBarra}%;margin:4px 0 0 auto"></div></td>
         <td>${nf.format(x.primeras_cargas)}</td>
         <td>${money(x.depositado)}</td>
-        <td><button type="button" class="pb-gasto-btn ${hay?"":"vacio"}" data-i="${i}"
-              title="${hay?"Corregir el gasto de este día":"Cargar el gasto de este día"}">${
+        <td data-celda="${i}"><button type="button" class="pb-gasto-btn ${hay?"":"vacio"}" data-i="${i}"
+              title="${hay?"Tocá para corregirlo":"Tocá para cargarlo"}">${
               hay ? money(x.gasto) + ico("lapiz") : "+ Cargar"}</button></td>
         <td>${hay ? `<button type="button" class="pb-gasto-del" data-del="${i}" title="Borrar el gasto de este día">✕</button>` : ""}</td>
       </tr>`;
@@ -10704,15 +10748,83 @@
       Gasto cargado en ${tot.conGasto} de ${dias.length} días — los que falten bajan el CPA y el ROAS de todo el período.
     </td></tr>` : ""}`;
 
+    /* EDICION EN LINEA, y no el modal de antes.
+       El modal pedia FECHA aunque vos ya habias tocado la fila de un dia -- un
+       campo que solo podia estar mal -- y para cargar una semana eran seis
+       idas y vueltas. Ahora se escribe en la celda: Enter guarda, Esc cancela.
+       El modal sigue existiendo para el boton "Cargar gasto" de arriba, que es
+       el camino para un dia FUERA del periodo que estas mirando. */
     $("#pbDiaPorDia").querySelectorAll(".pb-gasto-btn").forEach(b=>{
-      b.addEventListener("click", ()=>{
-        const x = dias[parseInt(b.dataset.i,10)];
-        pbAbrirModalGasto(x.fecha, x.gasto);
-      });
+      b.addEventListener("click", ()=> pbEditarGastoEnLinea(b, dias[parseInt(b.dataset.i,10)]));
     });
     $("#pbDiaPorDia").querySelectorAll(".pb-gasto-del").forEach(b=>{
       b.addEventListener("click", ()=>pbBorrarGasto(dias[parseInt(b.dataset.del,10)]));
     });
+  }
+
+  /* ---------- Editar el gasto de un día SIN salir de la tabla ----------
+     Reemplaza al modal para el caso normal. La fila ya sabe qué día es y la
+     solapa ya sabe qué campaña, así que no queda nada que preguntar: solo el
+     monto.
+
+     GUARDA CON ENTER O AL SALIR DEL CAMPO, y cancela con Esc. Guardar al salir
+     es lo que evita el error clásico de escribir el número, irse a otra fila y
+     perderlo sin que nada avise.
+
+     Mientras guarda se deja el input deshabilitado en vez de repintar la tabla
+     entera: repintar mueve la fila de lugar y el operador pierde dónde estaba. */
+  let pbEditando = null;   // la celda en edición, para no abrir dos a la vez
+  function pbEditarGastoEnLinea(btn, dia){
+    if(pbEditando) return;
+    const td = btn.parentElement;
+    if(!td) return;
+    pbEditando = td;
+    const previo = dia.gasto > 0 ? String(dia.gasto) : "";
+    const quien = pbLandingSel ? pbLandingSel.nombre : (pbPublicistaActivo()?.nombre || "");
+
+    td.innerHTML = `<input class="pb-gasto-in" type="number" min="0" step="0.01"
+                           inputmode="decimal" placeholder="0" value="${esc(previo)}">
+                    <div class="pb-gasto-ayuda">Enter guarda · Esc cancela</div>`;
+    const inp = td.querySelector("input");
+    inp.focus(); inp.select();
+
+    let cerrado = false;
+    const cancelar = ()=>{
+      if(cerrado) return; cerrado = true; pbEditando = null;
+      pbCargarDiaPorDia();
+    };
+    const guardar = async ()=>{
+      if(cerrado) return;
+      const txt = inp.value.trim();
+      /* Vacío = no tocar nada. Para borrar está la ×, que además pregunta:
+         que un campo vacío borrara plata cargada sería demasiado fácil. */
+      if(txt === ""){ cancelar(); return; }
+      const monto = parseFloat(txt);
+      if(isNaN(monto) || monto < 0){ toast("Poné un monto válido"); inp.focus(); return; }
+      if(monto === dia.gasto){ cancelar(); return; }   // no cambió: ni se molesta al server
+      cerrado = true; inp.disabled = true;
+
+      const destino = pbLandingSel ? { landing: pbLandingSel.slug }
+                                   : { publicista_id: pbActivoId };
+      let d;
+      try{ d = await pbPostJson({accion:"gasto_guardar", ...destino, fecha: dia.fecha, monto}); }
+      catch(e){ pbEditando = null; pbCargarDiaPorDia(); return; }
+      pbEditando = null;
+      if(!d.ok){ toast(d.error || "No se pudo guardar"); pbCargarDiaPorDia(); return; }
+      toast(`Gasto de ${pbDiaLabel(dia.fecha).replace(/<[^>]+>/g,"")}: ${money(monto)}`
+            + (quien ? ` · ${quien}` : ""));
+      /* Las tres vistas dependen del gasto: el embudo (CPA, ROAS), la tabla y
+         el resumen de otras campañas. */
+      pbCargarEmbudo();
+      pbCargarDiaPorDia();
+      pbCargarGastoTodo();
+    };
+
+    inp.addEventListener("keydown", e=>{
+      if(e.key === "Enter"){ e.preventDefault(); guardar(); }
+      else if(e.key === "Escape"){ e.preventDefault(); cancelar(); }
+    });
+    inp.addEventListener("blur", ()=> setTimeout(guardar, 120));
   }
 
   /** "2026-09-13" -> "vie 13/09". La fecha cruda obliga a traducir mentalmente
