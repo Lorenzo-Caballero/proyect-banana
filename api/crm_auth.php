@@ -35,8 +35,34 @@ if (!function_exists('operador_login')) {
         if (session_status() === PHP_SESSION_ACTIVE) {
             return;
         }
+
+        /* LA SESIÓN DURA 12 HORAS, y las dos patas son obligatorias
+           (15/09/2026, "me pide la clave a cada rato"):
+
+           1. CARPETA DE SESIONES PROPIA. En Ubuntu las sesiones de PHP viven
+              en /var/lib/php/sessions y un cron del SISTEMA (sessionclean)
+              las borra según el gc_maxlifetime del php.ini — 24 MINUTOS por
+              default. Un ini_set() acá no lo frena: el cron ni mira lo que
+              esta app configura en runtime. Con carpeta propia, ese cron no
+              nos toca y la vida la decide este archivo.
+              (Como el cron ya no limpia por nosotros, se prende el gc
+              propio de PHP: ~1 de cada 200 requests barre las vencidas.)
+
+           2. COOKIE CON VIDA. Estaba en 0 ("hasta cerrar el navegador"),
+              que en la práctica también moría antes por el punto 1. Una
+              jornada de trabajo del operador son 8+ horas: 12 da margen. */
+        $vida = 12 * 3600;
+        $dir  = sys_get_temp_dir() . '/goldpaw_crm_sesiones';
+        if (!is_dir($dir)) { @mkdir($dir, 0700, true); }
+        if (is_dir($dir) && is_writable($dir)) {
+            session_save_path($dir);
+            @ini_set('session.gc_probability', '1');
+            @ini_set('session.gc_divisor', '200');
+        }
+        @ini_set('session.gc_maxlifetime', (string)$vida);
+
         session_set_cookie_params([
-            'lifetime' => 0,          // se cierra con el navegador
+            'lifetime' => $vida,
             'path'     => '/',
             'domain'   => '',
             'secure'   => true,
