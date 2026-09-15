@@ -132,6 +132,50 @@ function ficha_usuario(PDO $pdo, string $usuario): ?array
     $r['notificaciones'] = (bool)($r['notificaciones'] ?? false);
     $r['registrado_sitio'] = true;
     $r['bono_pendiente'] = bono_pendiente_total($pdo, $usuario);
+
+    /* LOS PEDIDOS DE RETIRO QUE YA TIENE ABIERTOS, de los dos lados.
+       Son dos colas distintas para la misma plata: la nuestra
+       (`acciones_saldo`, lo que pide por el chat o carga el operador) y la del
+       panel (`retiros_panel`, el boton de retirar de adentro del juego). El
+       modal de "Retirar" no las veia, asi que el operador podia abrir un
+       segundo pedido sin enterarse de que ya habia uno.
+       Paso el 15/09/2026: 4.000 pedidos en el juego y 4.280 cargados desde
+       acá; le transfirio 4.280 al banco y despues resolvio en el panel el de
+       4.000 -- quedaron 280 fichas adentro y dos pedidos contando historias
+       distintas sobre la misma plata. */
+    $r['retiros_abiertos'] = [];
+    try {
+        $sr = $pdo->prepare(
+            "SELECT monto, estado FROM acciones_saldo
+              WHERE usuario = ? AND tipo = 'retirar'
+                AND estado IN ('pendiente','procesando','revisar','error')
+              ORDER BY creada_en DESC LIMIT 5"
+        );
+        $sr->execute([$usuario]);
+        foreach ($sr->fetchAll(PDO::FETCH_ASSOC) as $f) {
+            $r['retiros_abiertos'][] = ['monto' => (float)$f['monto'],
+                                        'estado' => (string)$f['estado'],
+                                        'del_juego' => false];
+        }
+    } catch (Throwable $e) {
+        error_log('ficha_usuario/retiros: ' . $e->getMessage());
+    }
+    try {
+        $sp = $pdo->prepare(
+            "SELECT monto FROM retiros_panel
+              WHERE username = ? AND estado = 'abierto'
+              ORDER BY primera_vez DESC LIMIT 5"
+        );
+        $sp->execute([$usuario]);
+        foreach ($sp->fetchAll(PDO::FETCH_ASSOC) as $f) {
+            $r['retiros_abiertos'][] = ['monto' => (float)$f['monto'],
+                                        'estado' => 'pendiente',
+                                        'del_juego' => true];
+        }
+    } catch (Throwable $e) {
+        // Sin la migracion 64 no hay espejo del juego: se avisa lo que se pueda.
+    }
+
     return $r;
 }
 

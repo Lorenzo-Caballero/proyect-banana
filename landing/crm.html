@@ -681,6 +681,11 @@
                border:1px dashed var(--line);color:var(--muted);font-weight:700;font-size:12.5px;cursor:pointer}
   .modal .todo:hover{border-color:var(--violet);color:var(--txt)}
   .modal .todo-aviso{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.45}
+  /* El aviso de "ya tiene un retiro abierto": en ámbar y con borde, porque es
+     lo único de este modal que puede terminar en un pago doble. */
+  .modal .ret-abiertos{margin-top:14px;padding:10px 12px;border-radius:10px;font-size:12px;
+                       line-height:1.5;color:var(--txt);
+                       background:rgba(240,160,42,.10);border:1px solid rgba(240,160,42,.45)}
   .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--panel);border:1px solid var(--violet);color:var(--txt);padding:12px 20px;border-radius:12px;z-index:60;opacity:0;transition:.25s;pointer-events:none;box-shadow:var(--shadow)}
   .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
   .sp{display:inline-block;width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--violet);border-radius:50%;animation:sp .7s linear infinite}
@@ -4877,6 +4882,9 @@
   <div class="modal">
     <h3 id="mTitulo">Cargar fichas</h3>
     <p id="mSub">Se acredita al instante en la cuenta del jugador.</p>
+    <!-- Pedidos de retiro que el jugador ya tiene abiertos (los nuestros y los
+         del juego). Arriba del campo a propósito: se lee ANTES de tipear. -->
+    <div class="ret-abiertos" id="mRetAbiertos" style="display:none"></div>
     <label for="mMonto">Cantidad</label>
     <input id="mMonto" type="number" inputmode="numeric" placeholder="Ej: 500">
     <!-- Solo en el modal de RETIRAR, y solo si hay saldo: lo prende abrirModal().
@@ -4978,7 +4986,7 @@
                // Saldo del jugador de la ficha abierta: el numero CRUDO (lo usa
                // "Retirar todo") y hace cuantos segundos se leyo del panel.
                // Arrancan en "no se nada" a proposito -- ver pintarUsuario().
-               saldo:0, saldoHace:null,
+               saldo:0, saldoHace:null, retirosAbiertos:[],
                archivada:false, mensajes:0 };   // el orden lo da ordenActual()
   /* La seleccion multiple. Un Set de ids, fuera de `st` porque no es un
      filtro: sobrevive a recargas de la lista (el render la vuelve a pintar)
@@ -7484,7 +7492,7 @@
     if(!u){
       /* SIN FICHA NO HAY SALDO. Si no se limpia, el saldo del jugador anterior
          queda en `st` y "Retirar todo" ofreceria la plata de otro. */
-      st.saldo = 0; st.saldoHace = null;
+      st.saldo = 0; st.saldoHace = null; st.retirosAbiertos = [];
       $("#userCard").style.display="none";
       $("#noUser").style.display="block";
       $("#noUser").textContent = st.usuario ? `El usuario "${st.usuario}" no está en la base de usuarios.` : "Esta conversación todavía no tiene un usuario vinculado.";
@@ -7503,6 +7511,9 @@
     st.saldo = Number(u.saldo) || 0;
     st.saldoHace = (u.saldo_visto_hace === null || u.saldo_visto_hace === undefined)
                  ? null : Number(u.saldo_visto_hace);
+    // Los pedidos de retiro que ya tiene abiertos, de las dos colas. Lo usa el
+    // modal de retirar para no abrir un segundo pedido sobre la misma plata.
+    st.retirosAbiertos = Array.isArray(u.retiros_abiertos) ? u.retiros_abiertos : [];
     pintarEdadSaldo();
     // Bono pendiente: fichas fijas prometidas (en coins) + cuántas promesas
     // de % y de giro de ruleta sin acreditar todavía -- ver
@@ -8177,6 +8188,13 @@
 
     $("#retList").innerHTML = d.items.map(r=>{
       const btns = [];
+      /* DOS PEDIDOS ABIERTOS DEL MISMO JUGADOR. Uno por el chat y otro desde
+         adentro del juego son dos filas de dos tablas distintas, y acá se ven
+         como dos pedidos que no tienen nada que ver. Pagar los dos es la forma
+         normal de equivocarse -- pasó el 15/09/2026. */
+      const chipDoble = (r.abiertos_del_jugador > 1)
+        ? `<span class="urg-chip crit" title="Este jugador tiene ${r.abiertos_del_jugador} pedidos de retiro abiertos (por el chat y/o desde el juego). Revisá que no sea el mismo dos veces antes de pagar.">${r.abiertos_del_jugador} pedidos abiertos</span>`
+        : "";
       /* PEDIDO DESDE EL JUEGO: viene del espejo del panel, no de nuestra cola.
          No lleva NINGUNA accion nuestra -- se paga y se cierra en ganamos, y el
          espejo se entera solo en menos de un minuto. Ofrecer "Pagado" o
@@ -8191,7 +8209,7 @@
           : `<span class="rr-dato falta">Sin CBU/alias</span>`;
         return `<div class="ret-row">
           <div class="rr-mid">
-            <div class="rr-user">@${esc(r.usuario)}<span class="ret-tag pendiente">Pedido en el juego</span>${chip}</div>
+            <div class="rr-user">@${esc(r.usuario)}<span class="ret-tag pendiente">Pedido en el juego</span>${chip}${chipDoble}</div>
             <div class="rr-sub">#${r.id} · ${hace(r.creada_en)} · lo resolvés en el panel de ganamos</div>
             <div class="rr-destino">${dst}
               ${r.destino_nombre ? `<span class="rr-dato">${esc(r.destino_nombre)}</span>` : ""}
@@ -8272,7 +8290,7 @@
 
       return `<div class="ret-row">
         <div class="rr-mid">
-          <div class="rr-user">@${esc(r.usuario)}<span class="ret-tag ${esc(r.estado)}">${esc(tagTxt)}</span>${hgChip}${chipEspera}</div>
+          <div class="rr-user">@${esc(r.usuario)}<span class="ret-tag ${esc(r.estado)}">${esc(tagTxt)}</span>${hgChip}${chipEspera}${chipDoble}</div>
           <div class="rr-sub">#${r.id} · ${hace(r.creada_en)}${r.motivo?" · "+esc(r.motivo):""}</div>
           ${dest}
           ${nota}
@@ -8338,6 +8356,17 @@
      quien ya le pagaste. La nota es obligatoria porque es la única constancia:
      del otro lado no queda comprobante automático. */
   async function marcarRetiroPagado(r, btn){
+    /* LO QUE SE OLVIDA NO ES LA TRANSFERENCIA, SON LAS FICHAS. Marcar
+       "Pagado" cierra el pedido y NO le saca el saldo del juego: si el agente
+       transfirió pero no se las descontó en ganamos, el jugador cobró Y se
+       quedó jugando la misma plata. Es lo que pasó el 15/09/2026 (pagó 4.280
+       al banco, sacó 4.000 del juego, quedaron 280 dando vueltas), así que la
+       pregunta va antes que la nota y en ese orden. */
+    if(!confirm(
+      `Antes de cerrarlo: ¿ya le descontaste ${money(r.monto)} del saldo de @${r.usuario} en el panel de ganamos?\n\n` +
+      `"Pagado" solo cierra el pedido acá. NO le saca las fichas.\n` +
+      `Si no se las sacaste, el jugador cobró la transferencia y encima las sigue teniendo para jugar.`
+    )) return;
     const nota = prompt(
       `Marcar como PAGADO el retiro de ${money(r.monto)} de @${r.usuario}.
 
@@ -10817,6 +10846,27 @@
           : (s >= SALDO_VIEJO_SEG
               ? `Ojo: este saldo lo leímos hace ${s < 5400 ? Math.round(s/60)+" min" : Math.round(s/3600)+" h"}. Si siguió jugando, ya cambió.`
               : "Saldo leído hace instantes desde ganamos.");
+      }
+    }
+
+    /* ¿YA TIENE UN PEDIDO DE RETIRO ABIERTO? Hay DOS colas para la misma plata:
+       la nuestra (lo que pide por el chat o cargás vos acá) y la del panel (el
+       botón de retirar de adentro del juego). Se ven en pantallas distintas, y
+       abrir un segundo pedido sin ver el primero es la forma normal de pagar
+       dos veces: el 15/09/2026 terminó con 4.280 transferidos al banco y 4.000
+       descontados del juego.
+       Es un AVISO y no un bloqueo: a veces el segundo pedido es lo correcto
+       (el primero quedó mal, o es otra cosa). Pero que se vea antes de tipear. */
+    const avisoRet = $("#mRetAbiertos");
+    if(avisoRet){
+      const abiertos = esRetiro ? (st.retirosAbiertos || []) : [];
+      avisoRet.style.display = abiertos.length ? "" : "none";
+      if(abiertos.length){
+        const lista = abiertos.map(x =>
+          `${money(x.monto)} ${x.del_juego ? "(pedido en el juego)" : "(" + x.estado + ")"}`).join(", ");
+        avisoRet.textContent = abiertos.length === 1
+          ? `Ojo: @${st.usuario} ya tiene un pedido de retiro abierto por ${lista}. Revisá que no sea el mismo antes de cargar otro.`
+          : `Ojo: @${st.usuario} ya tiene ${abiertos.length} pedidos de retiro abiertos: ${lista}.`;
       }
     }
 

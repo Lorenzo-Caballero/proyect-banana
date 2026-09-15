@@ -22,6 +22,13 @@
  * COMPLETA el mismo pedido en vez de rebotar con "ya tenés uno". El aviso sale
  * recién ahí, con el dato adentro.
  *
+ * SECCION 5 (15/09/2026): un jugador puede pedir el retiro desde ADENTRO del
+ * juego, y eso vive en otra tabla (`retiros_panel`, espejo del panel). Esta
+ * funcion solo miraba la cola nuestra, asi que se podian abrir los dos a la
+ * vez. Paso: 4.000 pedidos en el juego y 4.280 por el chat, el agente
+ * transfirio 4.280 al banco y resolvio en el panel el de 4.000 -- quedaron 280
+ * fichas adentro y dos pedidos diciendo cosas distintas sobre la misma plata.
+ *
  *     php t_retiro_flujo.php
  */
 declare(strict_types=1);
@@ -92,6 +99,48 @@ chequear('se crea con destino', !empty($r4['ok']) && empty($r4['falta_destino'])
 chequear('y no hace falta un segundo llamado',
          (string)$pdo->query("SELECT destino FROM acciones_saldo WHERE id=" . (int)$r4['id'])
               ->fetchColumn() === '0000003100010000000001');
+
+echo "\n=== 5. Ya pidio el retiro DENTRO DEL JUEGO ===\n";
+/* EL CASO DEL 15/09. Dos colas distintas para la misma plata: si las dos
+   quedan abiertas, la forma normal de equivocarse es pagar las dos. */
+$pdo->exec("DELETE FROM acciones_saldo WHERE usuario='$U'");
+$hayPanel = true;
+try {
+    $pdo->exec("DELETE FROM retiros_panel WHERE username='$U'");
+    $pdo->prepare(
+        "INSERT INTO retiros_panel (request_id, username, titular, monto, destino,
+                                    estado, primera_vez)
+         VALUES (?,?,?,?,?, 'abierto', NOW())"
+    )->execute([234999001, $U, 'Tester', 4000, '0000003100045017569289']);
+} catch (Throwable $e) {
+    $hayPanel = false;
+    echo "  (sin migracion 64 en esta base: se saltea)\n";
+}
+
+if ($hayPanel) {
+    /* 400 y no 4.280: el jugador de prueba tiene 500 de saldo, y el chequeo
+       de "no te alcanza" corre ANTES que este -- igual que corre antes del
+       en_curso de la seccion 2. Lo que se prueba aca es el freno por duplicado,
+       no el de saldo. */
+    $r5 = fichas_pedir_retiro($pdo, $U, 400, 'chatbot', false, '0000003100045017569289');
+    chequear('no abre un segundo pedido', ($r5['codigo'] ?? '') === 'en_curso',
+             json_encode($r5));
+    chequear('y dice que el otro es el del juego', !empty($r5['en_el_juego']));
+    chequear('el mensaje trae el monto del pedido que ya existe',
+             strpos((string)($r5['error'] ?? ''), '4.000') !== false,
+             (string)($r5['error'] ?? ''));
+    $n5 = (int)$pdo->query("SELECT COUNT(*) FROM acciones_saldo WHERE usuario='$U'")
+                   ->fetchColumn();
+    chequear('no quedo ninguna fila nuestra', $n5 === 0, "filas=$n5");
+
+    /* Y CUANDO EL DEL JUEGO SE CIERRA, vuelve a poder pedir: esto frena
+       mientras hay uno abierto, no para siempre. */
+    $pdo->exec("UPDATE retiros_panel SET estado='cerrado' WHERE username='$U'");
+    $r6 = fichas_pedir_retiro($pdo, $U, 300, 'chatbot', false, 'Ganamos1010');
+    chequear('resuelto el del juego, ya puede pedir otro', !empty($r6['ok']),
+             json_encode($r6));
+    $pdo->exec("DELETE FROM retiros_panel WHERE username='$U'");
+}
 
 $pdo->exec("DELETE FROM acciones_saldo WHERE usuario='$U'");
 $pdo->exec("DELETE FROM usuarios WHERE username='$U'");

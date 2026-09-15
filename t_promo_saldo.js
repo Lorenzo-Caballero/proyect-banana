@@ -41,6 +41,25 @@ if (iniSup < 0 || finSup < 0) {
 }
 const CODIGO_SUP = src.slice(iniSup, finSup + 4);
 
+/* Y ofrecerPromoApp(), que es por donde pasa mirarSaldoBajo() desde el
+   15/09/2026. Antes llamaba directo a mostrarPromoApp() -- se salteaba el
+   freno a proposito -- y el test solo necesitaba ese stub; cuando cambio, el
+   test se caia con "ofrecerPromoApp is not defined" antes de probar nada.
+   Se extrae en vez de stubearla porque LO QUE HAY QUE PROBAR ES EL FRENO. */
+const iniOfr = src.indexOf("function ofrecerPromoApp(promo){");
+const finOfr = src.indexOf("\n  }", iniOfr);
+if (iniOfr < 0 || finOfr < 0) {
+  console.error("No pude extraer ofrecerPromoApp() de landing/widget.js");
+  process.exit(1);
+}
+const CODIGO_OFR = src.slice(iniOfr, finOfr + 4);
+
+/* El tope, del mismo archivo: hardcodearlo aca lo dejaria desincronizado el
+   dia que se cambie alla. */
+const mMin = src.match(/var PROMO_APP_MIN\s*=\s*([^;]+);/);
+if (!mMin) { console.error("No encontre PROMO_APP_MIN en widget.js"); process.exit(1); }
+const PROMO_APP_MIN = eval(mMin[1]);
+
 let ok = 0, fail = 0;
 function chequear(q, c, d) {
   if (c) { ok++; console.log("  OK    " + q); }
@@ -52,7 +71,13 @@ function chequear(q, c, d) {
 function escenario(promo, guardadoInicial) {
   let mostrados = [];
   let ultimaPromoApp = promo;                 // lo lee la funcion extraida
-  function mostrarPromoApp(p) { mostrados.push(p); }
+  /* El stub ANOTA LA HORA igual que el real: es lo que lee el freno de
+     ofrecerPromoApp(). Sin eso el freno nunca cortaria y el test estaria
+     probando un cartel sin limite, que no es el que esta desplegado. */
+  function mostrarPromoApp(p) {
+    mostrados.push(p);
+    lss("gp_app_promo_visto", String(Date.now()));
+  }
   /* El armado vive en localStorage, asi que el test tiene que simularlo. Es
      justo lo que hay que probar: que sobreviva a recargar la pagina. */
   let guardado = Object.assign({}, guardadoInicial || {});
@@ -63,6 +88,7 @@ function escenario(promo, guardadoInicial) {
      ESTE scope, que es lo que se quiere: cada escenario tiene su propio estado
      y no puede contaminar al de al lado. Declararlos aca arriba con let
      chocaria con la declaracion que trae el codigo extraido. */
+  eval(CODIGO_OFR);
   eval(CODIGO);
   return {
     saldo: v => mirarSaldoBajo(v),
@@ -154,7 +180,14 @@ console.log("\n=== 3. Una sola vez por bajada, no acoso ===");
   chequear("y sigue sin repetir mientras baja", e.veces() === 1, "veces=" + e.veces());
 }
 
-console.log("\n=== 4. Si vuelve a cargar, se re-arma ===");
+console.log("\n=== 4. Si vuelve a cargar, se re-arma (pero una por dia) ===");
+/* ESTO CAMBIO EL 15/09/2026 y la diferencia es deliberada. mirarSaldoBajo()
+   pasaba por mostrarPromoApp(), salteandose el freno: dos bajadas el mismo dia
+   eran dos carteles. Ahora el cartel sale CUANDO SE ACREDITAN LAS FICHAS -- que
+   es el momento que pidio Nahuel -- y este es el segundo camino al mismo aviso;
+   sin freno, los dos se pisarian el mismo dia.
+   El re-armado sigue existiendo: es lo que hace que el cartel salga en la
+   PROXIMA bajada, aunque sea al dia siguiente. */
 {
   const e = escenario(PROMO);
   e.saldo(5000); e.saldo(200);
@@ -162,7 +195,21 @@ console.log("\n=== 4. Si vuelve a cargar, se re-arma ===");
   e.saldo(4000);                       // recargo
   chequear("volver a subir no muestra nada", e.veces() === 1);
   e.saldo(100);                        // se volvio a quedar sin
-  chequear("la segunda bajada si muestra", e.veces() === 2, "veces=" + e.veces());
+  chequear("la segunda bajada del MISMO dia no repite", e.veces() === 1,
+           "veces=" + e.veces());
+}
+{
+  /* Al dia siguiente si: el freno es de PROMO_APP_MIN minutos, no para
+     siempre. Se simula envejeciendo la marca que dejo el primer cartel. */
+  const e = escenario(PROMO);
+  e.saldo(5000); e.saldo(200);
+  chequear("primera bajada", e.veces() === 1);
+  const g = e.guardado();
+  g.gp_app_promo_visto = String(Date.now() - (PROMO_APP_MIN + 1) * 60 * 1000);
+  const manana = escenario(PROMO, g);
+  manana.saldo(5000); manana.saldo(200);
+  chequear("pasado el freno, vuelve a salir", manana.veces() === 1,
+           "veces=" + manana.veces());
 }
 
 console.log("\n=== 5. El borde exacto del umbral ===");

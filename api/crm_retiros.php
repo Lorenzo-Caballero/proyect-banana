@@ -188,6 +188,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 }
             }
 
+            /* EL MISMO JUGADOR CON MAS DE UN PEDIDO ABIERTO.
+               Es la forma normal de pagar dos veces: uno pedido por el chat y
+               otro adentro del juego son dos filas en dos tablas distintas, y
+               en esta pantalla se ven como dos pedidos independientes. Paso el
+               15/09/2026 -- 4.280 por el chat y 4.000 en el juego -- y termino
+               con el jugador cobrando 4.280 del banco y quedandose 280 fichas.
+               `fichas_pedir_retiro` ya no deja que se abran los dos por el
+               chat; esto es para los que ya existen y para los que carga el
+               operador a mano desde la ficha, que no pasa por esa validacion.
+
+               Se cuenta con SU PROPIA consulta y no sobre $items: la lista
+               esta filtrada por estado y cortada a 200 filas, y un duplicado
+               que no entro en la pagina es justo el que hay que avisar. */
+            $dobles = [];
+            try {
+                $sd = $pdo->query(
+                    "SELECT usuario, COUNT(*) n FROM acciones_saldo
+                      WHERE tipo = 'retirar'
+                        AND estado IN ('pendiente','procesando','revisar','error')
+                      GROUP BY usuario"
+                );
+                foreach ($sd->fetchAll(PDO::FETCH_ASSOC) as $f) {
+                    $dobles[mb_strtolower((string)$f['usuario'])] = (int)$f['n'];
+                }
+                $sp = $pdo->query(
+                    "SELECT username, COUNT(*) n FROM retiros_panel
+                      WHERE estado = 'abierto' GROUP BY username"
+                );
+                foreach ($sp->fetchAll(PDO::FETCH_ASSOC) as $f) {
+                    $k = mb_strtolower((string)$f['username']);
+                    $dobles[$k] = ($dobles[$k] ?? 0) + (int)$f['n'];
+                }
+            } catch (Throwable $e) {
+                // Sin migracion 64 no hay espejo del juego: se avisa lo que se pueda.
+                error_log('crm_retiros/duplicados: ' . $e->getMessage());
+            }
+            $ABIERTOS = ['pendiente', 'procesando', 'revisar', 'error'];
+            foreach ($items as &$it) {
+                $it['abiertos_del_jugador'] =
+                    in_array((string)$it['estado'], $ABIERTOS, true)
+                    ? (int)($dobles[mb_strtolower((string)$it['usuario'])] ?? 1)
+                    : 1;
+            }
+            unset($it);
+
             salir(['ok' => true, 'items' => $items]);
         }
 

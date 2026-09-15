@@ -1064,25 +1064,84 @@ function rl_avisar_revision_vieja(PDO $pdo, int $minutos = 3): int
  * que es su valor por default, asi que el camino automatico no cambia nada
  * observable.
  */
+/**
+ * ¿ESTA ES LA PRIMERA CARGA DEL JUGADOR? 1 si, 0 no, null si no se pudo saber.
+ *
+ * EL BUG QUE ARREGLA (15/09/2026, caso real). Los tres caminos de acreditacion
+ * contaban lo mismo:
+ *
+ *     SELECT COUNT(*) FROM recargas WHERE usuario = ? AND estado='acreditada'
+ *
+ * o sea SOLO el camino B (la transferencia que toma el chatbot). Un jugador
+ * que ya habia cargado por el boton «Depositos» de adentro del juego, o al que
+ * un agente le cargo saldo a mano desde el CRM, seguia teniendo cero filas en
+ * `recargas`: su SEGUNDA carga se contaba como la primera y se llevaba el bono
+ * de bienvenida otra vez. Paso el 15/09: cargo 1.280 y cobro 640 de bono que
+ * no le tocaban, y hubo que sacarselos a mano.
+ *
+ * Es exactamente el error que CLAUDE.md documenta para Publicidad y Finanzas
+ * -- «hay UNA definicion de una carga» -- y que Publicidad ya habia corregido
+ * por su lado (publicidad_lib.php calcula la primera con las dos vias sobre la
+ * mesa y dejo de leer `recargas.es_primera`). Faltaba el bono, que es el unico
+ * de los tres que PAGA por esa respuesta.
+ *
+ * LAS DOS PREGUNTAS SON:
+ *   1. ¿tiene alguna recarga acreditada? (camino B: chatbot + HG Cash)
+ *   2. ¿tiene algun movimiento de SALDO positivo? Ese tipo solo lo escriben
+ *      dos lugares y los dos son plata de verdad entrando al juego:
+ *      `origen='peticion'` (camino A, el boton Depositos) y `origen='crm'`
+ *      (un agente cargando a mano, que en la practica es como se resuelve una
+ *      transferencia que el matcher no pudo casar). Los regalos y los bonos
+ *      NO son tipo 'saldo' -- van como 'ficha' o 'bono' -- asi que regalarle
+ *      fichas a alguien no le quema el bono de bienvenida.
+ *
+ * ANTE LA DUDA, NO ES LA PRIMERA. Si la consulta falla se devuelve null y el
+ * caller no paga: deberle un bono se arregla cargandolo desde el CRM, pagarlo
+ * dos veces no se arregla con nada.
+ *
+ * SE LLAMA ANTES de marcar acreditada la recarga en curso -- si no, se contaria
+ * a si misma. Los tres callers ya lo hacen asi.
+ */
+function rl_es_primera_carga(PDO $pdo, string $usuario): ?int
+{
+    try {
+        $st = $pdo->prepare(
+            "SELECT 1 FROM recargas WHERE usuario = ? AND estado = 'acreditada' LIMIT 1"
+        );
+        $st->execute([$usuario]);
+        if ($st->fetchColumn()) { return 0; }
+
+        /* Segunda consulta y no un UNION: `recargas.usuario` y
+           `movimientos.usuario` tienen collations distintas (ver CLAUDE.md), y
+           comparar cada una contra un parametro de PHP no depende de ninguna. */
+        $st = $pdo->prepare(
+            "SELECT 1 FROM movimientos
+              WHERE usuario = ? AND tipo = 'saldo' AND monto > 0 LIMIT 1"
+        );
+        $st->execute([$usuario]);
+        if ($st->fetchColumn()) { return 0; }
+
+        return 1;
+    } catch (Throwable $e) {
+        error_log('rl_es_primera_carga (' . $usuario . '): ' . $e->getMessage());
+        return null;
+    }
+}
+
 function rl_acreditar(PDO $pdo, array &$recarga, string $idUnico, string $conf,
                        ?string $operador = null, ?string $confianza = null): void
 {
     // Se resuelve ANTES del UPDATE de abajo: en ese momento la fila de esta
-    // recarga todavia esta 'pendiente', asi que contar 'acreditada' previas
-    // del mismo usuario da exactamente "cuantas cargas tenia ANTES de esta".
+    // recarga todavia esta 'pendiente', asi que no se cuenta a si misma.
     // Se guarda en la fila (no se recalcula despues con MIN/subquery) para
     // que el modulo de Publicidad haga SUM/COUNT simples sobre es_primera en
     // vez de repetir este calculo cada vez que el operador abre el reporte.
-    $esPrimera = null;
-    try {
-        $st = $pdo->prepare(
-            "SELECT COUNT(*) FROM recargas WHERE usuario = ? AND estado = 'acreditada'"
-        );
-        $st->execute([$recarga['usuario']]);
-        $esPrimera = ((int)$st->fetchColumn() === 0) ? 1 : 0;
-    } catch (Throwable $e) {
-        error_log('rl_acreditar: no pude calcular es_primera: ' . $e->getMessage());
-    }
+    //
+    // ACA SE CONTABAN SOLO LAS `recargas`, y por eso un jugador que habia
+    // empezado por el boton «Depositos» cobraba el bono de bienvenida en su
+    // segunda carga. El conteo vive ahora en rl_es_primera_carga(), que mira
+    // los dos caminos -- ver su docblock.
+    $esPrimera = rl_es_primera_carga($pdo, (string)$recarga['usuario']);
 
     // $confianza viene explicito del que llama, no deducido de $conf. Se
     // intento parsear el prefijo del texto y quedaba NULL justo en el camino
@@ -2220,20 +2279,11 @@ function rl_acreditar_directo(PDO $pdo, string $idUnico, string $usuario,
            `recargas` -- y por eso se lo salteaba: la primera carga de un
            jugador de landing resuelta por aca no daba bono nunca, y la
            SEGUNDA (por recarga normal) lo cobraba sobre el monto equivocado.
-           Mismo criterio de "primera" que rl_acreditar: cero recargas
-           acreditadas previas (este camino no crea filas en `recargas`, asi
-           que el candado de una-sola-vez del helper es el que evita el doble
-           pago entre caminos y entre dos directos seguidos). */
-        $esPrimera = null;
-        try {
-            $st = $pdo->prepare(
-                "SELECT COUNT(*) FROM recargas WHERE usuario = ? AND estado = 'acreditada'"
-            );
-            $st->execute([$usuario]);
-            $esPrimera = ((int)$st->fetchColumn() === 0) ? 1 : 0;
-        } catch (Throwable $e) {
-            error_log('rl_acreditar_directo: no pude calcular es_primera: ' . $e->getMessage());
-        }
+           Mismo criterio de "primera" que rl_acreditar -- la misma funcion,
+           de hecho (este camino no crea filas en `recargas`, asi que el
+           candado de una-sola-vez del helper es el que evita el doble pago
+           entre caminos y entre dos directos seguidos). */
+        $esPrimera = rl_es_primera_carga($pdo, $usuario);
         $bono = 0;
         $refPago = null;
         if ($esPrimera === 1) {

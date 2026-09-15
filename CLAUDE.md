@@ -304,6 +304,26 @@ negocio. Pasó dos veces:
 > (el número redondo que pidió) — difieren hasta en 99 centavos en las recargas
 > viejas, de cuando los centavos eran únicos.
 
+### «La primera carga» tiene la misma trampa, y esa PAGA
+
+El bono de bienvenida se decide con «¿es su primera carga?», y los tres caminos
+de acreditación contestaban eso contando **solo `recargas`**. O sea que al que
+empezó cargando por el botón «Depósitos» —o al que un agente le cargó a mano—
+le marcaban como primera la que en realidad era su segunda, y **cobraba el bono
+otra vez**. Pasó el 15/09/2026: cargó 1.280 y se llevó 640 que no le tocaban.
+
+> **La pregunta se hace en un solo lugar: `rl_es_primera_carga()`**
+> (`api/recargas_lib.php`). Mira las dos cosas que significan «ya entró plata
+> por este jugador»: una `recargas` acreditada, o un `movimientos` de
+> `tipo='saldo'` con `monto > 0` —que solo escriben el camino A
+> (`origen='peticion'`) y la carga a mano del CRM (`origen='crm'`)—. Los
+> regalos van como `'ficha'` o `'bono'`, así que regalar fichas no le quema el
+> bono a nadie. **Ante la duda devuelve `null` y no se paga**: deber un bono se
+> arregla cargándolo desde el CRM; pagarlo dos veces, no.
+>
+> La columna `recargas.es_primera` guarda ese resultado. Publicidad ya no la
+> lee (calcula la suya con las dos vías), pero el bono sí.
+
 ### Los retiros salen del LIBRO del panel, no de nuestra cola
 
 Con los retiros pasaba lo simétrico y era **mucho peor**. `acciones_saldo` es
@@ -357,6 +377,33 @@ Cosas que hay que tener presentes al tocar esto:
 - También se guardan los **depósitos** (`tipo=0`). Todavía no se usan para
   sumar, pero son el control cruzado de los que el bot marcó `hecha` sin que la
   plataforma los registre, que es el bug de `PARA-FAUNO-deposito.md`.
+
+### Un retiro se puede pedir por DOS colas, y son distintas
+
+| Dónde lo pide | Dónde queda | Quién lo ejecuta |
+|---|---|---|
+| Chat, o el operador desde la ficha | `acciones_saldo` (`tipo='retirar'`) | nuestro worker, **solo con `aprobado=1`** |
+| Botón de retirar **adentro del juego** | `retiros_panel` (espejo, migración 64) | una persona, **en el panel de ganamos** |
+
+No se mezclan a propósito: un pedido del panel metido en `acciones_saldo` se
+pagaría dos veces. Pero eso deja un agujero que **no es teórico**: el mismo
+jugador podía tener **uno abierto en cada cola** y nadie lo veía junto.
+
+> Pasó el 15/09/2026. Pidió 4.000 desde el juego y 4.280 por el chat; el agente
+> le transfirió 4.280 al banco y después resolvió en el panel el de 4.000. Le
+> quedaron 280 fichas adentro, y los dos pedidos contaban historias distintas
+> sobre la misma plata. **Con dos pedidos abiertos, la forma normal de
+> equivocarse es pagar los dos.**
+
+Lo que lo contiene hoy: `fichas_pedir_retiro()` mira **las dos** colas antes de
+crear uno nuevo; la ficha del CRM devuelve `retiros_abiertos` y el modal de
+retirar lo avisa; y la pantalla de Retiros marca al jugador que tiene más de uno
+(`abiertos_del_jugador`).
+
+> **«Pagado» NO le saca las fichas del juego.** Cierra el pedido en el CRM y
+> nada más —la plata sale del banco, el saldo de ganamos lo bajás vos en el
+> panel—. Si te olvidás, el jugador cobró la transferencia **y** sigue teniendo
+> las fichas para jugar. Por eso el botón ahora pregunta eso primero.
 
 ## Chatbot y CRM
 

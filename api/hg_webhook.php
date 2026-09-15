@@ -187,19 +187,15 @@ function hgw_acreditar_checkout(PDO $pdo, string $checkoutId, string $dbNombre):
 
         /* "Primera carga" se decide ANTES del claim: el claim mismo vuelve
            acreditada ESTA recarga y el conteo ya no diria "cero previas".
-           Mismo calculo que rl_acreditar(); se persiste en la fila para que
-           Publicidad haga SUM(es_primera) sin recalcular (las recargas HG
-           quedaban en NULL y no contaban como primera carga en el embudo). */
-        $esPrimera = null;
-        try {
-            $st = $pdo->prepare(
-                "SELECT COUNT(*) FROM recargas WHERE usuario = ? AND estado = 'acreditada'"
-            );
-            $st->execute([(string)$recarga['usuario']]);
-            $esPrimera = ((int)$st->fetchColumn() === 0) ? 1 : 0;
-        } catch (Throwable $e) {
-            error_log('hg_webhook: no pude calcular es_primera: ' . $e->getMessage());
-        }
+           La MISMA funcion que los otros dos caminos (mira tambien las cargas
+           del boton «Depositos» y las que carga un agente a mano, que es lo
+           que hacia cobrar el bono de bienvenida dos veces); se persiste en la
+           fila para que Publicidad haga SUM(es_primera) sin recalcular (las
+           recargas HG quedaban en NULL y no contaban en el embudo).
+           Si recargas_lib no se pudo cargar, null -> no se paga bono. */
+        $esPrimera = function_exists('rl_es_primera_carga')
+                   ? rl_es_primera_carga($pdo, (string)$recarga['usuario'])
+                   : null;
 
         try {
             $claim = $pdo->prepare(

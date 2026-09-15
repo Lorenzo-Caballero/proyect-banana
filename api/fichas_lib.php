@@ -740,6 +740,43 @@ function fichas_pedir_retiro(PDO $pdo, string $usuario, int $monto, string $orig
                 'error' => 'Ya tenés un retiro pedido. Un agente lo está viendo.'];
     }
 
+    /* ¿Y UNO PEDIDO DENTRO DEL JUEGO? Son DOS colas distintas: la de arriba es
+       la nuestra (`acciones_saldo`), y el boton de retirar de adentro de la
+       plataforma deja el pedido del lado de ganamos, que espejamos en
+       `retiros_panel` (migracion 64). Hasta ahora esta funcion solo miraba la
+       nuestra, asi que un jugador podia tener los dos abiertos a la vez.
+
+       NO ES TEORICO. El 15/09/2026 uno pidio 4.000 desde el juego y 4.280 por
+       el chat: el agente le transfirio 4.280 al banco y despues resolvio en el
+       panel el pedido de 4.000 -- le quedaron 280 fichas adentro y dos pedidos
+       que decian cosas distintas sobre la misma plata. Con dos pedidos abiertos
+       del mismo jugador, la forma normal de equivocarse es pagar los dos.
+
+       Va DESPUES del bloque de arriba a proposito: ese completa el CBU de un
+       retiro nuestro que ya existe, y esa ayuda no se pierde por esto.
+
+       Si falta la migracion 64 no hay espejo y se sigue como siempre: una
+       tabla que no existe no puede frenar un retiro legitimo. */
+    try {
+        $enJuego = $pdo->prepare(
+            "SELECT request_id, monto FROM retiros_panel
+              WHERE username = ? AND estado = 'abierto'
+              ORDER BY primera_vez DESC LIMIT 1"
+        );
+        $enJuego->execute([$usuario]);
+        if ($rp = $enJuego->fetch(PDO::FETCH_ASSOC)) {
+            return ['ok' => false, 'codigo' => 'en_curso',
+                    'id' => (int)$rp['request_id'], 'en_el_juego' => true,
+                    'error' => 'Ya pediste un retiro de '
+                             . number_format((float)$rp['monto'], 0, ',', '.')
+                             . ' fichas desde el juego y lo está viendo un agente. '
+                             . 'Cuando se resuelva podés pedir otro.'];
+        }
+    } catch (Throwable $e) {
+        // Sin migracion 64: se sigue como antes.
+        error_log('fichas_pedir_retiro/retiros_panel: ' . $e->getMessage());
+    }
+
     /* Tope de retiro POR DIA (config_crm.lim_retiro_max_dia, 0 = sin tope).
        Se cuentan los pedidos de hoy incluyendo los que todavia no se pagaron:
        si solo se sumaran los ya pagados, alcanzaria con encolar varios juntos

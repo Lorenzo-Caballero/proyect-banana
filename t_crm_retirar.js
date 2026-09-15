@@ -83,6 +83,7 @@ function escenario(opciones) {
       convId: 7, accion: "",
       saldo: o.saldo === undefined ? 0 : o.saldo,
       saldoHace: o.saldoHace === undefined ? 0 : o.saldoHace,
+      retirosAbiertos: o.retirosAbiertos || [],
     },
     money: (n) => "$" + Number(n || 0).toLocaleString("es-AR"),
     nf: { format: (n) => Number(n || 0).toLocaleString("es-AR") },
@@ -177,7 +178,40 @@ async function correr() {
              e.nodo("#mTodoAviso").textContent);
   }
 
-  console.log("\n=== 4. El botón nunca dice lo contrario de lo que hace ===");
+  console.log("\n=== 4. Ya tiene un pedido de retiro abierto ===");
+  /* LAS DOS COLAS. Lo que el jugador pide adentro del juego vive en otra tabla
+     y se ve en otra pantalla; abrir un segundo pedido sin ver el primero es
+     como se termina pagando dos veces. El 15/09/2026: 4.280 al banco, 4.000
+     sacados del juego, 280 dando vueltas. */
+  {
+    const e = escenario({ saldo: 4280,
+      retirosAbiertos: [{ monto: 4000, estado: "pendiente", del_juego: true }] });
+    e.abrir("retirar_saldo", "Retirar saldo", true);
+    const av = e.nodo("#mRetAbiertos");
+    chequear("el aviso aparece", av.style.display === "", JSON.stringify(av.style));
+    chequear("dice cuanto es el pedido que ya existe",
+             /4\.?000/.test(av.textContent), av.textContent);
+    chequear("y de donde salio", /en el juego/i.test(av.textContent), av.textContent);
+    /* AVISA, NO BLOQUEA. A veces el segundo pedido es lo correcto (el primero
+       quedo mal, o es otra cosa): la decision sigue siendo del operador. */
+    chequear("pero NO bloquea: el boton sigue habilitado",
+             e.nodo("#mOk").disabled === false);
+  }
+  {
+    const e = escenario({ saldo: 4280,
+      retirosAbiertos: [{ monto: 4000, estado: "pendiente", del_juego: true }] });
+    e.abrir("cargar_saldo", "Cargar saldo", true);
+    chequear("en el modal de CARGAR no se avisa (no viene al caso)",
+             e.nodo("#mRetAbiertos").style.display === "none");
+  }
+  {
+    const e = escenario({ saldo: 4280 });
+    e.abrir("retirar_saldo", "Retirar saldo", true);
+    chequear("sin pedidos abiertos no hay cartel",
+             e.nodo("#mRetAbiertos").style.display === "none");
+  }
+
+  console.log("\n=== 5. El botón nunca dice lo contrario de lo que hace ===");
   {
     const e = escenario({ saldo: 4280, respuesta: { ok: false, error: "no se pudo" } });
     e.abrir("retirar_saldo", "Retirar saldo", true);

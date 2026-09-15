@@ -21,7 +21,11 @@
  *   - usuarios_sync.php marca CUANDO se leyo el saldo, incluso si el balance
  *     vino igual -- que es el caso que `actualizado_en` no cubre;
  *   - sin la migracion corrida, el espejo entra igual (nada de 500);
- *   - ficha_usuario() le pasa la edad al CRM, y null cuando nunca se leyo.
+ *   - ficha_usuario() le pasa la edad al CRM, y null cuando nunca se leyo;
+ *   - y le pasa los retiros que el jugador YA tiene abiertos, de las DOS colas
+ *     (la nuestra y la del boton de adentro del juego). Sin eso, el modal de
+ *     retirar dejaba abrir un segundo pedido sobre la misma plata -- que es
+ *     como el 15/09 terminaron 4.280 en el banco y 4.000 sacados del juego.
  *
  *     php t_espejo_saldo.php
  */
@@ -189,6 +193,64 @@ ok(is_int($f['saldo_visto_hace']) && $f['saldo_visto_hace'] <= 5,
 ok(isset($f['saldo']) && is_float($f['saldo']) && $f['saldo'] === 777.0,
    'el saldo viaja crudo (lo necesita el boton "Retirar todo")',
    var_export($f['saldo'] ?? null, true));
+
+echo "\n=== 5. Los retiros que ya tiene abiertos ===\n";
+/* Son DOS colas para la misma plata y se veian en pantallas distintas. La
+   ficha las junta para que el modal pueda avisar antes de abrir otro. */
+{
+    $f = ficha_usuario($pdo, $U);
+    ok(isset($f['retiros_abiertos']) && $f['retiros_abiertos'] === [],
+       'sin pedidos abiertos, la lista viene vacia',
+       json_encode($f['retiros_abiertos'] ?? 'sin clave'));
+
+    $pdo->prepare(
+        "INSERT INTO acciones_saldo (usuario, tipo, monto, motivo, estado)
+         VALUES (?, 'retirar', 4280, 'del test', 'pendiente')"
+    )->execute([$U]);
+    $f = ficha_usuario($pdo, $U);
+    ok(count($f['retiros_abiertos']) === 1
+       && (float)$f['retiros_abiertos'][0]['monto'] === 4280.0
+       && $f['retiros_abiertos'][0]['del_juego'] === false,
+       'aparece el pedido de nuestra cola', json_encode($f['retiros_abiertos']));
+
+    /* EL QUE FALTABA: el que el jugador pidio DENTRO del juego. Vive en otra
+       tabla y era invisible desde la ficha. */
+    $hayPanel = true;
+    try {
+        $pdo->prepare("DELETE FROM retiros_panel WHERE username = ?")->execute([$U]);
+        $pdo->prepare(
+            "INSERT INTO retiros_panel (request_id, username, titular, monto, destino,
+                                        estado, primera_vez)
+             VALUES (?,?,?,?,?, 'abierto', NOW())"
+        )->execute([234999002, $U, 'Tester', 4000, '00000031000450175692']);
+    } catch (Throwable $e) {
+        $hayPanel = false;
+        echo "  (sin migracion 64 en esta base: se saltea)\n";
+    }
+    if ($hayPanel) {
+        $f = ficha_usuario($pdo, $U);
+        ok(count($f['retiros_abiertos']) === 2,
+           'y tambien el pedido hecho DENTRO del juego',
+           json_encode($f['retiros_abiertos']));
+        $delJuego = array_values(array_filter($f['retiros_abiertos'],
+                                              static fn($x) => $x['del_juego']));
+        ok(count($delJuego) === 1 && (float)$delJuego[0]['monto'] === 4000.0,
+           'con su monto y marcado como del juego', json_encode($delJuego));
+
+        /* Un pedido CERRADO ya no molesta: esto avisa de lo que sigue abierto,
+           no del historial. */
+        $pdo->prepare("UPDATE retiros_panel SET estado='cerrado' WHERE username = ?")
+            ->execute([$U]);
+        $pdo->prepare("UPDATE acciones_saldo SET estado='hecha' WHERE usuario = ?")
+            ->execute([$U]);
+        $f = ficha_usuario($pdo, $U);
+        ok($f['retiros_abiertos'] === [],
+           'resueltos los dos, la lista vuelve a quedar vacia',
+           json_encode($f['retiros_abiertos']));
+        $pdo->prepare("DELETE FROM retiros_panel WHERE username = ?")->execute([$U]);
+    }
+    $pdo->prepare("DELETE FROM acciones_saldo WHERE usuario = ?")->execute([$U]);
+}
 
 $pdo->prepare("DELETE FROM usuarios WHERE username = ?")->execute([$U]);
 
