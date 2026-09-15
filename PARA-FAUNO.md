@@ -447,8 +447,37 @@ desde el VPS, ya logueados: cero challenges.** Ninguno. O sea que el dominio no
 alcanza para explicar el problema, y mudarse sería mover el bot a un lugar que
 no probamos por una causa que no está confirmada.
 
-**La hipótesis que queda en pie es la concurrencia en ráfaga** (el `conc = 6`
-del cambio 4), no el dominio.
+**Hay dos hipótesis, y la segunda es mucho más fuerte:**
+
+1. La concurrencia en ráfaga (el `conc = 6` del cambio 4). **Ya aplicada**: el
+   `.env` del VPS lleva `ALTA_CONCURRENCIA=3` desde el 15/09 y el log confirma
+   *"fast-path en olas de 3"*.
+
+2. **CINCO CONTENEDORES LOGUEADOS CON LA MISMA CUENTA DE AGENTE.** Medido en el
+   VPS el 15/09 — todos con `PANEL_USER=Nahuelwin26x` contra
+   `agents.ganamosonline.com`, y cada uno con su propio `estado_sesion.json`,
+   o sea **cinco logins distintos**:
+
+   | Contenedor | Qué corre | Para qué tenant |
+   |---|---|---|
+   | `ganamos-bot-creador` | `bot_crear_jugador` | ganamoscrm |
+   | `bot-ganamoscrm` | `sync_usuarios --loop 300` | ganamoscrm |
+   | `altas-casinotest` | `bot_crear_jugador` | casinotest |
+   | `bot-casinotest` | `sync_usuarios --loop 300` | casinotest |
+   | `ganamos-bot-recaudador` | `bot_recaudar --demonio` | ganamoscrm |
+
+   El compose de este repo ya advierte que **dos** sesiones con la misma cuenta
+   se patean el login. Acá hay cinco. Si la plataforma invalida la sesión vieja
+   al entrar de nuevo, esto es un ciclo permanente de login → invalidación →
+   re-login; y repetir logins desde una IP de datacenter es exactamente lo que
+   hace a Cloudflare/ServicePipe desconfiar y tirar el challenge.
+
+   **Esto explica los challenges intermitentes mejor que el `conc`**, y explica
+   además por qué el espejo de saldos "fallaba de a ratos".
+
+   Lo que corresponde: dejar **un solo** login por cuenta de agente, y que cada
+   tenant tenga la suya. `bot-ganamoscrm` ya es redundante — el espejo lo hace
+   `colector/aprobar_cargas.py` dentro del creador, sin login extra.
 
 > **Lo que falta para poder decidir el dominio**: entrar a mano a
 > `https://agents.ganamos7.com/` con las credenciales del cajero y ver si
