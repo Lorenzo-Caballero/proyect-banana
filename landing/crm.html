@@ -565,6 +565,10 @@
      número que se ve no es el que el jugador tiene. En ámbar arriba de los
      10 min, que es donde deja de servir para decidir un retiro. */
   .sbox .edad{font-size:9.5px;color:var(--muted);margin-top:3px;letter-spacing:.2px}
+  /* El saldo que el jugador ve en su pantalla. En violeta y no en verde: NO es
+     el numero oficial, es contexto -- y si se pareciera al saldo de arriba
+     alguien lo iba a usar para pagar. */
+  .sbox .vivo{font-size:10px;margin-top:2px;color:var(--violet2);font-weight:700}
   .sbox .edad.viejo{color:var(--amber,#f0a02a);font-weight:700}
   .sec{padding:4px 16px 18px}
   .sec h4{margin:16px 0 9px;font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px}
@@ -2409,7 +2413,7 @@
            bonos_pendientes sin acreditar todavía (lo prometido, no lo
            histórico acumulado) -- ver bono_pendiente_total() en crm.php. -->
       <div class="saldos saldos2">
-        <div class="sbox saldo" id="uSaldoBox"><div class="k">Saldo</div><div class="v" id="uSaldo">$0</div><div class="edad" id="uSaldoEdad"></div></div>
+        <div class="sbox saldo" id="uSaldoBox"><div class="k">Saldo</div><div class="v" id="uSaldo">$0</div><div class="edad" id="uSaldoEdad"></div><div class="vivo" id="uSaldoVivo" style="display:none"></div></div>
         <div class="sbox bono" id="uBonoBox" title="Bonos prometidos, aún no acreditados"><div class="k">Bono pendiente</div><div class="v" id="uBonos">0</div></div>
       </div>
       <div class="sec">
@@ -7729,6 +7733,42 @@
      Sin dato (`null`) el cartel dice que nunca se leyó, que es el síntoma de
      tener el espejo caído -- y callarlo sería peor que mostrarlo. */
   const SALDO_VIEJO_SEG = 600;
+  /* EL SALDO QUE EL JUGADOR VE EN SU PANTALLA, cuando aporta algo.
+     Sale de `balance_web`: lo reporta el widget desde el navegador del jugador,
+     leyendo el juego en vivo. No cuesta una sola request al panel, y suele ser
+     mucho más fresco que el espejo -- que se lee cada 5 minutos.
+
+     SE MUESTRA SOLO SI APORTA, y son tres condiciones a la vez:
+       - hay dato;
+       - es MÁS FRESCO que el espejo (si el espejo es más nuevo, este sobra);
+       - y DIFIERE del oficial (si dicen lo mismo, repetirlo es ruido).
+     Así aparece exactamente cuando importa: el jugador está jugando y su saldo
+     ya se movió respecto de lo último que leímos del panel.
+
+     NUNCA es el número para pagar, y por eso va abajo, más chico y en otro
+     color: `saldo_reportar.php` es un endpoint público y sin sesión, o sea que
+     el jugador puede mandar lo que quiera. Lo que autoriza plata sigue siendo
+     el saldo de arriba. Acá sirve para NOTAR UNA DIFERENCIA y ir a confirmarla
+     al panel. */
+  function pintarSaldoVivo(u){
+    const el = $("#uSaldoVivo"); if(!el) return;
+    const v = (u.saldo_web === null || u.saldo_web === undefined) ? null : Number(u.saldo_web);
+    const h = (u.saldo_web_hace === null || u.saldo_web_hace === undefined)
+            ? null : Number(u.saldo_web_hace);
+    const espejoHace = (u.saldo_visto_hace === null || u.saldo_visto_hace === undefined)
+                     ? Infinity : Number(u.saldo_visto_hace);
+    const aporta = v !== null && h !== null && h < espejoHace
+                && Math.round(v) !== Math.round(Number(u.saldo) || 0);
+    el.style.display = aporta ? "" : "none";
+    if(!aporta) return;
+    const cuando = h < 90 ? "recién" : (h < 5400 ? "hace " + Math.round(h/60) + " min"
+                                                 : "hace " + Math.round(h/3600) + " h");
+    el.textContent = "él ve " + money(v) + " · " + cuando;
+    el.title = "Lo que el jugador tiene en pantalla, reportado por su navegador " + cuando
+             + ". Es más fresco que el saldo de arriba, pero NO sirve para autorizar un pago: "
+             + "ese dato lo manda el navegador del jugador. Si la diferencia importa, confirmala en el panel.";
+  }
+
   function pintarEdadSaldo(){
     const el = $("#uSaldoEdad"); if(!el) return;
     const s = st.saldoHace;
@@ -7756,6 +7796,7 @@
       /* SIN FICHA NO HAY SALDO. Si no se limpia, el saldo del jugador anterior
          queda en `st` y "Retirar todo" ofreceria la plata de otro. */
       st.saldo = 0; st.saldoHace = null; st.retirosAbiertos = [];
+      const sv = $("#uSaldoVivo"); if(sv) sv.style.display = "none";
       $("#userCard").style.display="none";
       $("#noUser").style.display="block";
       $("#noUser").textContent = st.usuario ? `El usuario "${st.usuario}" no está en la base de usuarios.` : "Esta conversación todavía no tiene un usuario vinculado.";
@@ -7774,6 +7815,7 @@
     st.saldo = Number(u.saldo) || 0;
     st.saldoHace = (u.saldo_visto_hace === null || u.saldo_visto_hace === undefined)
                  ? null : Number(u.saldo_visto_hace);
+    pintarSaldoVivo(u);
     // Los pedidos de retiro que ya tiene abiertos, de las dos colas. Lo usa el
     // modal de retirar para no abrir un segundo pedido sobre la misma plata.
     st.retirosAbiertos = Array.isArray(u.retiros_abiertos) ? u.retiros_abiertos : [];
