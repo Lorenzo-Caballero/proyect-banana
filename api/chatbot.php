@@ -23,8 +23,10 @@
  * en ia_chat(), ia_texto() y procesar_chat().
  *
  * CONFIG (config.local.php o entorno):
- *   1) QWEN_API_KEY   la clave. Obligatoria (aunque corras sobre Claude: Qwen
- *                     queda de respaldo si Claude falla).
+ *   1) QWEN_API_KEY   la clave del RESPALDO Qwen. Muy recomendada aunque el
+ *                     chat corra sobre Claude (si Claude falla, sin ella no
+ *                     hay respaldo), pero ya no obligatoria: con CHAT_MODEL +
+ *                     ANTHROPIC_API_KEY el chat arranca igual.
  *   2) QWEN_BASE_URL  opcional, default en QWEN_BASE_DEF.
  *   3) QWEN_MODEL     opcional, default en QWEN_MODEL_DEF.
  *   3b) CHAT_MODEL    opcional: si es un modelo claude-... (ej. claude-sonnet-5)
@@ -348,16 +350,20 @@ $TOOLS = [
     ]],
 ];
 
-// --- La key: primero la del CLIENTE, despues la del server ---
-// ia_key() resuelve clientes.ia_key (plano de control, por tenant) -> 
-// QWEN_API_KEY -> COHERE_API_KEY (el nombre viejo). Ver api/ia_key.php: antes
-// esto eran dos lineas copiadas en tres archivos y la clave POR CLIENTE que
-// pedia el panel del dueño no la leia nadie.
+// --- Las keys: una por lugar, resueltas en ia_key.php ---
+// $key es la del RESPALDO Qwen (siempre las globales del server). La del
+// primario Claude la resuelve ia_chat() con ia_key_anthropic(), que es donde
+// entra la clave POR CLIENTE (clientes.ia_key) -- ver api/ia_key.php.
+// El chat esta configurado si hay AL MENOS UN camino con clave: Claude
+// (CHAT_MODEL=claude-... + una key de Anthropic) o Qwen. Antes se exigia la
+// de Qwen siempre, y una instalacion solo-Claude daba 500 con el chat sano.
 require_once __DIR__ . '/ia_key.php';
-$key = ia_key();
-if ($key === '' || strlen($key) < 20) {
+$key = ia_key_qwen();
+$hayQwen   = strlen($key) >= 20;
+$hayClaude = ia_chat_claude_activo(trim((string)cfg('CHAT_MODEL', '')), ia_key_anthropic());
+if (!$hayQwen && !$hayClaude) {
     http_response_code(500);
-    error_log('chatbot: falta QWEN_API_KEY en api/config.local.php');
+    error_log('chatbot: sin clave de IA (ni CHAT_MODEL+ANTHROPIC_API_KEY ni QWEN_API_KEY) en api/config.local.php');
     echo json_encode(['ok' => false, 'error' => 'El chatbot no esta configurado']);
     exit;
 }
@@ -2309,7 +2315,11 @@ function ia_chat(string $key, array $mensajes, array $tools): array
        Si Claude rechaza (cuota/key/modelo malo) o no contesta, NO se cae el
        chat: se avisa y sigue con Qwen de respaldo (el bloque de abajo). */
     $claudeModel = trim((string)cfg('CHAT_MODEL', ''));
-    $claudeKey   = (string)cfg('ANTHROPIC_API_KEY', '');
+    // ia_key_anthropic(): la clave del CLIENTE si cargo una en el panel del
+    // dueño, si no la ANTHROPIC_API_KEY global. Es el unico lugar donde entra
+    // la clave por cliente -- el respaldo Qwen de abajo usa siempre la global
+    // ($key), porque una clave de Anthropic contra DashScope da 401.
+    $claudeKey   = ia_key_anthropic();
     if (ia_chat_claude_activo($claudeModel, $claudeKey)) {
         $cc = $cuerpo; $cc['model'] = $claudeModel;
         // Una key de Anthropic a nivel ORGANIZACION (no scopeada a un workspace)

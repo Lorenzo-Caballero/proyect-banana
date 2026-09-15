@@ -1,59 +1,70 @@
 <?php
 /**
- * ia_key.php — De dónde sale la clave del proveedor de IA del chatbot.
+ * ia_key.php — De dónde sale cada clave de IA, y cuál va en qué lugar.
  *
- * ESTO EXISTÍA REPARTIDO Y A MEDIAS. `chatbot.php`, `comprobante_leer.php` y
- * `chatbot_diag.php` tenían cada uno estas dos líneas copiadas:
+ * HAY DOS LUGARES DISTINTOS, y confundirlos deja el chat mudo con la clave
+ * "cargada" (la trampa que documenta chatbot_diag.php):
  *
- *     $key = cfg('QWEN_API_KEY');
- *     if ($key === '') { $key = cfg('COHERE_API_KEY'); }
+ *   - EL LUGAR DE ANTHROPIC (`ia_key_anthropic`): el proveedor REAL. Lo usan
+ *     el chat (CHAT_MODEL=claude-... en chatbot.php) y la visión de
+ *     comprobantes (vision_lib.php, Claude Haiku). Acá es donde se enchufa la
+ *     clave POR CLIENTE: `clientes.ia_key` primero, `ANTHROPIC_API_KEY` del
+ *     server si el cliente no tiene. Es lo que hace multi-tenant al chatbot:
+ *     cada cliente gasta su propia cuota de Anthropic, y el que no carga
+ *     clave usa la del dueño.
  *
- * y el panel del dueño pedía una "Cohere API key" POR CLIENTE, la guardaba en
- * `goldpaw_control.clientes.cohere_key`... y nadie la leía nunca. El campo era
- * decorativo: cargaras lo que cargaras, todos los clientes hablaban con la
- * clave global del VPS.
+ *   - EL LUGAR DE QWEN (`ia_key_qwen`): el RESPALDO del chat (si Claude
+ *     rechaza o no contesta, ia_chat() sigue con Qwen) y el lector de
+ *     comprobantes del CRM (comprobante_leer.php, qwen-vl). SIEMPRE las
+ *     claves globales del server: QWEN_API_KEY, o COHERE_API_KEY como nombre
+ *     viejo del mismo campo. La clave del cliente NO entra acá a propósito —
+ *     es una clave de Anthropic, y mandársela a DashScope da 401: exactamente
+ *     la trampa de la clave de Cohere, repetida con otro proveedor.
  *
- * ORDEN DE BÚSQUEDA, y el porqué de cada escalón:
- *
- *   1. `clientes.ia_key` — la del CLIENTE (migración 07 del control). Es lo
- *      que hace multi-tenant de verdad al chatbot: cada cliente gasta su
- *      cuota, y el que no paga no le quema la del resto. Qwen da cuota gratis
- *      POR MODELO y POR CUENTA, así que compartir una clave entre clientes es
- *      compartir el techo.
- *   2. `QWEN_API_KEY` — la global del VPS. Es el default sano: un cliente sin
- *      clave propia igual tiene chatbot, pagado por el dueño.
- *   3. `COHERE_API_KEY` — el nombre viejo, que se acepta para no dejar el chat
- *      mudo entre que se despliega algo y alguien edita config.local.php.
+ * HISTORIA, porque este archivo ya cambió de significado una vez: cuando se
+ * escribió (15/09/2026 a la mañana), el chat era Qwen y `clientes.ia_key`
+ * resolvía al lugar de Qwen. Ese mismo día se confirmó que producción corre
+ * el chat sobre CLAUDE (CHAT_MODEL + ANTHROPIC_API_KEY en config.local.php),
+ * así que la clave del cliente enchufada en Qwen no se usaba nunca. El campo
+ * del panel pide ahora la clave de Anthropic, que es la que de verdad habla.
  *
  * DEGRADA HACIA ARRIBA, SIEMPRE. Si el plano de control está caído o la
- * migración 07 no corrió, cae a la global y el chat sigue andando. Nunca al
- * revés: quedarse sin chatbot porque una base secundaria no responde sería
- * cambiar un problema chico por uno grande.
- *
- * OJO CON LA TRAMPA QUE DOCUMENTA chatbot_diag.php: pegar una clave de COHERE
- * en cualquiera de los tres escalones la manda igual a Qwen, que la rechaza
- * con 401 — y el diagnóstico dice "clave cargada". Por eso ia_key_origen()
- * existe y por eso el panel avisa qué clave espera.
+ * migración 07 no corrió, se usa la global y el sistema sigue andando. Y si
+ * la clave propia de un cliente muere (sin crédito, revocada), el chat cae
+ * solo al respaldo Qwen del server: peor modelo, pero nunca mudo.
  */
 
-if (!function_exists('ia_key')) {
+if (!function_exists('ia_key_anthropic')) {
 
     /**
-     * La clave que hay que usar para hablar con el proveedor de IA.
-     * Cadena vacía si no hay ninguna configurada.
+     * La clave para hablar con ANTHROPIC (el chat sobre Claude y la visión):
+     * la del cliente si cargó una, si no la ANTHROPIC_API_KEY del server.
+     * Cadena vacía si no hay ninguna.
      */
-    function ia_key(): string
+    function ia_key_anthropic(): string
     {
         return (string)(ia_key_resolver()['key']);
     }
 
     /**
-     * De dónde salió: 'cliente' | 'QWEN_API_KEY' | 'COHERE_API_KEY' | ''.
-     * Lo usa el diagnóstico, que es donde importa distinguirlas.
+     * De dónde salió la clave de Anthropic: 'cliente' | 'ANTHROPIC_API_KEY'
+     * | ''. Lo usa el diagnóstico, que es donde importa distinguirlas.
      */
     function ia_key_origen(): string
     {
         return (string)(ia_key_resolver()['origen']);
+    }
+
+    /**
+     * La clave para el lugar de QWEN (el respaldo del chat y el lector de
+     * comprobantes del CRM): QWEN_API_KEY, o COHERE_API_KEY como nombre viejo
+     * del mismo campo. NUNCA la del cliente — ver el docblock de arriba.
+     */
+    function ia_key_qwen(): string
+    {
+        $q = (string)cfg('QWEN_API_KEY');
+        if ($q !== '') { return $q; }
+        return (string)cfg('COHERE_API_KEY');
     }
 
     /** Resuelve una sola vez por proceso y cachea (incluido el "no hay"). */
@@ -66,13 +77,9 @@ if (!function_exists('ia_key')) {
         if ($delCliente !== '') {
             return $r = ['key' => $delCliente, 'origen' => 'cliente'];
         }
-        $qwen = (string)cfg('QWEN_API_KEY');
-        if ($qwen !== '') {
-            return $r = ['key' => $qwen, 'origen' => 'QWEN_API_KEY'];
-        }
-        $co = (string)cfg('COHERE_API_KEY');
-        if ($co !== '') {
-            return $r = ['key' => $co, 'origen' => 'COHERE_API_KEY'];
+        $global = (string)cfg('ANTHROPIC_API_KEY');
+        if ($global !== '') {
+            return $r = ['key' => $global, 'origen' => 'ANTHROPIC_API_KEY'];
         }
         return $r = ['key' => '', 'origen' => ''];
     }
@@ -95,8 +102,8 @@ if (!function_exists('ia_key')) {
         try {
             /* Si recargas_lib ya está cargado se reusa SU conexión al control
                (cacheada por proceso, y respeta el override de los tests). Si
-               no, se abre una acá: comprobante_leer.php no carga esa lib y no
-               vale la pena arrastrarla entera por una consulta. */
+               no, se abre una acá: vision_lib/comprobante_leer no cargan esa
+               lib y no vale la pena arrastrarla entera por una consulta. */
             if (function_exists('rl_control')) {
                 $ctl = rl_control();
             } else {

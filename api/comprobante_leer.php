@@ -71,9 +71,11 @@ if ($bytes === false) {
     salir(['ok' => false, 'error' => 'No pude leer el archivo'], 500);
 }
 
-// Misma resolucion que el chatbot: la del cliente si tiene, si no la global.
+// Este endpoint habla con QWEN (qwen-vl, DashScope), asi que lleva la clave
+// del lugar de Qwen: las globales del server. La clave por cliente NO va aca
+// -- es de Anthropic y DashScope la rechaza con 401 (ver api/ia_key.php).
 require_once __DIR__ . '/ia_key.php';
-$key = ia_key();
+$key = ia_key_qwen();
 if ($key === '' || strlen($key) < 20) {
     salir(['ok' => false, 'error' => 'La IA no esta configurada (falta QWEN_API_KEY)'], 500);
 }

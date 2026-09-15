@@ -339,16 +339,22 @@ Cosas que hay que tener presentes al tocar esto:
 
 ## Chatbot y CRM
 
-- `api/chatbot.php` — proxy a **Qwen** (`qwen-vl-max`, endpoint internacional de
-  DashScope, en modo compatible con OpenAI) con *tool use*. Herramientas:
+- `api/chatbot.php` — el chat corre sobre **Claude** (`CHAT_MODEL=claude-...` +
+  `ANTHROPIC_API_KEY` en config.local.php, por el endpoint de Anthropic
+  compatible con OpenAI) con **Qwen de respaldo** si Claude falla, y otros
+  modelos Qwen / Cohere como últimos recursos. Todo con *tool use*. Herramientas:
   `identificar_usuario`, `crear_recarga`, `consultar_recarga`, `consultar_saldo`,
   `cargar_al_juego`, `retirar_del_juego`, `crear_cuenta`, `pasar_a_agente`,
-  `verificar_comprobante` (lee con visión la última imagen subida al chat) e
+  `verificar_comprobante` (lee con visión la última imagen subida al chat, con
+  **Claude Haiku** vía `api/vision_lib.php`) e
   `informar_transferencia` (titular / nro. de operación por texto).
   Si llega un JWT propio válido, ese usuario **manda** sobre el `usuario` suelto.
-  > Venía de Cohere (`command-r-08-2024`). Al leer la respuesta, ojo: Qwen la
-  > devuelve en `choices[0].message` y los errores en `error.message`; Cohere
-  > usaba `message` en los dos casos.
+  > Historia de proveedores: Cohere → Qwen (ago 2026) → Claude primario
+  > (sept 2026). Medido el 15/09/2026: **la cuota gratis de Qwen está agotada**
+  > (403 `AllocationQuota.FreeTierOnly`), o sea que hoy el chat vive SOLO del
+  > camino Claude — el "respaldo" Qwen no responde hasta pagar esa cuenta.
+  > Al leer la respuesta, ojo: el formato es OpenAI-compat en todos los caminos
+  > (`choices[0].message`, errores en `error.message`).
 - **El procedimiento del bot no es editable.** Las reglas fijas van **últimas**
   en el prompt (`chatbot_armar_prompt`) para que ganen sobre las indicaciones
   del operador. Es por un incidente real: alguien escribió *"si te dijo el
@@ -539,15 +545,19 @@ comportándose igual que una visita directa.
 ## Configuración
 
 Nada de secretos en el repo. `api/config.local.php` (gitignored) lleva
-`BOT_API_KEY`, `ADMIN_PASS`, `JWT_SECRET`, `QWEN_API_KEY` y los datos de la
-base; `.env` en la raíz lleva `PANEL_USER`/`PANEL_PASS` del agente; el worker
-usa su propio `.env` en `colector/` con `SESSION_COOKIE`. `BOT_API_KEY` tiene
-que ser idéntica en el server y en todos los clientes Python.
+`BOT_API_KEY`, `ADMIN_PASS`, `JWT_SECRET`, `ANTHROPIC_API_KEY` + `CHAT_MODEL`
+(el chat sobre Claude), `QWEN_API_KEY` (el respaldo) y los datos de la base;
+`.env` en la raíz lleva `PANEL_USER`/`PANEL_PASS` del agente; el worker usa su
+propio `.env` en `colector/` con `SESSION_COOKIE`. `BOT_API_KEY` tiene que ser
+idéntica en el server y en todos los clientes Python.
 
-> `COHERE_API_KEY` sigue aceptándose, pero es **el nombre viejo del mismo
-> campo**, no otra opción: el valor se le manda a Qwen igual. Una clave de
-> Cohere de verdad ahí da 401 y deja el chat mudo "con la clave cargada" — es
-> la trampa que diagnostica `api/chatbot_diag.php`.
+> **Cada clave va en SU lugar** (`api/ia_key.php` es la única fuente):
+> `ia_key_anthropic()` para Claude y la visión; `ia_key_qwen()` para el
+> respaldo Qwen y el lector de comprobantes del CRM. `COHERE_API_KEY` sigue
+> aceptándose pero es **el nombre viejo de la clave de Qwen**, no otra opción.
+> Cruzar claves de proveedor deja el chat mudo "con la clave cargada" (401) —
+> la trampa que diagnostica `api/chatbot_diag.php`, que ahora también hace una
+> llamada real a Claude.
 
 ### Lo que se configura POR CLIENTE, y dónde
 
@@ -558,13 +568,19 @@ cliente vive en `goldpaw_control.clientes`, lo del código es el respaldo.**
 |---|---|---|---|
 | Cuenta de cobro | `cobro_alias` / `cobro_cbu` / `cobro_titular` | panel del dueño | las constantes `RL_*` de `recargas_lib.php` |
 | Cuántos coins vale un peso | `coins_por_peso` | panel del dueño | `RL_COINS_POR_PESO` |
-| Clave de IA del chatbot | `ia_key` (migración 07 del control) | panel del dueño | `QWEN_API_KEY` global |
+| Clave de IA del chatbot | `ia_key` (migración 07 del control) | **nadie: el panel ya no la pide** | `ANTHROPIC_API_KEY` global |
 
-Los resuelven `rl_cuenta_cobro()`, `rl_coins_por_peso()` e `ia_key()`
+Los resuelven `rl_cuenta_cobro()`, `rl_coins_por_peso()` e `ia_key_anthropic()`
 (`api/ia_key.php`). **Todos degradan HACIA ARRIBA**: si el plano de control no
 responde, se usa el valor global y el sistema sigue andando. Nunca al revés —
 quedarse sin chatbot o sin poder crear una recarga porque una base secundaria
 no contesta sería cambiar un problema chico por uno grande.
+
+> **La clave de IA es LA MISMA para todos los clientes** (15/09/2026): la
+> `ANTHROPIC_API_KEY` global del server, la que ya usa `ganamoscrm.online`. El
+> panel dejó de pedirla en el alta y la edición. `clientes.ia_key` queda como
+> override sin UI — si algún día un cliente necesita clave propia se carga en
+> la base y `ia_key_anthropic()` ya la prefiere — pero hoy está vacía en todos.
 
 > **Las constantes `RL_ALIAS` / `RL_CBU` / `RL_TITULAR` / `RL_COINS_POR_PESO` de
 > `recargas_lib.php` NO son la fuente.** Editarlas en el VPS no sirve: el deploy

@@ -38,46 +38,102 @@ echo "memory_limit : " . ini_get('memory_limit') . "\n";
 echo "error_log    : " . (ini_get('error_log') ?: '(el del php-fpm/servidor)') . "\n";
 
 // ---------------------------------------------------------------------------
-// La KEY, resuelta IGUAL que chatbot.php: QWEN_API_KEY y, si falta, la vieja
-// COHERE_API_KEY. Ese fallback es la trampa mas probable: si en el server solo
-// esta la key de Cohere, se le manda a Qwen y Qwen la rechaza (401).
+// Las KEYS, resueltas IGUAL que chatbot.php (misma lib, no una copia -- una
+// copia es justo lo que hace que el diagnostico diga una cosa y el chat haga
+// otra). Dos lugares distintos, ver api/ia_key.php:
+//   - PRIMARIO Claude: CHAT_MODEL=claude-... + la clave de Anthropic
+//     (la del cliente si cargo una, si no ANTHROPIC_API_KEY del server).
+//   - RESPALDO Qwen: QWEN_API_KEY (o COHERE_API_KEY, el nombre viejo).
 // ---------------------------------------------------------------------------
 require_once __DIR__ . '/ia_key.php';
+$claudeModel = trim((string)cfg('CHAT_MODEL', ''));
+$claudeKey   = ia_key_anthropic();
+$claudeOn    = $claudeModel !== '' && stripos($claudeModel, 'claude') === 0
+            && strlen(trim($claudeKey)) > 20;   // el MISMO predicado que ia_chat_claude_activo()
+$origen      = ia_key_origen();
+
 $keyQwen   = (string)cfg('QWEN_API_KEY');
 $keyCohere = (string)cfg('COHERE_API_KEY');
-// Se resuelve con la MISMA funcion que usa el chat, no con una copia: una
-// copia es justo lo que hace que el diagnostico diga una cosa y el chat haga
-// otra. Incluye el escalon nuevo: la clave propia del cliente.
-$key    = ia_key();
-$origen = ia_key_origen();
-$cual   = $origen === 'cliente'         ? 'la clave PROPIA de este cliente (clientes.ia_key)'
-        : ($origen === 'QWEN_API_KEY'   ? 'QWEN_API_KEY (la global del server)'
-        : ($origen === 'COHERE_API_KEY' ? 'COHERE_API_KEY (fallback viejo)' : 'NINGUNA'));
+$key       = ia_key_qwen();
 
 $base   = rtrim((string)cfg('QWEN_BASE_URL', QWEN_BASE_DEF), '/');
 $modelo = (string)cfg('QWEN_MODEL', QWEN_MODEL_DEF);
 
-echo "\n=== CONFIG DEL MODELO ===\n";
+echo "\n=== PRIMARIO: CLAUDE (Anthropic) ===\n";
+echo "CHAT_MODEL        : " . ($claudeModel !== '' ? $claudeModel : '(vacio -> el chat corre en Qwen)') . "\n";
+// Las claves NO se imprimen nunca, ni recortadas: este endpoint se abre para
+// diagnosticar y una clave filtrada no se puede desfiltrar. Solo largo/origen.
+echo "clave de Anthropic: " . ($claudeKey !== ''
+        ? 'cargada (' . strlen($claudeKey) . ' chars), sale de '
+          . ($origen === 'cliente' ? 'clientes.ia_key (la PROPIA de este cliente)' : 'ANTHROPIC_API_KEY (la global del server)')
+        : 'VACIA') . "\n";
+echo "Claude activo     : " . ($claudeOn ? 'SI' : 'NO') . "\n";
+
+echo "\n=== RESPALDO: QWEN ===\n";
 echo "QWEN_API_KEY   : " . ($keyQwen !== '' ? 'cargada (' . strlen($keyQwen) . ' chars)' : 'VACIA') . "\n";
 echo "COHERE_API_KEY : " . ($keyCohere !== '' ? 'cargada (' . strlen($keyCohere) . ' chars)' : 'VACIA') . "\n";
-// La clave del cliente NO se imprime nunca, ni recortada: este endpoint se
-// abre para diagnosticar y una clave filtrada no se puede desfiltrar. Solo
-// se dice SI la tiene, que es lo unico que hace falta saber.
-echo "clientes.ia_key: " . (ia_key_del_cliente() !== '' ? 'cargada' : 'vacia (usa la del server)') . "\n";
-echo "SE USA         : $cual\n";
 echo "QWEN_BASE_URL  : $base\n";
 echo "QWEN_MODEL     : $modelo\n";
 
-if ($origen === 'COHERE_API_KEY') {
-    echo "\n  >> OJO: no hay QWEN_API_KEY y se esta cayendo a la de Cohere.\n";
-    echo "     Esa key NO sirve contra Qwen (DashScope): da 401 y el chat 502.\n";
+if ($keyQwen === '' && $keyCohere !== '') {
+    echo "\n  >> OJO: no hay QWEN_API_KEY y el respaldo cae a la clave de Cohere.\n";
+    echo "     Esa key NO sirve contra Qwen (DashScope): da 401.\n";
     echo "     Arreglo: agregar 'QWEN_API_KEY' => 'sk-...' en api/config.local.php\n";
 }
-if ($key === '' || strlen($key) < 20) {
-    echo "\n=> No hay una key usable. Pone QWEN_API_KEY en api/config.local.php y listo.\n";
+if (!$claudeOn && ($key === '' || strlen($key) < 20)) {
+    echo "\n=> No hay NINGUN camino con clave usable: ni Claude (CHAT_MODEL +\n";
+    echo "   clave de Anthropic) ni Qwen. El chat esta caido. Configura al menos uno.\n";
     volcar_log();
     exit;
 }
+if ($claudeOn && ($key === '' || strlen($key) < 20)) {
+    echo "\n  >> Sin clave de Qwen usable: el chat vive SOLO de Claude, sin respaldo.\n";
+}
+
+// ---------------------------------------------------------------------------
+// LLAMADA REAL a Claude (si esta activo), igual que ia_chat() en chatbot.php:
+// el endpoint compatible con OpenAI. Probar solo la config sin llamar es lo
+// que dejaba pasar la clave muerta.
+// ---------------------------------------------------------------------------
+if ($claudeOn) {
+    echo "\n=== LLAMADA A CLAUDE (el primario real del chat) ===\n";
+    $cuerpoC = json_encode([
+        'model'      => $claudeModel,
+        'messages'   => [['role' => 'user', 'content' => 'Responde solo con la palabra: hola']],
+        'max_tokens' => 20,
+    ], JSON_UNESCAPED_UNICODE);
+    $hdrC = ['Content-Type: application/json', 'Accept: application/json',
+             'Authorization: Bearer ' . $claudeKey];
+    $ws = trim((string)cfg('ANTHROPIC_WORKSPACE_ID', ''));
+    if ($ws !== '') { $hdrC[] = 'anthropic-workspace-id: ' . $ws; }
+    $ch = curl_init('https://api.anthropic.com/v1/chat/completions');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => $cuerpoC, CURLOPT_HTTPHEADER => $hdrC,
+        CURLOPT_TIMEOUT => 30,
+    ]);
+    $rawC  = curl_exec($ch);
+    $httpC = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $errC  = curl_error($ch);
+    curl_close($ch);
+    echo "  http = $httpC\n";
+    if ($rawC === false) {
+        echo "  curl_error = $errC (el server no llega a api.anthropic.com)\n";
+    } else {
+        echo "  respuesta = " . substr((string)$rawC, 0, 500) . "\n";
+        if ($httpC !== 200) {
+            echo "  >> Claude rechazo la llamada: con esto el chat cae al respaldo Qwen.\n";
+            if ($httpC === 401) { echo "  >> Es la KEY de Anthropic (invalida o revocada).\n"; }
+            if ($httpC === 400 && $ws === '') {
+                echo "  >> Si la key es a nivel ORGANIZACION, falta ANTHROPIC_WORKSPACE_ID.\n";
+            }
+        }
+    }
+}
+
+// (si no hay clave de Qwen, abajo se saltean SUS pruebas pero el chequeo de
+// libs corre igual: un "Cannot redeclare" rompe el chat tambien con Claude)
+$hayQwenUsable = ($key !== '' && strlen($key) >= 20);
 
 // ---------------------------------------------------------------------------
 // LLAMADA REAL a Qwen, igual que ia_chat() en chatbot.php.
@@ -139,11 +195,15 @@ function probar_qwen(string $base, string $modelo, string $key, bool $conTools):
     }
 }
 
-echo "\n=== LLAMADA A QWEN (sin tools) ===\n";
-probar_qwen($base, $modelo, $key, false);
+if ($hayQwenUsable) {
+    echo "\n=== LLAMADA A QWEN (el respaldo, sin tools) ===\n";
+    probar_qwen($base, $modelo, $key, false);
 
-echo "\n=== LLAMADA A QWEN (con tools, como el chat real) ===\n";
-probar_qwen($base, $modelo, $key, true);
+    echo "\n=== LLAMADA A QWEN (el respaldo, con tools como el chat real) ===\n";
+    probar_qwen($base, $modelo, $key, true);
+} else {
+    echo "\n(sin clave de Qwen usable: se saltean las pruebas del respaldo)\n";
+}
 
 // ---------------------------------------------------------------------------
 // Cargar las MISMAS libs que chatbot.php, en el mismo orden. Un "Cannot

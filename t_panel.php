@@ -18,6 +18,14 @@
  * Un campo que no hace nada es peor que un campo que falta: el que lo completa
  * se queda creyendo que lo configuró.
  *
+ * ACTUALIZACIÓN (15/09/2026, más tarde ese mismo día): el chat de producción
+ * corre sobre CLAUDE (CHAT_MODEL + ANTHROPIC_API_KEY), no sobre Qwen, así que
+ * la clave por cliente pasó al lugar de Anthropic (ia_key_anthropic) y el
+ * panel DEJÓ de pedir clave de IA: todos los clientes usan la global del
+ * server. clientes.ia_key queda como override sin UI. El lugar de Qwen
+ * (ia_key_qwen, el respaldo del chat) es solo de claves globales — una clave
+ * de Anthropic contra DashScope da 401, la trampa de Cohere repetida.
+ *
  * CADA ESCENARIO CORRE EN SU PROPIO PROCESO, y no es capricho: ia_key() y
  * rl_cliente_actual() cachean por proceso, que es lo correcto para un request
  * (resuelve una vez y listo). Probar el ORDEN de resolución dentro de un mismo
@@ -109,38 +117,33 @@ if ($__caso !== '') {
     $r = ['ok' => false, 'detalle' => 'caso desconocido: ' . $__caso];
 
     if ($__caso === 'key_cliente') {
-        tp_cliente($pdo, 'sk-la-del-cliente-1234567890');
-        $r = ['ok' => ia_key() === 'sk-la-del-cliente-1234567890' && ia_key_origen() === 'cliente',
+        tp_cliente($pdo, 'sk-ant-la-del-cliente-1234567890');
+        $r = ['ok' => ia_key_anthropic() === 'sk-ant-la-del-cliente-1234567890' && ia_key_origen() === 'cliente',
               'detalle' => ia_key_origen()];
 
     } elseif ($__caso === 'key_global') {
         tp_cliente($pdo, null);
-        $r = ['ok' => ia_key() === getenv('TP_QWEN_API_KEY') && ia_key_origen() === 'QWEN_API_KEY',
+        $r = ['ok' => ia_key_anthropic() === getenv('TP_ANTHROPIC_API_KEY') && ia_key_origen() === 'ANTHROPIC_API_KEY',
               'detalle' => ia_key_origen()];
 
     } elseif ($__caso === 'key_vacia_no_cuenta') {
         tp_cliente($pdo, '');
-        $r = ['ok' => ia_key_origen() === 'QWEN_API_KEY', 'detalle' => ia_key_origen()];
-
-    } elseif ($__caso === 'key_legacy_cohere') {
-        tp_cliente($pdo, null);
-        $r = ['ok' => ia_key() === getenv('TP_COHERE_API_KEY') && ia_key_origen() === 'COHERE_API_KEY',
-              'detalle' => ia_key_origen()];
+        $r = ['ok' => ia_key_origen() === 'ANTHROPIC_API_KEY', 'detalle' => ia_key_origen()];
 
     } elseif ($__caso === 'key_ninguna') {
         tp_cliente($pdo, null);
-        $r = ['ok' => ia_key() === '' && ia_key_origen() === '', 'detalle' => ia_key_origen()];
+        $r = ['ok' => ia_key_anthropic() === '' && ia_key_origen() === '', 'detalle' => ia_key_origen()];
 
     } elseif ($__caso === 'key_sin_fila') {
         tp_limpiar($pdo);
-        $r = ['ok' => ia_key_origen() === 'QWEN_API_KEY', 'detalle' => ia_key_origen()];
+        $r = ['ok' => ia_key_origen() === 'ANTHROPIC_API_KEY', 'detalle' => ia_key_origen()];
 
     } elseif ($__caso === 'key_sin_control') {
         /* Control CAÍDO: se saca el override, así ia_key_del_cliente() intenta
            abrir la suya con datos que no resuelven. Tiene que caer a la global
            y no romper. */
         unset($GLOBALS['HG_CONTROL_OVERRIDE']);
-        $r = ['ok' => ia_key_origen() === 'QWEN_API_KEY', 'detalle' => ia_key_origen()];
+        $r = ['ok' => ia_key_origen() === 'ANTHROPIC_API_KEY', 'detalle' => ia_key_origen()];
 
     } elseif ($__caso === 'key_sin_migracion') {
         /* EL HUECO DEL DEPLOY: el código sale con `git pull` y la migración 07
@@ -149,8 +152,26 @@ if ($__caso !== '') {
            porque los escenarios comparten la tabla y corren en fila. */
         tp_cliente($pdo, null);
         $pdo->exec("ALTER TABLE clientes DROP COLUMN ia_key");
-        $r = ['ok' => ia_key_origen() === 'QWEN_API_KEY', 'detalle' => ia_key_origen()];
+        $r = ['ok' => ia_key_origen() === 'ANTHROPIC_API_KEY', 'detalle' => ia_key_origen()];
         $pdo->exec("ALTER TABLE clientes ADD COLUMN ia_key VARCHAR(190) DEFAULT NULL");
+
+    } elseif ($__caso === 'qwen_ignora_cliente') {
+        /* LA GUARDA DEL 401: la clave del cliente es de ANTHROPIC. Si se
+           colara en el lugar de Qwen, DashScope la rechaza y el respaldo
+           muere justo cuando se lo necesita -- la trampa de Cohere de nuevo. */
+        tp_cliente($pdo, 'sk-ant-la-del-cliente-1234567890');
+        $r = ['ok' => ia_key_qwen() === getenv('TP_QWEN_API_KEY'),
+              'detalle' => 'qwen dio: ' . ia_key_qwen()];
+
+    } elseif ($__caso === 'qwen_legacy_cohere') {
+        tp_cliente($pdo, null);
+        $r = ['ok' => ia_key_qwen() === getenv('TP_COHERE_API_KEY'),
+              'detalle' => 'qwen dio: ' . ia_key_qwen()];
+
+    } elseif ($__caso === 'qwen_orden') {
+        tp_cliente($pdo, null);
+        $r = ['ok' => ia_key_qwen() === getenv('TP_QWEN_API_KEY'),
+              'detalle' => 'qwen dio: ' . ia_key_qwen()];
 
     } elseif ($__caso === 'cpp_cliente') {
         tp_cliente($pdo, null, 2.5);
@@ -225,22 +246,33 @@ function escenario(string $titulo, string $caso, array $cfg): void {
              is_array($json) ? (string)($json['detalle'] ?? '') : trim($out . ' ' . $err));
 }
 
+$ANT    = 'sk-ant-global-abcdefghijklmnopq';
 $QWEN   = 'sk-qwen-global-abcdefghijklmnop';
 $COHERE = 'sk-cohere-viejo-abcdefghijklmn';
 
-echo "=== 1. La clave de IA: el orden de resolución ===\n";
-escenario('la del CLIENTE gana sobre la global', 'key_cliente', ['QWEN_API_KEY' => $QWEN]);
-escenario('sin clave propia, usa la global del server', 'key_global', ['QWEN_API_KEY' => $QWEN]);
-escenario('una clave VACÍA en la base no cuenta como clave', 'key_vacia_no_cuenta', ['QWEN_API_KEY' => $QWEN]);
-escenario('sin QWEN_API_KEY todavía se acepta el nombre viejo', 'key_legacy_cohere', ['COHERE_API_KEY' => $COHERE]);
+echo "=== 1. La clave de ANTHROPIC (el proveedor real del chat) ===\n";
+/* El panel ya NO pide clave por cliente: todos usan la ANTHROPIC_API_KEY
+   global del server. clientes.ia_key queda como override sin UI, por si
+   algún día un cliente necesita la suya. */
+escenario('la del CLIENTE (si la hay en la base) gana sobre la global', 'key_cliente', ['ANTHROPIC_API_KEY' => $ANT]);
+escenario('sin clave propia, usa ANTHROPIC_API_KEY del server (el caso de TODOS)', 'key_global', ['ANTHROPIC_API_KEY' => $ANT]);
+escenario('una clave VACÍA en la base no cuenta como clave', 'key_vacia_no_cuenta', ['ANTHROPIC_API_KEY' => $ANT]);
 escenario('sin ninguna, devuelve vacío (y el chat avisa)', 'key_ninguna', []);
 
 echo "\n=== 2. Degrada hacia ARRIBA: nunca deja sin chatbot ===\n";
 /* La dirección importa. Quedarse sin chatbot porque una base secundaria no
    responde sería cambiar un problema chico por uno grande. */
-escenario('tenant sin fila en el control: cae a la global', 'key_sin_fila', ['QWEN_API_KEY' => $QWEN]);
-escenario('control CAÍDO: cae a la global, no rompe', 'key_sin_control', ['QWEN_API_KEY' => $QWEN]);
-escenario('migración 07 SIN correr: cae a la global, no tira', 'key_sin_migracion', ['QWEN_API_KEY' => $QWEN]);
+escenario('tenant sin fila en el control: cae a la global', 'key_sin_fila', ['ANTHROPIC_API_KEY' => $ANT]);
+escenario('control CAÍDO: cae a la global, no rompe', 'key_sin_control', ['ANTHROPIC_API_KEY' => $ANT]);
+escenario('migración 07 SIN correr: cae a la global, no tira', 'key_sin_migracion', ['ANTHROPIC_API_KEY' => $ANT]);
+
+echo "\n=== 2b. El lugar de QWEN (el respaldo) es SOLO de claves globales ===\n";
+escenario('la clave del cliente (de Anthropic) NO se cuela en Qwen', 'qwen_ignora_cliente',
+          ['ANTHROPIC_API_KEY' => $ANT, 'QWEN_API_KEY' => $QWEN]);
+escenario('QWEN_API_KEY gana sobre el nombre viejo', 'qwen_orden',
+          ['QWEN_API_KEY' => $QWEN, 'COHERE_API_KEY' => $COHERE]);
+escenario('sin QWEN_API_KEY todavía se acepta COHERE_API_KEY', 'qwen_legacy_cohere',
+          ['COHERE_API_KEY' => $COHERE]);
 
 echo "\n=== 3. Coins por peso: el campo del panel manda ===\n";
 escenario('toma la tasa del cliente (2.5), no la constante', 'cpp_cliente', []);
