@@ -24,6 +24,11 @@
  * Se EXTRAE la función de landing/crm.html, no se copia: una copia deja de
  * proteger justo cuando alguien toca el original.
  *
+ * SECCIÓN 6 — la ventana propia. Nahuel: "si tengo que cambiar el filtro...
+ * veo datos diferentes". La tabla colgaba del período de arriba, que es el
+ * mismo que manda el embudo, el CPA y el ROAS: para corregir el gasto de un
+ * martes había que mover el reporte entero. Ahora tiene su ventana.
+ *
  *     node t_gasto_ux.js
  */
 const fs = require("fs");
@@ -196,6 +201,47 @@ async function correr() {
              e.avisos.some(a => /fecha futura/.test(a)), JSON.stringify(e.avisos));
     chequear("y no se anuncia un guardado que no pasó",
              !e.avisos.some(a => /Gasto de/.test(a)), JSON.stringify(e.avisos));
+  }
+
+  console.log("\n=== 6. La ventana propia de la tabla de gasto ===");
+  /* LA TABLA NO SIGUE AL FILTRO DE ARRIBA. Se extrae pbRangoGasto() de
+     crm.html y se la corre con distintos tamaños de ventana. */
+  {
+    const iF = SRC.indexOf("  function pbFmtFecha(d){");
+    const jF = SRC.indexOf("\n  }\n", iF);
+    const iR = SRC.indexOf("  function pbRangoGasto(){");
+    const jR = SRC.indexOf("\n  }\n", iR);
+    if (iF < 0 || iR < 0) {
+      console.error("No encontré pbFmtFecha()/pbRangoGasto() en crm.html");
+      process.exit(1);
+    }
+    const rango = (dias) => new Function(
+      "pbDiasGasto",
+      SRC.slice(iF, jF + 4) + "\n" + SRC.slice(iR, jR + 4) + "\nreturn pbRangoGasto();"
+    )(dias);
+
+    const hoy = new Date();
+    const p = (n) => String(n).padStart(2, "0");
+    const fmt = (d) => `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+
+    const r10 = rango(10);
+    chequear("termina HOY", r10.hasta === fmt(hoy), r10.hasta);
+    const esperado10 = new Date(); esperado10.setDate(esperado10.getDate() - 9);
+    chequear("con 10 días arranca 9 días atrás (10 contando hoy)",
+             r10.desde === fmt(esperado10), r10.desde + " vs " + fmt(esperado10));
+
+    const r20 = rango(20);
+    const esperado20 = new Date(); esperado20.setDate(esperado20.getDate() - 19);
+    chequear('"Ver más días" estira hacia atrás, no hacia adelante',
+             r20.desde === fmt(esperado20) && r20.hasta === r10.hasta,
+             JSON.stringify(r20));
+
+    /* El caso que importa: la ventana NO depende de nada del reporte. Si
+       alguna vez vuelve a leer pbRangoActual, esto lo agarra -- la función se
+       evalúa sin esa variable en el scope, así que tiraría ReferenceError. */
+    let sano = true;
+    try { rango(30); } catch (e) { sano = false; }
+    chequear("no lee el período del reporte (ni existe en su scope)", sano);
   }
 
   console.log("\n---------------------------------------");

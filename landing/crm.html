@@ -691,6 +691,7 @@
                font-size:13px;font-weight:700;font-family:inherit}
   .pb-gasto-in:focus{outline:none;box-shadow:0 0 0 3px var(--violetSoft)}
   .pb-gasto-ayuda{font-size:10.5px;color:var(--muted);margin-top:3px;white-space:nowrap}
+  .pb-dia-mas{display:flex;gap:8px;justify-content:center;margin-top:10px}
   .modal .ret-abiertos{margin-top:14px;padding:10px 12px;border-radius:10px;font-size:12px;
                        line-height:1.5;color:var(--txt);
                        background:rgba(240,160,42,.10);border:1px solid rgba(240,160,42,.45)}
@@ -3511,6 +3512,11 @@
           <tbody id="pbDiaPorDia"><tr><td colspan="6" class="ag-vacio">Elegí una landing o un publicista</td></tr></tbody>
           <tfoot id="pbDiaTotales" style="display:none"></tfoot>
         </table>
+      </div>
+      <!-- La ventana de ESTA tabla, aparte del filtro de arriba. -->
+      <div class="pb-dia-mas">
+        <button class="btn-mini-accion" id="pbDiaMas" type="button" style="display:none">Ver 10 días más</button>
+        <button class="btn-mini-accion" id="pbDiaMenos" type="button" style="display:none">Ver menos</button>
       </div>
 
       <!-- Todo el gasto, de TODAS las campañas. La tabla de arriba muestra
@@ -10068,6 +10074,26 @@
   let pbVerificado = false;
   let pbFiltroActual = "hoy";
   let pbRangoActual = null;
+
+  /* CUANTOS DIAS MUESTRA LA TABLA DE CARGA DE GASTO.
+     Es SU ventana, deliberadamente separada del filtro de arriba. Nahuel:
+     "si tengo que cambiar el filtro... veo datos diferentes".
+     Y tenia razon: esa tabla es una herramienta de CARGA DE DATOS, y el filtro
+     de arriba manda el REPORTE (embudo, CPA, ROAS, ganancia). Atarlas obligaba
+     a mover el periodo --y con el todas las metricas-- solo para corregir el
+     gasto de un martes. Dos cosas distintas, dos ventanas.
+     Arranca en 10 dias y crece de a 10 con "Ver mas dias". */
+  const PB_DIAS_PASO = 10;
+  const PB_DIAS_MAX  = 180;      // freno duro: mas que eso no se carga a mano
+  let pbDiasGasto = PB_DIAS_PASO;
+
+  /** {desde, hasta} de la tabla de gasto: los ultimos `pbDiasGasto`, hasta hoy. */
+  function pbRangoGasto(){
+    const hasta = new Date();
+    const desde = new Date();
+    desde.setDate(desde.getDate() - (pbDiasGasto - 1));
+    return { desde: pbFmtFecha(desde), hasta: pbFmtFecha(hasta) };
+  }
   let pbPublicistas = [];
   let pbActivoId = null;
   // Segmento landing seleccionado (slug) o null = estamos mirando un publicista.
@@ -10580,10 +10606,13 @@
      una campaña que ya no se mira es justamente la que ensucia el total sin
      que nadie se dé cuenta. */
   async function pbCargarGastoTodo(){
-    if(!pbRangoActual) return;
+    /* La MISMA ventana que la tabla de arriba, no la del reporte: las dos
+       hablan del gasto cargado a mano, y que cada una mirara un tramo distinto
+       era pedir que no cerraran nunca. */
+    const rg = pbRangoGasto();
     let d;
     try{
-      d = await pbGetJson({accion:"gasto_todo", desde: pbRangoActual.desde, hasta: pbRangoActual.hasta});
+      d = await pbGetJson({accion:"gasto_todo", desde: rg.desde, hasta: rg.hasta});
     }catch(e){ return; }
     if(!d.ok) return;
     /* ESTA TABLA MOSTRABA TAMBIEN EL GASTO DE LA CAMPAÑA DE ARRIBA, y eso era
@@ -10663,10 +10692,15 @@
   }
 
   async function pbCargarDiaPorDia(){
-    if(!pbHaySel() || !pbRangoActual) return;
+    if(!pbHaySel()) return;
+    /* SU PROPIA VENTANA (ver pbRangoGasto): esta tabla no sigue al filtro de
+       arriba a proposito. Cambiar el periodo para corregir un gasto movia todas
+       las metricas del reporte, y uno terminaba mirando numeros distintos de
+       los que queria. */
+    const rg = pbRangoGasto();
     let d;
     try{
-      d = await pbGetJson({accion:"dia_por_dia", ...pbSegParams(), desde: pbRangoActual.desde, hasta: pbRangoActual.hasta});
+      d = await pbGetJson({accion:"dia_por_dia", ...pbSegParams(), desde: rg.desde, hasta: rg.hasta});
     }catch(e){ return; }
     if(!d.ok){ return; }
     const dias = d.dias || [];
@@ -10681,21 +10715,32 @@
        queda fuera de pantalla cuando uno llegó hasta acá scrolleando — así que
        lo dice acá mismo, y si es un solo día explica cómo ver los anteriores. */
     const per = $("#pbDiaPeriodo");
-    if(per) per.textContent = dias.length === 1
-      ? "— solo " + pbDiaLabel(dias[0].fecha).replace(/<[^>]+>/g, "")
-      : "— " + dias.length + " días, del " + pbDiaLabel(dias[0].fecha).replace(/<[^>]+>/g, "") +
-        " al " + pbDiaLabel(dias[dias.length-1].fecha).replace(/<[^>]+>/g, "");
+    if(per) per.textContent = "— últimos " + dias.length + " días, del "
+      + pbDiaLabel(dias[0].fecha).replace(/<[^>]+>/g, "") + " al "
+      + pbDiaLabel(dias[dias.length-1].fecha).replace(/<[^>]+>/g, "");
+
+    /* EL AVISO VIEJO DECIA "cambiá el período de arriba para ver más días", y
+       era el consejo que causaba el problema: mover ese filtro mueve TODO el
+       reporte. Ahora esta tabla tiene su propio "Ver más días" y no depende de
+       nada de arriba -- lo que hay que decir es justamente eso. */
     const aviso = $("#pbDiaAviso");
     if(aviso){
-      if(dias.length === 1){
-        aviso.style.display = "";
-        aviso.innerHTML = "Estás viendo <b>un solo día</b>, así que acá abajo aparece uno solo. " +
-          "Para cargar o corregir el gasto de días anteriores, cambiá el período con los botones " +
-          "de arriba (<b>7 días</b>, <b>Este mes</b>, <b>Mes pasado</b>) o poné las fechas a mano.";
-      } else {
-        aviso.style.display = "none";
-      }
+      aviso.style.display = "";
+      aviso.innerHTML = "Esta tabla muestra <b>siempre los últimos días</b>, sin importar el "
+        + "período que elijas arriba: sirve para cargar y corregir el gasto sin mover el resto "
+        + "del reporte.";
     }
+
+    /* "Ver más días": crece de a 10. Se esconde al llegar al tope, porque un
+       botón que ya no hace nada es peor que no tenerlo. */
+    const masBtn = $("#pbDiaMas");
+    if(masBtn){
+      const tope = pbDiasGasto >= PB_DIAS_MAX;
+      masBtn.style.display = tope ? "none" : "";
+      masBtn.textContent = "Ver " + PB_DIAS_PASO + " días más";
+    }
+    const menosBtn = $("#pbDiaMenos");
+    if(menosBtn) menosBtn.style.display = (pbDiasGasto > PB_DIAS_PASO) ? "" : "none";
 
     /* QUIEN se lleva el gasto de esta tabla, en el encabezado. Los publicistas
        y las landings comparten las mismas solapas, asi que sin el nombre a la
@@ -10886,6 +10931,18 @@
   });
   $("#pbAplicarRango").addEventListener("click", pbAplicarRangoCustom);
   $("#pbBtnAgregar").addEventListener("click", pbAbrirModalNuevo);
+  /* La ventana de la tabla de gasto crece y se achica sola, SIN tocar el
+     filtro de arriba: ese sigue mandando el reporte. */
+  $("#pbDiaMas").addEventListener("click", ()=>{
+    pbDiasGasto = Math.min(PB_DIAS_MAX, pbDiasGasto + PB_DIAS_PASO);
+    pbCargarDiaPorDia();
+    pbCargarGastoTodo();
+  });
+  $("#pbDiaMenos").addEventListener("click", ()=>{
+    pbDiasGasto = PB_DIAS_PASO;
+    pbCargarDiaPorDia();
+    pbCargarGastoTodo();
+  });
   $("#pbBtnCargarGasto").addEventListener("click", ()=>pbAbrirModalGasto());
   $("#pbBtnCargarGastoAviso").addEventListener("click", ()=>pbAbrirModalGasto());
 
