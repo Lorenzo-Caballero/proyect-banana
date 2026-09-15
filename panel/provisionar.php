@@ -240,9 +240,36 @@ function cf_dns_upsert($dominio, $cfg) {
 }
 
 /**
+ * ¿El contenedor $name corre con OTRAS credenciales que las de la fila?
+ *
+ * Existe porque las credenciales ahora las carga EL CLIENTE desde su CRM
+ * (crm_integracion.php, 15/09/2026) y las puede CORREGIR: sin este chequeo,
+ * el contenedor viejo seguía para siempre con las credenciales equivocadas
+ * -- el cliente arreglaba la clave en su CRM y nada cambiaba, sin un solo
+ * error a la vista. Compara el env real del contenedor (docker inspect)
+ * contra la fila; ante cualquier duda devuelve false (no recrear de más).
+ */
+function bot_creds_cambiaron($name, $user, $pass) {
+    $env = (string) shell_exec(
+        'docker inspect --format ' . escapeshellarg('{{range .Config.Env}}{{println .}}{{end}}')
+        . ' ' . escapeshellarg($name) . ' 2>/dev/null'
+    );
+    if (trim($env) === '') { return false; }   // no se pudo mirar: no tocar
+    $actualU = $actualP = null;
+    foreach (explode("\n", $env) as $l) {
+        if (strpos($l, 'PANEL_USER=') === 0) { $actualU = substr($l, 11); }
+        if (strpos($l, 'PANEL_PASS=') === 0) { $actualP = substr($l, 11); }
+    }
+    if ($actualU === null || $actualP === null) { return false; }
+    return $actualU !== $user || $actualP !== $pass;
+}
+
+/**
  * Asegura el contenedor de bot de un cliente. 1 por cliente, con SUS
  * credenciales de agente, espejando usuarios contra SU base (por su dominio).
- * Idempotente: si el contenedor ya existe, no hace nada. Best-effort.
+ * Idempotente: si el contenedor ya existe con las MISMAS credenciales, no
+ * hace nada; si las credenciales cambiaron (el cliente las corrigió desde su
+ * CRM), lo recrea con las nuevas. Best-effort.
  */
 function asegurar_bot($c, $cfg) {
     $slug = preg_replace('/[^a-z0-9_-]/i', '', (string) $c['slug']);
@@ -259,7 +286,11 @@ function asegurar_bot($c, $cfg) {
     $name = 'bot-' . $slug;
     $existe = trim((string) shell_exec('docker ps -aq --filter ' . escapeshellarg('name=^' . $name . '$') . ' 2>/dev/null'));
     if ($existe !== '') {
-        return 'bot ya existía';
+        if (!bot_creds_cambiaron($name, $user, $pass)) {
+            return 'bot ya existía';
+        }
+        shell_exec('docker rm -f ' . escapeshellarg($name) . ' 2>/dev/null');
+        echo date('c') . " bot $slug: credenciales nuevas -> recreando el contenedor\n";
     }
 
     // ¿está la imagen?
@@ -327,7 +358,11 @@ function asegurar_bot_altas($c, $cfg) {
     $name = 'altas-' . $slug;
     $existe = trim((string) shell_exec('docker ps -aq --filter ' . escapeshellarg('name=^' . $name . '$') . ' 2>/dev/null'));
     if ($existe !== '') {
-        return 'bot de altas ya existía';
+        if (!bot_creds_cambiaron($name, $user, $pass)) {
+            return 'bot de altas ya existía';
+        }
+        shell_exec('docker rm -f ' . escapeshellarg($name) . ' 2>/dev/null');
+        echo date('c') . " bot-altas $slug: credenciales nuevas -> recreando el contenedor\n";
     }
 
     $img = trim((string) shell_exec("docker images -q ganamos-bot:latest 2>/dev/null"));

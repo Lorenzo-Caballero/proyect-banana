@@ -683,9 +683,22 @@ cliente vive en `goldpaw_control.clientes`, lo del código es el respaldo.**
 
 | Qué | Columna en `clientes` | Lo carga | Respaldo si falta |
 |---|---|---|---|
-| Cuenta de cobro | `cobro_alias` / `cobro_cbu` / `cobro_titular` | panel del dueño | las constantes `RL_*` de `recargas_lib.php` |
-| Cuántos coins vale un peso | `coins_por_peso` | panel del dueño | `RL_COINS_POR_PESO` |
-| Clave de IA del chatbot | `ia_key` (migración 07 del control) | **nadie: el panel ya no la pide** | `ANTHROPIC_API_KEY` global |
+| Credenciales del agente en ganamos | `agente_usuario` / `agente_password` | **el CLIENTE**, desde su CRM (Configuración → Integración con ganamos, `crm_integracion.php`, solo admin) | no hay: sin ellas no hay bot, y su CRM se lo avisa |
+| Cuenta de cobro | `cobro_alias`/`cbu`/`titular` + `cobro_cuentas` | **el CLIENTE**, desde su CRM (Cómo cobro, `crm_cobro.php`) | las constantes `RL_*` de `recargas_lib.php` |
+| Cuántos coins vale un peso | `coins_por_peso` | **el CLIENTE**, desde su CRM (Cómo cobro) | `RL_COINS_POR_PESO` |
+| Clave de IA del chatbot | `ia_key` (migración 07 del control) | nadie: el panel no la pide | `ANTHROPIC_API_KEY` global |
+| Acceso al CRM (operador admin) | `crm_usuario` / `crm_password_hash` (migración 08) | panel del dueño, en el alta | botón «Operadores» del panel |
+
+> **El panel del dueño ya NO pide credenciales del agente ni cuenta de cobro
+> (15/09/2026):** son las llaves y la plata del cliente, y dictarlas para que
+> las tipee otro era inseguro. Su CRM muestra **avisos prioritarios fijos**
+> («Integrá tu panel de ganamos» / «Cargá tu cuenta de cobro») hasta que los
+> cargue, con click directo a la sección que lo resuelve. `provisionar.php`
+> levanta el bot del cliente solo cuando aparecen las credenciales (pasada 2,
+> cada minuto) y lo **recrea si cambian** (compara el env real del contenedor
+> — sin eso, corregir una clave equivocada no hacía nada). El `editar` del
+> panel pisa SOLO los campos que el request manda: mandar de menos no borra
+> lo que el cliente cargó.
 
 Los resuelven `rl_cuenta_cobro()`, `rl_coins_por_peso()` e `ia_key_anthropic()`
 (`api/ia_key.php`). **Todos degradan HACIA ARRIBA**: si el plano de control no
