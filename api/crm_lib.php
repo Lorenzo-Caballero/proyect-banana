@@ -143,7 +143,8 @@ if (!function_exists('crm_conversacion_id')) {
      * Best-effort: si el jugador nunca chateo (no hay conversacion) o algo falla,
      * se sale sin ruido -- la notificacion push ya salio igual.
      */
-    function crm_avisar_jugador(PDO $pdo, string $usuario, string $texto): bool
+    function crm_avisar_jugador(PDO $pdo, string $usuario, string $texto,
+                               ?array $meta = null): bool
     {
         $usuario = mb_substr(trim($usuario), 0, 50);
         $texto   = trim($texto);
@@ -155,7 +156,11 @@ if (!function_exists('crm_conversacion_id')) {
             $st->execute([$usuario, $usuario]);
             $convId = (int)$st->fetchColumn();
             if (!$convId) { return false; }   // nunca chateo: solo la push
-            crm_mensaje($pdo, $convId, 'agente', $texto, null, 'sistema');
+            /* $meta va a `mensajes.meta` (JSON). Sirve para MARCAR un aviso
+               automatico y despues poder preguntar "¿este ya salio hoy?" sin
+               buscar por el texto -- que cambia cada vez que alguien mejora la
+               redaccion y deja el freno mirando una frase que ya no existe. */
+            crm_mensaje($pdo, $convId, 'agente', $texto, $meta, 'sistema');
             try {
                 $pdo->prepare(
                     "UPDATE conversaciones SET preview = ?, actualizada_en = NOW() WHERE id = ?"

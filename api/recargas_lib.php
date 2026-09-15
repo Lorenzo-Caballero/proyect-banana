@@ -1597,6 +1597,43 @@ function rl_cargar_al_juego_auto(PDO $pdo, array $recarga): void
 
 /** Aviso de recarga acreditada. Mismo texto para el camino automatico y el
  *  manual: para el jugador es el mismo evento, no hay por que distinguirlo. */
+/**
+ * ¿Ya le mandamos hoy la invitacion a instalar la app?
+ *
+ * El freno de "una por dia" del mensaje de chat, espejo del que ya tiene el
+ * cartel del widget (PROMO_APP_MIN). Sin esto, quien carga cinco veces en un
+ * dia se lleva cinco invitaciones identicas.
+ *
+ * SE PREGUNTA POR LA MARCA `app_invite` DE `mensajes.meta`, no por el texto.
+ * Buscar por texto ata el freno a una frase, y la primera vez que alguien
+ * mejore la redaccion el freno deja de encontrar nada y vuelve el spam --
+ * ademas en silencio, que es lo peor.
+ *
+ * Ante un error devuelve TRUE (= "ya se mando"): el costo de saltear una
+ * invitacion es cero, y el de repetirla es el spam que se vino sacando toda la
+ * semana. Sin la conversacion tampoco hay nada que mirar, y ahi no hay mensaje
+ * posible de todos modos.
+ */
+function rl_invito_app_hoy(PDO $pdo, string $usuario): bool
+{
+    try {
+        $st = $pdo->prepare(
+            "SELECT 1
+               FROM mensajes m
+               JOIN conversaciones c ON c.id = m.conversacion_id
+              WHERE (c.clave = ? OR c.usuario = ?)
+                AND m.meta LIKE '%\"app_invite\"%'
+                AND m.creado_en >= NOW() - INTERVAL 1 DAY
+              LIMIT 1"
+        );
+        $st->execute([$usuario, $usuario]);
+        return (bool)$st->fetchColumn();
+    } catch (Throwable $e) {
+        error_log('rl_invito_app_hoy (' . $usuario . '): ' . $e->getMessage());
+        return true;
+    }
+}
+
 function rl_notificar_acreditada(PDO $pdo, array $recarga): void
 {
     $usuario = (string)$recarga['usuario'];
@@ -1635,19 +1672,56 @@ function rl_notificar_acreditada(PDO $pdo, array $recarga): void
         $msg .= ' ¡Gracias por jugar con nosotros, mucha suerte! 🍀';
         crm_avisar_jugador($pdo, $usuario, $msg);
 
-        /* ACA IBA UNA INVITACION A LA APP POR CHAT tras la primera carga, y
-           se saco el 15/09/2026.
+        /* LA INVITACION A LA APP, DE VUELTA (15/09/2026, segunda vez).
+           Se habia sacado esta manana razonando que el CARTEL del widget dice
+           lo mismo en el mismo segundo y quedaban dos avisos pegados. Eso es
+           cierto SOLO SI EL JUGADOR ESTA MIRANDO.
 
-           El widget ahora muestra el CARTEL de la app en este mismo momento --
-           al llegar la notificacion de tipo 'recarga' --, y mandar ademas esta
-           linea seria decir lo mismo dos veces en el mismo segundo. El cartel
-           gana: tiene el boton de descarga ahi mismo, y sale en todas las
-           cargas y no solo en la primera.
+           Y casi nunca lo esta: la carga acredita minutos despues de que
+           transfirio (el mail del banco es asincronico), y el cartel necesita
+           la pagina abierta y a la vista -- el widget sondea cada 25 s y no
+           dibuja nada si la pestaña se cerro. O sea que en el caso normal el
+           cartel se pierde y no queda NADA. El mensaje de chat sobrevive: esta
+           ahi cuando el jugador vuelve.
 
-           Si alguna vez conviene que quede algo ESCRITO en la conversacion
-           --el cartel se cierra y desaparece, el chat no-- volver a ponerla es
-           trivial: esta en el historial de git. Pero que salgan las dos juntas
-           es el spam que se vino sacando toda esta semana. */
+           Los dos canales, entonces, y cada uno para lo suyo: el cartel para
+           el que esta presente (tiene el boton de descarga ahi mismo), el
+           mensaje para el que no.
+
+           EN TODAS LAS CARGAS, NO SOLO LA PRIMERA. Antes iba con `es_primera`;
+           Nahuel pidio explicitamente que salga siempre. Pero "siempre" no es
+           "en cada carga": quien carga cinco veces en un dia no necesita cinco
+           invitaciones. El freno es UNA POR DIA, el mismo criterio que el
+           cartel (PROMO_APP_MIN).
+
+           Las condiciones de siempre: la promo prendida y con monto, `app_url`
+           configurada (sin URL no se inventa un link -- paso en produccion que
+           mandaba a Play Store, donde no esta) y el jugador sin la app
+           (tiene_app=0; si ya la tiene, el regalo ya lo cobro y prometerselo
+           seria mentirle). Si instala, el circuito existente acredita solo.
+           Best-effort total: esto no puede tumbar una acreditacion. */
+        try {
+            if (function_exists('cfg_crm_activo') && cfg_crm_activo($pdo, 'app_promo_activa')) {
+                $fichasApp = max(0, (int)(cfg_crm($pdo, 'app_bono_fichas') ?? 0));
+                $urlApp    = trim((string)(cfg_crm($pdo, 'app_url') ?? ''));
+                if ($fichasApp > 0 && $urlApp !== '') {
+                    if (!preg_match('~^https?://~i', $urlApp)) { $urlApp = 'https://' . $urlApp; }
+                    $st = $pdo->prepare("SELECT tiene_app FROM usuarios WHERE username = ?");
+                    $st->execute([$usuario]);
+                    $fila = $st->fetch(PDO::FETCH_ASSOC);
+                    if ($fila && !(int)$fila['tiene_app'] && !rl_invito_app_hoy($pdo, $usuario)) {
+                        crm_avisar_jugador($pdo, $usuario,
+                            '🎁 Ah, y tenés un regalo más esperándote: instalá nuestra app y '
+                            . 'te acredito otras ' . number_format($fichasApp, 0, ',', '.')
+                            . ' fichas, solas, apenas entres con tu cuenta. Bajala de acá: '
+                            . $urlApp,
+                            ['app_invite' => true]);
+                    }
+                }
+            }
+        } catch (Throwable $e) {
+            error_log('rl_notificar_acreditada (invitacion app): ' . $e->getMessage());
+        }
     }
 }
 
