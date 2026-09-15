@@ -58,6 +58,65 @@ function marcar($pdo, $id, $ok, $detalle) {
 const MIGRACIONES_LEGACY = ['01_migracion.sql', '02_recargas.sql'];
 
 /**
+ * Crea (o resetea) el operador ADMIN del CRM del cliente, con el usuario y el
+ * HASH que el panel guardó en el alta (migración 08 del control:
+ * clientes.crm_usuario / crm_password_hash — la clave en claro no existe en
+ * ningún lado, el panel la hasheó antes de guardar).
+ *
+ * Best-effort de punta a punta y SIEMPRE con mensaje: sin la migración 08, o
+ * sin credenciales cargadas, no hace nada y devuelve ''. Si falla, devuelve
+ * el motivo — el cliente queda aprovisionado igual y el acceso se puede crear
+ * después desde el botón "Operadores" del panel (misma tabla, mismo upsert).
+ *
+ * La tabla `operadores` es la MISMA que crea panel.php::operadores_asegurar_tabla
+ * y que lee crm_login.php. Idempotente: si el usuario ya existe, solo se le
+ * resetea la clave al hash guardado.
+ */
+function crm_operador_crear(PDO $control, array $cfg, int $clienteId, string $db): string {
+    try {
+        $st = $control->prepare('SELECT crm_usuario, crm_password_hash FROM clientes WHERE id = ?');
+        $st->execute([$clienteId]);
+        $c = $st->fetch();
+    } catch (Throwable $e) {
+        return '';   // migración 08 sin correr: no hay nada cargado que crear
+    }
+    $usr  = trim((string) ($c['crm_usuario'] ?? ''));
+    $hash = (string) ($c['crm_password_hash'] ?? '');
+    if ($usr === '' || $hash === '') { return ''; }
+    if (!preg_match('/^[a-zA-Z0-9_.\-]{3,60}$/', $usr)) {
+        return "usuario invalido ('$usr'), no se crea";
+    }
+    try {
+        $q = new PDO("mysql:host={$cfg['DB_HOST']};dbname=$db;charset=utf8mb4",
+                     $cfg['DB_USER'], $cfg['DB_PASS'],
+                     [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+        $q->exec(
+            "CREATE TABLE IF NOT EXISTS operadores (
+               id INT AUTO_INCREMENT PRIMARY KEY,
+               username VARCHAR(120) NOT NULL UNIQUE,
+               password_hash VARCHAR(255) NOT NULL,
+               rol ENUM('admin','agente') NOT NULL DEFAULT 'admin',
+               activo TINYINT(1) NOT NULL DEFAULT 1,
+               ultimo_login DATETIME DEFAULT NULL,
+               creado TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+        );
+        $ex = $q->prepare('SELECT id FROM operadores WHERE username = ? LIMIT 1');
+        $ex->execute([$usr]);
+        if ($ex->fetchColumn()) {
+            $q->prepare('UPDATE operadores SET password_hash = ?, activo = 1 WHERE username = ?')
+              ->execute([$hash, $usr]);
+            return "'$usr' ya existia: clave reseteada a la del alta";
+        }
+        $q->prepare("INSERT INTO operadores (username,password_hash,rol,activo) VALUES (?,?,'admin',1)")
+          ->execute([$usr, $hash]);
+        return "admin '$usr' creado";
+    } catch (Throwable $e) {
+        return 'FALLO (' . $e->getMessage() . ') — crearlo a mano con el boton Operadores';
+    }
+}
+
+/**
  * Corre las migraciones de $SQL_DIR (api/sql/*.sql) contra una base, en orden
  * numérico, salteando las legacy. Son idempotentes (CREATE TABLE IF NOT
  * EXISTS / ADD COLUMN IF NOT EXISTS): sobre una base que ya salió de la
@@ -357,6 +416,16 @@ foreach ($pend as $c) {
     // linea: aca adentro solo entran los que tienen aprovisionado = 0.
     $migMsg = aplicar_migraciones($db);
     if ($migMsg !== '') { echo date('c') . " {$c['slug']} migraciones: $migMsg\n"; }
+
+    /* El acceso al CRM que se cargo en el alta (migracion 08 del control):
+       crear el operador ADMIN en la base recien nacida, en esta misma pasada.
+       Sin esto el cliente tenia un CRM al que no podia entrar hasta que
+       alguien volviera al boton "Operadores". Best-effort con aviso: si
+       falla, el cliente queda aprovisionado igual (el boton Operadores sigue
+       siendo el plan B) pero el log lo dice. Idempotente: el hash vive en el
+       control y el upsert da lo mismo corrido dos veces. */
+    $opMsg = crm_operador_crear($pdo, $cfg, (int) $c['id'], $db);
+    if ($opMsg !== '') { echo date('c') . " {$c['slug']} operador CRM: $opMsg\n"; }
 
     // Por-path: comparte el dominio del operador, que ya tiene DNS. No hay
     // subdominio propio que crear.

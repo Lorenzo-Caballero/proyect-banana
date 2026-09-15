@@ -312,6 +312,21 @@
     </div>
 
     <label style="margin-top:22px">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      Acceso al CRM del cliente
+    </label>
+    <div class="grid">
+      <div><input id="fCrmUser" class="field" placeholder="usuario del CRM"></div>
+      <div><input id="fCrmPass" class="field" type="password" placeholder="contraseña (mín. 6)"></div>
+    </div>
+    <div class="hint">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+      <span>Con esto tu cliente entra a <b>su</b> crm.html como admin. El acceso
+            se crea solo cuando el worker aprovisiona la base (&lt; 1 min).
+            Después se cambia desde el botón <b>Operadores</b> de la fila.</span>
+    </div>
+
+    <label style="margin-top:22px">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
       Cuenta de cobro
     </label>
@@ -1032,7 +1047,7 @@
   }
 
   function limpiar(){
-    ["fNombre","fSlug","fAgUser","fAgPass","fAlias","fCbu","fTit","fNotas"].forEach(function(i){$(i).value="";});
+    ["fNombre","fSlug","fAgUser","fAgPass","fCrmUser","fCrmPass","fAlias","fCbu","fTit","fNotas"].forEach(function(i){$(i).value="";});
     $("fCpp").value = "1";
     slugEditadoAMano = false;
   }
@@ -1046,6 +1061,7 @@
     api("crear", {
       nombre:$("fNombre").value, slug: slug,
       agente_usuario:$("fAgUser").value, agente_password:$("fAgPass").value,
+      crm_usuario:$("fCrmUser").value.trim(), crm_password:$("fCrmPass").value,
       cobro_alias:$("fAlias").value, cobro_cbu:$("fCbu").value, cobro_titular:$("fTit").value,
       coins_por_peso:$("fCpp").value, notas:$("fNotas").value
     }).then(function(res){
