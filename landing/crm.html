@@ -370,13 +370,16 @@
   .badge{background:var(--violet);color:var(--onAccent);font-size:11px;font-weight:800;min-width:19px;height:19px;border-radius:10px;display:grid;place-items:center;padding:0 5px}
   .est-dot{width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:6px;flex:none}
   .est-abierta{background:var(--green);box-shadow:0 0 6px var(--green)} .est-pendiente{background:var(--orange)} .est-cerrada{background:var(--muted2)}
-  /* "Bot apagado" en la bandeja. NO es otra lucecita de color: el punto verde
-     de al lado ya significa otra cosa (el estado del ticket) y agregar un
-     segundo semaforo al lado del primero es como se arma la confusion que
-     veniamos a sacar. Texto, que no se puede malinterpretar. */
-  .conv-botoff{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;
-               padding:1px 6px;border-radius:6px;margin-left:6px;vertical-align:middle;
-               color:var(--muted);background:var(--panel2);border:1px solid var(--line)}
+  /* EL PUNTO DE LA BANDEJA AHORA ES EL BOT (15/09/2026).
+     Antes era el estado del ticket (verde abierta / naranja pendiente / gris
+     cerrada) y Nahuel lo leia como "aca contesta la IA" -- razonable, y
+     equivocado. Al sacar de la pantalla los filtros de abierta/pendiente/
+     cerrada ese punto se quedaba sin significado, asi que pasa a significar lo
+     que todo el mundo creia: verde, el bot responde; apagado, no. */
+  .bot-on{background:var(--green);box-shadow:0 0 6px var(--green)}
+  .bot-off{background:transparent;border:1.5px solid var(--muted2);box-shadow:none}
+  /* El chip "bot off" de texto se saco: el punto de al lado ya lo dice, y dos
+     señales para lo mismo en la misma linea es ruido. */
 
   /* ---- chat ----
      Cabecera simplificada: nombre/avatar a la izquierda con mucho menos
@@ -2257,9 +2260,14 @@
       <div class="menu-pop ctx" id="ctxMenu" role="menu"></div>
       <div class="tabs-chat" id="tabs">
         <button class="tab tab-chico on" data-e="todas">Todas</button>
-        <button class="tab tab-chico" data-e="abierta">Abiertas</button>
-        <button class="tab tab-chico" data-e="pendiente">Pendientes</button>
-        <button class="tab tab-chico" data-e="cerrada">Cerradas</button>
+        <!-- ABIERTAS / PENDIENTES / CERRADAS SE SACARON (15/09/2026, pedido de
+             Nahuel: "quiero dejar esa parte visual mucho más limpia").
+             Eran el estado del TICKET, un concepto de sistema de soporte que
+             acá nadie usaba: en la práctica una conversación se atiende y se
+             sigue. El estado sigue existiendo en la base y el server lo sigue
+             aceptando, así que nada se rompe -- solo dejó de ocupar la
+             pantalla. Lo que el agente sí pregunta es "¿qué me falta mirar?",
+             y para eso están No leídas / Leídas. -->
         <!-- Leido / No leido: es la primera pregunta al abrir la bandeja
              ("¿que me falta mirar?"). El contador no_leidos ya existia pero
              solo pintaba el globito; no se podia filtrar por el. No son
@@ -2278,28 +2286,14 @@
         <button class="tab tab-chico" data-e="todo"
                 title="Todos los chats, archivados incluidos, del más reciente al más viejo">Todo</button>
       </div>
-      <!-- Inactividad: grupo APARTE del estado del ticket. Son dos preguntas
-           independientes ("¿está abierta?" y "¿hace cuánto no recarga?") y se
-           combinan: se puede pedir las abiertas de quien no recarga hace 30
-           días. Mezclarlas en un solo grupo obligaría a elegir una sola. -->
-      <div class="inact-fila">
-        <!-- Qué es "inactivo". Son dos preguntas distintas y el mismo jugador
-             puede estar vivo en una y muerto en la otra: el que charla todos
-             los días pero no carga hace un mes es justo al que hay que ir a
-             buscar, y con un solo criterio no aparece. -->
-        <div class="inact-tipo" id="inactTipo" role="group" aria-label="Criterio de inactividad">
-          <span class="inact-rot">Sin</span>
-          <button class="tab tab-chico on" data-t="carga" title="Sin recargas acreditadas">cargar</button>
-          <button class="tab tab-chico" data-t="chat"
-                  title="Chats sin movimiento — y al final, los jugadores que se crearon la cuenta y nunca escribieron (esos todavía no tienen chat: se crea al escribirles)">hablar</button>
-        </div>
-        <div class="tabs-chat" id="tabsInact">
-          <button class="tab tab-chico on" data-i="0">Todos</button>
-          <button class="tab tab-chico" data-i="15">15d</button>
-          <button class="tab tab-chico" data-i="30">30d</button>
-          <button class="tab tab-chico" data-i="90">90d</button>
-        </div>
-      </div>
+      <!-- LA FILA DE INACTIVIDAD SE SACO (15/09/2026, pedido de Nahuel).
+           Eran dos grupos de botones --"sin cargar/hablar" por 15, 30 o 90
+           días-- arriba de la bandeja, todo el tiempo, para una pregunta que se
+           hace de vez en cuando. El filtrado sigue existiendo en el server
+           (`inactivos` e `inactivosTipo`), así que si alguna vez hace falta
+           volver a exponerlo alcanza con estos botones; y para ir a buscar a
+           los que no cargan hace rato ya está la sección Recaudar, que además
+           hace algo con ellos. -->
     </div>
     <div class="list" id="list"></div>
   </aside>
@@ -7028,14 +7022,11 @@
         <span class="marca"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span>
         <div class="av ${anon}" ${bg}>${esc(inic(c.usuario||"?"))}</div>
         <div class="mid">
-          <div class="n"><b>${pin}<span class="est-dot est-${esc(c.estado)}" title="${
-             c.estado === "abierta" ? "Conversación abierta" :
-             c.estado === "pendiente" ? "Pendiente: necesita que hagas algo" : "Cerrada"
-           } — es el estado del ticket, no dice si el bot está contestando"></span>${esc(nombre)}${
+          <div class="n"><b>${pin}<span class="est-dot ${c.ia_activa === false ? "bot-off" : "bot-on"}" title="${
              c.ia_activa === false
-               ? `<span class="conv-botoff" title="El bot está apagado en este chat: lo apaga solo cada vez que un agente responde, y se vuelve a prender cuando el jugador escribe pasados los minutos configurados.">bot off</span>`
-               : ""
-           }</b><span class="t">${hace(c.actualizada_en)}</span></div>
+               ? "El bot está APAGADO en este chat. Se apaga solo cada vez que un agente responde, y se vuelve a prender cuando el jugador escribe pasados los minutos configurados."
+               : "El bot está contestando en este chat."
+           }"></span>${esc(nombre)}</b><span class="t">${hace(c.actualizada_en)}</span></div>
           <div class="pv">${esc(c.preview||"—")}</div>${arch}${der}${ags}
         </div>${nl}
       </div>`;
@@ -7173,6 +7164,7 @@
       archivo:  '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></svg>',
       difundir: '<svg viewBox="0 0 24 24"><path d="m3 11 18-8-8 18-2-8z"/></svg>',
       quitar:   '<svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+      visto:    '<svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>',
       borrar:   '<svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6"/><path d="M10 11v6M14 11v6"/></svg>'
     };
 
@@ -7184,6 +7176,13 @@
       html += item("abrir", I.abrir, "Abrir");
       html += item("marcar", I.marcar, seleccion.has(id) ? "Quitar de la selección" : "Marcar");
       html += item("fijar", I.pin, c.fijada ? "Desanclar" : "Anclar arriba");
+      /* SACAR EL «Te necesita». Esa marca se bajaba sola de tres formas
+         --responder, atender o cerrar-- y ninguna sirve cuando el pedido se
+         resolvio POR AFUERA: lo llamaste, se arreglo solo, o el jugador
+         escribio de nuevo y ya no necesita nada. Quedaba clavada arriba de la
+         bandeja y sumando al badge para siempre, que es como ese numero deja
+         de significar algo. Solo aparece si la conversacion la tiene. */
+      if (c.derivada) html += item("quitar_derivada", I.visto, "Sacar «Te necesita»");
     } else {
       html += item("quitar", I.quitar, "Quitar selección");
     }
@@ -7213,6 +7212,14 @@
         if (a === "archivar") loteArchivar(ids);
         if (a === "difundir") abrirDifusion(ids);
         if (a === "eliminar") loteEliminar(ids);
+        if (a === "quitar_derivada"){
+          jpost({accion:"quitar_derivada", id})
+            .then(d=>{
+              if (d.ok){ toast("Listo, ya no dice «Te necesita»"); cargarLista(); actualizarBadgeComp(); }
+              else toast(d.error || "No se pudo");
+            })
+            .catch(err=> toast("No se pudo: " + err.message));
+        }
         if (a === "fijar"){
           jpost({accion:"fijar", id, fijar: !c.fijada})
             .then(d=>{ if (d.ok) cargarLista(); else toast(d.error || "No pude anclar"); })
@@ -7933,7 +7940,15 @@
      menos que tocar y una combinacion menos que pueda quedar mal. */
   function ordenActual(){ return st.inactivos ? "inactivos" : "reciente"; }
 
-  $("#tabsInact").addEventListener("click", e=>{
+  /* Los botones de inactividad se sacaron de la pantalla el 15/09/2026, pero
+     los listeners quedan CON GUARDA en vez de borrarse: el filtro sigue
+     existiendo del lado del server y volver a exponerlo es agregar los botones.
+     La guarda no es cosmética -- addEventListener sobre null tira TypeError, y
+     como el CRM es UN solo <script> de 12 mil líneas eso mata la página entera.
+     Pasó hoy mismo por una cadena mal cerrada: quedaba el spinner de arranque
+     para siempre. */
+  const _tabsInact = $("#tabsInact");
+  if (_tabsInact) _tabsInact.addEventListener("click", e=>{
     const b = e.target.closest(".tab"); if(!b) return;
     document.querySelectorAll("#tabsInact .tab").forEach(x=>x.classList.remove("on"));
     b.classList.add("on");
@@ -7941,7 +7956,8 @@
     cargarLista();
   });
 
-  $("#inactTipo").addEventListener("click", e=>{
+  const _inactTipo = $("#inactTipo");
+  if (_inactTipo) _inactTipo.addEventListener("click", e=>{
     const b = e.target.closest(".tab"); if(!b) return;
     document.querySelectorAll("#inactTipo .tab").forEach(x=>x.classList.remove("on"));
     b.classList.add("on");

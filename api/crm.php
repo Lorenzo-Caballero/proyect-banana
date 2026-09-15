@@ -1905,6 +1905,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         // ---- atender / soltar un chat (asignación de agente, relevo) ----
+        /* SACAR EL «Te necesita» SIN TENER QUE RESPONDER.
+           Hasta ahora esa marca se bajaba sola de tres formas --responder,
+           atender o cerrar la conversacion-- y ninguna sirve cuando el pedido
+           ya se resolvio POR AFUERA: lo llamaste por telefono, se resolvio solo,
+           o el jugador escribio de nuevo y ya no necesita nada. Quedaba clavada
+           arriba de la bandeja y sumando al badge para siempre, que es como ese
+           numero deja de significar algo.
+           Va con su linea en la bitacora: es un aviso que alguien decide
+           apagar, no un click sin consecuencia. */
+        if ($accion === 'quitar_derivada') {
+            $id = (int)($body['id'] ?? 0);
+            if (!$id) { salir(['ok' => false, 'error' => 'Falta id'], 400); }
+            $n = crm_bajar_derivada($pdo, [$id]);
+            if ($n > 0) { crm_bitacora($pdo, $operador, 'quitar_derivada', "conv $id"); }
+            salir(['ok' => true, 'bajadas' => $n]);
+        }
+
         if ($accion === 'atender' || $accion === 'soltar') {
             $id = (int)($body['id'] ?? 0);
             if (!$id) { salir(['ok' => false, 'error' => 'Falta id'], 400); }
