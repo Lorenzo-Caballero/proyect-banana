@@ -370,6 +370,13 @@
   .badge{background:var(--violet);color:var(--onAccent);font-size:11px;font-weight:800;min-width:19px;height:19px;border-radius:10px;display:grid;place-items:center;padding:0 5px}
   .est-dot{width:6px;height:6px;border-radius:50%;display:inline-block;margin-right:6px;flex:none}
   .est-abierta{background:var(--green);box-shadow:0 0 6px var(--green)} .est-pendiente{background:var(--orange)} .est-cerrada{background:var(--muted2)}
+  /* "Bot apagado" en la bandeja. NO es otra lucecita de color: el punto verde
+     de al lado ya significa otra cosa (el estado del ticket) y agregar un
+     segundo semaforo al lado del primero es como se arma la confusion que
+     veniamos a sacar. Texto, que no se puede malinterpretar. */
+  .conv-botoff{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;
+               padding:1px 6px;border-radius:6px;margin-left:6px;vertical-align:middle;
+               color:var(--muted);background:var(--panel2);border:1px solid var(--line)}
 
   /* ---- chat ----
      Cabecera simplificada: nombre/avatar a la izquierda con mucho menos
@@ -6738,7 +6745,14 @@
         <span class="marca"><svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg></span>
         <div class="av ${anon}" ${bg}>${esc(inic(c.usuario||"?"))}</div>
         <div class="mid">
-          <div class="n"><b>${pin}<span class="est-dot est-${esc(c.estado)}"></span>${esc(nombre)}</b><span class="t">${hace(c.actualizada_en)}</span></div>
+          <div class="n"><b>${pin}<span class="est-dot est-${esc(c.estado)}" title="${
+             c.estado === "abierta" ? "Conversación abierta" :
+             c.estado === "pendiente" ? "Pendiente: necesita que hagas algo" : "Cerrada"
+           } — es el estado del ticket, no dice si el bot está contestando"></span>${esc(nombre)}${
+             c.ia_activa === false
+               ? `<span class="conv-botoff" title="El bot está apagado en este chat: lo apaga solo cada vez que un agente responde, y se vuelve a prender cuando el jugador escribe pasados los minutos configurados.">bot off</span>`
+               : ""
+           }</b><span class="t">${hace(c.actualizada_en)}</span></div>
           <div class="pv">${esc(c.preview||"—")}</div>${arch}${der}${ags}
         </div>${nl}
       </div>`;

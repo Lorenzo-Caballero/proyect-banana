@@ -18,7 +18,9 @@
  *     carga cinco veces en un día no necesita cinco invitaciones idénticas.
  *
  * Lo que garantiza:
- *   - la confirmación trae las fichas Y el bono, que es la buena noticia;
+ *   - la confirmación trae las fichas, y NO el bono: de los tres avisos que
+ *     caían en el mismo minuto, dos hablaban de lo mismo. El que avisa del
+ *     bono es el que llega cuando ya está en el juego y dice el total jugable;
  *   - la invitación sale con su monto y su link completo;
  *   - el freno diario aguanta la segunda carga del mismo día;
  *   - pasado el día, vuelve a salir — no es "una sola vez en la vida";
@@ -94,8 +96,17 @@ echo "\n=== 1. La carga acreditada: confirmacion + invitacion ===\n";
 rl_notificar_acreditada($pdo, ['usuario' => $U, 'coins' => 5000, 'bono' => 2500, 'es_primera' => 1]);
 $m = $mensajes();
 ok(count($m) === 2, 'salen los DOS mensajes (' . count($m) . ')');
-ok(isset($m[0]) && strpos($m[0], '5.000') !== false && strpos($m[0], '2.500') !== false,
-   'la confirmacion trae las fichas y el bono, que es la buena noticia');
+ok(isset($m[0]) && strpos($m[0], '5.000') !== false,
+   'la confirmacion trae las fichas');
+/* Y NO EL BONO, desde el 15/09/2026 por la tarde. De los tres avisos que caian
+   en el mismo minuto, dos hablaban del bono; el que sobrevive es el que llega
+   cuando las fichas estan de verdad EN EL JUEGO y dice el total jugable
+   (acciones_cola). Este llega antes de que el deposito ocurra, asi que
+   prometer el bono aca es prometer algo que todavia no esta. */
+ok(isset($m[0]) && strpos($m[0], '2.500') === false
+   && stripos($m[0], 'bono') === false,
+   'y NO el bono: de eso avisa el mensaje que llega cuando ya esta en el juego',
+   $m[0] ?? '');
 ok(isset($m[1]) && strpos($m[1], '1.000') !== false
    && strpos($m[1], 'https://ganamoscrm.online/descargar.html') !== false,
    'la invitacion trae el monto y el link con https (se configuro sin esquema)');
