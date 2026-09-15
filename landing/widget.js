@@ -1959,13 +1959,17 @@
      en cuatro momentos distintos y se fue podando: hoy son dos, y ninguno se
      cruza delante de algo que el jugador estaba por hacer.
 
-       1. Al REGISTRAR EL DISPOSITIVO (notificaciones.php manda app_promo).
-          Eso corre al cargar CUALQUIER página con el widget, con sesión o sin
-          ella. O sea: también al anónimo que todavía no se registró.
+       1. Cuando SE ACREDITAN SUS FICHAS, justo antes de que empiece a jugar.
+          Es EL momento: la plata ya entró, así que interrumpir no cuesta una
+          carga, y en el celular es el único que queda -- abrir un juego navega
+          al dominio del proveedor, y si se funde adentro no vuelve a ninguna
+          página nuestra.
 
-       2. Cuando se le están acabando las fichas JUGANDO (mirarSaldoBajo).
-          Es el momento bueno: ya cargó, está jugando, y ofrecerle fichas ahí
-          no compite con nada.
+       2. Al REGISTRAR EL DISPOSITIVO (notificaciones.php manda app_promo),
+          una vez por día.
+
+       3. Cuando se le están acabando las fichas JUGANDO (mirarSaldoBajo), una
+          vez por día. En el celular casi nunca llega a pasar; en la PC sí.
 
      A QUIÉN le corresponde lo decide el server, no esto:
        - la promo tiene que estar prendida (`app_promo_activa`) Y con fichas
@@ -2024,11 +2028,13 @@
     if (v > umbral) { try { lss("gp_promo_armado", "1"); } catch (e) {} return; }
     if (!promoArmado()) return;           // o no jugó todavía, o ya se lo mostramos
     try { lsd("gp_promo_armado"); } catch (e) {}
-    /* Va por mostrarPromoApp() y NO por ofrecerPromoApp(): se saltea el freno
-       de los 30 minutos a propósito. Si el cartel salió al abrir la página y
-       media hora después se está quedando sin fichas, ESE es el momento que
-       importa -- y el freno se lo comería justo ahí. */
-    mostrarPromoApp(ultimaPromoApp);
+    /* Este pasa por ofrecerPromoApp(), o sea que RESPETA el freno diario, y
+       eso cambió el 15/09/2026. Antes se lo salteaba porque era EL momento;
+       hoy el momento es cuando se acreditan las fichas, y sin el freno los dos
+       carteles se pisarían el mismo día.
+       Sigue existiendo porque en la PC el juego corre dentro de la propia
+       página, y ahí sí llega a dispararse mientras el jugador juega. */
+    ofrecerPromoApp(ultimaPromoApp);
   }
 
   /* ---- "este ya la tiene, no lo molestes más" ----
@@ -3781,6 +3787,9 @@
   }
 
   var notifRegistrado = null;    // con que usuario quedo registrado (null = todavia no)
+  /* Se acaba de acreditar una carga y hay que ofrecer la app en cuanto el
+     server diga que corresponde. Ver el manejo de la notificacion 'recarga'. */
+  var promoTrasCarga = false;
   var timerNotif = null;
 
   /* ---------------------------------------------------------------------
@@ -4068,6 +4077,17 @@
         /* El server confirma que ya la instaló: se anota para siempre en
            este navegador, así tampoco le sale cuando navegue anónimo. */
         if (d.app_instalada) { try { lss("gp_app_tiene", "1"); } catch (e) {} }
+
+        /* Veniamos de una carga recien acreditada: si el server ahora si la
+           ofrece, ESTE es el momento. La demora deja que la tarjeta de "ya
+           tenes tus fichas" se lea primero: la buena noticia va antes que el
+           ofrecimiento. */
+        if (promoTrasCarga) {
+          promoTrasCarga = false;
+          if (d.app_promo) {
+            setTimeout(function (){ mostrarPromoApp(d.app_promo); }, 2500);
+          }
+        }
         if (d.app_promo) { ultimaPromoApp = d.app_promo; ofrecerPromoApp(d.app_promo); }
         else ultimaPromoApp = null;
       })
@@ -4108,6 +4128,30 @@
           /* El resto (push a mano, bono, fichas, recarga): sistema + tarjeta. */
           notificarSO(n);
           pintarNotif(n);
+
+          /* SE ACREDITO UNA CARGA: el momento de ofrecer la app.
+             Nahuel, 15/09/2026: "si se quedan sin fichas se van y no vuelven
+             al home; seria mejor luego de que se acreditan las fichas, antes
+             de empezar a jugar".
+
+             Tiene razon, y en el celular es el unico momento que queda: abrir
+             un juego NAVEGA al dominio del proveedor, asi que si se funden
+             adentro no vuelven a ninguna pagina nuestra y el cartel de saldo
+             bajo no llega a dispararse. Y es barato: la plata YA entro, asi
+             que interrumpir aca no cuesta una carga -- a diferencia de hacerlo
+             antes, que es por lo que se saco del alta.
+
+             SE LE VUELVE A PREGUNTAR AL SERVER, y esto es lo que hace que
+             funcione en la PRIMERA carga -- la que mas importa. El widget pide
+             la promo al cargar la pagina, cuando el jugador todavia no habia
+             cargado nunca; ahi el server NO se la ofrece (solo la ofrece a
+             quien ya cargo), asi que `ultimaPromoApp` quedo en null. Mostrarlo
+             con lo que hay en memoria no saldria nunca la primera vez. */
+          if (n.tipo === "recarga") {
+            promoTrasCarga = true;
+            notifRegistrado = null;   // fuerza el re-registro en el proximo tick
+            notifRegistrar();
+          }
         });
       })
       .catch(function (){});

@@ -1,15 +1,24 @@
 <?php
 /**
- * t_invita_app.php — La invitación a la app en el chat, tras la PRIMERA carga.
+ * t_invita_app.php — al acreditar una carga va UNA confirmación, y nada más.
  *
- * Después de "¡Listo! Ya te acredité tus N fichas 🎉 ..." va un segundo globo:
- * "🎁 ... instalá nuestra app y te acredito otras 1.000 fichas ... <app_url>".
+ * ACÁ HABÍA UNA SEGUNDA LÍNEA invitando a instalar la app, y se sacó el
+ * 15/09/2026. El widget ahora muestra el CARTEL de la app en ese mismo momento
+ * (al llegar la notificación de tipo 'recarga'), así que mandar además el
+ * mensaje era decir lo mismo dos veces en el mismo segundo. El cartel gana:
+ * tiene el botón de descarga ahí mismo y sale en todas las cargas, no solo en
+ * la primera.
  *
- * Lo que garantiza:
- *   - sale SOLO en la primera carga acreditada (es_primera);
- *   - no se le promete a quien ya tiene la app (el regalo ya lo cobró);
- *   - promo apagada o sin app_url => no sale (nunca se inventa un link);
- *   - el link viaja completo con https:// aunque el operador lo pegó sin esquema.
+ * Este test pasó a blindar lo contrario de lo que blindaba: que la
+ * acreditación mande UN solo mensaje. Si alguien vuelve a agregar la
+ * invitación por chat sin sacar el cartel, esto lo agarra -- el spam duplicado
+ * es exactamente lo que se estuvo limpiando toda la semana.
+ *
+ * Lo que sigue garantizando:
+ *   - la confirmación trae las fichas Y el bono, que es la buena noticia;
+ *   - una carga acredita UN mensaje, sea la primera o la décima;
+ *   - la config de la app (prendida, apagada, con o sin URL) ya no cambia
+ *     nada de lo que se manda por chat.
  *
  *     T_PORT=3399 php t_invita_app.php
  */
@@ -65,30 +74,34 @@ $mensajes = function () use ($pdo, $U): array {
     return array_column($st->fetchAll(), 'texto');
 };
 
+/* La promo esta PRENDIDA y con URL: antes eso bastaba para que saliera la
+   segunda linea. Ahora no sale ninguna, la muestre o no el widget. */
 rl_notificar_acreditada($pdo, ['usuario' => $U, 'coins' => 5000, 'bono' => 2500, 'es_primera' => 1]);
 $m = $mensajes();
-ok(count($m) === 2, 'primera carga: confirmacion + invitacion (' . count($m) . ' mensajes)');
+ok(count($m) === 1, 'primera carga: UN solo mensaje (' . count($m) . ')');
 ok(isset($m[0]) && strpos($m[0], '5.000') !== false && strpos($m[0], '2.500') !== false,
-   'la confirmacion trae fichas y bono');
-ok(isset($m[1]) && strpos($m[1], '1.000') !== false
-   && strpos($m[1], 'https://ganamoscrm.online/descargar.html') !== false,
-   'la invitacion trae el monto y el link con https (aunque se configuro sin esquema)');
+   'y trae las fichas y el bono, que es la buena noticia');
+ok(isset($m[0]) && stripos($m[0], 'app') === false
+   && strpos($m[0], 'descargar.html') === false,
+   'la confirmacion NO menciona la app: de eso se ocupa el cartel del widget');
 
 rl_notificar_acreditada($pdo, ['usuario' => $U, 'coins' => 3000, 'bono' => 0, 'es_primera' => 0]);
-ok(count($mensajes()) === 3, 'segunda carga: sin invitacion');
+ok(count($mensajes()) === 2, 'segunda carga: tambien un solo mensaje');
 
+/* La config de la app ya no puede agregar ni sacar mensajes del chat. Los tres
+   casos que antes cambiaban el resultado hoy dan todos lo mismo. */
 $pdo->prepare("UPDATE usuarios SET tiene_app = 1 WHERE username = ?")->execute([$U]);
 rl_notificar_acreditada($pdo, ['usuario' => $U, 'coins' => 1000, 'bono' => 0, 'es_primera' => 1]);
-ok(count($mensajes()) === 4, 'con la app instalada no se le promete de nuevo');
+ok(count($mensajes()) === 3, 'con la app ya instalada, igual');
 
 $pdo->prepare("UPDATE usuarios SET tiene_app = 0 WHERE username = ?")->execute([$U]);
 cfg_crm_guardar($pdo, ['app_promo_activa' => '0'], 'test');
 rl_notificar_acreditada($pdo, ['usuario' => $U, 'coins' => 1000, 'bono' => 0, 'es_primera' => 1]);
-ok(count($mensajes()) === 5, 'promo apagada: sin invitacion');
+ok(count($mensajes()) === 4, 'con la promo apagada, igual');
 
 cfg_crm_guardar($pdo, ['app_promo_activa' => '1', 'app_url' => ''], 'test');
 rl_notificar_acreditada($pdo, ['usuario' => $U, 'coins' => 1000, 'bono' => 0, 'es_primera' => 1]);
-ok(count($mensajes()) === 6, 'sin app_url no se inventa un link');
+ok(count($mensajes()) === 5, 'sin app_url configurada, igual');
 
 // Dejar la config como estaba (otra suite puede depender de ella).
 cfg_crm_guardar($pdo, array_map(fn($v) => (string)($v ?? ''), $cfgViejo), 'test');

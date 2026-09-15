@@ -1553,40 +1553,19 @@ function rl_notificar_acreditada(PDO $pdo, array $recarga): void
         $msg .= ' ¡Gracias por jugar con nosotros, mucha suerte! 🍀';
         crm_avisar_jugador($pdo, $usuario, $msg);
 
-        /* Tras la PRIMERA carga, la invitacion a la app (pedido de Nahuel):
-           recien acreditado es el momento de mas buena onda del jugador, y el
-           bono de la app le duplica el gusto. En su propio globo, DESPUES de
-           la confirmacion, para que la buena noticia no se mezcle.
+        /* ACA IBA UNA INVITACION A LA APP POR CHAT tras la primera carga, y
+           se saco el 15/09/2026.
 
-           Solo si: es su primera carga acreditada (es_primera, lo calcula
-           rl_acreditar -- despues de la segunda seria insistencia), la promo
-           esta prendida y con monto, hay app_url configurada (regla de
-           siempre: sin URL no se inventa un link) y el jugador todavia no
-           tiene la app (tiene_app=0; si ya la tiene, el regalo ya lo cobro y
-           prometerselo seria mentirle). Si instala: el circuito existente
-           acredita solo (notif_registrar_dispositivo). Best-effort total. */
-        try {
-            if (!empty($recarga['es_primera']) && function_exists('cfg_crm_activo')
-                && cfg_crm_activo($pdo, 'app_promo_activa')) {
-                $fichasApp = max(0, (int)(cfg_crm($pdo, 'app_bono_fichas') ?? 0));
-                $urlApp    = trim((string)(cfg_crm($pdo, 'app_url') ?? ''));
-                if ($fichasApp > 0 && $urlApp !== '') {
-                    if (!preg_match('~^https?://~i', $urlApp)) { $urlApp = 'https://' . $urlApp; }
-                    $st = $pdo->prepare("SELECT tiene_app FROM usuarios WHERE username = ?");
-                    $st->execute([$usuario]);
-                    $fila = $st->fetch(PDO::FETCH_ASSOC);
-                    if ($fila && !(int)$fila['tiene_app']) {
-                        crm_avisar_jugador($pdo, $usuario,
-                            '🎁 Ah, y tenés un regalo más esperándote: instalá nuestra app y '
-                            . 'te acredito otras ' . number_format($fichasApp, 0, ',', '.')
-                            . ' fichas, solas, apenas entres con tu cuenta. Bajala de acá: '
-                            . $urlApp);
-                    }
-                }
-            }
-        } catch (Throwable $e) {
-            error_log('rl_notificar_acreditada (invitacion app): ' . $e->getMessage());
-        }
+           El widget ahora muestra el CARTEL de la app en este mismo momento --
+           al llegar la notificacion de tipo 'recarga' --, y mandar ademas esta
+           linea seria decir lo mismo dos veces en el mismo segundo. El cartel
+           gana: tiene el boton de descarga ahi mismo, y sale en todas las
+           cargas y no solo en la primera.
+
+           Si alguna vez conviene que quede algo ESCRITO en la conversacion
+           --el cartel se cierra y desaparece, el chat no-- volver a ponerla es
+           trivial: esta en el historial de git. Pero que salgan las dos juntas
+           es el spam que se vino sacando toda esta semana. */
     }
 }
 
