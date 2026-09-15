@@ -61,6 +61,28 @@ necesite un subdominio de la plataforma.
 > septiembre de 2026 lo cambié yo a `ganamos7` leyendo el `.env` de un
 > contenedor que estaba desactualizado, y estaba mal.
 >
+> **MEDICION DEL 15/09/2026 (headers, no creencias).** Se comprobaron los dos
+> dominios con y sin User-Agent de navegador:
+>
+> | Dominio | Server | curl pelado | con navegador |
+> |---|---|---|---|
+> | `agents.ganamos7.com` | nginx | 200 | 200 |
+> | `agents.ganamosonline.com` | **cloudflare** | **403** | 200 |
+>
+> O sea: **el que tiene proteccion anti-bot es `ganamosonline`, el que usamos**,
+> y `ganamos7` esta pelado. Es al reves de lo que decia este bloque. El 403 es
+> Cloudflare Bot Fight Mode: bloquea lo que no parece navegador. El bot usa
+> Chromium real y por eso pasa casi siempre, pero desde una IP de datacenter
+> Cloudflare desconfia mas, y de ahi los challenges intermitentes que rompen
+> depositos y hacen tardar altas (ver PARA-FAUNO-deposito.md).
+>
+> **ESTO NO ALCANZA PARA CAMBIAR EL DOMINIO, y el historial explica por que:**
+> los headers prueban que hay menos proteccion, NO que la cuenta de agente
+> funcione del otro lado. Pueden ser operadores distintos con el mismo panel.
+> La prueba que falta es entrar a mano a `https://agents.ganamos7.com/` con las
+> credenciales del cajero y ver si aparecen LOS MISMOS jugadores y el MISMO
+> saldo. Sin eso, no se toca.
+>
 > **Antes de volver a tocar esto, mirá lo único que prueba algo: si las altas
 > están saliendo.** Un `.env`, un comentario o un default en el código son lo
 > que alguien creyó, no lo que funciona. La referencia buena es
