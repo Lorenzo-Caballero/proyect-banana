@@ -15,6 +15,16 @@
 > falta, el bug con su evidencia de producción, el arreglo, los casos de prueba
 > y cómo verificar que tomó.
 
+> **ESTADO (15/09/2026, noche): EL ARREGLO YA ESTÁ EN EL REPO DEL BOT**,
+> commit `0aad330` — los puntos 1, 2 y 3 completos (`evaluar_deposito` con
+> cuerpo, respuesta entera en `_depositar_una`, `es_challenge()` compartida y
+> el reintento en el fast-path de altas), con los casos de prueba de abajo en
+> `t_alta_api.py` (74 OK). **Falta desplegar**:
+> `bash /opt/goldpaw/scripts/deploy-bot.sh`. El código nuevo trae las marcas
+> `# [goldpaw]` así que el cron guardián del parche en caliente lo ve como
+> "ya parchado" y no toca nada. Lo de abajo queda como referencia del bug y
+> de cómo verificar en producción que el arreglo tomó.
+
 ---
 
 ## Resumen en una línea

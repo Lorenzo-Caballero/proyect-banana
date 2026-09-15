@@ -12,7 +12,8 @@ ruleta de bonos y recargas automáticas por transferencia.
 | `orange-crab-483661.hostingersite.com` | Hosting **viejo** (Hostinger). Ya no se usa: `landing/` y `api/` se sirven desde el VPS en `ganamoscrm.online` (la API, bajo `/gp-api/`) | Propio |
 | `ganamos7.com` | Front de la plataforma (React SPA) donde juega el usuario | De la plataforma |
 | `agents.ganamosonline.com` | **Panel de agentes en uso.** Alta de jugadores, saldo, depósitos | Cuenta de agente propia |
-| `agents.ganamos7.com` | El **mismo** panel, pero detrás del WAF. No apuntar nada acá (ver la nota) | — |
+| `agents.ganamos7.com` | El **mismo** panel, otro envoltorio. No apuntar nada acá (ver la nota) | — |
+| `agents.ganamosbet.net` | Otro envoltorio más del mismo panel; la plataforma dice que es "el actual". Sin usar | — |
 | `ganamoscrm.online` | **Dominio en uso.** Sirve la plataforma vía `replica/` y la API en `/gp-api/` | Propio (VPS) |
 | `ganamos.faunotattoo.com` | Dominio viejo. nginx todavía lo acepta, pero **ya no se usa** | Propio (VPS) |
 
@@ -75,6 +76,18 @@ necesite un subdominio de la plataforma.
 > Chromium real y por eso pasa casi siempre, pero desde una IP de datacenter
 > Cloudflare desconfia mas, y de ahi los challenges intermitentes que rompen
 > depositos y hacen tardar altas (ver PARA-FAUNO-deposito.md).
+>
+> **SEGUNDA MEDICION, mismo dia (ver PARA-FAUNO-dominios.md):**
+> `agents.ganamosbet.net` tambien es cloudflare pero da 200/200, y — lo
+> importante — **60 requests SECUENCIALES contra los tres paneles, ya
+> logueados, no provocaron NI UN challenge.** El dominio solo no explica el
+> problema. La hipotesis que queda en pie es la **concurrencia en rafaga**: el
+> fast-path de altas disparaba el lote con 6 conexiones simultaneas desde la
+> misma IP, que es el patron que un WAF puntua como bot. Por eso `conc` bajo
+> de 6 a 3 en el repo del bot (commit `0aad330`); si los challenges siguen, el
+> proximo paso es 2. Ese mismo commit lleva el arreglo real del challenge
+> (`es_challenge()` + decidir el deposito por el cuerpo + reintento en el
+> alta), con lo que el parche en caliente del contenedor queda obsoleto.
 >
 > **ESTO NO ALCANZA PARA CAMBIAR EL DOMINIO, y el historial explica por que:**
 > los headers prueban que hay menos proteccion, NO que la cuenta de agente
@@ -614,6 +627,25 @@ comportándose igual que una visita directa.
 > prueba que la cierra: abrir un juego, pestaña Red, buscar la request a
 > `.../game/link` y leer **el cuerpo** de la respuesta. Un minuto, y evita
 > probar a ciegas. El detalle completo está en `PARA-FAUNO-juegos.md`.
+
+### El OTRO problema de los juegos: el token de un solo uso
+
+Distinto del de la réplica, y en cualquier dominio (ver
+`PARA-FAUNO-dominios.md`, Parte 2). El launcher del proveedor lleva un
+`playerSession=<token>` que es de **UN SOLO USO**: refrescar, volver atrás o
+reabrir un enlace guardado usa un token quemado — y el proveedor **responde
+200 con el launcher entero igual**, que arranca el logo y se queda ahí para
+siempre, sin ningún error. Por eso "el primer intento anda y el segundo no",
+y por eso Safari (token nuevo) abría lo que el navegador de siempre no.
+
+- **No es el iframe, no es nuestro, no es el WAF.** El arreglo es de la
+  plataforma (que el token muerto falle visible); ya está pedido.
+- Mientras tanto: el jugador tiene que abrir el juego **siempre desde el
+  listado** — nunca un enlace guardado, nunca F5 adentro del juego.
+- En el celular el juego **navega afuera** de nuestra página (no corre
+  adentro como en PC), y la vuelta recarga la página entera: cualquier estado
+  en variables JS se pierde. Ya nos mordió con el cartel de la app; todo
+  estado que deba sobrevivir esa vuelta va a `localStorage`.
 
 ## Configuración
 

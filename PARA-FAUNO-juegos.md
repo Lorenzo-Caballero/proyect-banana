@@ -166,17 +166,14 @@ Si dice otra cosa, al menos ya sabemos qué, en vez de probar a ciegas.
 
 ## 3. De paso: lo que sigue pendiente de tu lado
 
-El bug de `PARA-FAUNO-deposito.md` **sigue abierto en el repo del bot**.
-Verificado hoy sobre `Bot-python`: `alta_api.evaluar_deposito(status: int)`
-todavía decide **solo por el código HTTP**, y no existe ninguna función que
-reconozca el challenge del WAF (no hay `es_challenge` ni `/exhk` en ningún
-archivo).
-
-Mientras tanto eso vive de un **parche en caliente** que GOLDPAW aplica por
-`docker cp` dentro del contenedor (`scripts/parche-deposito-cuerpo.py`). Ese
-parche **sobrevive un `docker restart` pero NO que se recree el contenedor**: el
-día que se recree, vuelven los depósitos fantasma que le costaron las fichas a
-tres jugadores.
+~~El bug de `PARA-FAUNO-deposito.md` sigue abierto en el repo del bot.~~
+**Cerrado el 15/09/2026 a la noche**: el arreglo entró al repo del bot en el
+commit `0aad330` (`evaluar_deposito` por el cuerpo, `es_challenge()`
+compartida, reintento del challenge en el alta, y `conc` del lote 6→3).
+**Falta desplegarlo** con `bash /opt/goldpaw/scripts/deploy-bot.sh`; hasta
+entonces el contenedor sigue viviendo del parche en caliente, que no
+sobrevive a una recreación.
 
 El detalle completo, con los casos reales y los tests, está en
-`PARA-FAUNO-deposito.md`.
+`PARA-FAUNO-deposito.md`; el análisis de dominios y del token de los juegos,
+en `PARA-FAUNO-dominios.md`.
