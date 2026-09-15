@@ -408,6 +408,15 @@
   .chead-sep{display:none}
   /* Estado del ticket: mismo segmented de siempre pero mucho más chico --
      el color ya distingue el estado, el texto es apoyo, no protagonista. */
+  /* La nota del jugador, en la cabecera del chat. En ambar: no es un dato
+     mas, es una advertencia que alguien del equipo dejo escrita a mano. Una
+     sola linea, con el texto completo en el title y el resto al tocarla. */
+  .chat-nota{display:inline-flex;align-items:center;gap:6px;max-width:min(42vw,420px);
+             padding:5px 10px;border-radius:9px;font-size:12px;text-align:left;
+             color:var(--txt);background:rgba(240,160,42,.10);
+             border:1px solid rgba(240,160,42,.45);cursor:pointer}
+  .chat-nota b{color:var(--amber,#f0a02a);flex:none}
+  .chat-nota span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .estbtns{display:flex;gap:3px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:3px}
   .estbtns button{background:transparent;border:none;color:var(--muted);padding:6px 12px;border-radius:7px;
     font-size:11px;font-weight:600;transition:.15s;cursor:pointer;white-space:nowrap}
@@ -2337,12 +2346,16 @@
             <span class="ia-txt">BOT</span>
             <span class="ia-track"><span class="ia-knob"></span></span>
           </button>
-          <!-- Estado del ticket: segmented compacto, solo inicial + color. -->
-          <div class="estbtns" id="estbtns" title="Estado de la conversación">
-            <button data-e="abierta" title="Abierta">Abierta</button>
-            <button data-e="pendiente" title="Pendiente">Pendiente</button>
-            <button data-e="cerrada" title="Cerrada">Cerrada</button>
-          </div>
+          <!-- ACA ESTABA EL SELECTOR abierta/pendiente/cerrada, y se saco el
+               15/09/2026 junto con sus filtros de la bandeja: era el estado de
+               un ticket, un concepto de sistema de soporte que nadie usaba.
+               En su lugar va lo que el agente SI necesita tener delante al
+               contestarle a alguien: la nota que el equipo escribio sobre ese
+               jugador ("cuidado, a veces intenta hacer trampa"). Antes vivia en
+               el panel lateral, que en el celular no se ve y en la PC hay que
+               abrir. Si no hay nota, no se muestra nada -- un cartel vacio
+               ocupa lugar y enseña a ignorar ese renglon. -->
+          <button class="chat-nota" id="chatNota" type="button" style="display:none"></button>
           <!-- Acciones secundarias: solo íconos, agrupadas al final. -->
           <div class="chead-acciones">
             <button class="pinbtn" id="btnAtender" type="button" title="Atender este chat"><svg viewBox="0 0 24 24"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/><path d="M17 11h6M20 8v6"/></svg></button>
@@ -2357,6 +2370,14 @@
                 <button class="menu-item" id="miArchivar" type="button" role="menuitem">
                   <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></svg>
                   <span id="miArchivarTxt">Archivar conversación</span>
+                </button>
+                <!-- Llevarse la conversación entera como texto. Sirve para
+                     pasarle el caso a otro, para guardar una constancia de lo
+                     que se prometió, o para revisar una discusión de plata
+                     fuera del CRM. -->
+                <button class="menu-item" id="miExportar" type="button" role="menuitem">
+                  <svg viewBox="0 0 24 24"><path d="M12 3v12M8 11l4 4 4-4"/><path d="M4 17v2a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2"/></svg>
+                  <span>Exportar chat</span>
                 </button>
                 <!-- Solo admin. Esto no esconde: destruye lo que se dijo. -->
                 <div class="menu-sep" id="miSep"></div>
@@ -7656,10 +7677,25 @@
     else av.style.display="none";
     $("#chatWho").textContent = c.usuario || "Conversación anónima";
     $("#chatSub").textContent = c.usuario ? ("@"+c.usuario) : ("sesión " + (c.session_id||"").slice(0,8));
-    $("#estbtns").querySelectorAll("button[data-e]").forEach(b=>b.classList.toggle("on", b.getAttribute("data-e")===c.estado));
+    /* LA NOTA DEL JUGADOR, en la cabecera. Se pinta acá y no en el panel
+       lateral porque es lo que hay que ver ANTES de contestar, no despues de
+       ir a buscarlo. Tocarla abre el panel, que es donde se edita. */
+    const elNota = $("#chatNota");
+    if (elNota){
+      const nota = (c.notas || "").trim();
+      elNota.style.display = nota ? "" : "none";
+      if (nota){
+        elNota.innerHTML = `<b>Nota</b><span>${esc(nota.replace(/\s+/g, " "))}</span>`;
+        elNota.title = nota + "\n\n(Tocá para abrir la ficha y editarla)";
+      }
+    }
     $("#btnFijar").classList.toggle("on", !!c.fijada);
     st.archivada = !!c.archivada;
     st.mensajes  = d.mensajes.length;
+    // La conversación entera, para "Exportar chat". Se guarda lo que YA vino
+    // en esta respuesta: pedirla de nuevo al exportar seria otra vuelta al
+    // server para traer exactamente lo mismo que esta en pantalla.
+    st.msgs = d.mensajes;
     pintarMenuMas();
     st.iaActiva = (c.ia_activa !== false);
     pintarBtnIA();
@@ -7968,10 +8004,16 @@
     if(st.inactivos) cargarLista();
   });
 
-  $("#estbtns").addEventListener("click", async e=>{
+  /* El selector de estado se saco de la cabecera el 15/09/2026. El listener
+     queda CON GUARDA: la accion `estado` sigue existiendo en el server --la usa
+     el cierre automatico-- y si alguna vez se vuelve a exponer, alcanza con el
+     markup. Sin la guarda, addEventListener sobre null tira TypeError y mata el
+     <script> entero del CRM: paso hoy mismo y dejaba el spinner para siempre. */
+  const _estbtns = $("#estbtns");
+  if (_estbtns) _estbtns.addEventListener("click", async e=>{
     const b=e.target.closest("button"); if(!b||!st.convId)return;
     await jpost({accion:"estado", id:st.convId, estado:b.getAttribute("data-e")});
-    $("#estbtns").querySelectorAll("button").forEach(x=>x.classList.toggle("on", x===b));
+    _estbtns.querySelectorAll("button").forEach(x=>x.classList.toggle("on", x===b));
     cargarLista();
   });
   $("#volver").addEventListener("click", ()=>{ $("#app").classList.remove("viewing"); });
@@ -7998,6 +8040,16 @@
 
   // ---------- anclar ----------
   /* El menú "..." del chat: archivar y eliminar. */
+  /* Tocar la nota lleva a donde se edita, que es el panel de la ficha. Sin
+     esto seria un cartel que no hace nada, y el agente igual tendria que ir a
+     buscar el panel a mano. */
+  const _chatNota = $("#chatNota");
+  if (_chatNota) _chatNota.addEventListener("click", ()=>{
+    const btn = $("#btnInfo");
+    if (btn) btn.click();
+    setTimeout(()=>{ const n = $("#notas"); if (n) n.focus(); }, 120);
+  });
+
   function pintarMenuMas(){
     $("#miArchivarTxt").textContent = st.archivada
       ? "Devolver a la bandeja"
@@ -8008,6 +8060,52 @@
     $("#miEliminar").classList.toggle("hide", !soyAdmin);
     $("#miSep").classList.toggle("hide", !soyAdmin);
   }
+  /* ---------- EXPORTAR EL CHAT ----------
+     Texto plano y no PDF ni Excel a proposito: se abre en cualquier lado, se
+     pega en un mail o en WhatsApp, y no depende de ninguna libreria. Lo que se
+     necesita de una conversacion es LEERLA.
+
+     Sale lo que esta cargado en pantalla, que es la conversacion completa
+     (`abrir` la trae entera). Los mensajes internos van marcados como tales y
+     los eliminados aparecen como eliminados: un export que esconde lo que se
+     borro no sirve como constancia. */
+  function exportarChat(){
+    const msgs = st.msgs || [];
+    if (!msgs.length){ toast("No hay mensajes para exportar"); return; }
+    const quien = st.usuario || "conversacion";
+
+    const lineas = [
+      "Conversación con " + quien,
+      "Exportado el " + new Date().toLocaleString("es-AR"),
+      "Mensajes: " + msgs.length,
+      "".padEnd(60, "-"),
+      "",
+    ];
+    msgs.forEach(m=>{
+      const cuando = horaExacta(m.creado_en);
+      let de = m.rol === "user" ? quien
+             : (m.rol === "agente" ? (m.operador || "Agente") : "Bot");
+      if (m.interno) de += " (nota interna)";
+      const texto = m.borrado_en
+        ? "[mensaje eliminado]"
+        : String(m.texto || "").replace(/\r?\n/g, "\n  ");
+      lineas.push("[" + cuando + "] " + de + ":");
+      lineas.push("  " + texto);
+      lineas.push("");
+    });
+
+    const blob = new Blob([lineas.join("\n")], {type:"text/plain;charset=utf-8"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "chat_" + quien.replace(/[^\w.-]/g, "_") + "_"
+               + new Date().toISOString().slice(0,10) + ".txt";
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(a.href);
+    toast("Chat exportado (" + msgs.length + " mensajes)");
+  }
+  const _miExportar = $("#miExportar");
+  if (_miExportar) _miExportar.addEventListener("click", ()=>{ cerrarMenuMas(); exportarChat(); });
+
   function cerrarMenuMas(){
     $("#menuMas").classList.remove("on");
     $("#btnMas").setAttribute("aria-expanded", "false");
