@@ -413,14 +413,22 @@ switch ($accion) {
         // Solo estos campos son editables. Lo que no este en la lista no se
         // toca, aunque venga en el body.
         $campos = [
-            'nombre'         => $nombre,
-            'agente_usuario' => $in['agente_usuario'] ?? null,
-            'cobro_alias'    => $in['cobro_alias']    ?? null,
-            'cobro_cbu'      => $in['cobro_cbu']      ?? null,
-            'cobro_titular'  => $in['cobro_titular']  ?? null,
-            'coins_por_peso' => (float) ($in['coins_por_peso'] ?? 1),
-            'notas'          => $in['notas']          ?? null,
+            'nombre' => $nombre,
+            'notas'  => $in['notas'] ?? null,
         ];
+        /* Credenciales del agente, cuenta de cobro y coins_por_peso: desde el
+           15/09/2026 los gestiona EL CLIENTE desde su CRM y este panel ya no
+           los manda. Se pisan SOLO si vienen en el request (un llamador viejo
+           o un script): antes se seteaban siempre, y con el formulario nuevo
+           sin esos campos cada "Guardar" hubiera borrado en silencio lo que
+           el cliente cargo en su CRM -- su usuario de agente en null, su
+           cuenta de cobro en null y su precio de vuelta a 1. */
+        foreach (['agente_usuario', 'cobro_alias', 'cobro_cbu', 'cobro_titular'] as $cx) {
+            if (array_key_exists($cx, $in)) { $campos[$cx] = $in[$cx]; }
+        }
+        if (array_key_exists('coins_por_peso', $in)) {
+            $campos['coins_por_peso'] = (float) $in['coins_por_peso'];
+        }
 
         // Las claves solo se pisan si mandaron una nueva: el formulario las
         // muestra vacias (nunca se devuelven), y un vacio ahi significa

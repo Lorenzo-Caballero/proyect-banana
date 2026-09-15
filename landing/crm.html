@@ -4663,6 +4663,43 @@
       </div>
 
       <div class="cfg-sec">
+        <h3>Integración con ganamos</h3>
+        <span class="cfg-sec-linea"></span>
+      </div>
+
+      <!-- Las credenciales del panel de agentes las carga EL CLIENTE, acá
+           (15/09/2026). Antes las tipeaba el dueño de la plataforma en su
+           panel de administración: inseguro (dictar la clave a un tercero) y
+           frágil (si no las cargaba, altas y cargas muertas sin aviso). Van a
+           goldpaw_control vía crm_integracion.php; provisionar.php levanta o
+           recrea el bot solo, en ~1 min. Solo admin. -->
+      <div class="cfg-card" id="gnCard">
+        <div class="cfg-card-head" style="cursor:default">
+          <span class="cb-ico"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></span>
+          <div class="cfg-card-txt">
+            <b>Tu panel de agentes de ganamos</b>
+            <span>Con esto el sistema crea cuentas, carga fichas y espeja a tus jugadores, solo. Sin esto, nada de eso funciona.</span>
+          </div>
+        </div>
+        <div class="cfg-card-body">
+          <p class="cfg-hint" id="gnEstado">Cargando…</p>
+          <div class="cfg-grid">
+            <div>
+              <label class="cb-flabel">Usuario del panel</label>
+              <input class="cb-input" id="gnUser" placeholder="tu usuario en agents.ganamos" autocomplete="off">
+            </div>
+            <div>
+              <label class="cb-flabel">Contraseña del panel</label>
+              <input class="cb-input" id="gnPass" type="password" placeholder="" autocomplete="new-password">
+            </div>
+          </div>
+          <p class="cfg-hint">La contraseña nunca vuelve a mostrarse acá. Se usa
+            únicamente para que el bot entre a TU panel de ganamos y trabaje por vos.</p>
+          <button class="cb-btn" id="gnGuardar" type="button" style="margin-top:12px">Guardar credenciales</button>
+        </div>
+      </div>
+
+      <div class="cfg-sec">
         <h3>Cómo cobro</h3>
         <span class="cfg-sec-linea"></span>
       </div>
@@ -4682,6 +4719,17 @@
         </div>
         <div class="cfg-card-body">
           <div id="cobroAviso" class="cb-nota" style="display:none"></div>
+
+          <!-- El precio: cuántos coins recibe el jugador por cada peso que
+               transfiere. Vive en goldpaw_control (lo lee rl_crear_recarga
+               para calcular el monto) y lo decide EL CLIENTE — antes lo
+               cargaba el dueño de la plataforma en su panel. Se guarda con
+               el botón grande de abajo, junto con el resto. -->
+          <div style="max-width:220px">
+            <label class="cb-flabel">Coins por peso</label>
+            <input class="cb-input" id="cobroCpp" type="number" step="0.0001" min="0.0001" placeholder="1">
+            <p class="cfg-hint">1 = un coin por peso. Con 2, el que transfiere $1.000 recibe 2.000 coins.</p>
+          </div>
 
           <div class="cobro-metodo-toggle">
             <label class="cobro-metodo-opt">
@@ -5872,7 +5920,7 @@
     /* Los preparativos que antes vivian en el click del rail van ACA, para
        que llegar por URL o por boton sea EXACTAMENTE lo mismo. */
     if(vista === "notificaciones") abrirNotif();   // desde el rail/URL siempre es masiva
-    if(vista === "config") { cargarConfig(); cobroCargar(); }
+    if(vista === "config") { cargarConfig(); cobroCargar(); gnCargar(); }
     // La pestaña del navegador dice donde estas: con diez CRMs abiertos (un
     // operador multi-cliente los tiene), "CRM" diez veces no dice nada.
     document.title = (RUTA_LABEL[vista] || "CRM") + " · GOLDPAW CRM";
@@ -6306,9 +6354,16 @@
 
     cobroFijaId = d.cobro_fija_id || 0;
 
-    // La principal (id=0) siempre encabeza la lista, junto con las extra --
-    // una sola lista para elegir, no dos fuentes separadas.
-    cobroCuentas = [d.cuenta_principal || {id:0}, ...(d.cuentas_extra || [])];
+    $("#cobroCpp").value = d.coins_por_peso || 1;
+
+    /* La principal (id=0) encabeza la lista junto con las extra -- una sola
+       lista para elegir. PERO si está VACÍA se oculta: desde que la cuenta
+       de cobro la carga el cliente (15/09/2026), los clientes nuevos no
+       tienen principal y una fila "sin cargar" que no se puede editar ni
+       borrar solo confunde. Sus cuentas son las que agrega él acá. */
+    const pr = d.cuenta_principal || {id:0};
+    const prVacia = !(pr.cbu || pr.alias);
+    cobroCuentas = [...(prVacia ? [] : [pr]), ...(d.cuentas_extra || [])];
     cobroPintarCuentas();
 
     const hg = d.hg_propio || {};
@@ -6413,6 +6468,14 @@
       let d = await jpost({accion:"metodo_guardar", metodo_cobro: metodo}, API_COBRO);
       if(!d.ok) throw new Error(d.error || "No se pudo guardar el método");
 
+      // El precio (coins por peso) va con el mismo botón: es parte de "cómo
+      // cobro" y un guardado aparte era otro botón que nadie encuentra.
+      const cpp = parseFloat($("#cobroCpp").value);
+      if(cpp > 0){
+        d = await jpost({accion:"coins_por_peso_guardar", valor: cpp}, API_COBRO);
+        if(!d.ok) throw new Error(d.error || "No se pudo guardar coins por peso");
+      }
+
       if(metodo === "transferencia"){
         // Primero la billetera que haya quedado tipeada sin apretar
         // "+ Agregar cuenta" -- si no, se perdía en silencio (ver
@@ -6443,12 +6506,112 @@
       }
       toast("Método de cobro guardado");
       cobroCargar();
+      gpAvisosRevisar();
     }catch(e){
       aviso.style.display = ""; aviso.textContent = e.message || "No se pudo guardar.";
     }finally{
       btn.disabled = false; btn.textContent = txt;
     }
   });
+
+  /* ============== Integración con ganamos (crm_integracion.php) ==============
+     Las credenciales del panel de agentes, cargadas por EL CLIENTE. Van a
+     goldpaw_control; provisionar.php levanta (o recrea) su bot solo en ~1
+     minuto. Solo admin: el endpoint corta con 403 para agentes, y acá ese
+     403 simplemente deja el card en "solo admin". */
+  const API_INTEG = API_BASE + "/crm_integracion.php";
+  let gnCargada = null;   // null = sin datos (no admin / error); bool si se supo
+
+  async function gnCargar(){
+    let d;
+    try{ d = await jget({accion:"estado"}, API_INTEG); }catch(e){ d = null; }
+    if(!d || !d.ok){
+      $("#gnEstado").textContent = "Solo un admin puede ver y cargar estas credenciales.";
+      return;
+    }
+    gnCargada = !!d.cargada;
+    $("#gnUser").value = d.usuario || "";
+    $("#gnPass").value = "";
+    $("#gnPass").placeholder = d.cargada ? "Ya cargada — dejala vacía para no cambiarla" : "la contraseña de tu panel";
+    $("#gnEstado").innerHTML = d.cargada
+      ? '✅ <b>Integrado.</b> El sistema entra a tu panel como <b>' + esc(d.usuario) + '</b>.'
+      : '⚠️ <b>Sin integrar.</b> Cargá tu usuario y contraseña del panel de agentes de ganamos.';
+  }
+
+  $("#gnGuardar").addEventListener("click", async ()=>{
+    const u = $("#gnUser").value.trim(), p = $("#gnPass").value;
+    if(!u){ toast("Falta el usuario del panel"); return; }
+    if(!p && gnCargada !== true){ toast("Falta la contraseña del panel"); return; }
+    const btn = $("#gnGuardar"); btn.disabled = true; const t = btn.textContent; btn.textContent = "Guardando…";
+    let d;
+    try{ d = await jpost({accion:"guardar", usuario:u, password:p}, API_INTEG); }
+    catch(e){ d = null; }
+    btn.disabled = false; btn.textContent = t;
+    if(!d || !d.ok){ toast((d && d.error) || "No se pudo guardar"); return; }
+    toast(d.aviso || "Credenciales guardadas");
+    gnCargar();
+    gpAvisosRevisar();
+  });
+
+  /* ================== AVISOS PRIORITARIOS (arriba de todo) ==================
+     Lo que el cliente TIENE que resolver para que su plataforma funcione:
+     sin integrar el panel de ganamos no hay altas ni cargas; sin cuenta de
+     cobro nadie puede transferirle. Es un cartel fijo arriba al centro (no
+     toca el layout del shell, que es un flex), clickeable: lleva directo a
+     la sección de Configuración que lo resuelve. Desaparece solo cuando el
+     problema se resolvió — no se puede "cerrar", a propósito: es plata. */
+  function gpAvisoPintar(id, html, alClick){
+    let el = document.getElementById(id);
+    if(!html){ if(el) el.remove(); return; }
+    if(!el){
+      el = document.createElement("div");
+      el.id = id;
+      el.style.cssText = "position:fixed;top:10px;left:50%;transform:translateX(-50%);" +
+        "z-index:1200;max-width:min(620px,92vw);background:var(--panel2,#231d2c);" +
+        "border:1px solid #c0392b;border-left:4px solid #e74c3c;border-radius:10px;" +
+        "padding:10px 16px;font-size:13px;color:var(--txt,#eee);cursor:pointer;" +
+        "box-shadow:0 6px 24px rgba(0,0,0,.45)";
+      document.body.appendChild(el);
+    }
+    el.innerHTML = html;
+    el.onclick = alClick;
+  }
+
+  async function gpAvisosRevisar(){
+    // Integración con ganamos: solo la ve/resuelve un admin — un 403 acá
+    // significa "no es tu tarea" y no se muestra nada.
+    let integ = null, cobro = null;
+    try{ integ = await jget({accion:"estado"}, API_INTEG); }catch(e){}
+    try{ cobro = await jget({accion:"estado"}, API_COBRO); }catch(e){}
+
+    gpAvisoPintar("gpAvisoInteg",
+      (integ && integ.ok && !integ.cargada)
+        ? '<b>⚠️ Integrá tu panel de ganamos</b> — sin esto no se crean cuentas, ' +
+          'no se cargan fichas y tus jugadores no se espejan. ' +
+          '<u>Cargar credenciales</u>'
+        : "",
+      ()=>{ navegar("config", true); setTimeout(()=>{ const c=$("#gnCard"); if(c) c.scrollIntoView({behavior:"smooth", block:"center"}); }, 250); });
+
+    // Cuenta de cobro: por transferencia sin NINGUNA cuenta usable, o HG
+    // Cash sin token. Sin esto el jugador no tiene a dónde transferir.
+    let faltaCobro = false;
+    if(cobro && cobro.ok){
+      if(cobro.metodo_cobro === "hgcash"){
+        faltaCobro = !(cobro.hg_propio && cobro.hg_propio.tiene_token);
+      } else {
+        const pr = cobro.cuenta_principal || {};
+        const hayPr = !!(pr.cbu || pr.alias);
+        const hayExtra = (cobro.cuentas_extra || []).some(c=> c.activa);
+        faltaCobro = !hayPr && !hayExtra;
+      }
+    }
+    gpAvisoPintar("gpAvisoCobro",
+      faltaCobro
+        ? '<b>⚠️ Cargá tu cuenta de cobro</b> — tus jugadores no tienen a dónde ' +
+          'transferir hasta que agregues un CBU/alias. <u>Cargar cuenta</u>'
+        : "",
+      ()=>{ navegar("config", true); setTimeout(()=>{ const c=$("#cobroCard"); if(c) c.scrollIntoView({behavior:"smooth", block:"center"}); }, 250); });
+  }
 
   /** Hash simple de string -> entero, compartido por colorDe()/agColorDe()
    *  (mismo algoritmo, cada uno lo usa para derivar un color distinto). */
@@ -11649,6 +11812,7 @@ ${cuando}.
     pintarCreditosCrm();
     iniciarPolling();
     aplicarRuta();
+    gpAvisosRevisar();
   });
 
   // ---------- logout ----------
@@ -12260,6 +12424,7 @@ ${cuando}.
     pintarCreditosCrm();
     iniciarPolling();
     aplicarRuta();
+    gpAvisosRevisar();
   }
   arrancar();
 })();

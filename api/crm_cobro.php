@@ -71,7 +71,7 @@ try {
 }
 
 $st = $ctl->prepare(
-    'SELECT id, metodo_cobro, cobro_alias, cobro_cbu, cobro_titular, cobro_modo, cobro_fija_id,
+    'SELECT id, metodo_cobro, coins_por_peso, cobro_alias, cobro_cbu, cobro_titular, cobro_modo, cobro_fija_id,
             hg_propio_activo, hg_propio_token, hg_propio_account_id, hg_propio_modo
        FROM clientes WHERE db_nombre = ? LIMIT 1'
 );
@@ -100,6 +100,10 @@ if ($metodo === 'GET' && ($_GET['accion'] ?? '') === 'estado') {
             'titular' => (string)($cliente['cobro_titular'] ?? ''),
         ],
         'cuentas_extra' => $st->fetchAll(),
+        // Cuántos coins vale un peso PARA ESTE CLIENTE (lo usa rl_crear_recarga
+        // para calcular el monto a transferir). Antes lo cargaba el dueño de la
+        // plataforma en su panel; ahora es del cliente, como el resto de esto.
+        'coins_por_peso' => (float)($cliente['coins_por_peso'] ?? 1),
         'cobro_modo'    => (string)($cliente['cobro_modo'] ?? 'azar'),
         'cobro_fija_id' => $cliente['cobro_fija_id'] !== null ? (int)$cliente['cobro_fija_id'] : 0,
         'hg_propio' => [
@@ -125,6 +129,21 @@ if ($metodo === 'POST') {
             }
             $ctl->prepare('UPDATE clientes SET metodo_cobro = ? WHERE id = ?')->execute([$nuevo, $clienteId]);
             crm_bitacora($pdo, $operador, 'cobro_metodo', "metodo=$nuevo");
+            salir(['ok' => true]);
+        }
+
+        /* Cuántos coins vale un peso. Del CLIENTE, no del dueño (15/09/2026):
+           es SU precio, y cargarlo en otro panel era el campo decorativo de
+           siempre. La guarda del > 0 está repetida en rl_coins_por_peso()
+           (un 0 acá dividiría por cero en el cálculo del monto), pero mejor
+           rechazarlo en la puerta que degradar en silencio a la constante. */
+        if ($accion === 'coins_por_peso_guardar') {
+            $v = (float)($body['valor'] ?? 0);
+            if ($v <= 0 || $v > 10000) {
+                salir(['ok' => false, 'error' => 'Coins por peso tiene que ser mayor a 0'], 400);
+            }
+            $ctl->prepare('UPDATE clientes SET coins_por_peso = ? WHERE id = ?')->execute([$v, $clienteId]);
+            crm_bitacora($pdo, $operador, 'cobro_coins_por_peso', "valor=$v");
             salir(['ok' => true]);
         }
 
