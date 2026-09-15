@@ -205,7 +205,7 @@ switch ($accion) {
            Se reemplazan por un booleano `<campo>_cargada`, que es lo unico que
            el formulario necesita saber para decir 'vacio = no cambiar'. */
         $secretos = ['agente_password', 'ia_key', 'cohere_key', 'bot_api_key',
-                     'hg_propio_token', 'hg_propio_webhook_secret'];
+                     'crm_password_hash', 'hg_propio_token', 'hg_propio_webhook_secret'];
         foreach ($secretos as $sx) {
             if (!array_key_exists($sx, $c)) { continue; }
             $c[$sx . '_cargada'] = trim((string) $c[$sx]) !== '';
@@ -233,19 +233,54 @@ switch ($accion) {
         $dbNombre = 'gp_' . preg_replace('/[^a-z0-9]/', '_', $slug);
         $iaKey = trim((string) ($in['ia_key'] ?? ($in['cohere_key'] ?? '')));
         if ($iaKey === '') { $iaKey = null; }   // vacio = usa la clave del sistema
+
+        /* Acceso al CRM del cliente (migracion 08 del control): usuario + HASH
+           de la clave. provisionar.php crea el operador admin en la base del
+           cliente en la misma pasada que la crea -- asi el cliente nace
+           PUDIENDO entrar a su CRM, sin un segundo viaje al boton Operadores.
+           La clave en claro no se guarda nunca: se hashea aca y viaja hash. */
+        $crmUser = trim((string) ($in['crm_usuario'] ?? ''));
+        $crmPass = (string) ($in['crm_password'] ?? '');
+        if ($crmUser !== '' || $crmPass !== '') {
+            if ($crmUser === '' || strlen($crmPass) < 6) {
+                salida(['ok' => false, 'error' => 'acceso al CRM: usuario y contraseña (mínimo 6) van juntos'], 422);
+            }
+            if (!preg_match('/^[a-zA-Z0-9_.\-]{3,60}$/', $crmUser)) {
+                salida(['ok' => false, 'error' => 'el usuario del CRM: solo letras, números, punto, guión (3-60)'], 422);
+            }
+        }
+        $crmHash = $crmPass !== '' ? password_hash($crmPass, PASSWORD_DEFAULT) : null;
+        // Sin la migracion 08 no hay donde guardarlo. Perderlo en silencio
+        // seria el campo decorativo de nuevo: se avisa y no se crea nada.
+        $hayCrmCols = true;
+        try { $pdo->query('SELECT crm_usuario, crm_password_hash FROM clientes LIMIT 0'); }
+        catch (Throwable $e) { $hayCrmCols = false; }
+        if ($crmUser !== '' && !$hayCrmCols) {
+            salida(['ok' => false, 'error' => 'falta la migración 08 del control (panel/sql/08_crm_operador.sql): '
+                . 'corrella o creá el cliente sin acceso al CRM y usá después el botón Operadores'], 422);
+        }
+
+        $colsCrm = $hayCrmCols ? 'crm_usuario,crm_password_hash,' : '';
+        $phCrm   = $hayCrmCols ? '?,?,' : '';
         try {
             $st = $pdo->prepare(
                 'INSERT INTO clientes
-                 (nombre,slug,dominio,path_tenant,db_nombre,agente_usuario,agente_password,cobro_alias,cobro_cbu,
+                 (nombre,slug,dominio,path_tenant,db_nombre,agente_usuario,agente_password,' . $colsCrm . 'cobro_alias,cobro_cbu,
                   cobro_titular,coins_por_peso,' . col_ia($pdo) . ',bot_api_key,notas,suscripcion_estado,trial_hasta)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+                 VALUES (?,?,?,?,?,?,?,' . $phCrm . '?,?,?,?,?,?,?,?,?)'
             );
             // Todo cliente nuevo arranca con 14 días de cortesía: el cron de
             // consumo (panel/consumo_diario.php) no le descuenta saldo ni lo
             // bloquea mientras siga en 'trial' y no haya pasado trial_hasta.
-            $st->execute([
+            $params = [
                 $nombre, $slug, $dominio, $pathTenant, $dbNombre,
                 $in['agente_usuario'] ?? null, $in['agente_password'] ?? null,
+            ];
+            if ($hayCrmCols) {
+                $params[] = $crmUser !== '' ? $crmUser : null;
+                $params[] = $crmHash;
+            }
+            $st->execute(array_merge($params, [
                 $in['cobro_alias'] ?? null, $in['cobro_cbu'] ?? null, $in['cobro_titular'] ?? null,
                 (float) ($in['coins_por_peso'] ?? 1),
                 // `ia_key`: la clave del proveedor de IA del chatbot (hoy Qwen).
@@ -256,7 +291,7 @@ switch ($accion) {
                 $iaKey, $botKey,
                 $in['notas'] ?? null,
                 'trial', date('Y-m-d', strtotime('+14 days')),
-            ]);
+            ]));
             // aprovisionado queda en 0 (default): el worker le crea la base en < 1 min.
             $url = $pathTenant ? ('https://' . $dominio . '/' . $slug . '/crm.html')
                                 : ('https://' . $dominio . '/crm.html');
