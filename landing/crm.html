@@ -6612,46 +6612,107 @@
   });
 
   /* ================== AVISOS PRIORITARIOS (arriba de todo) ==================
-     Lo que el cliente TIENE que resolver para que su plataforma funcione:
-     sin integrar el panel de ganamos no hay altas ni cargas; sin cuenta de
-     cobro nadie puede transferirle. Es un cartel fijo arriba al centro (no
-     toca el layout del shell, que es un flex), clickeable: lleva directo a
-     la sección de Configuración que lo resuelve. Desaparece solo cuando el
-     problema se resolvió — no se puede "cerrar", a propósito: es plata. */
-  function gpAvisoPintar(id, html, alClick){
+     Lo que el cliente TIENE que resolver para que su plataforma funcione, de
+     a UNO y en ORDEN — mostrar dos carteles a la vez era mostrarlos
+     superpuestos (mismo position:fixed), y de paso mareaba:
+
+       1. «Integrá tu panel de ganamos» — sin credenciales no hay NADA:
+          ni altas, ni cargas, ni espejo de jugadores. Manda sobre todo.
+       2. «Trayendo tus jugadores…» — recién integrado y el espejo todavía
+          vacío: no es un problema, es una espera. Cartel INFORMATIVO con
+          spinner, y se re-chequea solo cada 30s hasta que aparecen datos
+          (la primera pasada del bot tarda unos minutos).
+       3. «Cargá tu cuenta de cobro» — recién cuando lo de arriba está
+          resuelto: de nada sirve pedir el CBU a quien aún no integró.
+
+     Es un cartel fijo arriba al centro (no toca el layout del shell, que es
+     un flex), clickeable cuando lleva a una sección que lo resuelve, y no se
+     puede "cerrar" a propósito: es plata. Desaparece al resolverse. */
+  /* El contenedor apilado: los avisos van en columna, arriba al centro, en
+     ORDEN de prioridad (el de credenciales SIEMPRE primero). Se ven TODOS
+     los pendientes a la vez — antes se mostraba de a uno y el cliente
+     descubría el siguiente recién al resolver el anterior. */
+  function gpAvisosContenedor(){
+    let cont = document.getElementById("gpAvisos");
+    if(!cont){
+      cont = document.createElement("div");
+      cont.id = "gpAvisos";
+      cont.style.cssText = "position:fixed;top:10px;left:50%;transform:translateX(-50%);" +
+        "z-index:1200;display:flex;flex-direction:column;gap:8px;align-items:center;" +
+        "max-width:min(620px,92vw)";
+      document.body.appendChild(cont);
+      if(!document.getElementById("gpAvisoCss")){
+        const st = document.createElement("style");
+        st.id = "gpAvisoCss";
+        st.textContent = "@keyframes gpGirar{to{transform:rotate(360deg)}}" +
+          ".gp-spin{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.25);" +
+          "border-top-color:var(--txt,#eee);border-radius:50%;animation:gpGirar .8s linear infinite;" +
+          "vertical-align:-2px;margin-right:7px}";
+        document.head.appendChild(st);
+      }
+    }
+    return cont;
+  }
+
+  function gpAvisoPintar(id, html, tipo, alClick){
+    const cont = gpAvisosContenedor();
     let el = document.getElementById(id);
     if(!html){ if(el) el.remove(); return; }
     if(!el){
       el = document.createElement("div");
       el.id = id;
-      el.style.cssText = "position:fixed;top:10px;left:50%;transform:translateX(-50%);" +
-        "z-index:1200;max-width:min(620px,92vw);background:var(--panel2,#231d2c);" +
-        "border:1px solid #c0392b;border-left:4px solid #e74c3c;border-radius:10px;" +
-        "padding:10px 16px;font-size:13px;color:var(--txt,#eee);cursor:pointer;" +
-        "box-shadow:0 6px 24px rgba(0,0,0,.45)";
-      document.body.appendChild(el);
+      // El de integración va SIEMPRE primero, aunque se pinte después de
+      // que el de cobro ya esté en pantalla.
+      if(id === "gpAvisoInteg"){ cont.prepend(el); } else { cont.appendChild(el); }
     }
+    const rojo = tipo !== "info";
+    el.style.cssText = "background:var(--panel2,#231d2c);width:100%;" +
+      "border:1px solid " + (rojo ? "#c0392b" : "#2c6e8f") + ";" +
+      "border-left:4px solid " + (rojo ? "#e74c3c" : "#3aa0d8") + ";" +
+      "border-radius:10px;padding:10px 16px;font-size:13px;color:var(--txt,#eee);" +
+      (alClick ? "cursor:pointer;" : "cursor:default;") +
+      "box-shadow:0 6px 24px rgba(0,0,0,.45)";
     el.innerHTML = html;
-    el.onclick = alClick;
+    el.onclick = alClick || null;
   }
 
+  let gpAvisoTimer = null;
   async function gpAvisosRevisar(){
-    // Integración con ganamos: solo la ve/resuelve un admin — un 403 acá
-    // significa "no es tu tarea" y no se muestra nada.
+    // El estado de la integración lo lee CUALQUIER operador (guardar sigue
+    // siendo de admin): el aviso prioritario tiene que verse siempre — con
+    // el endpoint solo-admin, a un agente logueado le desaparecía en
+    // silencio y solo quedaba el de cobro, en el orden equivocado.
     let integ = null, cobro = null;
     try{ integ = await jget({accion:"estado"}, API_INTEG); }catch(e){}
     try{ cobro = await jget({accion:"estado"}, API_COBRO); }catch(e){}
 
-    gpAvisoPintar("gpAvisoInteg",
-      (integ && integ.ok && !integ.cargada)
-        ? '<b>⚠️ Integrá tu panel de ganamos</b> — sin esto no se crean cuentas, ' +
-          'no se cargan fichas y tus jugadores no se espejan. ' +
-          '<u>Cargar credenciales</u>'
-        : "",
-      ()=>{ navegar("config", true); setTimeout(()=>{ const c=$("#gnCard"); if(c) c.scrollIntoView({behavior:"smooth", block:"center"}); }, 250); });
+    if(gpAvisoTimer){ clearTimeout(gpAvisoTimer); gpAvisoTimer = null; }
 
-    // Cuenta de cobro: por transferencia sin NINGUNA cuenta usable, o HG
-    // Cash sin token. Sin esto el jugador no tiene a dónde transferir.
+    // ---- 1. PRIORITARIO, siempre arriba: las credenciales del panel de
+    //         ganamos. El contenedor pinta en orden de inserción, y este
+    //         cartel (o su reemplazo, el spinner de la primera pasada del
+    //         espejo) se pinta SIEMPRE primero.
+    const sinCreds = integ && integ.ok && !integ.cargada;
+    const espejando = integ && integ.ok && integ.cargada && (integ.usuarios || 0) === 0;
+
+    gpAvisoPintar("gpAvisoInteg",
+      sinCreds
+        ? '<b>⚠️ Integrá tu panel de ganamos</b> — sin esto no se crean cuentas, ' +
+          'no se cargan fichas y tus jugadores no se espejan. <u>Cargar credenciales</u>'
+        : (espejando
+          ? '<span class="gp-spin"></span><b>Trayendo tus jugadores desde ganamos…</b> ' +
+            'La primera sincronización puede demorar unos minutos. ' +
+            'La lista se va a llenar sola — no hace falta hacer nada.'
+          : ""),
+      sinCreds ? "rojo" : "info",
+      sinCreds
+        ? ()=>{ navegar("config", true); setTimeout(()=>{ const c=$("#gnCard"); if(c) c.scrollIntoView({behavior:"smooth", block:"center"}); }, 250); }
+        : null);
+    if(espejando){ gpAvisoTimer = setTimeout(gpAvisosRevisar, 30000); }
+
+    // ---- 2. Cuenta de cobro, debajo del anterior: por transferencia sin
+    //         NINGUNA cuenta usable, o HG Cash sin token. Sin esto el
+    //         jugador no tiene a dónde transferir.
     let faltaCobro = false;
     if(cobro && cobro.ok){
       if(cobro.metodo_cobro === "hgcash"){
@@ -6668,6 +6729,7 @@
         ? '<b>⚠️ Cargá tu cuenta de cobro</b> — tus jugadores no tienen a dónde ' +
           'transferir hasta que agregues un CBU/alias. <u>Cargar cuenta</u>'
         : "",
+      "rojo",
       ()=>{ navegar("config", true); setTimeout(()=>{ const c=$("#cobroCard"); if(c) c.scrollIntoView({behavior:"smooth", block:"center"}); }, 250); });
   }
 
