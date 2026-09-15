@@ -590,6 +590,31 @@ Sin eso, el botón del CRM encola pedidos que nadie ejecuta. Los dos endpoints d
 GOLDPAW que ese bot necesita (`inactivos.php` y `recaudar_cola.php`) ya existen
 y están probados.
 
+### Los `.env.bak.*` no están en `.gitignore` (riesgo de credenciales)
+
+En el clon del VPS hay una decena de archivos sin trackear con esta forma:
+
+```
+.env.bak.20260906195341
+.env.bak.20260906200524
+...
+```
+
+El `.gitignore` del repo ignora `.env`, pero **no** `.env.bak.*`. O sea que un
+`git add -A` en ese directorio commitea `PANEL_USER` y `PANEL_PASS` del agente
+a un repo público de GitHub.
+
+Se arregla con una línea:
+
+```gitignore
+.env
+.env.bak.*
+```
+
+(Y de paso: `datos-recaudar/` tampoco está en la lista, aunque `datos/` y
+`datos-sync/` sí. El `estado_sesion.json` de adentro sí queda cubierto porque
+la regla es por nombre, pero el resto del volumen no.)
+
 ### El endpoint de rechazo de cargas
 
 Capturado el 13/09 mirando qué hace el botón de cancelar del panel:
