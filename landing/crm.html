@@ -8351,9 +8351,11 @@
     debounce = setTimeout(()=>{ retQ = e.target.value.trim(); cargarRetiros(); }, 300);
   });
   $("#btnLiberarRetiros").addEventListener("click", async ()=>{
-    if(!confirm('¿Liberar los retiros trabados en "procesando"?
-
-Los que el bot tomó hace menos de 10 minutos NO se tocan: esos todavía pueden estar ejecutándose.')) return;
+    /* \n de verdad, no un salto de línea en el fuente: una cadena de comillas
+       simples partida en varias líneas es un SyntaxError que mata el <script>
+       ENTERO -- el CRM quedó en el spinner de arranque para siempre y así se
+       cayó producción el 15/09/2026. confirm() sí muestra los \n. */
+    if(!confirm('¿Liberar los retiros trabados en "procesando"?\n\nLos que el bot tomó hace menos de 10 minutos NO se tocan: esos todavía pueden estar ejecutándose.')) return;
     const btn = $("#btnLiberarRetiros");
     const txtOriginal = btn.textContent;
     btn.disabled = true; btn.textContent = "…";
