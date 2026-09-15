@@ -266,10 +266,13 @@ function hg_propio_webhook_url(): string
 function hg_propio_checkout_crear(float $monto, string $referencia, array $meta = []): array
 {
     $host = (string)($GLOBALS['TENANT_HOST'] ?? $_SERVER['HTTP_HOST'] ?? 'ganamoscrm.online');
+    // Con slug, la vuelta del pago entra por /<slug>/: el jugador cae en la
+    // plataforma de SU cliente y el widget re-captura el tenant de la URL.
+    $slug = (string)($GLOBALS['TENANT_SLUG'] ?? '');
     [$code, $r] = hg_propio_api('POST', '/checkouts', [
         'country'          => 'AR',
         'amount'           => number_format($monto, 2, '.', ''),
-        'successUrl'       => 'https://' . $host . '/?pago=ok',
+        'successUrl'       => 'https://' . $host . ($slug !== '' ? '/' . $slug : '') . '/?pago=ok',
         'webhookUrl'       => hg_propio_webhook_url(),
         'idempotencyKey'   => $referencia,
         'expiresInSeconds' => 45 * 60,
@@ -382,10 +385,11 @@ function hg_ledger_transicion(string $hgId, string $estado, ?string $detalle = n
 function hg_checkout_crear(float $monto, string $referencia, array $meta = []): array
 {
     $host = (string)($_SERVER['HTTP_HOST'] ?? 'ganamoscrm.online');
+    $slug = (string)($GLOBALS['TENANT_SLUG'] ?? '');
     [$code, $r] = hg_api('POST', '/checkouts', [
         'country'          => 'AR',
         'amount'           => number_format($monto, 2, '.', ''),
-        'successUrl'       => 'https://' . $host . '/?pago=ok',
+        'successUrl'       => 'https://' . $host . ($slug !== '' ? '/' . $slug : '') . '/?pago=ok',
         'webhookUrl'       => 'https://ganamoscrm.online/gp-api/hg_webhook.php',
         'idempotencyKey'   => $referencia,
         'expiresInSeconds' => 45 * 60,      // mismo vencimiento que la recarga
