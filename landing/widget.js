@@ -785,7 +785,7 @@
       elServerLaOfrece:  ultimaPromoApp ? "si" : "NO -- o no cargaste nunca, o ya tenes la app, o la promo esta apagada",
       fichasQueRegala:   ultimaPromoApp ? ultimaPromoApp.fichas : null,
       umbralDeSaldoBajo: ultimaPromoApp ? (ultimaPromoApp.saldo_bajo || 0) : null,
-      armado:            promoSaldoArmado ? "si (ya te vio con saldo arriba del umbral)" : "NO -- todavia no te vio con saldo alto",
+      armado:            promoArmado() ? "si (ya te vio con saldo arriba del umbral)" : "NO -- todavia no te vio con saldo alto",
       suprimidoEnEsteNavegador: sup,
       saldoQueLee:       (function(){ var v = saldoDeReact(); return v === null ? saldoDelHeader() : v; })(),
       usuario:           USUARIO || null
@@ -1996,25 +1996,34 @@
      al jugador le quedan pocas. Pedido de Nahuel (14/09/2026): "que aparezca
      cuando se están quedando con pocas fichas, por ejemplo 500".
 
-     ARRANCA DESARMADO Y SE ARMA AL VER UN SALDO ALTO. Parece un detalle y es
-     lo que hace que funcione: una cuenta recién creada tiene 0 fichas, o sea
-     que está "por debajo del umbral" desde el primer segundo. Si arrancara
-     armado, el cartel saltaría apenas entra alguien que todavía no cargó nada
-     -- justo al que no tiene nada que perder todavía. Armándose recién cuando
-     el saldo estuvo ARRIBA del umbral, el cartel solo sale después de haber
-     jugado de verdad, que es el momento que se quiso.
+     SE ARMA AL VER UN SALDO ALTO y se desarma al mostrarse, así sale una vez
+     por bajada y no cincuenta veces por minuto.
 
-     Se re-arma cada vez que vuelve a subir, así sale otra vez en la próxima
-     bajada -- pero nunca dos veces en la misma, que seria acoso. */
-  var promoSaldoArmado = false;
+     EL ARMADO VIVE EN localStorage Y NO EN UNA VARIABLE, y eso es lo que hace
+     que funcione de verdad (arreglado el 15/09/2026). En el celular, abrir un
+     juego NAVEGA a otro dominio -- el del proveedor, tipo prrplt3.com -- y al
+     volver la página se recarga entera. Con el armado en memoria, esa vuelta
+     lo reseteaba a "desarmado": el jugador volvía del juego con 50 fichas,
+     nunca más veía un saldo alto, y el cartel no salía NUNCA. Que es
+     exactamente lo que paso cuando Nahuel probó el flujo completo.
+
+     Guardado en el navegador, sobrevive a la vuelta del juego y al F5.
+
+     Lo que el armado protegía --que no le saltara al recién registrado con 0
+     fichas-- hoy además lo cubre el server, que solo le ofrece la promo a
+     quien ya cargó al menos una vez. Quedan los dos: el server decide A QUIÉN
+     y esto decide CUÁNDO. */
+  function promoArmado(){
+    try { return ls("gp_promo_armado") === "1"; } catch (e) { return false; }
+  }
 
   function mirarSaldoBajo(v){
     if (!ultimaPromoApp) return;          // el server no le ofrece la app a este
     var umbral = Number(ultimaPromoApp.saldo_bajo || 0);
     if (!(umbral > 0) || v === null || isNaN(v)) return;
-    if (v > umbral) { promoSaldoArmado = true; return; }
-    if (!promoSaldoArmado) return;        // o no jugó todavía, o ya se lo mostramos
-    promoSaldoArmado = false;
+    if (v > umbral) { try { lss("gp_promo_armado", "1"); } catch (e) {} return; }
+    if (!promoArmado()) return;           // o no jugó todavía, o ya se lo mostramos
+    try { lsd("gp_promo_armado"); } catch (e) {}
     /* Va por mostrarPromoApp() y NO por ofrecerPromoApp(): se saltea el freno
        de los 30 minutos a propósito. Si el cartel salió al abrir la página y
        media hora después se está quedando sin fichas, ESE es el momento que

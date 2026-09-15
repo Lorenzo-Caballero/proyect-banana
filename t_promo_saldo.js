@@ -22,8 +22,8 @@ const path = require("path");
 
 const src = fs.readFileSync(path.join(__dirname, "landing", "widget.js"), "utf8");
 
-/* Desde la declaracion del estado hasta el cierre de mirarSaldoBajo(). */
-const ini = src.indexOf("var promoSaldoArmado = false;");
+/* Desde promoArmado() hasta el cierre de mirarSaldoBajo(). */
+const ini = src.indexOf("function promoArmado(){");
 const fin = src.indexOf("\n  }", src.indexOf("function mirarSaldoBajo"));
 if (ini < 0 || fin < 0) {
   console.error("No pude extraer mirarSaldoBajo() de landing/widget.js");
@@ -49,10 +49,16 @@ function chequear(q, c, d) {
 
 /* Cada escenario es una instancia limpia: el estado vive en la funcion, asi
    que dos casos no pueden compartirlo. */
-function escenario(promo) {
+function escenario(promo, guardadoInicial) {
   let mostrados = [];
   let ultimaPromoApp = promo;                 // lo lee la funcion extraida
   function mostrarPromoApp(p) { mostrados.push(p); }
+  /* El armado vive en localStorage, asi que el test tiene que simularlo. Es
+     justo lo que hay que probar: que sobreviva a recargar la pagina. */
+  let guardado = Object.assign({}, guardadoInicial || {});
+  function ls(k) { return Object.prototype.hasOwnProperty.call(guardado, k) ? guardado[k] : null; }
+  function lss(k, v) { guardado[k] = String(v); }
+  function lsd(k) { delete guardado[k]; }
   /* eval() en modo no estricto mete `promoSaldoArmado` y `mirarSaldoBajo` en
      ESTE scope, que es lo que se quiere: cada escenario tiene su propio estado
      y no puede contaminar al de al lado. Declararlos aca arriba con let
@@ -62,6 +68,8 @@ function escenario(promo) {
     saldo: v => mirarSaldoBajo(v),
     veces: () => mostrados.length,
     apagar: () => { ultimaPromoApp = null; },
+    // Lo que quedaria guardado en el navegador: sirve para simular una recarga.
+    guardado: () => Object.assign({}, guardado),
   };
 }
 
@@ -88,21 +96,48 @@ console.log("\n=== 1. El caso que se pidio: jugando, se queda sin fichas ===");
   chequear("al cruzar para abajo, sale", e.veces() === 1, "veces=" + e.veces());
 }
 
-console.log("\n=== 2. Al recien registrado NO le salta en la cara ===");
-/* ES EL CASO QUE JUSTIFICA TODO EL ESTADO. Una cuenta nueva tiene 0 fichas:
-   sin el armado, el cartel saldria en el primer tick, antes de que el jugador
-   haya hecho nada. */
+console.log("\n=== 2. Con saldo bajo desde el arranque, no salta solo ===");
+/* El server ya no le ofrece la promo a quien nunca cargo, pero el armado sigue
+   haciendo falta: sin el, entrar con poco saldo dispararia el cartel en el
+   primer tick, sin que haya pasado nada. */
 {
   const e = escenario(PROMO);
   e.saldo(0);
   e.saldo(0);
   e.saldo(0);
-  chequear("con 0 fichas desde el arranque, no sale nunca", e.veces() === 0,
+  chequear("con 0 fichas desde el arranque, no sale", e.veces() === 0,
            "veces=" + e.veces());
-  e.saldo(3000);                       // carga por primera vez
+  e.saldo(3000);                       // carga
   chequear("al cargar tampoco sale", e.veces() === 0);
   e.saldo(100);                        // y ahora si jugo
   chequear("recien cuando jugo y bajo, sale", e.veces() === 1);
+}
+
+console.log("\n=== 2b. EL CASO DEL CELULAR: volver de un juego ===");
+/* EL BUG QUE ESTO FIJA (15/09/2026). En el celular, abrir un juego NAVEGA a
+   otro dominio -- el del proveedor, tipo prrplt3.com -- y al volver la pagina
+   se recarga entera. Con el armado en una variable de memoria, esa vuelta lo
+   reseteaba: el jugador volvia del juego con 50 fichas, nunca mas veia un
+   saldo alto, y el cartel no salia NUNCA. Guardado en el navegador, sobrevive. */
+{
+  const antes = escenario(PROMO);
+  antes.saldo(5000);                   // juega con saldo alto: queda armado
+  chequear("antes de irse al juego quedo armado",
+           antes.guardado().gp_promo_armado === "1", JSON.stringify(antes.guardado()));
+
+  // Vuelve del juego: pagina nueva, memoria en cero, pero el navegador recuerda.
+  const despues = escenario(PROMO, antes.guardado());
+  despues.saldo(50);                   // volvio sin fichas
+  chequear("al volver del juego con poco saldo, SI sale",
+           despues.veces() === 1, "veces=" + despues.veces());
+  chequear("y queda desarmado para no repetir",
+           !despues.guardado().gp_promo_armado, JSON.stringify(despues.guardado()));
+
+  // La contracara: si nunca estuvo armado, una recarga de pagina no lo inventa.
+  const limpio = escenario(PROMO, {});
+  limpio.saldo(50);
+  chequear("sin armado previo, recargar la pagina no dispara nada",
+           limpio.veces() === 0, "veces=" + limpio.veces());
 }
 
 console.log("\n=== 3. Una sola vez por bajada, no acoso ===");
