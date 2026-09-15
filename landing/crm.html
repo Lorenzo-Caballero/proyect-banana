@@ -8255,8 +8255,15 @@
       const btnRechazar = (puedeCerrar && !p.pago_id_unico && !rechazoEnCamino)
         ? `<button class="btn-mini-accion peligro" data-rechazar="${p.request_id}" type="button"
                    title="Cancelarla en ganamos, no solo acá">Rechazar</button>` : "";
-      const chipRechazo = rechazoEnCamino
-        ? `<span class="urg-chip warn">${ico("reloj")}Rechazo en camino</span>` : "";
+      /* "En camino" solo mientras DE VERDAD esta en camino. Si la solicitud ya
+         salio de 'esperando' y todavia arrastra el pedido de rechazo, es que el
+         rechazo NO se pudo hacer -- y seguir diciendo "en camino" deja al
+         operador esperando algo que no va a pasar. Es la otra mitad de lo que
+         reporto Nahuel: que no quede eternamente en ese estado. */
+      const chipRechazo = !rechazoEnCamino ? ""
+        : (p.estado === "esperando"
+            ? `<span class="urg-chip warn">${ico("reloj")}Rechazo en camino</span>`
+            : `<span class="urg-chip crit" title="Se pidió rechazarla pero no se pudo cancelar en ganamos. Miralo en el panel.">${ico("reloj")}El rechazo no salió</span>`);
       return `
       <div class="comp-row">
         <div class="cr-top">

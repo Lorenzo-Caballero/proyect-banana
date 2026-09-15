@@ -348,6 +348,56 @@ try {
             exit;
         }
 
+        /* ---- cerrada: LA RECHAZAMOS EN GANAMOS ----
+           ESTA RAMA NO EXISTIA, y era un agujero serio. 'cerrada' pasaba la
+           validacion de arriba y caia derecho en el bloque de `aprobada`: una
+           carga que el operador RECHAZO quedaba con estado='aprobada' y con su
+           linea en `movimientos` (origen='peticion', monto positivo) -- que es
+           justo lo que Finanzas cuenta como ingreso. O sea que rechazar una
+           carga la sumaba a la facturacion.
+
+           Lo que corresponde: cerrarla, NO registrar ningun movimiento (no
+           entro un peso), soltar cualquier transferencia que tuviera reclamada
+           para que pueda respaldar otra solicitud, y BAJAR la marca del pedido
+           de rechazo -- si no, el cartel "Rechazo en camino" se queda para
+           siempre aunque el rechazo ya se haya hecho. Eso ultimo fue lo que
+           reporto Nahuel: "que cuando se rechace ahi no quede eternamente en
+           rechazo en camino".
+
+           No se toca `usuarios.coins` ni el saldo: no hubo plata. */
+        if ($estado === 'cerrada') {
+            $soltar = (string)($pet['pago_id_unico'] ?? '');
+            $sql = "UPDATE peticiones_carga
+                       SET estado = 'cerrada', pago_id_unico = NULL, motivo = ?";
+            /* rechazo_pedido_en es de la migracion 63: si no esta, se cierra
+               igual -- una columna que falta no puede dejar la solicitud
+               colgada. */
+            try {
+                $pdo->prepare($sql . ", rechazo_pedido_en = NULL WHERE request_id = ?")
+                    ->execute([$mensaje !== '' ? $mensaje : 'rechazada en ganamos', $rid]);
+            } catch (Throwable $e) {
+                $pdo->prepare($sql . " WHERE request_id = ?")
+                    ->execute([$mensaje !== '' ? $mensaje : 'rechazada en ganamos', $rid]);
+            }
+            /* La transferencia que tuviera reclamada vuelve a estar disponible.
+               En teoria no deberia haber ninguna --el CRM y el worker se niegan
+               a rechazar una solicitud con pago reclamado-- pero entre esas dos
+               guardas y este punto pudo entrar, y dejarla marcada la sacaria de
+               circulacion sin que nadie sepa por que. */
+            if ($soltar !== '') {
+                try {
+                    $pdo->prepare(
+                        "UPDATE pagos SET estado='revision' WHERE id_unico = ? AND estado <> 'usado'"
+                    )->execute([$soltar]);
+                } catch (Throwable $e) {
+                    error_log('peticiones_cola/rechazo: no pude soltar el pago: ' . $e->getMessage());
+                }
+            }
+            $pdo->commit();
+            echo json_encode(['ok' => true, 'rechazada' => true]);
+            exit;
+        }
+
         // ---- aprobada ----
         $usuario = (string)$pet['username'];
         $monto   = (float)$pet['monto'];
