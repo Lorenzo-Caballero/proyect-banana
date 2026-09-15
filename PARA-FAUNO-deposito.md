@@ -1,5 +1,10 @@
 # El bot da por hecho depósitos que nunca ocurrieron
 
+> **Esto está incluido y actualizado en [`PARA-FAUNO.md`](PARA-FAUNO.md)**,
+> que es el documento completo y verificado contra el commit `3787cba`.
+> Este archivo queda como historia de cómo se fue descubriendo; si vas a
+> trabajar sobre el bot, usá el otro.
+
 **Para:** quien mantiene el repo del bot (`alta_api.py`, `bot_crear_jugador.py`)
 **De:** el lado GOLDPAW (CRM / API / colector)
 **Fecha:** 13/09/2026 · verificado contra el commit `b3a71a9` del repo del bot

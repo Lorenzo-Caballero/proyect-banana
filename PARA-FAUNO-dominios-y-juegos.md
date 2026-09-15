@@ -1,5 +1,10 @@
 # Los dominios de la plataforma, y por qué los juegos no abren
 
+> **Esto está incluido y actualizado en [`PARA-FAUNO.md`](PARA-FAUNO.md)**,
+> que es el documento completo y verificado contra el commit `3787cba`.
+> Este archivo queda como historia de cómo se fue descubriendo; si vas a
+> trabajar sobre el bot, usá el otro.
+
 **Para:** quien mantiene el repo del bot y quien habla con la plataforma
 **De:** el lado GOLDPAW (CRM / API / colector)
 **Fecha:** 15/09/2026
