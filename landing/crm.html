@@ -5497,6 +5497,60 @@
     actualizarBadgeRetiros();
     actualizarBadgePeticiones();
   }
+  /* ---------- VOLVER A LA PESTAÑA REFRESCA AL INSTANTE ----------
+     EL PROBLEMA (Nahuel, 15/09/2026): "siento que a veces debo recargar el CRM
+     para ver si llegó un mensaje o para ver el saldo real. Es bastante
+     recurrente".
+
+     No era una impresión. El CRM se refresca con setInterval, y los
+     navegadores CONGELAN los temporizadores de una pestaña que no está a la
+     vista: Chrome los baja a uno por minuto, y pasados unos minutos ocultos
+     los frena casi del todo. Como acá se trabaja saltando todo el tiempo entre
+     el CRM, el panel de ganamos y WhatsApp, la pestaña pasa la mayor parte del
+     tiempo en segundo plano -- o sea congelada. Al volver, lo que se ve es de
+     hace vaya a saber cuánto, y recargar "lo arregla" porque vuelve a pedir
+     todo.
+
+     Esto pide los datos EN EL MOMENTO en que la pestaña vuelve a estar a la
+     vista, sin esperar el próximo tick. Y reinicia los temporizadores, que
+     pueden haber quedado desfasados por el propio congelamiento.
+
+     Se escuchan DOS eventos porque cubren cosas distintas: `visibilitychange`
+     agarra el cambio de pestaña, y `focus` el cambio de APLICACIÓN (alt-tab a
+     WhatsApp y volver), donde el navegador considera que la página nunca dejó
+     de estar visible pero igual la frena.
+
+     El freno de 1,5 s evita la ráfaga: al volver de otra app los dos eventos
+     pueden dispararse casi juntos, y no tiene sentido pedir todo dos veces. */
+  let ultimoRefresco = 0;
+  function refrescarAlVolver(){
+    if (document.hidden) return;
+    const ahora = Date.now();
+    if (ahora - ultimoRefresco < 1500) return;
+    ultimoRefresco = ahora;
+
+    /* Los temporizadores primero: si quedaron congelados, reiniciarlos es lo
+       que hace que el refresco siga vivo de acá en adelante. iniciarPolling()
+       limpia los viejos antes de crear los nuevos, así que no se duplican. */
+    if (pollList || pollConv) iniciarPolling();
+
+    try {
+      cargarLista();
+      /* La conversación abierta y la ficha del jugador, que es donde está el
+         saldo. Solo en Conversaciones y con el modal cerrado, por el mismo
+         motivo que el sondeo normal: reabrirla sobre otra sección la deja
+         colgada, y refrescar bajo un modal abierto le mueve el piso a quien
+         está tipeando un monto. */
+      if (vistaActual === "chats" && st.convId
+          && !$("#back").classList.contains("on")) {
+        abrir(st.convId, true);
+      }
+      actualizarBadgeComp(); actualizarBadgeRetiros(); actualizarBadgePeticiones();
+    } catch (e) { /* si algo no está listo todavía, el sondeo normal sigue */ }
+  }
+  document.addEventListener("visibilitychange", refrescarAlVolver);
+  window.addEventListener("focus", refrescarAlVolver);
+
   function detenerPolling(){
     [pollList, pollConv, pollBadgeComp, pollBadgeRet, pollBadgePet,
      pollRetirosVista, pollCargasVista, pollPeticionesVista].forEach(p=>{ if(p) clearInterval(p); });
