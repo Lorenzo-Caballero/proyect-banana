@@ -625,6 +625,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             // 'todo' o busqueda), el agente tiene que ver POR QUE no estaba en
             // la bandeja. Sin el chip parece un chat comun que se le paso.
             $selArch   = crm_hay_archivada($pdo) ? 'c.archivada,' : '';
+            /* Si el BOT esta prendido en cada chat (migracion 27). La bandeja
+               no lo mostraba, asi que no habia forma de ver de un vistazo
+               donde quedo mudo -- y queda mudo solo, cada vez que un agente
+               responde. Mismo guard que las otras: una base sin migrar tiene
+               que seguir teniendo bandeja. */
+            $hayIa     = true;
+            try { $pdo->query("SELECT ia_activa FROM conversaciones LIMIT 0"); }
+            catch (Throwable $e) { $hayIa = false; }
+            $selIa     = $hayIa ? 'c.ia_activa,' : '';
 
             /* Las derivadas suben, arriba de todo menos de las fijadas.
                Esto es lo que hace que la derivacion sea un AVISO y no una
@@ -649,7 +658,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                    El front lo usa para marcar de una todos los que nunca
                    hablaron, en vez de tildarlos de a uno. */
                 "SELECT c.id, c.session_id, c.usuario, c.estado, c.preview,
-                        c.no_leidos, c.fijada, c.actualizada_en, $selDeriv $selArch
+                        c.no_leidos, c.fijada, c.actualizada_en, $selDeriv $selArch $selIa
                         EXISTS (SELECT 1 FROM mensajes m
                                  WHERE m.conversacion_id = c.id AND m.rol = 'user') AS hablo,
                         $ultimaCarga AS ultima_carga
@@ -667,6 +676,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 $it['derivada'] = !empty($it['derivada_en']);
                 $it['archivada'] = !empty($it['archivada']);
                 $it['hablo'] = !empty($it['hablo']);
+                /* Sin la columna se asume PRENDIDO, que es el default de la
+                   migracion 27 y el estado normal: pintar "apagado" donde no
+                   se sabe seria mandar al operador a revisar chats sanos. */
+                $it['ia_activa'] = !array_key_exists('ia_activa', $it)
+                                 || $it['ia_activa'] === null
+                                 || (int)$it['ia_activa'] === 1;
             }
             unset($it);
 

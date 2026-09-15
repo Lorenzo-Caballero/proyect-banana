@@ -1661,15 +1661,26 @@ function rl_notificar_acreditada(PDO $pdo, array $recarga): void
     $crmLib = __DIR__ . '/crm_lib.php';
     if (is_file($crmLib)) { require_once $crmLib; }
     if (function_exists('crm_avisar_jugador')) {
-        $msg = '¡Listo! Ya te acredité tus ' . number_format($coins, 0, ',', '.') . ' fichas 🎉';
-        if ($bono > 0) {
-            /* "de bienvenida" solo en la primera carga; en las demas el bono
-               es de fidelizacion o una promesa del CRM, y decirle "bienvenida"
-               a un jugador viejo suena a error. */
-            $cual = !empty($recarga['es_primera']) ? ' de bono de bienvenida.' : ' de bono.';
-            $msg .= ' Y te sumé ' . number_format($bono, 0, ',', '.') . $cual;
-        }
-        $msg .= ' ¡Gracias por jugar con nosotros, mucha suerte! 🍀';
+        /* ESTA CONFIRMACION YA NO REPITE EL BONO, y es a proposito.
+           Al acreditarse una carga con bono salian TRES avisos en el mismo
+           minuto: este (fichas + bono), la invitacion a la app, y --cuando el
+           bot confirma que deposito en ganamos-- el "🎁 Bono acreditado: ya
+           tenes N en tu saldo del juego". Nahuel lo leyo como "se le dio dos
+           veces el bono"; en la base habia UNA sola acreditacion (verificado),
+           lo que estaba duplicado era el anuncio.
+
+           De los dos que hablaban del bono, el que sobrevive es el OTRO: llega
+           cuando las fichas estan de verdad EN EL JUEGO y dice el total
+           jugable, que es lo unico que el jugador puede usar. Este llega antes
+           de que el deposito ocurra, asi que prometer el bono aca es prometer
+           algo que todavia no esta.
+
+           Y hay una razon de negocio, que la pidio Nahuel: "lo mas importante
+           de todo es que descarguen la app". Sacarle una linea a este mensaje
+           deja que la invitacion a la app --el aviso siguiente-- no compita
+           con un parrafo sobre bonos. */
+        $msg = '¡Listo! Ya te acredité tus ' . number_format($coins, 0, ',', '.') . ' fichas 🎉'
+             . ' ¡Gracias por jugar con nosotros, mucha suerte! 🍀';
         crm_avisar_jugador($pdo, $usuario, $msg);
 
         /* LA INVITACION A LA APP, DE VUELTA (15/09/2026, segunda vez).
