@@ -518,7 +518,30 @@ porque cada apertura emite el suyo.
 - **No es el iframe.** La plataforma no manda `X-Frame-Options` ni CSP
   `frame-ancestors` ni hace frame-busting. Embeber está permitido.
 - **No es el WAF.** No aparece ningún challenge en ese camino.
-- **No es nuestro.** No emitimos ni validamos ese token.
+
+> **CORRECCIÓN (15/09, tarde).** Acá decía además *"no es nuestro"*, y eso era
+> quedarse corto. Fauno encontró en el bundle del SPA que, para pedir el link
+> de un juego, el navegador arma este header:
+>
+> ```js
+> "x-actual-domain": `https://${location.host}/`
+> ```
+>
+> O sea **el dominio de la barra de direcciones**. Entrando por nuestra réplica
+> eso es `ganamoscrm.online` y no `ganamos7.com` — y `x-actual-domain` es
+> justamente por donde los proveedores validan desde qué dominio se lanza el
+> juego, que va por licencia y por contrato. Un origen no registrado no recibe
+> sesión de juego: **el listado carga bien y el juego no abre**, que es el
+> síntoma exacto.
+>
+> Eso sí es nuestro, y tiene arreglo de nuestro lado: reescribir ese header en
+> el proxy (ya está escrito en `replica/nginx-replica.conf`). **Todavía no está
+> confirmado contra un proveedor** — lo probado es que el SPA manda el dominio
+> del navegador; que el proveedor rechace POR ESO es la hipótesis.
+>
+> Las dos explicaciones pueden convivir: el token de un solo uso explica "abrió
+> la primera vez y después no", y el dominio explica "este juego no abre nunca".
+> El detalle completo está en `PARA-FAUNO-juegos.md`.
 
 **Diferencia PC vs celular:** en la PC el juego corre *dentro* de la misma
 página; en el celular **navega al dominio del proveedor** y sale de la nuestra
