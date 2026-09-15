@@ -137,13 +137,25 @@ las columnas propias. Tres saldos distintos que no hay que confundir:
 > última vez hace una semana aunque se haya leído recién. La ficha del CRM
 > muestra esa edad al lado del número y la pone en ámbar pasados 10 minutos.
 >
-> **Lo escribía sólo `sync_usuarios.py`, y ese contenedor está apagado**:
-> `bot/docker-compose.yml` lo deja detrás de `profiles: ["sync"]` porque usa su
-> propio `estado_sesion.json` — un segundo login con la misma cuenta de agente,
-> que se patea la sesión con el creador. O sea que la opción era «saldos al
-> día» **o** «altas funcionando». Peor: el chequeo de `scripts/deploy-bot.sh`
-> sólo avisa si ese contenedor **existe** y está caído; si nunca se creó, no
-> dice nada. El espejo podía estar muerto desde siempre en silencio.
+> **Lo escribía `sync_usuarios.py`, y el 15/09/2026 había DOS contenedores
+> haciéndolo a la vez**: `ganamos-bot-sync` (el del compose, `profiles:
+> ["sync"]`, que alguien levantó a mano y llevaba 8 días arriba) y
+> `bot-ganamoscrm`, otro con el mismo `sync_usuarios.py --loop 300`.
+>
+> **Ojo con el razonamiento fácil acá, porque me equivoqué:** que el compose lo
+> deje detrás de un profile NO prueba que no esté corriendo. `docker compose up`
+> no lo arranca, pero nada impide levantarlo suelto — y estaba. La única forma
+> de saberlo es mirar `docker ps`, no el compose.
+>
+> El problema real no era que el espejo no corriera: era que **cada uno de esos
+> contenedores usa su propio `estado_sesion.json`, o sea un login más con la
+> misma cuenta de agente**, y se patean la sesión entre ellos. Por eso el saldo
+> "se actualizaba de a ratos". Sumado al creador, al recaudador y a los de otro
+> tenant, llegó a haber **cinco logins simultáneos** con `PANEL_USER`
+> compartido.
+>
+> Y `scripts/deploy-bot.sh` sólo avisa si `ganamos-bot-sync` **existe** y está
+> caído: un contenedor con OTRO nombre haciendo lo mismo no lo ve.
 >
 > Desde el 15/09/2026 lo hace **`colector/aprobar_cargas.py`**
 > (`sincronizar_usuarios()`), que ya está logueado con la sesión del creador y
