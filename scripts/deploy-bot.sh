@@ -127,16 +127,33 @@ if [ -n "$ok" ]; then
     echo "==> un solo bot sondeando la cola. Correcto."
   fi
 
-  # El espejo de usuarios (sync) no frena las altas, pero caido deja a los
-  # jugadores recien creados como "inexistentes" para el chat y las recargas.
-  # Se AVISA, no se levanta solo: sync y creador comparten la cuenta del
-  # panel y pueden patearse el login (ver docker-compose.yml del bot) --
-  # levantarlo es una decision de una persona mirando los logs del creador.
-  if docker ps -a --format '{{.Names}}\t{{.Status}}' 2>/dev/null \
-       | grep '^ganamos-bot-sync' | grep -qv 'Up'; then
-    echo "!! ganamos-bot-sync esta caido (el espejo de usuarios). Para levantarlo:" >&2
-    echo "     cd $BOT_DIR && docker compose --profile sync up -d sync" >&2
-    echo "   y mira por que se cayo:  docker logs --tail=50 ganamos-bot-sync" >&2
+  # EL ESPEJO DE USUARIOS YA NO ES `ganamos-bot-sync`, Y AVISAR QUE ESTA
+  # CAIDO MANDABA A ROMPER ALGO.
+  #
+  # Hasta el 15/09/2026 este bloque decia "ganamos-bot-sync esta caido, para
+  # levantarlo: docker compose --profile sync up -d sync". Seguir esa
+  # instruccion HOY es un error: el espejo lo hace `aprobar_cargas.py`
+  # (`sincronizar_usuarios()`), que ya corre dentro del creador con SU sesion
+  # y no agrega ningun login. Levantar el sync suma un login mas con la misma
+  # cuenta de agente, y los logins con la misma cuenta se patean la sesion --
+  # es el bug del saldo que "se actualizaba de a ratos" (ver CLAUDE.md).
+  #
+  # O sea que `ganamos-bot-sync` caido es el ESTADO CORRECTO. Lo que hay que
+  # vigilar no es ese contenedor sino que el espejo corra: el creador loguea
+  # "espejo de saldos: N jugadores leidos" cada USUARIOS_CADA_MIN (5).
+  if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'ganamos-bot-sync'; then
+    echo "!! ganamos-bot-sync esta PRENDIDO, y no deberia." >&2
+    echo "   El espejo de usuarios lo hace aprobar_cargas.py adentro del" >&2
+    echo "   creador desde el 15/09/2026. Este contenedor es un login mas con" >&2
+    echo "   la misma cuenta de agente: se patean la sesion. Apagalo:" >&2
+    echo "     docker update --restart=no ganamos-bot-sync && docker stop ganamos-bot-sync" >&2
+  fi
+
+  # Y el espejo de verdad: que el creador lo este haciendo.
+  if ! docker logs --tail=400 ganamos-bot-creador 2>&1 | grep -q 'espejo de saldos'; then
+    echo "   (ojo: todavia no se vio 'espejo de saldos' en el creador --" >&2
+    echo "    normal si acaba de arrancar; si en 10 min no aparece, mira" >&2
+    echo "    /var/log/goldpaw-aprobar.log)" >&2
   fi
 else
   echo "!! El contenedor NO anuncio 'Version del bot: $GIT_HASH' en 60s." >&2
