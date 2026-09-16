@@ -112,14 +112,14 @@ foreach (['huellas_pagador', 'operaciones_panel', 'dispositivos_usuarios', 'bono
 
 // ===========================================================================
 titulo('2. La config con la que opera el cliente');
-$cta = rl_cuenta_cobro($pdo);
+$cta = rl_cuenta_cobro();
 $alias = trim((string)($cta['alias'] ?? ''));
 $cbu   = trim((string)($cta['cbu'] ?? ''));
 bien('hay una cuenta de cobro cargada', $alias !== '' || $cbu !== '',
      'sin esto el jugador no sabe a dónde transferir');
 printf("        alias=%s  cbu=%s  titular=%s\n", $alias ?: '-', $cbu ?: '-',
        trim((string)($cta['titular'] ?? '')) ?: '-');
-$cpp = rl_coins_por_peso($pdo);
+$cpp = rl_coins_por_peso();
 bien('coins por peso configurado', $cpp > 0, "valor: $cpp");
 bien('el alta de cuentas está prendida', cfg_crm_activo($pdo, 'registro_activo'));
 if (!cfg_crm_activo($pdo, 'ruleta_activa')) {
