@@ -90,12 +90,37 @@ $qTransf = $pdo->prepare(
         AND ROUND(p.monto * 100) = ?
         AND p.capturado_en BETWEEN (? - INTERVAL 12 HOUR) AND (? + INTERVAL 12 HOUR)"
 );
-/* ¿Hubo una carga a mano cerca? Es lo que distingue el doble de un bono. */
+/* LAS CARGAS A MANO CUENTAN COMO PLATA LEGITIMA, y esta es la correccion
+   mas importante del script.
+
+   La primera version comparaba depositos contra TRANSFERENCIAS y nada mas. Con
+   eso, cada carga que el operador hace a mano --una cortesia, un ajuste, una
+   devolucion-- aparecia como deposito sin respaldo, o sea "de mas". Medido el
+   16/09/2026: el resumen decia 69.600 acreditados de mas, y la mayor parte eran
+   cargas que Nahuel habia hecho el mismo a proposito.
+
+   El daño de ese falso positivo no es un numero feo: el script termina diciendo
+   "esto se saca del saldo del jugador". Cobrarle a alguien por una cortesia que
+   vos le diste es peor que no detectar un doble.
+
+   Asi que el respaldo de un deposito es: una transferencia del banco O una
+   carga a mano del CRM. Recien si los depositos superan la SUMA de las dos hay
+   algo que explicar. */
 $qMano = $pdo->prepare(
     "SELECT operador, monto, creado_en FROM movimientos
       WHERE usuario = ? AND tipo = 'saldo' AND origen = 'crm'
         AND creado_en BETWEEN (? - INTERVAL 2 HOUR) AND (? + INTERVAL 2 HOUR)
-      ORDER BY creado_en ASC LIMIT 3"
+      ORDER BY creado_en ASC LIMIT 5"
+);
+
+/* Cuantas cargas a mano de ESE monto hubo alrededor. Se cuenta aparte del
+   listado de arriba (que es informativo y esta capado) porque este numero
+   entra en la cuenta. */
+$qManoN = $pdo->prepare(
+    "SELECT COUNT(*) FROM movimientos
+      WHERE usuario = ? AND tipo = 'saldo' AND origen = 'crm'
+        AND ROUND(monto * 100) = ?
+        AND creado_en BETWEEN (? - INTERVAL 12 HOUR) AND (? + INTERVAL 12 HOUR)"
 );
 
 $sobra = 0.0; $casos = 0;
@@ -114,7 +139,11 @@ foreach ($pares as $p) {
     $qDep->execute([$p['username'], $cent, $p['cuandoa'], $p['cuandoa'], $ventana]);
     $nDep = (int)$qDep->fetchColumn();
 
-    $demas = $nDep - $nTransf;
+    $qManoN->execute([$p['username'], $cent, $p['cuandoa'], $p['cuandoa']]);
+    $nMano = (int)$qManoN->fetchColumn();
+
+    /* Respaldo = lo que entro por el banco MAS lo que se cargo a mano. */
+    $demas = $nDep - $nTransf - $nMano;
     $casos++;
 
     printf("\n  \033[1m%s\033[0m   $%s\n", $p['username'], plata($p['monto']));
@@ -123,7 +152,8 @@ foreach ($pares as $p) {
     printf("    %s [%d, %s]   (%d min después)\n", substr((string)$p['cuandob'], 5, 14),
            (int)$p['idb'], trim((string)$p['comb']) === '' ? 'lo pidió el jugador' : trim((string)$p['comb']),
            (int)$p['dt']);
-    printf("    depósitos de ese monto: %d   transferencias confirmadas: %d\n", $nDep, $nTransf);
+    printf("    depósitos de ese monto: %d   transferencias: %d   cargas a mano: %d\n",
+           $nDep, $nTransf, $nMano);
 
     $qMano->execute([$p['username'], $p['cuandoa'], $p['cuandoa']]);
     foreach ($qMano as $m) {
@@ -137,7 +167,7 @@ foreach ($pares as $p) {
         $sobra += $deMas;
         printf("    \033[1m>> SOBRAN $%s\033[0m (entraron %d de más)\n", plata($deMas), $demas);
     } else {
-        echo "    OK: hay tantas transferencias como depósitos.\n";
+        echo "    OK: cada depósito tiene su transferencia o su carga a mano.\n";
     }
 }
 
@@ -148,8 +178,12 @@ titulo('Resumen');
 printf("  Pares encontrados: %d\n", $casos);
 printf("  Plata acreditada de más: \033[1m$%s\033[0m\n", plata($sobra));
 if ($sobra > 0) {
-    echo "\n  Se saca del panel de agentes, del saldo del jugador. Antes de\n";
-    echo "  hacerlo, correr `jugador-plata.php <usuario>` para verlo completo:\n";
-    echo "  un bono o una carga de cortesía también aparecen como de más.\n";
+    echo "\n  NO LO SAQUES SIN MIRAR PRIMERO. Corré `jugador-plata.php <usuario>`:\n";
+    echo "  cruza lo que transfirió contra el LIBRO del panel, que es el único\n";
+    echo "  registro de lo que de verdad se acreditó.\n";
+    echo "\n  Sigue habiendo plata legítima que este script no puede ver: el bono\n";
+    echo "  de bienvenida, los bonos al juego y cualquier regalo entran como\n";
+    echo "  depósito sin transferencia. Por eso esto marca DÓNDE mirar, no qué\n";
+    echo "  cobrar. Si la diferencia coincide con un bono, no sobra nada.\n";
 }
 echo "\n";
