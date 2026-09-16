@@ -249,6 +249,31 @@ function cf_dns_upsert($dominio, $cfg) {
 const PANEL_LOGIN_URL  = 'https://agents.ganamos7.com/';
 const PANEL_CREATE_URL = 'https://agents.ganamos7.com/user/create-player';
 
+/* SLUGS QUE YA TIENEN BOT PROPIO Y NO SE APROVISIONAN.
+   `ganamoscrm` es NUESTRO propio negocio, y lo atienden desde antes del
+   multi-tenant los contenedores `ganamos-bot-creador` (altas + el colector
+   de plata) y `ganamos-bot-recaudador`. Como la fila tiene credenciales de
+   agente cargadas, la pasada 2 le levantaba ADEMÁS `bot-ganamoscrm` y
+   `altas-ganamoscrm`: dos bots más sondeando la MISMA cola de altas y
+   espejando los MISMOS usuarios, con la MISMA cuenta de agente.
+
+   El costo se midió el 16/09/2026 con el alta 336: el duplicado la tomó
+   primero, falló tres veces y la renombró dos veces antes de que el creador
+   la cerrara -- el jugador que pidió "Senaana" terminó siendo
+   `holaSenaana4493`, y tardó 100 segundos en vez de los 4 habituales. Las
+   altas 334, 335 y 337, que agarró el creador, salieron al primer intento.
+   Sumado a eso, cada duplicado es un login más con la misma cuenta (el
+   problema de las sesiones que se patean, ver CLAUDE.md).
+
+   Esto NO es una lista de excepciones que vaya a crecer: es el único slug
+   que existía antes del multi-tenant. Un cliente de verdad no tiene un
+   contenedor legacy esperándolo, así que se aprovisiona normal. */
+const SLUGS_CON_BOT_PROPIO = ['ganamoscrm'];
+
+function tiene_bot_propio($slug) {
+    return in_array((string) $slug, SLUGS_CON_BOT_PROPIO, true);
+}
+
 /**
  * ¿El contenedor $name corre con OTRO env que el que lanzaríamos hoy?
  *
@@ -296,6 +321,7 @@ function bot_creds_cambiaron($name, $user, $pass) {
  */
 function asegurar_bot($c, $cfg) {
     $slug = preg_replace('/[^a-z0-9_-]/i', '', (string) $c['slug']);
+    if (tiene_bot_propio($slug)) { return 'sin bot (lo atiende su contenedor propio)'; }
     $user = (string) ($c['agente_usuario'] ?? '');
     $pass = (string) ($c['agente_password'] ?? '');
     if ($slug === '' || $user === '' || $pass === '') {
@@ -370,6 +396,7 @@ function asegurar_bot($c, $cfg) {
  */
 function asegurar_bot_altas($c, $cfg) {
     $slug = preg_replace('/[^a-z0-9_-]/i', '', (string) $c['slug']);
+    if (tiene_bot_propio($slug)) { return 'sin bot de altas (lo atiende su contenedor propio)'; }
     $user = (string) ($c['agente_usuario'] ?? '');
     $pass = (string) ($c['agente_password'] ?? '');
     if ($slug === '' || $user === '' || $pass === '') {
