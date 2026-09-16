@@ -97,6 +97,21 @@ try {
                 destino    = VALUES(destino),
                 comentario = VALUES(comentario),
                 creada_api = VALUES(creada_api),
+                /* visto_en SE REFRESCA EN CADA PASADA, y hasta el 16/09/2026 no:
+                   solo se ponia al INSERT. La columna se llama asi --cuando la
+                   vimos-- y significaba cuando la vimos POR PRIMERA VEZ, que no
+                   es lo mismo y se lee mal.
+
+                   Costo real: el simulacro de produccion uso MAX(visto_en) para
+                   saber si el colector estaba sincronizando y dio 'hace 124
+                   min' con el colector andando perfecto cada 16 minutos. Lo que
+                   medía era cuando aparecio la ultima operacion NUEVA, que de
+                   madrugada es otra cosa.
+
+                   Asi MAX(visto_en) pasa a ser lo que hacia falta: la ultima
+                   vez que el colector trajo el libro. Sin columnas nuevas ni un
+                   latido aparte. */
+                visto_en   = NOW(),
                 cuando     = VALUES(cuando)"
     );
 } catch (Throwable $e) {
