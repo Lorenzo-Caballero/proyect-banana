@@ -189,6 +189,44 @@ contraseña y `contrasena` era un hash, se guardaba la clave en claro en
 espejo con `sync_usuarios.py`, que se loguea con Playwright y pagina
 `agents.ganamosonline.com/api` → `usuarios_sync.php` → tabla `usuarios`.
 
+### El nombre de usuario son DOS preguntas, y el chat solo quiere una
+
+Confundirlas tuvo el alta por chat rota hasta el 16/9/2026: la landing pasaba
+el nombre por `alta_usuario_disponible()` y el chatbot lo mandaba **crudo**.
+
+| Función | Contesta | Quién la quiere |
+|---|---|---|
+| `alta_nombre_sanear()` | *cómo se escribe este nombre* (translitera tildes/eñes, filtra al alfabeto del panel, estira los de menos de 4) | **los dos** |
+| `alta_usuario_disponible()` | *qué nombre LIBRE le doy* (`hola` + Nombre + 3 dígitos, **siempre**, esté libre o no) | la landing, y el chat **solo al chocar** |
+
+El chatbot no puede llamar a la segunda de entrada aunque parezca «lo mismo que
+hace la landing»: en la landing nadie elige nombre, pero en el chat el jugador
+**escribió el suyo**, y pedir "Sabatino" para recibir `holaSabatino482` es peor
+que el error que se venía a arreglar. El sufijo va siempre por la decisión del
+6/9/2026 (choque global imposible ⇒ alta por el camino rápido), y esa decisión
+sigue en pie para la landing.
+
+Sin sanear, los dos finales eran malos: **400** por un acento o una letra de
+menos —y ahí el modelo relataba el error técnico con sus palabras, llegando a
+decirle a alguien que *«"Rodrigo" tiene menos de 4 caracteres»* (siete)— o
+**409** por nombre tomado, con el bot pidiéndole otro nombre a alguien que
+todavía no puso un peso. Se veía en los datos: las altas de la landing salen en
+1 intento y las del chat en 2.
+
+> **Renombrar al chocar abre la puerta a cuentas duplicadas.** El modelo llama
+> dos veces a la herramienta y la segunda vuelta ve el nombre «ocupado» —por su
+> propio pedido de hace diez segundos— y crea otra cuenta con otro nombre. Lo
+> único que lo evita es preguntar **antes del renombre** si este chat ya tiene
+> un alta en curso, y preguntarlo **por `entrega_sid`, no por nombre**: si la
+> primera vuelta ya renombró, el nombre original quedó libre. Es un orden que
+> ningún test de comportamiento protege, así que `t_altas.php` lo chequea
+> posicionalmente sobre el código de `chatbot.php`.
+
+Y *«¿está tomado?»* se pregunta en un solo lugar, `alta_nombre_tomado()`: es la
+condición exacta que dispara el 409 de `alta_encolar()`. Contesta «seguro que
+está ocupado», **nunca** «seguro que está libre» — el username es único en toda
+la plataforma y acá solo se ve nuestro espejo.
+
 ## Cargar fichas, bonos y saldo
 
 Cuatro caminos distintos, con permisos distintos:
