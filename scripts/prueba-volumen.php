@@ -22,8 +22,11 @@
  *
  * Lo que se hace para que el costo sea aceptable:
  *
- *   - Va contra el tenant **casinotest**, que es de prueba y tiene su propia
- *     base. No ensucia la del negocio.
+ *   - Se elige el tenant con `--tenant <slug>`. Sin eso va al principal, que
+ *     es la base del negocio, y lo avisa.
+ *     OJO: `casinotest` NO existe como cliente, aunque haya un contenedor con
+ *     ese nombre -- el nombre de un contenedor no prueba que haya un tenant
+ *     detras. Los slugs validos salen de `goldpaw_control.clientes`.
  *   - Los nombres llevan un prefijo reconocible (`zzp` + fecha) para poder
  *     encontrarlas y borrarlas después en el panel.
  *   - **Por defecto NO hace nada**: dice qué haría. Crear pide `--si`.
@@ -32,7 +35,8 @@
  * Las cuentas quedan en el panel de agentes con saldo 0. Son basura visual,
  * no plata. Conviene borrarlas cuando termina la prueba.
  *
- *   php scripts/prueba-volumen.php                      # qué haría
+ *   php scripts/prueba-volumen.php                      # qué haría (principal)
+ *   php scripts/prueba-volumen.php --tenant ganamos     # contra otro tenant
  *   php scripts/prueba-volumen.php --si 20              # 20 altas, una cada 20s
  *   php scripts/prueba-volumen.php --si 40 --cada 90    # 40 en una hora (nocturno)
  *   php scripts/prueba-volumen.php --informe            # medir lo que pasó
@@ -53,11 +57,25 @@ $cuantas = $valor('--si', 10);
 $cada    = $valor('--cada', 20);          // segundos entre altas
 const TOPE = 60;
 
-/* El tenant de prueba. En CLI no hay request, así que el slug se pone a mano
-   por el mismo camino que usa nginx (ver api/db.php): se lee de
-   HTTP_X_TENANT_SLUG y nunca se parsea una URL. */
+/* EL TENANT SE PASA POR ARGUMENTO Y NO VA FIJO.
+   La primera version apuntaba a `casinotest` porque existe un contenedor con
+   ese nombre. Al correrla, la API contesto "Dominio no registrado" -- y ahi se
+   descubrio que ese tenant NO EXISTE en `goldpaw_control.clientes`: el
+   contenedor `altas-casinotest` lleva mas de un dia pegandole a una URL que
+   devuelve 404, cada 3 segundos.
+
+   O sea que el nombre de un contenedor no prueba que haya un cliente detras.
+   Ahora se pasa el slug y, si no esta registrado, la API lo dice de entrada.
+
+   En CLI no hay request, asi que el slug se pone por el mismo camino que usa
+   nginx (ver api/db.php): se lee de HTTP_X_TENANT_SLUG y nunca se parsea una
+   URL. Sin --tenant va al principal, que es el del negocio: de ahi el aviso. */
+$slugPedido = '';
+$iT = array_search('--tenant', $args, true);
+if ($iT !== false && isset($args[$iT + 1])) { $slugPedido = trim($args[$iT + 1]); }
+
 $_SERVER['HTTP_HOST'] = 'ganamoscrm.online';
-$_SERVER['HTTP_X_TENANT_SLUG'] = 'casinotest';
+if ($slugPedido !== '') { $_SERVER['HTTP_X_TENANT_SLUG'] = $slugPedido; }
 
 $API = is_dir('/var/www/api') ? '/var/www/api' : __DIR__ . '/../api';
 require_once $API . '/db.php';
@@ -66,7 +84,13 @@ require_once $API . '/altas_lib.php';
 $base = $GLOBALS['TENANT_DB'] ?? '(?)';
 function titulo($t) { echo "\n\033[1m" . $t . "\033[0m\n" . str_repeat('-', 74) . "\n"; }
 
-echo "\nPrueba de volumen — tenant \033[1mcasinotest\033[0m  (base " . $base . ")\n";
+printf("\nPrueba de volumen — tenant \033[1m%s\033[0m  (base %s)\n",
+       $slugPedido !== '' ? $slugPedido : 'principal', $base);
+if ($slugPedido === '') {
+    echo "\n  \033[1mOJO: es la base DEL NEGOCIO.\033[0m Las altas de prueba van a\n";
+    echo "  convivir con los jugadores reales. Se reconocen por el prefijo, pero\n";
+    echo "  si hay un tenant de prueba conviene usarlo:  --tenant <slug>\n";
+}
 
 /* Un prefijo por corrida: así dos pruebas del mismo día no se mezclan en el
    informe, y en el panel se ve de un vistazo cuáles borrar. */
@@ -149,7 +173,8 @@ $cuantas = min($cuantas, TOPE);
 printf("  %d altas de prueba, una cada %d segundos (%d min en total)\n",
        $cuantas, $cada, (int)ceil($cuantas * $cada / 60));
 printf("  nombres: %sNNN  ->  el sistema los convierte en hola%sNNN###\n", $PREFIJO, ucfirst($PREFIJO));
-echo "  tenant: casinotest (base de prueba, no la del negocio)\n";
+printf("  tenant: %s\n",
+       $slugPedido !== '' ? $slugPedido : 'principal (la base del negocio)');
 
 if (!$hacer) {
     echo "\n  \033[1mNo se creó nada.\033[0m Para hacerlo de verdad:\n";
