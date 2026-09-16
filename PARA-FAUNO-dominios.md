@@ -11,12 +11,29 @@ quedan cargando para siempre.
 > Es el complemento de `PARA-FAUNO-deposito.md`, que es el que sí tiene plata
 > en el medio.
 
-> **ESTADO (15/09/2026, misma noche):** los pedidos **1 y 2** de la lista del
-> final ya están **aplicados en el repo del bot**, commit `0aad330`
-> (`conc` 6→3, `es_challenge()` compartida, depósito que decide por el cuerpo,
-> reintento del challenge en el alta). Falta desplegar con
-> `bash /opt/goldpaw/scripts/deploy-bot.sh`. Los pedidos 3 y 4 siguen
-> pendientes: son una prueba manual y una conversación con la plataforma.
+> **ESTADO (16/09/2026):** los pedidos **1 y 2** están **aplicados en el repo
+> del bot**, commit `0aad330` (`conc` 6→3, `es_challenge()` compartida,
+> depósito que decide por el cuerpo, reintento del challenge en el alta).
+>
+> **Novedades del 16/09:** los challenges siguieron — tres altas seguidas
+> (320, 323, 324) con el WAF tapándole el **formulario** al bot; la historia
+> completa y su arreglo están en `PARA-FAUNO-altas-renombrar.md`. Por eso en
+> el repo del bot (commit `e0db90b`) el reintento del challenge en el alta se
+> amplió a **5 intentos con espera creciente** (1,5/3/4,5/6 s, con latido por
+> vuelta para el watchdog) y el veredicto «renombrar» **ya no baja al
+> formulario**. Queda desplegar
+> (`bash /opt/goldpaw/scripts/deploy-bot.sh`).
+>
+> Sobre `conc`: quedó en 3 con la nota «si con 3 siguen, probar 2». Ojo que lo
+> del 16/09 **no** gatilla esa baja por sí solo: esos challenges fueron en el
+> FORMULARIO (una navegación suelta), no en el lote del fast-path — el lote
+> llegó al backend y contestó el «ya existe». Bajar a 2 sigue en el bolsillo
+> para cuando el LOTE se coma challenges.
+>
+> Los pedidos **3 y 4 siguen pendientes**: la prueba manual del dominio y la
+> conversación con la plataforma (del punto 1 de los juegos —que el token
+> muerto falle visible— ya se le avisó; faltan confirmar el vencimiento por
+> tiempo y si existe re-emisión).
 
 ---
 
