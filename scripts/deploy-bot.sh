@@ -42,6 +42,51 @@ echo "==> version a desplegar: $GIT_HASH"
 # imagen (docker-compose.yml lo pasa como build-arg).
 bash "$(dirname "$0")/arreglar-bot-altas.sh"
 
+# ---------------------------------------------------------------------------
+# EL COLECTOR VUELVE A ENTRAR DESPUES DE CADA REBUILD, Y NO ES OPCIONAL.
+#
+# `/colector` dentro del contenedor NO esta en la imagen (el Dockerfile del
+# bot copia cinco .py sueltos y nada mas) NI es un volumen (el unico mount es
+# ./datos). Entro por `docker cp`, que es el canal acordado para tocar el
+# codigo del bot sin editar su repo. O sea que vive en la capa escribible del
+# contenedor: `docker compose up --build` lo recrea y se lo lleva puesto.
+#
+# Lo que se pierde ahi no es un detalle: `aprobar_cargas.py` es el circuito de
+# la plata entero -- aprueba las cargas del boton "Depositos", espeja el libro
+# del panel (`operaciones_panel`, de donde sale Finanzas), sincroniza el saldo
+# de los 3.000 jugadores y ejecuta los retiros. El cron del host lo llama con
+# `docker exec` cada minuto, asi que si el directorio no esta el error queda
+# enterrado en un log y NADA avisa: el sistema sigue "andando" mientras la
+# plata deja de moverse.
+#
+# La fuente es /opt/goldpaw/colector, verificado identico byte a byte contra
+# el contenedor el 16/09/2026 -- incluye colector.env y config.json, que estan
+# gitignoreados pero presentes en el working dir del VPS.
+#
+# EL ARREGLO DE FONDO es que el compose del bot monte esto como volumen
+# (`- /opt/goldpaw/colector:/colector`), y esta pedido. Mientras tanto, esta
+# copia se hace SIEMPRE y se verifica: un deploy que no puede dejar el
+# colector adentro es un deploy fallido, no un deploy con una advertencia.
+# ---------------------------------------------------------------------------
+COLECTOR_SRC="${COLECTOR_SRC:-/opt/goldpaw/colector}"
+if [ -d "$COLECTOR_SRC" ]; then
+  echo "==> reponiendo /colector en el creador (se lo lleva el rebuild)"
+  docker cp "$COLECTOR_SRC" ganamos-bot-creador:/colector
+  if docker exec ganamos-bot-creador test -f /colector/aprobar_cargas.py; then
+    echo "    ok — /colector/aprobar_cargas.py esta adentro"
+  else
+    echo "!! El colector NO quedo adentro del contenedor." >&2
+    echo "   El circuito de la plata (cargas, libro del panel, espejo de" >&2
+    echo "   saldos, retiros) queda parado y no lo avisa nadie mas." >&2
+    echo "   Copialo a mano:  docker cp $COLECTOR_SRC ganamos-bot-creador:/colector" >&2
+    exit 1
+  fi
+else
+  echo "!! No encontre $COLECTOR_SRC — no puedo reponer el colector." >&2
+  echo "   Pasa la ruta con COLECTOR_SRC=... y volve a correr el deploy." >&2
+  exit 1
+fi
+
 echo "==> verificando la version que corre"
 ok=""
 for i in $(seq 1 30); do
