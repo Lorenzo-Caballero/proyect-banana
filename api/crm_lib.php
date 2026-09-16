@@ -103,6 +103,18 @@ if (!function_exists('crm_conversacion_id')) {
             error_log('crm_saldo: ' . $e->getMessage());
             return ['ok' => false, 'error' => 'No se pudo registrar'];
         }
+
+        /* Si era una CARGA, puede ser la primera plata de este jugador: se
+           libera el bono de la app que quedo esperando (instalo antes de
+           cargar). Post-commit y best-effort, igual que en los otros caminos. */
+        if ($tipo === 'cargar') {
+            if (is_file(__DIR__ . '/notificaciones_lib.php')) {
+                require_once __DIR__ . '/notificaciones_lib.php';
+            }
+            if (function_exists('notif_app_bono_liberar')) {
+                notif_app_bono_liberar($pdo, $usuario);
+            }
+        }
         return ['ok' => true];
     }
 

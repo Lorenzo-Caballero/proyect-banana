@@ -1653,6 +1653,13 @@ function rl_notificar_acreditada(PDO $pdo, array $recarga): void
         );
     }
 
+    /* El bono de la app que quedo esperando la primera carga (instalo antes
+       de cargar): esto ES una carga, asi que aca se libera. Corre post-commit
+       en todos los callers; best-effort adentro, no puede tumbar el aviso. */
+    if (function_exists('notif_app_bono_liberar')) {
+        notif_app_bono_liberar($pdo, $usuario);
+    }
+
     /* Ademas del push, un aviso EN EL CHAT: la carga entra minutos despues de
        que el jugador transfiere (asincronico), y hasta ahora preguntaba "ya me
        cargaste?" sin recibir una confirmacion clara -- solo la push, que se

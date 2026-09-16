@@ -200,14 +200,23 @@ if (!function_exists('notif_crear')) {
      * best-effort:
      *
      *   1. El bono de la promo "descarga la app" (config app_promo_activa +
-     *      app_bono_fichas): se suma a usuarios.bonus con su fila en
-     *      `movimientos` (origen 'bono_app') y se manda AL JUEGO en el acto por
-     *      el mismo camino que el bono del CRM (deposito solo-bono via
-     *      fichas_pedir_carga, con bot y devolucion-si-falla). Si justo hay una
-     *      carga en curso, queda en el contador -- igual que en crm.php.
+     *      app_bono_fichas) -- PERO SOLO SI YA HIZO SU PRIMERA CARGA (pedido
+     *      del 16/09/2026: el bono es "despues de la primera carga"). El que
+     *      instala ANTES de cargar no cobra aca: queda un MARCADOR (fila en
+     *      `movimientos` origen 'bono_app' con monto 0) y un aviso que le
+     *      explica la condicion -- a proposito recien aca, con la app ya
+     *      instalada, y nunca en la promo del navegador: la invitacion va sin
+     *      letra chica. Cuando le entre su primera plata (cualquiera de los
+     *      caminos), notif_app_bono_liberar() se lo paga.
      *
-     *      La fila de `movimientos` es ademas el SEGUNDO candado: si alguien
-     *      resetea tiene_app a mano, el bono no se paga dos veces.
+     *      "Ya cargo" lo contesta rl_es_primera_carga() (recargas_lib), LA
+     *      definicion unica de una carga -- las dos vias, ver CLAUDE.md. Ante
+     *      la duda (la lib no esta, o devolvio null) NO se paga ya: se
+     *      difiere, que es el lado seguro.
+     *
+     *      La fila de `movimientos` (el pago o el marcador) es ademas el
+     *      SEGUNDO candado: si alguien resetea tiene_app a mano, el bono no
+     *      se paga ni se promete dos veces.
      *
      *   2. El aviso por Telegram (tg_ev_app), que sale aunque la promo este
      *      apagada: saber quien instala la app es una señal del negocio, no
@@ -227,26 +236,47 @@ if (!function_exists('notif_crear')) {
         }
 
         $acreditado = false;
+        $pendiente  = false;
         if ($fichas > 0) {
+            // La definicion de "ya cargo" vive en recargas_lib; carga perezosa
+            // porque esto corre una sola vez en la vida del jugador y el resto
+            // de esta lib no la necesita.
+            if (!function_exists('rl_es_primera_carga') && is_file(__DIR__ . '/recargas_lib.php')) {
+                require_once __DIR__ . '/recargas_lib.php';
+            }
+            $yaCargo = function_exists('rl_es_primera_carga')
+                    && rl_es_primera_carga($pdo, $usuario) === 0;
             try {
                 $pdo->beginTransaction();
                 // Segundo candado (ver arriba). FOR UPDATE: dos registros
                 // simultaneos del mismo jugador esperan aca y el segundo ve la
-                // fila del primero.
+                // fila del primero. Matchea el pago Y el marcador: cualquiera
+                // de los dos es "esta instalacion ya fue atendida".
                 $ya = $pdo->prepare(
                     "SELECT id FROM movimientos
                       WHERE usuario = ? AND origen = 'bono_app' LIMIT 1 FOR UPDATE"
                 );
                 $ya->execute([$usuario]);
                 if (!$ya->fetch()) {
-                    $pdo->prepare(
-                        "UPDATE usuarios SET bonus = bonus + ? WHERE username = ?"
-                    )->execute([$fichas, $usuario]);
-                    $pdo->prepare(
-                        "INSERT INTO movimientos (usuario, tipo, monto, motivo, origen)
-                         VALUES (?, 'bono', ?, 'Bono por instalar la app', 'bono_app')"
-                    )->execute([$usuario, $fichas]);
-                    $acreditado = true;
+                    if ($yaCargo) {
+                        $pdo->prepare(
+                            "UPDATE usuarios SET bonus = bonus + ? WHERE username = ?"
+                        )->execute([$fichas, $usuario]);
+                        $pdo->prepare(
+                            "INSERT INTO movimientos (usuario, tipo, monto, motivo, origen)
+                             VALUES (?, 'bono', ?, 'Bono por instalar la app', 'bono_app')"
+                        )->execute([$usuario, $fichas]);
+                        $acreditado = true;
+                    } else {
+                        // El marcador. Monto 0 a proposito: no es plata, no
+                        // entra en ningun conteo (todos filtran monto > 0) y
+                        // en la ficha del CRM se lee como lo que es.
+                        $pdo->prepare(
+                            "INSERT INTO movimientos (usuario, tipo, monto, motivo, origen)
+                             VALUES (?, 'bono', 0, 'Bono de la app: espera su primera carga', 'bono_app')"
+                        )->execute([$usuario]);
+                        $pendiente = true;
+                    }
                 }
                 $pdo->commit();
             } catch (Throwable $e) {
@@ -256,21 +286,17 @@ if (!function_exists('notif_crear')) {
         }
 
         if ($acreditado) {
-            // Al juego en el acto, como el bono del CRM. Si falla o hay una
-            // carga en curso, queda en el contador y lo manda "Bonos al juego".
+            notif_app_bono_entregar($pdo, $usuario, $fichas);
+        } elseif ($pendiente) {
+            // La condicion se cuenta ACA, con la app recien instalada --
+            // nunca en la promo del navegador (pedido explicito de Nahuel).
             try {
-                require_once __DIR__ . '/fichas_lib.php';
-                fichas_pedir_carga($pdo, $usuario, 0, 'bono_app', false, $fichas);
+                notif_crear($pdo, $usuario,
+                    '🎁 Tenés ' . number_format($fichas, 0, ',', '.') . ' fichas esperándote',
+                    'Se acreditan solas apenas hagas tu primera carga. ¡Hacela y son tuyas!',
+                    'bono', null, 'app');
             } catch (Throwable $e) {
-                error_log('notif_app_instalada (al juego): ' . $e->getMessage());
-            }
-            // El festejo en el celular que acaba de instalarla.
-            try {
-                notif_crear($pdo, $usuario, '🎁 ¡Fichas de regalo!',
-                    'Por instalar la app te acreditamos ' . number_format($fichas, 0, ',', '.')
-                    . ' fichas de bono. ¡Que las disfrutes!', 'bono', null, 'app');
-            } catch (Throwable $e) {
-                error_log('notif_app_instalada (notif): ' . $e->getMessage());
+                error_log('notif_app_instalada (notif pendiente): ' . $e->getMessage());
             }
         }
 
@@ -278,8 +304,104 @@ if (!function_exists('notif_crear')) {
             $lineas = ['Jugador' => $usuario];
             $lineas['Bono'] = $acreditado
                 ? number_format($fichas, 0, ',', '.') . ' fichas acreditadas'
-                : 'sin bono (promo apagada o ya cobrado)';
+                : ($pendiente
+                    ? number_format($fichas, 0, ',', '.') . ' fichas a la espera de su primera carga'
+                    : 'sin bono (promo apagada o ya cobrado)');
             tg_evento($pdo, 'app', '📱 Instaló la app', $lineas);
+        }
+    }
+
+    /**
+     * El "despues de acreditar" del bono de la app, compartido entre el pago
+     * al instalar (ya habia cargado) y el diferido (notif_app_bono_liberar):
+     * mandarlo AL JUEGO en el acto por el mismo camino que el bono del CRM
+     * (deposito solo-bono via fichas_pedir_carga, con bot y devolucion-si-
+     * falla; si justo hay una carga en curso, queda en el contador) y el
+     * festejo en el celular. Best-effort las dos cosas.
+     */
+    function notif_app_bono_entregar(PDO $pdo, string $usuario, int $fichas): void
+    {
+        try {
+            require_once __DIR__ . '/fichas_lib.php';
+            fichas_pedir_carga($pdo, $usuario, 0, 'bono_app', false, $fichas);
+        } catch (Throwable $e) {
+            error_log('notif_app_bono_entregar (al juego): ' . $e->getMessage());
+        }
+        try {
+            notif_crear($pdo, $usuario, '🎁 ¡Fichas de regalo!',
+                'Por instalar la app te acreditamos ' . number_format($fichas, 0, ',', '.')
+                . ' fichas de bono. ¡Que las disfrutes!', 'bono', null, 'app');
+        } catch (Throwable $e) {
+            error_log('notif_app_bono_entregar (notif): ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * La otra mitad del bono diferido: la llaman los caminos por donde entra
+     * plata de verdad (rl_notificar_acreditada -- camino B y HG Cash --,
+     * peticiones_cola -- camino A -- y crm_saldo -- la carga a mano del CRM)
+     * DESPUES de su commit. Si este jugador instalo la app antes de cargar
+     * (marcador monto 0 en origen 'bono_app', sin pago), le paga el bono que
+     * la app le prometio.
+     *
+     * Idempotente por el mismo candado (fila con monto > 0 = ya se pago) y
+     * best-effort: nunca lanza. Si la promo esta apagada en este momento no
+     * paga -- la promo manda, el mismo criterio que al instalar.
+     */
+    function notif_app_bono_liberar(PDO $pdo, string $usuario): void
+    {
+        $usuario = trim($usuario);
+        if ($usuario === '') { return; }
+
+        if (is_file(__DIR__ . '/config_crm.php')) { require_once __DIR__ . '/config_crm.php'; }
+        $fichas = 0;
+        if (function_exists('cfg_crm_activo') && cfg_crm_activo($pdo, 'app_promo_activa')) {
+            $fichas = max(0, (int)(cfg_crm($pdo, 'app_bono_fichas') ?? 0));
+        }
+        if ($fichas <= 0) { return; }
+
+        $acreditado = false;
+        $propia     = false;
+        try {
+            // Los callers llaman post-commit, pero si alguno llegara con una
+            // transaccion abierta no se le pisa: se suma a la suya.
+            if (!$pdo->inTransaction()) { $pdo->beginTransaction(); $propia = true; }
+            $st = $pdo->prepare(
+                "SELECT monto FROM movimientos
+                  WHERE usuario = ? AND origen = 'bono_app' FOR UPDATE"
+            );
+            $st->execute([$usuario]);
+            $marcado = false; $pagado = false;
+            foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $m) {
+                if ((int)$m > 0)   { $pagado  = true; }   // el pago (o su debito no: es negativo)
+                if ((int)$m === 0) { $marcado = true; }   // el marcador de la instalacion
+            }
+            if ($marcado && !$pagado) {
+                $pdo->prepare(
+                    "UPDATE usuarios SET bonus = bonus + ? WHERE username = ?"
+                )->execute([$fichas, $usuario]);
+                $pdo->prepare(
+                    "INSERT INTO movimientos (usuario, tipo, monto, motivo, origen)
+                     VALUES (?, 'bono', ?, 'Bono por instalar la app', 'bono_app')"
+                )->execute([$usuario, $fichas]);
+                $acreditado = true;
+            }
+            if ($propia) { $pdo->commit(); }
+        } catch (Throwable $e) {
+            if ($propia && $pdo->inTransaction()) { $pdo->rollBack(); }
+            error_log('notif_app_bono_liberar: ' . $e->getMessage());
+            return;
+        }
+
+        if ($acreditado) {
+            notif_app_bono_entregar($pdo, $usuario, $fichas);
+            if (is_file(__DIR__ . '/telegram_lib.php')) { require_once __DIR__ . '/telegram_lib.php'; }
+            if (function_exists('tg_evento')) {
+                tg_evento($pdo, 'app', '🎁 Bono de la app liberado', [
+                    'Jugador' => $usuario,
+                    'Bono'    => number_format($fichas, 0, ',', '.') . ' fichas (hizo su primera carga)',
+                ]);
+            }
         }
     }
 

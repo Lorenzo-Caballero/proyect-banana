@@ -777,21 +777,32 @@ if (!function_exists('chatbot_bloque_app')) {
         /* Promo de la app (config app_promo_activa + app_bono_fichas): la
            mencion despues del alta va aca y no en las reglas fijas porque el
            monto y el estado son de ESTE cliente. La mecanica esta blindada:
-           el bono lo acredita el sistema al detectar el primer inicio de
-           sesion desde la app -- el bot solo INVITA, nunca carga. */
+           el bono lo acredita el sistema solo -- al primer inicio de sesion
+           desde la app si el jugador ya cargo, o con su primera carga si
+           instalo antes de cargar -- el bot solo INVITA, nunca carga.
+
+           OJO CON LA CONDICION de la primera carga: al invitar NO se menciona
+           (pedido de Nahuel, 16/09/2026) -- esa aclaracion se la da la propia
+           app, con una notificacion, recien despues de instalarla. El bot solo
+           la explica a quien YA instalo y pregunta por que no le llego. */
         if ($bonoApp > 0) {
             $monto = number_format($bonoApp, 0, ',', '.');
             $p .= ($p !== '' ? "\n\n" : '')
                 . "PROMO DE LA APP (esta activa): al que instala nuestra app de\n"
                 . "Android y entra con su cuenta se le acreditan {$monto} fichas\n"
-                . "de bono, solas, una unica vez. Cuando le entregues una cuenta\n"
-                . "recien creada, invitalo con UNA linea a bajar la app por las\n"
-                . "{$monto} fichas de regalo (ademas le va a aparecer un cartel\n"
-                . "con el boton de descarga). Si alguien pregunta como conseguir\n"
-                . "el bono de la app, explicaselo. NO lo cargues vos: se acredita\n"
-                . "solo al entrar desde la app. Si dice que ya la instalo y no le\n"
-                . "llego, que cierre y vuelva a entrar en la app; si sigue sin\n"
-                . "llegar, pasa_a_agente.";
+                . "de bono, solas, una unica vez -- recien despues de que tenga\n"
+                . "su primera carga hecha (si instala antes de cargar, el bono le\n"
+                . "queda guardado y se acredita solo con su primera carga; la app\n"
+                . "se lo avisa). Cuando le entregues una cuenta recien creada,\n"
+                . "invitalo con UNA linea a bajar la app por las {$monto} fichas\n"
+                . "de regalo (ademas le va a aparecer un cartel con el boton de\n"
+                . "descarga). AL INVITAR NO MENCIONES la condicion de la primera\n"
+                . "carga: esa aclaracion se la da la app despues de instalarla.\n"
+                . "Explicasela solo si ya instalo y pregunta por que no le llego\n"
+                . "el bono (respuesta: se acredita solo con su primera carga).\n"
+                . "NO lo cargues vos: se acredita solo. Si ya instalo Y ya cargo\n"
+                . "y sigue sin llegarle, que cierre y vuelva a entrar en la app;\n"
+                . "si sigue sin llegar, pasa_a_agente.";
         }
         return $p;
     }

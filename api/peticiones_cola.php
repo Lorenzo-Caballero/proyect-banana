@@ -465,6 +465,12 @@ try {
             );
         }
 
+        /* El bono de la app que quedo esperando la primera carga: una carga
+           del camino A tambien lo libera. Best-effort, post-commit. */
+        if (function_exists('notif_app_bono_liberar')) {
+            notif_app_bono_liberar($pdo, $usuario);
+        }
+
         // Purchase de Meta: plata real acreditada, mismo criterio que en
         // acciones_cola.php -- se reporta cuando entro, no cuando se pidio.
         try {
