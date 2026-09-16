@@ -718,6 +718,15 @@
   .modal .ret-abiertos{margin-top:14px;padding:10px 12px;border-radius:10px;font-size:12px;
                        line-height:1.5;color:var(--txt);
                        background:rgba(240,160,42,.10);border:1px solid rgba(240,160,42,.45)}
+  /* La linea que explica QUE es cada clase de bono. Va apagada (color de
+     texto secundario) a proposito: es una aclaracion, no una alerta -- si
+     compitiera con el aviso ambar de los retiros abiertos, el que importa
+     de verdad dejaria de saltar a la vista. */
+  .modal .bono-ayuda{margin-top:11px;padding:9px 11px;border-radius:9px;font-size:12px;
+                     line-height:1.5;color:var(--muted);background:var(--panel2);
+                     border:1px solid var(--line)}
+  .modal .bono-ayuda b{color:var(--txt)}
+  .modal .chips{margin-top:13px}
   .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--panel);border:1px solid var(--violet);color:var(--txt);padding:12px 20px;border-radius:12px;z-index:60;opacity:0;transition:.25s;pointer-events:none;box-shadow:var(--shadow)}
   .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
   .sp{display:inline-block;width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--violet);border-radius:50%;animation:sp .7s linear infinite}
@@ -4995,13 +5004,20 @@
     <!-- Pedidos de retiro que el jugador ya tiene abiertos (los nuestros y los
          del juego). Arriba del campo a propósito: se lee ANTES de tipear. -->
     <div class="ret-abiertos" id="mRetAbiertos" style="display:none"></div>
-    <label for="mMonto">Cantidad</label>
+    <!-- SOLO en el modal de bono: que clase de bono es. El server ya sabia
+         hacer las cuatro (`bonos_pendientes`, migracion 33), pero las tres que
+         no se acreditan al instante solo se podian crear desde Difusion y
+         avisos, tipeando el nombre del jugador a mano. Estando parado en su
+         chat, eso es el camino largo para algo que se decide justo ahi. -->
+    <div class="chips" id="mBonoTipos" style="display:none"></div>
+    <div class="bono-ayuda" id="mBonoAyuda" style="display:none"></div>
+    <label for="mMonto" id="mMontoLbl">Cantidad</label>
     <input id="mMonto" type="number" inputmode="numeric" placeholder="Ej: 500">
     <!-- Solo en el modal de RETIRAR, y solo si hay saldo: lo prende abrirModal().
          Tipear a mano el saldo entero es justo donde se come un dígito. -->
     <button type="button" class="todo" id="mTodo" style="display:none"></button>
     <div class="todo-aviso" id="mTodoAviso" style="display:none"></div>
-    <label for="mMotivo">Motivo (opcional)</label>
+    <label for="mMotivo" id="mMotivoLbl">Motivo (opcional)</label>
     <input id="mMotivo" type="text" placeholder="Ej: promo, ajuste, regalo…">
     <div class="mbtns">
       <button class="no" id="mCancel">Cancelar</button>
@@ -11549,6 +11565,69 @@
   // entrar a la vista (pbFiltroRapido las pinta en pbAbrir/pbCargarPublicistas).
 
   // ---------- modal cargar/retirar/bono ----------
+  /* ---------- LAS CUATRO FORMAS DE UN BONO ----------
+     Pedido de Nahuel (16/09/2026): "si le quiero dar un bono a alguien para su
+     proxima jugada, no me da la opcion si quiero que sea en porcentaje o en
+     fichas regaladas". Salio de un caso real: le habia cargado $35.000 de mas a
+     un jugador por error y le ofrecio "un bono del 10% por las molestias" --
+     que es justo lo que este modal no sabia hacer.
+
+     La diferencia que importa no es el numero, es CUANDO se acredita:
+
+       ahora    suma ya a usuarios.bonus. Es lo unico que hacia el modal.
+       pct      no toca nada hoy; se aplica solo en su proxima recarga
+                acreditada (rl_acreditar -> crmnotif_bono_aplicar_en_recarga).
+       fichas   igual que pct pero con una cantidad fija.
+       giro     ni siquiera espera una carga: le queda un giro de ruleta.
+
+     Las tres ultimas son `bonos_pendientes` (migracion 33) y ya existian: se
+     creaban desde Difusion y avisos, tipeando el usuario. Aca se llama al MISMO
+     `bono_crear` -- ni un segundo camino ni una segunda tabla. */
+  const BONO_TIPOS = {
+    ahora: { chip:"Fichas ahora",
+             ayuda:"<b>Se le acreditan ya.</b> Van al contador de bonos; para que las pueda jugar, después tocá «Bonos al juego».",
+             label:"Cantidad", ph:"Ej: 500" },
+    pct:   { chip:"% de su próxima carga",
+             ayuda:"<b>No se acredita ahora.</b> Se aplica solo cuando vuelva a cargar: con 10%, si carga $10.000 se lleva $1.000 extra.",
+             label:"Porcentaje", ph:"Ej: 10" },
+    fichas:{ chip:"Fichas en su próxima carga",
+             ayuda:"<b>No se acredita ahora.</b> Se le suman solas la próxima vez que cargue, cargue lo que cargue.",
+             label:"Cantidad", ph:"Ej: 500" },
+    giro:  { chip:"Un giro de ruleta",
+             ayuda:"<b>No espera que cargue.</b> Le queda un giro gratis, además del que ya tiene por día. Lo usa desde la app.",
+             label:"", ph:"" },
+  };
+
+  function bonoTipoPintar(){
+    const bt = st.bonoTipo || "ahora";
+    const cfg = BONO_TIPOS[bt] || BONO_TIPOS.ahora;
+    document.querySelectorAll("#mBonoTipos .chip").forEach(c =>
+      c.classList.toggle("on", c.getAttribute("data-bt") === bt));
+    $("#mBonoAyuda").innerHTML = cfg.ayuda;
+
+    const sinMonto = bt === "giro";
+    $("#mMontoLbl").style.display = sinMonto ? "none" : "";
+    $("#mMonto").style.display    = sinMonto ? "none" : "";
+    if(!sinMonto){
+      $("#mMontoLbl").textContent = cfg.label;
+      $("#mMonto").placeholder = cfg.ph;
+    }
+    /* El motivo SOLO tiene sentido en el bono que se acredita ahora:
+       `bonos_pendientes` guarda quien lo prometio, no por que. Un campo que se
+       descarta en silencio es peor que un campo que no esta. */
+    const conMotivo = bt === "ahora";
+    $("#mMotivoLbl").style.display = conMotivo ? "" : "none";
+    $("#mMotivo").style.display    = conMotivo ? "" : "none";
+  }
+
+  $("#mBonoTipos").innerHTML = Object.keys(BONO_TIPOS).map(k =>
+    `<button type="button" class="chip" data-bt="${k}">${esc(BONO_TIPOS[k].chip)}</button>`).join("");
+  $("#mBonoTipos").addEventListener("click", e => {
+    const b = e.target.closest(".chip"); if(!b) return;
+    st.bonoTipo = b.getAttribute("data-bt");
+    bonoTipoPintar();
+  });
+
   function abrirModal(accion, titulo, ganamos){
     if(!st.usuario){ toast("Esta conversación no tiene usuario vinculado"); return; }
     st.accion = accion;
@@ -11569,8 +11648,27 @@
     $("#mSub").textContent = `Para @${st.usuario}. ` + (
       esRetiro ? "Queda en Retiros pendientes. Cuando lo APROBÁS ahí, el bot le saca las fichas en ganamos; la transferencia se la hacés vos."
       : ganamos ? "Se encola y el bot lo deposita en ganamos en segundos."
-      : "Se acredita al instante.");
+      /* Antes decia "Se acredita al instante", y desde que el bono puede quedar
+         prometido para la proxima carga eso seria mentira en tres de los cuatro
+         casos. El cuando lo dice la linea de ayuda, que cambia con el tipo. */
+      : "Elegí qué le das.");
     $("#mMonto").value=""; $("#mMotivo").value="";
+
+    /* Los tipos de bono, solo en el modal de bono. Se vuelve a "ahora" en CADA
+       apertura: un modal que recuerda la ultima eleccion es exactamente como se
+       regala un 500% creyendo que son 500 fichas. */
+    const esBono = accion === "cargar_bono";
+    st.bonoTipo = "ahora";
+    $("#mBonoTipos").style.display = esBono ? "" : "none";
+    $("#mBonoAyuda").style.display = esBono ? "" : "none";
+    if(esBono){
+      bonoTipoPintar();
+    } else {
+      // Los otros modales comparten estos campos: quedan como estaban.
+      $("#mMontoLbl").style.display = ""; $("#mMonto").style.display = "";
+      $("#mMontoLbl").textContent = "Cantidad"; $("#mMonto").placeholder = "Ej: 500";
+      $("#mMotivoLbl").style.display = ""; $("#mMotivo").style.display = "";
+    }
 
     /* "RETIRAR TODO" (pedido de Nahuel, 15/09/2026). El caso más común es sacar
        el saldo entero, y tipearlo a mano es justo donde se come un dígito.
@@ -11643,10 +11741,32 @@
   });
   wireModal("#back", "#mCancel");
   $("#mOk").addEventListener("click", async ()=>{
+    /* Tres de las cuatro clases de bono NO van por `cargar_bono`: son promesas
+       (`bono_crear`), y el server las aplica solo en la proxima recarga. El
+       resto del modal es identico, asi que la bifurcacion vive solo aca. */
+    const bt = st.accion === "cargar_bono" ? (st.bonoTipo || "ahora") : "ahora";
+    const promesa = bt !== "ahora";
+
     const monto = parseInt($("#mMonto").value,10);
-    if(!monto || monto<=0){ toast("Poné una cantidad válida"); return; }
+    if(bt !== "giro"){
+      if(!monto || monto<=0){
+        toast(bt === "pct" ? "Poné un porcentaje válido" : "Poné una cantidad válida");
+        return;
+      }
+      /* Un 500 en el campo de porcentaje casi siempre son 500 fichas tipeadas
+         en el tipo equivocado. Se avisa con el numero puesto en plata, que es
+         como se entiende, y NO se bloquea: un 150% de promo es legitimo. */
+      if(bt === "pct" && monto > 100 &&
+         !confirm(`¿Seguro ${monto}%?\n\nCon eso, si carga $10.000 se lleva $${nf.format(monto*100)} extra.`)){
+        return;
+      }
+    }
+
     const btn=$("#mOk"); btn.disabled=true; btn.textContent="…";
-    const d = await jpost({accion:st.accion, usuario:st.usuario, monto, motivo:$("#mMotivo").value, conversacion_id:st.convId});
+    const d = promesa
+      ? await jpost({accion:"bono_crear", usuario:st.usuario,
+                     tipo: bt, valor: bt === "giro" ? 0 : monto})
+      : await jpost({accion:st.accion, usuario:st.usuario, monto, motivo:$("#mMotivo").value, conversacion_id:st.convId});
     /* VOLVÍA A DECIR "Cargar" SIEMPRE, también en el modal de retirar: es el
        mismo bug que ya se había arreglado al ABRIR el modal y que sobrevivió en
        el camino de vuelta. Si el retiro fallaba, el botón quedaba diciendo
@@ -11655,7 +11775,15 @@
     btn.textContent = st.accion === "retirar_saldo" ? "Retirar" : "Cargar";
     if(d.ok){
       $("#back").classList.remove("on");
-      if(st.accion==="cargar_bono"){
+      if(promesa){
+        /* Se dice QUE quedo prometido y CUANDO se cobra: el operador acaba de
+           decirle algo al jugador por el chat y tiene que poder confirmar que
+           coincide con lo que hizo. */
+        toast(bt === "pct"    ? `Prometido: ${monto}% en su próxima carga`
+            : bt === "giro"   ? "Le queda un giro de ruleta gratis"
+            :                   `Prometidas ${nf.format(monto)} fichas para su próxima carga`);
+      }
+      else if(st.accion==="cargar_bono"){
         // al_juego dice si el deposito quedo encolado; si no (p.ej. habia una
         // carga en curso), `aviso` trae que hacer -- mostrarlo, no taparlo.
         if(d.aviso) toast(d.aviso);
