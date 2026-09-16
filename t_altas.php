@@ -511,33 +511,46 @@ chequear('pero solo si está demorada, no en cada alta',
          (bool)preg_match('/if \(\$demorada && function_exists\(.alta_avisar_trabadas/', $bloque));
 
 // ===========================================================================
-echo "\n=== 10. La entrega de credenciales se ve en el CRM (sin la clave) ===\n";
+echo "
+=== 10. La entrega de credenciales se ve en el CRM, TAL CUAL ===
+";
 
-/* EL REPORTE (Nahuel, 16/09/2026): *"el bot sí me da las credenciales de
-   acceso, pero cuando intento ver ese mismo chat desde el CRM, hay mensajes
+/* EL REPORTE ORIGINAL (Nahuel, 16/09/2026): *"el bot sí me da las credenciales
+   de acceso, pero cuando intento ver ese mismo chat desde el CRM, hay mensajes
    como ese de las credenciales que no están visibles"*.
 
-   Era exacto y la causa es de diseño: ese mensaje lo DIBUJA EL WIDGET en el
-   navegador del jugador (pintarVarios, widget.js) con lo que devuelve
+   La causa es de diseño: ese mensaje lo DIBUJA EL WIDGET en el navegador del
+   jugador (`pintarVarios` en narrarAlta, widget.js) con lo que devuelve
    alta_estado.php. Nunca pasa por `mensajes`, así que el CRM --que muestra esa
-   tabla-- no tenía nada que mostrar. Para el operador la conversación terminaba
-   con "ya te la estoy creando" y después nada.
+   tabla-- no tenía nada que mostrar.
 
-   LO QUE ESTOS CHEQUEOS PROTEGEN DE VERDAD es lo segundo: que al arreglarlo no
-   se filtre la contraseña. Lo que entra a `mensajes` queda ahí para siempre y a
-   la vista de cualquier agente que abra el chat -- es la misma razón por la que
-   el chatbot nunca se la pide al jugador. Es un cambio de una línea pasar de
-   "se entregó" a "se entregó, la clave es X", y nadie lo notaría hasta que
-   alguien mire un chat viejo. */
+   EL PRIMER ARREGLO SE QUEDÓ CORTO y estos chequeos protegían lo contrario de
+   lo que hay que proteger hoy. Anotaba un resumen ("credenciales entregadas,
+   usuario X") y los tests exigían que la contraseña NO estuviera, por miedo a
+   dejar una clave en `mensajes`.
+
+   Ese miedo no se sostenía: la clave es `ALTA_CLAVE_FIJA` y vale lo mismo para
+   TODOS los jugadores. El resumen ocultaba una constante que está en el código
+   fuente, y a cambio el operador no veía lo mismo que el jugador tenía en
+   pantalla. Nahuel, el mismo día: *"me gustaría que el mensaje que yo vea en el
+   chat sea exactamente el mismo que recibe él... tal cual lo ve él, con el
+   usuario y la contraseña"*.
+
+   LO QUE ESTOS CHEQUEOS PROTEGEN AHORA es que los dos lados no se separen. El
+   texto está escrito DOS VECES --en widget.js para el jugador, en
+   alta_estado.php para el CRM-- y no hay fuente única posible: el widget los
+   dibuja sin pasar por `mensajes`, que es justamente el bug que esto tapó.
+   Dos copias que nadie compara se separan solas. */
 $srcAE = file_get_contents(__DIR__ . '/api/alta_estado.php');
+$srcW  = file_get_contents(__DIR__ . '/landing/widget.js');
 
 chequear('la entrega se anota en la conversación',
          str_contains($srcAE, 'crm_mensaje('));
 chequear('y se busca la conversación por el sid del chat',
          str_contains($srcAE, 'crm_conversacion_id($pdo, $sid'));
 
-/* El texto se arma con el USUARIO y nunca con la password. Se mira el código
-   sin comentarios: el docblock de arriba nombra la palabra varias veces. */
+/* Se mira el código sin comentarios: los docblocks nombran estas palabras
+   varias veces y harían pasar cualquier cosa. */
 $codAE = '';
 foreach (token_get_all($srcAE) as $tk) {
     if (is_array($tk)) {
@@ -545,22 +558,49 @@ foreach (token_get_all($srcAE) as $tk) {
         $codAE .= $tk[1];
     } else { $codAE .= $tk; }
 }
-$iMsj = strpos($codAE, 'crm_mensaje(');
-$bloqueMsj = $iMsj !== false ? substr($codAE, $iMsj, 700) : '';
 
-chequear('el mensaje nombra el usuario', str_contains($bloqueMsj, "\$e['usuario']"));
-chequear('EL MENSAJE NO INCLUYE LA CONTRASEÑA',
-         !str_contains($bloqueMsj, "\$e['password']")
-         && !str_contains($bloqueMsj, '$clave'),
-         'si esto falla, la clave queda en `mensajes` para siempre');
+chequear('el mensaje del CRM nombra el usuario',
+         str_contains($codAE, "\$e['usuario']"));
+chequear('Y TAMBIÉN LA CONTRASEÑA (es lo que se pidió ver)',
+         str_contains($codAE, "\$e['password']"),
+         'el operador tiene que ver lo mismo que el jugador');
+
+/* LOS CUATRO RENGLONES, LOS MISMOS DE LOS DOS LADOS. Se comparan los textos
+   fijos; las partes variables (usuario y clave) se interpolan distinto en PHP
+   y en JS, así que se chequean aparte arriba. */
+$renglones = [
+    '¡Listo! Ya te creé la cuenta. Anotá estos datos:',
+    'Usuario: ',
+    'Contraseña: ',
+    'Guardala bien, no te la voy a poder repetir.',
+];
+foreach ($renglones as $r) {
+    chequear("el CRM escribe: «" . mb_substr($r, 0, 34) . "»",
+             str_contains($codAE, $r));
+    chequear("   y el widget le dice lo MISMO al jugador",
+             str_contains($srcW, $r),
+             'si cambiás uno, cambiá el otro: no hay fuente única');
+}
+
+/* LA DECISIÓN DE GUARDAR LA CLAVE SE APOYA EN QUE ES FIJA. El día que deje de
+   serlo, una clave POR JUGADOR queda en el historial del CRM a la vista de
+   cualquier agente -- que es otra cosa, y hay que volver a decidirla. Este
+   chequeo existe para que ese día alguien se entere. */
+chequear('la clave sigue siendo fija para todos',
+         (bool)preg_match('/function alta_clave_nueva\(\)[^}]*return ALTA_CLAVE_FIJA;/s',
+                          file_get_contents(__DIR__ . '/api/altas_lib.php')),
+         'si ya no es fija, revisá si la clave debe seguir yendo a `mensajes`');
 
 /* Y se anota SOLO en la entrega de verdad. alta_entrega() también contesta con
    `entregada` cuando el jugador recarga la página, y anotar eso llenaría el
-   chat de notas repetidas por algo que pasó una sola vez. */
+   chat de cuatro renglones repetidos por algo que pasó una sola vez. */
 chequear('solo se anota cuando hay password (la entrega real, una vez)',
          (bool)preg_match('/!empty\(\$e\[.password.\]\)/', $codAE));
-chequear('y no cuando la respuesta es "ya estaba entregada"',
-         !preg_match('/entregada.*crm_mensaje/s', $codAE));
+chequear('y el guard mira las tres condiciones juntas',
+         (bool)preg_match(
+             '/!empty\(\$e\[.listo.\]\)\s*&&\s*!empty\(\$e\[.password.\]\)\s*&&\s*!empty\(\$e\[.usuario.\]\)/',
+             $codAE),
+         'sin `listo` se anotaria un alta que todavia no salio');
 
 
 limpiar($pdo);

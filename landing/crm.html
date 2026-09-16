@@ -8206,17 +8206,31 @@
            sospecha en "ya decidimos sobre esta persona". */
         const hayBloqueada = vs.some(v => v.bloqueado);
         elVinc.classList.toggle("grave", hayBloqueada);
+        /* EL PUNTO ROJO ES PARA LA PLATA. Estaba en `fuerza >= 3` cuando
+           existía la señal por IP y había que separar lo fuerte del ruido.
+           Hoy las tres señales son corroborables (ver vinculos_lib.php), así
+           que el punto ya no significa «creele a ésta»: significa «ésta
+           compartió cuenta bancaria o comprobante», que es lo que cambia una
+           decisión de plata. El mismo celular queda sin punto porque un
+           teléfono se presta — sigue siendo un dato duro, pero no es prueba
+           de fraude por sí solo. */
         const filas = vs.map(v => {
-          const fuerte = v.fuerza >= 3;
-          return `<li>${fuerte ? '<span class="fuerte">●</span> ' : ''}` +
+          const plata = v.fuerza >= 3;
+          return `<li>${plata ? '<span class="fuerte">●</span> ' : ''}` +
                  `<b>@${esc(v.usuario)}</b>${v.bloqueado ? " 🚫" : ""} — ${esc(v.detalle)}</li>`;
         }).join("");
+        const hayPlata = vs.some(v => v.fuerza >= 3);
         elVinc.innerHTML =
           `<b>⚠️ ${vs.length === 1 ? "Otra cuenta parece" : vs.length + " cuentas parecen"} ` +
           `ser la misma persona</b>` +
           `<ul>${filas}</ul>` +
-          `<span style="color:var(--muted)">El punto rojo es la señal fuerte ` +
-          `(misma cuenta bancaria). La IP compartida sola no prueba nada.</span>`;
+          `<span style="color:var(--muted)">` +
+          (hayPlata
+            ? "El punto rojo es la señal de plata: la misma cuenta bancaria o el mismo comprobante. "
+            : "") +
+          `Acá solo aparecen datos corroborables: número de operación, ` +
+          `CUIT/CBU del mail del banco, o el mismo celular. La IP compartida ` +
+          `ya no se muestra — no probó nunca nada.</span>`;
       }
     }
 
@@ -8244,10 +8258,21 @@
           /* "Por este aparato pasaron N cuentas" es el dato que importa: un
              teléfono con tres cuentas no prueba nada solo, pero es lo primero
              que hay que saber antes de creerle a alguien que dice tener una. */
+          /* EL MODELO NO ES LA IDENTIDAD, Y ESTABA PUESTO COMO SI LO FUERA.
+             Iba en negrita y primero, así que «Xiaomi» era lo único que se
+             leía y el aviso parecía decir «sospechoso por ser un Xiaomi».
+             Nahuel lo leyó así el 16/09/2026, con razón: es la marca de medio
+             país. Lo que ata dos cuentas es el id de instalación (el `…ref`),
+             un UUID que genera la app la primera vez que se abre; el modelo va
+             al lado y en gris, que es todo lo que aporta — reconocer el
+             aparato cuando hablás con el jugador. */
           const otras = c.cuentas > 1
-            ? ` · <span class="hl-ojo">${c.cuentas} cuentas por este aparato</span>` : "";
-          return `<span class="hl-i">📱 <b>${esc(c.modelo || c.plataforma || "celular")}</b>` +
-                 ` · <code>…${esc(c.ref)}</code>${otras}</span>`;
+            ? ` · <span class="hl-ojo">${c.cuentas} cuentas desde esta misma ` +
+              `instalación de la app</span>` : "";
+          const modelo = esc(c.modelo || c.plataforma || "");
+          return `<span class="hl-i">📱 <code>…${esc(c.ref)}</code>` +
+                 (modelo ? ` <span style="color:var(--muted)">(${modelo})</span>` : "") +
+                 `${otras}</span>`;
         }).join("");
         elHu.innerHTML =
           `<span class="hl-t">Huella</span>` +
@@ -12091,9 +12116,15 @@
 
     /* SE OFRECE ARRASTRAR A LAS VINCULADAS, y es lo que hace efectivo el
        bloqueo: bloquear una de tres cuentas no frena nada -- la persona sigue
-       operando con las otras dos. Solo las de señal FUERTE (comprobante,
-       cuenta bancaria, celular); las que solo comparten IP no se ofrecen
-       siquiera, porque ahi adentro hay vecinos. */
+       operando con las otras dos.
+
+       El filtro `>= 2` dejaba afuera la señal por IP, que ya no existe (se
+       sacó el 16/09/2026: guardábamos edges de Cloudflare, no jugadores). Hoy
+       las tres que quedan son todas duras, así que esto pasa a ser «todas» —
+       y se deja escrito igual, no `st.vinculos` a secas, porque el día que
+       vuelva una señal blanda el límite tiene que seguir estando acá y no
+       haber que acordarse de volver a ponerlo. VIN_SENALES_DURAS del backend
+       es la misma decisión del otro lado. */
     const fuertes = (st.vinculos || []).filter(v => v.fuerza >= 2);
     let motivo = "", conVinc = false;
 

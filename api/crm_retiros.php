@@ -60,11 +60,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     $accion = (string)($_GET['accion'] ?? 'listar');
 
     try {
+        /* EL BADGE CUENTA LO QUE ESPERA A UNA PERSONA, Y ANTES NO.
+           Contaba solo los `procesando` trabados hace mas de 30 minutos, o sea
+           que era una alarma de worker colgado disfrazada de contador. Los
+           retiros que de verdad esperan --los `pendiente`, que necesitan que
+           alguien apruebe-- no lo prendian nunca.
+
+           El costo real, medido el 16/09/2026: habia CUATRO pendientes, el mas
+           viejo de 18 horas, y el rail del CRM no mostraba nada. Nahuel lo
+           pidio asi: *"me gustaria que se vea un icono en rojo a la izquierda
+           como con conversaciones para saber que hay un retiro pendiente"*.
+
+           La cuenta es la MISMA que el default de `listar` (estado NOT IN
+           ('hecha','cancelada')), y eso no es casualidad: el numero del badge
+           tiene que ser el numero de filas que vas a encontrar al hacer click.
+           Si divergen, el badge deja de creerse -- que es como termino el
+           anterior.
+
+           Entra `revisar` y entra `error`: los dos significan "no se pudo
+           confirmar" y los dos los resuelve una persona mirando el libro del
+           panel. Un retiro que nadie mira no se arregla solo. */
         if ($accion === 'badge') {
             $n = (int)$pdo->query(
                 "SELECT COUNT(*) FROM acciones_saldo
-                  WHERE tipo='retirar' AND estado='procesando'
-                    AND tomada_en < DATE_SUB(NOW(), INTERVAL 30 MINUTE)"
+                  WHERE tipo='retirar' AND estado NOT IN ('hecha','cancelada')"
             )->fetchColumn();
             salir(['ok' => true, 'cantidad' => $n]);
         }

@@ -82,12 +82,28 @@ try {
        terminaba con el bot diciendo "ya te la estoy creando" y despues nada: no
        habia forma de saber si el jugador recibio sus datos o se fue sin cuenta.
 
-       LA CONTRASEÑA NO SE GUARDA, Y ESO NO ES UN OLVIDO. Es la misma razon por
-       la que el chat nunca se la pide al jugador (ver chatbot.php): lo que entra
-       a `mensajes` queda ahi para siempre y a la vista de cualquier agente que
-       abra el chat en el CRM. El operador necesita saber QUE se entrego y CON
-       QUE USUARIO -- para eso alcanza y sobra. Si el jugador la pierde, se le
-       pone una nueva desde el panel; no se la lee de un historial.
+       Y SE GUARDA EL MENSAJE EXACTO QUE VIO EL JUGADOR, contraseña incluida
+       (16/09/2026). Antes se anotaba un resumen --"credenciales entregadas,
+       usuario X, la contraseña no se guarda"-- por miedo a dejar una clave en
+       `mensajes`, que queda ahi para siempre y a la vista de cualquier agente.
+
+       Ese miedo no se sostenia: la clave es `ALTA_CLAVE_FIJA` y vale
+       '12345678' para TODOS los jugadores (altas_lib.php:46, decision de
+       negocio). O sea que el resumen estaba ocultando una constante que esta
+       en el codigo fuente, y a cambio el operador no podia ver lo mismo que
+       tenia el jugador en pantalla. Nahuel lo pidio asi: *"me gustaria que el
+       mensaje que yo vea en el chat sea exactamente el mismo que recibe el...
+       tal cual lo ve el, con el usuario y la contraseña"*.
+
+       Son los MISMOS cuatro renglones, en el mismo orden, que pinta el widget
+       (`pintarVarios` en widget.js, narrarAlta). Si alguno de los dos lados
+       cambia, hay que cambiar el otro: no hay una fuente unica porque el
+       widget los dibuja sin pasar por `mensajes` --ese es justamente el bug
+       que esto vino a tapar-- y compartir el texto obligaria a que el widget
+       pida al server un string que ya sabe.
+
+       > Si algun dia la clave deja de ser fija, ESTO HAY QUE REVISARLO: una
+       > clave por jugador en el historial del CRM es otra cosa.
 
        Se escribe SOLO en la entrega de verdad (`password` presente): esta
        respuesta tambien vuelve con `entregada` cuando alguien recarga la
@@ -102,13 +118,17 @@ try {
             if (function_exists('crm_conversacion_id') && function_exists('crm_mensaje')) {
                 $convId = crm_conversacion_id($pdo, $sid, (string)$e['usuario']);
                 if ($convId > 0) {
-                    crm_mensaje($pdo, $convId, 'bot',
-                        '✅ Cuenta creada y credenciales entregadas al jugador. '
-                        . 'Usuario: ' . $e['usuario']
-                        . ' · la contraseña no se guarda acá (si la perdió, '
-                        . 'se le pone una nueva desde el panel).',
-                        ['tipo' => 'alta_entregada', 'alta_id' => $id,
-                         'usuario' => (string)$e['usuario']]);
+                    $meta = ['tipo' => 'alta_entregada', 'alta_id' => $id,
+                             'usuario' => (string)$e['usuario']];
+                    foreach ([
+                        '¡Listo! Ya te creé la cuenta. Anotá estos datos:',
+                        'Usuario: ' . $e['usuario'],
+                        'Contraseña: ' . $e['password'],
+                        'Guardala bien, no te la voy a poder repetir. '
+                            . 'Ya podés iniciar sesión con esos datos.',
+                    ] as $linea) {
+                        crm_mensaje($pdo, $convId, 'bot', $linea, $meta);
+                    }
                 }
             }
         } catch (Throwable $ex) {

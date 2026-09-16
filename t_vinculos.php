@@ -195,48 +195,65 @@ vin_bloquear($pdo, 'tv_malo', false, 'nahuel');
 chequear('sin nadie bloqueado, la misma cuenta bancaria no frena nada',
          vin_bloqueado_por_senal($pdo, ['cuit' => '20555444333']) === null);
 
-echo "\n=== 5b. Una IP con muchas cuentas no describe a una persona ===\n";
+echo "
+=== 5b. La IP NO vincula a nadie, y eso es a proposito ===
+";
 
-/* MEDIDO EN PRODUCCIÓN el 16/09/2026, primera corrida del script: a
-   @holasofito763 lo vinculó con QUINCE cuentas por IP, entre ellas varias de
-   prueba evidentes (holaTesttet262, holaTeeettttgf695) y tres altas del chat de
-   esa misma madrugada. No es una persona con quince cuentas: es una IP por la
-   que pasan todos.
+/* ACA SE PROBABA QUE DOS CUENTAS DESDE LA MISMA IP SE VINCULABAN. Se dio vuelta
+   el 16/09/2026 y vale entender por que, porque la version anterior de este
+   bloque estaba bien razonada y aun asi protegia algo roto.
 
-   Sin este corte el aviso se vuelve ruido --si todos están vinculados con
-   todos, no dice nada-- y encima invita a bloquear inocentes. */
+   El razonamiento viejo era: la IP es un indicio debil pero real, asi que se
+   muestra etiquetada como debil y se descartan las IP con muchas cuentas
+   (VIN_IP_MAX_CUENTAS), que son conexiones compartidas y no personas.
+
+   Lo que ese razonamiento daba por sentado es que `altas.ip` tenia IPs de
+   jugadores. NO LAS TENIA. El sitio quedo detras de Cloudflare y guardabamos el
+   edge de la CDN:
+
+       162.158.195.184   124 cuentas
+       172.69.255.142     45 cuentas
+       198.41.230.150     16 cuentas
+
+   21 "IPs compartidas" tocando 237 cuentas, todas rangos de Cloudflare. El
+   corte de VIN_IP_MAX_CUENTAS tapaba las peores; las de 2, 3 y 4 cuentas
+   pasaban limpias y salian al CRM como "parecen ser la misma persona". Cuentas
+   legitimas, acusadas por compartir un servidor de la CDN.
+
+   Y el test no lo veia porque inventaba la IP: `$ponerAlta('tv_par1',
+   '200.1.2.3')` escribe una IP de jugador perfecta, que en produccion no
+   existia. UN TEST QUE SE FABRICA SUS DATOS NO PUEDE DESCUBRIR QUE LOS DATOS
+   REALES SON OTRA COSA. Por eso ahora se chequea la ausencia de la señal, que
+   es lo unico que no depende de que fixture se arme.
+
+   `alta_ip()` ya quedo arreglado (api/ip_cliente.php), asi que la columna va a
+   tener IPs de verdad. La señal no vuelve igual: una IP correcta sigue sin ser
+   corroborable --familia, WiFi, NAT-- y el criterio es que el aviso solo diga
+   cosas que el operador pueda poner sobre la mesa. */
 $limpiar();
 $ponerAlta = function (string $u, string $ip) use ($pdo) {
     $pdo->prepare("INSERT INTO altas (usuario, password, estado, origen, ip, pedido_en)
                    VALUES (?, 'clave123456', 'ok', 'chatbot', ?, NOW())")->execute([$u, $ip]);
 };
 
-/* Dos cuentas desde la misma IP: eso SÍ es un indicio. */
 $usuario('tv_par1'); $usuario('tv_par2');
 $ponerAlta('tv_par1', '200.1.2.3');
 $ponerAlta('tv_par2', '200.1.2.3');
-$v = vin_relacionados($pdo, 'tv_par1');
-chequear('dos cuentas desde la misma IP sí se vinculan', count($v) === 1, json_encode($v));
-chequear('y va marcada como indicio débil, no como señal fuerte',
-         (int)($v[0]['fuerza'] ?? 0) === VIN_FUERZA['ip'], (string)($v[0]['fuerza'] ?? '?'));
-
-/* La misma IP, pero con más cuentas de las que tiene una familia: deja de
-   contar entera, también para los dos primeros. */
-foreach (range(3, 9) as $i) {
-    $usuario("tv_par$i");
-    $ponerAlta("tv_par$i", '200.1.2.3');
-}
-chequear('con 9 cuentas, esa IP deja de vincular a nadie',
+chequear('dos cuentas desde la misma IP NO se vinculan',
          vin_relacionados($pdo, 'tv_par1') === [],
-         json_encode(array_column(vin_relacionados($pdo, 'tv_par1'), 'usuario')));
+         json_encode(vin_relacionados($pdo, 'tv_par1')));
 
-/* Y no se lleva puestas a las otras señales: el que además comparte cuenta
-   bancaria sigue apareciendo, que es lo que de verdad importa. */
+chequear("y 'ip' ya no es una fuerza posible",
+         !isset(VIN_FUERZA['ip']),
+         'si vuelve, tiene que volver con una decision escrita al lado');
+
+/* LO QUE NO SE LLEVO PUESTO. Sacar una señal es facil de hacer de mas: lo que
+   importa es que las corroborables sigan intactas sobre los mismos datos. */
 $huella('tv_par1', '20123123123', '');
-$huella('tv_par5', '20123123123', '');
+$huella('tv_par2', '20123123123', '');
 $v = vin_relacionados($pdo, 'tv_par1');
-chequear('pero la cuenta bancaria sigue viéndose igual',
-         count($v) === 1 && $v[0]['usuario'] === 'tv_par5', json_encode($v));
+chequear('pero la cuenta bancaria sigue viendose igual',
+         count($v) === 1 && $v[0]['usuario'] === 'tv_par2', json_encode($v));
 chequear('y esa sí es señal fuerte', (int)($v[0]['fuerza'] ?? 0) === VIN_FUERZA['pago']);
 
 // ===========================================================================

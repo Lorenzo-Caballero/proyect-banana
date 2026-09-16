@@ -30,13 +30,19 @@
  *   Dispositivo  `dispositivos_usuarios`. El mismo celular. Fuerte, pero un
  *              teléfono se presta: la pareja, el hermano, el locutorio.
  *
- *   IP del alta  `altas.ip`. La más débil, y por MUCHO. Un barrio entero
- *              detrás del NAT de la telefónica comparte IP; una familia con el
- *              mismo WiFi también. Sola no prueba nada.
+ * HUBO UNA CUARTA, LA IP DEL ALTA, Y SE SACÓ EL 16/09/2026. No por débil
+ * --que lo era-- sino porque `altas.ip` no tenía IPs de jugadores: el sitio
+ * quedó detrás de Cloudflare y estábamos guardando el edge de la CDN. 124
+ * cuentas "compartían" una IP. El CRM acusaba a cuentas legítimas de ser la
+ * misma persona, y eso es lo que hace que el aviso entero se deje de leer.
  *
- * Por eso cada vínculo sale etiquetado con su fuerza y NADA se bloquea solo.
- * La diferencia importa de verdad: bloquear por IP a dos hermanos que juegan
- * de la misma casa es perder dos clientes reales para atajar a uno falso.
+ * El criterio que quedó, en palabras de Nahuel: *"si no es seguro que es una
+ * cuenta falsa, preferiría que ahí no aparezca nada... que sean datos
+ * corroborables"*. Las tres que quedan lo son: un número de operación, un
+ * CUIT/CBU que sale del mail del banco, y un device_id que es un UUID por
+ * instalación.
+ *
+ * Cada vínculo sale igual etiquetado con su fuerza, y NADA se bloquea solo.
  *
  * ============================================================================
  * QUÉ BLOQUEA UN BLOQUEO (y qué no)
@@ -55,34 +61,26 @@
 
 declare(strict_types=1);
 
-/** Fuerza de un vínculo. Ordena de más a menos confiable. */
-const VIN_FUERZA = ['comprobante' => 4, 'pago' => 3, 'dispositivo' => 2, 'ip' => 1];
+/**
+ * Fuerza de un vínculo. Ordena de más a menos confiable.
+ *
+ * LAS TRES SON CORROBORABLES, y eso es el criterio de entrada desde el
+ * 16/09/2026: el operador tiene que poder ponerle el dato enfrente al jugador.
+ * Había una cuarta, `'ip' => 1`, y se sacó junto con VIN_IP_MAX_CUENTAS -- no
+ * por débil sino porque lo que guardábamos no eran IPs de jugadores sino edges
+ * de Cloudflare. Ver el bloque 3 de vin_relacionados().
+ */
+const VIN_FUERZA = ['comprobante' => 4, 'pago' => 3, 'dispositivo' => 2];
 
 /**
  * Las señales que alcanzan para frenar un alta nueva y para arrastrar un
- * bloqueo al resto del grupo. La IP NUNCA: ver el encabezado.
+ * bloqueo al resto del grupo.
+ *
+ * Hoy son TODAS las que existen, y la lista se queda igual a propósito: si
+ * mañana vuelve una señal blanda, tiene que entrar en VIN_FUERZA sin entrar
+ * acá, y este const es el lugar donde se decide eso.
  */
 const VIN_SENALES_DURAS = ['comprobante', 'pago', 'dispositivo'];
-
-/**
- * Pasadas cuántas cuentas una IP deja de decir algo sobre una persona.
- *
- * MEDIDO EL 16/09/2026, y por eso existe esta constante: la primera corrida en
- * producción vinculó a @holasofito763 con QUINCE cuentas por IP, entre ellas
- * varias de prueba evidentes (holaTesttet262, holaTeeettttgf695) y tres altas
- * del chat de esa misma madrugada. No es una persona con quince cuentas: es una
- * IP por la que pasan todos -- un proxy, una CDN, o simplemente la conexión
- * desde la que se venía probando.
- *
- * La regla vale igual sin saber la causa, que es lo bueno de ponerla acá: si
- * una IP tiene muchas cuentas, lo que describe es una CONEXIÓN COMPARTIDA, no
- * un jugador. Cuatro deja lugar a una familia; de ahí para arriba es
- * infraestructura.
- *
- * Y se corrige sola: el día que las IP se capturen bien, las de una persona van
- * a tener dos o tres cuentas y volverán a contar, sin tocar nada.
- */
-const VIN_IP_MAX_CUENTAS = 4;
 
 
 /**
@@ -196,7 +194,7 @@ function vin_senal_fuerte(array $senales): bool
  * Las cuentas que parecen ser la misma persona que `$usuario`.
  *
  * Devuelve una lista ordenada de más a menos confiable:
- *   ['usuario', 'senales' => ['pago','ip'], 'fuerza' => 3, 'detalle' => '...',
+ *   ['usuario', 'senales' => ['pago'], 'fuerza' => 3, 'detalle' => '...',
  *    'bloqueado' => bool]
  *
  * Es una sola pasada por señal (tres consultas), no una por cuenta: la ficha
@@ -300,42 +298,46 @@ function vin_relacionados(PDO $pdo, string $usuario, int $limite = 20): array
         // Sin la migración 69 esta señal simplemente no existe todavía.
     }
 
-    /* ---- 3. Misma IP al registrarse (la débil) ----
-       Se acota a 7 días: una IP dinámica cambia de dueño, y cruzar altas de
-       hace tres meses por IP junta a desconocidos.
+    /* ---- 3. Misma IP al registrarse: NO SE USA, Y NO ES POR SER DÉBIL ----
+       Acá había una tercera señal que cruzaba `altas.ip`. Se sacó el
+       16/09/2026, y el motivo no es el que decía el comentario que estaba acá
+       ("indicio débil, un barrio entero comparte el NAT"): eso era cierto pero
+       era lo de menos.
 
-       Y SOBRE TODO: se descartan las IP con muchas cuentas. La primera corrida
-       en producción (16/09/2026) ató a un jugador con QUINCE cuentas --varias
-       de prueba, y tres altas del chat de esa madrugada-- porque todas
-       comparten una misma IP de salida. Una IP así no describe a una persona
-       sino a una conexión compartida, y contarla convierte el aviso en ruido:
-       si todos están vinculados con todos, el aviso no dice nada y encima
-       invita a bloquear a inocentes. Ver VIN_IP_MAX_CUENTAS.
+       LO QUE PASABA ES QUE NO HABÍA NI UNA IP DE JUGADOR EN LA BASE. El sitio
+       quedó detrás de Cloudflare y `alta_ip()` guardaba `REMOTE_ADDR`, o sea
+       el edge de la CDN:
 
-       Las de loopback tampoco: un alta creada desde el CRM o por un script
-       lleva la IP nuestra. */
-    try {
-        $st = $pdo->prepare(
-            "SELECT DISTINCT o.usuario
-               FROM altas a
-               JOIN altas o
-                 ON o.ip = a.ip AND o.usuario <> a.usuario
-                AND ABS(TIMESTAMPDIFF(DAY, o.pedido_en, a.pedido_en)) <= 7
-               JOIN (SELECT ip FROM altas
-                      WHERE ip IS NOT NULL AND ip <> ''
-                      GROUP BY ip
-                     HAVING COUNT(DISTINCT usuario) <= " . VIN_IP_MAX_CUENTAS . ") propia
-                 ON propia.ip = a.ip
-              WHERE a.usuario = ?
-                AND a.ip IS NOT NULL AND a.ip <> ''
-                AND a.ip NOT IN ('127.0.0.1', '::1', 'localhost')
-              LIMIT 50"
-        );
-        $st->execute([$usuario]);
-        foreach ($st as $f) {
-            $sumar((string)$f['usuario'], 'ip', 'se registró desde la misma IP (indicio débil)');
-        }
-    } catch (Throwable $e) { error_log('vin_relacionados/ip: ' . $e->getMessage()); }
+           162.158.195.184   124 cuentas
+           172.69.255.142     45 cuentas
+           198.41.230.150     16 cuentas
+
+       21 "IPs compartidas" tocando 237 cuentas, todas rangos de Cloudflare.
+       VIN_IP_MAX_CUENTAS tapaba las peores, pero las de 2, 3 y 4 cuentas
+       pasaban el filtro y salían al CRM como "parecen ser la misma persona".
+       Cuentas legítimas, acusadas por compartir un servidor de la CDN.
+
+       EL DAÑO NO ERA EL FALSO POSITIVO SUELTO, ERA QUE EL AVISO DEJA DE
+       LEERSE. Nahuel lo dijo así el 16/09: *"si no es seguro que es una cuenta
+       falsa, preferiría que ahí no aparezca nada... que sean datos
+       corroborables"*. Un aviso que miente a veces no es un aviso al 80%: es
+       ruido, y termina tapando al comprobante repetido que sí importa.
+
+       `alta_ip()` ya quedó arreglado (lee CF-Connecting-IP cuando la conexión
+       viene de Cloudflare, ver api/ip_cliente.php), así que de acá en adelante
+       la columna va a tener IPs de verdad. Aun así esta señal NO vuelve sola:
+       una IP correcta sigue sin ser corroborable --familia, WiFi compartido,
+       NAT de la telefónica-- y el criterio es que el aviso solo diga cosas que
+       el operador pueda poner sobre la mesa. La IP queda como dato para
+       investigar a mano, no como acusación en la ficha.
+
+       Las tres que quedan son todas verificables contra algo:
+         comprobante  el mismo número de operación declarado dos veces
+         pago         el mismo CUIT/CBU, que sale del MAIL DEL BANCO
+         dispositivo  el mismo device_id, un UUID por instalación de la app
+                      (comprobado: los 4 casos compartidos en producción son
+                      instalaciones reales, no modelos de teléfono repetidos) */
+
 
     if (!$enc) { return []; }
 

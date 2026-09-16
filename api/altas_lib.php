@@ -67,13 +67,25 @@ function alta_limite_dia(): int
 }
 
 /**
- * REMOTE_ADDR y nada mas. Las cabeceras tipo X-Forwarded-For las manda el
- * cliente: confiar en ellas es dejar el limite sin efecto con un header.
- * Si algun dia el sitio queda detras de Cloudflare, ACA hay que cambiarlo.
+ * La IP del jugador.
+ *
+ * ACA DECIA "REMOTE_ADDR y nada mas", con la advertencia de que si el sitio
+ * alguna vez quedaba detras de Cloudflare habia que cambiar esto. Paso, y no
+ * lo notamos por meses: `altas.ip` se llenó de edges de Cloudflare (124
+ * cuentas en una sola "IP"), los vinculos por IP del CRM eran todos falsos, y
+ * los limites por IP habrian frenado a todos los jugadores juntos.
+ *
+ * ip_cliente() lee CF-Connecting-IP SOLO cuando la conexion viene de un rango
+ * de Cloudflare, que es lo que cierra el agujero que esa advertencia avisaba:
+ * la cabecera no se cree por si misma, se cree por quien la trajo. Ver
+ * api/ip_cliente.php.
  */
 function alta_ip(): string
 {
-    return (string)($_SERVER['REMOTE_ADDR'] ?? '');
+    if (!function_exists('ip_cliente')) {
+        require_once __DIR__ . '/ip_cliente.php';
+    }
+    return ip_cliente();
 }
 
 /**

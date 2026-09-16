@@ -36,9 +36,19 @@ if ($secret === '' || strlen($secret) < 16) {
 }
 
 // --- Limite simple por IP (anti fuerza bruta) ---
+//
+// LA IP SALE DE ip_cliente(), NO DE REMOTE_ADDR, Y NO ES UN DETALLE. Con el
+// sitio detras de Cloudflare, REMOTE_ADDR es el edge de la CDN: lo comparten
+// TODOS los jugadores. O sea que este limite --15 intentos cada 5 minutos--
+// dejaba de ser por persona y pasaba a ser global. El jugador numero 16 que
+// intentaba entrar en esos 5 minutos se comia "Demasiados intentos" sin haber
+// fallado nunca, y desde el CRM eso no se ve: no queda registrado como error
+// de nadie. Encontrado el 16/09/2026 mirando por que los vinculos por IP daban
+// falsos positivos -- la misma causa, dos sintomas que no se parecen.
+require_once __DIR__ . '/ip_cliente.php';
 function _limite(int $max, int $ventana): bool
 {
-    $f = sys_get_temp_dir() . '/auth_rl_' . md5($_SERVER['REMOTE_ADDR'] ?? 'x');
+    $f = sys_get_temp_dir() . '/auth_rl_' . md5(ip_cliente() ?: 'x');
     $ahora = time(); $hits = [];
     if (is_file($f)) {
         foreach (explode(',', (string)@file_get_contents($f)) as $t) {
