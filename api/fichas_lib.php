@@ -629,9 +629,7 @@ function fichas_avisar_retiro(PDO $pdo, string $usuario, int $idRetiro): bool
             'Quiere'    => '$' . number_format((float)$r['monto'], 0, ',', '.'),
             'Tiene'     => $saldo !== null ? '$' . number_format($saldo, 0, ',', '.') : null,
             'CBU/alias' => ['code' => $destino],
-            /* "le saca las fichas" era falso: el bot no ejecuta retiros
-               (ver bot_crear_jugador.py:1721). Los dos pasos son a mano. */
-            'Qué hacer' => 'Aprobalo en CRM → Retiros, sacale las fichas en el panel y transferile.',
+            'Qué hacer' => 'Aprobalo en CRM → Retiros (le saca las fichas) y transferile.',
         ]);
     } catch (Throwable $e) {
         error_log('fichas_avisar_retiro: ' . $e->getMessage());
