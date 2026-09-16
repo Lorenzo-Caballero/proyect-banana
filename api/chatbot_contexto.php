@@ -781,10 +781,19 @@ if (!function_exists('chatbot_bloque_app')) {
            desde la app si el jugador ya cargo, o con su primera carga si
            instalo antes de cargar -- el bot solo INVITA, nunca carga.
 
-           OJO CON LA CONDICION de la primera carga: al invitar NO se menciona
-           (pedido de Nahuel, 16/09/2026) -- esa aclaracion se la da la propia
-           app, con una notificacion, recien despues de instalarla. El bot solo
-           la explica a quien YA instalo y pregunta por que no le llego. */
+           LAS FICHAS SE OFRECEN SOLO A QUIEN YA CARGO (pedido de Nahuel,
+           16/09/2026, segunda vuelta): prometerselas a una cuenta recien
+           creada que no puso un peso es justo lo que el bono diferido vino a
+           evitar. A la cuenta nueva se la invita a la app igual -- "lo mas
+           importante es que descarguen la app" sigue vigente -- pero sin
+           fichas en la frase; los canales del sistema (el cartel del widget y
+           el mensaje post-carga) ya ofrecen el bono unicamente a quien cargo
+           alguna vez.
+
+           Y OJO CON LA CONDICION de la primera carga: al invitar no se
+           menciona -- esa aclaracion se la da la propia app, con una
+           notificacion, recien despues de instalarla. El bot solo la explica
+           a quien YA instalo y pregunta por que no le llego. */
         if ($bonoApp > 0) {
             $monto = number_format($bonoApp, 0, ',', '.');
             $p .= ($p !== '' ? "\n\n" : '')
@@ -793,13 +802,20 @@ if (!function_exists('chatbot_bloque_app')) {
                 . "de bono, solas, una unica vez -- recien despues de que tenga\n"
                 . "su primera carga hecha (si instala antes de cargar, el bono le\n"
                 . "queda guardado y se acredita solo con su primera carga; la app\n"
-                . "se lo avisa). Cuando le entregues una cuenta recien creada,\n"
-                . "invitalo con UNA linea a bajar la app por las {$monto} fichas\n"
-                . "de regalo (ademas le va a aparecer un cartel con el boton de\n"
-                . "descarga). AL INVITAR NO MENCIONES la condicion de la primera\n"
-                . "carga: esa aclaracion se la da la app despues de instalarla.\n"
-                . "Explicasela solo si ya instalo y pregunta por que no le llego\n"
-                . "el bono (respuesta: se acredita solo con su primera carga).\n"
+                . "se lo avisa).\n"
+                . "A QUIEN SE LO OFRECES: las {$monto} fichas se le prometen SOLO\n"
+                . "a un jugador que ya cargo alguna vez -- el caso tipico es que\n"
+                . "en este chat se le acaba de acreditar una carga y todavia no\n"
+                . "tiene la app. A una cuenta recien creada invitala igual a\n"
+                . "bajar la app con UNA linea (para enterarse al instante de sus\n"
+                . "cargas y respuestas), pero SIN prometerle fichas: todavia no\n"
+                . "cargo. Si alguien que nunca cargo pregunta por el bono de la\n"
+                . "app, decile que es un regalo que se activa con su primera\n"
+                . "carga, sin mas detalle.\n"
+                . "AL INVITAR NO MENCIONES la condicion de la primera carga: esa\n"
+                . "aclaracion se la da la app despues de instalarla. Explicasela\n"
+                . "solo si ya instalo y pregunta por que no le llego el bono\n"
+                . "(respuesta: se acredita solo con su primera carga).\n"
                 . "NO lo cargues vos: se acredita solo. Si ya instalo Y ya cargo\n"
                 . "y sigue sin llegarle, que cierre y vuelva a entrar en la app;\n"
                 . "si sigue sin llegar, pasa_a_agente.";
