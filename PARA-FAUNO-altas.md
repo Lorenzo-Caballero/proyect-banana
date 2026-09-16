@@ -191,13 +191,40 @@ bloque de nuestro `CLAUDE.md` ya se dio vuelta dos veces por creerle a evidencia
 superficial — los tres dominios responden 200 a un navegador, así que cualquier
 prueba rápida "confirma" lo que uno quiera.
 
-**Lo que falta para poder decidir** es una sola cosa: entrar a mano a
-`https://agents.ganamos7.com/` con las credenciales del cajero y ver si aparecen
-**los mismos jugadores y el mismo saldo**. Si son el mismo operador, mover el
-`.env` saca el Cloudflare de encima; si no, se descarta y dejamos de dar vueltas.
+**LA PRUEBA QUE FALTABA YA ESTA HECHA (16/09/2026).** Nahuel entro a mano a
+`https://agents.ganamos7.com/users/all` con las credenciales del cajero:
 
-**Si sabés por qué se eligió `ganamosonline`, decilo** — puede haber un motivo
-real que nosotros perdimos.
+- entra normalmente, misma cuenta `NAHUELWIN26X`, **ID 20284777**;
+- **mismo saldo de agente: 204.915,48**;
+- **los jugadores son los nuestros**, los que creamos esta madrugada:
+  `holavanesa683`, `holaceleste9678`, `holadiego858`, `holajavierso7459`,
+  `holafabianol5049`, `holateeettttgf695`.
+
+O sea: **es el mismo operador y el mismo backend, servido por una puerta que no
+tiene Cloudflare delante.** No es un panel distinto ni otra cuenta.
+
+### La propuesta
+
+Mover `PANEL_URL`, `LOGIN_URL` y `PANEL_API` de `agents.ganamosonline.com` a
+`agents.ganamos7.com`. Con eso el bot deja de cruzar Cloudflare, que es de donde
+salen los challenges que trababan altas y depositos.
+
+**Pero no los cinco contenedores de una.** Lo que esta probado es que la cuenta
+funciona en el navegador; lo que NO esta probado es que la API se comporte igual
+bajo esa puerta (podria versionar distinto, o cambiar una ruta). Asi que:
+
+1. **Uno solo primero.** `altas-casinotest` es el candidato obvio: es de prueba
+   y si se rompe no afecta a nadie. Si no, `ganamos-bot-recaudador`.
+2. **Mirar 24 h.** Del lado nuestro se mide con
+   `php /opt/goldpaw/scripts/waf.php` -- cuenta challenges por dia. Hoy son 5 en
+   7 dias; el contenedor mudado tiene que bajar a 0.
+3. **Si sale bien, el resto.** Si sale mal, se vuelve cambiando una linea del
+   `.env` -- no hay migracion ni estado que revertir.
+
+**Nuestro `CLAUDE.md` pedia no tocar esto sin la prueba del login. La prueba
+esta hecha.** Lo unico que quedaria por saber es si vos sabes POR QUE se eligio
+`ganamosonline` en su momento: si hay un motivo que nosotros perdimos, decilo
+antes de mover nada.
 
 ### 4.2 Los cinco contenedores comparten la cuenta, y NO se patean
 

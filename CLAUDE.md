@@ -89,12 +89,28 @@ necesite un subdominio de la plataforma.
 > (`es_challenge()` + decidir el deposito por el cuerpo + reintento en el
 > alta), con lo que el parche en caliente del contenedor queda obsoleto.
 >
-> **ESTO NO ALCANZA PARA CAMBIAR EL DOMINIO, y el historial explica por que:**
-> los headers prueban que hay menos proteccion, NO que la cuenta de agente
-> funcione del otro lado. Pueden ser operadores distintos con el mismo panel.
-> La prueba que falta es entrar a mano a `https://agents.ganamos7.com/` con las
-> credenciales del cajero y ver si aparecen LOS MISMOS jugadores y el MISMO
-> saldo. Sin eso, no se toca.
+> **LA PRUEBA QUE FALTABA SE HIZO EL 16/09/2026, Y DIO QUE SI.** Hasta ese dia
+> este bloque decia que los headers no alcanzaban --prueban que hay menos
+> proteccion, no que la cuenta de agente funcione del otro lado-- y que hacia
+> falta entrar a mano. Se entro:
+>
+> `https://agents.ganamos7.com/users/all` con las credenciales del cajero abre
+> normalmente, con la MISMA cuenta (`NAHUELWIN26X`, ID 20284777), el MISMO saldo
+> de agente (204.915,48) y LOS MISMOS jugadores -- los que el bot habia creado
+> esa madrugada (`holaceleste9678`, `holadiego858`, `holajavierso7459`…).
+>
+> **Es el mismo operador y el mismo backend, por una puerta sin Cloudflare.**
+>
+> Con eso, mover el `.env` a `ganamos7` deja de ser una corazonada. Lo que sigue
+> sin estar probado es que la API se comporte igual bajo esa puerta, asi que el
+> cambio va **de a un contenedor**, empezando por uno que no importe
+> (`altas-casinotest`), midiendo 24 h con `scripts/waf.php` y recien despues el
+> resto. Volver atras es cambiar una linea del `.env`: no hay estado que
+> revertir.
+>
+> Antes de moverlo, preguntarle a Fauno si sabe POR QUE se eligio
+> `ganamosonline`. Este bloque ya se dio vuelta dos veces; puede haber un motivo
+> que se perdio.
 >
 > **Antes de volver a tocar esto, mirá lo único que prueba algo: si las altas
 > están saliendo.** Un `.env`, un comentario o un default en el código son lo
