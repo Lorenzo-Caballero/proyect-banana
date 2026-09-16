@@ -1425,6 +1425,27 @@ function rl_bono_bienvenida_aplicar(PDO $pdo, string $usuario, int $coins): int
             return 0;
         }
 
+        /* EL BONO ES POR PERSONA, NO POR CUENTA (16/09/2026). El candado de
+           abajo es por usuario, así que una cuenta nueva era un bono nuevo:
+           registrarse, cargar el mínimo, cobrar el 50%, repetir. Si OTRA
+           cuenta de la misma persona —misma cuenta bancaria o mismo
+           comprobante declarado, ver vin_misma_persona()— ya cobró la
+           bienvenida, esta no la cobra. Funciona en la PRIMERA carga de la
+           cuenta nueva porque la huella se aprende antes que este bono en
+           los tres caminos de acreditación. Ante error, el helper devuelve
+           null y se paga: no se le corta el bono a todos por una tabla que
+           falte. */
+        if (!function_exists('vin_bono_cobrado_por_grupo') && is_file(__DIR__ . '/vinculos_lib.php')) {
+            require_once __DIR__ . '/vinculos_lib.php';
+        }
+        if (function_exists('vin_bono_cobrado_por_grupo')) {
+            $otra = vin_bono_cobrado_por_grupo($pdo, $usuario, 'bono_bienvenida');
+            if ($otra !== null) {
+                error_log('rl_bono_bienvenida: ' . $usuario . ' NO cobra: la misma persona ya lo cobró en ' . $otra);
+                return 0;
+            }
+        }
+
         // El candado (ver docblock).
         $ya = $pdo->prepare(
             "SELECT id FROM movimientos
@@ -1915,6 +1936,21 @@ function rl_aprender_huella(PDO $pdo, string $usuario, array $pago): void
     } catch (Throwable $e) {
         error_log('rl_aprender_huella: ' . $e->getMessage());
     }
+
+    /* La huella recién aprendida puede ser justo la que une dos cuentas: si
+       ahora este usuario comparte cuenta bancaria con otro, se le avisa (una
+       sola vez — la idempotencia vive adentro). Best-effort: el aviso jamás
+       puede afectar la acreditación desde la que se llamó. */
+    try {
+        if (!function_exists('vin_avisar_multicuenta') && is_file(__DIR__ . '/vinculos_lib.php')) {
+            require_once __DIR__ . '/vinculos_lib.php';
+        }
+        if (function_exists('vin_avisar_multicuenta')) {
+            vin_avisar_multicuenta($pdo, $usuario);
+        }
+    } catch (Throwable $e) {
+        error_log('rl_aprender_huella (aviso multicuenta): ' . $e->getMessage());
+    }
 }
 
 /**
@@ -2222,6 +2258,23 @@ function rl_declarar_pago(PDO $pdo, string $usuario, string $titular = '',
                 )->execute([$titular, $rec['id']]);
             } catch (Throwable $e2) {
                 error_log('rl_declarar_pago: no pude guardar el titular: ' . $e2->getMessage());
+            }
+        }
+
+        /* Un número de operación recién declarado puede ser el MISMO que ya
+           declaró otra cuenta (la señal 'comprobante' de vinculos_lib, la
+           más fuerte de todas): si eso acaba de pasar, el aviso multicuenta
+           sale ahora. Best-effort, una sola vez por cuenta. */
+        if ($nroTrx !== '') {
+            try {
+                if (!function_exists('vin_avisar_multicuenta') && is_file(__DIR__ . '/vinculos_lib.php')) {
+                    require_once __DIR__ . '/vinculos_lib.php';
+                }
+                if (function_exists('vin_avisar_multicuenta')) {
+                    vin_avisar_multicuenta($pdo, $usuario);
+                }
+            } catch (Throwable $e) {
+                error_log('rl_declarar_pago (aviso multicuenta): ' . $e->getMessage());
             }
         }
     }

@@ -453,3 +453,141 @@ function vin_anotar_dispositivo(PDO $pdo, string $deviceId, string $usuario): vo
         // igual: esta tabla solo alimenta un aviso.
     }
 }
+
+/**
+ * Las cuentas que son LA MISMA PERSONA que $usuario a nivel BANCARIO: solo
+ * las señales 'pago' (misma cuenta bancaria) y 'comprobante' (declaró la
+ * misma transferencia).
+ *
+ * El dispositivo queda afuera A PROPÓSITO, aunque sea señal dura para
+ * arrastrar bloqueos: un celular se presta (la pareja, el hermano, el
+ * locutorio), y dos hermanos que pagan cada uno de su banco son dos clientes
+ * reales. Negarle un bono o acusar de multicuenta por compartir teléfono es
+ * castigar a inocentes; la cuenta bancaria y el número de operación no
+ * tienen esa lectura. La IP, menos todavía.
+ */
+function vin_misma_persona(PDO $pdo, string $usuario): array
+{
+    $out = [];
+    foreach (vin_relacionados($pdo, $usuario) as $v) {
+        if (array_intersect($v['senales'], ['pago', 'comprobante'])) {
+            $out[] = (string)$v['usuario'];
+        }
+    }
+    return $out;
+}
+
+/**
+ * ¿Alguna OTRA cuenta de la misma persona (vin_misma_persona) ya cobró este
+ * bono? `$origen` es el de `movimientos`: 'bono_bienvenida' o 'bono_app'.
+ *
+ * Es el candado ANTI-MULTICUENTA de los bonos (pedido de Nahuel,
+ * 16/09/2026): el candado por usuario que ya tienen los dos bonos sigue
+ * igual; este agrega «por persona». Devuelve el usuario que ya lo cobró, o
+ * null.
+ *
+ * Ante un error devuelve null (= se paga): cortar TODOS los bonos porque
+ * una tabla de vínculos falta sería cambiar un abuso puntual por un problema
+ * general — el mismo criterio que vin_bloqueado().
+ */
+function vin_bono_cobrado_por_grupo(PDO $pdo, string $usuario, string $origen): ?string
+{
+    try {
+        $grupo = vin_misma_persona($pdo, $usuario);
+        if (!$grupo) { return null; }
+        $ph = implode(',', array_fill(0, count($grupo), '?'));
+        $st = $pdo->prepare(
+            "SELECT usuario FROM movimientos
+              WHERE origen = ? AND monto > 0 AND usuario IN ($ph)
+              LIMIT 1"
+        );
+        $st->execute(array_merge([$origen], $grupo));
+        $u = $st->fetchColumn();
+        return $u !== false && $u !== null ? (string)$u : null;
+    } catch (Throwable $e) {
+        error_log('vin_bono_cobrado_por_grupo: ' . $e->getMessage());
+        return null;
+    }
+}
+
+/**
+ * El AVISO al jugador multicuenta (pedido de Nahuel, 16/09/2026): cuando el
+ * sistema descubre que sus cuentas son la misma persona —a nivel bancario,
+ * ver vin_misma_persona()— se le dice de frente, UNA vez por cuenta: que lo
+ * vimos, que los bonos son por persona, y que siga con una sola cuenta para
+ * no llegar a la restricción.
+ *
+ * Se dispara desde donde NACEN las señales (rl_aprender_huella al acreditar
+ * un pago, rl_declarar_pago al declarar un comprobante), así el aviso llega
+ * en el momento en que el vínculo se vuelve un hecho y no en un cron.
+ *
+ * La idempotencia es la fila en `notificaciones` con origen 'multicuenta':
+ * si ya existe para este usuario, no se repite nada. Best-effort total:
+ * nunca lanza, y jamás puede frenar la acreditación desde la que se llamó.
+ */
+function vin_avisar_multicuenta(PDO $pdo, string $usuario): void
+{
+    $usuario = trim($usuario);
+    if ($usuario === '') { return; }
+
+    try {
+        // ¿Ya se le avisó a ESTA cuenta? (La push queda en `notificaciones`
+        // aunque el jugador nunca la abra: sirve de marca durable.)
+        $st = $pdo->prepare(
+            "SELECT 1 FROM notificaciones
+              WHERE usuario = ? AND origen = 'multicuenta' LIMIT 1"
+        );
+        $st->execute([$usuario]);
+        if ($st->fetchColumn()) { return; }
+
+        $grupo = vin_misma_persona($pdo, $usuario);
+        if (!$grupo) { return; }
+
+        $texto = 'Detectamos que hay más de una cuenta creada por la misma persona, '
+               . 'y la tuya es una de ellas. Los bonos se pagan una sola vez por '
+               . 'persona: nuestro sistema es anti-multicuenta. Seguí jugando con '
+               . 'una sola cuenta, así no tenemos que restringirte el acceso.';
+
+        // La push (y la marca de "ya avisado"). Si notificaciones_lib no está
+        // cargada se trae acá: sin la push no queda marca y el aviso se
+        // repetiría en cada carga.
+        if (!function_exists('notif_crear') && is_file(__DIR__ . '/notificaciones_lib.php')) {
+            require_once __DIR__ . '/notificaciones_lib.php';
+        }
+        $notifId = 0;
+        if (function_exists('notif_crear')) {
+            $notifId = notif_crear($pdo, $usuario, '⚠️ Varias cuentas detectadas',
+                                   $texto, 'aviso', null, 'multicuenta');
+        }
+        if ($notifId <= 0) {
+            // Sin la marca durable no hay idempotencia: mejor no mandar el
+            // chat tampoco y reintentar entero en la próxima señal, que
+            // repetir la acusación en cada carga.
+            return;
+        }
+
+        // El mismo texto en el chat, que es donde el jugador de verdad lee.
+        if (!function_exists('crm_avisar_jugador') && is_file(__DIR__ . '/crm_lib.php')) {
+            require_once __DIR__ . '/crm_lib.php';
+        }
+        if (function_exists('crm_avisar_jugador')) {
+            crm_avisar_jugador($pdo, $usuario, '⚠️ ' . $texto,
+                               ['multicuenta_aviso' => true]);
+        }
+
+        // Y que el operador se entere de que se avisó (con quién matchea lo
+        // ve en la ficha). Dedupe por usuario: una línea por cuenta avisada.
+        if (!function_exists('tg_evento') && is_file(__DIR__ . '/telegram_lib.php')) {
+            require_once __DIR__ . '/telegram_lib.php';
+        }
+        if (function_exists('tg_evento')) {
+            tg_evento($pdo, 'salud', '👥 Multicuenta avisada', [
+                'Jugador'   => $usuario,
+                'Vinculada' => implode(', ', array_slice($grupo, 0, 5)),
+                'Qué pasó'  => 'Se le avisó que los bonos son por persona y que use una sola cuenta.',
+            ], 'multicuenta_' . $usuario);
+        }
+    } catch (Throwable $e) {
+        error_log('vin_avisar_multicuenta: ' . $e->getMessage());
+    }
+}

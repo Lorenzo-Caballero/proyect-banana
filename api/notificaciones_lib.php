@@ -273,13 +273,18 @@ if (!function_exists('notif_crear')) {
                encarece bastante, pero no lo cierra: si el minimo de carga es
                1.280 y el bono 1.000, repetir la vuelta sigue conviniendo.
 
-               El celular si lo cierra, porque es lo unico que no se multiplica
-               gratis: `dispositivos_usuarios` (migracion 69) guarda que cuentas
-               pasaron por cada aparato, y si alguna YA cobro este bono, la
-               siguiente no lo cobra.
+               El celular lo cierra bastante, porque no se multiplica gratis:
+               `dispositivos_usuarios` (migracion 69) guarda que cuentas
+               pasaron por cada aparato. Y desde el 16/09 a la tarde la misma
+               pregunta se hace tambien a nivel BANCARIO (vinculos_lib: misma
+               cuenta bancaria o mismo comprobante declarado), que cubre a
+               quien usa dos telefonos. Todo vive en
+               notif_app_bono_cobro_otro(), compartido con
+               notif_app_bono_liberar(): el marcador tampoco es un cheque al
+               portador.
 
                DOS LIMITES, dichos de frente:
-                 - la tabla arranca vacia, asi que esto protege de aca en
+                 - las tablas arrancan vacias, asi que esto protege de aca en
                    adelante y no puede revisar lo que ya paso;
                  - reinstalando la app se puede generar un device_id nuevo. Eso
                    ya es bastante mas trabajo que crearse una cuenta, que es
@@ -288,27 +293,11 @@ if (!function_exists('notif_crear')) {
                Ante un error de base NO se frena el bono: negarle un regalo a un
                jugador legitimo por una consulta que fallo es peor que pagar uno
                de mas. */
-            $yaLoCobroOtro = false;
-            try {
-                $qd = $pdo->prepare(
-                    "SELECT o.usuario
-                       FROM dispositivos_usuarios d
-                       JOIN dispositivos_usuarios o
-                         ON o.device_id = d.device_id AND o.usuario <> d.usuario
-                       JOIN movimientos m
-                         ON m.usuario = o.usuario AND m.origen = 'bono_app' AND m.monto > 0
-                      WHERE d.usuario = ?
-                      LIMIT 1"
-                );
-                $qd->execute([$usuario]);
-                $otro = $qd->fetchColumn();
-                if ($otro) {
-                    $yaLoCobroOtro = true;
-                    error_log("notif_app_instalada: bono de la app NO pagado a $usuario; "
-                            . "ya lo cobro $otro desde el mismo celular");
-                }
-            } catch (Throwable $e) {
-                // Sin la migracion 69 esta defensa no existe todavia.
+            $otroCobro = notif_app_bono_cobro_otro($pdo, $usuario);
+            $yaLoCobroOtro = $otroCobro !== null;
+            if ($yaLoCobroOtro) {
+                error_log("notif_app_instalada: bono de la app NO pagado a $usuario; "
+                        . "ya lo cobro $otroCobro (misma persona)");
             }
             try {
                 $pdo->beginTransaction();
@@ -382,6 +371,54 @@ if (!function_exists('notif_crear')) {
     }
 
     /**
+     * ¿Alguna OTRA cuenta de la misma persona ya cobro el bono de la app?
+     * Dos miradas, cada una best-effort:
+     *
+     *   1. El CELULAR: dispositivos_usuarios (migracion 69) -- que cuentas
+     *      pasaron por este aparato. Es la natural para un bono que se cobra
+     *      instalando una app.
+     *   2. El BANCO: vin_bono_cobrado_por_grupo() (vinculos_lib) -- misma
+     *      cuenta bancaria o mismo comprobante declarado. Cubre a quien usa
+     *      dos telefonos distintos.
+     *
+     * Devuelve el usuario que ya lo cobro, o null. Ante error: null (se
+     * paga) -- negarle el regalo a un legitimo por una consulta caida es
+     * peor que pagar uno de mas.
+     */
+    function notif_app_bono_cobro_otro(PDO $pdo, string $usuario): ?string
+    {
+        try {
+            $qd = $pdo->prepare(
+                "SELECT o.usuario
+                   FROM dispositivos_usuarios d
+                   JOIN dispositivos_usuarios o
+                     ON o.device_id = d.device_id AND o.usuario <> d.usuario
+                   JOIN movimientos m
+                     ON m.usuario = o.usuario AND m.origen = 'bono_app' AND m.monto > 0
+                  WHERE d.usuario = ?
+                  LIMIT 1"
+            );
+            $qd->execute([$usuario]);
+            $otro = $qd->fetchColumn();
+            if ($otro) { return (string)$otro; }
+        } catch (Throwable $e) {
+            // Sin la migracion 69 esta mirada no existe todavia.
+        }
+
+        try {
+            if (!function_exists('vin_bono_cobrado_por_grupo') && is_file(__DIR__ . '/vinculos_lib.php')) {
+                require_once __DIR__ . '/vinculos_lib.php';
+            }
+            if (function_exists('vin_bono_cobrado_por_grupo')) {
+                return vin_bono_cobrado_por_grupo($pdo, $usuario, 'bono_app');
+            }
+        } catch (Throwable $e) {
+            error_log('notif_app_bono_cobro_otro: ' . $e->getMessage());
+        }
+        return null;
+    }
+
+    /**
      * El "despues de acreditar" del bono de la app, compartido entre el pago
      * al instalar (ya habia cargado) y el diferido (notif_app_bono_liberar):
      * mandarlo AL JUEGO en el acto por el mismo camino que el bono del CRM
@@ -447,14 +484,27 @@ if (!function_exists('notif_crear')) {
                 if ((int)$m === 0) { $marcado = true; }   // el marcador de la instalacion
             }
             if ($marcado && !$pagado) {
-                $pdo->prepare(
-                    "UPDATE usuarios SET bonus = bonus + ? WHERE username = ?"
-                )->execute([$fichas, $usuario]);
-                $pdo->prepare(
-                    "INSERT INTO movimientos (usuario, tipo, monto, motivo, origen)
-                     VALUES (?, 'bono', ?, 'Bono por instalar la app', 'bono_app')"
-                )->execute([$usuario, $fichas]);
-                $acreditado = true;
+                /* EL MARCADOR NO ES UN CHEQUE AL PORTADOR. Entre la
+                   instalacion y la primera carga pudo aparecer la prueba de
+                   que es la misma persona que ya cobro -- y justamente ESTA
+                   carga es la que aprende la huella bancaria, que corre
+                   antes de llegar aca. La misma pregunta que al instalar,
+                   el mismo helper; y recien aca adentro para que las cargas
+                   sin marcador (el 99%) no paguen las consultas de vinculos. */
+                $otro = notif_app_bono_cobro_otro($pdo, $usuario);
+                if ($otro !== null) {
+                    error_log("notif_app_bono_liberar: bono NO liberado a $usuario; "
+                            . "ya lo cobro $otro (misma persona)");
+                } else {
+                    $pdo->prepare(
+                        "UPDATE usuarios SET bonus = bonus + ? WHERE username = ?"
+                    )->execute([$fichas, $usuario]);
+                    $pdo->prepare(
+                        "INSERT INTO movimientos (usuario, tipo, monto, motivo, origen)
+                         VALUES (?, 'bono', ?, 'Bono por instalar la app', 'bono_app')"
+                    )->execute([$usuario, $fichas]);
+                    $acreditado = true;
+                }
             }
             if ($propia) { $pdo->commit(); }
         } catch (Throwable $e) {
