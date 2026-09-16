@@ -602,7 +602,13 @@
   .nouser{padding:34px 20px;text-align:center;color:var(--muted);font-size:13.5px}
 
   /* ---- modal / toast ---- */
-  .back{position:fixed;inset:0;background:rgba(6,9,20,.66);backdrop-filter:blur(3px);display:none;place-items:center;z-index:50;padding:20px}
+  /* z-index 80 y no 50: en mobile la ficha del jugador es un cajón fixed con
+     z-index 70 (.col-user, más abajo), y desde ESE cajón salen los botones
+     Cargar fichas/bono. Con el modal en 50 el cajón lo tapaba y no se veía el
+     formulario (reporte mobile). 80 lo deja arriba del cajón (70) y su fondo
+     (69), y debajo del login (100), el boot (110) y los menús (130). El toast
+     sube a 90 para seguir por encima del modal. */
+  .back{position:fixed;inset:0;background:rgba(6,9,20,.66);backdrop-filter:blur(3px);display:none;place-items:center;z-index:80;padding:20px}
   /* El fade del fondo y el pop de la tarjeta corren cada vez que se abre:
      pasar de display:none a grid reinicia las animaciones solo, sin JS. */
   .back.on{display:grid;animation:backFade .16s ease-out}
@@ -763,7 +769,9 @@
   .huella code{background:rgba(148,163,184,.14);padding:1px 5px;border-radius:5px;
                font-size:11px;color:var(--txt)}
   .huella .hl-ojo{color:var(--red);font-weight:700}
-  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--panel);border:1px solid var(--violet);color:var(--txt);padding:12px 20px;border-radius:12px;z-index:60;opacity:0;transition:.25s;pointer-events:none;box-shadow:var(--shadow)}
+  /* z-index 90: por encima del modal (.back, 80) — un aviso tipo "cargado" o
+     un error de la carga tiene que verse aunque el modal siga abierto. */
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--panel);border:1px solid var(--violet);color:var(--txt);padding:12px 20px;border-radius:12px;z-index:90;opacity:0;transition:.25s;pointer-events:none;box-shadow:var(--shadow)}
   .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
   .sp{display:inline-block;width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--violet);border-radius:50%;animation:sp .7s linear infinite}
   @keyframes sp{to{transform:rotate(360deg)}}
