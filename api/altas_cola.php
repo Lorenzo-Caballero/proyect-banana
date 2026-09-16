@@ -44,12 +44,38 @@ header('Content-Type: application/json; charset=utf-8');
 const MAX_INTENTOS   = 10;
 const MINUTOS_ZOMBIE = 15;   // reintentar los que quedaron colgados en 'procesando'
 
-// Backoff entre reintentos (ver sql/36_altas_backoff.sql): el WAF de
-// agents.ganamos7.com a veces frena altas reales con un challenge -- si el
-// bot reintenta enseguida (siguiente poll, 30s despues) le pega al WAF
-// todavia caliente. Minutos de espera ANTES del intento N+1, indexado por
-// cuantos intentos ya se gastaron (intentos=1 -> primer error -> espera[0]).
-const MINUTOS_BACKOFF = [5, 20, 60];
+/* Backoff entre reintentos (ver sql/36_altas_backoff.sql): el WAF a veces frena
+   altas reales con un challenge, y reintentar en el siguiente poll (30s) le pega
+   todavia caliente. Minutos de espera ANTES del intento N+1, indexado por
+   cuantos intentos ya se gastaron (intentos=1 -> primer error -> espera[0]).
+
+   ERA [5, 20, 60] Y SE ACORTO EL 16/09/2026, con la medicion delante. Ese dia
+   tres altas del chat quedaron en un ciclo infinito por un diagnostico que se
+   perdia, se arreglo el renombrado (alta_debe_renombrar: dos fallos con el
+   mismo nombre alcanzan) y las tres SALIERON. Pero salieron tarde:
+
+       holaJavierso7459   5 intentos   90 min
+       holaBejarano4944   4 intentos   29 min
+       holaFabianol5049   4 intentos   29 min
+
+   Noventa minutos es no llegar: el jugador que pidio una cuenta ya se fue.
+
+   Y la espera larga dejo de tener sentido justo cuando el renombrado empezo a
+   funcionar. Antes, reintentar con el MISMO nombre contra el MISMO WAF tenia
+   pocas chances, asi que esperar salia barato. Ahora el intento 3 sale con un
+   nombre nuevo --practicamente imposible de chocar-- y por el camino rapido,
+   que es una sola llamada a la API. Hacerlo esperar 25 minutos es regalar el
+   jugador por nada.
+
+   Con [1, 3, 10, 30] el intento renombrado cae a los ~4 minutos en vez de ~25.
+   La cola es de unas pocas altas por hora, asi que un reintento por minuto no
+   es un patron que ningun WAF puntue: lo que Cloudflare mira son rafagas
+   concurrentes, no una request suelta.
+
+   La cola larga (30 min, y el ultimo valor se repite) se conserva para el caso
+   feo de verdad: si algo esta roto en serio, los 10 intentos siguen siendo
+   horas y no una tormenta. */
+const MINUTOS_BACKOFF = [1, 3, 10, 30];
 
 // Sin clave configurada NO se abre: este endpoint devuelve las contraseñas en
 // claro, y una clave por defecto seria una clave publica (esta en el codigo).
