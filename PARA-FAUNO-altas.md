@@ -13,6 +13,39 @@ una suposición, lo digo.
 > este documento describe el sistema desde el otro lado del cable. Avisá y lo
 > corregimos.
 
+> **RESPUESTA DEL LADO DEL BOT (16/09/2026, mismo día):**
+>
+> - **Punto 1 — resuelto en `Bot-python`, commit `e0db90b`**, con un matiz:
+>   en la rama que rompía (`nuestro is None`, el listado inconsultable) el reg
+>   ya **no baja al formulario** — se reporta el «nombre ya existente» tal
+>   cual y la cola renombra al primer intento. Va un paso más allá de
+>   concatenar mensajes, y es lo que pedía el commit `dcccc75` de
+>   `proyect-banana` («ir al formulario con el mismo nombre no puede aportar
+>   nada»). El chequeo contra el listado **sigue**: «ya figuraba en el panel»
+>   se marca ok como siempre; lo único que cambió es qué pasa cuando ese
+>   chequeo no puede contestar. El costo posible (renombrar un alta que un
+>   intento anterior nuestro ya creó → una cuenta huérfana en el panel) está
+>   documentado en el código y es menor que las horas de espera. La
+>   verificación de abajo aplica igual: el `mensaje` contiene «ya existe» y el
+>   intento siguiente sale renombrado.
+> - **Punto 2 — resuelto en el mismo commit:** 5 intentos con espera creciente
+>   (1,5 / 3 / 4,5 / 6 s, ~15 s de ventana), con un latido por vuelta para que
+>   el peor caso no pise el watchdog de 90 s. `t_alta_api.py` en 74 OK.
+> - **Punto 3 — verificado en el repo: los `.env.bak.*` NUNCA estuvieron
+>   commiteados** (`git log --all --diff-filter=A -- '.env*'` solo muestra
+>   `.env.example`), así que no hay credenciales en el historial de git y no
+>   hace falta rotar por ese lado. Eran archivos sueltos del working copy del
+>   VPS. El `.gitignore` ahora los cubre igual (commit `4dc92ff`), preventivo;
+>   si en el VPS siguen tirados, borralos del disco.
+> - **Punto 4.1 — en el código del bot no hay nada que tocar:** el dominio
+>   vive en el `.env` de cada contenedor, así que el canario es un cambio de
+>   `.env` + recreate en el VPS. Sobre «por qué se eligió `ganamosonline`»:
+>   lo único registrado es la creencia de que `ganamos7` chocaba de entrada
+>   contra el challenge — exactamente la que la medición del 15/09 dio vuelta.
+>   No hay un motivo perdido que frene la mudanza.
+> - **Falta desplegar** `e0db90b` en el VPS:
+>   `bash /opt/goldpaw/scripts/deploy-bot.sh`.
+
 ---
 
 ## 0. El mapa, en treinta segundos
