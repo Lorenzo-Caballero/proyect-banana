@@ -1,30 +1,32 @@
 /**
- * t_avisos.js — Los avisos prioritarios se muestran UNA vez por sesión.
+ * t_avisos.js — Los avisos prioritarios: se sacan de encima y no vuelven.
  *
- * EL PEDIDO (Nahuel, 16/09/2026), en dos pasos: primero *"que aparezcan unos
- * segundos y luego se vayan, no que queden constantes"*, y después —probando la
- * versión que los encogía a un chip— *"pero quiero que aparezcan una vez cuando
- * inicia sesión y luego se vayan, porque en mobile es molesto"*.
+ * DE DÓNDE SALE (Nahuel, 16/09/2026), en tres pasos:
+ *   1. *"que aparezcan unos segundos y luego se vayan, no que queden constantes"*
+ *   2. probando la versión que los encogía a un chip: *"quiero que aparezcan una
+ *      vez cuando inicia sesión y luego se vayan, porque en mobile es molesto"*
+ *   3. y la aclaración que ordenó todo: **el cartel es para SUS CLIENTES**, los
+ *      agentes que todavía no configuraron su CRM. *"está bueno que le salga el
+ *      aviso, pero que lo pueda deslizar hacia arriba o que aparezca durante dos,
+ *      tres segundos y desaparezca"*.
  *
- * Tenía razón las dos veces: en una pantalla de teléfono cualquier cosa fija
- * arriba se come el espacio útil, y un chip permanente sigue siendo permanente.
+ * O sea: tiene que verse —es lo que le avisa al cliente nuevo que su plataforma
+ * no funciona todavía— pero tiene que poder sacarse de encima al instante.
  *
  * LO QUE ESTOS CHEQUEOS CUIDAN, que es donde esto se rompe:
  *
- *  1. **Que el repintado no los reviva.** `gpAvisosRevisar()` corre cada 30 s
- *     mientras el espejo se llena. Sin cuidado, el cartel reaparecería solo cada
- *     medio minuto — justo lo que se vino a sacar.
- *
- *  2. **Que el reloj no se reinicie en cada repintado.** Si cada pasada armara
- *     un timer nuevo, el aviso que se repinta cada 30 s no se iría nunca.
- *
- *  3. **Que si el problema se resuelve y VUELVE, se vea otra vez.** Son las dos
- *     cosas sin las cuales la plataforma no funciona; si el "ya lo vio" quedara
- *     pegado, a quien le borran las credenciales no le avisaría nadie.
- *
- *  4. **Que sobreviva a un storage bloqueado.** En una ventana privada leer
- *     sessionStorage tira excepción. Mostrarlo de más es molesto; no mostrarlo
- *     nunca es dejar al cliente sin sistema sin saber por qué.
+ *  1. **Que deslizar no navegue.** El aviso es clickeable (lleva a la sección
+ *     que lo resuelve). Si un deslizamiento contara como toque, intentar
+ *     sacarlo de encima te mandaría a Configuración — lo contrario de lo que
+ *     quisiste hacer.
+ *  2. **Que las tres formas de irse dejen el MISMO estado.** Reloj, cruz y
+ *     deslizamiento: si una no marcara "ya se vio", el aviso volvería en el
+ *     próximo repintado por haberse ido "de la forma equivocada".
+ *  3. **Que el repintado no lo reviva** — `gpAvisosRevisar()` corre cada 30 s
+ *     mientras el espejo se llena.
+ *  4. **Que el reloj no se reinicie en cada repintado**, o el que se repinta
+ *     cada 30 s no se iría nunca.
+ *  5. **Que si el problema se resuelve y VUELVE, se vea otra vez.**
  *
  * Se EXTRAE de landing/crm.html, no se copia.
  *
@@ -42,30 +44,33 @@ function chequear(que, cond, detalle) {
   else { fallas++; console.log("  FALLA " + que + (detalle ? "   " + detalle : "")); }
 }
 
-const DESDE = "  const GP_AVISO_SEG = 9;";
+const DESDE = "  const GP_AVISO_SEG = 5;";
 const HASTA = "  let gpAvisoTimer = null;";
 const i = SRC.indexOf(DESDE), j = SRC.indexOf(HASTA, i);
 if (i < 0 || j < 0) { console.error("No encontré gpAvisoPintar en crm.html"); process.exit(1); }
 const FUENTE = SRC.slice(i, j);
 
 /**
- * Un DOM y un sessionStorage mínimos.
- *  `storageRoto` simula la ventana privada, donde leer TIRA.
+ * DOM y sessionStorage mínimos.
  *  `sesion` se comparte entre montajes para simular "la misma pestaña".
+ *  `storageRoto` simula la ventana privada, donde leer TIRA.
  */
 function montar(sesion, storageRoto) {
   const nodos = {};
   const pendientes = [];
-  const nuevo = (id) => ({
-    id, style: { cssText: "", opacity: "" }, innerHTML: "", onclick: null,
-    remove() { delete nodos[this.id]; },
-  });
+  const nuevo = (id) => {
+    const oyentes = {};
+    return {
+      id, innerHTML: "", onclick: null,
+      style: { cssText: "", opacity: "", transform: "", transition: "" },
+      addEventListener(ev, fn) { (oyentes[ev] = oyentes[ev] || []).push(fn); },
+      _disparar(ev, e) { (oyentes[ev] || []).forEach(f => f(e)); },
+      remove() { delete nodos[this.id]; },
+    };
+  };
   const ctx = {
     gpAvisosContenedor: () => ({ prepend(){}, appendChild(){} }),
-    document: {
-      getElementById: (id) => nodos[id] || null,
-      createElement: () => ({}),
-    },
+    document: { getElementById: (id) => nodos[id] || null, createElement: () => ({}) },
     sessionStorage: {
       getItem(k) { if (storageRoto) throw new Error("bloqueado"); return sesion[k] ?? null; },
       setItem(k, v) { if (storageRoto) throw new Error("bloqueado"); sesion[k] = v; },
@@ -84,50 +89,121 @@ function montar(sesion, storageRoto) {
       pintarReal(id, html, tipo, alClick);
       return nodos[id] || null;
     },
-    /** Corre los relojes pendientes (el de los 9 s y el del fundido). */
     correrRelojes() {
-      for (let v = 0; v < 3 && pendientes.length; v++) {
-        const p = pendientes.splice(0, pendientes.length);
-        p.forEach(x => x.fn());
+      for (let v = 0; v < 4 && pendientes.length; v++) {
+        pendientes.splice(0, pendientes.length).forEach(x => x.fn());
       }
     },
     cuantosRelojes: () => pendientes.length,
     nodo: (id) => nodos[id] || null,
+    /** Simula el gesto: apoyar, arrastrar `px` y soltar. */
+    deslizar(id, px) {
+      const n = nodos[id];
+      n._disparar("touchstart", { touches: [{ clientY: 300 }] });
+      n._disparar("touchmove",  { touches: [{ clientY: 300 + px }] });
+      n._disparar("touchend", {});
+    },
   };
 }
 
 const HTML_INTEG = '<b>⚠️ Integrá tu panel de ganamos</b> — sin esto no se crean ' +
                    'cuentas, no se cargan fichas y tus jugadores no se espejan.';
 
-console.log("\n=== 1. Se ve al entrar, y después se va ===");
+console.log("\n=== 1. Se ve al entrar y se va solo ===");
 {
   const s = {};
   const m = montar(s);
   const el = m.pintar("gpAvisoInteg", HTML_INTEG, "rojo", () => {});
-  chequear("al entrar se ve entero", el.innerHTML === HTML_INTEG);
-  chequear("y ocupa el ancho", el.style.cssText.includes("width:100%"));
-
+  chequear("al entrar se ve el texto", el.innerHTML.includes("Integrá tu panel de ganamos"));
+  chequear("y trae la cruz para sacarlo ya", el.innerHTML.includes('data-cerrar="1"'));
   m.correrRelojes();
-  chequear("pasados los segundos, DESAPARECE", m.nodo("gpAvisoInteg") === null);
-  chequear("y queda anotado que ya se vio", s["gp_aviso_gpAvisoInteg"] === "1");
+  chequear("pasados los segundos DESAPARECE", m.nodo("gpAvisoInteg") === null);
+  chequear("y queda anotado que se vio", s["gp_aviso_gpAvisoInteg"] === "1");
 }
 
-console.log("\n=== 2. EL REPINTADO NO LO REVIVE ===");
-/* gpAvisosRevisar() corre cada 30 s mientras el espejo se llena. Sin esto el
-   cartel reaparecería solo cada medio minuto. */
+console.log("\n=== 2. Deslizar hacia arriba lo saca ===");
 {
   const s = {};
   const m = montar(s);
   m.pintar("gpAvisoInteg", HTML_INTEG, "rojo", () => {});
-  m.correrRelojes();
-  m.pintar("gpAvisoInteg", HTML_INTEG, "rojo", () => {});        // el de los 30 s
-  chequear("no vuelve después de repintar", m.nodo("gpAvisoInteg") === null);
+  m.deslizar("gpAvisoInteg", -60);
+  m.correrRelojes();                       // el fundido
+  chequear("deslizando hacia arriba se va", m.nodo("gpAvisoInteg") === null);
+  chequear("y cuenta como visto (no vuelve)", s["gp_aviso_gpAvisoInteg"] === "1");
+}
+{
+  /* Un movimiento chico es un temblor de dedo, no una intención. */
+  const m = montar({});
   m.pintar("gpAvisoInteg", HTML_INTEG, "rojo", () => {});
+  m.deslizar("gpAvisoInteg", -8);
+  chequear("un movimiento chico NO lo saca", m.nodo("gpAvisoInteg") !== null);
+}
+{
+  /* Hacia abajo no hace nada: el gesto es hacia arriba. */
+  const m = montar({});
   m.pintar("gpAvisoInteg", HTML_INTEG, "rojo", () => {});
-  chequear("ni después de tres repintados más", m.nodo("gpAvisoInteg") === null);
+  m.deslizar("gpAvisoInteg", 80);
+  chequear("deslizar hacia abajo tampoco", m.nodo("gpAvisoInteg") !== null);
 }
 
-console.log("\n=== 3. El reloj no se reinicia en cada repintado ===");
+console.log("\n=== 3. DESLIZAR NO PUEDE NAVEGAR ===");
+/* El aviso lleva a la sección que lo resuelve. Si el deslizamiento contara como
+   toque, sacarlo de encima te mandaría a Configuración -- lo contrario de lo
+   que quisiste hacer. */
+{
+  let fue = 0;
+  const m = montar({});
+  const el = m.pintar("gpAvisoInteg", HTML_INTEG, "rojo", () => { fue++; });
+  m.deslizar("gpAvisoInteg", -60);
+  if (el.onclick) el.onclick({ target: {} });
+  chequear("después de deslizar, el toque no navega", fue === 0, "navegó " + fue + " vez");
+}
+{
+  let fue = 0;
+  const m = montar({});
+  const el = m.pintar("gpAvisoInteg", HTML_INTEG, "rojo", () => { fue++; });
+  el.onclick({ target: {} });
+  chequear("pero un toque normal SÍ navega", fue === 1);
+}
+
+console.log("\n=== 4. La cruz lo saca, y no navega ===");
+{
+  let fue = 0;
+  const s = {};
+  const m = montar(s);
+  const el = m.pintar("gpAvisoInteg", HTML_INTEG, "rojo", () => { fue++; });
+  el.onclick({
+    target: { getAttribute: (k) => (k === "data-cerrar" ? "1" : null) },
+    stopPropagation() {},
+  });
+  m.correrRelojes();
+  chequear("tocar la cruz lo saca", m.nodo("gpAvisoInteg") === null);
+  chequear("y no navega", fue === 0);
+  chequear("y cuenta como visto", s["gp_aviso_gpAvisoInteg"] === "1");
+}
+
+console.log("\n=== 5. El repintado no lo revive ===");
+/* gpAvisosRevisar() corre cada 30 s mientras el espejo se llena. */
+{
+  const m = montar({});
+  m.pintar("gpAvisoInteg", HTML_INTEG, "rojo", () => {});
+  m.correrRelojes();
+  m.pintar("gpAvisoInteg", HTML_INTEG, "rojo", () => {});
+  m.pintar("gpAvisoInteg", HTML_INTEG, "rojo", () => {});
+  chequear("no vuelve después de repintar", m.nodo("gpAvisoInteg") === null);
+}
+{
+  /* Y lo mismo si se fue deslizando: las tres formas de irse tienen que dejar
+     el mismo estado, o volvería por haberse ido "de la forma equivocada". */
+  const m = montar({});
+  m.pintar("gpAvisoInteg", HTML_INTEG, "rojo", () => {});
+  m.deslizar("gpAvisoInteg", -60);
+  m.correrRelojes();
+  m.pintar("gpAvisoInteg", HTML_INTEG, "rojo", () => {});
+  chequear("tampoco vuelve si se fue deslizado", m.nodo("gpAvisoInteg") === null);
+}
+
+console.log("\n=== 6. El reloj no se reinicia en cada repintado ===");
 /* Si cada pasada armara un timer nuevo, el aviso que se repinta cada 30 s no se
    iría NUNCA: siempre habría un reloj recién empezado. */
 {
@@ -138,75 +214,46 @@ console.log("\n=== 3. El reloj no se reinicia en cada repintado ===");
   m.pintar("gpAvisoInteg", HTML_INTEG, "rojo", () => {});
   chequear("tres repintados dejan UN solo reloj",
            m.cuantosRelojes() === tras1, `${tras1} -> ${m.cuantosRelojes()}`);
-  m.correrRelojes();
-  chequear("y ese reloj lo saca", m.nodo("gpAvisoInteg") === null);
 }
 
-console.log("\n=== 4. Misma sesión: no reaparece. Sesión nueva: sí ===");
+console.log("\n=== 7. Vuelve en la sesión siguiente, no en esta ===");
 {
   const s = {};
   const m1 = montar(s);
   m1.pintar("gpAvisoInteg", HTML_INTEG, "rojo", () => {});
   m1.correrRelojes();
-
-  /* Recargar la página (el celular lo hace solo al volver de un juego) es el
+  /* Recargar la página --el celular lo hace solo al volver de un juego-- es el
      MISMO sessionStorage: no tiene que volver a salir. */
   const m2 = montar(s);
   m2.pintar("gpAvisoInteg", HTML_INTEG, "rojo", () => {});
   chequear("recargar la página no lo trae de vuelta", m2.nodo("gpAvisoInteg") === null);
-
-  /* Cerrar la pestaña y volver a entrar: sessionStorage nuevo. */
   const m3 = montar({});
-  const el = m3.pintar("gpAvisoInteg", HTML_INTEG, "rojo", () => {});
-  chequear("en una sesión nueva vuelve a verse", el !== null && el.innerHTML === HTML_INTEG);
+  chequear("en una sesión nueva vuelve a verse",
+           m3.pintar("gpAvisoInteg", HTML_INTEG, "rojo", () => {}) !== null);
 }
 
-console.log("\n=== 5. Si se resuelve y VUELVE, se ve otra vez ===");
-/* Son las dos cosas sin las cuales la plataforma no funciona: si el "ya lo vio"
-   quedara pegado, a quien le borran las credenciales no le avisaría nadie. */
+console.log("\n=== 8. Si se resuelve y VUELVE, se ve otra vez ===");
 {
   const s = {};
   const m = montar(s);
   m.pintar("gpAvisoInteg", HTML_INTEG, "rojo", () => {});
   m.correrRelojes();
-  chequear("se fue", m.nodo("gpAvisoInteg") === null);
-
-  m.pintar("gpAvisoInteg", "", "rojo", null);                    // resuelto
+  m.pintar("gpAvisoInteg", "", "rojo", null);                   // resuelto
   chequear("al resolverse se olvida que ya se vio",
            s["gp_aviso_gpAvisoInteg"] === undefined, JSON.stringify(s));
-
-  const el = m.pintar("gpAvisoInteg", HTML_INTEG, "rojo", () => {});
-  chequear("si el problema vuelve, se ve de nuevo",
-           el !== null && el.innerHTML === HTML_INTEG);
+  chequear("y si el problema vuelve, se ve de nuevo",
+           m.pintar("gpAvisoInteg", HTML_INTEG, "rojo", () => {}) !== null);
 }
 
-console.log("\n=== 6. Los dos avisos son independientes ===");
-{
-  const HTML_COBRO = '<b>⚠️ Cargá tu cuenta de cobro</b> — tus jugadores no tienen a dónde transferir.';
-  const s = {};
-  const m = montar(s);
-  m.pintar("gpAvisoInteg", HTML_INTEG, "rojo", () => {});
-  m.pintar("gpAvisoCobro", HTML_COBRO, "rojo", () => {});
-  chequear("los dos se ven al entrar",
-           m.nodo("gpAvisoInteg") !== null && m.nodo("gpAvisoCobro") !== null);
-  m.correrRelojes();
-  chequear("y los dos se van", m.nodo("gpAvisoInteg") === null && m.nodo("gpAvisoCobro") === null);
-  chequear("cada uno con su marca",
-           s["gp_aviso_gpAvisoInteg"] === "1" && s["gp_aviso_gpAvisoCobro"] === "1");
-}
-
-console.log("\n=== 7. Con el storage bloqueado, se muestra igual ===");
+console.log("\n=== 9. Con el storage bloqueado, se muestra igual ===");
 /* Ventana privada: leer sessionStorage TIRA. Mostrarlo de más es molesto; no
    mostrarlo nunca es dejar al cliente sin sistema sin saber por qué. */
 {
   const m = montar({}, true);
-  const el = m.pintar("gpAvisoInteg", HTML_INTEG, "rojo", () => {});
-  chequear("se ve igual", el !== null && el.innerHTML === HTML_INTEG);
+  chequear("se ve igual",
+           m.pintar("gpAvisoInteg", HTML_INTEG, "rojo", () => {}) !== null);
   m.correrRelojes();
   chequear("y se va igual", m.nodo("gpAvisoInteg") === null);
-  const m2 = montar({}, true);
-  chequear("sin poder recordar, vuelve a mostrarse (el lado seguro)",
-           m2.pintar("gpAvisoInteg", HTML_INTEG, "rojo", () => {}) !== null);
 }
 
 console.log("\n---------------------------------------");

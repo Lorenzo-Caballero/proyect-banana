@@ -6761,7 +6761,16 @@
      celular al volver de un juego (ver CLAUDE.md), y ahi el aviso reaparecia
      sin que nadie hubiera iniciado sesion de nuevo. sessionStorage dura lo que
      dura la pestaña, que es exactamente "esta sesion". */
-  const GP_AVISO_SEG = 9;
+  /* CINCO Y NO NUEVE. Nahuel pidio "dos, tres segundos": el numero real es un
+     compromiso, porque el texto del aviso son dos renglones y leerlos lleva
+     unos cuatro segundos. Con tres, un cliente nuevo --que es para quien existe
+     el cartel-- alcanza a ver que hay algo rojo y no que dice. Si igual se
+     quiere mas corto, es esta sola constante.
+
+     Y lo que de verdad resuelve la molestia no es el numero: es poder sacarlo
+     de encima YA, deslizando hacia arriba o tocando la cruz. Eso es lo que
+     pidio primero. */
+  const GP_AVISO_SEG = 5;
   const gpAvisoTimers = {};
 
   /* Best-effort con localStorage/sessionStorage: en una ventana privada o con
@@ -6818,24 +6827,77 @@
       "border-radius:10px;padding:10px 16px;font-size:13px;color:var(--txt,#eee);" +
       (alClick ? "cursor:pointer;" : "cursor:default;") +
       "box-shadow:0 6px 24px rgba(0,0,0,.45);transition:opacity .4s";
-    el.innerHTML = html;
-    el.onclick = alClick || null;
+    /* La cruz va DENTRO del aviso y no afuera: en un telefono, un boton
+       flotante al lado de un cartel de ancho completo no tiene donde caer. */
+    el.innerHTML = '<span style="display:flex;align-items:flex-start;gap:10px">'
+      + '<span style="flex:1">' + html + '</span>'
+      + '<span data-cerrar="1" title="Ocultar hasta la próxima vez que entres" '
+      + 'style="flex:none;opacity:.55;cursor:pointer;font-size:16px;line-height:1;'
+      + 'padding:0 2px">&times;</span></span>';
+
+    /* DESLIZAR HACIA ARRIBA PARA SACARLO. Es el gesto que pidio Nahuel y el
+       unico comodo en un telefono: la cruz es chica y el cartel es ancho.
+
+       Lo delicado es que el aviso TAMBIEN es clickeable (lleva a la seccion que
+       lo resuelve), asi que un deslizamiento no puede terminar navegando. Por
+       eso se marca `arrastro` y el onclick lo mira: sin eso, intentar sacarlo
+       de encima te manda a Configuracion, que es lo contrario de lo que
+       quisiste hacer. */
+    let y0 = null, dy = 0, arrastro = false;
+    const alSoltar = () => {
+      el.style.transition = "transform .2s, opacity .2s";
+      if (dy < -30) { gpAvisoIrse(id, el); }
+      else { el.style.transform = "translateY(0)"; el.style.opacity = "1"; }
+      y0 = null; dy = 0;
+      setTimeout(()=>{ arrastro = false; }, 60);
+    };
+    el.addEventListener("touchstart", (e)=>{
+      y0 = e.touches[0].clientY; dy = 0; el.style.transition = "none";
+    }, {passive:true});
+    el.addEventListener("touchmove", (e)=>{
+      if (y0 === null) return;
+      dy = e.touches[0].clientY - y0;
+      if (dy > 0) dy = 0;                       // solo hacia arriba
+      if (dy < -4) arrastro = true;
+      el.style.transform = "translateY(" + dy + "px)";
+      el.style.opacity = String(Math.max(0, 1 + dy / 90));
+    }, {passive:true});
+    el.addEventListener("touchend", alSoltar, {passive:true});
+    el.addEventListener("touchcancel", alSoltar, {passive:true});
+
+    el.onclick = (ev)=>{
+      if (ev && ev.target && ev.target.getAttribute
+          && ev.target.getAttribute("data-cerrar")) {
+        ev.stopPropagation();
+        gpAvisoIrse(id, el);
+        return;
+      }
+      if (arrastro) { return; }                 // fue un deslizamiento, no un toque
+      if (alClick) alClick();
+    };
 
     /* El reloj se arma UNA sola vez por aviso: si cada repintado lo reiniciara,
        el que se repinta cada 30 s no se iria nunca. */
     if(!gpAvisoTimers[id]){
-      gpAvisoTimers[id] = setTimeout(()=>{
-        gpAvisoMarcarVisto(id, true);
-        const n = document.getElementById(id);
-        if(n){
-          /* Se desvanece en vez de saltar: un cartel que desaparece de golpe
-             se lee como un error de la pantalla. */
-          n.style.opacity = "0";
-          setTimeout(()=>{ const m = document.getElementById(id); if(m) m.remove(); }, 400);
-        }
-        delete gpAvisoTimers[id];
-      }, GP_AVISO_SEG * 1000);
+      gpAvisoTimers[id] = setTimeout(()=>{ gpAvisoIrse(id, document.getElementById(id)); },
+                                     GP_AVISO_SEG * 1000);
     }
+  }
+
+  /* Sacarlo de pantalla y anotar que ya se vio. Lo llaman el reloj, la cruz y
+     el deslizamiento: los tres tienen que dejar el MISMO estado, o el aviso
+     volveria en el proximo repintado por haberse ido "de la forma equivocada". */
+  function gpAvisoIrse(id, el){
+    gpAvisoMarcarVisto(id, true);
+    if(gpAvisoTimers[id]){ clearTimeout(gpAvisoTimers[id]); delete gpAvisoTimers[id]; }
+    const n = el || document.getElementById(id);
+    if(!n) return;
+    /* Se desvanece hacia arriba en vez de saltar: un cartel que desaparece de
+       golpe se lee como un error de la pantalla. */
+    n.style.transition = "transform .25s, opacity .25s";
+    n.style.transform = "translateY(-14px)";
+    n.style.opacity = "0";
+    setTimeout(()=>{ const m = document.getElementById(id); if(m) m.remove(); }, 260);
   }
 
   let gpAvisoTimer = null;
