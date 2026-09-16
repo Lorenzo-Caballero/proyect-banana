@@ -149,6 +149,23 @@ if (!function_exists('notif_crear')) {
                 $soltar ? 1 : 0,
             ]);
 
+            /* EL HISTORIAL de que cuentas pasaron por este celular. La tabla
+               `dispositivos` de arriba no sirve para eso y no es un descuido:
+               su UNIQUE por device_id PISA el usuario cuando entra otra cuenta,
+               que es justo lo que necesita para notificar --avisarle a quien
+               esta usando el telefono AHORA-- y justo lo que borra el dato de
+               que antes pasaron otras dos.
+               Best-effort: esto solo alimenta un aviso en el CRM, no puede
+               tumbar el registro del dispositivo ni las notificaciones. */
+            if ($usuario !== null && $usuario !== '') {
+                if (is_file(__DIR__ . '/vinculos_lib.php')) {
+                    require_once __DIR__ . '/vinculos_lib.php';
+                }
+                if (function_exists('vin_anotar_dispositivo')) {
+                    vin_anotar_dispositivo($pdo, $deviceId, $usuario);
+                }
+            }
+
             /* Las banderas del CRM son sobre la APP, no sobre el navegador: una
                visita desde la web no puede marcar tiene_app. Estas dos columnas
                existen desde la migracion 07 y hasta ahora no las escribia nadie. */

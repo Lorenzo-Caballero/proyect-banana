@@ -19,6 +19,12 @@
 
 declare(strict_types=1);
 
+/* El bloqueo propio vive en vinculos_lib (migracion 69). Se requiere aca --y
+   con is_file-- porque fichas_lib es el cuello por donde pasan TODAS las
+   cargas y retiros: chat, CRM y camino A. Si el archivo no estuviera
+   desplegado todavia, las funciones no existen y todo sigue como antes. */
+if (is_file(__DIR__ . '/vinculos_lib.php')) { require_once __DIR__ . '/vinculos_lib.php'; }
+
 /** RESPALDO de los limites, no la fuente. Los de verdad los pone cada cliente
  *  desde Configuracion (config_crm: lim_carga_min, lim_carga_max,
  *  lim_retiro_min, lim_retiro_max_dia) y se leen con fichas_limite(). Estas
@@ -156,6 +162,18 @@ function fichas_pedir_carga(PDO $pdo, string $usuario, int $monto, string $orige
         return ['ok' => false, 'codigo' => 'sin_usuario',
                 'error' => 'No sé a qué usuario cargarle. Primero hay que iniciar sesión.'];
     }
+    /* BLOQUEADO DE NUESTRO LADO (migracion 69): no se le mueve plata.
+       El texto es para el JUGADOR y a proposito NO dice "estas bloqueado":
+       quien abre tres cuentas aprende de cada mensaje que recibe, y decirle
+       exactamente que lo detectamos le enseña que probar la proxima vez. Que
+       hable con una persona, que es ademas lo correcto si el bloqueo estuvo
+       mal puesto. */
+    if (function_exists('vin_bloqueado') && vin_bloqueado($pdo, $usuario)) {
+        return ['ok' => false, 'codigo' => 'bloqueado',
+                'error' => 'No puedo hacer esa operación en esta cuenta. '
+                         . 'Decile que lo tiene que ver un agente.'];
+    }
+
     /* Deposito SOLO-BONO (monto=0, bono>0): el CRM mandando al juego los
        bonos del jugador. Es un regalo de la casa, no una compra del jugador:
        los limites de carga (minimo/maximo del AUTOSERVICIO) no aplican, igual
@@ -629,6 +647,18 @@ function fichas_pedir_retiro(PDO $pdo, string $usuario, int $monto, string $orig
         return ['ok' => false, 'codigo' => 'sin_usuario',
                 'error' => 'No sé de qué cuenta retirar. Primero hay que iniciar sesión.'];
     }
+    /* BLOQUEADO DE NUESTRO LADO (migracion 69): no se le paga un retiro.
+       El texto es para el JUGADOR y a proposito NO dice "estas bloqueado":
+       quien abre tres cuentas aprende de cada mensaje que recibe, y decirle
+       exactamente que lo detectamos le enseña que probar la proxima vez. Que
+       hable con una persona, que es ademas lo correcto si el bloqueo estuvo
+       mal puesto. */
+    if (function_exists('vin_bloqueado') && vin_bloqueado($pdo, $usuario)) {
+        return ['ok' => false, 'codigo' => 'bloqueado',
+                'error' => 'No puedo hacer esa operación en esta cuenta. '
+                         . 'Decile que lo tiene que ver un agente.'];
+    }
+
 
     /* Ventana horaria: si el cliente cerró los retiros a esta hora, se corta acá
        y no se toca la base. Mismo criterio que las validaciones baratas de

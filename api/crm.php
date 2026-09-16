@@ -204,6 +204,47 @@ function ficha_usuario(PDO $pdo, string $usuario): ?array
         // Sin la migracion 64 no hay espejo del juego: se avisa lo que se pueda.
     }
 
+    /* ¿ESTA BLOQUEADO, Y HAY OTRAS CUENTAS QUE SON LA MISMA PERSONA?
+       Nahuel descubrio a mano que holasofito763, holajuan969 y holaleiva89
+       eran uno solo. Los datos para verlo estaban hace semanas --la cuenta
+       bancaria desde la que pagan, el celular, la IP del alta-- y nadie los
+       cruzaba. Ahora sale en la ficha, que es donde el operador ya esta
+       mirando cuando decide cargarle o no.
+
+       `bloqueado` es NUESTRA columna (migracion 69) y no `is_banned`, que es
+       el espejo del baneo de la plataforma y lo pisa el sync cada 5 minutos.
+
+       Best-effort entero: un vinculo que no se pudo calcular no puede impedir
+       que se abra la ficha de un jugador. */
+    $r['bloqueado'] = false;
+    $r['bloqueo']   = null;
+    $r['vinculos']  = [];
+    try {
+        if (is_file(__DIR__ . '/vinculos_lib.php')) {
+            require_once __DIR__ . '/vinculos_lib.php';
+        }
+        if (function_exists('vin_relacionados')) {
+            $qb = $pdo->prepare(
+                "SELECT bloqueado, bloqueado_en, bloqueado_por, bloqueado_motivo
+                   FROM usuarios WHERE username = ? LIMIT 1"
+            );
+            $qb->execute([$usuario]);
+            if ($b = $qb->fetch(PDO::FETCH_ASSOC)) {
+                $r['bloqueado'] = (bool)$b['bloqueado'];
+                if ($r['bloqueado']) {
+                    $r['bloqueo'] = [
+                        'desde'    => $b['bloqueado_en'],
+                        'por'      => $b['bloqueado_por'],
+                        'motivo'   => $b['bloqueado_motivo'],
+                    ];
+                }
+            }
+            $r['vinculos'] = vin_relacionados($pdo, $usuario);
+        }
+    } catch (Throwable $e) {
+        error_log('ficha_usuario/vinculos: ' . $e->getMessage());
+    }
+
     return $r;
 }
 
@@ -1255,6 +1296,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
            NO toca ninguna otra cosa: ni archiva, ni cierra, ni baja el
            «Te necesita». Marcar leido es decir "ya lo vi", no "ya lo resolvi". */
+        /* BLOQUEAR / DESBLOQUEAR. Es una decision de una persona, siempre:
+           las señales que junta vinculos_lib avisan, no deciden. Bloquear por
+           IP a dos hermanos que juegan de la misma casa es perder dos clientes
+           reales para atajar a uno falso. */
+        if ($accion === 'bloquear') {
+            if (is_file(__DIR__ . '/vinculos_lib.php')) {
+                require_once __DIR__ . '/vinculos_lib.php';
+            }
+            if (!function_exists('vin_bloquear')) {
+                salir(['ok' => false, 'error' => 'Falta correr la migración 69'], 400);
+            }
+            $u   = trim((string)($body['usuario'] ?? ''));
+            $on  = !empty($body['bloquear']);
+            $mot = trim((string)($body['motivo'] ?? ''));
+            $res = vin_bloquear($pdo, $u, $on, $operador, $mot);
+            if ($res['ok']) {
+                crm_bitacora($pdo, $operador,
+                             $on ? 'bloquear' : 'desbloquear',
+                             $u . ($mot !== '' ? ' · ' . $mot : ''));
+            }
+            salir($res, $res['ok'] ? 200 : 400);
+        }
+
         if ($accion === 'marcar_leidas') {
             if (!empty($body['todas'])) {
                 $st = $pdo->query("UPDATE conversaciones SET no_leidos = 0 WHERE no_leidos > 0");

@@ -727,6 +727,23 @@
                      border:1px solid var(--line)}
   .modal .bono-ayuda b{color:var(--txt)}
   .modal .chips{margin-top:13px}
+  /* AVISO DE CUENTAS VINCULADAS. Va ARRIBA del saldo a proposito: es un dato
+     que cambia la decision de cargarle o no, asi que tiene que leerse ANTES de
+     mirar cuanto tiene. Abajo del saldo lo veria el que ya decidio.
+     Rojo solo cuando hay una cuenta BLOQUEADA en el grupo; ambar cuando solo
+     hay sospecha. La diferencia importa: si todo fuera rojo, el rojo deja de
+     querer decir algo. */
+  .vinc{margin:0 0 12px;padding:10px 12px;border-radius:11px;font-size:12px;line-height:1.55;
+        background:rgba(240,160,42,.10);border:1px solid rgba(240,160,42,.45);color:var(--txt)}
+  .vinc.grave{background:rgba(239,68,68,.11);border-color:rgba(239,68,68,.5)}
+  .vinc b{display:block;margin-bottom:5px;font-size:12.5px}
+  .vinc ul{margin:5px 0 0;padding-left:17px;display:flex;flex-direction:column;gap:3px}
+  .vinc li{color:var(--muted)}
+  .vinc li b{display:inline;margin:0;color:var(--txt);font-weight:700}
+  .vinc .fuerte{color:var(--red);font-weight:700}
+  /* El cartel de "esta bloqueado". Siempre rojo: no hay grados. */
+  .bloq{margin:0 0 12px;padding:10px 12px;border-radius:11px;font-size:12px;line-height:1.55;
+        background:rgba(239,68,68,.14);border:1px solid rgba(239,68,68,.55);color:var(--txt)}
   .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--panel);border:1px solid var(--violet);color:var(--txt);padding:12px 20px;border-radius:12px;z-index:60;opacity:0;transition:.25s;pointer-events:none;box-shadow:var(--shadow)}
   .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
   .sp{display:inline-block;width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--violet);border-radius:50%;animation:sp .7s linear infinite}
@@ -883,6 +900,12 @@
 
   /* ---- notificacion push ---- */
   .act.notif{background:linear-gradient(180deg,var(--violet2),var(--violet))}
+  /* Bloquear va APAGADO, no en rojo: el rojo del panel ya es el de Retirar, que
+     se usa todos los dias. Un segundo boton rojo al lado le saca peso al
+     primero y encima invita a tocarlo. Este tiene que verse disponible y
+     serio, no urgente. */
+  .act.bloquear{background:var(--panel2);border:1px solid var(--line);color:var(--muted)}
+  .act.bloquear:hover{color:var(--red);border-color:var(--red)}
   .chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:4px}
   .chip{padding:7px 11px;border-radius:9px;border:1px solid var(--line);background:var(--panel2);
         color:var(--muted);font-size:12.5px;transition:.15s;
@@ -2440,6 +2463,11 @@
            plataforma -- se sacó para no confundir). Bono pendiente =
            bonos_pendientes sin acreditar todavía (lo prometido, no lo
            histórico acumulado) -- ver bono_pendiente_total() en crm.php. -->
+      <!-- Bloqueo y cuentas vinculadas. Antes de los saldos porque cambian la
+           decision: quien va a cargarle fichas a este jugador tiene que ver
+           esto primero. -->
+      <div class="bloq" id="uBloq" style="display:none"></div>
+      <div class="vinc" id="uVinc" style="display:none"></div>
       <div class="saldos saldos2">
         <div class="sbox saldo" id="uSaldoBox"><div class="k">Saldo</div><div class="v" id="uSaldo">$0</div><div class="edad" id="uSaldoEdad"></div><div class="vivo" id="uSaldoVivo" style="display:none"></div></div>
         <div class="sbox bono" id="uBonoBox" title="Bonos prometidos, aún no acreditados"><div class="k">Bono pendiente</div><div class="v" id="uBonos">0</div></div>
@@ -2447,6 +2475,7 @@
       <div class="sec">
         <h4>Acciones</h4>
         <div class="acts grid2">
+          <button class="act bloquear" id="btnBloquear"><svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg> <span id="btnBloquearTxt">Bloquear</span></button>
           <button class="act saldo" id="btnSaldo"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg> Cargar saldo</button>
           <button class="act retirar" id="btnRetiro"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12h8"/></svg> Retirar</button>
         </div>
@@ -7971,6 +8000,58 @@
     $("#uAv").style.background = colorDe(u.nombre_usuario);
     $("#uNombre").textContent = ((u.nombre||"")+" "+(u.apellido||"")).trim() || u.nombre_usuario;
     $("#uUser").textContent = "@"+u.nombre_usuario;
+    /* ---------- Bloqueo y cuentas vinculadas ----------
+       EL PEDIDO (Nahuel, 16/09/2026): "descubri que holasofito763, holajuan969
+       y holaleiva89 son la misma persona". Lo descubrio a mano; los datos para
+       verlo estaban hace semanas.
+
+       Las señales NO valen lo mismo y el cartel lo dice: la cuenta bancaria es
+       la fuerte (abrir una a nombre de otro para esquivar un bloqueo no es algo
+       que se haga), el celular es fuerte pero se presta, y la IP del alta es
+       debil de verdad -- un barrio entero detras del NAT de la telefonica
+       comparte IP. Mostrarlas todas iguales convertiria el aviso en ruido y en
+       bloqueos a hermanos que juegan de la misma casa. */
+    st.bloqueado = !!u.bloqueado;
+    const elBloq = $("#uBloq");
+    if (elBloq){
+      elBloq.style.display = u.bloqueado ? "" : "none";
+      if (u.bloqueado){
+        const b = u.bloqueo || {};
+        elBloq.innerHTML = `<b>🚫 Bloqueado</b>` +
+          `No puede cargar, retirar ni pedir una recarga.` +
+          (b.motivo ? `<br><b>Motivo:</b> ${esc(b.motivo)}` : "") +
+          (b.por ? `<br><span style="color:var(--muted)">Lo bloqueó ${esc(b.por)}` +
+                   (b.desde ? ` el ${esc(String(b.desde).slice(0,16))}` : "") + `</span>` : "") +
+          `<br><span style="color:var(--muted)">Ojo: esto NO le saca el juego. ` +
+          `Para que no pueda jugar hay que banearlo en el panel de ganamos.</span>`;
+      }
+    }
+    const btnBl = $("#btnBloquearTxt");
+    if (btnBl) btnBl.textContent = u.bloqueado ? "Desbloquear" : "Bloquear";
+
+    const elVinc = $("#uVinc");
+    if (elVinc){
+      const vs = u.vinculos || [];
+      elVinc.style.display = vs.length ? "" : "none";
+      if (vs.length){
+        /* Rojo solo si alguna del grupo ya esta bloqueada: eso convierte la
+           sospecha en "ya decidimos sobre esta persona". */
+        const hayBloqueada = vs.some(v => v.bloqueado);
+        elVinc.classList.toggle("grave", hayBloqueada);
+        const filas = vs.map(v => {
+          const fuerte = v.fuerza >= 3;
+          return `<li>${fuerte ? '<span class="fuerte">●</span> ' : ''}` +
+                 `<b>@${esc(v.usuario)}</b>${v.bloqueado ? " 🚫" : ""} — ${esc(v.detalle)}</li>`;
+        }).join("");
+        elVinc.innerHTML =
+          `<b>⚠️ ${vs.length === 1 ? "Otra cuenta parece" : vs.length + " cuentas parecen"} ` +
+          `ser la misma persona</b>` +
+          `<ul>${filas}</ul>` +
+          `<span style="color:var(--muted)">El punto rojo es la señal fuerte ` +
+          `(misma cuenta bancaria). La IP compartida sola no prueba nada.</span>`;
+      }
+    }
+
     $("#uSaldo").textContent = money(u.saldo);
     /* EL NUMERO CRUDO, para "Retirar todo". El textContent ya sale con "$" y
        separadores de miles, y volver a parsear eso es como se cuela un error de
@@ -11734,6 +11815,27 @@
     if(d.ok) toast(`${nf.format(d.monto)} en bonos van al juego (los deposita el bot en segundos)`);
     else toast(d.error || "No se pudo");
   });
+  /* BLOQUEAR / DESBLOQUEAR. Pide motivo al bloquear y confirmacion al
+     desbloquear: las dos son decisiones que alguien va a tener que justificar
+     despues, y el motivo es lo unico que sobrevive a la memoria. */
+  $("#btnBloquear").addEventListener("click", async ()=>{
+    if(!st.usuario){ toast("Esta conversación no tiene usuario vinculado"); return; }
+    const estaba = !!st.bloqueado;
+    let motivo = "";
+    if (estaba) {
+      if(!confirm(`¿Desbloquear a @${st.usuario}?\n\nVa a poder volver a cargar y retirar.`)) return;
+    } else {
+      motivo = prompt(`Bloquear a @${st.usuario}. ¿Por qué?\n\n` +
+                      `(Lo vas a leer vos dentro de tres semanas, no el jugador.)`, "");
+      if (motivo === null) return;   // cancelo
+    }
+    const d = await jpost({accion:"bloquear", usuario:st.usuario,
+                           bloquear: !estaba, motivo: motivo || ""});
+    if(!d.ok){ toast(d.error || "No se pudo"); return; }
+    toast(estaba ? "Desbloqueado" : "Bloqueado: no puede cargar ni retirar");
+    abrir(st.convId);
+  });
+
   $("#btnVer").addEventListener("click", ()=>{
     if(!st.usuario){ toast("Sin usuario vinculado"); return; }
     toast(`Saldo ${$("#uSaldo").textContent} · Bono pendiente ${$("#uBonos").textContent}`);

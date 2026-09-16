@@ -464,6 +464,16 @@ function rl_crear_recarga(PDO $pdo, string $usuario, int $coins, string $titular
     if ($usuario === '') {
         return ['ok' => false, 'error' => 'Falta el nombre de usuario del juego.'];
     }
+
+    /* BLOQUEADO: se corta ANTES de darle el alias. Es el orden que importa --
+       si se cortara despues, el jugador ya transfirio y la plata entro: ahi el
+       problema deja de ser un bloqueo y pasa a ser devolverle el dinero a
+       alguien a quien no le queremos vender. */
+    if (function_exists('vin_bloqueado') && vin_bloqueado($pdo, $usuario)) {
+        return ['ok' => false, 'codigo' => 'bloqueado',
+                'error' => 'No puedo generar una carga para esta cuenta. '
+                         . 'Decile que lo tiene que ver un agente.'];
+    }
     // Los MISMOS limites que fichas_pedir_carga(), leidos del mismo lugar: si
     // el chat aceptara un monto que despues la carga rechaza, el jugador
     // transferiria plata por una recarga que no se puede completar.
