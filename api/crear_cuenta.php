@@ -131,11 +131,47 @@ if ($metodo === 'POST') {
     }
 
     try {
+        // El sid lo genera el navegador; se lee ACA arriba porque ademas de
+        // autorizar la entrega de la clave ahora tambien deduplica.
+        $sid = mb_substr(trim((string)($body['sid'] ?? '')), 0, 64);
+
+        /* DEDUP POR SESION (16/09/2026). El chatbot tiene esta guarda; la
+           landing no la tenia, y el comentario que decia que el doble-submit
+           quedaba "cubierto por el UNIQUE de la tabla" era FALSO desde que
+           alta_usuario_disponible() sufija SIEMPRE con digitos al azar: dos
+           POST del mismo navegador (doble click, reintento de red) generan
+           DOS nombres distintos, el UNIQUE no choca, y salian DOS cuentas
+           -- una entregada y la otra huerfana en el panel. Si este sid ya
+           tiene un alta viva o recien creada, se devuelve ESA y el front
+           sigue sondeando por id+sid como siempre. Las 'error' quedan
+           afuera: ahi el reintento es legitimo. */
+        if ($sid !== '') {
+            try {
+                $qs = $pdo->prepare(
+                    "SELECT id, usuario FROM altas
+                      WHERE entrega_sid = ?
+                        AND estado IN ('pendiente', 'procesando', 'ok')
+                        AND pedido_en > (NOW() - INTERVAL 30 MINUTE)
+                      ORDER BY id DESC LIMIT 1"
+                );
+                $qs->execute([$sid]);
+                if ($prev = $qs->fetch()) {
+                    echo json_encode(['ok' => true, 'id' => (int)$prev['id'],
+                                      'usuario' => (string)$prev['usuario'],
+                                      'repetida' => true], JSON_UNESCAPED_UNICODE);
+                    exit;
+                }
+            } catch (Throwable $e) {
+                // Sin la migracion 35 no hay entrega_sid: se sigue sin dedup,
+                // como siempre.
+                error_log('crear_cuenta (dedup sid): ' . $e->getMessage());
+            }
+        }
+
         // Se resuelve un username LIBRE a partir de lo que puso el jugador
-        // -- ver el porqué en el docblock de arriba. alta_encolar() ya no
-        // puede rechazar por "ese usuario ya existe" salvo una carrera
-        // extrema entre el chequeo y el INSERT (dos pestañas a la vez con
-        // el mismo nombre), que sigue cubierta por el UNIQUE de la tabla.
+        // -- ver el porqué en el docblock de arriba. La carrera entre dos
+        // requests CONCURRENTES del mismo navegador la achica el dedup de
+        // arriba (queda la ventana de milisegundos entre SELECT e INSERT).
         $usuarioFinal = alta_usuario_disponible($pdo, $nombrePedido);
 
         // La clave la genera el SERVER, una distinta por cuenta. Antes la
@@ -144,10 +180,9 @@ if ($metodo === 'POST') {
         // pedia un retiro. No se acepta mas lo que venga en el body.
         $clave = alta_clave_nueva();
 
-        // El sid lo genera el navegador y es lo unico que despues autoriza a
-        // ver la clave. Igual que en el chat: sin el, cualquiera que recorra
-        // id=1,2,3... se lleva las credenciales de los demas.
-        $sid = mb_substr(trim((string)($body['sid'] ?? '')), 0, 64);
+        // (El sid ya se leyo arriba, antes del dedup. Sigue siendo lo unico
+        // que despues autoriza a ver la clave: sin el, cualquiera que recorra
+        // id=1,2,3... se lleva las credenciales de los demas.)
 
         // De que publicista vino el pedido (?pub=<slug> en la landing) y los
         // identificadores de Meta que agarro en el camino. Todo opcional: un

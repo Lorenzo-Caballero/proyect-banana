@@ -1691,6 +1691,18 @@ function rl_notificar_acreditada(PDO $pdo, array $recarga): void
         notif_app_bono_liberar($pdo, $usuario);
     }
 
+    /* Y el aviso al multicuenta, si esta carga acaba de revelar el vinculo
+       (la huella se aprendio adentro de la transaccion, esto corre despues
+       del commit: adentro no puede ir porque el aviso puede terminar en un
+       curl a Telegram de hasta 8s -- ver rl_aprender_huella). Idempotente y
+       best-effort adentro. */
+    if (!function_exists('vin_avisar_multicuenta') && is_file(__DIR__ . '/vinculos_lib.php')) {
+        require_once __DIR__ . '/vinculos_lib.php';
+    }
+    if (function_exists('vin_avisar_multicuenta')) {
+        vin_avisar_multicuenta($pdo, $usuario);
+    }
+
     /* Ademas del push, un aviso EN EL CHAT: la carga entra minutos despues de
        que el jugador transfiere (asincronico), y hasta ahora preguntaba "ya me
        cargaste?" sin recibir una confirmacion clara -- solo la push, que se
@@ -1937,20 +1949,16 @@ function rl_aprender_huella(PDO $pdo, string $usuario, array $pago): void
         error_log('rl_aprender_huella: ' . $e->getMessage());
     }
 
-    /* La huella recién aprendida puede ser justo la que une dos cuentas: si
-       ahora este usuario comparte cuenta bancaria con otro, se le avisa (una
-       sola vez — la idempotencia vive adentro). Best-effort: el aviso jamás
-       puede afectar la acreditación desde la que se llamó. */
-    try {
-        if (!function_exists('vin_avisar_multicuenta') && is_file(__DIR__ . '/vinculos_lib.php')) {
-            require_once __DIR__ . '/vinculos_lib.php';
-        }
-        if (function_exists('vin_avisar_multicuenta')) {
-            vin_avisar_multicuenta($pdo, $usuario);
-        }
-    } catch (Throwable $e) {
-        error_log('rl_aprender_huella (aviso multicuenta): ' . $e->getMessage());
-    }
+    /* EL AVISO MULTICUENTA NO SE DISPARA DESDE ACA, y es a proposito
+       (16/09/2026, mismo dia que se agrego y se saco): esta funcion corre
+       ADENTRO de la transaccion de los tres caminos de acreditacion
+       (rl_matchear_y_acreditar, rl_acreditar_directo, peticiones_cola), y
+       vin_avisar_multicuenta() puede terminar en tg_evento() -- un curl
+       sincronico de hasta 8 segundos. Sostener los locks del matcher
+       mientras se habla con Telegram es exactamente el tipo de cuelgue que
+       este proyecto ya pago. El aviso sale post-commit: en
+       rl_notificar_acreditada() (camino B y HG Cash) y en peticiones_cola
+       (camino A), cuando la plata ya quedo firme. */
 }
 
 /**
@@ -2039,6 +2047,34 @@ function rl_matchear_y_acreditar(PDO $pdo, string $idUnico, float $monto): array
         $pg = $pdo->prepare("SELECT * FROM pagos WHERE id_unico = ? LIMIT 1");
         $pg->execute([$idUnico]);
         $pago = $pg->fetch() ?: [];
+
+        /* ¿Esta transferencia ya esta RECLAMADA por una solicitud del camino A
+           (el boton «Depositos» de la plataforma)? Los dos caminos MANUALES
+           (rl_asignar_manual y rl_acreditar_directo) tienen esta guarda hace
+           rato; el matcher automatico no la tenia (16/09/2026) -- y
+           rl_declarar_pago() lo hace correr sobre los pagos en 'revision',
+           que es justo el estado de un pago reclamado. Sin esto, el jugador
+           que pidio por el boton del juego y despues reclamo por el chat
+           cobraba DOS veces con UNA transferencia: coins por aca y balance
+           cuando el worker aprobara la solicitud en el panel. El pago queda
+           en 'revision' y lo resuelve el camino A (o una persona). Misma
+           consulta y mismos estados que las guardas manuales. */
+        try {
+            $pt = $pdo->prepare(
+                "SELECT request_id FROM peticiones_carga
+                  WHERE pago_id_unico = ? AND estado IN ('esperando','revision') FOR UPDATE"
+            );
+            $pt->execute([$idUnico]);
+            if ($req = $pt->fetchColumn()) {
+                $pdo->prepare("UPDATE pagos SET estado='revision' WHERE id_unico=? AND estado <> 'usado'")
+                    ->execute([$idUnico]);
+                $pdo->commit();
+                return ['resultado' => 'revision', 'mensaje' =>
+                    'reservada para la carga #' . $req . ' pedida desde la plataforma (camino A)'];
+            }
+        } catch (PDOException $e) {
+            // Sin migracion 48 no hay camino A que pueda pisar nada. Se sigue.
+        }
 
         /* ---- CAPA 0: EL NUMERO DE OPERACION, QUE NO ADMITE EMPATE ----
            El jugador declara el numero de operacion de su transferencia (por

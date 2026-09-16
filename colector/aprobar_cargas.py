@@ -487,46 +487,84 @@ def rechazar(ctx, request_id: int) -> tuple[str, str]:
     transferencia reclamada (eso lo chequean los dos lados).
     """
     url = f"{PANEL_API}/payment/deposit/{request_id}"
-    try:
-        r = ctx.request.patch(url, data={"status": 0}, timeout=45_000)
-    except Exception as e:
-        # No se sabe si el panel alcanzo a procesarlo: se reintenta la proxima.
-        return "revisar", f"no se pudo confirmar el rechazo ({e})"
-
-    try:
-        cuerpo = r.text()[:300]
-    except Exception:
-        cuerpo = ""
+    # [goldpaw] El mismo agujero del challenge que tenia aprobar(): 200 + HTML
+    # caia por el `except: pass` a 'cerrada', o sea "rechazada en ganamos"
+    # cuando el rechazo nunca llego -- nosotros dejabamos de trackearla y la
+    # solicitud seguia ABIERTA en el panel. Mismo arreglo: reintentar el
+    # challenge (no llego al backend, es seguro) y 200 ilegible -> 'revisar'.
+    cuerpo = ""
+    for _i in range(3):
+        try:
+            r = ctx.request.patch(url, data={"status": 0}, timeout=45_000)
+        except Exception as e:
+            # No se sabe si el panel alcanzo a procesarlo: se reintenta la proxima.
+            return "revisar", f"no se pudo confirmar el rechazo ({e})"
+        try:
+            cuerpo = r.text()
+        except Exception:
+            cuerpo = ""
+        cabeza = cuerpo.lstrip()[:500].lower()
+        if not (cabeza.startswith("<!doctype html") or "servicepipe" in cabeza
+                or "/exhk" in cuerpo[:2000]):
+            break
+        if _i == 2:
+            return "revisar", f"el WAF corto el rechazo (challenge persistente) | {cuerpo[:300]}"
+        time.sleep(1.5 * (_i + 1))
+    corto = cuerpo[:300]
 
     if r.ok:
         # Mismo criterio que aprobar: 2xx no alcanza, el resultado viene en el
         # cuerpo. Un status != 0 significa que la API lo entendio y dijo que no.
         try:
-            d = r.json()
-            if isinstance(d, dict) and d.get("status") not in (None, 0):
-                return "revisar", f"el panel no la rechazo (status={d.get('status')}) {cuerpo}".strip()
+            d = json.loads(cuerpo)
         except Exception:
-            pass
-        return "cerrada", f"rechazada en ganamos por API ({r.status}) {cuerpo}".strip()
+            return "revisar", f"respuesta ilegible al rechazar ({r.status}) | {corto}"
+        if not isinstance(d, dict) or d.get("status") not in (None, 0):
+            st = d.get("status") if isinstance(d, dict) else "?"
+            return "revisar", f"el panel no la rechazo (status={st}) {corto}".strip()
+        return "cerrada", f"rechazada en ganamos por API ({r.status}) {corto}".strip()
 
     if 400 <= r.status < 500 and r.status not in (408, 429):
-        return "revisar", f"el panel no acepto el rechazo ({r.status}) {cuerpo}".strip()
-    return "revisar", f"respuesta dudosa al rechazar ({r.status}) {cuerpo}".strip()
+        return "revisar", f"el panel no acepto el rechazo ({r.status}) {corto}".strip()
+    return "revisar", f"respuesta dudosa al rechazar ({r.status}) {corto}".strip()
 
 
 def aprobar(ctx, request_id: int) -> tuple[str, str]:
-    """Aprueba la carga en el panel. Devuelve (estado, detalle)."""
-    url = f"{PANEL_API}/payment/deposit/{request_id}"
-    try:
-        r = ctx.request.patch(url, data={"status": 1}, timeout=45_000)
-    except Exception as e:
-        # No sabemos si el panel lo proceso antes de cortarse.
-        return "revisar", f"no se pudo confirmar la aprobacion ({e})"
+    """Aprueba la carga en el panel. Devuelve (estado, detalle).
 
-    try:
-        cuerpo = r.text()[:300]
-    except Exception:
-        cuerpo = ""
+    [goldpaw] EL CHALLENGE DEL WAF, QUE ACA FALTABA (16/09/2026). El WAF
+    contesta 200 con el HTML del challenge, y esta funcion hacia r.json()
+    con un `except: pass` y caia a 'aprobada': el jugador pagaba, el server
+    insertaba el movimiento y le avisaba "fichas acreditadas", y la
+    plataforma nunca habia acreditado -- el MISMO bug de los depositos de
+    PARA-FAUNO-deposito.md, que se arreglo en las altas y en los retiros
+    pero no en este PATCH. Un challenge prueba que la request NO llego al
+    backend, asi que reintentarla es seguro; si persiste -> 'revisar' (el
+    reclamo del pago se conserva y lo mira una persona). Y un 200 con
+    cuerpo ilegible NUNCA vuelve a ser 'aprobada': sin el status=0 del
+    cuerpo no se da plata por hecha.
+    """
+    url = f"{PANEL_API}/payment/deposit/{request_id}"
+    cuerpo = ""
+    for _i in range(3):
+        try:
+            r = ctx.request.patch(url, data={"status": 1}, timeout=45_000)
+        except Exception as e:
+            # No sabemos si el panel lo proceso antes de cortarse.
+            return "revisar", f"no se pudo confirmar la aprobacion ({e})"
+        try:
+            cuerpo = r.text()
+        except Exception:
+            cuerpo = ""
+        # Mismo detector que _json() y retirar_del_jugador().
+        cabeza = cuerpo.lstrip()[:500].lower()
+        if not (cabeza.startswith("<!doctype html") or "servicepipe" in cabeza
+                or "/exhk" in cuerpo[:2000]):
+            break
+        if _i == 2:
+            return "revisar", f"el WAF corto la aprobacion (challenge persistente) | {cuerpo[:300]}"
+        time.sleep(1.5 * (_i + 1))
+    corto = cuerpo[:300]
 
     if r.ok:
         # 2xx no alcanza: la API devuelve status != 0 para decir "lo entendi y
@@ -534,20 +572,21 @@ def aprobar(ctx, request_id: int) -> tuple[str, str]:
         # transferencia, y si en realidad entro, otro se la lleva y el jugador
         # cobra dos veces. Ante la duda, que lo mire una persona.
         try:
-            d = r.json()
-            if isinstance(d, dict) and d.get("status") not in (None, 0):
-                return "revisar", f"el panel respondio status={d.get('status')} {cuerpo}".strip()
+            d = json.loads(cuerpo)
         except Exception:
-            pass
-        return "aprobada", f"aprobada por API ({r.status}) {cuerpo}".strip()
+            return "revisar", f"respuesta ilegible del panel ({r.status}) | {corto}"
+        if not isinstance(d, dict) or d.get("status") not in (None, 0):
+            st = d.get("status") if isinstance(d, dict) else "?"
+            return "revisar", f"el panel respondio status={st} {corto}".strip()
+        return "aprobada", f"aprobada por API ({r.status}) {corto}".strip()
 
     if 400 <= r.status < 500 and r.status not in (408, 429):
         # El panel RECHAZO el pedido y no lo proceso: soltar la transferencia es
         # correcto. 408/429 quedan afuera: son "reintentalo", no "lo rechace".
-        return "error", f"el panel rechazo la aprobacion ({r.status}) {cuerpo}".strip()
+        return "error", f"el panel rechazo la aprobacion ({r.status}) {corto}".strip()
 
     # 5xx, 408, 429: pudo haberse procesado igual. Nunca 'error' aca.
-    return "revisar", f"respuesta dudosa del panel ({r.status}) {cuerpo}".strip()
+    return "revisar", f"respuesta dudosa del panel ({r.status}) {corto}".strip()
 
 
 def una_pasada(ctx, solo_ver: bool, dias: int) -> int:

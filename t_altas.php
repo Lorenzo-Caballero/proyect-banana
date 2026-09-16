@@ -395,6 +395,15 @@ chequear('la guarda pregunta por el chat y no por el nombre',
          'preguntar por el nombre no serviría: cada vuelta trae uno distinto');
 chequear('y se acota en el tiempo, para no dejarlo sin pedir cuenta nunca más',
          str_contains($blq, 'pedido_en >'));
+/* AGREGADO EL 16/09/2026: la guarda tiene que ver TAMBIEN las 'ok'. Con el
+   fast-path un alta queda 'ok' en segundos; si la guarda solo mira
+   pendiente/procesando, el modelo re-llamando ("no me llego nada") genera
+   otro nombre unico y crea una SEGUNDA cuenta. Las 'error' quedan afuera a
+   proposito: ahi no se creo nada y reintentar es legitimo. */
+chequear("la guarda cubre las 'ok': una cuenta ya creada en este chat no se duplica",
+         (bool)preg_match("/estado IN \('pendiente', 'procesando', 'ok'\)/", $blq));
+chequear("pero las 'error' siguen afuera (ahi el reintento es legitimo)",
+         !str_contains($blq, "'pendiente', 'procesando', 'ok', 'error'"));
 chequear('el nombre se resuelve antes de encolar',
          $pEncolar !== false && $pNombre < $pEncolar);
 

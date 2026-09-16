@@ -237,6 +237,33 @@ try {
             // worker se corto entre evaluar y confirmar): se le devuelve la
             // misma, no se busca otra.
             if (!empty($q['pago_id_unico'])) {
+                /* PERO REVALIDANDO EL PAGO (16/09/2026): entre el reclamo y
+                   este momento pudo consumirlo el camino B (un operador
+                   asignandolo a mano o, antes de la guarda nueva de
+                   rl_matchear_y_acreditar, el rematch de rl_declarar_pago).
+                   Aprobar igual era acreditar el balance con una
+                   transferencia que ya pago coins: el doble cobro. Se suelta
+                   el reclamo fantasma y la solicitud queda esperando como
+                   una sin plata -- a los 15 min la marca para una persona,
+                   el circuito de siempre. */
+                $pu = $pdo->prepare("SELECT estado, recarga_id FROM pagos WHERE id_unico = ? LIMIT 1");
+                $pu->execute([(string)$q['pago_id_unico']]);
+                $pf = $pu->fetch(PDO::FETCH_ASSOC) ?: [];
+                if ($pf && ((string)$pf['estado'] === 'usado' || !empty($pf['recarga_id']))) {
+                    try {
+                        $pdo->prepare(
+                            "UPDATE peticiones_carga
+                                SET pago_id_unico = NULL,
+                                    motivo = 'su transferencia reclamada ya se uso por otro camino'
+                              WHERE request_id = ?"
+                        )->execute([$rid]);
+                    } catch (Throwable $e) {
+                        error_log('peticiones_cola: no pude soltar el reclamo fantasma: ' . $e->getMessage());
+                    }
+                    $datos[] = ['request_id' => $rid, 'decision' => 'esperar',
+                                'motivo' => 'su transferencia reclamada ya se uso por otro camino'];
+                    continue;
+                }
                 $datos[] = ['request_id' => $rid, 'decision' => 'aprobar',
                             'pago_id_unico' => (string)$q['pago_id_unico'],
                             'usuario' => (string)$q['username'],
@@ -469,6 +496,17 @@ try {
            del camino A tambien lo libera. Best-effort, post-commit. */
         if (function_exists('notif_app_bono_liberar')) {
             notif_app_bono_liberar($pdo, $usuario);
+        }
+
+        /* El aviso al multicuenta, si la huella que se aprendio en esta
+           aprobacion acaba de unir dos cuentas. Post-commit a proposito: el
+           aviso puede terminar en un curl a Telegram y adentro de la
+           transaccion sostenia los locks (ver rl_aprender_huella). */
+        if (!function_exists('vin_avisar_multicuenta') && is_file(__DIR__ . '/vinculos_lib.php')) {
+            require_once __DIR__ . '/vinculos_lib.php';
+        }
+        if (function_exists('vin_avisar_multicuenta')) {
+            vin_avisar_multicuenta($pdo, $usuario);
         }
 
         // Purchase de Meta: plata real acreditada, mismo criterio que en

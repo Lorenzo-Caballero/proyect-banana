@@ -2129,15 +2129,31 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
         $sidAlta = mb_substr(trim($sid), 0, 64);
         if ($sidAlta !== '') {
             try {
+                /* TAMBIEN LAS 'ok' (16/09/2026). La guarda cubria solo
+                   pendiente/procesando, y con el fast-path un alta queda 'ok'
+                   en segundos: el modelo re-llamando ("no me llego nada", o
+                   un segundo pedido en el mismo chat) caia mas abajo,
+                   generaba OTRO nombre -- unico por construccion, asi que
+                   nada choca -- y creaba una SEGUNDA cuenta. Las 'error'
+                   siguen afuera a proposito: ahi no se creo nada y el
+                   reintento es legitimo. */
                 $qs = $pdo->prepare(
-                    "SELECT id, usuario FROM altas
+                    "SELECT id, usuario, estado FROM altas
                       WHERE entrega_sid = ?
-                        AND estado IN ('pendiente', 'procesando')
+                        AND estado IN ('pendiente', 'procesando', 'ok')
                         AND pedido_en > (NOW() - INTERVAL 30 MINUTE)
                       ORDER BY id DESC LIMIT 1"
                 );
                 $qs->execute([$sidAlta]);
                 $prev = $qs->fetch();
+                if ($prev && (string)$prev['estado'] === 'ok') {
+                    return ['ok' => true, 'usuario' => (string)$prev['usuario'],
+                            'id' => (int)$prev['id'], 'estado' => 'ok',
+                            'mensaje' => 'La cuenta de este chat YA se creo (usuario '
+                                       . (string)$prev['usuario'] . '). NO crees otra ni '
+                                       . 'pidas otro nombre: los datos le aparecen solos '
+                                       . 'en la pantalla.'];
+                }
                 if ($prev) {
                     return ['ok' => true, 'usuario' => (string)$prev['usuario'],
                             'id' => (int)$prev['id'], 'estado' => 'en_curso',

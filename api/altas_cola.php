@@ -488,6 +488,7 @@ if ($accion === 'marcar' && $metodo === 'POST') {
        jugador sondea por el id del alta, asi que sigue esperando sin enterarse
        y al final recibe las credenciales con el nombre que SI se pudo crear. */
     $renombrada = false;
+    $eraNombreOcupado = false;
     if ($estado === 'error') {
         try {
             /* `intentos` se lee ANTES de decidir, no solo para elegir el sufijo:
@@ -502,6 +503,10 @@ if ($accion === 'marcar' && $metodo === 'POST') {
             $fila   = $q->fetch() ?: [];
             $actual = (string)($fila['usuario'] ?? '');
             $ronda  = (int)($fila['intentos'] ?? 0);
+            /* Se mide sobre el mensaje ORIGINAL y antes de mutarlo: el texto
+               que el renombre le antepone ("estaba ocupado...") matchea la
+               pista 'ocupado' y haria verdadera esta pregunta SIEMPRE. */
+            $eraNombreOcupado = alta_parece_nombre_ocupado($mensaje);
             if ($actual !== '' && alta_debe_renombrar($mensaje, $ronda)) {
                 /* Se parte del nombre SIN el sufijo numerico que podamos
                    haberle puesto antes: si no, cada reintento lo alarga
@@ -535,17 +540,28 @@ if ($accion === 'marcar' && $metodo === 'POST') {
     try {
         $pdo->prepare($sql)->execute([$mensaje, $id]);
 
-        /* SIN ESPERA cuando se renombro. El backoff (5, 20, 60 minutos) esta
+        /* SIN ESPERA cuando se renombro POR NOMBRE OCUPADO. El backoff esta
            pensado para fallas pasajeras -- sesion caida, red, panel lento --
            donde esperar es lo correcto. Pero un nombre ocupado no se destraba
            con el tiempo: ya tenemos otro nombre y hay que probarlo YA.
 
            Y el jugador esta esperando del otro lado: su navegador se rinde a
-           los 4 minutos, asi que un reintento a los 5 llega cuando ya no hay
+           los 4 minutos, asi que un reintento largo llega cuando ya no hay
            nadie mirando. Con esto el bot lo toma en su proxima vuelta, que es
            cada 3 segundos, y el alta se resuelve mientras el jugador sigue en
-           la pantalla de "creando tu cuenta". */
-        if ($renombrada) {
+           la pantalla de "creando tu cuenta".
+
+           `$eraNombreOcupado` Y NO `$renombrada` A SECAS (16/09/2026): desde
+           que alta_debe_renombrar() renombra tras dos fallos DIGA LO QUE
+           DIGA el mensaje, $renombrada es verdadera para CUALQUIER error del
+           segundo en adelante -- y saltear la espera aca anulaba el backoff
+           entero justo en las fallas para las que existe: un episodio de
+           WAF o de sesion quemaba los 10 intentos en ráfaga (minutos, no
+           horas) y el alta moria en error definitivo mientras hostigaba al
+           panel caido. El renombre "a ciegas" del segundo fallo conserva su
+           espera; el salto es solo para el diagnostico de nombre ocupado,
+           que es al que le urge. */
+        if ($renombrada && $eraNombreOcupado) {
             $pdo->prepare("UPDATE altas SET proximo_intento_en = NULL
                             WHERE id = ? AND estado = 'pendiente'")->execute([$id]);
         }
