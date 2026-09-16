@@ -223,9 +223,36 @@ conversión perdida: el jugador ya se fue.
 
 ## 4. El parche en caliente que está corriendo (la curita)
 
-**Hay un parche aplicado AHORA MISMO en producción**, sobre `/app` dentro del
-contenedor `ganamos-bot-creador`. No toca este repo: se aplica por `docker cp`,
-que fue la vía acordada para no pisar código ajeno.
+> # ✅ RESUELTO — 15/09/2026. Esta sección es historia.
+>
+> **Fauno incorporó el parche a su repo** en el commit `0aad330` ("El deposito
+> decide por el cuerpo, el challenge del WAF se reintenta, y el lote baja a 3").
+> Ya no hay nada aplicado en caliente.
+>
+> **Verificado el 16/09/2026 de la única forma que no admite duda** — comparando
+> el archivo que corre contra el del repo:
+>
+> ```
+> docker exec ganamos-bot-creador md5sum /app/alta_api.py
+>   3f340b492f50b0228675662a9b95019f
+> md5sum ~/Bot-python/alta_api.py
+>   3f340b492f50b0228675662a9b95019f     ← idénticos
+> ```
+>
+> El contenedor corre **exactamente** el código del repo, sin nada encima. Los
+> comentarios centinela (`# [goldpaw] parche cuerpo-del-deposito`) siguen ahí
+> porque Fauno los conservó al integrarlo, no porque haya un parche vivo.
+>
+> **Consecuencia práctica:** ya no importa que el contenedor se recree. Era lo
+> único frágil de todo esto y dejó de serlo. El cron guardián que lo vigilaba se
+> retiró el 16/09 (ver más abajo).
+>
+> Lo que sigue se deja escrito porque explica **por qué** el bot decide por el
+> cuerpo y no por el código HTTP, que es una decisión que conviene no revertir.
+
+**Había un parche aplicado en producción**, sobre `/app` dentro del contenedor
+`ganamos-bot-creador`. No tocaba este repo: se aplicaba por `docker cp`, que fue
+la vía acordada para no pisar código ajeno.
 
 Vive en GOLDPAW, en `scripts/parche-deposito-cuerpo.py`, y hace **exactamente
 los tres cambios de la sección 5**. Es idempotente (se puede correr mil veces) y
