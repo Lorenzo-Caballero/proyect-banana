@@ -219,6 +219,71 @@ function alta_debe_renombrar(string $mensaje, int $intentos): bool
     return alta_nombre_ocupado_sospecha($mensaje) && $intentos >= 2;
 }
 
+/**
+ * El nombre del jugador, llevado al alfabeto que el panel acepta. SIN prefijo
+ * ni sufijo: solo lo justo para que alta_validar() no lo rechace.
+ *
+ * Mismo alfabeto que exige alta_validar(): letras, numeros, punto, guion,
+ * guion bajo. Se sanea ACA y no en el frontend porque de esto depende que el
+ * alta entre a la cola, y hay tres puertas distintas (landing, chat, CRM).
+ *
+ * Tildes/enies ANTES del preg_replace ASCII: "Maria" con acento, sin esto,
+ * perdia la letra entera (preg_replace sin flag Unicode corta bytes multibyte
+ * a lo bruto) -- iconv translitera a lo mas parecido en ASCII y recien ahi se
+ * filtra lo que no entra en el alfabeto del panel.
+ *
+ * ESTA SEPARADA DE alta_usuario_disponible() porque son dos preguntas
+ * distintas, y hasta el 16/09/2026 estaban pegadas: "como se escribe este
+ * nombre" la contesta esta funcion; "que nombre LIBRE le doy" la otra. La
+ * landing quiere las dos --nadie eligio nada ahi--, pero el chatbot, donde el
+ * jugador ESCRIBIO el nombre que quiere, quiere solo la primera mientras ese
+ * nombre este libre.
+ */
+function alta_nombre_sanear(string $nombreCrudo): string
+{
+    $translit = @iconv('UTF-8', 'ASCII//TRANSLIT', $nombreCrudo);
+    $base = preg_replace('/[^a-zA-Z0-9._-]/', '', $translit !== false ? $translit : $nombreCrudo);
+    $base = mb_substr((string)$base, 0, 64);   // el tope que pide alta_validar()
+    // 4 y no 3: alta_validar() acepta desde 3, pero el PANEL rechaza los muy
+    // cortos y ahi el alta muere recien cuando el bot llena el formulario --
+    // con el jugador ya esperando. Se alarga aca, antes de encolar nada.
+    if (mb_strlen($base) < 4) {
+        $base = 'jugador' . $base;
+    }
+    return $base;
+}
+
+/**
+ * ¿Ese username esta tomado de nuestro lado?
+ *
+ * Es EXACTAMENTE la condicion que hace que alta_encolar() conteste 409, y por
+ * eso vive en una funcion sola: existe en `usuarios` (ya es jugador) o hay un
+ * pedido vivo en `altas`. Las filas en 'error' NO cuentan -- ese nombre quedo
+ * libre y alta_encolar() reutiliza la fila.
+ *
+ * Estaba escrita dos veces (aca dentro de alta_usuario_disponible y en el
+ * chatbot), y si las dos copias se separan pasa lo peor de los dos mundos: uno
+ * cree que el nombre esta libre, encola, y el otro le contesta 409 al jugador.
+ *
+ * OJO CON LO QUE **NO** CONTESTA. El username es unico en TODA la plataforma,
+ * entre todos los agentes, y aca solo se ve nuestro espejo. Un "no esta
+ * tomado" no garantiza que el panel lo acepte -- de eso se ocupa el renombre
+ * por mensaje del bot (alta_debe_renombrar). Sirve para afirmar "seguro que
+ * esta ocupado", nunca para afirmar "seguro que esta libre".
+ */
+function alta_nombre_tomado(PDO $pdo, string $usuario): bool
+{
+    // Un solo viaje a la base por nombre.
+    $st = $pdo->prepare(
+        "SELECT
+           (SELECT 1 FROM usuarios WHERE username = ? LIMIT 1) AS en_usuarios,
+           (SELECT 1 FROM altas WHERE usuario = ? AND estado <> 'error' LIMIT 1) AS en_altas"
+    );
+    $st->execute([$usuario, $usuario]);
+    $r = $st->fetch();
+    return !empty($r['en_usuarios']) || !empty($r['en_altas']);
+}
+
 /** Prefijo de los usuarios que genera la landing.
  *
  *  "holaJuan847" en vez de "Juan427". El prefijo hace de espacio de nombres
@@ -232,23 +297,11 @@ const ALTA_PREFIJO = 'hola';
 
 function alta_usuario_disponible(PDO $pdo, string $nombreCrudo, int $ronda = 0): string
 {
-    // Mismo alfabeto que exige alta_validar(): letras, números, punto,
-    // guion, guion bajo. Se sanea ACA (no se confía en que el frontend ya
-    // lo haya hecho) porque esta función también decide el username final.
-    //
-    // Tildes/eñes ANTES del preg_replace ASCII: "María" sin esto perdía la
-    // "í" entera (preg_replace sin flag Unicode corta bytes multibyte a lo
-    // bruto) -- iconv translitera a lo más parecido en ASCII ("Maria") y
-    // recién ahí se filtra lo que no entra en el alfabeto del panel.
-    $translit = @iconv('UTF-8', 'ASCII//TRANSLIT', $nombreCrudo);
-    $base = preg_replace('/[^a-zA-Z0-9._-]/', '', $translit !== false ? $translit : $nombreCrudo);
-    $base = mb_substr((string)$base, 0, 40); // deja lugar al sufijo sin pasar de 64
-    // 4 y no 3: alta_validar() acepta desde 3, pero el PANEL rechaza los muy
-    // cortos y ahi el alta muere recien cuando el bot llena el formulario --
-    // con el jugador ya esperando. Se alarga aca, antes de encolar nada.
-    if (mb_strlen($base) < 4) {
-        $base = 'jugador' . $base;
-    }
+    // El saneado vive en alta_nombre_sanear(): mismo alfabeto que exige
+    // alta_validar(), tildes transliteradas y los nombres muy cortos estirados.
+    // Aca se recorta a 40 --y no a los 64 de alta_validar()-- para que el
+    // prefijo y el sufijo numerico entren sin pasarse del tope.
+    $base = mb_substr(alta_nombre_sanear($nombreCrudo), 0, 40);
 
     /* El prefijo va SIEMPRE, y el sufijo numerico TAMBIEN -- desde el primer
        nombre, no solo al reintentar.
@@ -281,18 +334,7 @@ function alta_usuario_disponible(PDO $pdo, string $nombreCrudo, int $ronda = 0):
             $candidato = $base . random_int(1000, 9999);  // holaJuan8471
         }
 
-        // Un solo viaje a la base por candidato: existe en `usuarios` O hay
-        // un pedido no fallido en `altas` con ese nombre. 'error' no cuenta
-        // como ocupado -- ver alta_encolar(), ese estado se puede reintentar
-        // con el mismo usuario.
-        $st = $pdo->prepare(
-            "SELECT
-               (SELECT 1 FROM usuarios WHERE username = ? LIMIT 1) AS en_usuarios,
-               (SELECT 1 FROM altas WHERE usuario = ? AND estado <> 'error' LIMIT 1) AS en_altas"
-        );
-        $st->execute([$candidato, $candidato]);
-        $r = $st->fetch();
-        if (!$r['en_usuarios'] && !$r['en_altas']) {
+        if (!alta_nombre_tomado($pdo, $candidato)) {
             return $candidato;
         }
     }
