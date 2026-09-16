@@ -48,12 +48,17 @@ function titulo($t) { echo "\n\033[1m" . $t . "\033[0m\n" . str_repeat('-', 78) 
    significaria que el dia que alguien lo cambie, el diagnostico empiece a
    mentir sin que nada falle. */
 $ZOMBIE = 15;
+$backoffTxt = ['5', '20', '60'];
 try {
     $srcCola = @file_get_contents($API . '/altas_cola.php');
     if ($srcCola && preg_match('/MINUTOS_ZOMBIE\s*=\s*(\d+)/', $srcCola, $m)) {
         $ZOMBIE = (int)$m[1];
     }
+    if ($srcCola && preg_match('/MINUTOS_BACKOFF\s*=\s*\[([0-9,\s]+)\]/', $srcCola, $m)) {
+        $backoffTxt = array_map('trim', explode(',', $m[1]));
+    }
 } catch (Throwable $e) {}
+define('MINUTOS_BACKOFF_TXT', $backoffTxt);
 function corto($s, $n = 58) { $s = trim((string)$s); return $s === '' ? '' : mb_substr($s, 0, $n); }
 
 /* Segundos a algo legible. En segundos hasta el minuto porque es la escala en
@@ -109,40 +114,87 @@ if ($visto === '') {
 
 // ===========================================================================
 titulo('2. Qué hay en la cola AHORA');
+/* ESPERAR EL BACKOFF NO ES ESTAR TRABADA, y confundirlos manda a buscar el
+   problema donde no está. Esta sección lo diagnosticó mal dos veces (16/09/2026)
+   antes de quedar así: la segunda vez dijo "el bot no está sondeando" con el bot
+   contestando hacía 16 segundos.
+
+   Una pendiente vieja puede ser DOS cosas opuestas:
+
+     con `proximo_intento_en` en el futuro  -> falló y está cumpliendo su espera
+                                               antes del próximo intento. Es el
+                                               diseño funcionando.
+     sin fecha de reintento, y vieja        -> nadie la tomó. ESO sí es que el
+                                               bot no está mirando la cola.
+
+   Y una 'procesando' vieja es otra cosa más: un zombie, que el rescate devuelve
+   a la cola a los MINUTOS_ZOMBIE. Ese rescate corre DENTRO del sondeo del bot,
+   así que si pasó el plazo y sigue ahí, el bot no está sondeando.
+
+   Tres estados, tres causas, tres arreglos. Por eso se cuentan por separado. */
 $st = $pdo->query(
-    "SELECT estado, COUNT(*) n,
-            MAX(TIMESTAMPDIFF(MINUTE, pedido_en, NOW())) mas_vieja
-       FROM altas
-      WHERE estado IN ('pendiente', 'procesando')
-      GROUP BY estado"
+    "SELECT
+       SUM(estado = 'procesando')                                        AS proc,
+       MAX(CASE WHEN estado = 'procesando'
+                THEN TIMESTAMPDIFF(MINUTE, COALESCE(tomado_en, pedido_en), NOW()) END) AS proc_min,
+       SUM(estado = 'pendiente' AND proximo_intento_en > NOW())          AS esperando,
+       MIN(CASE WHEN estado = 'pendiente' AND proximo_intento_en > NOW()
+                THEN proximo_intento_en END)                             AS proximo,
+       MAX(CASE WHEN estado = 'pendiente' AND proximo_intento_en > NOW()
+                THEN TIMESTAMPDIFF(MINUTE, NOW(), proximo_intento_en) END) AS espera_max,
+       SUM(estado = 'pendiente' AND (proximo_intento_en IS NULL OR proximo_intento_en <= NOW())) AS listas,
+       MAX(CASE WHEN estado = 'pendiente' AND (proximo_intento_en IS NULL OR proximo_intento_en <= NOW())
+                THEN TIMESTAMPDIFF(MINUTE, pedido_en, NOW()) END)        AS listas_min
+     FROM altas
+     WHERE estado IN ('pendiente', 'procesando') AND password IS NOT NULL"
 );
-$enCola = 0; $masVieja = 0;
-foreach ($st as $f) {
-    $enCola += (int)$f['n'];
-    $masVieja = max($masVieja, (int)$f['mas_vieja']);
-    printf("  %-12s %3d   la más vieja hace %d min\n", $f['estado'], $f['n'], (int)$f['mas_vieja']);
-}
+$c = $st->fetch() ?: [];
+$proc      = (int)($c['proc'] ?? 0);
+$esperando = (int)($c['esperando'] ?? 0);
+$listas    = (int)($c['listas'] ?? 0);
+$enCola    = $proc + $esperando + $listas;
+
+printf("  en el panel ahora mismo      %3d%s\n", $proc,
+       $proc ? '   (hace ' . (int)$c['proc_min'] . ' min)' : '');
+printf("  esperando su reintento       %3d%s\n", $esperando,
+       $esperando ? '   (el próximo, ' . substr((string)$c['proximo'], 11, 5)
+                  . '; el que más espera, ' . (int)$c['espera_max'] . ' min)' : '');
+printf("  listas para que las tome     %3d%s\n", $listas,
+       $listas ? '   (la más vieja hace ' . (int)$c['listas_min'] . ' min)' : '');
+
 if ($enCola === 0) {
-    echo "  Vacía: no hay ningún alta esperando.\n";
+    echo "\n  Vacía: no hay ningún alta esperando.\n";
     echo "\n  OJO CON ESTE CASO. Si el jugador está esperando y la cola está vacía,\n";
     echo "  el alta NO se encoló: el problema está ANTES, en el chatbot, y esto\n";
     echo "  no lo va a mostrar. Buscá su nombre en la sección 3; si tampoco está,\n";
     echo "  la herramienta crear_cuenta nunca llegó a correr.\n";
-} elseif ($masVieja > $ZOMBIE) {
-    printf("\n  \033[1m>> Trabada de verdad:\033[0m pasó de los %d min del rescate automático.\n", $ZOMBIE);
-    echo "  Ese rescate corre DENTRO del sondeo del bot, así que si no se disparó\n";
-    echo "  es porque el bot no está sondeando. Volvé a la sección 1.\n";
-} elseif ($masVieja > 2) {
-    /* Entre 2 y ZOMBIE minutos NO hay nada roto todavía: el sistema devuelve
-       sola a la cola cualquier alta colgada en 'procesando' y la reintenta
-       hasta 10 veces. Decir "trabada" acá --como hacía la primera versión de
-       este script-- manda a apagar incendios que se apagan solos. Lo que sí
-       importa es que el jugador está esperando y el chat le prometió minutos. */
-    printf("\n  Todavía dentro de lo normal: a los %d min vuelve sola a la cola y\n", $ZOMBIE);
-    echo "  se reintenta (hasta 10 veces). El motivo del intento fallido está en\n";
-    echo "  la sección 3.\n";
-    echo "  Pero el jugador está esperando desde antes: si no puede esperar,\n";
-    echo "  se destraba a mano desde la cola de altas.\n";
+}
+/* El orden de los diagnósticos va de lo más grave a lo más benigno: si el bot
+   no toma nada, lo demás es consecuencia y no hace falta leerlo. */
+if ($listas > 0 && (int)$c['listas_min'] > 2) {
+    printf("\n  \033[1m>> HAY ALTAS LISTAS QUE NADIE TOMA\033[0m (la más vieja, %d min).\n",
+           (int)$c['listas_min']);
+    echo "  El bot sondea cada pocos segundos: esto solo pasa si no está mirando\n";
+    echo "  la cola. Volvé a la sección 1 y mirá los logs del contenedor.\n";
+}
+if ($proc > 0 && (int)$c['proc_min'] > $ZOMBIE) {
+    printf("\n  \033[1m>> UNA QUEDÓ COLGADA\033[0m en el panel hace %d min, más que los %d del\n",
+           (int)$c['proc_min'], $ZOMBIE);
+    echo "  rescate automático. Ese rescate corre DENTRO del sondeo del bot, así\n";
+    echo "  que si no se disparó es porque el bot no está sondeando.\n";
+}
+if ($esperando > 0) {
+    /* ESTO NO ES UNA FALLA: es el backoff haciendo lo suyo. Pero sí es la
+       respuesta a "el jugador dice que no le llega": le va a llegar, y cuándo. */
+    printf("\n  %d esperando reintento NO es una falla: fallaron una vez y el sistema\n", $esperando);
+    printf("  espacia los intentos a propósito (%s min) para no pegarle al WAF\n",
+           implode(', ', MINUTOS_BACKOFF_TXT));
+    echo "  todavía caliente. El motivo de cada una está en la sección 3.\n";
+    if ((int)$c['espera_max'] > 20) {
+        printf("  \033[1mPero una espera %d min:\033[0m para un jugador parado en el chat eso es\n",
+               (int)$c['espera_max']);
+        echo "  no llegar nunca. Si está esperando, conviene crearla a mano en el panel.\n";
+    }
 }
 
 // ===========================================================================
