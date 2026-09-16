@@ -251,10 +251,16 @@ Marca lo que ya aplicó con dos comentarios centinela:
 `scripts/arreglar-bot-altas.sh` — que es lo que se corre cuando las altas se
 traban — hace justamente `--force-recreate`.
 
-Hay un cron guardián (`scripts/vigilar-parche-deposito.sh`, cada 5 min) que
-detecta que el centinela no está y lo vuelve a poner. Pero eso es un parche del
-parche: entre que el contenedor se recrea y que el cron pasa, hay una ventana en
-la que **se vuelven a perder cargas en silencio**.
+Hubo un cron guardián (`scripts/vigilar-parche-deposito.sh`, cada 5 min) que
+detectaba que el centinela no estaba y lo volvía a poner. Era un parche del
+parche: entre que el contenedor se recreaba y que el cron pasaba, quedaba una
+ventana en la que **se volvían a perder cargas en silencio**.
+
+> **RETIRADO el 16/09/2026** (cron y script). Dejó de hacer falta cuando el
+> arreglo de verdad entró en el bot (commit `0aad330`: el depósito decide por el
+> CUERPO de la respuesta, no por el código HTTP). Peor todavía, el guardián no
+> reconocía ese arreglo y **reiniciaba el bot cada 5 minutos** creyendo que el
+> parche faltaba. Si algo de este documento manda a restaurarlo, no lo hagas.
 
 ### Resultado medido de la curita
 

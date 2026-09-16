@@ -2004,6 +2004,51 @@ function rl_matchear_y_acreditar(PDO $pdo, string $idUnico, float $monto): array
         $pg->execute([$idUnico]);
         $pago = $pg->fetch() ?: [];
 
+        /* ---- CAPA 0: EL NUMERO DE OPERACION, QUE NO ADMITE EMPATE ----
+           El jugador declara el numero de operacion de su transferencia (por
+           texto con `informar_transferencia`, o leido de la foto por vision) y
+           se guarda en `recargas.trx_declarada`. Estaba guardado desde la
+           migracion 45 y NO se usaba para casar: lo que desempataba era el
+           titular, con tolerancia a erratas.
+
+           Ahora se usa, y va PRIMERO, porque es la unica señal que no admite
+           interpretacion: dos personas pueden llamarse igual y transferir el
+           mismo monto el mismo minuto, pero no comparten el numero de
+           operacion del banco.
+
+           POR QUE RECIEN AHORA: hacia falta saber que el dato existe de los dos
+           lados. Medido el 16/09/2026 sobre los 81 pagos de 30 dias, el 100%
+           trae `nro_transaccion`. Antes esto era una idea; ahora es un cruce.
+
+           Se exigen 6 caracteres: los numeros cortos los tipea cualquiera y
+           casarian recargas de desconocidos. Y se compara contra el monto
+           tambien -- si el numero coincide pero el importe no, algo esta mal y
+           es mejor caer a las capas de abajo que acreditar a ciegas. */
+        $trx = trim((string)($pago['nro_transaccion'] ?? ''));
+        $porTrx = null;
+        if (mb_strlen($trx) >= 6) {
+            try {
+                $qt = $pdo->prepare(
+                    "SELECT * FROM recargas
+                      WHERE estado = 'pendiente'
+                        AND trx_declarada IS NOT NULL
+                        AND TRIM(trx_declarada) = ?
+                        AND ROUND(monto_pedido*100) = ?
+                      ORDER BY creada_en
+                      LIMIT 2 FOR UPDATE"
+                );
+                $qt->execute([$trx, $centTarget]);
+                $cT = $qt->fetchAll();
+                /* Si dos recargas declararon el MISMO numero, no se elige: son
+                   dos personas reclamando la misma transferencia, y eso lo mira
+                   un operador. Acreditar a la primera seria premiar al que
+                   copio el comprobante de otro. */
+                if (count($cT) === 1) { $porTrx = $cT[0]; }
+            } catch (Throwable $e) {
+                // Sin la migracion 45 no hay trx_declarada: sigue el camino viejo.
+            }
+        }
+
         // Capa 1: monto EXACTO (centavos unicos). Es el camino normal.
         $q = $pdo->prepare(
             "SELECT * FROM recargas
@@ -2016,7 +2061,15 @@ function rl_matchear_y_acreditar(PDO $pdo, string $idUnico, float $monto): array
         $recarga = null;
         $conf = '';
         $confianza = null;
-        if (count($cands) === 1) {
+
+        /* La Capa 0 gana sobre todo lo de abajo: el numero de operacion es del
+           banco, no una coincidencia de monto. */
+        if ($porTrx) {
+            $recarga   = $porTrx;
+            $confianza = 'alta';
+            $conf = 'numero de operacion declarado: ' . $trx;
+        }
+        elseif (count($cands) === 1) {
             $recarga = $cands[0];
             $conf = 'monto exacto';
             $confianza = 'alta';

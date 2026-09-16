@@ -319,10 +319,15 @@ de los puntos 1 y 2. Dejó respaldos:
 ```
 
 **Ese parche se pierde si el contenedor se recrea** (sobrevive un `restart`, no
-un `docker rm` + `run`). Hay un cron guardián
-(`scripts/vigilar-parche-deposito.sh`) que lo vuelve a poner, pero eso es un
-parche del parche: mientras tanto, cualquier recreación deja una ventana en la
-que se vuelven a perder cargas.
+un `docker rm` + `run`). Hubo un cron guardián
+(`scripts/vigilar-parche-deposito.sh`) que lo volvía a poner, pero era un parche
+del parche: mientras tanto, cualquier recreación dejaba una ventana en la que se
+volvían a perder cargas.
+
+> **RETIRADO el 16/09/2026**, cron y script. El arreglo de verdad ya está en el
+> bot (`0aad330`), así que el parche en caliente quedó obsoleto -- y el guardián,
+> que no sabía reconocer ese arreglo, estaba **reiniciando el bot cada 5
+> minutos** creyendo que faltaba.
 
 Cuando esté el arreglo de verdad en el repo, se despliega normal y el parche
 queda sobreescrito sin problema — es idempotente y detecta si ya está aplicado.

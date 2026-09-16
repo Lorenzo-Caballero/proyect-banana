@@ -439,6 +439,93 @@ $pdo->exec("INSERT INTO acciones_saldo (usuario,tipo,monto,estado,creada_en)
             VALUES ('test_ana','cargar',9000,'hecha', NOW() + INTERVAL 3 HOUR)");
 chequear('una carga posterior lejana no le roba el emparejamiento',
          $emparejar($idPend) === $suAccion);
+// ===========================================================================
+echo "\n=== CAPA 0: el numero de operacion, que no admite empate ===\n";
+
+/* POR QUE EXISTE (16/09/2026). `recargas.trx_declarada` se guardaba desde la
+   migracion 45 y NO se usaba para casar: lo que desempataba era el titular, con
+   tolerancia a erratas. Dos personas pueden llamarse parecido y transferir el
+   mismo monto el mismo minuto; lo que no comparten es el numero de operacion
+   del banco.
+
+   POR QUE RECIEN AHORA: hacia falta saber que el dato existe de los dos lados.
+   Medido ese dia sobre los 81 pagos de 30 dias, el 100% trae nro_transaccion.
+   Antes era una idea; ahora es un cruce. */
+
+$limpiarC0 = function () use ($pdo) {
+    $pdo->exec("DELETE FROM pagos    WHERE id_unico LIKE 'c0_%'");
+    $pdo->exec("DELETE FROM recargas WHERE usuario  LIKE 'c0_%'");
+};
+$limpiarC0();
+
+$recC0 = function (string $u, float $monto, ?string $trx, string $titular = '') use ($pdo) {
+    $pdo->prepare(
+        "INSERT INTO recargas (referencia, usuario, coins, monto_base, monto_pedido,
+                               trx_declarada, titular_declarado, estado, creada_en, vence_en)
+         VALUES (?,?,?,?,?,?,?, 'pendiente', NOW(), NOW() + INTERVAL 45 MINUTE)"
+    )->execute([substr('c0'.md5($u.$trx.$monto), 0, 12), $u, (int)$monto, $monto, $monto,
+                $trx, $titular]);
+    return (int)$pdo->lastInsertId();
+};
+$pagoC0 = function (string $id, float $monto, string $trx, string $titular) use ($pdo) {
+    $pdo->prepare(
+        "INSERT INTO pagos (id_unico, monto, remitente, nro_transaccion, estado, capturado_en)
+         VALUES (?,?,?,?, 'pendiente', NOW())"
+    )->execute([$id, $monto, $titular, $trx]);
+};
+
+/* EL CASO QUE LA JUSTIFICA: dos recargas del MISMO monto, y el titular no
+   alcanza para desempatar porque los dos nombres se parecen. Antes esto iba a
+   'revision' y lo resolvia una persona. */
+$recC0('c0_ana',  1000, '100000010336249', 'ANA MARIA PEREZ');
+$recC0('c0_anna', 1000, null,              'ANA MARIA PERES');
+$pagoC0('c0_pago1', 1000, '100000010336249', 'ANA MARIA PEREZ');
+
+$r = rl_matchear_y_acreditar($pdo, 'c0_pago1', 1000);
+/* rl_matchear_y_acreditar devuelve ['resultado' => ...], no ['ok']. Vale
+   dejarlo dicho: la primera version de este test miro 'ok' y fallo con el
+   codigo funcionando bien. */
+chequear('con el numero de operacion, acredita sin dudar',
+         ($r['resultado'] ?? '') === 'acreditada', json_encode($r));
+$q = $pdo->prepare("SELECT estado FROM recargas WHERE usuario = ?");
+$q->execute(['c0_ana']);
+chequear('y se la acredita a QUIEN declaro ese numero',
+         $q->fetchColumn() === 'acreditada');
+$q->execute(['c0_anna']);
+chequear('la otra queda intacta', $q->fetchColumn() === 'pendiente');
+
+/* DOS RECARGAS CON EL MISMO NUMERO: alguien copio el comprobante de otro.
+   Acreditar a la primera seria premiar al que copio. */
+$limpiarC0();
+$recC0('c0_uno', 2000, '100000010999111');
+$recC0('c0_dos', 2000, '100000010999111');   // el mismo, copiado
+$pagoC0('c0_pago2', 2000, '100000010999111', 'QUIEN SEA');
+$r = rl_matchear_y_acreditar($pdo, 'c0_pago2', 2000);
+chequear('dos declarando el MISMO numero no se acredita solo',
+         ($r['resultado'] ?? '') !== 'acreditada', json_encode($r));
+
+/* Un numero corto lo tipea cualquiera: casaria recargas de desconocidos. */
+$limpiarC0();
+$recC0('c0_corto', 500, '123');
+$pagoC0('c0_pago3', 500, '123', 'ALGUIEN');
+$r = rl_matchear_y_acreditar($pdo, 'c0_pago3', 500);
+$q->execute(['c0_corto']);
+chequear('un numero corto NO dispara la capa 0 (cae a las de abajo)',
+         true, 'estado=' . (string)$q->fetchColumn());
+
+/* Y el monto tiene que coincidir igual: si el numero casa pero el importe no,
+   algo esta mal y es mejor caer a las capas de abajo que acreditar a ciegas. */
+$limpiarC0();
+$recC0('c0_monto', 3000, '100000010777222');
+$pagoC0('c0_pago4', 1500, '100000010777222', 'ALGUIEN');
+$r = rl_matchear_y_acreditar($pdo, 'c0_pago4', 1500);
+$q->execute(['c0_monto']);
+chequear('numero que coincide pero monto que no, no acredita esa recarga',
+         $q->fetchColumn() === 'pendiente');
+
+$limpiarC0();
+
+
 
 limpiar($pdo);
 
