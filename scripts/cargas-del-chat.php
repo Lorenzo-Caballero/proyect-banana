@@ -191,4 +191,78 @@ foreach ($st as $f) {
 }
 if (!$hay) { echo "  Ninguna esperando pago.\n"; }
 
+// ===========================================================================
+titulo('6. Las vencidas, POR JUGADOR (el número que importa)');
+/* "38 vencidas" no son 38 personas que se fueron: el que pide, se distrae y
+   vuelve a pedir cuenta tres veces. Medido el 16/09/2026, holaceleste923 tenía
+   tres pedidos de $2.000 en una hora y UNA sola transferencia. Contar filas
+   infla el problema y esconde el único dato que decide si hay algo que
+   arreglar: de los que pidieron y se les venció, ¿cuántos terminaron cargando
+   igual?
+
+   "Cargó" se pregunta con publicidad_sql_cargas(), que es LA definición única
+   de una carga en todo el CRM (ver CLAUDE.md). Es a propósito: el que abandona
+   el chat y paga con el botón «Depósitos» de adentro del juego NO deja fila en
+   `recargas`, y mirando solo esa tabla figuraría como perdido cuando en
+   realidad cargó por la otra puerta. */
+require_once $API . '/publicidad_lib.php';
+
+$st = $pdo->prepare(
+    "SELECT usuario, COUNT(*) pedidos, SUM(monto_pedido) total,
+            MIN(creada_en) primera, MAX(monto_pedido) mayor
+       FROM recargas
+      WHERE estado = 'vencida' AND creada_en >= ?
+      GROUP BY usuario
+      ORDER BY total DESC"
+);
+$st->execute([$desde]);
+$venc = $st->fetchAll();
+
+/* Se pregunta jugador por jugador y no de una: son unas pocas decenas de filas
+   en un script de diagnóstico, y una consulta por jugador se lee de un vistazo. */
+$qCargo = $pdo->prepare(
+    "SELECT COUNT(*) n, COALESCE(SUM(c.monto), 0) m
+       FROM (" . publicidad_sql_cargas() . ") c
+      WHERE c.usuario = ? AND c.cuando >= ?"
+);
+
+$recuperados = []; $perdidos = [];
+foreach ($venc as $v) {
+    /* Desde SU primer pedido vencido, no desde el inicio del período: una carga
+       ANTERIOR no dice nada sobre el pedido que se le venció después. */
+    $qCargo->execute([$v['usuario'], $v['primera']]);
+    $c = $qCargo->fetch();
+    $v['cargo_n'] = (int)$c['n'];
+    $v['cargo_m'] = (float)$c['m'];
+    if ($v['cargo_n'] > 0) { $recuperados[] = $v; } else { $perdidos[] = $v; }
+}
+
+printf("  %d pedidos vencidos = %d jugador(es) distinto(s).\n\n",
+       (int)array_sum(array_column($venc, 'pedidos')), count($venc));
+
+printf("  \033[1mSe les venció pero cargaron igual: %d\033[0m\n", count($recuperados));
+foreach ($recuperados as $v) {
+    printf("    %-22s %d vencido(s), después cargó %d vez/veces  $%s\n",
+           $v['usuario'], (int)$v['pedidos'], $v['cargo_n'], plata($v['cargo_m']));
+}
+if (!$recuperados) { echo "    (ninguno)\n"; }
+
+printf("\n  \033[1mPidieron y NUNCA cargaron: %d\033[0m\n", count($perdidos));
+$plataPerdida = 0;
+foreach ($perdidos as $v) {
+    $plataPerdida += (float)$v['mayor'];
+    printf("    %-22s %d pedido(s), el mayor de $%s  (primero: %s)\n",
+           $v['usuario'], (int)$v['pedidos'], plata($v['mayor']),
+           substr((string)$v['primera'], 5, 11));
+}
+if ($perdidos) {
+    printf("\n  Intención declarada y no concretada: $%s.\n", plata($plataPerdida));
+    echo "  Se suma el pedido MAYOR de cada uno, no todos: pedir tres veces\n";
+    echo "  \$2.000 es una intención de \$2.000, no de \$6.000.\n";
+    echo "\n  Esto NO es plata perdida por una falla -- el que se arrepintió\n";
+    echo "  también está acá. Es el techo de lo que se podría recuperar.\n";
+} else {
+    echo "    (ninguno: a todos los que se les venció, cargaron igual)\n";
+}
+
 echo "\n";
