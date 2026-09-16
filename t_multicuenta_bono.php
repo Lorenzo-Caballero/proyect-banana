@@ -141,10 +141,15 @@ ok($avisos($D) === 0, 'a D (sin vínculos) no se le dice nada');
 vin_avisar_multicuenta($pdo, $C);
 ok($avisos($C) === 0, 'a C (solo celular) tampoco: no es una acusación para familias');
 
-// ---- 5. el camino real: la huella recién aprendida dispara el aviso ---------
-echo "5. rl_aprender_huella dispara el aviso solo\n";
+// ---- 5. el camino real: la acreditación aprende la huella y avisa -----------
+echo "5. El camino real: huella en la transacción, aviso post-commit\n";
+// La huella se aprende ADENTRO de la transacción de acreditar; el aviso NO
+// puede salir ahí (tg_evento es un curl de hasta 8s sosteniendo los locks).
+// Sale en rl_notificar_acreditada, que todos los caminos llaman post-commit.
 rl_aprender_huella($pdo, $E, ['cuit' => $CUIT, 'cbu_origen' => '', 'remitente' => 'TITULAR TEST']);
-ok($avisos($E) === 1, 'E paga desde el banco de A y el aviso le sale al toque');
+ok($avisos($E) === 0, 'aprender la huella sola NO avisa (corre dentro de la transacción)');
+rl_notificar_acreditada($pdo, ['usuario' => $E, 'coins' => 100, 'referencia' => 'test', 'id' => 0]);
+ok($avisos($E) === 1, 'el aviso sale con la notificación post-commit de la carga');
 
 // ---- limpiar -----------------------------------------------------------------
 $limpiar();

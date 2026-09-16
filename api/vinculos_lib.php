@@ -577,10 +577,16 @@ function vin_avisar_multicuenta(PDO $pdo, string $usuario): void
 
         // Y que el operador se entere de que se avisó (con quién matchea lo
         // ve en la ficha). Dedupe por usuario: una línea por cuenta avisada.
+        //
+        // NUNCA con una transacción abierta: tg_evento es un curl sincrónico
+        // de hasta 8 segundos, y sostener los locks del caller mientras se
+        // habla con Telegram es un cuelgue servido. Los callers correctos
+        // llaman post-commit; si alguno futuro llega en transacción, pierde
+        // solo la línea de Telegram (el push y el chat salen igual).
         if (!function_exists('tg_evento') && is_file(__DIR__ . '/telegram_lib.php')) {
             require_once __DIR__ . '/telegram_lib.php';
         }
-        if (function_exists('tg_evento')) {
+        if (function_exists('tg_evento') && !$pdo->inTransaction()) {
             tg_evento($pdo, 'salud', '👥 Multicuenta avisada', [
                 'Jugador'   => $usuario,
                 'Vinculada' => implode(', ', array_slice($grupo, 0, 5)),

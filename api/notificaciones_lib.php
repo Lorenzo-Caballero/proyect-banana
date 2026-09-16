@@ -515,12 +515,22 @@ if (!function_exists('notif_crear')) {
 
         if ($acreditado) {
             notif_app_bono_entregar($pdo, $usuario, $fichas);
-            if (is_file(__DIR__ . '/telegram_lib.php')) { require_once __DIR__ . '/telegram_lib.php'; }
-            if (function_exists('tg_evento')) {
-                tg_evento($pdo, 'app', '🎁 Bono de la app liberado', [
-                    'Jugador' => $usuario,
-                    'Bono'    => number_format($fichas, 0, ',', '.') . ' fichas (hizo su primera carga)',
-                ]);
+            /* Telegram SOLO sin transaccion abierta: hg_webhook llama
+               rl_notificar_acreditada (que termina aca) ANTES de su commit,
+               con la fila de `usuarios` lockeada FOR UPDATE -- y tg_evento es
+               un curl sincronico de hasta 8 segundos. Sostener ese lock
+               mientras se habla con Telegram es un cuelgue servido (mismo
+               criterio que vin_avisar_multicuenta). En los otros caminos
+               (matcher, directo, peticiones_cola) esto corre post-commit y
+               el aviso sale igual; en HG se pierde solo la linea de TG. */
+            if (!$pdo->inTransaction()) {
+                if (is_file(__DIR__ . '/telegram_lib.php')) { require_once __DIR__ . '/telegram_lib.php'; }
+                if (function_exists('tg_evento')) {
+                    tg_evento($pdo, 'app', '🎁 Bono de la app liberado', [
+                        'Jugador' => $usuario,
+                        'Bono'    => number_format($fichas, 0, ',', '.') . ' fichas (hizo su primera carga)',
+                    ]);
+                }
             }
         }
     }
