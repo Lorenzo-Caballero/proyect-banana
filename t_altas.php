@@ -331,20 +331,22 @@ chequear('...y alta_encolar la reutiliza en vez de rechazar',
          (int)$r['http'] === 200, json_encode($r));
 
 // ===========================================================================
-echo "\n=== 7. El orden del alta por chat (lo que evita cuentas duplicadas) ===\n";
+echo "\n=== 7. El alta por chat: nombre como la landing, y sin duplicar ===\n";
 
-/* ESTO ES POSICIONAL Y NO SE PUEDE TESTEAR DE OTRA FORMA: ejecutar_tool() vive
-   en chatbot.php, que se conecta a la base y atiende el request apenas se
-   incluye. Asi que se lee el bloque como texto, igual que hace t_contexto.php
-   con el prompt.
+/* LA POLITICA (decision del dueño, 16/09/2026): "no me importa que si se llaman
+   Juan el usuario siempre sea holajuan123, siempre y cuando sea rapido. Como la
+   landing. Necesito que falle lo menos posible."
 
-   Lo que se protege: renombrar al chocar (el arreglo del 16/09/2026) ABRE la
-   puerta a crear cuentas duplicadas. El modelo llama dos veces a la
-   herramienta, la segunda vuelta ve el nombre "ocupado" --por su propio pedido
-   de hace diez segundos-- y crea una segunda cuenta con otro nombre. Lo unico
-   que lo evita es que la pregunta "¿este chat ya tiene un alta en curso?" vaya
-   ANTES del renombre. Un refactor que las reordene no rompe ningun test de
-   comportamiento y sale a produccion creando cuentas de a dos. */
+   Revierte el camino intermedio de esa misma mañana --respetar el nombre
+   elegido si estaba libre-- que parecia lo mejor de los dos mundos y resulto lo
+   peor: `alta_nombre_tomado()` solo ve NUESTRO espejo, y el username es unico
+   en TODA la plataforma. "Libre para nosotros" no dice nada del panel, asi que
+   nombres como Javierso o Bejarano pasaban el chequeo, se encolaban, y la
+   plataforma los rechazaba despues -- cuando ya costaba horas.
+
+   ESTO ES POSICIONAL Y NO HAY OTRA FORMA: ejecutar_tool() vive en chatbot.php,
+   que se conecta a la base y atiende el request apenas se incluye. Se lee el
+   bloque como texto, igual que hace t_contexto.php con el prompt. */
 $src = file_get_contents(__DIR__ . '/api/chatbot.php');
 $ini = strpos($src, "if (\$nombre === 'crear_cuenta') {");
 $fin = strpos($src, "if (\$nombre === 'crear_recarga') {", $ini ?: 0);
@@ -352,10 +354,9 @@ chequear('se encuentra el bloque crear_cuenta', $ini !== false && $fin !== false
 $blq = ($ini !== false && $fin !== false) ? substr($src, $ini, $fin - $ini) : '';
 
 /* SE MIRA EL CODIGO, NO LOS COMENTARIOS. La primera version de estos chequeos
-   daba falso negativo: el comentario que explica el arreglo NOMBRA
-   alta_usuario_disponible() para decir que justamente NO se la llama de
-   entrada, y strpos() encontraba esa mencion antes que la llamada real. Con el
-   lexer de PHP no hay forma de equivocarse. */
+   daba falso negativo: el comentario que explica el arreglo NOMBRA las
+   funciones de las que habla, y strpos() encontraba esas menciones antes que
+   las llamadas reales. Con el lexer de PHP no hay forma de equivocarse. */
 $blqCod = '';
 foreach (token_get_all('<?php ' . $blq) as $tk) {
     if (is_array($tk)) {
@@ -367,28 +368,42 @@ foreach (token_get_all('<?php ' . $blq) as $tk) {
 }
 $blq = $blqCod;
 
-$pSanear   = strpos($blq, 'alta_nombre_sanear(');
 $pSid      = strpos($blq, 'entrega_sid = ?');
-$pTomado   = strpos($blq, 'alta_nombre_tomado(');
-$pRenombre = strpos($blq, 'alta_usuario_disponible(');
+$pNombre   = strpos($blq, 'alta_usuario_disponible(');
 $pEncolar  = strpos($blq, 'alta_encolar(');
 
-chequear('el chat sanea el nombre', $pSanear !== false);
-chequear('el chat pregunta si esta tomado', $pTomado !== false);
-chequear('el chat puede renombrar', $pRenombre !== false);
-chequear('LA GUARDA POR SID VA ANTES DEL RENOMBRE (si no: cuentas duplicadas)',
-         $pSid !== false && $pRenombre !== false && $pSid < $pRenombre,
-         "sid=$pSid renombre=$pRenombre");
-chequear('se sanea antes de preguntar si esta tomado',
-         $pSanear !== false && $pTomado !== false && $pSanear < $pTomado);
-chequear('y todo eso antes de encolar',
-         $pEncolar !== false && $pRenombre < $pEncolar);
-chequear('el renombre esta condicionado a que este tomado, no es incondicional',
-         (bool)preg_match('/if \(\$tomado\) \{ \$u = alta_usuario_disponible/', $blq));
-/* La guarda por sid tiene que acotar el rato: un alta trabada en 'pendiente'
-   no puede dejar al jugador sin poder pedir cuenta nunca mas. */
-chequear('la guarda por sid se acota en el tiempo',
+chequear('el chat genera el nombre con la MISMA función que la landing',
+         $pNombre !== false);
+/* Incondicional: es toda la decisión. Un `if` alrededor sería volver al camino
+   intermedio que fallaba. */
+chequear('y lo hace SIEMPRE, no solo cuando el nombre está tomado',
+         (bool)preg_match('/\n\s*\$u = alta_usuario_disponible\(\$pdo, \$u\);/', $blq),
+         'si esto falla, alguien le puso una condición encima');
+chequear('ya no se pregunta por nuestro espejo, que no sabe lo que importa',
+         !str_contains($blq, 'alta_nombre_tomado('));
+
+/* LA GUARDA QUE SOSTIENE TODO LO DEMAS. Con el nombre crudo, dos llamadas del
+   modelo chocaban contra el 409 y no pasaba nada. Ahora cada llamada genera un
+   nombre NUEVO y unico por construccion: nada choca, y dos llamadas serian dos
+   cuentas. Un refactor que mueva esto abajo del nombre no rompe ningun test de
+   comportamiento y sale a produccion creando cuentas de a dos. */
+chequear('LA GUARDA POR SID VA ANTES DE GENERAR EL NOMBRE (si no: cuentas duplicadas)',
+         $pSid !== false && $pNombre !== false && $pSid < $pNombre,
+         "sid=$pSid nombre=$pNombre");
+chequear('la guarda pregunta por el chat y no por el nombre',
+         str_contains($blq, 'entrega_sid = ?'),
+         'preguntar por el nombre no serviría: cada vuelta trae uno distinto');
+chequear('y se acota en el tiempo, para no dejarlo sin pedir cuenta nunca más',
          str_contains($blq, 'pedido_en >'));
+chequear('el nombre se resuelve antes de encolar',
+         $pEncolar !== false && $pNombre < $pEncolar);
+
+/* El filtro de placeholders sigue ANTES de todo: un "jugador123" inventado por
+   el modelo no se convierte en "holaJugador123", se rechaza y se pregunta. */
+$pPlace = strpos($blq, 'alta_nombre_es_placeholder(');
+chequear('los nombres inventados por el modelo se frenan antes de generar nada',
+         $pPlace !== false && $pPlace < $pNombre, "place=$pPlace nombre=$pNombre");
+
 
 // ===========================================================================
 echo "\n=== 8. La cola demorada: no prometer lo que no controlamos ===\n";

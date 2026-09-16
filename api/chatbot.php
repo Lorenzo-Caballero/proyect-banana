@@ -2020,68 +2020,19 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
                     'error' => '¿Qué nombre de usuario querés para tu cuenta?'];
         }
 
-        /* EL NOMBRE SE SANEA SIEMPRE; SE RENOMBRA SOLO SI ESTA OCUPADO.
-           ESTE ERA EL BUG (medido el 16/09/2026). La landing
-           (`crear_cuenta.php`) pasa el nombre por alta_usuario_disponible();
-           el chatbot mandaba al panel lo que el jugador habia escrito, crudo.
-           Moria por dos lados distintos:
+        /* ¿ESTE CHAT YA TIENE UN ALTA EN CURSO? Va ANTES de generar el nombre,
+           y es lo unico que evita cuentas duplicadas.
 
-             - con tilde, enie, espacio o menos de 4 letras, alta_validar() lo
-               rechazaba con 400, y el modelo relataba ese motivo tecnico con
-               sus palabras: llego a decirle a alguien que «"Rodrigo" tiene
-               menos de 4 caracteres» --siete letras-- y lo dejo sin saber que
-               hacer;
-             - si el nombre ya existia, 409, y el bot contestaba "ese nombre ya
-               esta ocupado, pedile otro".
+           Cuando el chat mandaba el nombre crudo, el modelo llamando dos veces
+           a la herramienta chocaba contra el 409 ("ese usuario ya existe") y no
+           pasaba nada. Ahora cada llamada genera un nombre NUEVO y unico por
+           construccion, asi que nada choca: dos llamadas serian dos cuentas.
+           O sea que esta guarda no es un extra, es lo que sostiene al resto.
 
-           Se ve en los datos: las altas de la landing salen en 1 intento y las
-           del chat en 2, y las conversaciones se cortan justo ahi. Un jugador
-           nuevo, que todavia no puso un peso, negociando un nombre de usuario
-           con un bot es exactamente donde se lo pierde.
-
-           PERO NO SE LLAMA A alta_usuario_disponible() DE ENTRADA, Y ESA ES LA
-           DIFERENCIA CON LA LANDING: esa funcion devuelve `holaNombre123`
-           INCLUSO con el nombre libre -- el sufijo va siempre, por decision
-           del 6/9/2026, para que el alta salga por el camino rapido sin ir a
-           verificar nada contra el panel. En la landing eso no le saca nada a
-           nadie, porque ahi no se elige nombre. En el chat el jugador
-           ESCRIBIO el suyo: pedir "Sabatino" y recibir "holaSabatino482" sin
-           motivo es una respuesta peor que la que ya habia.
-
-           Entonces: sanear siempre (eso mata el 400) y renombrar unicamente
-           cuando de verdad choca (eso mata el 409). El que puede quedarse con
-           su nombre se lo queda; al que no, se le crea igual la cuenta en vez
-           de dejarlo negociando -- y se entera del nombre final por el mismo
-           lugar donde ve la clave, que lo muestra el sistema cuando la cuenta
-           EXISTE. El modelo nunca escribe credenciales.
-
-           El `function_exists` es por el orden del deploy: alta_nombre_sanear()
-           es nueva. Si por lo que sea llegara este archivo con un altas_lib
-           viejo, el alta sigue funcionando como hasta hoy en vez de tirar un
-           fatal en medio de una conversacion. */
-        if (function_exists('alta_nombre_sanear')) { $u = alta_nombre_sanear($u); }
-
-        /* Un nombre que al sanear no deja nada (solo emojis, solo simbolos)
-           termina en "jugador" pelado -- justo lo que el filtro de placeholders
-           de arriba no quiere dejar pasar. Se vuelve a preguntar. */
-        if (function_exists('alta_nombre_es_placeholder') && alta_nombre_es_placeholder($u)) {
-            return ['ok' => false, 'codigo' => 'nombre_inventado',
-                    'error' => '¿Qué nombre de usuario querés para tu cuenta?'];
-        }
-
-        /* ¿ESTE CHAT YA TIENE UN ALTA EN CURSO? Va ANTES de renombrar, y es lo
-           que evita que el arreglo de arriba cree cuentas duplicadas.
-
-           Hasta hoy, el modelo llamando dos veces a la herramienta chocaba
-           contra el 409 y no pasaba nada. Con el renombre, la segunda vuelta
-           veria el nombre "ocupado" --por su PROPIO pedido de hace diez
-           segundos-- y crearia una segunda cuenta con otro nombre. Y no
-           alcanza con mirar el nombre: si la primera vuelta ya renombro, la
-           segunda llega con el nombre original, que ahora si esta libre.
-
-           Por eso se pregunta por el SID del chat y no por el usuario. Se
-           acota a 30 minutos para que un alta trabada no lo deje sin poder
-           pedir cuenta para siempre: pasado ese rato, que lo intente de nuevo.
+           Y se pregunta por el SID del chat, no por el usuario: preguntar por
+           el nombre no serviria justamente porque cada vuelta trae uno
+           distinto. Se acota a 30 minutos para que un alta trabada no lo deje
+           sin poder pedir cuenta para siempre.
 
            `entrega_sid` es de la migracion 35; sin ella la consulta explota y
            se sigue por el camino de siempre, que termina en el 409 de abajo. */
@@ -2113,19 +2064,37 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
             }
         }
 
-        /* ¿El nombre esta tomado? La pregunta es de alta_nombre_tomado(), que
-           es la MISMA condicion que dispara el 409 de alta_encolar() -- si acá
-           se escribiera aparte y las dos se separaran, este camino creeria que
-           el nombre esta libre y el 409 igual le llegaria al jugador.
-           Ante un error de base NO se renombra: se encola con el nombre tal
-           cual, que es lo que se hacia hasta hoy. */
-        $tomado = false;
-        try {
-            $tomado = alta_nombre_tomado($pdo, $u);
-        } catch (Throwable $e) {
-            error_log('chatbot crear_cuenta (nombre libre?): ' . $e->getMessage());
-        }
-        if ($tomado) { $u = alta_usuario_disponible($pdo, $u); }
+        /* EL NOMBRE SE GENERA IGUAL QUE EN LA LANDING: holaJuan123, siempre.
+
+           DECISION DEL DUEÑO (16/09/2026), y revierte la de esa misma mañana:
+           "no me importa que si se llaman Juan el usuario siempre sea
+           holajuan123, siempre y cuando sea rapido. Como la landing. Necesito
+           que falle lo menos posible."
+
+           Vale la pena dejar escrito por que, porque el camino intermedio
+           --respetar el nombre elegido si esta libre-- parecia lo mejor de los
+           dos mundos y resulto ser lo peor:
+
+           `alta_nombre_tomado()` solo ve NUESTRO espejo. El username es unico
+           en TODA la plataforma, entre todos los agentes, asi que "libre para
+           nosotros" no dice nada sobre el panel. Un nombre como "Javierso" o
+           "Bejarano" pasaba el chequeo, se encolaba, y recien ahi la plataforma
+           decia que no. Y ese "no" salia caro: el bot iba al formulario con el
+           mismo nombre, el WAF le tapaba el formulario, y el motivo real
+           quedaba enterrado bajo "no aparecio el formulario de alta". El alta
+           se reintentaba igual, fallaba igual, y con el backoff de 5/20/60
+           minutos el jugador esperaba horas para nada.
+
+           Con prefijo y tres digitos al azar el choque global es
+           practicamente imposible: el alta sale por el camino rapido (la API,
+           2 a 10 segundos) y no toca nunca el formulario, que es donde vive el
+           WAF. Las altas de la landing venian saliendo asi desde el 6/9/2026 y
+           nunca dieron este problema -- de eso se trata "como la landing".
+
+           Lo que se paga es el nombre elegido. El jugador se entera del suyo
+           al final, cuando el sistema le muestra usuario y clave con la cuenta
+           ya creada, y para entonces la tiene andando. */
+        $u = alta_usuario_disponible($pdo, $u);
 
         // SIN freno por IP en el chat, a proposito. El que pide una cuenta por
         // aca ya esta hablando con nosotros: contestarle "espera una hora" es

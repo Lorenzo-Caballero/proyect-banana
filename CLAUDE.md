@@ -189,43 +189,70 @@ contraseña y `contrasena` era un hash, se guardaba la clave en claro en
 espejo con `sync_usuarios.py`, que se loguea con Playwright y pagina
 `agents.ganamosonline.com/api` → `usuarios_sync.php` → tabla `usuarios`.
 
-### El nombre de usuario son DOS preguntas, y el chat solo quiere una
+### El nombre de usuario lo genera el sistema, no lo elige el jugador
 
-Confundirlas tuvo el alta por chat rota hasta el 16/9/2026: la landing pasaba
-el nombre por `alta_usuario_disponible()` y el chatbot lo mandaba **crudo**.
+**Todos los caminos** —landing, chat y CRM— pasan el nombre por
+`alta_usuario_disponible()`, que devuelve `hola` + Nombre + 3 dígitos **siempre**,
+esté libre o no. Pedís "Juan", te creás `holaJuan847`.
 
-| Función | Contesta | Quién la quiere |
-|---|---|---|
-| `alta_nombre_sanear()` | *cómo se escribe este nombre* (translitera tildes/eñes, filtra al alfabeto del panel, estira los de menos de 4) | **los dos** |
-| `alta_usuario_disponible()` | *qué nombre LIBRE le doy* (`hola` + Nombre + 3 dígitos, **siempre**, esté libre o no) | la landing, y el chat **solo al chocar** |
+No es una limitación: es lo que hace que el alta salga rápido. El username es
+único en **toda** la plataforma, entre todos los agentes, y con prefijo + sufijo
+al azar el choque global es prácticamente imposible ⇒ el alta sale por el
+**camino rápido** (la API, 2-10 s) y no toca nunca el formulario. Decisión del
+dueño, 6/9/2026 para la landing y 16/9/2026 para el chat:
 
-El chatbot no puede llamar a la segunda de entrada aunque parezca «lo mismo que
-hace la landing»: en la landing nadie elige nombre, pero en el chat el jugador
-**escribió el suyo**, y pedir "Sabatino" para recibir `holaSabatino482` es peor
-que el error que se venía a arreglar. El sufijo va siempre por la decisión del
-6/9/2026 (choque global imposible ⇒ alta por el camino rápido), y esa decisión
-sigue en pie para la landing.
+> *"No me importa que si se llaman Juan el usuario siempre sea holajuan123,
+> siempre y cuando sea rápido. Como la landing. Necesito que falle lo menos
+> posible."*
 
-Sin sanear, los dos finales eran malos: **400** por un acento o una letra de
-menos —y ahí el modelo relataba el error técnico con sus palabras, llegando a
-decirle a alguien que *«"Rodrigo" tiene menos de 4 caracteres»* (siete)— o
-**409** por nombre tomado, con el bot pidiéndole otro nombre a alguien que
-todavía no puso un peso. Se veía en los datos: las altas de la landing salen en
-1 intento y las del chat en 2.
+> **El camino intermedio ya se probó y fue peor que los dos extremos.** El
+> 16/9/2026, por la mañana, el chat pasó a respetar el nombre elegido cuando
+> estaba libre y a renombrar solo al chocar. Parecía lo mejor de los dos mundos.
+> El problema es que **`alta_nombre_tomado()` solo ve NUESTRO espejo**: "libre
+> para nosotros" no dice nada sobre el panel. Nombres como `Javierso` o
+> `Bejarano` pasaban el chequeo, se encolaban, y la plataforma los rechazaba
+> recién después — cuando arreglarlo ya costaba horas. Ese mismo día, a la
+> tarde, se revirtió.
 
-> **Renombrar al chocar abre la puerta a cuentas duplicadas.** El modelo llama
-> dos veces a la herramienta y la segunda vuelta ve el nombre «ocupado» —por su
-> propio pedido de hace diez segundos— y crea otra cuenta con otro nombre. Lo
-> único que lo evita es preguntar **antes del renombre** si este chat ya tiene
-> un alta en curso, y preguntarlo **por `entrega_sid`, no por nombre**: si la
-> primera vuelta ya renombró, el nombre original quedó libre. Es un orden que
-> ningún test de comportamiento protege, así que `t_altas.php` lo chequea
-> posicionalmente sobre el código de `chatbot.php`.
+**Y ese rechazo tardío sale carísimo, por una cadena que conviene conocer:**
 
-Y *«¿está tomado?»* se pregunta en un solo lugar, `alta_nombre_tomado()`: es la
-condición exacta que dispara el 409 de `alta_encolar()`. Contesta «seguro que
-está ocupado», **nunca** «seguro que está libre» — el username es único en toda
-la plataforma y acá solo se ve nuestro espejo.
+```
+fast-path 320 / Javierso: HTTP 200 -> renombrar | nombre ya existente   <- lo supo
+Creando jugador 320 / Javierso                    <- va al formulario, MISMO nombre
+Excepcion en 320 / Javierso                       <- el WAF le tapa el formulario
+```
+
+El bot **ya sabía** que el nombre estaba tomado, pero fue igual al formulario;
+el WAF lo bloqueó y lo que quedó guardado fue *"no apareció el formulario de
+alta"*. **El diagnóstico correcto existía y lo pisó un error posterior.** Sin
+una frase reconocible, el renombrado no se disparaba y el alta reintentaba con
+el mismo nombre hasta rendirse — con el backoff de 5/20/60 min, horas de espera
+para nada.
+
+> **De ahí la regla de `alta_debe_renombrar()`: dos fallos con el mismo nombre
+> alcanzan, diga lo que diga el mensaje.** No adivina el motivo porque a esa
+> altura da igual: si era el nombre, renombrar lo arregla; si era otra cosa, no
+> lo empeora. Apoyarse solo en el texto es frágil cuando un error puede pisar a
+> otro. Los dos primeros intentos siguen respetando el nombre, así que los
+> fallos transitorios (una sesión caída, un challenge suelto) no le cambian el
+> nombre a nadie.
+>
+> Esto **dio vuelta** una decisión anterior que estaba bien tomada: antes un
+> fallo ajeno al nombre no renombraba nunca, porque con `MAX_INTENTOS` en 3 cada
+> renombrado inútil se comía uno de los tres. Hoy son 10.
+
+> **Generar siempre un nombre nuevo hace que la guarda por `entrega_sid` sea
+> imprescindible.** Con el nombre crudo, el modelo llamando dos veces a
+> `crear_cuenta` chocaba contra el 409 y no pasaba nada. Ahora cada llamada
+> produce un nombre único por construcción: nada choca, y dos llamadas serían
+> **dos cuentas**. Por eso `crear_cuenta` pregunta primero si ese chat ya tiene
+> un alta en curso —por SID, nunca por nombre— antes de generar nada.
+> `t_altas.php` lo chequea posicionalmente sobre el código: es un orden que
+> ningún test de comportamiento protege.
+
+`alta_nombre_sanear()` sigue existiendo aparte (translitera tildes/eñes, filtra
+al alfabeto del panel, estira los de menos de 4) y `alta_usuario_disponible()`
+la usa adentro.
 
 ## Cargar fichas, bonos y saldo
 
