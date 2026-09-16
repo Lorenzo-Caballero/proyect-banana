@@ -9432,6 +9432,12 @@
     const btnDestrabar = r.fichas === "trabado"
       ? `<button class="btn-mini-accion" data-accion="destrabar" data-id="${r.id}" type="button"
                  title="Volver a encolar el depósito">Reintentar depósito</button>` : "";
+    // Marcar resuelto: para cuando el operador YA le depositó a mano por el
+    // panel. Cierra la carga (no deposita ni devuelve) para que pare el aviso
+    // de Telegram. Va junto a "Reintentar" -- son las dos salidas de 'trabado'.
+    const btnResolver = r.fichas === "trabado"
+      ? `<button class="btn-mini-accion" data-accion="resolver" data-id="${r.id}" type="button"
+                 title="Ya lo resolví a mano: cerrar y callar el aviso">Marcar resuelto</button>` : "";
 
     return `<div class="carga-row" data-id="${r.id}">
       <div class="cg-top">
@@ -9442,7 +9448,7 @@
           ${nota}
         </div>
         <div class="cg-monto">${money(r.monto_pedido)}</div>
-        <div class="cg-acciones">${btnDestrabar}${btn}</div>
+        <div class="cg-acciones">${btnDestrabar}${btnResolver}${btn}</div>
       </div>
       <div class="cg-detalle">
         ${warnPago}
@@ -9487,6 +9493,13 @@
         if(fila) destrabarCarga(fila, btn);
       });
     });
+    $("#cgList").querySelectorAll("[data-accion='resolver']").forEach(btn=>{
+      btn.addEventListener("click", e=>{
+        e.stopPropagation();
+        const fila = cgItems.find(x=>x.id===+btn.getAttribute("data-id"));
+        if(fila) resolverCarga(fila, btn);
+      });
+    });
     $("#cgList").querySelectorAll("[data-accion='cancelar']:not(:disabled)").forEach(btn=>{
       btn.addEventListener("click", e=>{
         e.stopPropagation();
@@ -9522,6 +9535,34 @@
     } else {
       btn.disabled = false; btn.textContent = "Reintentar depósito";
       toast(d.error || "No se pudo reintentar");
+    }
+  }
+
+  /* Cerrar un depósito trabado que el operador YA resolvió a mano (le depositó
+     por el panel). NO deposita ni devuelve: solo cambia el estado a 'cancelada'
+     para que el watchdog deje de mandar el Telegram. Es lo opuesto a
+     destrabar -- por eso el texto aclara que no vuelve a la cola. */
+  async function resolverCarga(r, btn){
+    const ok = confirm(
+      `Marcar como resuelto el depósito de ${r.coins} fichas a @${r.usuario}.
+
+` +
+      `Usá esto SOLO si ya se lo depositaste vos por el panel (o lo resolviste de otra forma).
+` +
+      `Esto NO deposita ni devuelve nada: solo cierra la carga para que pare el aviso de Telegram.
+
+` +
+      `¿La resolviste ya?`
+    );
+    if(!ok) return;
+    btn.disabled = true; btn.textContent = "…";
+    const d = await jpost({accion:"resolver", id:r.id}, API_CG);
+    if(d.ok){
+      toast(d.mensaje || "Carga cerrada");
+      cargarCargas(); actualizarContadoresCargas();
+    } else {
+      btn.disabled = false; btn.textContent = "Marcar resuelto";
+      toast(d.error || "No se pudo cerrar");
     }
   }
 

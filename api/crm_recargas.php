@@ -358,6 +358,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                    'mensaje' => 'El depósito volvió a la cola. En un minuto se reintenta.']);
         }
 
+        /* ---- resolver: cerrar un depósito trabado que YA se resolvió a mano ----
+           El otro lado de 'destrabar'. Cuando el operador ya le depositó las
+           fichas por el panel (o lo resolvió de otra forma), la acción sigue en
+           'revisar' y el watchdog (monitor-cargas.sh) manda el Telegram "hay
+           cargas que el jugador pagó y no recibió" cada rato. Hasta ahora no
+           había forma de cerrarla desde el CRM: 'destrabar' la RE-ENCOLA (la
+           depositaría de nuevo = pago doble) y no aplica. Esto la marca
+           'cancelada' -- NO deposita ni devuelve nada, solo cierra la fila para
+           que el aviso pare. La plata ya la movió la persona; esto es admin.
+           SOLO desde 'revisar', como 'destrabar'. Queda en la bitácora. */
+        if ($accion === 'resolver') {
+            $id = (int)($body['id'] ?? 0);
+            if (!$id) { salir(['ok' => false, 'error' => 'Falta id'], 400); }
+            if (!crm_rate_limite("resolver_carga_$operador", 30, 3600)) {
+                salir(['ok' => false, 'error' => 'Demasiados en poco tiempo. Esperá un rato.'], 429);
+            }
+
+            $st = $pdo->prepare("SELECT id, usuario, creada_en FROM recargas WHERE id = ? LIMIT 1");
+            $st->execute([$id]);
+            $rec = $st->fetch(PDO::FETCH_ASSOC);
+            if (!$rec) { salir(['ok' => false, 'error' => 'Esa recarga no existe'], 404); }
+
+            // La misma acción que muestra el listado (destrabar usa esto igual):
+            // la primera carga de ese jugador creada después de la recarga.
+            $sa = $pdo->prepare(
+                "SELECT id, estado, monto FROM acciones_saldo
+                  WHERE usuario = ? COLLATE utf8mb4_unicode_ci AND tipo = 'cargar'
+                    AND creada_en >= ?
+                  ORDER BY creada_en ASC LIMIT 1"
+            );
+            $sa->execute([$rec['usuario'], $rec['creada_en']]);
+            $acc = $sa->fetch(PDO::FETCH_ASSOC);
+            if (!$acc) {
+                salir(['ok' => false, 'error' => 'Esta recarga no tiene un depósito encolado.'], 404);
+            }
+            if ($acc['estado'] !== 'revisar') {
+                salir(['ok' => false, 'error' =>
+                    'Solo se puede cerrar un depósito que quedó en revisar. Este está en: '
+                    . $acc['estado']], 409);
+            }
+
+            $msg = mb_substr("cerrada a mano por $operador: ya resuelta fuera de la cola", 0, 300);
+            $upd = $pdo->prepare(
+                "UPDATE acciones_saldo
+                    SET estado = 'cancelada', mensaje = ?
+                  WHERE id = ? AND estado = 'revisar'"
+            );
+            $upd->execute([$msg, (int)$acc['id']]);
+            if ($upd->rowCount() !== 1) {
+                // Otro la cerró/tocó entre el SELECT y el UPDATE.
+                salir(['ok' => false, 'error' => 'La carga cambió de estado, refrescá.'], 409);
+            }
+
+            crm_bitacora($pdo, $operador, 'resolver_deposito', json_encode([
+                'recarga_id' => $id,
+                'accion_id'  => (int)$acc['id'],
+                'usuario'    => $rec['usuario'],
+                'monto'      => (float)$acc['monto'],
+            ], JSON_UNESCAPED_UNICODE));
+
+            salir(['ok' => true, 'accion_id' => (int)$acc['id'],
+                   'mensaje' => 'Listo, la carga quedó cerrada y el aviso deja de sonar.']);
+        }
+
         // ---- cancelar (puntual, solo desde pendiente sin pago vinculado) ----
         if ($accion === 'cancelar') {
             $id   = (int)($body['id'] ?? 0);
