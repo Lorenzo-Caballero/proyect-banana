@@ -199,9 +199,22 @@ if (!function_exists('fid_tramos')) {
             error_log('fid_avisar_uno (bono): ' . $e->getMessage());
         }
 
-        // 3) El giro de cortesía, si el escalón lo trae y no tiene uno esperando.
+        /* 3) El giro de cortesía, si el escalón lo trae y no tiene uno esperando.
+
+           CON LA RULETA APAGADA NO SE PROMETE NADA, y faltaba ese chequeo.
+           Nahuel (16/09/2026): "les llega una notificación de que giren la
+           ruleta pero creo que no está activa". Estaba en lo cierto:
+           `ruleta_activa` figuraba en 0 y esta función igual mandaba "te
+           regalé un giro de la ruleta, entrá y giralo cuando quieras" -- y
+           `ruleta.php` lo rechaza justamente por ese flag. El jugador entra,
+           no puede girar, y lo que se gana es desconfianza.
+
+           El recordatorio diario (`ruleta_recordatorio.php`) ya lo chequeaba, y
+           el APK también filtra sus textos de ruleta con el flag que baja en el
+           sondeo. Este era el único camino que prometía sin mirar. */
         $conGiro = false;
-        if (!empty($tramo['ruleta'])) {
+        $ruletaOn = !function_exists('cfg_crm_activo') || cfg_crm_activo($pdo, 'ruleta_activa');
+        if (!empty($tramo['ruleta']) && $ruletaOn) {
             try {
                 if (function_exists('crmnotif_cortesia_disponible')
                     && !crmnotif_cortesia_disponible($pdo, $usuario)

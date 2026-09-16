@@ -750,6 +750,19 @@
              line-height:1.5;background:rgba(239,68,68,.13);
              border:1px solid rgba(239,68,68,.5);color:var(--txt)}
   .rr-yaesta b{color:var(--red)}
+  /* LA HUELLA: desde qué billetera paga y desde qué celular entra.
+     Apagada de color a propósito -- es referencia, no alerta. El cartel de
+     cuentas vinculadas (ámbar/rojo) es el que tiene que saltar; si esto
+     compitiera, los dos dejarían de leerse. */
+  .huella{margin:0 0 12px;padding:9px 11px;border-radius:10px;font-size:11.5px;
+          line-height:1.6;background:var(--panel2);border:1px solid var(--line);
+          color:var(--muted)}
+  .huella b{color:var(--txt);font-weight:700}
+  .huella .hl-t{display:block;margin-bottom:4px;color:var(--txt);font-size:12px;font-weight:700}
+  .huella .hl-i{display:block}
+  .huella code{background:rgba(148,163,184,.14);padding:1px 5px;border-radius:5px;
+               font-size:11px;color:var(--txt)}
+  .huella .hl-ojo{color:var(--red);font-weight:700}
   .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--panel);border:1px solid var(--violet);color:var(--txt);padding:12px 20px;border-radius:12px;z-index:60;opacity:0;transition:.25s;pointer-events:none;box-shadow:var(--shadow)}
   .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
   .sp{display:inline-block;width:16px;height:16px;border:2px solid var(--line);border-top-color:var(--violet);border-radius:50%;animation:sp .7s linear infinite}
@@ -2474,6 +2487,9 @@
            esto primero. -->
       <div class="bloq" id="uBloq" style="display:none"></div>
       <div class="vinc" id="uVinc" style="display:none"></div>
+      <!-- La huella va DESPUÉS de los vínculos: primero la conclusión ("estas
+           dos cuentas son la misma persona"), después el dato que la sostiene. -->
+      <div class="huella" id="uHuella" style="display:none"></div>
       <div class="saldos saldos2">
         <div class="sbox saldo" id="uSaldoBox"><div class="k">Saldo</div><div class="v" id="uSaldo">$0</div><div class="edad" id="uSaldoEdad"></div><div class="vivo" id="uSaldoVivo" style="display:none"></div></div>
         <div class="sbox bono" id="uBonoBox" title="Bonos prometidos, aún no acreditados"><div class="k">Bono pendiente</div><div class="v" id="uBonos">0</div></div>
@@ -8055,6 +8071,42 @@
           `<ul>${filas}</ul>` +
           `<span style="color:var(--muted)">El punto rojo es la señal fuerte ` +
           `(misma cuenta bancaria). La IP compartida sola no prueba nada.</span>`;
+      }
+    }
+
+    /* ---------- La huella: con QUÉ paga y desde QUÉ entra ----------
+       Los vínculos de arriba dicen CON QUIÉN comparte; esto dice CON QUÉ. Sirve
+       para lo que el aviso no alcanza: cuando el jugador dice "yo tengo una
+       sola cuenta", el operador necesita el dato concreto para ponérselo
+       enfrente. Pasó tal cual el 16/09/2026.
+
+       El titular sale del MAIL DEL BANCO, no de lo que el jugador declara. Es
+       la diferencia entre un dato y una afirmación. */
+    const elHu = $("#uHuella");
+    if (elHu){
+      const h = u.huella || {pago:[], celulares:[]};
+      const pagos = h.pago || [], cels = h.celulares || [];
+      elHu.style.display = (pagos.length || cels.length) ? "" : "none";
+      if (pagos.length || cels.length){
+        const filasPago = pagos.map(p => {
+          const ident = p.cuit ? `CUIT ${esc(p.cuit)}` : (p.cbu ? `CBU ${esc(p.cbu)}` : "");
+          return `<span class="hl-i">💳 <b>${esc(p.titular || "(sin titular)")}</b>` +
+                 (ident ? ` · <code>${ident}</code>` : "") +
+                 ` · ${p.usos} pago${p.usos === 1 ? "" : "s"}</span>`;
+        }).join("");
+        const filasCel = cels.map(c => {
+          /* "Por este aparato pasaron N cuentas" es el dato que importa: un
+             teléfono con tres cuentas no prueba nada solo, pero es lo primero
+             que hay que saber antes de creerle a alguien que dice tener una. */
+          const otras = c.cuentas > 1
+            ? ` · <span class="hl-ojo">${c.cuentas} cuentas por este aparato</span>` : "";
+          return `<span class="hl-i">📱 <b>${esc(c.modelo || c.plataforma || "celular")}</b>` +
+                 ` · <code>…${esc(c.ref)}</code>${otras}</span>`;
+        }).join("");
+        elHu.innerHTML =
+          `<span class="hl-t">Huella</span>` +
+          (filasPago || `<span class="hl-i">💳 Todavía no pagó desde ninguna cuenta bancaria.</span>`) +
+          (filasCel || `<span class="hl-i">📱 Sin celular registrado.</span>`);
       }
     }
 

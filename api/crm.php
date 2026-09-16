@@ -240,6 +240,71 @@ function ficha_usuario(PDO $pdo, string $usuario): ?array
                 }
             }
             $r['vinculos'] = vin_relacionados($pdo, $usuario);
+
+            /* LA HUELLA, EN CRUDO. Los vínculos dicen CON QUIÉN comparte; esto
+               dice CON QUÉ -- desde qué billetera paga y desde qué teléfono
+               entra. Pedido de Nahuel (16/09/2026): "podés agregar info de
+               fingerprint, como teléfono, en el apartado de detalles del
+               usuario cuando abrimos una conversación".
+
+               Sirve para lo que el aviso no alcanza: cuando el jugador dice
+               "yo tengo una sola cuenta", el operador necesita el dato concreto
+               para ponérselo enfrente. Pasó tal cual esa madrugada.
+
+               `huellas_pagador` se aprende del mail del banco cuando se acredita
+               una recarga, así que es dato del BANCO, no declarado: medido el
+               16/09, el 100% de los pagos trae titular, CUIT, CBU y número de
+               operación. */
+            $r['huella'] = ['pago' => [], 'celulares' => []];
+            try {
+                $qh = $pdo->prepare(
+                    "SELECT cuit, cbu, nombre, usos, ultima_vez
+                       FROM huellas_pagador WHERE usuario = ?
+                      ORDER BY ultima_vez DESC LIMIT 5"
+                );
+                $qh->execute([$usuario]);
+                foreach ($qh as $h) {
+                    $r['huella']['pago'][] = [
+                        'titular' => (string)($h['nombre'] ?? ''),
+                        'cuit'    => (string)($h['cuit'] ?? ''),
+                        'cbu'     => (string)($h['cbu'] ?? ''),
+                        'usos'    => (int)$h['usos'],
+                        'ultima'  => $h['ultima_vez'],
+                    ];
+                }
+            } catch (Throwable $e) { /* sin huellas: la ficha va igual */ }
+
+            try {
+                /* El modelo del teléfono sale de `dispositivos` (lo manda el
+                   APK al registrarse) y el historial de qué cuentas pasaron por
+                   él, de `dispositivos_usuarios` (migración 69). Se juntan acá
+                   porque para el operador es un solo dato: "entra desde este
+                   aparato, y por ese aparato pasaron estas otras cuentas". */
+                $qd = $pdo->prepare(
+                    "SELECT du.device_id, du.usos, du.ultima_vez,
+                            d.modelo, d.plataforma,
+                            (SELECT COUNT(DISTINCT o.usuario) FROM dispositivos_usuarios o
+                              WHERE o.device_id = du.device_id) AS cuentas
+                       FROM dispositivos_usuarios du
+                       LEFT JOIN dispositivos d ON d.device_id = du.device_id
+                      WHERE du.usuario = ?
+                      ORDER BY du.ultima_vez DESC LIMIT 5"
+                );
+                $qd->execute([$usuario]);
+                foreach ($qd as $d) {
+                    $r['huella']['celulares'][] = [
+                        'modelo'     => (string)($d['modelo'] ?? ''),
+                        'plataforma' => (string)($d['plataforma'] ?? ''),
+                        'usos'       => (int)$d['usos'],
+                        'cuentas'    => (int)$d['cuentas'],
+                        'ultima'     => $d['ultima_vez'],
+                        /* El id entero no sirve para nada en pantalla y es
+                           ruido; los últimos 6 alcanzan para distinguir dos
+                           aparatos y para buscarlo si hace falta. */
+                        'ref'        => substr((string)$d['device_id'], -6),
+                    ];
+                }
+            } catch (Throwable $e) { /* sin migración 69: sin celulares */ }
         }
     } catch (Throwable $e) {
         error_log('ficha_usuario/vinculos: ' . $e->getMessage());
