@@ -158,7 +158,21 @@ function au_query_base(): string
                                                                                 AS tipo,
         m.origen COLLATE utf8mb4_unicode_ci                                    AS subtipo,
         m.usuario COLLATE utf8mb4_unicode_ci                                   AS usuario,
-        ABS(m.monto)                                                           AS monto,
+        /* EL MONTO VA FIRMADO, y hasta el 16/09/2026 iba en ABS().
+           Un `movimientos` guarda el signo porque lo necesita: +35000 es una
+           carga y -35000 son fichas gastadas. Tirarlo aca obligaba a la
+           pantalla a adivinarlo por el tipo, y como 'ajuste' no es ni ingreso
+           ni egreso, TODOS los ajustes se dibujaban en rojo con un menos --
+           incluida una carga a mano de +35.000.
+
+           El costo real no era estetico. Nahuel fue a Auditoria justamente a
+           ver si a un jugador se le habia cargado dos veces, y la fila de SU
+           PROPIA carga le decia menos 35.000. La pantalla que existe para
+           contestar esa pregunta contestaba al reves.
+
+           Los KPIs no se tocan: suman solo 'deposito' y 'retiro', que salen de
+           `recargas` / `acciones_saldo` como magnitudes y no de aca. */
+        m.monto                                                                AS monto,
         m.operador COLLATE utf8mb4_unicode_ci                                  AS operador,
         CASE
           WHEN m.operador IS NOT NULL AND m.operador <> '' THEN 'humano'

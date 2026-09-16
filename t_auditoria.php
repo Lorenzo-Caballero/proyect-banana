@@ -266,6 +266,67 @@ chequear('todas son tipo retiro', $tipos === ['retiro'], json_encode(array_value
 $n = (int)$pdo->query("SELECT COUNT(*) FROM ($SQL) x WHERE tipo='retiro' AND fuente='retiros_panel'")->fetchColumn();
 chequear('el filtro tipo=retiro las agarra', $n === 4, "n=$n");
 
+// ===========================================================================
+echo "\n=== 7. El signo del ajuste: +35.000 no puede verse como -35.000 ===\n";
+
+/* EL BUG (16/09/2026). Nahuel abrio Auditoria para contestar exactamente
+   "¿a este jugador le cargamos dos veces?", y la fila de SU PROPIA carga de
+   +35.000 le decia -35.000. Eran dos cosas encadenadas: la SQL devolvia
+   ABS(m.monto), tirando el signo que `movimientos` si guarda, y la pantalla lo
+   reponia por el TIPO -- y como 'ajuste' no es ni ingreso ni egreso, todos los
+   ajustes salian en rojo con un menos.
+
+   Una auditoria donde no se distingue lo que entra de lo que sale no sirve
+   para lo unico que se le pide. Estos chequeos cuidan la mitad del server; la
+   otra mitad vive en auFilaHtml() de crm.html. */
+$pdo->exec("DELETE FROM movimientos WHERE usuario LIKE 't_sg_%'");
+
+$mov = $pdo->prepare(
+    "INSERT INTO movimientos (usuario, tipo, monto, motivo, origen, operador)
+     VALUES (?,?,?,?,?,?)"
+);
+/* Las dos filas de aquella noche, tal cual las escribio el sistema. */
+$mov->execute(['t_sg_uno', 'saldo',  35000, null, 'crm', 'nahuel']);   // carga a mano
+$mov->execute(['t_sg_uno', 'ficha', -35000, 'Carga al juego', 'recarga', null]);
+$mov->execute(['t_sg_uno', 'bono',    5000, 'Bono de bienvenida', 'recarga', null]);
+
+$sg = $pdo->query(
+    "SELECT monto, detalle, tipo FROM (" . au_query_base() . ") x
+      WHERE usuario = 't_sg_uno' ORDER BY monto DESC"
+)->fetchAll();
+
+chequear('salen las tres filas', count($sg) === 3, (string)count($sg));
+
+$porMonto = [];
+foreach ($sg as $f) { $porMonto[(int)$f['monto']] = $f; }
+
+chequear('la carga a mano llega POSITIVA (era el bug)',
+         isset($porMonto[35000]), json_encode(array_keys($porMonto)));
+chequear('las fichas gastadas llegan NEGATIVAS',
+         isset($porMonto[-35000]), json_encode(array_keys($porMonto)));
+chequear('y no se confunden entre si: son dos filas distintas',
+         isset($porMonto[35000]) && isset($porMonto[-35000]));
+chequear('el bono tambien conserva su signo', isset($porMonto[5000]));
+
+/* El detalle de la carga a mano se arma solo (motivo NULL): es el
+   "saldo +35000" que se veia en pantalla, y ahi el signo SIEMPRE estuvo bien.
+   O sea que la fila se contradecia a si misma -- el monto decia una cosa y el
+   detalle la contraria. */
+chequear('el detalle autogenerado ya decia el signo correcto',
+         isset($porMonto[35000]) && str_contains((string)$porMonto[35000]['detalle'], '+35000'),
+         $porMonto[35000]['detalle'] ?? '(no está)');
+
+/* Y los KPIs no pueden haberse movido: suman SOLO 'deposito' y 'retiro', que
+   salen de recargas/acciones_saldo como magnitudes. Si un ajuste negativo
+   entrara ahi, restaria de los depositos del dia. */
+$tiposAjuste = array_unique(array_column($sg, 'tipo'));
+sort($tiposAjuste);
+chequear('ninguna de estas filas cuenta como deposito ni retiro',
+         !in_array('deposito', $tiposAjuste, true) && !in_array('retiro', $tiposAjuste, true),
+         json_encode($tiposAjuste));
+
+$pdo->exec("DELETE FROM movimientos WHERE usuario LIKE 't_sg_%'");
+
 $limpiar();
 $libroLimpiar();
 $viejasLimpiar();   // el test se lleva TODO lo suyo, incluidas las tres viejas

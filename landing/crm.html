@@ -9331,8 +9331,23 @@
   }
 
   function auFilaHtml(f, idx){
-    const esIngreso = f.tipo === "deposito" || f.tipo === "bono";
-    const signo = esIngreso ? "pos" : "neg";
+    /* EL SIGNO SALE DEL MONTO CUANDO EL MONTO LO SABE.
+       Antes era `tipo === "deposito" || tipo === "bono"`, o sea que todo lo
+       que no fuera eso se pintaba en rojo con un menos -- y 'ajuste' incluye
+       tanto las fichas gastadas (-) como una carga de saldo a mano (+). Una
+       auditoria donde no se distingue lo que entra de lo que sale no sirve
+       para lo unico que se le pide.
+
+       Las dos formas conviven porque las filas no vienen todas iguales:
+       `deposito` y `retiro` salen de `recargas` / `acciones_saldo` como
+       MAGNITUDES (siempre positivas) y ahi el sentido lo da el tipo;
+       `ajuste` y `bono` salen de `movimientos`, donde el monto ya viene
+       firmado y el tipo no alcanza para saberlo. */
+    const porTipo = f.tipo === "deposito" || f.tipo === "retiro";
+    const neto    = Number(f.monto) || 0;
+    const entra   = porTipo ? (f.tipo === "deposito") : (neto >= 0);
+    const signo   = entra ? "pos" : "neg";
+    const montoTxt = (entra ? "+" : "-") + nf.format(Math.abs(neto));
     const rowId = `auRow${idx}`;
     /* 60 caracteres cortaban JUSTO donde empieza lo que uno viene a leer: el
        detalle arranca con "Retiro $100 — hecha | pagado a mano por nahuel:" y
@@ -9350,7 +9365,7 @@
       </td>
       <td><span class="au-badge-tipo ${esc(f.tipo)}" title="${esc(AU_TIPO_TXT[f.tipo]||f.tipo)}">${AU_BADGE_ICO[f.tipo]||""}<span class="au-tipo-txt">${esc(AU_TIPO_TXT[f.tipo]||f.tipo)}</span></span></td>
       <td data-usuario="${esc(f.usuario)}" title="${esc(f.usuario)}">@${esc(f.usuario)}</td>
-      <td class="au-monto ${signo}">${esIngreso?"+":"-"}${nf.format(f.monto)}</td>
+      <td class="au-monto ${signo}">${montoTxt}</td>
       <td>${auEstadoBadge(f.subtipo)}</td>
       <td>${auOperadorHtml(f)}</td>
       <td class="au-col-detalle au-detalle" title="${esc(f.detalle||"")}">${esc(detalleCorto)}
