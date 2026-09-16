@@ -144,10 +144,34 @@ necesite un subdominio de la plataforma.
 > sistema sano casi no usa. En paralelo, el creador en `ganamosonline` cerró
 > las altas 334, 335 y 337 por fast-path al primer intento, en 4-6 segundos.
 >
-> **Lo que sí quedó probado es que las LECTURAS andan perfecto por ganamos7.**
-> Lo que falta medir es UNA alta por fast-path (el `POST` de creación) contra
-> esa puerta. Hasta entonces, el creador y el recaudador siguen en
-> `ganamosonline` por su `.env`, que le gana al default del código.
+> **Lo que sí quedó probado ahí es que las LECTURAS andan perfecto por
+> ganamos7.** Lo que faltaba era UNA alta por fast-path contra esa puerta.
+>
+> **SE MIDIÓ ESA MISMA NOCHE Y DIO QUE SÍ.** Al desplegar la versión `39fb9d9`
+> del bot, el creador quedó en `ganamos7` con la plantilla ya aprendida, o sea
+> con el fast-path armado. Se encoló un alta de prueba con
+> `scripts/prueba-volumen.php --si 1`:
+>
+>     20:17:29  fast-path 338 / holaZzp0916001420: HTTP 200 -> creado id=38929348
+>     20:17:30  fast-path: 1/1 creado(s) por API; 0 al formulario
+>
+> **Dos segundos, primer intento, por API.** Y el colector —que sale del mismo
+> `.env`— relogueó solo en `ganamos7` y siguió con todo: retiros, solicitudes,
+> stock (201.913,48) y el libro (161 operaciones). El circuito de la plata
+> entero funciona por esa puerta. El simulacro de producción dio 26/0.
+>
+> **La cuenta de prueba `holaZzp0916001420` quedó en el panel con saldo 0**:
+> conviene borrarla buscando `zzp`.
+>
+> > **Y una trampa que costó una afirmación equivocada: el `.env` del bot NO es
+> > sticky.** Acá se dijo que el creador seguía en `ganamosonline` "por su
+> > `.env`, que le gana al default del código". Es falso:
+> > `scripts/arreglar-bot-altas.sh` —que `deploy-bot.sh` llama siempre—
+> > **reescribe** `PANEL_URL` y `LOGIN_URL` desde las constantes del repo, y
+> > deja un backup `.env.bak.<fecha>`. O sea que el dominio no se movió "de a un
+> > contenedor": se movió entero en el primer deploy, sin que nadie lo pidiera
+> > en ese momento. Para fijar un dominio distinto al del repo hay que cambiarlo
+> > **en `arreglar-bot-altas.sh`**, no en el `.env`.
 
 >
 > **Antes de volver a tocar esto, mirá lo único que prueba algo: si las altas
