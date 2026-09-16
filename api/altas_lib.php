@@ -284,6 +284,40 @@ function alta_nombre_tomado(PDO $pdo, string $usuario): bool
     return !empty($r['en_usuarios']) || !empty($r['en_altas']);
 }
 
+/* A partir de cuantos minutos una cola de altas se considera demorada.
+   Un alta sale en SEGUNDOS cuando todo anda: lo que tarda es el viaje al panel,
+   no la cola. Tres minutos ya es sintoma, no cola normal.
+
+   El mismo numero lo usan el aviso de Telegram y el mensaje que el chatbot le
+   pasa al modelo, y tiene que ser UNO: si el chat dijera "puede demorar" antes
+   de que suene la alerta, el operador se entera por el jugador. */
+const ALTA_DEMORA_MIN = 3;
+
+/**
+ * Minutos que lleva esperando el alta mas vieja sin resolver. 0 si no hay
+ * ninguna, y 0 tambien si la consulta falla -- ante la duda se dice que la cola
+ * esta bien, porque este numero solo decide el TONO de una respuesta, y frenar
+ * un alta buena por un error de lectura seria peor que el problema.
+ *
+ * Cuenta solo las que el bot PUEDE crear (con password): una fila sin clave no
+ * va a salir nunca y no habla del estado de la cola, habla de otra cosa.
+ */
+function alta_cola_atraso(PDO $pdo): int
+{
+    try {
+        $st = $pdo->query(
+            "SELECT COALESCE(MAX(TIMESTAMPDIFF(MINUTE, pedido_en, NOW())), 0)
+               FROM altas
+              WHERE estado IN ('pendiente', 'procesando')
+                AND password IS NOT NULL"
+        );
+        return (int)$st->fetchColumn();
+    } catch (Throwable $e) {
+        error_log('alta_cola_atraso: ' . $e->getMessage());
+        return 0;
+    }
+}
+
 /** Prefijo de los usuarios que genera la landing.
  *
  *  "holaJuan847" en vez de "Juan427". El prefijo hace de espacio de nombres
@@ -832,7 +866,7 @@ function alta_entrega(PDO $pdo, int $id, string $sid): array
  * envio en si puede fallar o estar deduplicado). Nunca lanza: avisar es un
  * extra.
  */
-function alta_avisar_trabadas(PDO $pdo, int $minutos = 3): int
+function alta_avisar_trabadas(PDO $pdo, int $minutos = ALTA_DEMORA_MIN): int
 {
     if ($minutos < 1) { $minutos = 1; }
 

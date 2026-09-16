@@ -348,6 +348,102 @@ chequear('el renombre esta condicionado a que este tomado, no es incondicional',
 chequear('la guarda por sid se acota en el tiempo',
          str_contains($blq, 'pedido_en >'));
 
+// ===========================================================================
+echo "\n=== 8. La cola demorada: no prometer lo que no controlamos ===\n";
+
+/* EL CASO (16/09/2026). El bot le dijo a un jugador "en un par de minutos te
+   aparecen los datos" y la cuenta no salio: el alta choco contra el challenge
+   del WAF y quedo esperando el rescate automatico. El jugador se quedo mirando
+   el chat.
+
+   Lo peculiar es que ese plazo NO estaba escrito en ningun lado: lo invento el
+   modelo, y con razon, porque encolar es instantaneo y nada le decia que la
+   cuenta la crea OTRO sistema. La unica forma de que deje de inventarlo es
+   decirle como viene la cola. */
+limpiar($pdo);
+
+$ponerAlta = function (string $u, string $estado, int $haceMin, bool $conClave = true) use ($pdo) {
+    $pdo->prepare(
+        "INSERT INTO altas (usuario, password, estado, origen, pedido_en)
+         VALUES (?,?,?,'chatbot', NOW() - INTERVAL ? MINUTE)"
+    )->execute([$u, $conClave ? 'clave123456' : null, $estado, $haceMin]);
+};
+
+chequear('cola vacía = sin atraso', alta_cola_atraso($pdo) === 0);
+
+$ponerAlta('tstfresca', 'pendiente', 0);
+chequear('un alta recién pedida no es atraso', alta_cola_atraso($pdo) === 0);
+
+$ponerAlta('tstvieja', 'procesando', 7);
+chequear('cuenta los minutos de la MÁS vieja, no de la última',
+         alta_cola_atraso($pdo) === 7, (string)alta_cola_atraso($pdo));
+
+/* Una que ya salió no habla del estado de la cola. Si contara, cualquier alta
+   vieja y resuelta dejaría al chat diciendo "demorada" para siempre. */
+limpiar($pdo);
+$ponerAlta('tstlista', 'ok', 600);
+chequear('una ya creada no cuenta como atraso', alta_cola_atraso($pdo) === 0);
+limpiar($pdo);
+$ponerAlta('tstfallada', 'error', 600);
+chequear('una que se rindió tampoco', alta_cola_atraso($pdo) === 0);
+
+/* Sin password el bot no puede tipear nada: esa fila no va a salir nunca y es
+   otra clase de problema, no una cola lenta. */
+limpiar($pdo);
+$ponerAlta('tstsinclave', 'pendiente', 90, false);
+chequear('una sin clave no se cuenta (no es cola lenta, es otra cosa)',
+         alta_cola_atraso($pdo) === 0, (string)alta_cola_atraso($pdo));
+
+limpiar($pdo);
+$ponerAlta('tstjusto', 'pendiente', ALTA_DEMORA_MIN);
+chequear('en el límite exacto ya se considera demorada',
+         alta_cola_atraso($pdo) >= ALTA_DEMORA_MIN);
+
+/* El aviso de Telegram y el mensaje del chat tienen que usar EL MISMO numero:
+   si el chat dijera "puede demorar" antes de que suene la alerta, el operador
+   se entera del problema por el jugador. */
+$refl = new ReflectionFunction('alta_avisar_trabadas');
+$porDefecto = $refl->getParameters()[1]->getDefaultValue();
+chequear('el aviso de Telegram usa el mismo umbral que el chat',
+         $porDefecto === ALTA_DEMORA_MIN, "aviso=$porDefecto chat=" . ALTA_DEMORA_MIN);
+
+limpiar($pdo);
+
+// ===========================================================================
+echo "\n=== 9. Lo que el chat le dice al modelo ===\n";
+
+/* Posicional otra vez, por lo mismo que la sección 7: ejecutar_tool() vive en
+   chatbot.php, que atiende el request apenas se incluye. */
+$srcCC = file_get_contents(__DIR__ . '/api/chatbot.php');
+$i0 = strpos($srcCC, "if (\$nombre === 'crear_cuenta') {");
+$i1 = strpos($srcCC, "if (\$nombre === 'crear_recarga') {", $i0 ?: 0);
+$bloque = ($i0 !== false && $i1 !== false) ? substr($srcCC, $i0, $i1 - $i0) : '';
+
+chequear('el chat mira el atraso de la cola antes de contestar',
+         str_contains($bloque, 'alta_cola_atraso('));
+chequear('y el mensaje depende de eso, no es uno solo',
+         str_contains($bloque, "'mensaje' => \$demorada"));
+
+/* Los dos textos van al MODELO, que los relata con sus palabras. El de la cola
+   demorada tiene que prohibir el plazo explícitamente: sin eso vuelve a
+   inventarlo, que es exactamente lo que pasó. */
+$iMsj = strpos($bloque, "'mensaje' => \$demorada");
+$textos = substr($bloque, $iMsj, 900);
+chequear('con la cola demorada se le PROHIBE prometer un tiempo',
+         (bool)preg_match('/NO le prometas/i', $textos), mb_substr($textos, 0, 120));
+chequear('y se le ofrece qué decir en su lugar (un agente lo ayuda)',
+         str_contains($textos, 'agente'));
+chequear('con la cola sana sí puede decir el par de minutos',
+         str_contains($textos, 'par de minutos'));
+
+/* El aviso al operador se dispara en el chat, que hasta hoy era el único
+   camino que no lo hacía -- la misma asimetría que tenía el nombre de usuario.
+   Es donde más falta: es el único lugar donde a alguien se le PROMETIÓ algo. */
+chequear('con la cola demorada se avisa al operador',
+         str_contains($bloque, 'alta_avisar_trabadas('));
+chequear('pero solo si está demorada, no en cada alta',
+         (bool)preg_match('/if \(\$demorada && function_exists\(.alta_avisar_trabadas/', $bloque));
+
 limpiar($pdo);
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);
 exit($fail > 0 ? 1 : 0);

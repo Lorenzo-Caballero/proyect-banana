@@ -2167,14 +2167,58 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
                     error_log('chatbot crear_cuenta ref: ' . $e->getMessage());
                 }
             }
+            /* EL TIEMPO SE PROMETE SEGUN COMO VENGA LA COLA, no siempre igual.
+               EL CASO (16/09/2026): el bot le dijo a un jugador "en un par de
+               minutos te aparecen los datos" y la cuenta no salio -- el alta
+               choco contra el challenge del WAF y quedo 15 minutos esperando el
+               rescate automatico. El jugador se quedo mirando el chat.
+
+               Ese "par de minutos" NO estaba en este mensaje: lo invento el
+               modelo, y es razonable que lo haga, porque encolar es instantaneo
+               y nada le decia lo contrario. La cuenta la crea OTRO sistema (el
+               bot de Playwright contra el panel), y de ese lado el chat no sabia
+               nada.
+
+               Asi que ahora se lo decimos. Con la cola sana el plazo es cierto y
+               tranquiliza; con la cola demorada, prometerlo es lo peor que se
+               puede hacer -- el jugador nuevo que no vuelve es el que esperaba
+               algo que no llego.
+
+               NO se le miente al jugador ni se le esconde: se le dice que esta
+               en camino y que si tarda lo agarra un agente, que es exactamente
+               lo que pasa. */
+            $atraso = function_exists('alta_cola_atraso') ? alta_cola_atraso($pdo) : 0;
+            $demorada = $atraso >= (defined('ALTA_DEMORA_MIN') ? ALTA_DEMORA_MIN : 3);
+
+            /* Y QUE EL OPERADOR SE ENTERE EN ESE MOMENTO. Hasta hoy este aviso
+               lo disparaban la landing, el sondeo del widget y el cron del
+               colector -- el chat no, la misma asimetria que tenia el nombre de
+               usuario. Es justo el lugar donde hace mas falta: es el unico
+               canal donde a alguien se le acaba de PROMETER algo.
+               Best-effort y deduplicado por alta: no agrega una sola llamada
+               HTTP si no hay nada trabado (consulta y vuelve). */
+            if ($demorada && function_exists('alta_avisar_trabadas')) {
+                try { alta_avisar_trabadas($pdo); } catch (Throwable $e) {
+                    error_log('chatbot crear_cuenta (aviso cola): ' . $e->getMessage());
+                }
+            }
+
             // OJO: NO se devuelve la password. A esta altura la cuenta todavia
             // no existe en el panel; el bot la crea despues y puede fallar. El
             // widget sondea alta_estado.php y la muestra cuando este confirmada.
             return ['ok' => true, 'usuario' => $u,
                     'id' => (int)($r['cuerpo']['id'] ?? 0),
                     'estado' => 'en_curso',
-                    'mensaje' => 'Alta pedida. Se esta creando en la plataforma; '
-                               . 'cuando este lista se le muestran los datos.'];
+                    'demorada' => $demorada,
+                    'mensaje' => $demorada
+                        ? 'Alta pedida, PERO la cola viene demorada. NO le prometas '
+                          . 'ningun tiempo ni le digas "unos minutos". Decile que la '
+                          . 'cuenta esta en camino, que los datos le van a aparecer '
+                          . 'aca mismo apenas este lista, y que si tarda un agente lo '
+                          . 'va a ayudar.'
+                        : 'Alta pedida. Se esta creando en la plataforma; cuando este '
+                          . 'lista se le muestran los datos aca mismo. Podes decirle '
+                          . 'que suele tardar un par de minutos.'];
         }
 
         // 409: puede ser "nombre tomado" o "ese alta YA esta en la cola". No
