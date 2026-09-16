@@ -11,9 +11,21 @@
  * LAS TRES SEÑALES NO VALEN LO MISMO, Y ESO ES TODO EL DISEÑO
  * ============================================================================
  *
+ *   Comprobante  `recargas.trx_declarada`. DOS cuentas declararon LA MISMA
+ *              transferencia. Es la más fuerte de todas y además no es un
+ *              indicio de identidad sino de intención: nadie declara por error
+ *              el mismo número de operación desde dos cuentas distintas.
+ *
+ *              Así lo descubrió Nahuel el 16/09/2026 --*"mandó un comprobante
+ *              con los mismos datos, el mismo desde varias cuentas"*-- y por
+ *              eso esta señal existe. `pagos.id_unico` es UNIQUE, así que el
+ *              banco acredita UNA sola vez; el riesgo real es que un operador
+ *              vea el comprobante en el CRM y lo asigne a mano sin saber que
+ *              ya se usó.
+ *
  *   CUIT/CBU   `huellas_pagador`. La plata salió de la MISMA cuenta bancaria.
- *              Es la más fuerte de lejos: abrir una cuenta de banco a nombre
- *              de otro no es algo que se haga para esquivar un bloqueo.
+ *              Muy fuerte: abrir una cuenta de banco a nombre de otro no es
+ *              algo que se haga para esquivar un bloqueo.
  *
  *   Dispositivo  `dispositivos_usuarios`. El mismo celular. Fuerte, pero un
  *              teléfono se presta: la pareja, el hermano, el locutorio.
@@ -44,7 +56,7 @@
 declare(strict_types=1);
 
 /** Fuerza de un vínculo. Ordena de más a menos confiable. */
-const VIN_FUERZA = ['pago' => 3, 'dispositivo' => 2, 'ip' => 1];
+const VIN_FUERZA = ['comprobante' => 4, 'pago' => 3, 'dispositivo' => 2, 'ip' => 1];
 
 /** Sólo estas frenan un alta nueva. La IP nunca: ver el encabezado. */
 const VIN_SENALES_DURAS = ['pago', 'dispositivo'];
@@ -185,6 +197,37 @@ function vin_relacionados(PDO $pdo, string $usuario, int $limite = 20): array
                    . ($quien !== '' ? ' (' . $quien . ')' : ''));
         }
     } catch (Throwable $e) { error_log('vin_relacionados/pago: ' . $e->getMessage()); }
+
+    /* ---- 1b. EL MISMO COMPROBANTE DECLARADO DESDE DOS CUENTAS ----
+       No es solo "son la misma persona": es que alguien reclamó la misma
+       transferencia dos veces. Por eso pesa más que la cuenta bancaria --
+       compartir banco puede ser una familia; declarar el mismo número de
+       operación no tiene lectura inocente.
+
+       Se exigen 6 caracteres: los números de operación cortos ("1", "123") los
+       tipea cualquiera y atarían a desconocidos. Y los vacíos quedan afuera
+       por lo mismo que en las huellas. */
+    try {
+        $st = $pdo->prepare(
+            "SELECT DISTINCT o.usuario, o.trx_declarada
+               FROM recargas r
+               JOIN recargas o
+                 ON o.trx_declarada = r.trx_declarada
+                AND o.usuario <> r.usuario
+              WHERE r.usuario = ?
+                AND r.trx_declarada IS NOT NULL
+                AND CHAR_LENGTH(TRIM(r.trx_declarada)) >= 6
+              LIMIT 50"
+        );
+        $st->execute([$usuario]);
+        foreach ($st as $f) {
+            $sumar((string)$f['usuario'], 'comprobante',
+                   'declaró LA MISMA transferencia (operación '
+                   . trim((string)$f['trx_declarada']) . ')');
+        }
+    } catch (Throwable $e) {
+        // trx_declarada es de la migracion 45: sin ella, esta señal no existe.
+    }
 
     /* ---- 2. Mismo celular ----
        Sale de dispositivos_usuarios (migración 69), que guarda el HISTORIAL.

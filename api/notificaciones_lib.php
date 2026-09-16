@@ -263,6 +263,53 @@ if (!function_exists('notif_crear')) {
             }
             $yaCargo = function_exists('rl_es_primera_carga')
                     && rl_es_primera_carga($pdo, $usuario) === 0;
+
+            /* EL BONO ES POR PERSONA, NO POR CUENTA (16/09/2026).
+               El candado de abajo es por `usuario`, asi que una cuenta nueva =
+               un bono nuevo. Nahuel encontro a alguien cobrandolo varias veces:
+               registrarse, instalar la app, cobrar, repetir.
+
+               La condicion de la primera carga (de esta misma mañana) ya lo
+               encarece bastante, pero no lo cierra: si el minimo de carga es
+               1.280 y el bono 1.000, repetir la vuelta sigue conviniendo.
+
+               El celular si lo cierra, porque es lo unico que no se multiplica
+               gratis: `dispositivos_usuarios` (migracion 69) guarda que cuentas
+               pasaron por cada aparato, y si alguna YA cobro este bono, la
+               siguiente no lo cobra.
+
+               DOS LIMITES, dichos de frente:
+                 - la tabla arranca vacia, asi que esto protege de aca en
+                   adelante y no puede revisar lo que ya paso;
+                 - reinstalando la app se puede generar un device_id nuevo. Eso
+                   ya es bastante mas trabajo que crearse una cuenta, que es
+                   todo lo que se le pide a una defensa asi.
+
+               Ante un error de base NO se frena el bono: negarle un regalo a un
+               jugador legitimo por una consulta que fallo es peor que pagar uno
+               de mas. */
+            $yaLoCobroOtro = false;
+            try {
+                $qd = $pdo->prepare(
+                    "SELECT o.usuario
+                       FROM dispositivos_usuarios d
+                       JOIN dispositivos_usuarios o
+                         ON o.device_id = d.device_id AND o.usuario <> d.usuario
+                       JOIN movimientos m
+                         ON m.usuario = o.usuario AND m.origen = 'bono_app' AND m.monto > 0
+                      WHERE d.usuario = ?
+                      LIMIT 1"
+                );
+                $qd->execute([$usuario]);
+                $otro = $qd->fetchColumn();
+                if ($otro) {
+                    $yaLoCobroOtro = true;
+                    error_log("notif_app_instalada: bono de la app NO pagado a $usuario; "
+                            . "ya lo cobro $otro desde el mismo celular");
+                }
+            } catch (Throwable $e) {
+                // Sin la migracion 69 esta defensa no existe todavia.
+            }
             try {
                 $pdo->beginTransaction();
                 // Segundo candado (ver arriba). FOR UPDATE: dos registros
@@ -274,7 +321,13 @@ if (!function_exists('notif_crear')) {
                       WHERE usuario = ? AND origen = 'bono_app' LIMIT 1 FOR UPDATE"
                 );
                 $ya->execute([$usuario]);
-                if (!$ya->fetch()) {
+                /* `!$yaLoCobroOtro` corta las DOS ramas, y tiene que ser asi:
+                   poner $fichas en 0 mas arriba no alcanzaba --al contrario,
+                   era peor-- porque la rama del marcador inserta un movimiento
+                   de monto 0 pase lo que pase, y ese marcador es exactamente lo
+                   que notif_app_bono_liberar() cobra en la primera carga. O
+                   sea: el bono se pagaba igual, un rato despues. */
+                if (!$ya->fetch() && !$yaLoCobroOtro) {
                     if ($yaCargo) {
                         $pdo->prepare(
                             "UPDATE usuarios SET bonus = bonus + ? WHERE username = ?"

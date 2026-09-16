@@ -240,6 +240,112 @@ chequear('pero la cuenta bancaria sigue viéndose igual',
 chequear('y esa sí es señal fuerte', (int)($v[0]['fuerza'] ?? 0) === VIN_FUERZA['pago']);
 
 // ===========================================================================
+echo "\n=== 5c. El mismo comprobante desde dos cuentas ===\n";
+
+/* CÓMO SE DESCUBRIÓ (Nahuel, 16/09/2026): *"me di cuenta porque mandó un
+   comprobante con los mismos datos, el mismo desde varias cuentas"*.
+
+   Es la señal MÁS fuerte de todas, y no porque identifique mejor a una persona
+   sino porque no tiene lectura inocente: compartir banco puede ser una familia,
+   pero declarar el MISMO número de operación desde dos cuentas es reclamar la
+   misma transferencia dos veces.
+
+   `pagos.id_unico` es UNIQUE, así que el banco acredita una sola vez. El riesgo
+   real es que un operador vea el comprobante en el CRM y lo asigne a mano sin
+   saber que ya se usó -- por eso hace falta que se VEA. */
+$limpiar();
+$usuario('tv_tramposo1'); $usuario('tv_tramposo2'); $usuario('tv_honesto');
+
+$recarga = function (string $u, string $trx) use ($pdo) {
+    $pdo->prepare(
+        "INSERT INTO recargas (referencia, usuario, coins, monto_base, monto_pedido,
+                               trx_declarada, estado, creada_en, vence_en)
+         VALUES (?, ?, 1280, 1280, 1280, ?, 'pendiente', NOW(), NOW() + INTERVAL 45 MINUTE)"
+    )->execute([substr('tv' . md5($u . $trx), 0, 12), $u, $trx]);
+};
+
+$recarga('tv_tramposo1', '100000010277176');
+$recarga('tv_tramposo2', '100000010277176');   // el MISMO comprobante
+$recarga('tv_honesto',   '100000010999999');
+
+$v = vin_relacionados($pdo, 'tv_tramposo1');
+chequear('encuentra a quien declaró la misma transferencia',
+         count($v) === 1 && $v[0]['usuario'] === 'tv_tramposo2', json_encode($v));
+chequear('es la señal más fuerte de todas',
+         (int)$v[0]['fuerza'] === VIN_FUERZA['comprobante']);
+chequear('más que compartir cuenta bancaria',
+         VIN_FUERZA['comprobante'] > VIN_FUERZA['pago']);
+chequear('y dice QUÉ operación, para poder ir a mirarla',
+         str_contains($v[0]['detalle'], '100000010277176'), $v[0]['detalle']);
+chequear('el que declaró otra cosa no aparece',
+         vin_relacionados($pdo, 'tv_honesto') === []);
+
+/* Un número corto lo tipea cualquiera: "1", "123" atarían a desconocidos. */
+$limpiar();
+$usuario('tv_c1'); $usuario('tv_c2');
+$recarga('tv_c1', '123');
+$recarga('tv_c2', '123');
+chequear('un número de operación corto NO vincula a nadie',
+         vin_relacionados($pdo, 'tv_c1') === [],
+         json_encode(vin_relacionados($pdo, 'tv_c1')));
+
+$pdo->exec("DELETE FROM recargas WHERE usuario LIKE 'tv_%'");
+
+// ===========================================================================
+echo "\n=== 5d. El bono de la app, una vez por CELULAR ===\n";
+
+/* EL AGUJERO (16/09/2026). El candado del bono es por `usuario`, así que una
+   cuenta nueva = un bono nuevo: registrarse, instalar la app, cobrar, repetir.
+   La condición de la primera carga lo encarece pero no lo cierra -- con mínimo
+   1.280 y bono 1.000, repetir la vuelta sigue conviniendo.
+
+   El celular sí lo cierra, porque es lo único que no se multiplica gratis.
+
+   Se prueba la CONSULTA que decide, no notif_app_instalada() entero: esa
+   función depende de config_crm, de la promo prendida y del candado tiene_app,
+   y lo que puede romperse acá es el cruce. */
+$limpiar();
+$usuario('tv_app1'); $usuario('tv_app2'); $usuario('tv_appsolo');
+vin_anotar_dispositivo($pdo, 'dev-trampa-1', 'tv_app1');
+vin_anotar_dispositivo($pdo, 'dev-trampa-1', 'tv_app2');
+vin_anotar_dispositivo($pdo, 'dev-otro-2',   'tv_appsolo');
+
+$pdo->prepare("INSERT INTO movimientos (usuario, tipo, monto, motivo, origen)
+               VALUES ('tv_app1', 'bono', 1000, 'Bono por instalar la app', 'bono_app')")->execute();
+
+$yaCobro = function (string $u) use ($pdo) {
+    $q = $pdo->prepare(
+        "SELECT o.usuario
+           FROM dispositivos_usuarios d
+           JOIN dispositivos_usuarios o
+             ON o.device_id = d.device_id AND o.usuario <> d.usuario
+           JOIN movimientos m
+             ON m.usuario = o.usuario AND m.origen = 'bono_app' AND m.monto > 0
+          WHERE d.usuario = ? LIMIT 1"
+    );
+    $q->execute([$u]);
+    return (string)($q->fetchColumn() ?: '');
+};
+
+chequear('la segunda cuenta del mismo celular NO puede cobrarlo otra vez',
+         $yaCobro('tv_app2') === 'tv_app1', $yaCobro('tv_app2'));
+chequear('el que ya cobró no se bloquea a sí mismo', $yaCobro('tv_app1') === '');
+chequear('otro celular cobra normal', $yaCobro('tv_appsolo') === '');
+
+/* EL MARCADOR NO CUENTA COMO COBRO. Quien instaló antes de cargar deja una fila
+   de monto 0 esperando su primera carga: si eso contara, el bono se le negaría
+   a la persona equivocada -- a la que todavía no cobró nada. */
+$pdo->prepare("INSERT INTO movimientos (usuario, tipo, monto, motivo, origen)
+               VALUES ('tv_appsolo', 'bono', 0, 'Bono de la app: espera su primera carga', 'bono_app')")->execute();
+$usuario('tv_appvecino');
+vin_anotar_dispositivo($pdo, 'dev-otro-2', 'tv_appvecino');
+chequear('un marcador pendiente (monto 0) no bloquea a nadie',
+         $yaCobro('tv_appvecino') === '', $yaCobro('tv_appvecino'));
+
+$pdo->exec("DELETE FROM dispositivos_usuarios WHERE device_id LIKE 'dev-%'");
+$pdo->exec("DELETE FROM movimientos WHERE usuario LIKE 'tv_%'");
+
+// ===========================================================================
 // ===========================================================================
 echo "\n=== 6. Nada de esto puede tumbar una ficha ===\n";
 /* vin_relacionados corre al abrir CADA conversación del CRM. Un vínculo que no
