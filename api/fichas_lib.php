@@ -448,9 +448,37 @@ function fichas_consultar(PDO $pdo, string $usuario): array
     // en este flujo nadie escribe, y tenerlo al lado hacia que el chatbot
     // hablara de dos monedas distintas: contestaba "0 fichas" a alguien que
     // tenia 1000 de saldo.
+    /* EL BLOQUEO SE DICE ACA, AL PRINCIPIO, Y NO AL FINAL DEL FLUJO.
+       EL CASO (16/09/2026): a un jugador bloqueado el bot le contesto "Tenés
+       1.400 fichas disponibles para retirar. ¿Querés sacar todo o una parte?",
+       le pidio el CBU, le confirmo el monto -- y recien al aceptar aparecio
+       "hay un bloqueo en tu cuenta". Lo llevo por todo el camino para chocarlo
+       contra la pared al final.
+
+       Eso es malo para los dos lados: el jugador se enoja mas cuanto mas
+       avanzo, y el operador hereda una discusion que no hacia falta. El freno
+       de fichas_pedir_retiro sigue estando --es el que protege la plata-- pero
+       el modelo tiene que saberlo ANTES de ofrecer nada.
+
+       El saldo se sigue diciendo: preguntar cuanto tengo es inofensivo y
+       negarselo solo confirma que pasa algo raro. Lo que cambia es que el
+       modelo deja de OFRECER retirar.
+
+       El texto es para el MODELO, no para el jugador, y a proposito no le dice
+       que lo detectamos por multicuenta: quien abre tres cuentas aprende de
+       cada mensaje que recibe. */
+    $bloqueado = function_exists('vin_bloqueado') && vin_bloqueado($pdo, $usuario);
+
     return ['ok' => true, 'usuario' => $usuario,
             'saldo' => (float)$r['balance'],
-            'bonos' => (int)$r['bonos']];
+            'bonos' => (int)$r['bonos'],
+            'bloqueado' => $bloqueado,
+            'aviso' => $bloqueado
+                ? 'OJO: esta cuenta tiene un bloqueo. Podés decirle el saldo, pero NO le '
+                . 'ofrezcas retirar ni cargar ni le preguntes cuánto quiere sacar: no se '
+                . 'va a poder. Decile que un agente tiene que revisar su cuenta y que ya '
+                . 'está avisado. No le expliques el motivo del bloqueo.'
+                : ''];
 }
 
 

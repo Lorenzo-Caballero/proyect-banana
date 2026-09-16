@@ -403,6 +403,65 @@ chequear('desbloquear en grupo libera a las tres',
 $pdo->exec("DELETE FROM dispositivos_usuarios WHERE device_id LIKE 'dev-%'");
 
 // ===========================================================================
+echo "\n=== 5f. El bloqueado se entera AL PRINCIPIO, no al final ===\n";
+
+/* EL CASO (16/09/2026). A un jugador bloqueado el bot le contestó "Tenés 1.400
+   fichas disponibles para retirar. ¿Querés sacar todo o una parte?", le pidió
+   el CBU, le confirmó el monto -- y recién al aceptar apareció "hay un bloqueo
+   en tu cuenta". Lo llevó por todo el camino para chocarlo contra la pared al
+   final.
+
+   Es malo para los dos lados: el jugador se enoja más cuanto más avanzó, y el
+   operador hereda una discusión que no hacía falta. El freno de
+   fichas_pedir_retiro sigue estando --es el que protege la plata-- pero el
+   modelo tiene que saberlo ANTES de ofrecer nada. */
+require_once __DIR__ . '/api/fichas_lib.php';
+$limpiar();
+$usuario('tv_bloq');
+$pdo->prepare("UPDATE usuarios SET balance = 1400 WHERE username = 'tv_bloq'")->execute();
+
+/* Sin bloqueo: la consulta responde normal y sin avisos. */
+$c = fichas_consultar($pdo, 'tv_bloq');
+chequear('sin bloqueo devuelve el saldo', (float)$c['saldo'] === 1400.0, json_encode($c));
+chequear('y no inventa ningún aviso', ($c['aviso'] ?? '') === '', (string)($c['aviso'] ?? ''));
+chequear('bloqueado viene en false', ($c['bloqueado'] ?? null) === false);
+
+vin_bloquear($pdo, 'tv_bloq', true, 'nahuel', 'multicuenta');
+$c = fichas_consultar($pdo, 'tv_bloq');
+
+/* EL SALDO SE SIGUE DICIENDO. Preguntar cuánto tengo es inofensivo, y negarlo
+   solo confirma que pasa algo raro -- que es justo lo que no se quiere. */
+chequear('con bloqueo el saldo se sigue diciendo',
+         !empty($c['ok']) && (float)$c['saldo'] === 1400.0, json_encode($c));
+chequear('pero avisa que está bloqueado', ($c['bloqueado'] ?? null) === true);
+chequear('y le dice al modelo que NO ofrezca retirar',
+         str_contains((string)$c['aviso'], 'NO le ofrezcas retirar'), (string)$c['aviso']);
+
+/* EL AVISO ES PARA EL MODELO Y NO PUEDE CONTAR EL MOTIVO. Quien abre tres
+   cuentas aprende de cada mensaje que recibe: decirle "te detectamos por
+   multicuenta" le enseña qué esconder la próxima vez. */
+chequear('el aviso NO cuenta el motivo del bloqueo',
+         !str_contains(mb_strtolower((string)$c['aviso']), 'multicuenta')
+         && !str_contains(mb_strtolower((string)$c['aviso']), 'cuenta bancaria'),
+         (string)$c['aviso']);
+
+/* Y el freno de verdad sigue donde estaba: el aviso orienta al modelo, pero lo
+   que protege la plata es que la operación no se pueda hacer. Un modelo que
+   ignore el aviso igual choca contra esto. */
+$r = fichas_pedir_retiro($pdo, 'tv_bloq', 500, 'chatbot');
+chequear('el retiro sigue frenado aunque el modelo insista',
+         empty($r['ok']) && ($r['codigo'] ?? '') === 'bloqueado', json_encode($r));
+$r = fichas_pedir_carga($pdo, 'tv_bloq', 500, 'chatbot');
+chequear('y la carga también', empty($r['ok']) && ($r['codigo'] ?? '') === 'bloqueado',
+         json_encode($r));
+
+/* Al desbloquear, todo vuelve a la normalidad sin dejar rastros en la consulta. */
+vin_bloquear($pdo, 'tv_bloq', false, 'nahuel');
+$c = fichas_consultar($pdo, 'tv_bloq');
+chequear('desbloqueado vuelve a responder limpio',
+         ($c['bloqueado'] ?? null) === false && ($c['aviso'] ?? '') === '');
+
+// ===========================================================================
 // ===========================================================================
 echo "\n=== 6. Nada de esto puede tumbar una ficha ===\n";
 /* vin_relacionados corre al abrir CADA conversación del CRM. Un vínculo que no
