@@ -346,6 +346,63 @@ $pdo->exec("DELETE FROM dispositivos_usuarios WHERE device_id LIKE 'dev-%'");
 $pdo->exec("DELETE FROM movimientos WHERE usuario LIKE 'tv_%'");
 
 // ===========================================================================
+echo "\n=== 5e. Bloquear a la PERSONA, no a una cuenta ===\n";
+
+/* LA PREGUNTA (Nahuel, 16/09/2026, con el aviso ya andando en producción):
+   *"es la misma persona. ¿Cómo se puede hacer efectivo un bloqueo?"*.
+
+   Bloquear una de tres cuentas no hace nada: sigue operando con las otras dos.
+   Un bloqueo que deja puertas abiertas no es un bloqueo, es una molestia. */
+$limpiar();
+$usuario('tv_g1'); $usuario('tv_g2'); $usuario('tv_g3'); $usuario('tv_vecino');
+
+/* El grupo real: una comparte cuenta bancaria, otra el celular. */
+$huella('tv_g1', '20777666555', '', 'MARIANELA LEIVA');
+$huella('tv_g2', '20777666555', '', 'MARIANELA LEIVA');
+vin_anotar_dispositivo($pdo, 'dev-grupo-9', 'tv_g1');
+vin_anotar_dispositivo($pdo, 'dev-grupo-9', 'tv_g3');
+
+/* El vecino SOLO comparte IP: no puede caer en la redada. */
+$pdo->prepare("INSERT INTO altas (usuario, password, estado, origen, ip, pedido_en)
+               VALUES (?, 'clave123456', 'ok', 'chatbot', '190.5.5.5', NOW())")->execute(['tv_g1']);
+$pdo->prepare("INSERT INTO altas (usuario, password, estado, origen, ip, pedido_en)
+               VALUES (?, 'clave123456', 'ok', 'chatbot', '190.5.5.5', NOW())")->execute(['tv_vecino']);
+
+$r = vin_bloquear_grupo($pdo, 'tv_g1', true, 'nahuel', 'multicuenta');
+chequear('el bloqueo en grupo devuelve ok', !empty($r['ok']), json_encode($r));
+
+$tocadas = $r['usuarios'] ?? [];
+sort($tocadas);
+chequear('alcanza a la del mismo banco y a la del mismo celular',
+         $tocadas === ['tv_g1', 'tv_g2', 'tv_g3'], json_encode($tocadas));
+chequear('las tres quedan bloqueadas de verdad',
+         vin_bloqueado($pdo, 'tv_g1') && vin_bloqueado($pdo, 'tv_g2')
+         && vin_bloqueado($pdo, 'tv_g3'));
+
+/* LO MÁS IMPORTANTE DE ESTA SECCIÓN. Arrastrar por IP bloquearía de una sola
+   vez a todos los que comparten una conexión -- en la base real son quince
+   cuentas, la mayoría ajenas. Un solo click y quince clientes afuera. */
+chequear('el que solo comparte IP NO cae en la redada (lo importante de esta seccion)',
+         vin_bloqueado($pdo, 'tv_vecino') === false);
+chequear('y tampoco figura entre las tocadas',
+         !in_array('tv_vecino', $tocadas, true), json_encode($tocadas));
+
+/* Queda anotado que fue por arrastre y de quién: el que lea la ficha del g2
+   dentro de un mes tiene que poder reconstruir por qué está bloqueado. */
+$m = $pdo->query("SELECT bloqueado_motivo FROM usuarios WHERE username = 'tv_g2'")->fetchColumn();
+chequear('la arrastrada dice a quién estaba vinculada',
+         str_contains((string)$m, 'tv_g1'), (string)$m);
+
+/* Y se puede deshacer entero: bloquear en grupo y desbloquear de a una sería
+   una trampa para el operador que se equivocó. */
+$r = vin_bloquear_grupo($pdo, 'tv_g1', false, 'nahuel');
+chequear('desbloquear en grupo libera a las tres',
+         !vin_bloqueado($pdo, 'tv_g1') && !vin_bloqueado($pdo, 'tv_g2')
+         && !vin_bloqueado($pdo, 'tv_g3'), json_encode($r));
+
+$pdo->exec("DELETE FROM dispositivos_usuarios WHERE device_id LIKE 'dev-%'");
+
+// ===========================================================================
 // ===========================================================================
 echo "\n=== 6. Nada de esto puede tumbar una ficha ===\n";
 /* vin_relacionados corre al abrir CADA conversación del CRM. Un vínculo que no

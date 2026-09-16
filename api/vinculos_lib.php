@@ -58,8 +58,11 @@ declare(strict_types=1);
 /** Fuerza de un vínculo. Ordena de más a menos confiable. */
 const VIN_FUERZA = ['comprobante' => 4, 'pago' => 3, 'dispositivo' => 2, 'ip' => 1];
 
-/** Sólo estas frenan un alta nueva. La IP nunca: ver el encabezado. */
-const VIN_SENALES_DURAS = ['pago', 'dispositivo'];
+/**
+ * Las señales que alcanzan para frenar un alta nueva y para arrastrar un
+ * bloqueo al resto del grupo. La IP NUNCA: ver el encabezado.
+ */
+const VIN_SENALES_DURAS = ['comprobante', 'pago', 'dispositivo'];
 
 /**
  * Pasadas cuántas cuentas una IP deja de decir algo sobre una persona.
@@ -140,6 +143,53 @@ function vin_bloquear(PDO $pdo, string $usuario, bool $bloquear,
         return ['ok' => false, 'error' => 'No se pudo guardar (¿falta la migración 69?)'];
     }
     return ['ok' => true, 'bloqueado' => $bloquear];
+}
+
+/**
+ * Bloquear (o desbloquear) a la persona, no a una cuenta.
+ *
+ * POR QUE EXISTE (16/09/2026). Nahuel: *"es la misma persona. ¿Cómo se puede
+ * hacer efectivo un bloqueo?"*. Bloquear una de tres cuentas no hace nada: la
+ * persona sigue operando con las otras dos y en diez minutos abre una cuarta.
+ * Un bloqueo que deja puertas abiertas no es un bloqueo, es una molestia.
+ *
+ * SOLO ARRASTRA LAS SEÑALES FUERTES (comprobante, cuenta bancaria, celular) y
+ * NUNCA la IP. Es la misma línea que en todo este archivo, y acá es donde más
+ * importa: arrastrar por IP bloquearía de una sola vez a todos los que
+ * comparten una conexión -- que en esta base son quince cuentas, la mayoría
+ * ajenas.
+ *
+ * NO ES RECURSIVO a propósito: se bloquea a los vinculados DIRECTOS del que
+ * elegiste, no a los vinculados de los vinculados. Encadenar saltos convierte
+ * dos coincidencias flojas en un grupo enorme, y nadie revisa una lista de
+ * treinta nombres antes de apretar el botón.
+ *
+ * Devuelve ['ok', 'usuarios' => [los que cambiaron], 'error'?].
+ */
+function vin_bloquear_grupo(PDO $pdo, string $usuario, bool $bloquear,
+                            string $operador = '', string $motivo = ''): array
+{
+    $r = vin_bloquear($pdo, $usuario, $bloquear, $operador, $motivo);
+    if (empty($r['ok'])) { return $r; }
+
+    $hechos = [$usuario];
+    foreach (vin_relacionados($pdo, $usuario) as $v) {
+        if (!vin_senal_fuerte($v['senales'])) { continue; }
+        $sub = vin_bloquear($pdo, (string)$v['usuario'], $bloquear, $operador,
+                            $motivo !== '' ? $motivo . ' (vinculada a ' . $usuario . ')'
+                                           : 'vinculada a ' . $usuario);
+        if (!empty($sub['ok'])) { $hechos[] = (string)$v['usuario']; }
+    }
+    return ['ok' => true, 'usuarios' => $hechos];
+}
+
+/** ¿Alguna de estas señales alcanza para arrastrar un bloqueo? */
+function vin_senal_fuerte(array $senales): bool
+{
+    foreach ($senales as $s) {
+        if (in_array($s, VIN_SENALES_DURAS, true)) { return true; }
+    }
+    return false;
 }
 
 /**

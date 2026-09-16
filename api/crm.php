@@ -1310,11 +1310,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $u   = trim((string)($body['usuario'] ?? ''));
             $on  = !empty($body['bloquear']);
             $mot = trim((string)($body['motivo'] ?? ''));
-            $res = vin_bloquear($pdo, $u, $on, $operador, $mot);
+
+            /* `con_vinculadas` bloquea a la PERSONA y no a una cuenta. Es lo
+               que hace efectivo el bloqueo: dejar dos de tres abiertas no frena
+               nada. Arrastra solo por señales fuertes (comprobante, banco,
+               celular) -- nunca por IP. */
+            $res = !empty($body['con_vinculadas']) && function_exists('vin_bloquear_grupo')
+                 ? vin_bloquear_grupo($pdo, $u, $on, $operador, $mot)
+                 : vin_bloquear($pdo, $u, $on, $operador, $mot);
+
             if ($res['ok']) {
+                $tocadas = $res['usuarios'] ?? [$u];
                 crm_bitacora($pdo, $operador,
                              $on ? 'bloquear' : 'desbloquear',
-                             $u . ($mot !== '' ? ' · ' . $mot : ''));
+                             implode(', ', $tocadas) . ($mot !== '' ? ' · ' . $mot : ''));
             }
             salir($res, $res['ok'] ? 200 : 400);
         }

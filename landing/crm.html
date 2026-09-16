@@ -11821,18 +11821,41 @@
   $("#btnBloquear").addEventListener("click", async ()=>{
     if(!st.usuario){ toast("Esta conversación no tiene usuario vinculado"); return; }
     const estaba = !!st.bloqueado;
-    let motivo = "";
+
+    /* SE OFRECE ARRASTRAR A LAS VINCULADAS, y es lo que hace efectivo el
+       bloqueo: bloquear una de tres cuentas no frena nada -- la persona sigue
+       operando con las otras dos. Solo las de señal FUERTE (comprobante,
+       cuenta bancaria, celular); las que solo comparten IP no se ofrecen
+       siquiera, porque ahi adentro hay vecinos. */
+    const fuertes = (st.vinculos || []).filter(v => v.fuerza >= 2);
+    let motivo = "", conVinc = false;
+
     if (estaba) {
       if(!confirm(`¿Desbloquear a @${st.usuario}?\n\nVa a poder volver a cargar y retirar.`)) return;
+      if (fuertes.length && confirm(
+            `¿Desbloquear también las ${fuertes.length} cuenta(s) vinculadas?\n\n` +
+            fuertes.map(v => "@" + v.usuario).join("\n"))) { conVinc = true; }
     } else {
       motivo = prompt(`Bloquear a @${st.usuario}. ¿Por qué?\n\n` +
                       `(Lo vas a leer vos dentro de tres semanas, no el jugador.)`, "");
       if (motivo === null) return;   // cancelo
+      if (fuertes.length) {
+        conVinc = confirm(
+          `¿Bloquear también las ${fuertes.length} cuenta(s) de la misma persona?\n\n` +
+          fuertes.map(v => "@" + v.usuario + " — " + v.detalle).join("\n") +
+          `\n\nSi no, va a seguir operando con esas.`);
+      }
     }
+
     const d = await jpost({accion:"bloquear", usuario:st.usuario,
-                           bloquear: !estaba, motivo: motivo || ""});
+                           bloquear: !estaba, motivo: motivo || "",
+                           con_vinculadas: conVinc});
     if(!d.ok){ toast(d.error || "No se pudo"); return; }
-    toast(estaba ? "Desbloqueado" : "Bloqueado: no puede cargar ni retirar");
+    const n = (d.usuarios || [st.usuario]).length;
+    toast(estaba
+      ? (n > 1 ? `${n} cuentas desbloqueadas` : "Desbloqueado")
+      : (n > 1 ? `${n} cuentas bloqueadas: no pueden cargar ni retirar`
+               : "Bloqueado: no puede cargar ni retirar"));
     abrir(st.convId);
   });
 
