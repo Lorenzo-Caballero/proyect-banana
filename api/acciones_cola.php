@@ -635,6 +635,30 @@ try {
     //
     // SIN ids: libera todo lo 'procesando'. Eso sigue siendo a mano y a
     // proposito: quien lo corra tiene que haber mirado el panel antes.
+    /* CONCILIAR: cerrar las acciones que quedaron trabadas pero que el LIBRO
+       del panel dice que SI se ejecutaron.
+
+       Cuando el WAF corta un deposito, el worker recibe 200 con el HTML del
+       challenge, no puede confirmar y marca 'revisar' -- el lado seguro. Pero
+       "no pude confirmar" no es "no paso": la request pudo llegar igual, y
+       llega. Esas filas no se cierran nunca.
+
+       Va ACA y no en el worker por lo mismo que el resto de las decisiones del
+       proyecto: cuando esto se decide en Python terminan habiendo dos criterios
+       que se separan (paso con el matcher). El colector solo pregunta.
+
+       SOLO CIERRA. Que algo no este en el libro no marca ningun error: el libro
+       tiene ventana movil y backfill, y una ausencia puede ser "todavia no
+       sincronizo". Cerrar de mas se nota; marcar un fracaso falso le saca la
+       plata a alguien que la tiene. */
+    if ($accion === 'conciliar' && $metodo === 'POST') {
+        require_once __DIR__ . '/conciliar_lib.php';
+        $cuerpo = json_decode(file_get_contents('php://input'), true) ?: [];
+        $dias = (int)($cuerpo['dias'] ?? CONC_DIAS);
+        echo json_encode(conc_conciliar($pdo, $dias), JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
     if ($accion === 'liberar' && $metodo === 'POST') {
         $body = json_decode(file_get_contents('php://input'), true) ?: [];
         $ids  = array_values(array_filter(array_map('intval', (array)($body['ids'] ?? []))));

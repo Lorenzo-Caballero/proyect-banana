@@ -366,6 +366,45 @@ def retirar_del_jugador(ctx, id_ganamos: int, monto: float) -> tuple[str, str]:
     return "hecha", f"retiro por API ({r.status}) {corto}".strip()
 
 
+def conciliar(ctx, solo_ver: bool) -> int:
+    """Cierra las acciones trabadas que el LIBRO dice que si se ejecutaron.
+
+    POR QUE HACE FALTA: cuando el WAF corta un deposito, el worker recibe 200
+    con el HTML del challenge, no puede confirmar y marca 'revisar' -- el lado
+    seguro. Pero "no pude confirmar" no es "no paso": la request pudo llegar
+    igual, y llega. Esas filas no se cierran nunca y ensucian la bandeja de lo
+    que falta resolver con cosas ya resueltas. El costo real no es el ruido: es
+    que el operador deje de creerle a la bandeja y cargue a mano lo que ya
+    entro -- que es como se acreditan 35.000 dos veces.
+
+    LA DECISION ES DEL SERVER, no de aca. Este worker solo pide que se haga,
+    igual que con las peticiones de carga: dos criterios escritos en dos
+    lenguajes se separan solos (paso con el matcher).
+
+    Va DESPUES de sincronizar_libro() a proposito: con el libro recien traido,
+    lo que se ejecuto hace un minuto ya figura.
+    """
+    key = os.environ.get("API_KEY", "")
+    if not key or solo_ver or MODE == "DRY_RUN":
+        return 0
+    try:
+        r = ctx.request.post(url_acciones() + "?accion=conciliar",
+                             headers={"X-API-Key": key},
+                             data={"dias": 7}, timeout=20_000)
+        d = r.json() or {}
+    except Exception as e:
+        log.warning("conciliar: no pude pedirlo: %s", e)
+        return 0
+    n = int(d.get("cerradas") or 0)
+    if n:
+        for x in (d.get("detalle") or []):
+            log.info("  conciliado #%s %s %s %s -> pago %s",
+                     x.get("id"), x.get("usuario"), x.get("tipo"),
+                     x.get("monto"), x.get("payment_id"))
+        log.info("%d accion(es) cerradas contra el libro", n)
+    return n
+
+
 def una_pasada_retiros(ctx, solo_ver: bool) -> int:
     """Ejecuta los retiros que un operador YA APROBO en el CRM.
 
@@ -1115,6 +1154,8 @@ def main() -> int:
                     log.info("%d retiro(s) ejecutado(s)", nr)
                 revisar_stock(ctx, args.ver)
                 sincronizar_libro(ctx, args.ver)
+                # Justo DESPUES de traer el libro, que es cuando esta fresco.
+                conciliar(ctx, args.ver)
                 # El saldo de los jugadores. Va ULTIMO a proposito: es lo unico
                 # de la pasada que no decide nada -- si tarda o falla, las
                 # cargas y los retiros ya se resolvieron.
