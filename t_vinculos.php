@@ -195,6 +195,51 @@ vin_bloquear($pdo, 'tv_malo', false, 'nahuel');
 chequear('sin nadie bloqueado, la misma cuenta bancaria no frena nada',
          vin_bloqueado_por_senal($pdo, ['cuit' => '20555444333']) === null);
 
+echo "\n=== 5b. Una IP con muchas cuentas no describe a una persona ===\n";
+
+/* MEDIDO EN PRODUCCIÓN el 16/09/2026, primera corrida del script: a
+   @holasofito763 lo vinculó con QUINCE cuentas por IP, entre ellas varias de
+   prueba evidentes (holaTesttet262, holaTeeettttgf695) y tres altas del chat de
+   esa misma madrugada. No es una persona con quince cuentas: es una IP por la
+   que pasan todos.
+
+   Sin este corte el aviso se vuelve ruido --si todos están vinculados con
+   todos, no dice nada-- y encima invita a bloquear inocentes. */
+$limpiar();
+$ponerAlta = function (string $u, string $ip) use ($pdo) {
+    $pdo->prepare("INSERT INTO altas (usuario, password, estado, origen, ip, pedido_en)
+                   VALUES (?, 'clave123456', 'ok', 'chatbot', ?, NOW())")->execute([$u, $ip]);
+};
+
+/* Dos cuentas desde la misma IP: eso SÍ es un indicio. */
+$usuario('tv_par1'); $usuario('tv_par2');
+$ponerAlta('tv_par1', '200.1.2.3');
+$ponerAlta('tv_par2', '200.1.2.3');
+$v = vin_relacionados($pdo, 'tv_par1');
+chequear('dos cuentas desde la misma IP sí se vinculan', count($v) === 1, json_encode($v));
+chequear('y va marcada como indicio débil, no como señal fuerte',
+         (int)($v[0]['fuerza'] ?? 0) === VIN_FUERZA['ip'], (string)($v[0]['fuerza'] ?? '?'));
+
+/* La misma IP, pero con más cuentas de las que tiene una familia: deja de
+   contar entera, también para los dos primeros. */
+foreach (range(3, 9) as $i) {
+    $usuario("tv_par$i");
+    $ponerAlta("tv_par$i", '200.1.2.3');
+}
+chequear('con 9 cuentas, esa IP deja de vincular a nadie',
+         vin_relacionados($pdo, 'tv_par1') === [],
+         json_encode(array_column(vin_relacionados($pdo, 'tv_par1'), 'usuario')));
+
+/* Y no se lleva puestas a las otras señales: el que además comparte cuenta
+   bancaria sigue apareciendo, que es lo que de verdad importa. */
+$huella('tv_par1', '20123123123', '');
+$huella('tv_par5', '20123123123', '');
+$v = vin_relacionados($pdo, 'tv_par1');
+chequear('pero la cuenta bancaria sigue viéndose igual',
+         count($v) === 1 && $v[0]['usuario'] === 'tv_par5', json_encode($v));
+chequear('y esa sí es señal fuerte', (int)($v[0]['fuerza'] ?? 0) === VIN_FUERZA['pago']);
+
+// ===========================================================================
 // ===========================================================================
 echo "\n=== 6. Nada de esto puede tumbar una ficha ===\n";
 /* vin_relacionados corre al abrir CADA conversación del CRM. Un vínculo que no

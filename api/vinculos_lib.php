@@ -49,6 +49,26 @@ const VIN_FUERZA = ['pago' => 3, 'dispositivo' => 2, 'ip' => 1];
 /** Sólo estas frenan un alta nueva. La IP nunca: ver el encabezado. */
 const VIN_SENALES_DURAS = ['pago', 'dispositivo'];
 
+/**
+ * Pasadas cuántas cuentas una IP deja de decir algo sobre una persona.
+ *
+ * MEDIDO EL 16/09/2026, y por eso existe esta constante: la primera corrida en
+ * producción vinculó a @holasofito763 con QUINCE cuentas por IP, entre ellas
+ * varias de prueba evidentes (holaTesttet262, holaTeeettttgf695) y tres altas
+ * del chat de esa misma madrugada. No es una persona con quince cuentas: es una
+ * IP por la que pasan todos -- un proxy, una CDN, o simplemente la conexión
+ * desde la que se venía probando.
+ *
+ * La regla vale igual sin saber la causa, que es lo bueno de ponerla acá: si
+ * una IP tiene muchas cuentas, lo que describe es una CONEXIÓN COMPARTIDA, no
+ * un jugador. Cuatro deja lugar a una familia; de ahí para arriba es
+ * infraestructura.
+ *
+ * Y se corrige sola: el día que las IP se capturen bien, las de una persona van
+ * a tener dos o tres cuentas y volverán a contar, sin tocar nada.
+ */
+const VIN_IP_MAX_CUENTAS = 4;
+
 
 /**
  * ¿Está bloqueado de nuestro lado?
@@ -189,10 +209,18 @@ function vin_relacionados(PDO $pdo, string $usuario, int $limite = 20): array
 
     /* ---- 3. Misma IP al registrarse (la débil) ----
        Se acota a 7 días: una IP dinámica cambia de dueño, y cruzar altas de
-       hace tres meses por IP junta a desconocidos. Aun así es la señal que
-       menos pesa, y va marcada como tal.
-       Las IP de servidor no cuentan: si un alta se creó desde el CRM o por un
-       script, la IP es la nuestra y ataría entre sí a todos esos jugadores. */
+       hace tres meses por IP junta a desconocidos.
+
+       Y SOBRE TODO: se descartan las IP con muchas cuentas. La primera corrida
+       en producción (16/09/2026) ató a un jugador con QUINCE cuentas --varias
+       de prueba, y tres altas del chat de esa madrugada-- porque todas
+       comparten una misma IP de salida. Una IP así no describe a una persona
+       sino a una conexión compartida, y contarla convierte el aviso en ruido:
+       si todos están vinculados con todos, el aviso no dice nada y encima
+       invita a bloquear a inocentes. Ver VIN_IP_MAX_CUENTAS.
+
+       Las de loopback tampoco: un alta creada desde el CRM o por un script
+       lleva la IP nuestra. */
     try {
         $st = $pdo->prepare(
             "SELECT DISTINCT o.usuario
@@ -200,6 +228,11 @@ function vin_relacionados(PDO $pdo, string $usuario, int $limite = 20): array
                JOIN altas o
                  ON o.ip = a.ip AND o.usuario <> a.usuario
                 AND ABS(TIMESTAMPDIFF(DAY, o.pedido_en, a.pedido_en)) <= 7
+               JOIN (SELECT ip FROM altas
+                      WHERE ip IS NOT NULL AND ip <> ''
+                      GROUP BY ip
+                     HAVING COUNT(DISTINCT usuario) <= " . VIN_IP_MAX_CUENTAS . ") propia
+                 ON propia.ip = a.ip
               WHERE a.usuario = ?
                 AND a.ip IS NOT NULL AND a.ip <> ''
                 AND a.ip NOT IN ('127.0.0.1', '::1', 'localhost')
