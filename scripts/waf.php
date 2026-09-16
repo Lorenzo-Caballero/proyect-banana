@@ -68,8 +68,48 @@ if (!$dep) { echo "  Ninguno. Los depósitos no se toparon con el challenge.\n";
 else {
     printf("\n  %d depósito(s) tocados.  Fichas que NO entraron: %s\n",
            count($dep), number_format($plataParada, 0, ',', '.'));
+
+    /* ANTES DE QUE ALGUIEN CARGUE ESE TOTAL A MANO: puede estar duplicado.
+       Medido el 16/09/2026 en la primera corrida -- dos pedidos de 750 del
+       MISMO jugador con 4 minutos de diferencia, distinguidos solo por una
+       mayúscula (holaDiego858 / holadiego858). El total decía 1.500 y lo que
+       se le debe es 750.
+
+       El nombre se compara en minúsculas justamente por eso: MySQL compara sin
+       distinguir mayúsculas, pero acá se agrupa en PHP sobre el texto tal cual
+       quedó guardado, y dos formas del mismo nombre parecerían dos personas.
+
+       No se decide nada: se avisa y se manda a mirar. Un jugador PUEDE haber
+       pedido dos cargas iguales seguidas -- lo que no puede es que se le
+       carguen las dos sin que nadie lo haya mirado. Es exactamente el error
+       que le costó 35.000 de más a rodrigoalejandro1234 esa misma madrugada. */
+    $porJugador = [];
+    foreach ($dep as $f) {
+        if (!in_array((string)$f['estado'], ['error', 'revisar'], true)) { continue; }
+        $k = mb_strtolower(trim((string)$f['usuario'])) . '|' . (float)$f['monto'];
+        $porJugador[$k][] = $f;
+    }
+    $sospechosos = array_filter($porJugador, fn($g) => count($g) > 1);
+    if ($sospechosos) {
+        echo "\n  \033[1m⚠ OJO ANTES DE CARGAR A MANO: hay pedidos repetidos.\033[0m\n";
+        foreach ($sospechosos as $k => $g) {
+            [$u, $m] = explode('|', $k);
+            printf("    %s pidió %s fichas %d veces:\n",
+                   $u, number_format((float)$m, 0, ',', '.'), count($g));
+            foreach ($g as $f) {
+                printf("      %s  (como \"%s\", acción %d)\n",
+                       substr((string)$f['creada_en'], 5, 14), $f['usuario'], (int)$f['id']);
+            }
+            printf("      Si fue UNA sola carga, se le deben %s y no %s.\n",
+                   number_format((float)$m, 0, ',', '.'),
+                   number_format((float)$m * count($g), 0, ',', '.'));
+        }
+        echo "\n    Miralo con:  php scripts/jugador-plata.php <usuario>\n";
+        echo "    Ahí se ve lo que TRANSFIRIÓ contra lo que se le acreditó.\n";
+    }
+
     if ($plataParada > 0) {
-        echo "  Esas hay que cargarlas A MANO en el panel: el jugador pagó y no las tiene.\n";
+        echo "\n  Lo que falte cargar va A MANO en el panel: el jugador pagó y no lo tiene.\n";
     }
 }
 
@@ -94,6 +134,11 @@ foreach ($alt as $f) {
            $f['estado'], (int)$f['intentos'], $f['origen']);
 }
 if (!$alt) { echo "  Ninguna.\n"; }
+/* CUENTA DE MENOS Y CONVIENE SABERLO: `altas.mensaje` guarda SOLO el último
+   intento. Un alta que hoy pegó contra el challenge y después salió bien
+   --porque se renombró y entró por la API-- queda con "creado por API" y
+   desaparece de esta lista. O sea que acá se ven las que TERMINARON mal, no
+   todas las que lo tocaron. Para las de hoy, mirá scripts/altas-estado.php. */
 
 // ===========================================================================
 titulo('3. ¿Va peor? (por día)');
