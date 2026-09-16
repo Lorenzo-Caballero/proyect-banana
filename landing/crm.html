@@ -6740,10 +6740,42 @@
     return cont;
   }
 
+  /* CUANTO SE VE ENTERO ANTES DE ENCOGERSE.
+     Pedido de Nahuel (16/09/2026): "quiero que aparezcan durante unos segundos
+     pero que luego se vayan, que no queden constantes porque son molestos".
+
+     Tenía razón, pero desaparecer del todo sería peor: son las dos cosas sin
+     las cuales su plataforma no funciona --sin credenciales no se crea ni una
+     cuenta, y sin cuenta de cobro nadie le puede pagar-- y un cliente que se
+     olvida de cargarlas no tiene sistema y no sabe por qué.
+
+     Así que no se van: se ENCOGEN a un chip chico arriba, que sigue ahí
+     mientras el problema exista y sigue siendo UN click para resolverlo. El
+     texto entero queda en el title. Deja de tapar y deja de reclamar, pero no
+     deja de estar. */
+  const GP_AVISO_SEG = 9;
+  const gpAvisoChico = {};   // id -> ya se encogió (sobrevive a los repintados)
+  const gpAvisoTimers = {};
+
+  /* El texto corto del chip. Se saca del <b> del aviso, que es justamente el
+     titular: "Integrá tu panel de ganamos", "Cargá tu cuenta de cobro". Así no
+     hay una segunda lista de textos que mantener al día. */
+  function gpAvisoTitular(html){
+    const m = String(html).match(/<b>(.*?)<\/b>/i);
+    return m ? m[1].replace(/<[^>]+>/g, "").trim() : "Pendiente de configurar";
+  }
+
   function gpAvisoPintar(id, html, tipo, alClick){
     const cont = gpAvisosContenedor();
     let el = document.getElementById(id);
-    if(!html){ if(el) el.remove(); return; }
+    if(!html){
+      if(el) el.remove();
+      if(gpAvisoTimers[id]){ clearTimeout(gpAvisoTimers[id]); delete gpAvisoTimers[id]; }
+      /* Resuelto: si el problema vuelve (le borran las credenciales), el aviso
+         tiene que volver a verse ENTERO. Sin esto reaparecería ya encogido. */
+      delete gpAvisoChico[id];
+      return;
+    }
     if(!el){
       el = document.createElement("div");
       el.id = id;
@@ -6752,13 +6784,45 @@
       if(id === "gpAvisoInteg"){ cont.prepend(el); } else { cont.appendChild(el); }
     }
     const rojo = tipo !== "info";
-    el.style.cssText = "background:var(--panel2,#231d2c);width:100%;" +
-      "border:1px solid " + (rojo ? "#c0392b" : "#2c6e8f") + ";" +
-      "border-left:4px solid " + (rojo ? "#e74c3c" : "#3aa0d8") + ";" +
-      "border-radius:10px;padding:10px 16px;font-size:13px;color:var(--txt,#eee);" +
-      (alClick ? "cursor:pointer;" : "cursor:default;") +
-      "box-shadow:0 6px 24px rgba(0,0,0,.45)";
-    el.innerHTML = html;
+    const borde = rojo ? "#e74c3c" : "#3aa0d8";
+
+    /* Los dos aspectos del mismo aviso. El chico no es un resumen distinto: es
+       el mismo titular, más chico y sin ocupar el ancho. */
+    const pintarGrande = () => {
+      el.style.cssText = "background:var(--panel2,#231d2c);width:100%;" +
+        "border:1px solid " + (rojo ? "#c0392b" : "#2c6e8f") + ";" +
+        "border-left:4px solid " + borde + ";" +
+        "border-radius:10px;padding:10px 16px;font-size:13px;color:var(--txt,#eee);" +
+        (alClick ? "cursor:pointer;" : "cursor:default;") +
+        "box-shadow:0 6px 24px rgba(0,0,0,.45);transition:opacity .35s";
+      el.innerHTML = html;
+      el.title = "";
+    };
+    const pintarChico = () => {
+      el.style.cssText = "background:var(--panel2,#231d2c);" +
+        "border:1px solid " + borde + ";border-radius:999px;" +
+        "padding:4px 12px;font-size:11.5px;color:var(--txt,#eee);opacity:.82;" +
+        (alClick ? "cursor:pointer;" : "cursor:default;") +
+        "box-shadow:0 3px 12px rgba(0,0,0,.35);transition:opacity .35s;white-space:nowrap";
+      /* El texto entero va al title: encogerlo no puede perder la explicación
+         de por qué importa. */
+      el.innerHTML = (rojo ? "⚠️ " : "") + esc(gpAvisoTitular(html));
+      el.title = String(html).replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim()
+               + (alClick ? "\n\n(Tocá para resolverlo)" : "");
+    };
+
+    if(gpAvisoChico[id]){ pintarChico(); }
+    else {
+      pintarGrande();
+      if(gpAvisoTimers[id]) clearTimeout(gpAvisoTimers[id]);
+      gpAvisoTimers[id] = setTimeout(()=>{
+        gpAvisoChico[id] = true;
+        /* Puede haberse resuelto mientras corría el reloj. */
+        if(document.getElementById(id)) pintarChico();
+      }, GP_AVISO_SEG * 1000);
+    }
+    /* El click sigue llevando al lugar que lo resuelve, grande o chico: que se
+       achique no puede costarle un paso más al que quiere arreglarlo. */
     el.onclick = alClick || null;
   }
 
