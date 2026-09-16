@@ -56,6 +56,17 @@ try {
 } catch (Throwable $e) {}
 function corto($s, $n = 58) { $s = trim((string)$s); return $s === '' ? '' : mb_substr($s, 0, $n); }
 
+/* Segundos a algo legible. En segundos hasta el minuto porque es la escala en
+   la que pasa todo: un alta sana sale en 5-20 s y una que peleo contra el WAF
+   tarda minutos. Decir "0 min" y "3 min" esconde justo la diferencia. */
+function dur($seg) {
+    if ($seg === null) { return '—'; }
+    $seg = (int)$seg;
+    if ($seg < 90)   { return $seg . 's'; }
+    if ($seg < 5400) { return round($seg / 60) . 'min'; }
+    return round($seg / 3600, 1) . 'h';
+}
+
 echo "\nCola de altas — " . $dominio . "\n";
 
 // ===========================================================================
@@ -142,7 +153,8 @@ titulo('3. Las últimas ' . $cuantas . ' altas');
 try {
     $st = $pdo->prepare(
         "SELECT usuario, estado, intentos, origen, pedido_en, tomado_en, hecho_en,
-                mensaje, creado_en_panel, proximo_intento_en
+                mensaje, creado_en_panel, proximo_intento_en,
+                TIMESTAMPDIFF(SECOND, pedido_en, hecho_en) AS tardo
            FROM altas ORDER BY id DESC LIMIT ?"
     );
     $st->bindValue(1, $cuantas, PDO::PARAM_INT);
@@ -152,7 +164,8 @@ try {
     // creado_en_panel es de la migración 36; proximo_intento_en, de la 37.
     $st = $pdo->prepare(
         "SELECT usuario, estado, intentos, origen, pedido_en, tomado_en, hecho_en,
-                mensaje, NULL creado_en_panel, NULL proximo_intento_en
+                mensaje, NULL creado_en_panel, NULL proximo_intento_en,
+                TIMESTAMPDIFF(SECOND, pedido_en, hecho_en) AS tardo
            FROM altas ORDER BY id DESC LIMIT ?"
     );
     $st->bindValue(1, $cuantas, PDO::PARAM_INT);
@@ -161,9 +174,15 @@ try {
 }
 
 foreach ($filas as $f) {
-    printf("  %-22s %-11s int:%-2d %-9s %s\n",
+    /* El tiempo que tardo va en la MISMA linea que el nombre: "salio" y "salio
+       en 4 segundos" son dos respuestas distintas, y la segunda es la que se
+       pregunta cuando un jugador se queja de que espero. Solo tiene sentido en
+       las que terminaron: en una que sigue esperando seria la edad, no la
+       duracion, y confundir las dos hace que una cola trabada parezca lenta. */
+    printf("  %-22s %-11s int:%-2d %-9s %-14s %s\n",
            corto($f['usuario'], 22), $f['estado'], (int)$f['intentos'],
-           $f['origen'], substr((string)$f['pedido_en'], 5, 14));
+           $f['origen'], substr((string)$f['pedido_en'], 5, 14),
+           $f['hecho_en'] ? 'tardó ' . dur($f['tardo']) : '');
     if (trim((string)$f['mensaje']) !== '') {
         printf("      └─ %s\n", corto($f['mensaje'], 70));
     }
@@ -196,26 +215,50 @@ foreach ($st as $f) {
 if (!$hay) { echo "  Ninguna en los últimos 3 días.\n"; }
 
 // ===========================================================================
-titulo('5. Salieron o no, por hora (últimas 12 h)');
+titulo('5. Cuántas salieron y CUÁNTO TARDARON, por hora (últimas 12 h)');
 /* La curva dice si esto empezó ahora o viene de antes, que cambia dónde mirar:
    un corte limpio a una hora tiene causa (un deploy, un reinicio); una caída
-   gradual es la sesión del panel muriéndose. */
+   gradual es la sesión del panel muriéndose.
+
+   Y el tiempo va al lado de la cantidad porque "salieron todas" puede ser una
+   respuesta tranquilizadora y falsa: si el promedio pasó de 8 segundos a 4
+   minutos, las altas SALEN y el negocio igual se está perdiendo gente que no
+   espera tanto. El máximo se muestra aparte del promedio a propósito -- con
+   una que tardó 15 minutos entre veinte de 5 segundos, el promedio no se
+   mueve y es justo la que hace que alguien se vaya. */
 $st = $pdo->query(
     "SELECT DATE_FORMAT(pedido_en, '%d/%m %Hh') hora,
             SUM(estado = 'ok') ok,
             SUM(estado = 'error') err,
-            SUM(estado IN ('pendiente','procesando')) esperando
+            SUM(estado IN ('pendiente','procesando')) esperando,
+            AVG(CASE WHEN estado = 'ok' AND hecho_en IS NOT NULL
+                     THEN TIMESTAMPDIFF(SECOND, pedido_en, hecho_en) END) prom,
+            MAX(CASE WHEN estado = 'ok' AND hecho_en IS NOT NULL
+                     THEN TIMESTAMPDIFF(SECOND, pedido_en, hecho_en) END) peor
        FROM altas
       WHERE pedido_en >= NOW() - INTERVAL 12 HOUR
       GROUP BY hora ORDER BY hora"
 );
-$hay = 0;
+$hay = 0; $promGlobal = []; $peorGlobal = 0;
 foreach ($st as $f) {
     $hay++;
-    printf("  %-12s ok:%-3d error:%-3d esperando:%-3d %s\n",
+    if ($f['prom'] !== null) { $promGlobal[] = (float)$f['prom']; }
+    $peorGlobal = max($peorGlobal, (int)$f['peor']);
+    printf("  %-12s ok:%-3d error:%-3d esperando:%-3d  prom %-6s peor %-6s %s\n",
            $f['hora'], (int)$f['ok'], (int)$f['err'], (int)$f['esperando'],
-           str_repeat('#', min(30, (int)$f['ok'])));
+           $f['prom'] !== null ? dur((int)round((float)$f['prom'])) : '—',
+           $f['peor'] !== null ? dur((int)$f['peor']) : '—',
+           str_repeat('#', min(24, (int)$f['ok'])));
 }
-if (!$hay) { echo "  No se pidió ningún alta en las últimas 12 h.\n"; }
+if (!$hay) {
+    echo "  No se pidió ningún alta en las últimas 12 h.\n";
+} else {
+    $p = $promGlobal ? array_sum($promGlobal) / count($promGlobal) : null;
+    printf("\n  En promedio: %s.   La que más tardó: %s.\n",
+           $p !== null ? dur((int)round($p)) : '—', $peorGlobal ? dur($peorGlobal) : '—');
+    echo "  Referencia: con todo sano un alta sale en 5-20 segundos -- lo que\n";
+    echo "  tarda es el viaje al panel, no la cola. De un minuto para arriba ya\n";
+    echo "  es el bot peleando (challenge del WAF, sesión, reintentos).\n";
+}
 
 echo "\n";
