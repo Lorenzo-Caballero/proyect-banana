@@ -145,8 +145,15 @@ Los que hay hoy:
 | cada minuto | `aprobar_cargas.py` — aprueba las cargas pedidas desde «Depósitos» (camino A), y de paso espeja el libro, el stock y el **saldo de los jugadores** |
 | cada 10 min | `difusiones_chat_procesar.php` — manda los mensajes de chat programados |
 | cada hora | `sync_bancos.py` — espeja los datos bancarios del panel |
+| cada hora | `fidelizacion.php` — empuja a los inactivos que cruzaron un escalón (bono + push + chat). Instalarlo: `bash scripts/instalar-cron-fidelizacion.sh` |
 | 14:00 | `ruleta_recordatorio.php` |
 | 00:10 | `consumo_diario.php` — descuenta el día de suscripción a cada cliente |
+
+> **Si el CRM muestra «el motor nunca corrió — falta el cron» en la vista
+> Fidelización, es que esta línea no está en el crontab.** Pasó porque el cron
+> quedó solo como comentario en `api/fidelizacion.php` y nunca se instaló.
+> `scripts/instalar-cron-fidelizacion.sh` lo pone (idempotente, lee la key de
+> `config.local.php`) y corre una pasada para que el latido aparezca al toque.
 
 > **Los dos workers del panel comparten `flock /tmp/gp_panel.lock`, y tiene que
 > seguir así.** `ejecutar_cargas.py` y `aprobar_cargas.py` corren cada minuto en
