@@ -41,6 +41,19 @@ require_once $API . '/db.php';
 require_once $API . '/config_crm.php';
 
 function titulo($t) { echo "\n\033[1m" . $t . "\033[0m\n" . str_repeat('-', 78) . "\n"; }
+
+/* MINUTOS_ZOMBIE se LEE de altas_cola.php en vez de copiarlo. Es el numero que
+   decide cuando un alta colgada vuelve sola a la cola, y es justo el que hace
+   que este script diga "esta trabada" o "va a reintentar sola": copiarlo aca
+   significaria que el dia que alguien lo cambie, el diagnostico empiece a
+   mentir sin que nada falle. */
+$ZOMBIE = 15;
+try {
+    $srcCola = @file_get_contents($API . '/altas_cola.php');
+    if ($srcCola && preg_match('/MINUTOS_ZOMBIE\s*=\s*(\d+)/', $srcCola, $m)) {
+        $ZOMBIE = (int)$m[1];
+    }
+} catch (Throwable $e) {}
 function corto($s, $n = 58) { $s = trim((string)$s); return $s === '' ? '' : mb_substr($s, 0, $n); }
 
 echo "\nCola de altas — " . $dominio . "\n";
@@ -49,7 +62,15 @@ echo "\nCola de altas — " . $dominio . "\n";
 titulo('1. ¿El bot está vivo?');
 /* El latido lo escribe `altas_cola.php` en CADA sondeo del bot (cada ~3 s), no
    cuando crea una cuenta: separa "está corriendo" de "está logrando algo", que
-   es justo la distinción que hace falta. */
+   es justo la distinción que hace falta.
+
+   PERO EL BOT NO SONDEA MIENTRAS TRABAJA, y por eso los umbrales de acá abajo
+   son anchos. La primera corrida de este script (16/09/2026) dio "DUDOSO" con
+   65 segundos de silencio mientras el bot estaba creando cuentas sin problema:
+   estaba esperando un formulario que no cargaba, con Playwright bloqueado. Una
+   verificación contra el listado del panel ya tarda 15-20 s, y un timeout de
+   Playwright son 30 s más. Un monitor que grita cada vez que el bot está
+   ocupado enseña a ignorarlo, que es peor que no tenerlo. */
 $visto = '';
 try { $visto = trim((string)cfg_crm($pdo, 'bot_altas_visto_en')); } catch (Throwable $e) {}
 
@@ -61,11 +82,18 @@ if ($visto === '') {
     $hace = time() - (int)strtotime($visto);
     printf("  Último sondeo: %s  (hace %s)\n", $visto,
            $hace < 120 ? $hace . ' seg' : round($hace / 60) . ' min');
-    if ($hace <= 30)      { echo "  \033[1m>> VIVO.\033[0m Está sondeando la cola normalmente.\n"; }
-    elseif ($hace <= 300) { echo "  \033[1m>> DUDOSO.\033[0m Sondea cada ~3 s: este silencio ya es raro.\n"; }
-    else                  { echo "  \033[1m>> CAÍDO o en crash-loop.\033[0m Nada se va a crear hasta que vuelva.\n"
-                               . "     docker ps --filter name=ganamos-bot\n"
-                               . "     docker logs --tail 50 ganamos-bot-creador\n"; }
+    if ($hace <= 120) {
+        echo "  \033[1m>> VIVO.\033[0m Sondeando, o trabajando en un alta (ahí no sondea).\n";
+    } elseif ($hace <= 600) {
+        echo "  \033[1m>> DUDOSO.\033[0m Más de lo que tarda un alta, incluso fallando.\n"
+           . "     Mirá la sección 3: si hay una en 'procesando', está peleándola.\n";
+    } else {
+        echo "  \033[1m>> CAÍDO o en crash-loop.\033[0m Nada se va a crear hasta que vuelva,\n"
+           . "     y tampoco se destraba solo lo que quedó colgado: el rescate de\n"
+           . "     zombies corre DENTRO del sondeo del bot.\n"
+           . "     docker ps --filter name=ganamos-bot\n"
+           . "     docker logs --tail 50 ganamos-bot-creador\n";
+    }
 }
 
 // ===========================================================================
@@ -89,9 +117,21 @@ if ($enCola === 0) {
     echo "  el alta NO se encoló: el problema está ANTES, en el chatbot, y esto\n";
     echo "  no lo va a mostrar. Buscá su nombre en la sección 3; si tampoco está,\n";
     echo "  la herramienta crear_cuenta nunca llegó a correr.\n";
-} elseif ($masVieja > 5) {
-    echo "\n  \033[1m>> Hay altas trabadas.\033[0m Con el bot vivo esto tiene que ser ~0.\n";
-    echo "  El motivo de cada una está en la columna `mensaje` de la sección 3.\n";
+} elseif ($masVieja > $ZOMBIE) {
+    printf("\n  \033[1m>> Trabada de verdad:\033[0m pasó de los %d min del rescate automático.\n", $ZOMBIE);
+    echo "  Ese rescate corre DENTRO del sondeo del bot, así que si no se disparó\n";
+    echo "  es porque el bot no está sondeando. Volvé a la sección 1.\n";
+} elseif ($masVieja > 2) {
+    /* Entre 2 y ZOMBIE minutos NO hay nada roto todavía: el sistema devuelve
+       sola a la cola cualquier alta colgada en 'procesando' y la reintenta
+       hasta 10 veces. Decir "trabada" acá --como hacía la primera versión de
+       este script-- manda a apagar incendios que se apagan solos. Lo que sí
+       importa es que el jugador está esperando y el chat le prometió minutos. */
+    printf("\n  Todavía dentro de lo normal: a los %d min vuelve sola a la cola y\n", $ZOMBIE);
+    echo "  se reintenta (hasta 10 veces). El motivo del intento fallido está en\n";
+    echo "  la sección 3.\n";
+    echo "  Pero el jugador está esperando desde antes: si no puede esperar,\n";
+    echo "  se destraba a mano desde la cola de altas.\n";
 }
 
 // ===========================================================================
