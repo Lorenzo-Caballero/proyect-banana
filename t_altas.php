@@ -115,9 +115,51 @@ chequear('con sospecha NO renombra en el primero',
 chequear('pero si vuelve a fallar, ahi si renombra',
          alta_debe_renombrar($deduceElBot, 2) === true);
 
-/* Un fallo que no tiene nada que ver no renombra nunca, pase lo que pase. */
-chequear('una sesion caida declarada NO renombra ni al quinto intento',
-         alta_debe_renombrar('Sesion caida, sin re-login', 5) === false);
+/* ESTO CAMBIO EL 16/09/2026, Y LA DECISION VIEJA ERA BUENA CUANDO SE TOMO.
+   Acá se chequeaba que un fallo ajeno al nombre --una sesion caida-- no
+   renombrara NUNCA, "pase lo que pase". El motivo era real: con MAX_INTENTOS
+   en 3, cada renombre inutil se comia uno de los tres y un bache de sesion de
+   dos minutos dejaba a la persona sin cuenta.
+
+   Dos cosas lo dieron vuelta:
+
+   1. MAX_INTENTOS paso de 3 a 10. Renombrar de mas ya no deja a nadie sin
+      cuenta: quedan siete intentos.
+
+   2. El mensaje puede MENTIR, y se vio entero. El 16/09 el fast-path detecto
+      "nombre ya existente" en tres altas del chat, fue igual al formulario con
+      el mismo nombre, el WAF se lo tapo, y lo que quedo guardado fue "no
+      aparecio el formulario de alta". El diagnostico correcto existia y lo
+      piso un error posterior. Sin renombre, esas tres altas iban a reintentar
+      con el mismo nombre hasta rendirse: horas de espera para nada.
+
+   O sea que apoyarse SOLO en el texto es fragil cuando un error puede pisar a
+   otro. La regla nueva no adivina el motivo: dice que despues de DOS fallos
+   con el mismo nombre da igual cual sea. Si era el nombre, renombrar lo
+   arregla; si era otra cosa, renombrar no lo empeora.
+
+   Lo que se conserva es lo que de verdad importaba: los dos primeros intentos
+   siguen respetando el nombre que eligio la persona, y ahi se resuelven los
+   fallos transitorios. Lo que se pierde es su nombre en un caso raro; lo que
+   se gana es que nadie se quede sin cuenta. */
+chequear('una sesion caida NO renombra en el primer intento',
+         alta_debe_renombrar('Sesion caida, sin re-login', 1) === false);
+chequear('pero al segundo fallo se renombra igual, diga lo que diga',
+         alta_debe_renombrar('Sesion caida, sin re-login', 2) === true);
+
+/* EL CASO QUE PIDIO EL CAMBIO, tal cual quedo guardado en la base. */
+$wafTapo = 'Excepcion: No aparecio el formulario de alta en https://agents.ganamos';
+chequear('el error que tapo al diagnostico no matchea ninguna pista',
+         alta_parece_nombre_ocupado($wafTapo) === false, 'y por eso hacia falta la regla nueva');
+chequear('aun asi, al segundo fallo el alta se renombra y sale',
+         alta_debe_renombrar($wafTapo, 2) === true);
+chequear('y no antes: el primer intento le respeta el nombre',
+         alta_debe_renombrar($wafTapo, 1) === false);
+
+/* La certeza sigue mandando desde el primer intento: cuando la plataforma lo
+   dice con todas las letras no hay por que gastar un intento. */
+chequear('con certeza se renombra igual en el primero',
+         alta_debe_renombrar('User with username: Juan - already exist', 1) === true);
 
 
 // ===========================================================================

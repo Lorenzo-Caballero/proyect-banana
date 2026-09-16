@@ -205,18 +205,47 @@ function alta_nombre_ocupado_sospecha(string $mensaje): bool
 /**
  * Si corresponde cambiarle el nombre al jugador tras este fallo.
  *
- * Con certeza, siempre. Con sospecha, recien a partir del SEGUNDO intento: si
- * fue una sesion caida, el reintento con el MISMO nombre suele salir bien --
- * y salir bien con el nombre que la persona eligio es mejor que salir bien con
- * uno inventado. Si el nombre estaba de verdad ocupado, el segundo intento
- * vuelve a fallar y ahi si se renombra, con un solo intento de costo.
+ * Con certeza, siempre. Con sospecha o sin ninguna señal, a partir del SEGUNDO
+ * intento: si fue una sesion caida, el reintento con el MISMO nombre suele
+ * salir bien -- y salir bien con el nombre que la persona eligio es mejor que
+ * salir bien con uno inventado. Si el nombre estaba de verdad ocupado, el
+ * segundo intento vuelve a fallar y ahi se renombra, con un intento de costo.
+ *
+ * LA REGLA GENERAL SE AGREGO EL 16/09/2026, Y ESTE ES EL CASO QUE LA PIDIO.
+ * Tres altas del chat (Javierso, Bejarano, Fabianol) quedaron dando vueltas
+ * para siempre. En el log del bot se ve la cadena entera:
+ *
+ *     fast-path 320 / Javierso: HTTP 200 -> renombrar | nombre ya existente
+ *     Creando jugador 320 / Javierso          <- al formulario, MISMO nombre
+ *     Excepcion en 320 / Javierso             <- el WAF le tapa el formulario
+ *
+ * El bot YA SABIA que el nombre estaba tomado. Pero despues fue al formulario
+ * igual, el WAF se lo bloqueo, y lo que quedo guardado fue "no aparecio el
+ * formulario de alta" -- que no matchea ninguna de las dos listas de pistas.
+ * Sin renombre, el intento siguiente usa el mismo nombre, la API vuelve a
+ * decir "ya existe", el formulario vuelve a fallar, y asi hasta rendirse. Con
+ * el backoff de 5, 20 y 60 minutos, el jugador espera horas para nada.
+ *
+ * O sea: el diagnostico correcto existia y se perdio en el camino. Cuando eso
+ * puede pasar, apoyarse SOLO en el texto del mensaje es fragil -- basta un
+ * error posterior que pise al primero.
+ *
+ * Por eso ahora, pase lo que pase, dos fallos con el mismo nombre alcanzan. No
+ * es adivinar el motivo: es que a esa altura da igual. Si el nombre estaba
+ * tomado, renombrar lo arregla; si el problema era otro, renombrar no lo
+ * empeora -- el nombre nuevo se crea igual de bien. Lo unico que cuesta es el
+ * nombre elegido, y perderlo es mucho mejor que quedarse sin cuenta.
+ *
+ * Los dos primeros intentos siguen respetando el nombre de la persona, que es
+ * lo que hace que la mayoria salga con el suyo: los fallos transitorios (una
+ * sesion caida, un challenge suelto) se resuelven ahi.
  *
  * $intentos es el contador de la fila, ya incrementado por 'pendientes'.
  */
 function alta_debe_renombrar(string $mensaje, int $intentos): bool
 {
     if (alta_nombre_ocupado_seguro($mensaje)) { return true; }
-    return alta_nombre_ocupado_sospecha($mensaje) && $intentos >= 2;
+    return $intentos >= 2;
 }
 
 /**
