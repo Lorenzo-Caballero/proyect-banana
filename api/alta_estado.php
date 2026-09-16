@@ -70,6 +70,52 @@ try {
        a quien YA cargo al menos una vez, y el widget elige el momento bueno --
        cuando se le estan acabando las fichas jugando. No hace falta mandarla
        aca, y mandarla igual seria dejar un dato que nadie lee. */
+    /* QUE EN EL CRM CONSTE QUE LA CUENTA SE ENTREGO.
+       EL REPORTE (Nahuel, 16/09/2026): "el bot si me da las credenciales de
+       acceso, pero cuando intento ver ese mismo chat desde el CRM, hay mensajes
+       como ese de las credenciales que no estan visibles".
+
+       Y es cierto, por como estaba hecho: ese mensaje lo DIBUJA EL WIDGET en el
+       navegador del jugador (pintarVarios, widget.js) con lo que devuelve este
+       endpoint. Nunca pasa por `mensajes`, asi que el CRM --que muestra esa
+       tabla-- no tiene nada que mostrar. Para el operador, la conversacion
+       terminaba con el bot diciendo "ya te la estoy creando" y despues nada: no
+       habia forma de saber si el jugador recibio sus datos o se fue sin cuenta.
+
+       LA CONTRASEÑA NO SE GUARDA, Y ESO NO ES UN OLVIDO. Es la misma razon por
+       la que el chat nunca se la pide al jugador (ver chatbot.php): lo que entra
+       a `mensajes` queda ahi para siempre y a la vista de cualquier agente que
+       abra el chat en el CRM. El operador necesita saber QUE se entrego y CON
+       QUE USUARIO -- para eso alcanza y sobra. Si el jugador la pierde, se le
+       pone una nueva desde el panel; no se la lee de un historial.
+
+       Se escribe SOLO en la entrega de verdad (`password` presente): esta
+       respuesta tambien vuelve con `entregada` cuando alguien recarga la
+       pagina, y anotar eso llenaria el chat de notas repetidas por algo que ya
+       paso una vez.
+
+       Best-effort de punta a punta: el jugador ya tiene sus credenciales en
+       pantalla cuando esto corre. Que falle la nota no puede romperle nada. */
+    if (!empty($e['listo']) && !empty($e['password']) && !empty($e['usuario'])) {
+        try {
+            require_once __DIR__ . '/crm_lib.php';
+            if (function_exists('crm_conversacion_id') && function_exists('crm_mensaje')) {
+                $convId = crm_conversacion_id($pdo, $sid, (string)$e['usuario']);
+                if ($convId > 0) {
+                    crm_mensaje($pdo, $convId, 'bot',
+                        '✅ Cuenta creada y credenciales entregadas al jugador. '
+                        . 'Usuario: ' . $e['usuario']
+                        . ' · la contraseña no se guarda acá (si la perdió, '
+                        . 'se le pone una nueva desde el panel).',
+                        ['tipo' => 'alta_entregada', 'alta_id' => $id,
+                         'usuario' => (string)$e['usuario']]);
+                }
+            }
+        } catch (Throwable $ex) {
+            error_log('alta_estado: no pude anotar la entrega en el chat: ' . $ex->getMessage());
+        }
+    }
+
     echo json_encode($e, JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
     // El detalle al log, nunca a la respuesta: acá contesta cualquiera.

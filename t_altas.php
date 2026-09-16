@@ -501,6 +501,59 @@ chequear('con la cola demorada se avisa al operador',
 chequear('pero solo si está demorada, no en cada alta',
          (bool)preg_match('/if \(\$demorada && function_exists\(.alta_avisar_trabadas/', $bloque));
 
+// ===========================================================================
+echo "\n=== 10. La entrega de credenciales se ve en el CRM (sin la clave) ===\n";
+
+/* EL REPORTE (Nahuel, 16/09/2026): *"el bot sí me da las credenciales de
+   acceso, pero cuando intento ver ese mismo chat desde el CRM, hay mensajes
+   como ese de las credenciales que no están visibles"*.
+
+   Era exacto y la causa es de diseño: ese mensaje lo DIBUJA EL WIDGET en el
+   navegador del jugador (pintarVarios, widget.js) con lo que devuelve
+   alta_estado.php. Nunca pasa por `mensajes`, así que el CRM --que muestra esa
+   tabla-- no tenía nada que mostrar. Para el operador la conversación terminaba
+   con "ya te la estoy creando" y después nada.
+
+   LO QUE ESTOS CHEQUEOS PROTEGEN DE VERDAD es lo segundo: que al arreglarlo no
+   se filtre la contraseña. Lo que entra a `mensajes` queda ahí para siempre y a
+   la vista de cualquier agente que abra el chat -- es la misma razón por la que
+   el chatbot nunca se la pide al jugador. Es un cambio de una línea pasar de
+   "se entregó" a "se entregó, la clave es X", y nadie lo notaría hasta que
+   alguien mire un chat viejo. */
+$srcAE = file_get_contents(__DIR__ . '/api/alta_estado.php');
+
+chequear('la entrega se anota en la conversación',
+         str_contains($srcAE, 'crm_mensaje('));
+chequear('y se busca la conversación por el sid del chat',
+         str_contains($srcAE, 'crm_conversacion_id($pdo, $sid'));
+
+/* El texto se arma con el USUARIO y nunca con la password. Se mira el código
+   sin comentarios: el docblock de arriba nombra la palabra varias veces. */
+$codAE = '';
+foreach (token_get_all($srcAE) as $tk) {
+    if (is_array($tk)) {
+        if ($tk[0] === T_COMMENT || $tk[0] === T_DOC_COMMENT) { continue; }
+        $codAE .= $tk[1];
+    } else { $codAE .= $tk; }
+}
+$iMsj = strpos($codAE, 'crm_mensaje(');
+$bloqueMsj = $iMsj !== false ? substr($codAE, $iMsj, 700) : '';
+
+chequear('el mensaje nombra el usuario', str_contains($bloqueMsj, "\$e['usuario']"));
+chequear('EL MENSAJE NO INCLUYE LA CONTRASEÑA',
+         !str_contains($bloqueMsj, "\$e['password']")
+         && !str_contains($bloqueMsj, '$clave'),
+         'si esto falla, la clave queda en `mensajes` para siempre');
+
+/* Y se anota SOLO en la entrega de verdad. alta_entrega() también contesta con
+   `entregada` cuando el jugador recarga la página, y anotar eso llenaría el
+   chat de notas repetidas por algo que pasó una sola vez. */
+chequear('solo se anota cuando hay password (la entrega real, una vez)',
+         (bool)preg_match('/!empty\(\$e\[.password.\]\)/', $codAE));
+chequear('y no cuando la respuesta es "ya estaba entregada"',
+         !preg_match('/entregada.*crm_mensaje/s', $codAE));
+
+
 limpiar($pdo);
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);
 exit($fail > 0 ? 1 : 0);
