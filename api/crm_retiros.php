@@ -135,6 +135,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 return $r;
             }, $st->fetchAll(PDO::FETCH_ASSOC));
 
+            /* ¿ESTE RETIRO YA SE HIZO A MANO EN EL PANEL?
+               EL CASO (16/09/2026): había cuatro pedidos esperando aprobación y
+               TRES ya estaban resueltos -- el operador los había hecho a mano en
+               el panel y el pedido quedó abierto acá. Aprobar cualquiera de esos
+               le sacaba las fichas por SEGUNDA vez al jugador.
+
+               Es la misma falla que costó 35.000 de más en un depósito esa misma
+               madrugada, con el signo cambiado: nuestras tablas dicen lo que
+               quisimos hacer, y `operaciones_panel` --el libro de la PLATAFORMA--
+               dice lo que pasó. La pantalla que decide mostraba solo la primera.
+
+               Se busca por jugador y monto en una ventana de ±2 h alrededor del
+               pedido. La ventana es ancha a propósito: el operador resuelve
+               cuando puede, y el panel da la hora al minuto. Un falso aviso
+               cuesta que mires; un aviso que falta cuesta plata.
+
+               `hecho_en_panel` es un AVISO, no un bloqueo: puede ser que el
+               jugador pidiera dos retiros iguales de verdad. Lo decide una
+               persona, igual que todo lo que saca plata.
+
+               Best-effort: sin migración 67 no hay libro y la lista sale igual. */
+            try {
+                $conLibro = [];
+                foreach ($items as $it) {
+                    if (!empty($it['del_juego'])) { continue; }
+                    if (!in_array((string)$it['estado'], ['pendiente','revisar','error'], true)) { continue; }
+                    $conLibro[] = $it;
+                }
+                if ($conLibro) {
+                    $qL = $pdo->prepare(
+                        "SELECT payment_id, monto, cuando, comentario
+                           FROM operaciones_panel
+                          WHERE tipo = 1
+                            AND username = ?
+                            AND ROUND(monto * 100) = ?
+                            AND cuando BETWEEN (? - INTERVAL 2 HOUR) AND (? + INTERVAL 2 HOUR)
+                          ORDER BY cuando ASC LIMIT 1"
+                    );
+                    foreach ($items as $i => $it) {
+                        if (!empty($it['del_juego'])) { continue; }
+                        if (!in_array((string)$it['estado'], ['pendiente','revisar','error'], true)) { continue; }
+                        $qL->execute([
+                            (string)$it['usuario'],
+                            (int)round(((float)$it['monto']) * 100),
+                            $it['creada_en'], $it['creada_en'],
+                        ]);
+                        if ($y = $qL->fetch(PDO::FETCH_ASSOC)) {
+                            $items[$i]['hecho_en_panel'] = [
+                                'cuando'     => $y['cuando'],
+                                'payment_id' => (int)$y['payment_id'],
+                                'monto'      => (float)$y['monto'],
+                            ];
+                        }
+                    }
+                }
+            } catch (Throwable $e) {
+                error_log('crm_retiros: sin libro para cruzar: ' . $e->getMessage());
+            }
+
             /* LOS PEDIDOS DESDE EL JUEGO, en la misma lista. Viven en otra
                tabla (`retiros_panel`, migracion 64) y NO en `acciones_saldo`,
                porque esa es la cola que ejecuta nuestro worker: uno del panel

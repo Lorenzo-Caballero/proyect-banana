@@ -480,6 +480,30 @@ Cosas que hay que tener presentes al tocar esto:
 | Chat, o el operador desde la ficha | `acciones_saldo` (`tipo='retirar'`) | nuestro worker, **solo con `aprobado=1`** |
 | Botón de retirar **adentro del juego** | `retiros_panel` (espejo, migración 64) | una persona, **en el panel de ganamos** |
 
+> **LAS DOS NO SON LA MISMA OPERACIÓN CON DISTINTO ORIGEN.** Explicado por
+> Nahuel el 16/09/2026, y cambia cómo hay que pensarlas:
+>
+> **Desde el juego** el jugador completa una solicitud con su CBU y, al
+> enviarla, **ganamos le CONGELA las fichas** — no puede seguir jugando con esa
+> plata mientras espera. Es deliberado del lado de ellos: entre que pide y le
+> pagamos pueden pasar 10-15 minutos, y sin el congelamiento se las jugaría.
+> Cuando aprobamos, las fichas **pasan a nuestro stock** y se le descuentan
+> definitivamente. O sea: la plata ya está reservada, y aprobar solo la mueve.
+>
+> **Desde el chat NO se congela nada.** Nuestra cola es nuestra: la plataforma
+> no se entera de que pidió un retiro, así que el jugador **puede seguir
+> jugando mientras espera** — y perderlo. Eso no es hipotético: el 16/09 un
+> pedido de 1.000 quedó esperando aprobación seis horas y el jugador terminó
+> en 0. Aprobarlo ahí no saca nada de donde no hay.
+>
+> Por eso el retiro del chat lo resuelve **una persona**: le saca las fichas
+> (normalmente todas) y le hace la transferencia como una común. Con HG Cash
+> podría automatizarse la transferencia; con billeteras virtuales, no.
+>
+> **Consecuencia práctica:** un pedido del chat que lleva horas esperando ya no
+> significa lo mismo que cuando se creó. El del juego sí — ahí la plata está
+> quieta.
+
 No se mezclan a propósito: un pedido del panel metido en `acciones_saldo` se
 pagaría dos veces. Pero eso deja un agujero que **no es teórico**: el mismo
 jugador podía tener **uno abierto en cada cola** y nadie lo veía junto.
@@ -494,6 +518,20 @@ Lo que lo contiene hoy: `fichas_pedir_retiro()` mira **las dos** colas antes de
 crear uno nuevo; la ficha del CRM devuelve `retiros_abiertos` y el modal de
 retirar lo avisa; y la pantalla de Retiros marca al jugador que tiene más de uno
 (`abiertos_del_jugador`).
+
+> **UN PEDIDO ABIERTO ACÁ NO PRUEBA QUE NO SE HAYA PAGADO YA.** El 16/09/2026
+> había cuatro retiros esperando aprobación y **tres ya estaban resueltos**: el
+> operador los había hecho a mano en el panel y el pedido quedó abierto en el
+> CRM. Aprobar cualquiera le sacaba las fichas por segunda vez.
+>
+> Es la misma falla que costó 35.000 de más en un depósito esa misma madrugada,
+> con el signo cambiado, y se arregla igual: la pantalla de Retiros cruza cada
+> pendiente contra **`operaciones_panel`** y avisa *«esto ya figura hecho en el
+> panel»*. Nuestras tablas dicen lo que quisimos hacer; el libro dice lo que
+> pasó.
+>
+> Es un aviso y no un bloqueo: un jugador puede pedir dos retiros iguales de
+> verdad. Pero tiene que leerse **antes** de apretar Aprobar.
 
 > **«Pagado» NO le saca las fichas del juego.** Cierra el pedido en el CRM y
 > nada más —la plata sale del banco, el saldo de ganamos lo bajás vos en el
