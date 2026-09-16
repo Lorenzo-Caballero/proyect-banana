@@ -135,10 +135,21 @@ else {
     bien('el bot sondeó hace poco', $hace <= 600, "hace {$hace}s");
 }
 try {
+    /* CUIDADO CON LO QUE MIDE ESTA COLUMNA. La primera version dio MAL con el
+       colector andando perfecto: `visto_en` solo se escribia al INSERT, asi que
+       MAX(visto_en) era 'cuando aparecio la ultima operacion NUEVA' -- que de
+       madrugada, sin movimiento en el panel, son horas. Desde el 16/09/2026 el
+       upsert la refresca en cada pasada, que es lo que el nombre de la columna
+       dice.
+
+       Se toleran 30 min porque el libro se sincroniza cada 15 (LIBRO_CADA_MIN):
+       un margen de una pasada perdida evita que esto grite por nada. */
     $ultLibro = $pdo->query("SELECT MAX(visto_en) FROM operaciones_panel")->fetchColumn();
     $h = $ultLibro ? round((time() - strtotime((string)$ultLibro)) / 60) : null;
-    bien('el colector sincronizó el libro del panel', $h !== null && $h <= 60,
+    bien('el colector trajo el libro del panel hace poco', $h !== null && $h <= 30,
          $h === null ? 'nunca' : "hace {$h} min");
+    $nOps = (int)$pdo->query("SELECT COUNT(*) FROM operaciones_panel")->fetchColumn();
+    bien('y el libro tiene operaciones', $nOps > 0, "$nOps filas");
 } catch (Throwable $e) { bien('el libro del panel existe', false); }
 
 // ===========================================================================
@@ -196,14 +207,23 @@ try {
          'sin esto no se detecta multicuenta');
 } catch (Throwable $e) { bien('huellas_pagador', false); }
 
-/* 4.5 El bono de bienvenida: que se haya decidido, no que sea tal número. */
+/* 4.5 El bono de bienvenida. SE IMPRIME, NO SE AFIRMA.
+
+   Aca da CERO y esta bien: el bono se decide por `altas.origen`
+   (rl_bono_bienvenida_aplicar) y este jugador no tiene fila en `altas` -- no
+   vino de la landing ni del chat, lo invento el simulacro. Uno real si lo
+   cobra: el 16/09/2026 holaDiego858 transfirio 500 y se le acreditaron 250.
+
+   La primera version cerraba esto con bien('...se resolvio', true). Afirmar
+   con un true fijo sobre algo que siempre da cero no es un chequeo, es un
+   adorno que suma un OK al total sin haber mirado nada. */
 try {
     $b = $pdo->prepare("SELECT COALESCE(SUM(monto),0) FROM movimientos
                          WHERE usuario = ? AND tipo = 'bono' AND monto > 0");
     $b->execute([$U]);
     $bono = (float)$b->fetchColumn();
-    printf("        bono de bienvenida acreditado: %s\n", number_format($bono, 0, ',', '.'));
-    bien('el bono de la primera carga se resolvió', true);
+    printf("        bono de bienvenida: %s  (0 es correcto: el de prueba no tiene alta)\n",
+           number_format($bono, 0, ',', '.'));
 } catch (Throwable $e) { ojo('no pude leer los movimientos del bono'); }
 
 /* 4.6 Un pago repetido NO puede acreditarse dos veces. */
