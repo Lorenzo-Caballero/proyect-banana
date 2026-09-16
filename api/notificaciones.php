@@ -139,35 +139,29 @@ if ($accion === 'registrar') {
                     $yaLaTiene = $fila && (int)$fila['tiene_app'];
                     $corresponde = $fila && !$yaLaTiene;
 
-                    /* ¿Ya cargó alguna vez? Las DOS vías: la transferencia que
-                       maneja el chatbot y el botón Depósitos de adentro del
-                       juego. Mirar solo `recargas` dejaría afuera a quien carga
-                       siempre por el juego -- que es el recorrido natural una
-                       vez que está adentro. */
+                    /* ¿YA CARGÓ ALGUNA VEZ? Lo contesta rl_es_primera_carga(),
+                       que es LA definición única de "una carga" en todo el CRM
+                       (ver CLAUDE.md). Acá había una copia escrita a mano --
+                       `recargas` acreditada o `movimientos` origen 'peticion'--
+                       y ya se había separado sin que nadie lo notara: le faltaba
+                       origen 'crm', o sea la carga que hace un agente a mano.
+                       Con eso, a quien le cargaron desde el CRM este cartel no
+                       se le ofrecía nunca, mientras notif_app_instalada() SÍ le
+                       pagaba el bono al instalar. Dos respuestas distintas a la
+                       misma pregunta, que es exactamente el error contra el que
+                       CLAUDE.md advierte.
+
+                       Ante la duda NO se ofrece: el costo de no mostrar el
+                       cartel es cero, y el de mostrarlo encima de la primera
+                       carga es una carga perdida. Por eso null (la función no
+                       pudo contestar) cuenta como "no corresponde". */
                     if ($corresponde) {
-                        try {
-                            $q = $pdo->prepare(
-                                "SELECT 1 FROM recargas
-                                  WHERE usuario = ? AND estado = 'acreditada' LIMIT 1"
-                            );
-                            $q->execute([$usuarioReg]);
-                            $cargo = (bool)$q->fetchColumn();
-                            if (!$cargo) {
-                                $q = $pdo->prepare(
-                                    "SELECT 1 FROM movimientos
-                                      WHERE usuario = ? AND origen = 'peticion'
-                                        AND tipo = 'saldo' AND monto > 0 LIMIT 1"
-                                );
-                                $q->execute([$usuarioReg]);
-                                $cargo = (bool)$q->fetchColumn();
-                            }
-                            $corresponde = $cargo;
-                        } catch (Throwable $e) {
-                            /* Ante la duda NO se ofrece: el costo de no mostrar
-                               el cartel es cero, y el de mostrarlo encima de la
-                               primera carga es una carga perdida. */
-                            $corresponde = false;
+                        if (!function_exists('rl_es_primera_carga')
+                            && is_file(__DIR__ . '/recargas_lib.php')) {
+                            require_once __DIR__ . '/recargas_lib.php';
                         }
+                        $corresponde = function_exists('rl_es_primera_carga')
+                                    && rl_es_primera_carga($pdo, $usuarioReg) === 0;
                     }
                     /* Se dice EXPLICITAMENTE que ya la tiene, en vez de dejar
                        que el widget lo deduzca de la ausencia de `app_promo`.
