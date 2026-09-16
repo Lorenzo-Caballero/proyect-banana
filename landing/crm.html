@@ -11727,7 +11727,22 @@
        Así que el saldo del jugador NO baja solo, y quien leía ese subtítulo se
        quedaba esperando que bajara. */
     $("#mSub").textContent = `Para @${st.usuario}. ` + (
-      esRetiro ? "Queda en Retiros pendientes. Cuando lo APROBÁS ahí, el bot le saca las fichas en ganamos; la transferencia se la hacés vos."
+      /* DECIA QUE EL BOT LE SACA LAS FICHAS, Y EL BOT NO HACE ESO.
+         Nahuel (16/09/2026): "retiros no está funcionando desde el CRM, no
+         retira nada efectivamente". Tenía razón, y no es una falla nueva: el
+         retiro NUNCA se implementó. El worker, al encontrar una acción de tipo
+         'retirar', la marca con "retiro: lo resuelve un agente" y no toca nada
+         (bot_crear_jugador.py:1721). Sacar plata siempre fue una decisión de
+         una persona.
+
+         El texto viejo lo daba por automático y por eso se leía como un bug:
+         aprobabas, esperabas, y no pasaba nada. Lo único que estaba roto era la
+         promesa.
+
+         Se dice entero y en orden, porque son DOS pasos manuales y olvidarse
+         del primero es lo que deja al jugador cobrando la transferencia Y con
+         las fichas para seguir jugando. */
+      esRetiro ? "Queda en Retiros pendientes. OJO: el bot NO ejecuta retiros. Las fichas se las sacás vos en el panel de ganamos, y después le hacés la transferencia."
       : ganamos ? "Se encola y el bot lo deposita en ganamos en segundos."
       /* Antes decia "Se acredita al instante", y desde que el bono puede quedar
          prometido para la proxima carga eso seria mentira en tres de los cuatro
