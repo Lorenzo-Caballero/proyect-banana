@@ -11,8 +11,8 @@ ruleta de bonos y recargas automáticas por transferencia.
 |---|---|---|
 | `orange-crab-483661.hostingersite.com` | Hosting **viejo** (Hostinger). Ya no se usa: `landing/` y `api/` se sirven desde el VPS en `ganamoscrm.online` (la API, bajo `/gp-api/`) | Propio |
 | `ganamos7.com` | Front de la plataforma (React SPA) donde juega el usuario | De la plataforma |
-| `agents.ganamosonline.com` | **Panel de agentes en uso.** Alta de jugadores, saldo, depósitos | Cuenta de agente propia |
-| `agents.ganamos7.com` | El **mismo** panel, otro envoltorio. No apuntar nada acá (ver la nota) | — |
+| `agents.ganamos7.com` | **Panel de agentes en uso** (desde el 16/09/2026). Alta de jugadores, saldo, depósitos. nginx pelado, sin Cloudflare | Cuenta de agente propia |
+| `agents.ganamosonline.com` | El **mismo** panel, otro envoltorio — pero detrás de **Cloudflare** (challenges intermitentes). Era el que se usaba; ya no | — |
 | `agents.ganamosbet.net` | Otro envoltorio más del mismo panel; la plataforma dice que es "el actual". Sin usar | — |
 | `ganamoscrm.online` | **Dominio en uso.** Sirve la plataforma vía `replica/` y la API en `/gp-api/` | Propio (VPS) |
 | `ganamos.faunotattoo.com` | Dominio viejo. nginx todavía lo acepta, pero **ya no se usa** | Propio (VPS) |
@@ -25,17 +25,33 @@ necesite un subdominio de la plataforma.
 > no apuntes nada nuevo ahí. Todo lo que se configure —el `.env` del bot, los
 > crons, las URLs de retorno— va contra `ganamoscrm.online`.
 
-> **El panel de agentes en uso es `agents.ganamosonline.com`.**
+> **El panel de agentes en uso es `agents.ganamos7.com` (decisión del dueño,
+> 16/09/2026: "usá el dominio que no tiene Cloudflare, que no vuelva a pasar").**
 >
->     PANEL_URL=https://agents.ganamosonline.com/user/create-player
->     LOGIN_URL=https://agents.ganamosonline.com/
+>     PANEL_URL=https://agents.ganamos7.com/user/create-player
+>     LOGIN_URL=https://agents.ganamos7.com/
 >
-> **Los dos son el mismo panel.** `agents.ganamosonline.com` es un envoltorio
-> de `agents.ganamos7.com`: mismo backend, mismos datos, mismos endpoints. Se
-> usa este porque con él las altas salen; `ganamos7` choca de entrada contra el
-> challenge anti-bot.
+> Los defaults del código, `bot/.env.example`, `scripts/arreglar-bot-altas.sh`
+> y `panel/provisionar.php` (que además recrea los contenedores de clientes
+> cuyo env tenga el dominio viejo) ya apuntan ahí. Lo que queda en el VPS:
+> correr `arreglar-bot-altas.sh` (nuestros contenedores) y dejar que la pasada
+> de `provisionar.php` recree los de clientes. Se mide con `scripts/waf.php`
+> (challenges por día: tienen que ir a 0); volver atrás es una línea del `.env`.
 >
-> **Pero `ganamosonline` NO está libre del WAF, como decía acá hasta el
+> **Los dos son el mismo panel** — mismo backend, mismos datos, mismos
+> endpoints, LA MISMA CUENTA (probado a mano el 16/09: mismo ID de agente
+> 20284777, mismo saldo, mismos jugadores por las dos puertas). La diferencia
+> es la puerta: `ganamosonline` está detrás de Cloudflare (Bot Fight Mode:
+> 403 a un curl pelado, challenges intermitentes que trabaron altas y
+> depósitos); `ganamos7` es nginx pelado. La historia de abajo queda porque
+> este bloque ya se dio vuelta DOS veces con evidencia superficial — lo que
+> sigue es la evidencia completa de por qué esta vez es distinto.
+>
+> Durante la etapa `ganamosonline` se decía acá que "con él las altas salen y
+> ganamos7 choca contra el challenge". **Era al revés**, y se creyó por años
+> porque los dos dominios responden 200 a un navegador.
+>
+> **`ganamosonline` NO estaba libre del WAF, como decía acá hasta el
 > 13/09/2026.** Verificado ese día: el bot logueado en `ganamosonline`, con
 > `PANEL_API`, `PANEL_URL` y `LOGIN_URL` los tres en ese dominio, hizo un
 > `POST .../api/agent_admin/user/{id}/payment/` y le contestó el challenge de
@@ -101,16 +117,14 @@ necesite un subdominio de la plataforma.
 >
 > **Es el mismo operador y el mismo backend, por una puerta sin Cloudflare.**
 >
-> Con eso, mover el `.env` a `ganamos7` deja de ser una corazonada. Lo que sigue
-> sin estar probado es que la API se comporte igual bajo esa puerta, asi que el
-> cambio va **de a un contenedor**, empezando por uno que no importe
-> (`altas-casinotest`), midiendo 24 h con `scripts/waf.php` y recien despues el
-> resto. Volver atras es cambiar una linea del `.env`: no hay estado que
-> revertir.
->
-> Antes de moverlo, preguntarle a Fauno si sabe POR QUE se eligio
-> `ganamosonline`. Este bloque ya se dio vuelta dos veces; puede haber un motivo
-> que se perdio.
+> Con esa prueba, el 16/09/2026 el dueño tomó la decisión: **todo a
+> `ganamos7`**. La pregunta de "¿por qué se eligió `ganamosonline` en su
+> momento?" quedó contestada: el único motivo registrado era la creencia de
+> que ganamos7 tenía el challenge — exactamente la que la medición dio
+> vuelta. Lo único que NO está probado es que la API se comporte igual bajo
+> esa puerta (podría versionar distinto), así que operativamente conviene
+> mover primero un contenedor que no importe, mirar `waf.php` y los logs, y
+> el resto atrás — pero es un orden de despliegue, no una decisión pendiente.
 >
 > **Antes de volver a tocar esto, mirá lo único que prueba algo: si las altas
 > están saliendo.** Un `.env`, un comentario o un default en el código son lo

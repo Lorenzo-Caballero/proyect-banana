@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
 # arreglar-bot-altas.sh — deja el bot de altas apuntando a donde corresponde.
 #
-# El bot estaba sondeando la cola de Hostinger y creando las cuentas en el
-# panel VIEJO (agents.ganamosonline.com). Resultado: las altas que encola el
-# chatbot -que viven en la base del VPS- no las veia nadie, y las que si
-# procesaba iban a la plataforma equivocada.
+# HISTORIA DE ESTE VALOR, porque ya se dio vuelta TRES veces y las tres con
+# motivo escrito:
+#   1. Apuntaba a agents.ganamos7.com "porque ganamosonline era el viejo".
+#   2. Sept 2026: se corrigio a agents.ganamosonline.com "porque ganamos7
+#      choca con el challenge anti-bot". Esa creencia tambien estaba mal.
+#   3. 16/09/2026, LA DEFINITIVA y esta vez con MEDICION + PRUEBA: los dos
+#      dominios son el MISMO panel (login a mano: misma cuenta NAHUELWIN26X,
+#      mismo ID 20284777, mismo saldo, mismos jugadores), pero ganamosonline
+#      esta detras de CLOUDFLARE (403 a curl pelado, challenges intermitentes
+#      que trabaron tres altas y dos depositos el 16/09) y ganamos7 es nginx
+#      pelado. Decision del dueño: se usa ganamos7 y no se cruza mas el WAF.
 #
-# CORRECCION (sept 2026): el panel en uso es agents.ganamosonline.com. El
-# parrafo de arriba queda tal cual -- es lo que se creia el dia que se escribio
-# esto -- pero estaba al reves, y por eso los valores de abajo apuntaban a
-# agents.ganamos7.com. Ya corregidos.
-#
-# OJO SI ESTE SCRIPT SE CORRIO ANTES DE HOY: dejo el .env del bot apuntando al
-# panel que no es. Revisalo (o volve a correrlo, que recrea el contenedor) y
-# fijate si quedaron jugadores creados del otro lado.
+# Si los challenges reaparecieran por ganamos7, medi primero (curl con y sin
+# UA de navegador, scripts/waf.php) antes de volver a tocar esto.
 #
 # Arregla las tres URLs del .env, verifica que la API conteste con la clave
 # que tiene el bot, y reinicia el contenedor.
@@ -31,8 +32,8 @@ CFG="${CFG:-/var/www/api/config.local.php}"
 DOMINIO="${DOMINIO:-ganamoscrm.online}"
 
 API_URL_NUEVA="https://$DOMINIO/gp-api/altas_cola.php"
-PANEL_URL_NUEVA="https://agents.ganamosonline.com/user/create-player"
-LOGIN_URL_NUEVA="https://agents.ganamosonline.com/"
+PANEL_URL_NUEVA="https://agents.ganamos7.com/user/create-player"
+LOGIN_URL_NUEVA="https://agents.ganamos7.com/"
 
 echo "==> Bot en:  $BOT_DIR"
 [ -f "$ENV" ] || { echo "!! No existe $ENV — pasá BOT_DIR=/ruta/al/bot" >&2; exit 1; }

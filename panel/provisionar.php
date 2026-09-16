@@ -239,8 +239,18 @@ function cf_dns_upsert($dominio, $cfg) {
     return [false, 'Cloudflare falló: ' . $msg];
 }
 
+/* El panel de agentes al que le pegan TODOS los bots de clientes.
+   agents.ganamos7.com desde el 16/09/2026 (decision del dueño): es el MISMO
+   backend que agents.ganamosonline.com (probado con login a mano: misma
+   cuenta, mismo saldo, mismos jugadores) pero servido por nginx pelado --
+   ganamosonline esta detras de Cloudflare y sus challenges intermitentes
+   trabaron altas y depositos. Una sola constante para que el run y la
+   comparacion de abajo no puedan divergir. */
+const PANEL_LOGIN_URL  = 'https://agents.ganamos7.com/';
+const PANEL_CREATE_URL = 'https://agents.ganamos7.com/user/create-player';
+
 /**
- * ¿El contenedor $name corre con OTRAS credenciales que las de la fila?
+ * ¿El contenedor $name corre con OTRO env que el que lanzaríamos hoy?
  *
  * Existe porque las credenciales ahora las carga EL CLIENTE desde su CRM
  * (crm_integracion.php, 15/09/2026) y las puede CORREGIR: sin este chequeo,
@@ -248,6 +258,12 @@ function cf_dns_upsert($dominio, $cfg) {
  * -- el cliente arreglaba la clave en su CRM y nada cambiaba, sin un solo
  * error a la vista. Compara el env real del contenedor (docker inspect)
  * contra la fila; ante cualquier duda devuelve false (no recrear de más).
+ *
+ * DESDE EL 16/09/2026 COMPARA TAMBIÉN LAS URLs DEL PANEL, por el mismo bug
+ * con otra ropa: se cambió el dominio del panel en este archivo (Cloudflare
+ * afuera) y los contenedores existentes se quedaban con el viejo PARA
+ * SIEMPRE -- el cambio solo aplicaba a clientes nuevos. Comparando contra
+ * las constantes, la próxima pasada del cron los recrea sola.
  */
 function bot_creds_cambiaron($name, $user, $pass) {
     $env = (string) shell_exec(
@@ -255,13 +271,20 @@ function bot_creds_cambiaron($name, $user, $pass) {
         . ' ' . escapeshellarg($name) . ' 2>/dev/null'
     );
     if (trim($env) === '') { return false; }   // no se pudo mirar: no tocar
-    $actualU = $actualP = null;
+    $actualU = $actualP = $actualL = $actualC = null;
     foreach (explode("\n", $env) as $l) {
         if (strpos($l, 'PANEL_USER=') === 0) { $actualU = substr($l, 11); }
         if (strpos($l, 'PANEL_PASS=') === 0) { $actualP = substr($l, 11); }
+        if (strpos($l, 'LOGIN_URL=')  === 0) { $actualL = substr($l, 10); }
+        if (strpos($l, 'PANEL_URL=')  === 0) { $actualC = substr($l, 10); }
     }
     if ($actualU === null || $actualP === null) { return false; }
-    return $actualU !== $user || $actualP !== $pass;
+    if ($actualU !== $user || $actualP !== $pass) { return true; }
+    // URLs: solo si el contenedor las TIENE (uno muy viejo sin esas vars no
+    // se recrea por esto -- ante la duda, no tocar).
+    if ($actualL !== null && $actualL !== PANEL_LOGIN_URL)  { return true; }
+    if ($actualC !== null && $actualC !== PANEL_CREATE_URL) { return true; }
+    return false;
 }
 
 /**
@@ -313,8 +336,8 @@ function asegurar_bot($c, $cfg) {
          . '--restart unless-stopped --shm-size 1g --init '
          . '-e ' . escapeshellarg('PANEL_USER=' . $user) . ' '
          . '-e ' . escapeshellarg('PANEL_PASS=' . $pass) . ' '
-         . '-e ' . escapeshellarg('LOGIN_URL=https://agents.ganamosonline.com/') . ' '
-         . '-e ' . escapeshellarg('PANEL_URL=https://agents.ganamosonline.com/user/create-player') . ' '
+         . '-e ' . escapeshellarg('LOGIN_URL=' . PANEL_LOGIN_URL) . ' '
+         . '-e ' . escapeshellarg('PANEL_URL=' . PANEL_CREATE_URL) . ' '
          . '-e ' . escapeshellarg('API_URL=' . $base . '/gp-api/usuarios_sync.php') . ' '
          . '-e ' . escapeshellarg('API_KEY=' . $apiKey) . ' '
          . '-v ' . escapeshellarg('/opt/bots/' . $slug . ':/datos') . ' '
@@ -386,8 +409,8 @@ function asegurar_bot_altas($c, $cfg) {
          . '--restart unless-stopped --shm-size 1g --init '
          . '-e ' . escapeshellarg('PANEL_USER=' . $user) . ' '
          . '-e ' . escapeshellarg('PANEL_PASS=' . $pass) . ' '
-         . '-e ' . escapeshellarg('LOGIN_URL=https://agents.ganamosonline.com/') . ' '
-         . '-e ' . escapeshellarg('PANEL_URL=https://agents.ganamosonline.com/user/create-player') . ' '
+         . '-e ' . escapeshellarg('LOGIN_URL=' . PANEL_LOGIN_URL) . ' '
+         . '-e ' . escapeshellarg('PANEL_URL=' . PANEL_CREATE_URL) . ' '
          . '-e ' . escapeshellarg('API_URL=' . $base . '/gp-api/altas_cola.php') . ' '
          . '-e ' . escapeshellarg('API_KEY=' . $apiKey) . ' '
          . '-v ' . escapeshellarg('/opt/bots-altas/' . $slug . ':/datos') . ' '

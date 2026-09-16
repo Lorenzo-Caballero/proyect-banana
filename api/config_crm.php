@@ -264,7 +264,7 @@ const CFG_CRM_DEFAULTS = [
     'stock_fichas'       => '',
     'stock_fichas_en'    => '',
 
-    // ----- Credenciales del panel de agentes (agents.ganamosonline.com) -----
+    // ----- Credenciales del panel de agentes (agents.ganamos7.com desde el 16/09/2026) -----
     // Las usa el bot del VPS para loguearse y depositar/crear jugadores.
     // VACIAS = el bot sigue con las PANEL_USER/PANEL_PASS de su .env, que es
     // el comportamiento de siempre -- desplegar esto no cambia nada hasta que

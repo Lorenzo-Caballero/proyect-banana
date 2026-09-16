@@ -97,8 +97,11 @@ else
 
   PU="$(grep -E '^PANEL_URL=' "$BOT_ENV" | head -1 | cut -d= -f2-)"
   case "$PU" in
-    *agents.ganamosonline.com*) ok "PANEL_URL en agents.ganamosonline.com" ;;
-    *agents.ganamos7.com*)      mal "PANEL_URL en el panel VIEJO: crea las cuentas donde no van" ;;
+    # Desde el 16/09/2026 el panel es ganamos7 (mismo backend que
+    # ganamosonline -- probado con login a mano -- pero sin el Cloudflare
+    # que tiraba challenges). Ver scripts/arreglar-bot-altas.sh.
+    *agents.ganamos7.com*)      ok "PANEL_URL en agents.ganamos7.com (sin Cloudflare)" ;;
+    *agents.ganamosonline.com*) mal "PANEL_URL en agents.ganamosonline.com: es el dominio CON Cloudflare (challenges). Corre arreglar-bot-altas.sh" ;;
     *)                          info "PANEL_URL: $PU" ;;
   esac
 fi

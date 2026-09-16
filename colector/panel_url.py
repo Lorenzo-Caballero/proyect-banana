@@ -14,7 +14,8 @@ Hubo dos intentos antes de este:
 
   1. Hardcodear "https://agents.ganamos7.com/api". Anda mientras el .env
      apunte ahi, y falla en silencio si apunta a agents.ganamosonline.com --
-     que es OTRA instalacion, con otro servidor y otra sesion.
+     es el MISMO backend (probado el 16/09/2026), pero la COOKIE de sesion es
+     por dominio: logueado en uno, el POST al otro sale sin sesion valida.
 
   2. Leerla de `bot.PANEL_API` (el repo del bot). Correcto en intencion, pero
      ata estos workers a que OTRO repo exporte una constante con ese nombre.
