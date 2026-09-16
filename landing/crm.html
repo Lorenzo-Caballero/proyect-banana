@@ -6740,42 +6740,70 @@
     return cont;
   }
 
-  /* CUANTO SE VE ENTERO ANTES DE ENCOGERSE.
-     Pedido de Nahuel (16/09/2026): "quiero que aparezcan durante unos segundos
-     pero que luego se vayan, que no queden constantes porque son molestos".
+  /* SE MUESTRAN UNA VEZ POR SESION Y DESPUES SE VAN.
+     Pedido de Nahuel (16/09/2026), en dos pasos: primero "que aparezcan unos
+     segundos y luego se vayan, no que queden constantes", y despues --probando
+     la version que los encogia a un chip-- "pero quiero que aparezcan una vez
+     cuando inicia sesion y luego se vayan, porque en mobile es molesto".
 
-     Tenía razón, pero desaparecer del todo sería peor: son las dos cosas sin
-     las cuales su plataforma no funciona --sin credenciales no se crea ni una
-     cuenta, y sin cuenta de cobro nadie le puede pagar-- y un cliente que se
-     olvida de cargarlas no tiene sistema y no sabe por qué.
+     Tenia razon las dos veces. En una pantalla de telefono cualquier cosa fija
+     arriba se come el espacio util, y un chip permanente sigue siendo algo
+     permanente. El aviso ya cumplio su trabajo cuando se leyo.
 
-     Así que no se van: se ENCOGEN a un chip chico arriba, que sigue ahí
-     mientras el problema exista y sigue siendo UN click para resolverlo. El
-     texto entero queda en el title. Deja de tapar y deja de reclamar, pero no
-     deja de estar. */
+     QUE SE PIERDE Y COMO SE COMPENSA: son las dos cosas sin las cuales la
+     plataforma no funciona --sin credenciales no se crea ni una cuenta, sin
+     cuenta de cobro nadie puede pagarle-- asi que no pueden desaparecer para
+     siempre. Vuelven a mostrarse en CADA sesion nueva mientras el problema
+     exista: cierra y abre, y estan de nuevo. Y el lugar donde se resuelven
+     (Configuracion) sigue mostrando el estado cuando entra.
+
+     UNA VEZ POR SESION Y NO POR CARGA DE PAGINA: el CRM se recarga solo en el
+     celular al volver de un juego (ver CLAUDE.md), y ahi el aviso reaparecia
+     sin que nadie hubiera iniciado sesion de nuevo. sessionStorage dura lo que
+     dura la pestaña, que es exactamente "esta sesion". */
   const GP_AVISO_SEG = 9;
-  const gpAvisoChico = {};   // id -> ya se encogió (sobrevive a los repintados)
   const gpAvisoTimers = {};
 
-  /* El texto corto del chip. Se saca del <b> del aviso, que es justamente el
-     titular: "Integrá tu panel de ganamos", "Cargá tu cuenta de cobro". Así no
-     hay una segunda lista de textos que mantener al día. */
-  function gpAvisoTitular(html){
-    const m = String(html).match(/<b>(.*?)<\/b>/i);
-    return m ? m[1].replace(/<[^>]+>/g, "").trim() : "Pendiente de configurar";
+  /* Best-effort con localStorage/sessionStorage: en una ventana privada o con
+     el almacenamiento bloqueado, leer TIRA. Si no se puede recordar, el aviso
+     se muestra igual -- mostrarlo de mas es molesto, no mostrarlo nunca es
+     dejar al cliente sin sistema sin saber por que. */
+  function gpAvisoYaVisto(id){
+    try { return sessionStorage.getItem("gp_aviso_" + id) === "1"; }
+    catch(e){ return false; }
+  }
+  function gpAvisoMarcarVisto(id, si){
+    try {
+      if(si) sessionStorage.setItem("gp_aviso_" + id, "1");
+      else   sessionStorage.removeItem("gp_aviso_" + id);
+    } catch(e){}
   }
 
   function gpAvisoPintar(id, html, tipo, alClick){
     const cont = gpAvisosContenedor();
     let el = document.getElementById(id);
-    if(!html){
-      if(el) el.remove();
+
+    const sacar = () => {
       if(gpAvisoTimers[id]){ clearTimeout(gpAvisoTimers[id]); delete gpAvisoTimers[id]; }
-      /* Resuelto: si el problema vuelve (le borran las credenciales), el aviso
-         tiene que volver a verse ENTERO. Sin esto reaparecería ya encogido. */
-      delete gpAvisoChico[id];
+      const n = document.getElementById(id);
+      if(n) n.remove();
+    };
+
+    if(!html){
+      sacar();
+      /* Resuelto: se olvida que ya se mostro. Si el problema VUELVE en esta
+         misma sesion --le borran las credenciales-- tiene que volver a verse,
+         porque es un problema nuevo. */
+      gpAvisoMarcarVisto(id, false);
       return;
     }
+
+    /* Ya se mostro en esta sesion: no se vuelve a dibujar. Esto tambien cubre
+       los repintados de gpAvisosRevisar(), que corre cada 30 s mientras el
+       espejo se llena -- sin esto el cartel reaparecia solo cada medio minuto,
+       que es justo lo que se vino a sacar. */
+    if(gpAvisoYaVisto(id)){ sacar(); return; }
+
     if(!el){
       el = document.createElement("div");
       el.id = id;
@@ -6784,46 +6812,30 @@
       if(id === "gpAvisoInteg"){ cont.prepend(el); } else { cont.appendChild(el); }
     }
     const rojo = tipo !== "info";
-    const borde = rojo ? "#e74c3c" : "#3aa0d8";
+    el.style.cssText = "background:var(--panel2,#231d2c);width:100%;" +
+      "border:1px solid " + (rojo ? "#c0392b" : "#2c6e8f") + ";" +
+      "border-left:4px solid " + (rojo ? "#e74c3c" : "#3aa0d8") + ";" +
+      "border-radius:10px;padding:10px 16px;font-size:13px;color:var(--txt,#eee);" +
+      (alClick ? "cursor:pointer;" : "cursor:default;") +
+      "box-shadow:0 6px 24px rgba(0,0,0,.45);transition:opacity .4s";
+    el.innerHTML = html;
+    el.onclick = alClick || null;
 
-    /* Los dos aspectos del mismo aviso. El chico no es un resumen distinto: es
-       el mismo titular, más chico y sin ocupar el ancho. */
-    const pintarGrande = () => {
-      el.style.cssText = "background:var(--panel2,#231d2c);width:100%;" +
-        "border:1px solid " + (rojo ? "#c0392b" : "#2c6e8f") + ";" +
-        "border-left:4px solid " + borde + ";" +
-        "border-radius:10px;padding:10px 16px;font-size:13px;color:var(--txt,#eee);" +
-        (alClick ? "cursor:pointer;" : "cursor:default;") +
-        "box-shadow:0 6px 24px rgba(0,0,0,.45);transition:opacity .35s";
-      el.innerHTML = html;
-      el.title = "";
-    };
-    const pintarChico = () => {
-      el.style.cssText = "background:var(--panel2,#231d2c);" +
-        "border:1px solid " + borde + ";border-radius:999px;" +
-        "padding:4px 12px;font-size:11.5px;color:var(--txt,#eee);opacity:.82;" +
-        (alClick ? "cursor:pointer;" : "cursor:default;") +
-        "box-shadow:0 3px 12px rgba(0,0,0,.35);transition:opacity .35s;white-space:nowrap";
-      /* El texto entero va al title: encogerlo no puede perder la explicación
-         de por qué importa. */
-      el.innerHTML = (rojo ? "⚠️ " : "") + esc(gpAvisoTitular(html));
-      el.title = String(html).replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim()
-               + (alClick ? "\n\n(Tocá para resolverlo)" : "");
-    };
-
-    if(gpAvisoChico[id]){ pintarChico(); }
-    else {
-      pintarGrande();
-      if(gpAvisoTimers[id]) clearTimeout(gpAvisoTimers[id]);
+    /* El reloj se arma UNA sola vez por aviso: si cada repintado lo reiniciara,
+       el que se repinta cada 30 s no se iria nunca. */
+    if(!gpAvisoTimers[id]){
       gpAvisoTimers[id] = setTimeout(()=>{
-        gpAvisoChico[id] = true;
-        /* Puede haberse resuelto mientras corría el reloj. */
-        if(document.getElementById(id)) pintarChico();
+        gpAvisoMarcarVisto(id, true);
+        const n = document.getElementById(id);
+        if(n){
+          /* Se desvanece en vez de saltar: un cartel que desaparece de golpe
+             se lee como un error de la pantalla. */
+          n.style.opacity = "0";
+          setTimeout(()=>{ const m = document.getElementById(id); if(m) m.remove(); }, 400);
+        }
+        delete gpAvisoTimers[id];
       }, GP_AVISO_SEG * 1000);
     }
-    /* El click sigue llevando al lugar que lo resuelve, grande o chico: que se
-       achique no puede costarle un paso más al que quiere arreglarlo. */
-    el.onclick = alClick || null;
   }
 
   let gpAvisoTimer = null;
