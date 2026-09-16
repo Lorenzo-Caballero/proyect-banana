@@ -126,6 +126,30 @@ necesite un subdominio de la plataforma.
 > mover primero un contenedor que no importe, mirar `waf.php` y los logs, y
 > el resto atrás — pero es un orden de despliegue, no una decisión pendiente.
 >
+> **PRIMERA MEDICIÓN DEL MOVIMIENTO (16/09/2026, noche). El primer contenedor
+> en `ganamos7` ya corrió, sin que nadie lo planeara, y el resultado es
+> ambiguo — no lo tomes como luz verde ni como veto.** `provisionar.php` tiene
+> el dominio nuevo hardcodeado, así que al recrear los bots del tenant los
+> dejó apuntando ahí:
+>
+> | Lo que hizo en `ganamos7` | Resultado |
+> |---|---|
+> | Login del agente | **OK** (`-> /users/all`) |
+> | `GET /agent_admin/user/` (espejo, 3.058 jugadores, cada 5 min) | **OK, siempre** |
+> | Alta por **formulario** (DOM), 3 intentos | **0 de 3**: *"HTTP 200 sin confirmación y el jugador NO figura en el listado (2xx pero el cuerpo es HTML (¿login?))"* |
+> | Alta por **fast-path** (la API, que es como se crean de verdad) | **nunca se probó** |
+>
+> Esa última fila es la que impide concluir. El contenedor era nuevo y **no
+> tenía plantilla**, así que cayó al formulario — el camino lento que el
+> sistema sano casi no usa. En paralelo, el creador en `ganamosonline` cerró
+> las altas 334, 335 y 337 por fast-path al primer intento, en 4-6 segundos.
+>
+> **Lo que sí quedó probado es que las LECTURAS andan perfecto por ganamos7.**
+> Lo que falta medir es UNA alta por fast-path (el `POST` de creación) contra
+> esa puerta. Hasta entonces, el creador y el recaudador siguen en
+> `ganamosonline` por su `.env`, que le gana al default del código.
+
+>
 > **Antes de volver a tocar esto, mirá lo único que prueba algo: si las altas
 > están saliendo.** Un `.env`, un comentario o un default en el código son lo
 > que alguien creyó, no lo que funciona. La referencia buena es
@@ -735,6 +759,26 @@ jugadores.
   última falla, y si corrió la migración 56).
 - **`cola_panel.php` devuelve contraseñas en claro** (legacy). Sin `BOT_API_KEY`
   configurada responde 500 a propósito.
+- **`/colector` vive en la capa escribible de `ganamos-bot-creador`**: no está
+  en la imagen (el Dockerfile del bot copia cinco `.py` sueltos) ni es un
+  volumen (el único mount es `./datos`). Entró por `docker cp`, así que
+  **`docker compose up --build` lo borra** — y con él se va el circuito de la
+  plata entero (`aprobar_cargas.py`: las cargas del botón «Depósitos», el
+  libro del panel del que sale Finanzas, el espejo de saldos y los retiros).
+  El cron lo llama con `docker exec` cada minuto, así que el error queda
+  enterrado en un log y **nada avisa**: el sistema sigue «andando» mientras la
+  plata deja de moverse. `scripts/deploy-bot.sh` lo repone desde
+  `/opt/goldpaw/colector` y **falla el deploy** si no quedó adentro; si recreás
+  el contenedor a mano, hacé esa copia igual. El arreglo de fondo —que el
+  compose del bot lo monte como volumen— está pedido a Fauno.
+- **`provisionar.php` no aprovisiona `ganamoscrm`** (`SLUGS_CON_BOT_PROPIO`):
+  es nuestro propio negocio y ya lo atienden `ganamos-bot-creador` y
+  `ganamos-bot-recaudador`. Sin esa guarda le levantaba **además**
+  `bot-ganamoscrm` y `altas-ganamoscrm`, y dos bots en la misma cola de altas
+  no se reparten el trabajo: se lo pelean. El 16/09/2026 el duplicado tomó el
+  alta 336, falló tres veces y la renombró dos (el jugador que pidió «Senaana»
+  quedó `holaSenaana4493`, 100 s) mientras las que agarró el creador salían en
+  4-6 s al primer intento.
 - **Sin build:** `landing/` es HTML+CSS+JS a mano, se sube por FTP/administrador
   de archivos. No hay npm, ni bundler, ni deploy automático.
 
