@@ -1877,6 +1877,16 @@
             if (d.carga) narrarCarga(d.carga);
             if (d.alta)  narrarAlta(d.alta);
           }, d.mensaje_id);
+        } else if (!d.respuesta) {
+          /* SIN RESPUESTA ES UNA RESPUESTA VALIDA. Con el bot apagado, el
+             server manda `respuesta` vacia cuando el aviso de "ya te contesta
+             un agente" ya se dijo hace poco -- o cuando el agente acaba de
+             escribir. Antes esto no existia y el aviso salia en CADA mensaje:
+             quince veces en el mismo chat, mientras el operador contestaba.
+             Pintar la burbuja igual dejaria un globo vacio, que se ve peor que
+             el aviso repetido. El mensaje del jugador ya se guardo del lado
+             del server, asi que el operador lo ve igual. */
+          pintarCopiables(d.pago);
         } else {
           var fb = pintar("b", d.respuesta);
           // El id del mensaje en el CRM viaja con la burbuja: es lo que
@@ -1889,7 +1899,10 @@
         }
         /* Al historial va la versión plana: es lo que el modelo tiene que ver
            en el próximo turno, y los marcadores ya no existen a esta altura. */
-        historial.push({ role: "assistant", content: d.respuesta });
+        /* Un turno vacio no va al historial: el modelo lo veria como que
+           contesto con silencio, y eso le ensucia el contexto del proximo
+           turno cuando el bot se vuelva a prender. */
+        if (d.respuesta) { historial.push({ role: "assistant", content: d.respuesta }); }
         guardar();
       } else if (d && d._neterr){
         pintar("b", "No pude conectar. Fijate si tenés señal y probá de nuevo.", false, "alerta");

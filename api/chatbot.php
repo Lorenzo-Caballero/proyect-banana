@@ -479,9 +479,37 @@ if (!$botActivo || !$iaEsteChat) {
     if ($botActivo) {
         chatbot_avisar_derivada_escribio($pdo, $sessionId, $usuarioCliente, $ultimoUser);
     }
-    $aviso = 'En un momento te responde un agente. ¡Gracias por tu paciencia!';
-    // Guardamos el turno con el aviso como "respuesta", asi el hilo del CRM
-    // queda coherente y el agente ve el mensaje del jugador para contestarlo.
+    /* EL AVISO SE MANDA UNA VEZ, NO EN CADA MENSAJE.
+       EL BUG (Nahuel, 16/09/2026): con el bot apagado, CADA mensaje del jugador
+       recibia "En un momento te responde un agente". En una conversacion real
+       quedo asi --y el agente estaba escribiendo al mismo tiempo:
+
+           Quiero retirar            -> En un momento te responde un agente...
+           Necesito hablar con alguien -> En un momento te responde un agente...
+           Quiero retirar            -> En un momento te responde un agente...
+
+       Quince veces en el mismo chat. Para el jugador es un robot que le repite
+       la misma frase mientras pide ayuda, y para el operador es su hilo lleno
+       de ruido justo cuando esta tratando de leer lo que el otro dice.
+
+       Dos frenos, y el segundo importa mas que el primero:
+
+       1. Si un AGENTE ya escribio hace poco, no se manda NADA. Prometer que
+          "en un momento te responde un agente" cuando el agente te acaba de
+          contestar no es redundante: es contradecirlo.
+
+       2. Si no, se manda una sola vez cada AVISO_AGENTE_MIN minutos. La
+          primera vez informa; de la segunda en adelante solo molesta.
+
+       Cuando no se manda, el turno se guarda IGUAL con el mensaje del jugador
+       y sin respuesta: lo que el jugador dijo tiene que llegarle al operador
+       siempre. crm_registrar_turno() con texto vacio no inserta burbuja. */
+    $aviso = chatbot_aviso_agente_toca($pdo, $sessionId, $usuarioCliente)
+           ? 'En un momento te responde un agente. ¡Gracias por tu paciencia!'
+           : '';
+
+    // El turno se guarda siempre: el agente ve el mensaje del jugador para
+    // contestarlo, con aviso o sin el.
     if (function_exists('crm_registrar_turno')) {
         crm_registrar_turno($pdo, $sessionId, $ultimoUser, $aviso,
             $usuarioCliente !== '' ? $usuarioCliente : null);
@@ -1484,6 +1512,64 @@ function chatbot_reconectar_derivacion(PDO $pdo, string $sessionId, string $usua
  * diez avisos. El texto dice en cuantos minutos lo retoma el bot, asi el
  * operador sabe el margen que tiene.
  */
+/** Cada cuantos minutos, como MUCHO, se repite el aviso de "ya te contesta un
+ *  agente". La primera vez informa; de la segunda en adelante solo molesta. */
+const AVISO_AGENTE_MIN = 15;
+
+/**
+ * ¿Corresponde mandar el aviso de "en un momento te responde un agente"?
+ *
+ * Dos frenos, y el segundo importa mas que el primero:
+ *
+ *   1. Si un AGENTE ya escribio hace poco, NO. Prometerle que "en un momento
+ *      te responde un agente" a alguien que acaba de recibir respuesta del
+ *      agente no es redundante: lo contradice, y encima le ensucia el hilo al
+ *      operador que esta tratando de leerlo.
+ *
+ *   2. Si no, una vez cada AVISO_AGENTE_MIN minutos.
+ *
+ * Ante un error de base devuelve TRUE: el aviso de mas es molesto, pero
+ * quedarse callado cuando el jugador escribe a un bot apagado es peor -- se
+ * queda sin saber si alguien lo esta leyendo.
+ */
+function chatbot_aviso_agente_toca(PDO $pdo, string $sessionId, string $usuario): bool
+{
+    if (!function_exists('crm_conversacion_id')) { return true; }
+    try {
+        $conv = crm_conversacion_id($pdo, $sessionId, $usuario !== '' ? $usuario : null);
+        if ($conv <= 0) { return true; }
+
+        /* Lo ultimo que se dijo del lado nuestro, sea agente o bot. Se miran
+           los dos en UNA consulta porque la respuesta depende de cual fue:
+           si hablo el agente, no se dice nada; si fue el aviso, se respeta el
+           intervalo. */
+        $st = $pdo->prepare(
+            "SELECT rol, texto, creado_en,
+                    TIMESTAMPDIFF(MINUTE, creado_en, NOW()) AS hace
+               FROM mensajes
+              WHERE conversacion_id = ? AND rol IN ('agente', 'bot')
+              ORDER BY id DESC LIMIT 1"
+        );
+        $st->execute([$conv]);
+        $ult = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$ult) { return true; }          // nunca se dijo nada: que se diga
+
+        if ((string)$ult['rol'] === 'agente') {
+            /* El agente esta. No hay nada que prometer. */
+            return false;
+        }
+        /* Fue el bot. Si lo ultimo que dijo NO es este aviso, el chat venia
+           conversando normal y recien ahora se apago: corresponde avisar. */
+        if (!str_contains((string)$ult['texto'], 'te responde un agente')) {
+            return true;
+        }
+        return (int)$ult['hace'] >= AVISO_AGENTE_MIN;
+    } catch (Throwable $e) {
+        error_log('chatbot_aviso_agente_toca: ' . $e->getMessage());
+        return true;
+    }
+}
+
 function chatbot_avisar_derivada_escribio(PDO $pdo, string $sessionId, string $usuario, string $texto): void
 {
     if (!function_exists('tg_evento')) { return; }
