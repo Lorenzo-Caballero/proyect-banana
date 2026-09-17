@@ -62,6 +62,10 @@ require_once __DIR__ . '/publicidad_lib.php';
 // dejo el chat muerto en produccion dos veces.
 require_once __DIR__ . '/crm_lib.php';
 require_once __DIR__ . '/telegram_lib.php';
+/* vin_avisos_mudos(): un bloqueado no hace sonar el Telegram. Se carga acá
+   arriba porque el primer uso está en el flujo del bot apagado, fuera de
+   toda función. */
+require_once __DIR__ . '/vinculos_lib.php';
 // El CRM es opcional: si crm_lib.php no esta subido, el chat sigue funcionando.
 $crmLib = __DIR__ . '/crm_lib.php';
 if (is_file($crmLib)) { require_once $crmLib; }
@@ -1573,6 +1577,7 @@ function chatbot_aviso_agente_toca(PDO $pdo, string $sessionId, string $usuario)
 function chatbot_avisar_derivada_escribio(PDO $pdo, string $sessionId, string $usuario, string $texto): void
 {
     if (!function_exists('tg_evento')) { return; }
+    if (vin_avisos_mudos($pdo, $usuario)) { return; }
     $clave = chatbot_clave_conv($pdo, $sessionId, $usuario);
     if ($clave === '') { return; }
 
@@ -1946,11 +1951,17 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
                   . ($recoMin > 0
                         ? ' Si despues no volves a escribir en ' . $recoMin . ' min, lo retoma solo.'
                         : ' Una vez que le escribas, no lo retoma solo: el chat queda tuyo.');
-            tg_evento($pdo, 'derivacion', $titulo, [
-                'Jugador' => $quien,
-                'Motivo'  => $motivo !== '' ? $motivo : '(no lo dijo)',
-                'Nota'    => $nota,
-            ]);
+            /* Un bloqueado que pide un agente tampoco suena el Telegram: la
+               conversación queda marcada en el CRM igual (eso pasa arriba y no
+               se toca), pero no se interrumpe a nadie. Ver
+               chatbot_avisos_mudos(). */
+            if (!vin_avisos_mudos($pdo, $usuarioSesion)) {
+                tg_evento($pdo, 'derivacion', $titulo, [
+                    'Jugador' => $quien,
+                    'Motivo'  => $motivo !== '' ? $motivo : '(no lo dijo)',
+                    'Nota'    => $nota,
+                ]);
+            }
         }
 
         /* Al modelo se le confirma SIEMPRE, aunque el marcado haya fallado: lo
@@ -2359,7 +2370,8 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
            Con clave de dedupe: un aviso por pago, no uno por pregunta. El
            jugador nervioso pregunta cinco veces. */
         $tr = $r['pago_trabado'] ?? null;
-        if ($tr && !empty($tr['hay']) && function_exists('tg_evento')) {
+        if ($tr && !empty($tr['hay']) && function_exists('tg_evento')
+            && !vin_avisos_mudos($pdo, (string)($r['usuario'] ?? ''))) {
             /* tipo 'revision' (el interruptor que el operador ya conoce) y la
                clave de dedupe en el 5to parametro: un aviso por PAGO, no uno
                por pregunta -- el que espera su plata pregunta cinco veces. */

@@ -480,6 +480,62 @@ chequear('desbloqueado vuelve a responder limpio',
 
 // ===========================================================================
 // ===========================================================================
+echo "
+=== 5e. Un bloqueado no hace sonar el Telegram ===
+";
+
+/* EL REPORTE (Nahuel, 16/09/2026): *"eliminá el mensaje molesto de Telegram que
+   me llega a cada ratito sobre el jugador falso ese que supuestamente envió el
+   dinero y no recibió las fichas. Nunca envió el dinero realmente, mandó varios
+   comprobantes falsos con fecha y hora diferentes"*.
+
+   Era `holajorge443` --una de las cinco cuentas de la misma persona, todas
+   pagando desde la cuenta de DIEGO SANTILLAN--, ya bloqueado, repitiendo su
+   reclamo cada pocos minutos.
+
+   LO QUE HACE INTERESANTE ESTE BUG es que ningún freno estaba roto. El aviso de
+   derivación ya tenía un límite de 5 minutos POR CHAT y lo respetaba perfecto.
+   Lo que faltaba era una pregunta anterior: si ya decidimos no atender a esta
+   persona, ¿por qué le pedimos a alguien que vuelva a decidirlo doce veces por
+   hora? Un freno regula la frecuencia; no puede contestar si el aviso vale.
+
+   NO LE SACA EL CHAT: la conversación sigue entrando al CRM --hace falta para
+   ver qué está intentando, y para poder revertir un bloqueo equivocado--. Lo
+   único que se corta es la interrupción. El CRM se mira, el Telegram te busca. */
+$limpiar();
+$usuario('tv_mudo');
+chequear('sin bloquear, el aviso sale',
+         vin_avisos_mudos($pdo, 'tv_mudo') === false);
+
+vin_bloquear($pdo, 'tv_mudo', true, 'nahuel', 'comprobantes falsos');
+chequear('bloqueado, el aviso se calla',
+         vin_avisos_mudos($pdo, 'tv_mudo') === true);
+
+vin_bloquear($pdo, 'tv_mudo', false, 'nahuel');
+chequear('y al desbloquear vuelve a avisar',
+         vin_avisos_mudos($pdo, 'tv_mudo') === false);
+
+/* ANTE LA DUDA SE AVISA. Perder el aviso de alguien que SI hay que atender es
+   peor que uno de mas: el de mas molesta, el que falta deja a un jugador
+   esperando a nadie. */
+chequear('un anonimo (sin usuario) NO se calla',
+         vin_avisos_mudos($pdo, '') === false);
+chequear('un usuario que no existe tampoco',
+         vin_avisos_mudos($pdo, 'tv_no_existe_jamas') === false);
+
+/* Y QUE LA GUARDA ESTE EN LOS TRES AVISOS del chat que llevan nombre de
+   jugador, no solo en el que se reporto. Es posicional sobre el codigo porque
+   ningun test de comportamiento ve que falte en uno de los tres --y el que
+   falte va a ser justo el que suene a las 4 de la mañana--. chatbot.php no se
+   puede requerir: es un endpoint, arranca una request al cargarlo. */
+$srcCb = file_get_contents(__DIR__ . '/api/chatbot.php');
+chequear('la guarda esta en los 3 avisos con jugador',
+         substr_count($srcCb, 'vin_avisos_mudos($pdo') === 3,
+         substr_count($srcCb, 'vin_avisos_mudos($pdo') . ' usos');
+chequear('y chatbot.php carga vinculos_lib para poder llamarla',
+         str_contains($srcCb, "require_once __DIR__ . '/vinculos_lib.php';"));
+
+// ===========================================================================
 echo "\n=== 6. Nada de esto puede tumbar una ficha ===\n";
 /* vin_relacionados corre al abrir CADA conversación del CRM. Un vínculo que no
    se pudo calcular no puede impedir que el operador vea a su jugador. */

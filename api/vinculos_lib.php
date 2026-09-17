@@ -106,6 +106,50 @@ function vin_bloqueado(PDO $pdo, string $usuario): bool
 }
 
 /**
+ * ¿Los avisos por Telegram de ESTE jugador van al tacho?
+ *
+ * SI ESTA BLOQUEADO, SI. Bloquear es la decisión de no atenderlo más: seguir
+ * mandando un Telegram cada vez que escribe es pedirle a una persona que
+ * vuelva a decidir lo mismo, varias veces por hora.
+ *
+ * EL CASO REAL (Nahuel, 16/09/2026): *"eliminá el mensaje molesto de Telegram
+ * que me llega a cada ratito sobre el jugador falso ese que supuestamente
+ * envió el dinero y no recibió las fichas. Nunca envió el dinero realmente,
+ * mandó varios comprobantes falsos con fecha y hora diferentes"*. Era
+ * `holajorge443` --una de las cinco cuentas de la misma persona, todas pagando
+ * desde la cuenta de DIEGO SANTILLAN--, ya bloqueado, repitiendo su reclamo
+ * cada pocos minutos.
+ *
+ * LO QUE HACE INTERESANTE A ESTE BUG es que ningún freno estaba roto. El aviso
+ * de derivación ya tenía un límite de 5 minutos POR CHAT y lo respetaba
+ * perfecto. Lo que faltaba era una pregunta anterior: si ya decidimos no
+ * atender a esta persona, ¿por qué le pedimos a alguien que vuelva a decidirlo
+ * doce veces por hora? Un freno regula la FRECUENCIA; no puede contestar si el
+ * aviso VALE.
+ *
+ * NO LE SACA EL CHAT NI LE BORRA LOS MENSAJES. La conversación sigue entrando
+ * al CRM y el operador la lee cuando quiera --hace falta para ver qué está
+ * intentando, y para poder revertir un bloqueo equivocado--. Lo único que se
+ * corta es la interrupción: el CRM se mira, el Telegram te busca.
+ *
+ * ANTE LA DUDA, AVISA. Sin usuario (anónimo), con la migración sin correr o si
+ * la consulta falla, devuelve false. Perder el aviso de alguien que SÍ hay que
+ * atender es peor que uno de más: el de más molesta, el que falta deja a un
+ * jugador esperando a nadie.
+ *
+ * Vive acá y no en chatbot.php --que es donde se uso primero-- porque es una
+ * pregunta sobre el BLOQUEO, no sobre el chat; y porque chatbot.php es un
+ * endpoint, no una librería: requerirlo desde un test arranca una request.
+ */
+function vin_avisos_mudos(PDO $pdo, string $usuario): bool
+{
+    $usuario = trim($usuario);
+    if ($usuario === '') { return false; }
+    try { return vin_bloqueado($pdo, $usuario); }
+    catch (Throwable $e) { return false; }
+}
+
+/**
  * Bloquear o desbloquear. `$motivo` es para el operador que lo lea en tres
  * semanas, no para el jugador: nunca se le muestra.
  */
