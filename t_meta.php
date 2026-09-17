@@ -151,6 +151,81 @@ chequear('pero NO el token',
          !str_contains(json_encode($pub), 'SECRETO'),
          'con el token en el HTML cualquiera manda eventos falsos a tu pixel');
 
+echo "
+=== Modo prueba: nada sale hacia afuera ===
+";
+
+/* EL INCIDENTE (17/09/2026). `scripts/simulacro.php` recorre el circuito de la
+   plata en PRODUCCION con un jugador inventado, y lo hace bien: por las
+   funciones de verdad. El problema es que acreditar una recarga dispara
+   `rl_notificar_acreditada()`, que dispara un `Purchase`.
+
+   Siete corridas del simulacro = SIETE conversiones falsas de $1.000 en la
+   cuenta de publicidad, de jugadores `zzsim…` que no existen y que el propio
+   script borra al terminar. Aparecieron auditando por que Meta reportaba mas
+   conversiones que el CRM.
+
+   No es un numero feo en un informe: Meta OPTIMIZA la pauta con esos eventos,
+   asi que el simulacro le estaba enseñando al algoritmo a buscar gente
+   parecida a un fantasma. Y no se puede deshacer -- un evento mandado a la
+   CAPI no se retracta.
+
+   LA REGLA QUE QUEDA: una prueba puede tocar NUESTRA base, nunca a un tercero.
+   El flag se define antes de cargar nada y lo miran meta_evento() y
+   tg_evento(). */
+cfg_crm_guardar($pdo, ['meta_activo' => '1', 'meta_pixel_id' => '123',
+                       'meta_capi_token' => 'SECRETO', 'meta_ev_purchase' => '1'], 'test');
+
+chequear('con todo prendido, el evento se arma',
+         meta_evento($pdo, 'Purchase', ['usuario' => 'test_meta2', 'valor' => 1000,
+                                        'ref' => 'guardia:1']) !== '',
+         'si esto ya daba vacio, el chequeo de abajo no prueba nada');
+
+/* El flag es una constante y no se puede desdefinir, asi que el chequeo de
+   comportamiento vive en un proceso aparte. El codigo hijo va a un ARCHIVO y
+   no a `php -r`: en Windows escapeshellarg() envuelve en comillas dobles y el
+   codigo lleva las suyas adentro, asi que el hijo moria con un parse error --
+   y un hijo que no arranca hace fallar el chequeo por el motivo equivocado. */
+$tmp = sys_get_temp_dir() . '/gp_modo_prueba_' . getmypid() . '.php';
+$dir = str_replace(DIRECTORY_SEPARATOR, '/', __DIR__);
+file_put_contents($tmp, <<<PHPHIJO
+<?php
+define('GP_MODO_PRUEBA', true);
+\$pdo = new PDO(
+    'mysql:host=' . (getenv('T_HOST') ?: '127.0.0.1')
+        . ';port=' . (getenv('T_PORT') ?: '3306')
+        . ';dbname=' . (getenv('T_DB') ?: 'goldpaw_demo') . ';charset=utf8mb4',
+    getenv('T_USER') ?: 'root', getenv('T_PASS') ?: '',
+    [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]
+);
+\$GLOBALS['pdo'] = \$pdo;
+require '{$dir}/api/config_crm.php';
+require '{$dir}/api/meta_lib.php';
+require '{$dir}/api/telegram_lib.php';
+echo meta_evento(\$pdo, 'Purchase',
+        ['usuario' => 'test_meta2', 'valor' => 1000, 'ref' => 'guardia:2']) === ''
+     ? 'META_MUDO' : 'META_MANDO';
+echo tg_evento(\$pdo, 'pago', 'titulo', []) === false ? '|TG_MUDO' : '|TG_MANDO';
+PHPHIJO);
+
+$salida = (string)@shell_exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($tmp) . ' 2>&1');
+@unlink($tmp);
+
+chequear('con GP_MODO_PRUEBA, meta_evento() no manda nada',
+         str_contains($salida, 'META_MUDO'), trim($salida));
+chequear('y tg_evento() tampoco',
+         str_contains($salida, 'TG_MUDO'), trim($salida));
+
+/* Y que el simulacro lo defina ANTES de cargar libs: si quedara despues de un
+   require que ya llamo a meta_evento(), el flag no serviria de nada. */
+$sim = (string)@file_get_contents(__DIR__ . '/scripts/simulacro.php');
+$posFlag = strpos($sim, "define('GP_MODO_PRUEBA'");
+$posReq  = strpos($sim, "require_once \$API");
+chequear('el simulacro define el flag', $posFlag !== false);
+chequear('y lo define ANTES del primer require',
+         $posFlag !== false && $posReq !== false && $posFlag < $posReq,
+         'un flag que llega tarde no apaga nada');
+
 cfg_crm_guardar($pdo, ['meta_activo' => '0', 'meta_pixel_id' => '',
                        'meta_capi_token' => ''], 'test');
 limpiar($pdo);

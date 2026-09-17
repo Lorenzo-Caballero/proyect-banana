@@ -110,6 +110,28 @@ function meta_credenciales(PDO $pdo, ?array $pixelPublicista): array
  */
 function meta_evento(PDO $pdo, string $evento, array $datos = []): string
 {
+    /* MODO PRUEBA: ningún evento sale hacia afuera.
+     *
+     * EL INCIDENTE (17/09/2026): `scripts/simulacro.php` recorre el circuito de
+     * la plata con un jugador inventado (`zzsim…`) y lo hace bien, por las
+     * funciones de verdad — crea la recarga, registra el pago y la acredita.
+     * El problema es que acreditar dispara `rl_notificar_acreditada()`, que
+     * dispara este `Purchase`. Siete corridas del simulacro = **siete
+     * conversiones falsas de $1.000 reportadas a Meta**, de jugadores que no
+     * existen y que el propio script borra al terminar.
+     *
+     * No es solo un número inflado en el informe: Meta optimiza la pauta con
+     * esos eventos, así que el simulacro le estaba enseñando al algoritmo a
+     * buscar gente parecida a un fantasma. Y no se puede deshacer: un evento
+     * mandado a la API de conversiones no se retracta.
+     *
+     * La regla que queda: **una prueba puede tocar nuestra base, nunca a un
+     * tercero.** El flag se define ANTES de cargar nada (ver el encabezado del
+     * simulacro) y lo mira también `tg_evento()`.
+     */
+    if (defined('GP_MODO_PRUEBA') && GP_MODO_PRUEBA) {
+        return '';
+    }
     if (!cfg_crm_activo($pdo, 'meta_activo')) {
         return '';
     }

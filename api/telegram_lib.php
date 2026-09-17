@@ -166,6 +166,14 @@ if (!function_exists('tg_evento')) {
     function tg_evento(?PDO $pdo, string $tipo, string $titulo,
                        array $lineas = [], string $clave = ''): bool
     {
+        /* MODO PRUEBA: no se le escribe a nadie. Mismo criterio que
+           meta_evento() -- una prueba puede tocar nuestra base, nunca a un
+           tercero. Acá el daño sería menor (un Telegram raro en vez de una
+           conversión falsa que Meta usa para optimizar), pero la regla es la
+           misma y así no hay que acordarse de cuál es cuál. */
+        if (defined('GP_MODO_PRUEBA') && GP_MODO_PRUEBA) {
+            return false;
+        }
         try {
             if (function_exists('cfg_crm_activo')
                 && !cfg_crm_activo($pdo, 'tg_ev_' . $tipo)) {

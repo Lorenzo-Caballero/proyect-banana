@@ -49,6 +49,22 @@ if ($i !== false && isset($args[$i + 1])) { $slug = trim($args[$i + 1]); }
 $_SERVER['HTTP_HOST'] = 'ganamoscrm.online';
 if ($slug !== '') { $_SERVER['HTTP_X_TENANT_SLUG'] = $slug; }
 
+/* NADA SALE HACIA AFUERA. Va ANTES de cargar cualquier lib, porque lo miran
+   meta_evento() y tg_evento() en cuanto los llame el código real.
+
+   POR QUÉ HACE FALTA (17/09/2026): este script acredita una recarga por el
+   camino de verdad, y acreditar dispara `rl_notificar_acreditada()`, que manda
+   un `Purchase` a la API de conversiones de Meta. Siete corridas dejaron
+   SIETE conversiones falsas de $1.000 en la cuenta de publicidad, de jugadores
+   `zzsim…` que no existen y que este mismo script borra al terminar.
+
+   No es un número feo en un informe: Meta optimiza la pauta con esos eventos,
+   así que el simulacro le estaba enseñando al algoritmo a buscar fantasmas. Y
+   no se puede deshacer — un evento mandado a la CAPI no se retracta.
+
+   La regla: una prueba puede tocar NUESTRA base, nunca a un tercero. */
+define('GP_MODO_PRUEBA', true);
+
 $API = is_dir('/var/www/api') ? '/var/www/api' : __DIR__ . '/../api';
 require_once $API . '/db.php';
 require_once $API . '/config_crm.php';
