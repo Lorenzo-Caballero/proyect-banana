@@ -124,7 +124,11 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $body   = json_decode(file_get_contents('php://input'), true) ?: [];
 $accion = (string)($body['accion'] ?? 'girar');
-$ip     = $_SERVER['REMOTE_ADDR'] ?? null;
+/* ip_cliente() y no REMOTE_ADDR: acá la IP es solo registro (los límites de
+   la ruleta salen de los UNIQUE por sesión y por día), pero guardar el edge de
+   Cloudflare en vez del jugador no sirve para nada. Ver api/ip_cliente.php. */
+require_once __DIR__ . '/ip_cliente.php';
+$ip     = ip_cliente() ?: null;
 
 /* Ruleta apagada desde el CRM (Configuración -> Ruleta de bonos).
    Se corta ACA, antes de cualquier accion: esconder el boton en el widget no

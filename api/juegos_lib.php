@@ -285,7 +285,11 @@ function jug_token(): string
  */
 function jug_rate(string $clave, int $max, int $ventanaSeg): bool
 {
-    $ip = $_SERVER['REMOTE_ADDR'] ?? 'desconocida';
+    /* POR JUGADOR, NO POR EDGE DE CLOUDFLARE. Con REMOTE_ADDR, los 30 tiros
+       por minuto de la raspa y los 40 del slot eran el total entre todos los
+       jugadores. Ver api/ip_cliente.php (16/09/2026). */
+    require_once __DIR__ . '/ip_cliente.php';
+    $ip = ip_cliente() ?: 'desconocida';
     $f  = sys_get_temp_dir() . '/gpjuego_' . $clave . '_' . md5($ip);
     $ahora = time();
     $hits = [];

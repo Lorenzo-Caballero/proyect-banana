@@ -160,7 +160,9 @@ try {
                  VALUES (?, CURDATE(), CURDATE(), ?, ?, ?, ?, ?)"
             )->execute([
                 $usuario, $indice, $premio, implode(',', $celdas), $token,
-                $_SERVER['REMOTE_ADDR'] ?? null,
+                // ip_cliente(): REMOTE_ADDR guardaba el edge de Cloudflare.
+                (function () { require_once __DIR__ . '/ip_cliente.php';
+                               return ip_cliente() ?: null; })(),
             ]);
         } catch (PDOException $e) {
             if ($e->getCode() !== '23000') { throw $e; }

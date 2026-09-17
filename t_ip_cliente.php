@@ -95,5 +95,35 @@ $src = file_get_contents(__DIR__ . '/api/altas_lib.php');
 chequear('alta_ip() tambien',
          (bool)preg_match('/function alta_ip\(\).*?return ip_cliente\(\);/s', $src));
 
+echo "\n=== 5. Que no se cuele otro REMOTE_ADDR ===\n";
+
+/* ESTE ES EL CHEQUEO QUE MAS VALE DE TODO EL ARCHIVO. El bug no fue escribir
+   REMOTE_ADDR una vez: fue que estaba en OCHO lugares y ninguno se reviso
+   cuando el sitio quedo detras de Cloudflare. Cuatro de esos ocho eran limites
+   de tasa, que en silencio pasaron de "por jugador" a "para todos juntos":
+   el chat aceptaba 20 mensajes por minuto entre 2.980 conversaciones, y subir
+   un comprobante --el paso previo a que se acredite la plata-- 10 cada 10
+   minutos entre todos.
+
+   Lo que los hacia invisibles es que el limite NO es un error: contesta 429 y
+   el jugador ve que "no anda", se va, y del lado nuestro no queda nada raro.
+
+   Se cuentan los usos REALES (sin comentarios), asi que explicar el incidente
+   en un docblock no hace pasar el chequeo. */
+$sospechosos = [];
+foreach (glob(__DIR__ . '/api/*.php') as $archivo) {
+    if (basename($archivo) === 'ip_cliente.php') { continue; }   // ahi vive
+    $codigo = '';
+    foreach (token_get_all(file_get_contents($archivo)) as $tk) {
+        if (is_array($tk)) {
+            if ($tk[0] === T_COMMENT || $tk[0] === T_DOC_COMMENT) { continue; }
+            $codigo .= $tk[1];
+        } else { $codigo .= $tk; }
+    }
+    if (str_contains($codigo, 'REMOTE_ADDR')) { $sospechosos[] = basename($archivo); }
+}
+chequear('ningun api/*.php usa REMOTE_ADDR directo', $sospechosos === [],
+         implode(', ', $sospechosos) . ' -- usa ip_cliente()');
+
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);
 exit($fail > 0 ? 1 : 0);

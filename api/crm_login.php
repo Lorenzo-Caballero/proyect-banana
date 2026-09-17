@@ -55,7 +55,11 @@ if ($accion === 'logout') {
 
 if ($accion === 'login') {
     $usuario = trim((string) ($in['usuario'] ?? ''));
-    $ip      = (string) ($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0');
+    /* ip_cliente(): detrás de Cloudflare REMOTE_ADDR es el edge, así que el
+       registro de accesos decía que todos los operadores entran desde la misma
+       IP -- y cualquier límite por IP los contaba como uno solo. */
+    require_once __DIR__ . '/ip_cliente.php';
+    $ip      = ip_cliente() ?: '0.0.0.0';
 
     if (!crm_login_limite('login_' . $ip . '_' . strtolower($usuario), 5, 900)) {
         http_response_code(429);

@@ -72,9 +72,16 @@ if ($esAgente) {
         http_response_code(400);
         echo json_encode(['ok' => false, 'error' => 'Falta session_id']); exit;
     }
-    // Rate limit por IP: sin esto un anónimo podía llenar el disco con
-    // archivos de 8 MB. Mismo patrón de archivo temporal que crm_login.php.
-    $ip = (string)($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0');
+    /* Rate limit por IP: sin esto un anónimo podía llenar el disco con
+       archivos de 8 MB. Mismo patrón de archivo temporal que crm_login.php.
+
+       LA IP SALE DE ip_cliente() Y ACA IMPORTA MAS QUE EN NINGUN LADO: detrás
+       de Cloudflare, REMOTE_ADDR es el edge y estos "10 archivos cada 10
+       minutos por IP" eran 10 entre TODOS los jugadores. Subir el comprobante
+       es el paso anterior a que se le acredite la plata: el jugador número 11
+       no podía mandarlo y lo único que veía era "Demasiadas subidas". */
+    require_once __DIR__ . '/ip_cliente.php';
+    $ip = ip_cliente() ?: '0.0.0.0';
     $rl = sys_get_temp_dir() . '/gp_subir_rl_' . md5($ip);
     $hits = [];
     if (is_file($rl)) {

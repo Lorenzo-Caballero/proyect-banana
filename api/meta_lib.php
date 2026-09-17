@@ -184,7 +184,14 @@ function meta_evento(PDO $pdo, string $evento, array $datos = []): string
        Meta usa esos campos para reconocer y ubicar a la persona: mandarlos mal
        hunde el Event Match Quality y le dice que todo pasa en un servidor.
        Se guardan en el alta (migracion 51) y se releen, igual que fbp/fbc. */
-    $ip = trim((string)($datos['ip'] ?? '')) ?: (string)($_SERVER['REMOTE_ADDR'] ?? '');
+    /* EL FALLBACK TAMBIEN TIENE QUE SER LA IP DEL JUGADOR. Mandarle a Meta el
+       edge de Cloudflare es justo lo que este bloque dice que no hay que hacer
+       --hunde el Event Match Quality y le dice que todo pasa en un servidor--
+       y encima con la misma IP para todos. `$datos['ip']` sale del alta, que
+       hasta el 16/09/2026 guardaba lo mismo mal (ver api/ip_cliente.php): las
+       altas viejas no se pueden arreglar, las nuevas ya salen bien. */
+    require_once __DIR__ . '/ip_cliente.php';
+    $ip = trim((string)($datos['ip'] ?? '')) ?: ip_cliente();
     $ua = trim((string)($datos['ua'] ?? '')) ?: (string)($_SERVER['HTTP_USER_AGENT'] ?? '');
     if ($ip !== '') { $userData['client_ip_address']  = $ip; }
     if ($ua !== '') { $userData['client_user_agent']  = $ua; }

@@ -162,7 +162,9 @@ try {
         try {
             $ins->execute([
                 $usuario, $i, $indice, implode(',', $rodillos), $premio,
-                $_SERVER['REMOTE_ADDR'] ?? null,
+                // ip_cliente(): REMOTE_ADDR guardaba el edge de Cloudflare.
+                (function () { require_once __DIR__ . '/ip_cliente.php';
+                               return ip_cliente() ?: null; })(),
             ]);
             $nro = $i;
             break;

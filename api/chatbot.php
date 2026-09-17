@@ -2717,10 +2717,22 @@ function ia_chat_post(string $url, string $key, array $cuerpo, array $extraHeade
     return ['http' => $http, 'data' => is_array($data) ? $data : [], 'raw' => $raw];
 }
 
-/** Limite de tasa por IP con archivo temporal. */
+/**
+ * Limite de tasa por IP con archivo temporal.
+ *
+ * ERA UN LIMITE GLOBAL SIN QUERERLO. Con `$_SERVER['REMOTE_ADDR']` y el sitio
+ * detras de Cloudflare, la "IP" es el edge de la CDN: la comparten todos los
+ * jugadores. O sea que `limite_por_ip(20, 60)` no dejaba pasar 20 mensajes por
+ * minuto POR PERSONA sino 20 en total entre todos -- con 2.980 conversaciones
+ * abiertas, el mensaje 21 de cualquiera se comia un 429.
+ *
+ * Y no deja rastro: el jugador ve que el chat no contesta y se va. Encontrado
+ * el 16/09/2026 tirando del hilo de los vinculos falsos por IP.
+ */
 function limite_por_ip($max, $ventanaSeg)
 {
-    $ip = $_SERVER['REMOTE_ADDR'] ?? 'desconocida';
+    require_once __DIR__ . '/ip_cliente.php';
+    $ip = ip_cliente() ?: 'desconocida';
     $f  = sys_get_temp_dir() . '/chatbot_rl_' . md5($ip);
     $ahora = time();
     $hits = array();
