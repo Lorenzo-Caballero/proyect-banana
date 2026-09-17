@@ -808,15 +808,33 @@ jugadores.
 - **`/colector` vive en la capa escribible de `ganamos-bot-creador`**: no está
   en la imagen (el Dockerfile del bot copia cinco `.py` sueltos) ni es un
   volumen (el único mount es `./datos`). Entró por `docker cp`, así que
-  **`docker compose up --build` lo borra** — y con él se va el circuito de la
-  plata entero (`aprobar_cargas.py`: las cargas del botón «Depósitos», el
-  libro del panel del que sale Finanzas, el espejo de saldos y los retiros).
-  El cron lo llama con `docker exec` cada minuto, así que el error queda
-  enterrado en un log y **nada avisa**: el sistema sigue «andando» mientras la
-  plata deja de moverse. `scripts/deploy-bot.sh` lo repone desde
-  `/opt/goldpaw/colector` y **falla el deploy** si no quedó adentro; si recreás
-  el contenedor a mano, hacé esa copia igual. El arreglo de fondo —que el
-  compose del bot lo monte como volumen— está pedido a Fauno.
+  **`docker compose up --build` lo borra** — y con él `aprobar_cargas.py`, que
+  es el circuito de la plata entero (las cargas del botón «Depósitos», el libro
+  del panel del que sale Finanzas, el espejo de saldos y los retiros).
+
+  > **Pero se repone solo, y eso acota mucho el daño.** El cron del minuto es
+  > `docker cp /opt/goldpaw/colector/. ganamos-bot-creador:/colector && docker
+  > exec ... aprobar_cargas.py`: la copia va ANTES de cada corrida. O sea que
+  > un rebuild pierde como máximo una pasada, no el worker. Acá se dijo que el
+  > deploy «te borraba el circuito de la plata» sin mirar el crontab, y era una
+  > exageración: la ventana real es de ≤60 segundos.
+  >
+  > `scripts/deploy-bot.sh` lo repone igual y **falla el deploy** si no quedó
+  > adentro — así el estado queda explícito en vez de depender del próximo tic
+  > del cron. El arreglo de fondo (que el compose lo monte como volumen) sigue
+  > pedido a Fauno.
+
+- **Los avisos de Telegram salen de DOS lugares, y solo uno deja rastro.**
+  `tg_evento()` (PHP) registra en `tg_avisos` cuando lleva clave de dedupe; los
+  **watchdogs de `scripts/*.sh`** (`monitor-cargas.sh`, `monitor-altas.sh`,
+  `monitor-sitio.sh`, en el crontab) le pegan **directo a la API de Telegram
+  con `curl`** y no escriben nada en la base.
+
+  > **Buscar un aviso repetido solo en `tg_avisos` y en los `tg_evento` de
+  > `api/` lleva a concluir que no existe.** Pasó el 16/09/2026: un aviso que
+  > llegaba cada 15 minutos nombrando a tres jugadores no figuraba en ninguna
+  > de las dos partes, porque era `monitor-cargas.sh`. **El crontab es parte
+  > del código que hay que leer.**
 - **`provisionar.php` no aprovisiona `ganamoscrm`** (`SLUGS_CON_BOT_PROPIO`):
   es nuestro propio negocio y ya lo atienden `ganamos-bot-creador` y
   `ganamos-bot-recaudador`. Sin esa guarda le levantaba **además**
