@@ -11241,9 +11241,25 @@
     // Las landings del CRM, separadas de los publicistas. Son OTRO eje: acá se
     // ve QUÉ página de promo trajo al jugador (por altas.origen), no quién.
     if(pbLandings.length){
-      html += '<span class="pb-tab-sep">Landings</span>' + pbLandings.map(l=>
-        `<button class="pb-tab pb-tab-lp ${(pbLandingSel && pbLandingSel.slug===l.slug)?"on":""} ${l.activa?"":"pb-tab-pausado"}" data-slug="${esc(l.slug)}" type="button">${esc(l.nombre)}${l.activa?"":ico("pausa")}</button>`
-      ).join("");
+      /* EL SLUG VA EN LA SOLAPA, NO SOLO EL NOMBRE, y no es adorno.
+         El nombre lo escribe el operador y NO es único: el 16/09/2026 había
+         seis landings y cinco se llamaban «50», «50», «50», «Bono 50» y
+         «landing 50». La barra mostraba cuatro solapas idénticas que eran
+         páginas distintas, con gasto y registros distintos — imposible saber
+         en cuál estabas cargando la plata, y los números "no cerraban" porque
+         cada visita caía en otra.
+         El slug sí es único, es la clave con la que se guarda el gasto y es lo
+         que aparece en la URL (`lp.html?l=<slug>`), así que es el dato que
+         permite reconocerla. Ojo que tampoco coinciden entre sí: la que se
+         llama «landing 50» tiene slug `landing-40`. */
+      html += '<span class="pb-tab-sep">Landings</span>' + pbLandings.map(l=>{
+        const distinto = String(l.nombre || "").trim().toLowerCase()
+                      !== String(l.slug   || "").trim().toLowerCase();
+        const chip = distinto
+          ? ` <span style="font-weight:400;opacity:.65;font-size:.9em">${esc(l.slug)}</span>`
+          : "";
+        return `<button class="pb-tab pb-tab-lp ${(pbLandingSel && pbLandingSel.slug===l.slug)?"on":""} ${l.activa?"":"pb-tab-pausado"}" data-slug="${esc(l.slug)}" type="button" title="slug: ${esc(l.slug)}">${esc(l.nombre)}${chip}${l.activa?"":ico("pausa")}</button>`;
+      }).join("");
     }
     $("#pbTabs").innerHTML = html;
 
@@ -11713,7 +11729,18 @@
        y equivocarse no se nota hasta que los numeros no cierran. */
     const thG = $("#pbThGasto");
     if(thG){
-      const quienTabla = pbLandingSel ? pbLandingSel.nombre : (pbPublicistaActivo()?.nombre || "");
+      /* Para una landing va el SLUG, no el nombre: los nombres se repiten (ver
+         pbPintarTabs) y este encabezado es justo el que tiene que despejar la
+         duda de a quién se le está cargando la plata. Si el nombre aporta algo
+         --o sea, si difiere del slug-- va al lado, en chico. */
+      let quienTabla = "";
+      if(pbLandingSel){
+        const n = String(pbLandingSel.nombre || "").trim();
+        const s = String(pbLandingSel.slug   || "").trim();
+        quienTabla = (n && n.toLowerCase() !== s.toLowerCase()) ? `${s} (${n})` : s;
+      } else {
+        quienTabla = pbPublicistaActivo()?.nombre || "";
+      }
       thG.innerHTML = quienTabla
         ? 'Gasto <span style="font-weight:400;color:var(--muted)">· ' + esc(quienTabla) + '</span>'
         : 'Gasto';
