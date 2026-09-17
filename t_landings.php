@@ -28,7 +28,7 @@ $pdo->exec("CREATE TABLE landings (
 
 // --- plantillas ---
 $pl = landings_plantillas();
-chk(isset($pl['oro'], $pl['neon'], $pl['fuego']), 'hay 3 plantillas por default');
+chk(isset($pl['oro'], $pl['neon'], $pl['fuego'], $pl['registro']), 'hay 4 plantillas por default (3 presets + solo registro)');
 foreach ($pl as $clave => $p) {
     chk(isset($p['colores']['fondo'], $p['colores']['acento'], $p['colores']['destacado'], $p['colores']['texto']),
         "plantilla $clave: 4 colores completos");

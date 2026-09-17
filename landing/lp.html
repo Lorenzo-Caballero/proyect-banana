@@ -207,6 +207,18 @@
   .cred .v{font-size:17px;font-weight:800;word-break:break-all;text-align:right}
   .aviso{margin-top:12px;font-size:12px;color:var(--texto-dim);opacity:.8;line-height:1.5;text-align:center}
 
+  /* ---------- plantilla "Solo registro" ----------
+     La hoja ES la página: sin hero ni promo, la tarjeta de "Creá tu cuenta"
+     queda sola y centrada. Deja de ser un bottom-sheet: pasa a bloque
+     estático dentro del flex del body, así se centra igual en PC y celular
+     (va DESPUÉS de las media queries de .hoja para ganarles). */
+  body.solo-registro .hero,
+  body.solo-registro .fondo,
+  body.solo-registro .tirador{display:none}
+  body.solo-registro .hoja{position:static;transform:none;width:100%;max-width:420px;
+    margin:auto 0;border-radius:22px;border-bottom:1px solid var(--line);
+    padding:30px 24px 28px;animation:sube .5s ease both}
+
   /* Landing inexistente/pausada: un cartel simple, nada de la promo. */
   .caida{margin:auto;text-align:center;color:var(--texto-dim);font-size:15px;display:none;
     line-height:1.6}
@@ -346,6 +358,11 @@
   const HEX = v => /^#[0-9a-fA-F]{6}$/.test(v || '');
 
   function aplicar(landing){
+    /* 'registro' no es un preset de colores: cambia el layout (solo la hoja
+       de alta, centrada). El toggle con false lo saca en la preview del CRM
+       cuando el operador vuelve a una plantilla común. */
+    document.body.classList.toggle('solo-registro', landing.plantilla === 'registro');
+
     const c  = (landing.config && landing.config.colores)  || {};
     const t  = (landing.config && landing.config.textos)   || {};
     const im = (landing.config && landing.config.imagenes) || {};
@@ -401,7 +418,7 @@
     const bono = parseInt(landing.bono_pct, 10) || 0;
     $('bonoPct').textContent = bono;
     document.body.classList.toggle('sin-bono', bono <= 0);
-    $('btn').textContent = bono > 0 ? 'Crear mi cuenta y activar el bono' : 'Crear mi cuenta';
+    $('btn').textContent = textoBtnAlta();
   }
 
   // ---------------- de dónde sale la config ----------------
@@ -526,21 +543,37 @@
   function leer(){ try{ return JSON.parse(localStorage.getItem(CLAVE_LOCAL) || 'null'); }catch(e){ return null; } }
   function olvidar(){ try{ localStorage.removeItem(CLAVE_LOCAL); }catch(e){} }
 
+  /* El botón de alta no nombra el bono cuando la página no lo prometió:
+     ni sin bono, ni en la plantilla "Solo registro" (que no muestra promo
+     aunque tenga un % cargado). */
+  function textoBtnAlta(){
+    return (document.body.classList.contains('sin-bono') || document.body.classList.contains('solo-registro'))
+      ? 'Crear mi cuenta' : 'Crear mi cuenta y activar el bono';
+  }
+
   const FRASES_ESPERA = [
     'Creando tu cuenta…',
     'Reservando tu usuario…',
     'Activando tu bono…',
     'Ya casi está…',
   ];
+  // Mismo criterio que textoBtnAlta: una página que no prometió bono no puede
+  // decir "Activando tu bono…" mientras espera.
+  function frasesEspera(){
+    const sinPromesa = document.body.classList.contains('sin-bono')
+                    || document.body.classList.contains('solo-registro');
+    return sinPromesa ? FRASES_ESPERA.filter(f => !/bono/i.test(f)) : FRASES_ESPERA;
+  }
   let rotEspera = null;
   function iniciarRotacionEspera(){
+    const frases = frasesEspera();
     let i = 0;
     detenerRotacionEspera();
     rotEspera = setInterval(()=>{
-      i = (i + 1) % FRASES_ESPERA.length;
+      i = (i + 1) % frases.length;
       const h2 = $('esperaTitulo');
       h2.classList.add('cambiando');
-      setTimeout(()=>{ h2.textContent = FRASES_ESPERA[i]; h2.classList.remove('cambiando'); }, 250);
+      setTimeout(()=>{ h2.textContent = frases[i]; h2.classList.remove('cambiando'); }, 250);
     }, 2600);
   }
   function detenerRotacionEspera(){ if(rotEspera){ clearInterval(rotEspera); rotEspera = null; } }
@@ -554,8 +587,7 @@
     detenerRotacionEspera();
     ver('vistaForm');
     btn.disabled = false;
-    btn.textContent = document.body.classList.contains('sin-bono')
-      ? 'Crear mi cuenta' : 'Crear mi cuenta y activar el bono';
+    btn.textContent = textoBtnAlta();
   }
 
   function verEspera(u){

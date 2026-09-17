@@ -15,11 +15,13 @@
 declare(strict_types=1);
 
 /**
- * Plantillas por default. Son PRESETS del editor, no layouts distintos:
- * lp.html pinta siempre el mismo esqueleto y estos son los colores/textos con
- * los que arranca una landing nueva antes de que el operador los toque.
- * Viven acá (y no en lp.html) para que el CRM y la página pública lean los
- * mismos defaults de un solo lugar.
+ * Plantillas por default. Casi todas son PRESETS del editor, no layouts
+ * distintos: lp.html pinta siempre el mismo esqueleto y estos son los
+ * colores/textos con los que arranca una landing nueva antes de que el
+ * operador los toque. La EXCEPCIÓN es 'registro': misma estructura de config,
+ * pero lp.html la reconoce por la clave y pinta SOLO la tarjeta de alta
+ * ("Creá tu cuenta"), sin hero ni promo. Viven acá (y no en lp.html) para que
+ * el CRM y la página pública lean los mismos defaults de un solo lugar.
  */
 function landings_plantillas(): array
 {
@@ -57,6 +59,17 @@ function landings_plantillas(): array
         'fuego' => [
             'nombre'  => 'Fuego',
             'colores' => ['fondo' => '#1c0507', 'acento' => '#e5233d', 'destacado' => '#ffb03a', 'texto' => '#fff1ec'],
+            'textos'  => $textosBase,
+            'imagenes' => $imagenes,
+            'tamanos' => $tamanos,
+        ],
+        // Layout distinto, no un preset más: lp.html muestra SOLO el
+        // formulario "Creá tu cuenta" centrado, sin hero ni promo, y el botón
+        // dice siempre "Crear mi cuenta" (nunca nombra el bono). Los textos y
+        // tamaños quedan por compatibilidad con el merge, pero no se ven.
+        'registro' => [
+            'nombre'  => 'Solo registro',
+            'colores' => ['fondo' => '#200a38', 'acento' => '#8b3ffe', 'destacado' => '#ffc844', 'texto' => '#f4ecff'],
             'textos'  => $textosBase,
             'imagenes' => $imagenes,
             'tamanos' => $tamanos,

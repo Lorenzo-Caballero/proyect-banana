@@ -3817,6 +3817,11 @@
               <p class="cb-help">Un punto de partida de colores y textos. Elegirla pisa lo que hayas
               tocado abajo (las imágenes quedan).</p>
               <select id="lpPlantilla" class="cb-input" style="margin-top:8px"></select>
+              <p class="cb-help" id="lpPlantillaNota" style="display:none;margin-top:8px">Esta
+              plantilla muestra <b>solo el formulario «Creá tu cuenta»</b>, centrado en PC y
+              celular: sin marca, sin promo y sin textos extra. El botón dice siempre
+              «Crear mi cuenta». Si cargás un bono, se paga igual en la primera carga,
+              pero la página no lo anuncia.</p>
             </div>
 
             <div class="cb-field">
@@ -3839,7 +3844,7 @@
               </div>
             </div>
 
-            <div class="cb-field">
+            <div class="cb-field" id="lpCampoTamanos">
               <label class="cb-flabel">Tamaños</label>
               <p class="cb-help">Qué tan grandes se ven el número del bono y el botón, y cuánto
               aire queda entre ellos. Arrastrá y miralo en la vista previa; 100% ya es grande.</p>
@@ -3865,7 +3870,7 @@
               </div>
             </div>
 
-            <div class="cb-field">
+            <div class="cb-field" id="lpCampoTextos">
               <label class="cb-flabel">Textos</label>
               <div class="lp-textos">
                 <label>Marca (arriba de todo)<input class="cb-input" id="lpTxtMarca" data-txt="marca" maxlength="40"></label>
@@ -13129,10 +13134,20 @@ ${cuando}.
     }
   }
 
+  function lpAjustarCamposPlantilla(){
+    // "Solo registro" no usa textos ni tamaños (la página es la tarjeta de
+    // alta sola): se esconden para no dejar editar cosas que no se ven.
+    const solo = lpDraft && lpDraft.plantilla === "registro";
+    $("#lpCampoTextos").style.display   = solo ? "none" : "";
+    $("#lpCampoTamanos").style.display  = solo ? "none" : "";
+    $("#lpPlantillaNota").style.display = solo ? "" : "none";
+  }
+
   function lpPintarCampos(){
     $("#lpNombre").value    = lpDraft.nombre;
     $("#lpPlantilla").value = lpDraft.plantilla;
     $("#lpBono").value      = lpDraft.bono_pct;
+    lpAjustarCamposPlantilla();
     document.querySelectorAll("#viewLandings [data-col]").forEach(el => {
       el.value = lpDraft.config.colores[el.getAttribute("data-col")] || "#000000";
     });
@@ -13165,7 +13180,10 @@ ${cuando}.
     if(!lpDraft || !frame.contentWindow) return;
     frame.contentWindow.postMessage({
       tipo: "lp_config",
-      landing: { bono_pct: parseInt($("#lpBono").value, 10) || 0, config: lpDraft.config },
+      // La plantilla viaja también: 'registro' cambia el LAYOUT de lp.html
+      // (solo la hoja de alta), no solo colores.
+      landing: { plantilla: lpDraft.plantilla,
+                 bono_pct: parseInt($("#lpBono").value, 10) || 0, config: lpDraft.config },
     }, "*");
   }
 
