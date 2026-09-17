@@ -3819,9 +3819,10 @@
               <select id="lpPlantilla" class="cb-input" style="margin-top:8px"></select>
               <p class="cb-help" id="lpPlantillaNota" style="display:none;margin-top:8px">Esta
               plantilla muestra <b>solo el formulario «Creá tu cuenta»</b>, centrado en PC y
-              celular: sin marca, sin promo y sin textos extra. El botón dice siempre
-              «Crear mi cuenta». Si cargás un bono, se paga igual en la primera carga,
-              pero la página no lo anuncia.</p>
+              celular, con la estética ya resuelta: no hay colores, textos ni imágenes que
+              tocar. Lo único que se configura es <b>el % del bono</b>: la página no lo
+              anuncia (el botón dice siempre «Crear mi cuenta»), pero el sistema se lo
+              acredita solo en la primera carga a quien se registre por este link.</p>
             </div>
 
             <div class="cb-field">
@@ -3834,7 +3835,7 @@
               <input id="lpBono" class="cb-input" type="number" min="0" max="200" step="5" style="margin-top:8px;width:120px">
             </div>
 
-            <div class="cb-field">
+            <div class="cb-field" id="lpCampoColores">
               <label class="cb-flabel">Colores</label>
               <div class="lp-colores">
                 <label>Fondo<input type="color" id="lpColFondo" data-col="fondo"></label>
@@ -3883,7 +3884,7 @@
               </div>
             </div>
 
-            <div class="cb-field">
+            <div class="cb-field" id="lpCampoImagenes">
               <label class="cb-flabel">Imágenes</label>
               <p class="cb-help">JPG, PNG o WEBP de hasta 4 MB. Sin logo propio se usa el del sitio.</p>
               <div class="lp-img-fila">
@@ -13135,11 +13136,14 @@ ${cuando}.
   }
 
   function lpAjustarCamposPlantilla(){
-    // "Solo registro" no usa textos ni tamaños (la página es la tarjeta de
-    // alta sola): se esconden para no dejar editar cosas que no se ven.
+    // "Solo registro" es a propósito la landing SIN nada que configurar: la
+    // página es la tarjeta de alta sola, con la estética fija de la
+    // plantilla. Lo único editable queda el nombre interno (hace falta para
+    // crearla y de él sale el link) y el % del bono, que la página no
+    // muestra pero el sistema paga solo en la primera carga.
     const solo = lpDraft && lpDraft.plantilla === "registro";
-    $("#lpCampoTextos").style.display   = solo ? "none" : "";
-    $("#lpCampoTamanos").style.display  = solo ? "none" : "";
+    ["#lpCampoColores", "#lpCampoTamanos", "#lpCampoTextos", "#lpCampoImagenes"]
+      .forEach(sel => { $(sel).style.display = solo ? "none" : ""; });
     $("#lpPlantillaNota").style.display = solo ? "" : "none";
   }
 
