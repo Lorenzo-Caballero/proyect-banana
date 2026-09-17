@@ -65,14 +65,39 @@ for DB in $CLIENTES; do
   # El corte de 1 dia no es cosmetico: hay acciones viejas trabadas de epocas
   # en que el worker no corria, y sin este filtro el watchdog avisaria para
   # siempre por historia antigua -- y un aviso que suena siempre no se lee.
-  TRABADAS="$(sql "$DB" "SELECT COUNT(*) FROM acciones_saldo
-                          WHERE tipo='cargar' AND estado IN ('pendiente','procesando')
-                            AND creada_en < NOW() - INTERVAL ${DEMORA_MIN} MINUTE
-                            AND creada_en > NOW() - INTERVAL 1 DAY")"
+  #
+  # LOS JUGADORES BLOQUEADOS NO CUENTAN, y es la diferencia entre un watchdog
+  # que se lee y uno que se silencia.
+  #
+  # EL CASO (16/09/2026): este aviso repitio cada 15 minutos, toda la tarde,
+  # nombrando a holajorge443, holaceleste9678 y holaDiego858 -- las tres
+  # cuentas de la misma persona, ya bloqueadas por mandar comprobantes
+  # truchos. Cuatro cargas en 'revisar' que nadie iba a resolver nunca, porque
+  # ya estaban resueltas: la decision fue bloquearlo.
+  #
+  # Y el titulo del aviso decia lo contrario de lo que pasaba: "Hay cargas que
+  # el jugador PAGO y no recibio". Nunca pago. Sus recargas figuran vencidas y
+  # no hay una sola fila en `pagos`. Un watchdog que afirma algo falso sobre
+  # plata es peor que uno que no avisa.
+  #
+  # El COLLATE explicito es obligatorio: `usuarios` quedo en uca1400 y las
+  # tablas del CRM en utf8mb4_unicode_ci, asi que el JOIN sin el falla en
+  # ejecucion (ver CLAUDE.md). El LEFT JOIN + COALESCE mantiene lo de antes
+  # para una accion cuyo usuario no este en el espejo: ante la duda, se avisa.
+  TRABADAS="$(sql "$DB" "SELECT COUNT(*) FROM acciones_saldo a
+                          LEFT JOIN usuarios u
+                            ON u.username COLLATE utf8mb4_unicode_ci = a.usuario
+                          WHERE a.tipo='cargar' AND a.estado IN ('pendiente','procesando')
+                            AND COALESCE(u.bloqueado, 0) = 0
+                            AND a.creada_en < NOW() - INTERVAL ${DEMORA_MIN} MINUTE
+                            AND a.creada_en > NOW() - INTERVAL 1 DAY")"
   # Las que ya agotaron los reintentos y esperan a una persona.
-  REVISAR="$(sql "$DB" "SELECT COUNT(*) FROM acciones_saldo
-                         WHERE tipo='cargar' AND estado='revisar'
-                           AND creada_en > NOW() - INTERVAL 1 DAY")"
+  REVISAR="$(sql "$DB" "SELECT COUNT(*) FROM acciones_saldo a
+                         LEFT JOIN usuarios u
+                           ON u.username COLLATE utf8mb4_unicode_ci = a.usuario
+                         WHERE a.tipo='cargar' AND a.estado='revisar'
+                           AND COALESCE(u.bloqueado, 0) = 0
+                           AND a.creada_en > NOW() - INTERVAL 1 DAY")"
   TRABADAS="${TRABADAS:-0}"; REVISAR="${REVISAR:-0}"
   { [ "$TRABADAS" -gt 0 ] || [ "$REVISAR" -gt 0 ]; } 2>/dev/null || continue
 
@@ -94,12 +119,17 @@ for DB in $CLIENTES; do
                          FROM config_crm WHERE clave='bot_cargas_visto_en' LIMIT 1")"
   LATIDO="${LATIDO:-9999}"
 
-  DETALLE="$(sql "$DB" "SELECT CONCAT(usuario, ' · ', ROUND(monto), ' fichas · ', estado)
-                          FROM acciones_saldo
-                         WHERE tipo='cargar' AND estado IN ('pendiente','procesando','revisar')
-                           AND creada_en < NOW() - INTERVAL ${DEMORA_MIN} MINUTE
-                           AND creada_en > NOW() - INTERVAL 1 DAY
-                         ORDER BY id DESC LIMIT 5" | sed 's/^/• /')"
+  # Mismo filtro que los contadores: si un bloqueado no suma al numero,
+  # tampoco puede aparecer en la lista -- ver arriba.
+  DETALLE="$(sql "$DB" "SELECT CONCAT(a.usuario, ' · ', ROUND(a.monto), ' fichas · ', a.estado)
+                          FROM acciones_saldo a
+                          LEFT JOIN usuarios u
+                            ON u.username COLLATE utf8mb4_unicode_ci = a.usuario
+                         WHERE a.tipo='cargar' AND a.estado IN ('pendiente','procesando','revisar')
+                           AND COALESCE(u.bloqueado, 0) = 0
+                           AND a.creada_en < NOW() - INTERVAL ${DEMORA_MIN} MINUTE
+                           AND a.creada_en > NOW() - INTERVAL 1 DAY
+                         ORDER BY a.id DESC LIMIT 5" | sed 's/^/• /')"
 
   # Un latido NEGATIVO significa que la marca quedo en el futuro: los relojes de
   # PHP y MySQL no coinciden. No se puede diagnosticar con un numero en el que
@@ -121,7 +151,10 @@ for DB in $CLIENTES; do
   fi
 
   echo "$(date '+%F %T') [$DB] trabadas=$TRABADAS revisar=$REVISAR latido=${LATIDO}min"
-  avisar "$DB" "⛔ <b>Hay cargas que el jugador pagó y no recibió</b>
+  # El titulo decia "el jugador PAGO y no recibio", y este watchdog no sabe si
+  # pago: mira `acciones_saldo`, que es la orden de acreditar, no el cobro.
+  # Afirmarlo mandaba a regalar fichas para "corregir" algo que nunca entro.
+  avisar "$DB" "⛔ <b>Hay fichas que no están entrando al juego</b>
 Esperando hace más de ${DEMORA_MIN} min: <b>${TRABADAS}</b>
 Ya sin reintentos (necesitan una persona): <b>${REVISAR}</b>
 
