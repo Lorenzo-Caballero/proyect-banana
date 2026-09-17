@@ -783,6 +783,28 @@ jugadores.
   última falla, y si corrió la migración 56).
 - **`cola_panel.php` devuelve contraseñas en claro** (legacy). Sin `BOT_API_KEY`
   configurada responde 500 a propósito.
+- **`$_SERVER['REMOTE_ADDR']` NO es el jugador: es el edge de Cloudflare.** Usá
+  siempre **`ip_cliente()`** (`api/ip_cliente.php`), que lee `CF-Connecting-IP`
+  *sólo* cuando la conexión viene de un rango publicado de Cloudflare — así el
+  header no se cree por sí mismo sino por quién lo trajo, que es lo que evita
+  que alguien esquive un límite mandando una cabecera.
+
+  > **El daño de no hacerlo no se parece a la causa, y por eso vivió meses.**
+  > Medido el 16/09/2026: en `altas.ip` no había **ni una** IP de jugador (una
+  > sola "IP" con 124 cuentas, 237 cuentas tocadas por 21 edges). De ahí salían
+  > los vínculos falsos del CRM — cuentas legítimas acusadas de ser la misma
+  > persona por compartir un servidor de la CDN.
+  >
+  > Y lo peor eran los **límites por IP, que en silencio pasaron a ser
+  > globales**: el chat aceptaba 20 mensajes por minuto **entre las 2.980
+  > conversaciones**, `subir.php` 10 comprobantes cada 10 minutos entre todos
+  > (y subir el comprobante es el paso previo a que se le acredite la plata), y
+  > `auth.php` 15 logins cada 5 minutos entre todos. Un límite **no es un
+  > error**: contesta 429, el jugador ve que "no anda" y se va, y del lado
+  > nuestro no queda nada raro.
+  >
+  > `t_ip_cliente.php` cuenta los usos reales de `REMOTE_ADDR` en `api/*.php`
+  > (sin comentarios) y falla si aparece uno nuevo.
 - **`/colector` vive en la capa escribible de `ganamos-bot-creador`**: no está
   en la imagen (el Dockerfile del bot copia cinco `.py` sueltos) ni es un
   volumen (el único mount es `./datos`). Entró por `docker cp`, así que
