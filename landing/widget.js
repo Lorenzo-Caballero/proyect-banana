@@ -257,7 +257,8 @@
     // de datos_cobro.php y los muestra al instante con botones de copiar. El
     // `accion` lo distingue de los atajos que mandan texto al bot.
     { rot: "CBU / ALIAS", txt: "", clase: "", accion: "datos" },
-    { rot: "SOPORTE", txt: "Necesito hablar con alguien", clase: "" }
+    // `confirmar` = no se manda al toque: primero pregunta. Ver el handler.
+    { rot: "SOPORTE", txt: "Necesito hablar con alguien", clase: "", confirmar: true }
   ];
   /* Sin sesión, "cargar" y "retirar" no llevan a ningún lado: las herramientas
      necesitan usuario y el bot va a terminar pidiéndole que inicie sesión. Lo
@@ -266,7 +267,8 @@
   var ATAJOS_ANON = [
     { rot: "CREAR CUENTA", txt: "No tengo cuenta, quiero crear una", clase: "ok" },
     { rot: "YA TENGO",     txt: "Ya tengo cuenta",                   clase: "" },
-    { rot: "SOPORTE",      txt: "Necesito hablar con alguien",       clase: "" }
+    { rot: "SOPORTE",      txt: "Necesito hablar con alguien",       clase: "",
+      confirmar: true }
   ];
 
   function ls(k){ try { return localStorage.getItem(k); } catch (e) { return null; } }
@@ -1148,6 +1150,17 @@
   "box-shadow:0 1px 1px rgba(11,20,26,.10);transition:.15s}"+
   ".gp-cp-b:active{transform:scale(.97)}"+
   ".gp-cp-b.ok{background:#d9fdd3;border-color:#25d366;color:#0b6b2f}"+
+  /* Opciones del desvío de SOPORTE. Mismo molde que los de copiar, pero en
+     columna: son tres frases y en fila se cortan feo en un teléfono. La
+     tercera --"hablar con una persona"-- va apagada A PROPOSITO: tiene que
+     encontrarla el que la busca, no el que toca por curiosidad. */
+  ".gp-cs{display:flex;flex-direction:column;gap:6px;margin-top:-2px;align-items:flex-start}"+
+  ".gp-cs-b{background:#fff;border:1px solid #cfd8dc;color:#0a7cff;border-radius:999px;"+
+  "padding:9px 16px;font-size:13px;font-weight:700;cursor:pointer;line-height:1;"+
+  "box-shadow:0 1px 1px rgba(11,20,26,.10);transition:.15s}"+
+  ".gp-cs-b:active{transform:scale(.97)}"+
+  ".gp-cs-b:disabled{opacity:.45;cursor:default}"+
+  ".gp-cs-b.flojo{color:#667781;font-weight:600;border-color:#dde4e7;box-shadow:none}"+
   /* hora + tildes flotadas abajo a la derecha, como WhatsApp: el texto las envuelve */
   ".gp-meta{float:right;margin:6px -3px -2px 9px;font-size:10.5px;color:#667781;line-height:1;white-space:nowrap;user-select:none}"+
   ".gp-r.u .gp-meta{color:#5c8a72}"+
@@ -2436,8 +2449,69 @@
     // Atajo con respuesta LOCAL (no pasa por el modelo): lo resuelve el widget
     // al toque. Hoy: "DATOS PARA TRANSFERIR".
     if (a.accion === "datos"){ mostrarDatosCobro(); return; }
+    if (a.confirmar){ confirmarSoporte(); return; }
     enviarMensaje(a.txt);
   });
+
+  /* SOPORTE PIDE CONFIRMACION, Y NO ES POR HACERLO DIFICIL.
+   *
+   * EL REPORTE (Nahuel, 16/09/2026): *"mucha gente toca el mensaje de soporte
+   * simplemente para ver qué hace, aunque no necesiten soporte... y luego de
+   * eso me ponen 'quiero cargar fichas'. Entonces es algo que el bot
+   * tranquilamente podría haber resuelto. Y a mí me está llegando un mensaje
+   * de Telegram que es molesto, o es falso"*.
+   *
+   * El botón está al lado de CARGAR y RETIRAR, se toca igual de fácil, y lo
+   * que dispara no es reversible: le saca el bot al jugador y le manda un
+   * Telegram a una persona. Los tres atajos parecen lo mismo y no lo son.
+   *
+   * LO QUE SE ARREGLA NO ES LA FRICCION, ES EL DESVIO. Una confirmación pelada
+   * ("¿estás seguro?") sólo molesta al que sí necesita ayuda. Ésta ofrece
+   * primero los dos motivos reales por los que la gente toca acá --cargar y
+   * retirar-- resueltos por el bot al instante, y deja "hablar con una
+   * persona" como tercera opción, escrita sin drama para el que de verdad la
+   * necesita.
+   *
+   * Se dibuja como un mensaje más del bot y no con un `confirm()` del
+   * navegador: adentro de la app el confirm sale con el nombre del sitio
+   * arriba y parece un error del sistema.
+   *
+   * Y se arma con nodos, no con un string de HTML: `pintar()` pasa el texto
+   * por `conLinks()`, que escapa a propósito --lo que llega ahí lo escribe el
+   * bot o un agente y no se interpreta como marcado--. Mismo patrón que
+   * pintarCopiables(). */
+  function confirmarSoporte(){
+    pintar("b", "Puedo ayudarte yo con casi todo, y es al instante. "
+              + "¿Qué necesitás?", true);
+
+    var opciones = [
+      { rot: "Cargar fichas",          txt: "Quiero cargar fichas" },
+      { rot: "Retirar",                txt: "Quiero retirar" },
+      { rot: "Hablar con una persona", txt: "Necesito hablar con alguien",
+        flojo: true }
+    ];
+
+    var r    = document.createElement("div"); r.className = "gp-r b";
+    var caja = document.createElement("div"); caja.className = "gp-cs";
+    var botones = [];
+
+    opciones.forEach(function (op){
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "gp-cs-b" + (op.flojo ? " flojo" : "");
+      b.appendChild(document.createTextNode(op.rot));
+      b.addEventListener("click", function (){
+        /* Se desactivan los tres: sin esto, el que toca dos veces manda dos
+           mensajes y el bot contesta dos cosas encimadas. */
+        botones.forEach(function (x){ x.disabled = true; });
+        enviarMensaje(op.txt);
+      });
+      botones.push(b);
+      caja.appendChild(b);
+    });
+
+    r.appendChild(caja); body.appendChild(r); body.scrollTop = body.scrollHeight;
+  }
 
   /* Muestra el alias, CBU y titular de la cuenta de cobro con botones de
      copiar, SIN pasar por el modelo: es informacion fija que no hace falta
