@@ -603,6 +603,53 @@ chequear('y el guard mira las tres condiciones juntas',
          'sin `listo` se anotaria un alta que todavia no salio');
 
 
+// ===========================================================================
+echo "\n=== 10. Tope de cuentas por persona (por IP) ===\n";
+
+/* Pedido del dueño (17/09/2026): dos cuentas por persona como maximo; la
+   tercera se rechaza. "La persona" es la IP real del jugador (altas.ip). El
+   tope frena solo los caminos de autoservicio (landing y chat): el CRM no
+   pasa por aca, para que un agente pueda hacer la excepcion a mano. */
+
+$IP_TOPE = '203.0.113.77';   // TEST-NET: nunca es una IP real
+$pdo->prepare("DELETE FROM altas WHERE ip IN (?, ?)")->execute([$IP_TOPE, '203.0.113.78']);
+
+chequear('el default es 2 cuentas por IP', alta_max_por_ip() === 2);
+chequear('sin IP no frena (fail-open: nunca dejar sin cuenta por un dato que falta)',
+         alta_tope_cuentas_superado($pdo, '') === null);
+chequear('con 0 cuentas puede', alta_tope_cuentas_superado($pdo, $IP_TOPE) === null);
+
+$insT = $pdo->prepare("INSERT INTO altas (usuario, password, estado, ip) VALUES (?, '12345678', ?, ?)");
+$insT->execute(['tstTope1', 'ok', $IP_TOPE]);
+chequear('con 1 cuenta todavia puede', alta_tope_cuentas_superado($pdo, $IP_TOPE) === null);
+
+$insT->execute(['tstTope2', 'pendiente', $IP_TOPE]);
+chequear('con 2 (una todavia en curso) la tercera se RECHAZA',
+         alta_tope_cuentas_superado($pdo, $IP_TOPE) !== null,
+         'las pendientes tienen que contar: pedir seguido esquivaria el tope');
+chequear('el mensaje no nombra la IP (no regalarle al que abusa como lo detectamos)',
+         stripos((string)alta_tope_cuentas_superado($pdo, $IP_TOPE), 'ip') === false
+         && stripos((string)alta_tope_cuentas_superado($pdo, $IP_TOPE), 'conexi') === false);
+
+chequear('otra IP no se ve afectada', alta_tope_cuentas_superado($pdo, '203.0.113.78') === null);
+
+$pdo->prepare("UPDATE altas SET estado = 'error' WHERE usuario = 'tstTope2'")->execute();
+chequear("un alta fallida ('error') no cuenta: ahi no se creo nada",
+         alta_tope_cuentas_superado($pdo, $IP_TOPE) === null);
+
+$pdo->prepare("DELETE FROM altas WHERE ip IN (?, ?)")->execute([$IP_TOPE, '203.0.113.78']);
+
+/* Y LOS DOS CAMINOS DE AUTOSERVICIO LO LLAMAN, DESPUES de su dedup por sid
+   (un reintento sobre un alta en curso devuelve ESA, no un rechazo). Se mira
+   el codigo: es un orden que ningun test de comportamiento protege. */
+foreach (['api/crear_cuenta.php', 'api/chatbot.php'] as $arch) {
+    $src = file_get_contents(__DIR__ . '/' . $arch);
+    $posDedup = strpos($src, "estado IN ('pendiente', 'procesando', 'ok')");
+    $posTope  = strpos($src, 'alta_tope_cuentas_superado(');
+    chequear("$arch llama al tope, despues del dedup por sid",
+             $posDedup !== false && $posTope !== false && $posTope > $posDedup);
+}
+
 limpiar($pdo);
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);
 exit($fail > 0 ? 1 : 0);

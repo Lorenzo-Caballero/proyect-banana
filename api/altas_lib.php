@@ -452,6 +452,56 @@ function alta_limite_superado(PDO $pdo, string $ip): ?string
     return null;
 }
 
+// Tope de cuentas POR PERSONA (pedido del dueño, 17/09/2026): una misma
+// persona puede crear hasta N cuentas por los caminos de AUTOSERVICIO
+// (landing y chat); el intento N+1 se rechaza. No es un rate-limit como el de
+// arriba: no vence nunca, cuenta todas las cuentas que esa persona llegó a
+// crear.
+//
+// "La persona" acá es la IP real del jugador (altas.ip, confiable desde el
+// arreglo de ip_cliente() del 16/09/2026 — las filas viejas con edges de
+// Cloudflare no matchean IPs reales, así que no molestan). El límite que hay
+// que conocer: las redes de celular comparten IP entre muchos clientes
+// (CGNAT), así que dos personas distintas del mismo operador pueden pisar el
+// mismo tope. Por eso el rechazo manda al chat, donde un agente —o el CRM,
+// que no pasa por acá— puede crear la cuenta igual si la persona es real.
+//
+// Ajustable sin deploy en api/config.local.php: 'ALTAS_MAX_POR_IP' => 3
+// (0 = apagado).
+const ALTAS_MAX_POR_IP = 2;
+
+function alta_max_por_ip(): int
+{
+    $v = function_exists('cfg') ? cfg('ALTAS_MAX_POR_IP', '') : '';
+    return ($v === '' || $v === null) ? ALTAS_MAX_POR_IP : max(0, (int)$v);
+}
+
+/**
+ * Devuelve el mensaje de rechazo si esta IP ya creó el máximo de cuentas, o
+ * null si todavía puede. Cuentan las vivas y las en curso (pendiente,
+ * procesando, ok): si no, pedir tres seguidas antes de que el bot termine la
+ * primera esquivaría el tope. Las 'error' no cuentan — ahí no se creó nada.
+ * Best-effort hacia PERMITIR: un fallo de la consulta no puede dejar a un
+ * jugador legítimo sin cuenta.
+ */
+function alta_tope_cuentas_superado(PDO $pdo, string $ip): ?string
+{
+    $max = alta_max_por_ip();
+    if ($max === 0 || $ip === '') {
+        return null;
+    }
+    try {
+        $q = $pdo->prepare("SELECT COUNT(*) FROM altas WHERE ip = ? AND estado <> 'error'");
+        $q->execute([$ip]);
+        if ((int)$q->fetchColumn() >= $max) {
+            return 'Ya creaste el máximo de cuentas permitido. Entrá con la cuenta que ya tenés; si no te acordás el usuario o la clave, escribinos por el chat.';
+        }
+    } catch (Throwable $e) {
+        error_log('alta_tope_cuentas_superado: ' . $e->getMessage());
+    }
+    return null;
+}
+
 /**
  * Mete un pedido en la cola.
  *

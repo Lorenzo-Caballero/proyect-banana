@@ -168,6 +168,21 @@ if ($metodo === 'POST') {
             }
         }
 
+        /* TOPE DE CUENTAS POR PERSONA (por IP; default 2, ver altas_lib).
+           Va DESPUES del dedup por sid a proposito: un reintento del mismo
+           navegador sobre un alta ya en curso tiene que devolver ESA, no un
+           rechazo — el dedup ya salio arriba con la fila vieja, y aca solo
+           llegan los pedidos que van a crear una cuenta NUEVA. 403 y no 429:
+           no es "espera un rato", es que no hay mas cuentas para esta
+           persona. */
+        $tope = alta_tope_cuentas_superado($pdo, $ip);
+        if ($tope !== null) {
+            http_response_code(403);
+            echo json_encode(['ok' => false, 'codigo' => 'tope_cuentas', 'error' => $tope],
+                JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+
         // Se resuelve un username LIBRE a partir de lo que puso el jugador
         // -- ver el porqué en el docblock de arriba. La carrera entre dos
         // requests CONCURRENTES del mismo navegador la achica el dedup de

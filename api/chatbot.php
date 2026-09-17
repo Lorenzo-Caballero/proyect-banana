@@ -2177,6 +2177,24 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
             }
         }
 
+        /* TOPE DE CUENTAS POR PERSONA (por IP; default 2, ver altas_lib).
+           Va despues de la guarda por sid: preguntar por un alta que este
+           chat ya tiene en curso no es pedir otra cuenta. Distinto del freno
+           por hora de abajo (que en el chat sigue apagado a proposito): esto
+           no es "espera un rato", es una regla del negocio — dos cuentas por
+           persona y listo. El CRM no pasa por aca: un agente puede crear la
+           excepcion a mano si corresponde. */
+        $ip = alta_ip();
+        if (alta_tope_cuentas_superado($pdo, $ip) !== null) {
+            // `error` player-safe, como los otros: el modelo lo relaya tal
+            // cual. Sin nombres de columnas ni "IP" — decirle al que abusa
+            // como lo detectamos es regalarle la vuelta.
+            return ['ok' => false, 'codigo' => 'tope_cuentas',
+                    'error' => 'Ya tenés el máximo de cuentas permitido, así que no se puede '
+                             . 'crear otra. Entrá con la que ya tenés; si no te acordás el '
+                             . 'usuario o la clave, decime y te ayudo con eso.'];
+        }
+
         /* EL NOMBRE SE GENERA IGUAL QUE EN LA LANDING: holaJuan123, siempre.
 
            DECISION DEL DUEÑO (16/09/2026), y revierte la de esa misma mañana:
@@ -2209,11 +2227,11 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
            ya creada, y para entonces la tiene andando. */
         $u = alta_usuario_disponible($pdo, $u);
 
-        // SIN freno por IP en el chat, a proposito. El que pide una cuenta por
-        // aca ya esta hablando con nosotros: contestarle "espera una hora" es
-        // perder al cliente en la puerta. Si algun dia hay abuso, se mira la
-        // cola y se prende ALTAS_POR_IP_HORA en config.local.php.
-        $ip = alta_ip();
+        // SIN freno POR HORA en el chat, a proposito ($ip ya se leyo arriba,
+        // para el tope de cuentas). El que pide una cuenta por aca ya esta
+        // hablando con nosotros: contestarle "espera una hora" es perder al
+        // cliente en la puerta. Si algun dia hay abuso, se mira la cola y se
+        // prende ALTAS_POR_IP_HORA en config.local.php.
 
         // La clave la genera el server, NUNCA el jugador ni el modelo: si se la
         // pidieramos por chat, queda escrita en `mensajes` para siempre y a la
