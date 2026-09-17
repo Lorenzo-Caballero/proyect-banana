@@ -270,7 +270,7 @@
 
   <div class="vista on" id="vistaForm">
     <h2 id="hojaTitulo">Creá tu cuenta</h2>
-    <p class="ayuda">Escribí tu nombre y listo. No pedimos mail, teléfono ni tarjeta.</p>
+    <p class="ayuda" id="hojaAyuda">Escribí tu nombre y listo. No pedimos mail, teléfono ni tarjeta.</p>
     <form id="form" novalidate>
       <input id="usuario" class="inp" type="text" inputmode="text"
              autocomplete="name" placeholder="Ej: Martín" aria-label="Tu nombre">
@@ -361,7 +361,14 @@
     /* 'registro' no es un preset de colores: cambia el layout (solo la hoja
        de alta, centrada). El toggle con false lo saca en la preview del CRM
        cuando el operador vuelve a una plantilla común. */
-    document.body.classList.toggle('solo-registro', landing.plantilla === 'registro');
+    const soloReg = landing.plantilla === 'registro';
+    document.body.classList.toggle('solo-registro', soloReg);
+    // En solo registro la ayuda es más corta (pedido del dueño, 16/09/2026);
+    // el else restaura la frase completa cuando la preview vuelve a un
+    // preset común.
+    $('hojaAyuda').textContent = soloReg
+      ? 'Escribí tu nombre y listo.'
+      : 'Escribí tu nombre y listo. No pedimos mail, teléfono ni tarjeta.';
 
     const c  = (landing.config && landing.config.colores)  || {};
     const t  = (landing.config && landing.config.textos)   || {};
