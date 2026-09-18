@@ -91,17 +91,25 @@ def correr(respuestas, intentos=3):
         'DesafioWAF': DesafioWAF,
         'WAF_INTENTOS': intentos,
         'WAF_ESPERAS_S': [0, 0, 0],   # sin dormir: el test mide intentos, no relojes
+        # El contador de challenges de la pasada, que leer_json incrementa para
+        # que salud_colector.php sepa cuanto nos esta peleando el WAF.
+        'PASADA': {'challenges': 0},
         'time': type('t', (), {'sleep': staticmethod(
             lambda s: dormido.__setitem__('s', dormido['s'] + s))}),
         '_despejar_waf': lambda ctx: (setattr(ctx, 'despejes', ctx.despejes + 1), True)[1],
         'log': _Log(),
     }
     exec(compile(ast.Module(body=[fn], type_ignores=[]), '<t>', 'exec'), ns)
+    global ns_ultimo
+    ns_ultimo = ns
     try:
         d = ns['leer_json'](panel, 'http://x', 'prueba')
         return panel, d, None
     except Exception as e:
         return panel, None, e
+
+
+ns_ultimo = {}
 
 
 print('\n=== 1. Lo normal no cambia ===')
@@ -135,6 +143,12 @@ panel, d, err = correr(['waf'] * 9, intentos=4)
 chequear('levanta DesafioWAF', isinstance(err, DesafioWAF), 'err=%r' % err)
 chequear('despues de exactamente 4 intentos', panel.pedidos == 4,
          'pedidos=%s -- de mas se come el minuto del cron' % panel.pedidos)
+
+# Y que quede contado: es lo que salud_colector.php usa para saber cuanto nos
+# esta peleando el WAF, y lo que se ve en salud_bot.php sin entrar al VPS.
+chequear('cada challenge queda contado para el indicador de salud',
+         ns_ultimo.get('PASADA', {}).get('challenges', 0) == 4,
+         'challenges=%s' % ns_ultimo.get('PASADA', {}).get('challenges'))
 
 print('\n=== 4b. La espera CRECE, que es lo que deja pasar la rafaga ===')
 # El 18/09 se bajo a una espera fija de 0,5 s razonando que "el challenge es por

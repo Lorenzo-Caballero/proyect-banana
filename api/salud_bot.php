@@ -18,6 +18,16 @@
  *                         fresco, el bot vive pero el PANEL le rechaza el
  *                         trabajo (credenciales, sesión, panel caído).
  *
+ *   - colector            qué pudo LEER del panel el worker de la plata, y
+ *                         hace cuánto. Es lo que ningún otro indicador
+ *                         contestaba: con el WAF tapándonos, todo lo de arriba
+ *                         da verde (el worker late, la cola está vacía) y lo
+ *                         único que pasa es que los saldos envejecen en
+ *                         silencio. `espejo` viejo = el bot le va a discutir
+ *                         el saldo a gente que sí tiene plata; `libro` viejo =
+ *                         Retiros pendientes deja de avisar que algo ya se
+ *                         pagó en el panel.
+ *
  * NO es secreto: dice si la automatización anda, lo mismo que cualquiera
  * deduce registrándose y mirando el reloj. No expone nombres ni claves.
  * Mismo criterio de publicación que datos_cobro.php.
@@ -31,6 +41,28 @@ require_once __DIR__ . '/config_crm.php';
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Cache-Control: no-store');
+
+/* Cada lectura del colector con su edad, para no obligar a nadie a restar
+   fechas a ojo. Nunca lanza: si falta la config, viaja en null. */
+$colector = [];
+foreach (['espejo', 'libro', 'stock'] as $k) {
+    $edad = null;
+    $est  = null;
+    try {
+        $v = trim((string)cfg_crm($pdo, 'colector_' . $k . '_en'));
+        if ($v !== '') {
+            $tt = strtotime($v);
+            if ($tt !== false) { $edad = max(0, time() - $tt); }
+        }
+        $e = trim((string)cfg_crm($pdo, 'colector_' . $k . '_estado'));
+        if ($e !== '') { $est = $e; }
+    } catch (Throwable $e) { /* sin config_crm se informa null */ }
+    $colector[$k] = ['hace_seg' => $edad, 'estado' => $est];
+}
+try {
+    $ch = trim((string)cfg_crm($pdo, 'colector_challenges'));
+    $colector['challenges_ultima_pasada'] = $ch === '' ? null : (int)$ch;
+} catch (Throwable $e) { $colector['challenges_ultima_pasada'] = null; }
 
 $hace = null;
 try {
@@ -122,4 +154,16 @@ echo json_encode([
     'cargas_en_cola'            => $cargas,
     'cargas_mas_vieja_min'      => $cargasVieja,
     'cargas_ultima_falla'       => $falla,
+    /* LO QUE EL COLECTOR PUDO LEER DEL PANEL. Lo escribe salud_colector.php
+       con lo que le reporta el worker en cada pasada.
+
+       Es la pregunta que ningún indicador contestaba: con el WAF tapándonos,
+       TODO lo de arriba da verde --el worker late, la cola está vacía-- y lo
+       único que pasa es que los saldos envejecen en silencio. Acá se ve.
+
+       `hace_seg` null = nunca se lo vio (o falta desplegar esto). `estado` es
+       cómo salió la ÚLTIMA pasada, que es distinto: 'waf' con un `hace_seg`
+       chico es el caso normal (una ráfaga que se recupera sola); 'waf' con un
+       `hace_seg` grande es el problema. */
+    'colector'                  => $colector,
 ], JSON_UNESCAPED_UNICODE);

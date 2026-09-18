@@ -362,6 +362,30 @@ const CFG_CRM_DEFAULTS = [
     // firma exacta de "las altas andan y las cargas del CRM quedan
     // pendientes para siempre" (10/9/2026).
     'bot_cargas_visto_en' => '',
+
+    /* QUE PUDO LEER EL COLECTOR DEL PANEL, y cuando por ultima vez.
+       Lo escribe salud_colector.php con lo que le reporta aprobar_cargas.py en
+       cada pasada. Nadie lo edita a mano.
+
+       Existen porque las lecturas fallaban EN SILENCIO: con el WAF tapando el
+       espejo, el CRM abre, el chat contesta y las cargas se aprueban -- lo
+       unico que pasa es que los saldos envejecen, el bot le discute el saldo a
+       gente que si tiene plata, y un jugador recien creado no aparece. Los dos
+       watchdogs que habia (monitor-altas.sh, monitor-cargas.sh) dan VERDE en
+       ese escenario, porque miran el worker y la cola, no lo que el worker
+       pudo leer.
+
+       `_en` guarda la ultima lectura BUENA (solo la mueve un 'ok'); `_estado`
+       guarda como salio la ultima pasada, que es distinto: sirve para ver que
+       el colector esta vivo y peleando y no muerto. */
+    'colector_espejo_en'     => '',
+    'colector_espejo_estado' => '',
+    'colector_libro_en'      => '',
+    'colector_libro_estado'  => '',
+    'colector_stock_en'      => '',
+    'colector_stock_estado'  => '',
+    'colector_challenges'    => '',   // challenges del WAF en el ultimo barrido
+    'colector_visto_en'      => '',   // ultima vez que el colector reporto algo
 ];
 
 /** Cache por request: estas funciones se llaman varias veces por pedido. */

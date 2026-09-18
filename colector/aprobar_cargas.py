@@ -201,6 +201,16 @@ WAF_INTENTOS = int(os.environ.get("WAF_INTENTOS", "4"))   # el original + 3
 # el caso normal) y la larga tiene tiempo de aflojar sin gastar intentos.
 WAF_ESPERAS_S = [1.5, 3.0, 5.0]
 
+# QUE PUDO HACER ESTA PASADA. Se llena sobre la marcha y se reporta al final a
+# salud_colector.php, que es el que decide si amerita un Telegram.
+#
+# Existe porque las lecturas fallaban EN SILENCIO: con el WAF tapando el espejo
+# el sistema sigue "andando" --el CRM abre, el chat contesta, las cargas se
+# aprueban-- y lo unico que pasa es que los saldos envejecen. Los dos watchdogs
+# que habia dan VERDE en ese escenario porque miran el worker y la cola, no lo
+# que el worker pudo LEER.
+PASADA = {"challenges": 0}
+
 
 def _despejar_waf(ctx) -> bool:
     """Vuelve a cargar una pagina del panel para que el NAVEGADOR resuelva el
@@ -255,6 +265,7 @@ def leer_json(ctx, url: str, que: str, **kw):
             return _json(ctx.request.get(url, **kw))
         except DesafioWAF as e:
             ultimo = e
+            PASADA["challenges"] = PASADA.get("challenges", 0) + 1
             if intento >= WAF_INTENTOS:
                 break
             # La espera primero, siempre: es lo que deja pasar la rafaga y lo
@@ -912,6 +923,10 @@ def revisar_stock(ctx, solo_ver: bool) -> None:
             log.warning("stock: la respuesta no trae result.source_user.balance")
             return
     except Exception as e:
+        # DesafioWAF hereda de RuntimeError y cae aca: el stock es lo unico que
+        # no distingue un challenge de otra falla, y no hace falta -- para el
+        # aviso alcanza con que la fecha de la ultima lectura buena no avance.
+        PASADA["stock"] = "waf"
         log.warning("stock: no pude leer el saldo del agente: %s", e)
         return
 
@@ -927,6 +942,7 @@ def revisar_stock(ctx, solo_ver: bool) -> None:
                         d.get("saldo"), d.get("umbral"))
         else:
             log.info("stock de fichas: %s", d.get("saldo"))
+        PASADA["stock"] = "ok"
     except Exception as e:
         log.warning("stock: no pude reportar el saldo: %s", e)
 
@@ -1039,6 +1055,7 @@ def sincronizar_libro(ctx, solo_ver: bool, dias: int = LIBRO_DIAS,
     try:
         ops = _libro_paginas(ctx, 1, dias) + _libro_paginas(ctx, 0, dias)
     except DesafioWAF as e:
+        PASADA["libro"] = "waf"
         log.warning("libro: %s. Lo sincronizo en la proxima vuelta.", e)
         return
     except Exception as e:
@@ -1060,6 +1077,7 @@ def sincronizar_libro(ctx, solo_ver: bool, dias: int = LIBRO_DIAS,
             log.warning("libro: el server rechazo la sincronizacion: %s",
                         str(d.get("error"))[:120])
             return
+        PASADA["libro"] = "ok"
         log.info("libro: %s operaciones (%s guardadas, %s ignoradas), desde %s",
                  d.get("recibidas"), d.get("guardadas"), d.get("ignoradas"),
                  d.get("libro_desde"))
@@ -1360,6 +1378,7 @@ def sincronizar_usuarios(ctx, solo_ver: bool, forzar: bool = False) -> None:
     try:
         usuarios = _usuarios_paginas(ctx)
     except DesafioWAF as e:
+        PASADA["espejo"] = "waf"
         log.warning("espejo de saldos: %s. Lo reintento en la proxima vuelta.", e)
         return
     except Exception as e:
@@ -1387,8 +1406,52 @@ def sincronizar_usuarios(ctx, solo_ver: bool, forzar: bool = False) -> None:
                     guardados, e)
         return
 
+    # 'parcial' es un barrido que se corto por presupuesto: se guardo lo leido y
+    # se retoma, pero NO cuenta como lectura buena -- si solo hubiera parciales,
+    # media tabla envejeceria sin que nadie lo note.
+    PASADA["espejo"] = "parcial" if _pagina_inicial() else "ok"
     log.info("espejo de saldos: %d jugadores leidos, %d guardados",
              len(usuarios), guardados)
+
+
+def _url_salud() -> str:
+    """De API_URL (.../gp-api/altas_cola.php) sacamos .../gp-api/salud_colector.php"""
+    base = (os.environ.get("API_URL", "") or "").split("?")[0]
+    return base.rsplit("/", 1)[0] + "/salud_colector.php"
+
+
+def reportar_salud(ctx, solo_ver: bool) -> None:
+    """Le cuenta al server que pudo LEER esta pasada.
+
+    POR QUE EXISTE: las lecturas fallaban en silencio. Con el WAF tapando el
+    espejo, el sistema sigue "andando" --el CRM abre, el chat contesta, las
+    cargas se aprueban-- y lo unico que pasa es que los saldos envejecen, el
+    bot le discute el saldo a gente que si tiene plata, y un jugador recien
+    creado no aparece. Los dos watchdogs que habia dan VERDE en ese escenario:
+    miran el worker y la cola, no lo que el worker pudo leer.
+
+    El que decide si eso amerita un Telegram es salud_colector.php, no este
+    worker: la regla ("cuanto puede envejecer cada lectura antes de que se
+    note") es del negocio y vive del lado del server, junto al dedupe que evita
+    el aviso repetido.
+
+    Best-effort y ULTIMO de la pasada: si esto falla no se pierde nada de lo
+    que ya se hizo. Una pasada que no toco el libro simplemente no lo manda, y
+    su fecha queda como estaba.
+    """
+    if solo_ver:
+        return
+    key = os.environ.get("API_KEY", "")
+    if not key or not PASADA:
+        return
+    try:
+        r = ctx.request.post(_url_salud(), headers={"X-API-Key": key},
+                             data=PASADA, timeout=20_000)
+        d = r.json() or {}
+        for cual in (d.get("avisados") or []):
+            log.warning("salud: avise por Telegram que hace rato no podemos leer %s", cual)
+    except Exception as e:
+        log.info("salud: no pude reportar la pasada: %s", str(e)[:120])
 
 
 def main() -> int:
@@ -1446,6 +1509,10 @@ def main() -> int:
             return 0
 
         while True:
+            # Con --loop el proceso vive muchas vueltas: si no se limpia, la
+            # vuelta 2 reportaria el resultado de la 1.
+            PASADA.clear()
+            PASADA["challenges"] = 0
             try:
                 n = una_pasada(ctx, args.ver, args.dias)
                 # Los retiros aprobados en el CRM, en la misma vuelta.
@@ -1468,7 +1535,11 @@ def main() -> int:
                     log.info("%d carga(s) aprobada(s)", n)
             except DesafioWAF as e:
                 # Sin marcar nada: se reintenta la vuelta que viene.
+                PASADA.setdefault("espejo", "waf")
                 log.warning("%s. Salteo esta vuelta.", e)
+            # VA AFUERA DEL try/except A PROPOSITO: la pasada que MAS hace falta
+            # reportar es justamente la que murio por el WAF.
+            reportar_salud(ctx, args.ver)
             if not args.loop:
                 break
             time.sleep(args.loop)
