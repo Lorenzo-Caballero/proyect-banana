@@ -50,20 +50,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['accion'] ?? '') === 'activos
     $min  = max(1, min(120, (int)($_GET['minutos'] ?? 15)));
     $tope = max(1, min(200, (int)($_GET['limite']  ?? 60)));
     $lista = [];
+    /* LA CONSULTA ARRANCA POR LO RECIENTE, NO POR LOS 3.000 JUGADORES.
+       La primera versión recorría `usuarios` entero preguntando, por cada uno,
+       si había hecho algo (dos EXISTS correlacionados). Medido el 18/09/2026
+       con 3.076 usuarios y 10.599 mensajes: **1.493 ms**, cada minuto — y
+       creciendo con el tráfico, que es justo lo que va a pasar al prender la
+       publicidad. El COLLATE del JOIN además impide usar el índice del
+       username, así que no había forma de que mejorara sola.
+
+       Dada vuelta --UNION de lo que se movió en los últimos N minutos, y recién
+       ahí el JOIN contra `usuarios`-- arranca por dos rangos de fecha que SÍ
+       tienen índice (`mensajes.creado_en`, `movimientos.creado_en`) y sobre un
+       puñado de filas. Misma respuesta: **7 ms**.
+
+       Es la diferencia entre una consulta que escala con el padrón y una que
+       escala con la actividad del último cuarto de hora. */
     try {
         $st = $pdo->prepare(
             "SELECT DISTINCT u.username
-               FROM usuarios u
+               FROM (
+                     SELECT c.clave AS usuario
+                       FROM mensajes m
+                       JOIN conversaciones c ON c.id = m.conversacion_id
+                      WHERE m.creado_en > DATE_SUB(NOW(), INTERVAL ? MINUTE)
+                     UNION
+                     SELECT v.usuario
+                       FROM movimientos v
+                      WHERE v.creado_en > DATE_SUB(NOW(), INTERVAL ? MINUTE)
+                    ) x
+               JOIN usuarios u ON u.username COLLATE utf8mb4_unicode_ci = x.usuario
               WHERE u.username <> ''
-                AND (
-                     EXISTS (SELECT 1 FROM mensajes m
-                               JOIN conversaciones c ON c.id = m.conversacion_id
-                              WHERE c.clave COLLATE utf8mb4_unicode_ci = u.username
-                                AND m.creado_en > DATE_SUB(NOW(), INTERVAL ? MINUTE))
-                  OR EXISTS (SELECT 1 FROM movimientos v
-                              WHERE v.usuario COLLATE utf8mb4_unicode_ci = u.username
-                                AND v.creado_en > DATE_SUB(NOW(), INTERVAL ? MINUTE))
-                    )
               LIMIT $tope"
         );
         $st->execute([$min, $min]);
