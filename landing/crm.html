@@ -734,6 +734,21 @@
                background:var(--amberSoft,rgba(240,180,60,.10));border:1px solid rgba(240,180,60,.35)}
   .rdec .lista b{display:block;font-size:12px;margin-bottom:5px}
   .rdec .lista span{display:block;font-size:12.5px;color:var(--txt);line-height:1.7}
+  /* ---- Opciones del bloqueo ----
+     Casillas y no botones: acá el operador puede querer VARIAS a la vez
+     (bloquear la cuenta, arrastrar las vinculadas Y cerrarle la IP), al revés
+     del modal de retiro, donde las opciones se excluyen. */
+  .bq-hint{font-size:11px;color:var(--muted);margin:5px 0 12px;line-height:1.45}
+  .bq-op{display:flex;gap:10px;align-items:flex-start;padding:11px 13px;border-radius:12px;
+         background:var(--panel2);border:1px solid var(--line);cursor:pointer}
+  .bq-op:hover{border-color:var(--violet)}
+  .bq-op input{margin:2px 0 0;flex:none;width:16px;height:16px;accent-color:var(--violet)}
+  .bq-op .t{display:block;font-weight:800;font-size:13px;margin-bottom:2px}
+  .bq-op .d{display:block;font-size:11.5px;color:var(--muted);line-height:1.5;font-weight:400}
+  .bq-dur{display:flex;gap:6px;flex-wrap:wrap;padding:0 2px 2px 40px}
+  .bq-h{padding:7px 12px;border-radius:999px;cursor:pointer;font:700 12px inherit;
+        background:transparent;border:1px solid var(--line);color:var(--muted)}
+  .bq-h.on{border-color:var(--violet);background:var(--violetSoft);color:var(--txt)}
   /* El aviso de "ya tiene un retiro abierto": en ámbar y con borde, porque es
      lo único de este modal que puede terminar en un pago doble. */
   /* La celda del gasto, editable en el lugar. El input hereda el ancho de la
@@ -5113,6 +5128,47 @@
       <!-- El texto y el color los pone abrirModal(): en el modal de retirar
            tiene que decir "Retirar", no "Cargar". -->
       <button class="ok" id="mOk">Cargar</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- BLOQUEAR: qué se corta y hasta cuándo.
+     Antes eran un prompt() para el motivo y uno o dos confirm() encadenados.
+     Funcionaba, pero no dejaba ver las opciones juntas ni elegir el alcance:
+     bloquear una cuenta, arrastrar las de la misma persona, y/o cerrarle la IP
+     al que vuelve sin cuenta. Pedido del dueño (18/09/2026): *"que nos dé la
+     opción al momento de apretar el botón de bloquear"*.
+     Cada casilla explica qué hace ABAJO del título: sobre plata ajena, un
+     rótulo suelto no alcanza. -->
+<div class="back" id="backBloq">
+  <div class="modal">
+    <h3 id="bqTitulo">Bloquear jugador</h3>
+    <p id="bqSub"></p>
+
+    <label for="bqMotivo">Motivo</label>
+    <input id="bqMotivo" type="text" placeholder="Ej: manda comprobantes truchos, multicuenta…">
+    <div class="bq-hint">Lo vas a leer vos dentro de tres semanas, no el jugador.</div>
+
+    <div class="rdec" id="bqOpciones">
+      <label class="bq-op" id="bqOpVinc">
+        <input type="checkbox" id="bqVinc">
+        <span><span class="t" id="bqVincT"></span><span class="d" id="bqVincD"></span></span>
+      </label>
+      <label class="bq-op" id="bqOpIp">
+        <input type="checkbox" id="bqIp">
+        <span><span class="t">Bloquear también su IP</span><span class="d" id="bqIpD"></span></span>
+      </label>
+      <div id="bqIpDur" class="bq-dur" style="display:none">
+        <button type="button" class="bq-h on" data-h="24">24 horas</button>
+        <button type="button" class="bq-h" data-h="72">3 días</button>
+        <button type="button" class="bq-h" data-h="0">Sin vencimiento</button>
+      </div>
+    </div>
+
+    <div class="mbtns">
+      <button class="no" id="bqCancel">Cancelar</button>
+      <button class="ok peligro" id="bqOk">Bloquear</button>
     </div>
   </div>
 </div>
@@ -12207,50 +12263,140 @@
   /* BLOQUEAR / DESBLOQUEAR. Pide motivo al bloquear y confirmacion al
      desbloquear: las dos son decisiones que alguien va a tener que justificar
      despues, y el motivo es lo unico que sobrevive a la memoria. */
+  /* BLOQUEAR, CON LAS OPCIONES A LA VISTA.
+   *
+   * Antes eran un prompt() para el motivo y uno o dos confirm() encadenados.
+   * Funcionaba, pero el operador no veia las opciones JUNTAS ni podia elegir
+   * el alcance: bloquear la cuenta, arrastrar las de la misma persona, y/o
+   * cerrarle la IP al que vuelve sin cuenta. Pedido del dueño (18/09/2026):
+   * *"que nos de la opcion al momento de apretar el boton de bloquear"*.
+   *
+   * Las opciones que NO aplican no se muestran: si no hay cuentas vinculadas
+   * ni IP conocida, el modal queda con el motivo y "Bloquear", que es lo que
+   * habia antes. Una casilla que no hace nada es peor que no tenerla.
+   *
+   * El radio de la IP se pide al server ANTES de ofrecerla (ip_radio): una IP
+   * la comparten una familia o un WiFi, y "alcanza a 4 cuentas" es el dato que
+   * decide si conviene o no. */
+  function bloqAbrir(estaba, fuertes){
+    return new Promise(resolve=>{
+      const back = $("#backBloq");
+      let horas = 24, ipDato = null;
+
+      $("#bqTitulo").textContent = estaba ? "Desbloquear jugador" : "Bloquear jugador";
+      $("#bqOk").textContent     = estaba ? "Desbloquear" : "Bloquear";
+      $("#bqOk").classList.toggle("peligro", !estaba);
+      $("#bqSub").textContent = estaba
+        ? `@${st.usuario} va a poder volver a cargar, retirar y escribir por el chat.`
+        : `@${st.usuario} no va a poder cargar, retirar ni escribir por el chat.`;
+
+      /* El motivo solo al bloquear: al desbloquear no hay nada que justificar.
+         Se OCULTA, no se borra: la primera version hacia `.remove()` sobre la
+         etiqueta y al segundo bloqueo el campo quedaba sin rotulo para
+         siempre. */
+      $("#bqMotivo").value = "";
+      const verMotivo = !estaba;
+      document.querySelectorAll("#backBloq label[for='bqMotivo']")
+              .forEach(x => { x.style.display = verMotivo ? "" : "none"; });
+      $("#bqMotivo").style.display = verMotivo ? "" : "none";
+      $("#backBloq .bq-hint").style.display = verMotivo ? "" : "none";
+
+      // --- Cuentas vinculadas ---
+      const hayVinc = fuertes.length > 0;
+      $("#bqOpVinc").style.display = hayVinc ? "" : "none";
+      $("#bqVinc").checked = false;
+      if(hayVinc){
+        $("#bqVincT").textContent = estaba
+          ? `Desbloquear también las ${fuertes.length} cuenta(s) de la misma persona`
+          : `Bloquear también las ${fuertes.length} cuenta(s) de la misma persona`;
+        $("#bqVincD").textContent = (estaba
+          ? "Vuelven a poder operar: "
+          : "Si no, sigue operando con esas: ")
+          + fuertes.map(v => "@" + v.usuario).join(", ");
+      }
+
+      // --- IP --- (solo al bloquear; desbloquear una IP se hace aparte)
+      $("#bqOpIp").style.display = "none";
+      $("#bqIpDur").style.display = "none";
+      $("#bqIp").checked = false;
+      if(!estaba && st.convId){
+        jpost({accion:"ip_radio", conversacion_id: st.convId}).then(d=>{
+          if(!d || !d.ok || !d.ip) return;      // sin IP conocida: no se ofrece
+          ipDato = d;
+          $("#bqOpIp").style.display = "";
+          $("#bqIpD").textContent =
+            `Corta el chat a cualquiera que entre desde ${d.ip}, tenga cuenta o no. `
+            + (d.cuentas > 1
+                ? `OJO: desde esa IP se registraron ${d.cuentas} cuentas — puede ser una familia o un WiFi compartido.`
+                : "Es la IP desde la que está escribiendo ahora.")
+            + (d.bloqueada ? " (ya está bloqueada)" : "");
+        }).catch(()=>{});
+      }
+
+      const cerrar = (valor)=>{
+        back.classList.remove("on");
+        back.removeEventListener("click", porFuera);
+        document.removeEventListener("keydown", porEsc);
+        resolve(valor);
+      };
+      const porFuera = (e)=>{ if(e.target === back) cerrar(null); };
+      const porEsc   = (e)=>{ if(e.key === "Escape") cerrar(null); };
+
+      $("#bqIp").onchange = ()=>{ $("#bqIpDur").style.display = $("#bqIp").checked ? "flex" : "none"; };
+      $("#bqIpDur").querySelectorAll(".bq-h").forEach(b=>{
+        b.onclick = ()=>{
+          horas = parseInt(b.getAttribute("data-h"), 10);
+          $("#bqIpDur").querySelectorAll(".bq-h").forEach(x=>x.classList.toggle("on", x===b));
+        };
+      });
+      $("#bqCancel").onclick = ()=> cerrar(null);
+      $("#bqOk").onclick = ()=> cerrar({
+        motivo: verMotivo ? $("#bqMotivo").value.trim() : "",
+        vinculadas: hayVinc && $("#bqVinc").checked,
+        ip: (!estaba && $("#bqIp").checked && ipDato) ? ipDato.ip : "",
+        horas
+      });
+      back.addEventListener("click", porFuera);
+      document.addEventListener("keydown", porEsc);
+      back.classList.add("on");
+      if(verMotivo) setTimeout(()=>$("#bqMotivo").focus(), 50);
+    });
+  }
+
   $("#btnBloquear").addEventListener("click", async ()=>{
     if(!st.usuario){ toast("Esta conversación no tiene usuario vinculado"); return; }
     const estaba = !!st.bloqueado;
 
     /* SE OFRECE ARRASTRAR A LAS VINCULADAS, y es lo que hace efectivo el
        bloqueo: bloquear una de tres cuentas no frena nada -- la persona sigue
-       operando con las otras dos.
-
-       El filtro `>= 2` dejaba afuera la señal por IP, que ya no existe (se
-       sacó el 16/09/2026: guardábamos edges de Cloudflare, no jugadores). Hoy
-       las tres que quedan son todas duras, así que esto pasa a ser «todas» —
-       y se deja escrito igual, no `st.vinculos` a secas, porque el día que
-       vuelva una señal blanda el límite tiene que seguir estando acá y no
-       haber que acordarse de volver a ponerlo. VIN_SENALES_DURAS del backend
-       es la misma decisión del otro lado. */
+       operando con las otras dos. Solo señales duras (comprobante, banco,
+       celular); la IP va por su propia opción, que es otra cosa. */
     const fuertes = (st.vinculos || []).filter(v => v.fuerza >= 2);
-    let motivo = "", conVinc = false;
 
-    if (estaba) {
-      if(!confirm(`¿Desbloquear a @${st.usuario}?\n\nVa a poder volver a cargar y retirar.`)) return;
-      if (fuertes.length && confirm(
-            `¿Desbloquear también las ${fuertes.length} cuenta(s) vinculadas?\n\n` +
-            fuertes.map(v => "@" + v.usuario).join("\n"))) { conVinc = true; }
-    } else {
-      motivo = prompt(`Bloquear a @${st.usuario}. ¿Por qué?\n\n` +
-                      `(Lo vas a leer vos dentro de tres semanas, no el jugador.)`, "");
-      if (motivo === null) return;   // cancelo
-      if (fuertes.length) {
-        conVinc = confirm(
-          `¿Bloquear también las ${fuertes.length} cuenta(s) de la misma persona?\n\n` +
-          fuertes.map(v => "@" + v.usuario + " — " + v.detalle).join("\n") +
-          `\n\nSi no, va a seguir operando con esas.`);
-      }
-    }
+    const eleccion = await bloqAbrir(estaba, fuertes);
+    if(eleccion === null) return;
 
     const d = await jpost({accion:"bloquear", usuario:st.usuario,
-                           bloquear: !estaba, motivo: motivo || "",
-                           con_vinculadas: conVinc});
+                           bloquear: !estaba, motivo: eleccion.motivo,
+                           con_vinculadas: eleccion.vinculadas});
     if(!d.ok){ toast(d.error || "No se pudo"); return; }
+
+    /* La IP va DESPUES y aparte: es otra tabla y otra decisión. Si falla, el
+       bloqueo de la cuenta ya quedó hecho -- se avisa, no se deshace. */
+    let avisoIp = "";
+    if(eleccion.ip){
+      const di = await jpost({accion:"bloquear_ip", ip: eleccion.ip, bloquear: true,
+                              motivo: eleccion.motivo, horas: eleccion.horas});
+      avisoIp = di && di.ok
+        ? ` + IP ${eleccion.ip} ${eleccion.horas > 0 ? "por " + eleccion.horas + " h" : "sin vencimiento"}`
+        : " (la IP no se pudo bloquear)";
+    }
+
     const n = (d.usuarios || [st.usuario]).length;
-    toast(estaba
+    toast((estaba
       ? (n > 1 ? `${n} cuentas desbloqueadas` : "Desbloqueado")
-      : (n > 1 ? `${n} cuentas bloqueadas: no pueden cargar ni retirar`
-               : "Bloqueado: no puede cargar ni retirar"));
+      : (n > 1 ? `${n} cuentas bloqueadas: no pueden cargar, retirar ni escribir`
+               : "Bloqueado: no puede cargar, retirar ni escribir")) + avisoIp);
     abrir(st.convId);
   });
 

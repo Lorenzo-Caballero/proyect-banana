@@ -674,6 +674,50 @@ chequear('el radio cuenta las cuentas de esa IP',
 $pdo->prepare("DELETE FROM bloqueos_ip WHERE ip LIKE '200.45.%'")->execute();
 $pdo->prepare("DELETE FROM altas WHERE ip = ?")->execute(["200.45.77.91"]);
 
+echo "\n=== 5h. El boton de bloquear ofrece las opciones ===\n";
+
+/* Nahuel (18/09/2026): *"si hay alguna otra opcion --bloqueo permanente, o
+   por 24 horas, o bloquear con IP-- que nos de la opcion al momento de
+   apretar el boton de bloquear"*.
+
+   Antes eran un prompt() para el motivo y uno o dos confirm() encadenados: se
+   podia bloquear la cuenta y arrastrar las vinculadas, pero las opciones no se
+   veian juntas y la IP no existia como opcion. */
+$crm = file_get_contents(__DIR__ . '/landing/crm.html');
+
+chequear('el bloqueo tiene su propio modal', str_contains($crm, 'backBloq'));
+chequear('y ya no lo resuelve un prompt() del navegador',
+         !str_contains($crm, 'prompt(`Bloquear a'),
+         'un prompt no deja ver las opciones juntas');
+
+chequear('opcion: arrastrar las cuentas vinculadas', str_contains($crm, 'bqVinc'));
+chequear('opcion: bloquear tambien la IP',           str_contains($crm, 'bqIp'));
+
+/* Las tres duraciones, que es lo que se pidio. Sin "sin vencimiento" el
+   bloqueo permanente no se puede poner desde la pantalla. */
+foreach ([['24', '24 horas'], ['72', '3 dias'], ['0', 'sin vencimiento']] as $d) {
+    chequear('duracion ' . $d[1], str_contains($crm, 'data-h="' . $d[0] . '"'));
+}
+
+/* EL RADIO SE PIDE ANTES DE OFRECER LA IP. Una IP la comparten una familia o
+   un WiFi: "alcanza a 4 cuentas" es el dato que decide si conviene. Sin esto
+   la opcion estaria igual de disponible pero a ciegas. */
+chequear('se consulta el radio de la IP antes de ofrecerla',
+         str_contains($crm, 'ip_radio'),
+         'sin el radio, bloquear una IP es a ciegas');
+chequear('y se avisa cuando alcanza a varias cuentas',
+         str_contains($crm, 'puede ser una familia o un WiFi compartido'));
+
+/* La IP se manda APARTE del bloqueo de la cuenta: son dos tablas y dos
+   decisiones. Si la IP falla, el bloqueo de la cuenta ya quedo hecho. */
+chequear('la IP se bloquea con su propia accion',
+         str_contains($crm, 'accion:"bloquear_ip"'));
+
+/* Y que el backend tenga las dos acciones que la pantalla usa. */
+$srcCrm = file_get_contents(__DIR__ . '/api/crm.php');
+chequear('el server atiende ip_radio y bloquear_ip',
+         str_contains($srcCrm, "'ip_radio'") && str_contains($srcCrm, "'bloquear_ip'"));
+
 echo "\n=== 6. Nada de esto puede tumbar una ficha ===\n";
 /* vin_relacionados corre al abrir CADA conversación del CRM. Un vínculo que no
    se pudo calcular no puede impedir que el operador vea a su jugador. */
