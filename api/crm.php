@@ -1445,6 +1445,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             salir($res, $res['ok'] ? 200 : 400);
         }
 
+        /* ---- Bloquear por IP al que no tiene cuenta ----
+           El último recurso, y el más romo. El bloqueo por usuario ya corta
+           todo, y el de multicuenta alcanza al anónimo por su aparato; esto
+           cubre al único que queda: el que llega por el navegador, molesta,
+           borra el `session_id` y vuelve.
+
+           `accion=ip_radio` NO bloquea: dice a cuántas cuentas alcanzaría. Va
+           aparte a propósito, para que el CRM lo pueda mostrar ANTES de que el
+           operador apriete. Una IP la comparten una familia, un WiFi o el NAT
+           de la telefónica; ver el radio es la diferencia entre bloquear a un
+           pesado y bloquear a cinco personas que no hicieron nada. */
+        if ($accion === 'ip_radio' || $accion === 'bloquear_ip') {
+            if (is_file(__DIR__ . '/vinculos_lib.php')) {
+                require_once __DIR__ . '/vinculos_lib.php';
+            }
+            if (!function_exists('vin_ip_bloquear')) {
+                salir(['ok' => false, 'error' => 'Falta correr la migración 73'], 400);
+            }
+            $ip = trim((string)($body['ip'] ?? ''));
+            if ($ip === '' && !empty($body['conversacion_id'])) {
+                try {
+                    $q = $pdo->prepare("SELECT ip FROM conversaciones WHERE id = ? LIMIT 1");
+                    $q->execute([(int)$body['conversacion_id']]);
+                    $ip = (string)($q->fetchColumn() ?: '');
+                } catch (Throwable $e) { /* sin migración 73 no hay columna */ }
+            }
+            if ($ip === '') {
+                salir(['ok' => false, 'error' =>
+                    'No tengo la IP de esa conversación. Aparece recién cuando el '
+                    . 'jugador escribe un mensaje nuevo.'], 400);
+            }
+
+            if ($accion === 'ip_radio') {
+                salir(['ok' => true, 'ip' => $ip,
+                       'cuentas'   => vin_ip_cuantas_cuentas($pdo, $ip),
+                       'bloqueada' => vin_ip_bloqueada($pdo, $ip) !== null]);
+            }
+
+            $on    = !empty($body['bloquear']);
+            $horas = isset($body['horas']) ? max(0, (int)$body['horas']) : 24;
+            $res   = vin_ip_bloquear($pdo, $ip, $on, $operador,
+                                     trim((string)($body['motivo'] ?? '')), $horas);
+            if (!empty($res['ok'])) {
+                crm_bitacora($pdo, $operador, $on ? 'bloquear_ip' : 'desbloquear_ip',
+                             $ip . ($on ? ' · ' . ($horas > 0 ? $horas . ' h' : 'sin vencimiento') : ''));
+            }
+            salir($res, !empty($res['ok']) ? 200 : 400);
+        }
+
         if ($accion === 'marcar_leidas') {
             if (!empty($body['todas'])) {
                 $st = $pdo->query("UPDATE conversaciones SET no_leidos = 0 WHERE no_leidos > 0");

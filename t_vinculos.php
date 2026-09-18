@@ -619,6 +619,61 @@ chequear('y chatbot.php carga vinculos_lib para poder llamarla',
          str_contains($srcCb, "require_once __DIR__ . '/vinculos_lib.php';"));
 
 // ===========================================================================
+echo "\n=== 5g. Bloqueo por IP: el ultimo recurso ===\n";
+
+/* EL PEDIDO (Nahuel, 18/09/2026): *"ver si se puede bloquear a un jugador
+   pesado por IP, para que no pueda hablar al chat ni siquiera"*.
+
+   Cubre al unico que los otros dos cortes no alcanzan: el que no tiene cuenta
+   NI app, llega por el navegador, molesta, borra el session_id y vuelve.
+
+   ESTO NO SE PODIA HACER AYER. Hasta el 18/09 REMOTE_ADDR era el edge de
+   Cloudflare --una sola "IP" con 124 cuentas-- asi que bloquear una habria
+   dejado sin chat a todos los que entraran por ahi, sin un error visible. Lo
+   habilita ip_cliente(). Y aun asi una IP no es una persona, de ahi el
+   vencimiento por defecto y el radio. */
+$IPX = "200.45.77.90";
+$pdo->prepare("DELETE FROM bloqueos_ip WHERE ip = ?")->execute([$IPX]);
+
+chequear('una IP limpia no esta bloqueada', vin_ip_bloqueada($pdo, $IPX) === null);
+
+$r = vin_ip_bloquear($pdo, $IPX, true, 'nahuel', 'molesta en el chat', 24);
+chequear('se puede bloquear', !empty($r['ok']), json_encode($r));
+chequear('y queda bloqueada', vin_ip_bloqueada($pdo, $IPX) === 'molesta en el chat');
+chequear('con vencimiento, no para siempre', !empty($r['hasta']), json_encode($r));
+
+$r = vin_ip_bloquear($pdo, $IPX, false, 'nahuel');
+chequear('se puede levantar', vin_ip_bloqueada($pdo, $IPX) === null);
+
+/* EL VENCIMIENTO TIENE QUE VENCER DE VERDAD: si no, "24 horas" es un bloqueo
+   permanente con otro nombre y nadie se entera hasta que alguien reclama. */
+$pdo->prepare("DELETE FROM bloqueos_ip WHERE ip = ?")->execute([$IPX]);
+$pdo->prepare("INSERT INTO bloqueos_ip (ip, motivo, hasta)
+               VALUES (?, 'ya vencido', DATE_SUB(NOW(), INTERVAL 1 HOUR))")->execute([$IPX]);
+chequear('un bloqueo vencido NO corta', vin_ip_bloqueada($pdo, $IPX) === null);
+
+/* Lo que NO se puede bloquear, porque dejaria al CRM hablando solo: las altas
+   hechas por script llevan 127.0.0.1. */
+$r = vin_ip_bloquear($pdo, '127.0.0.1', true, 'nahuel', 'x', 1);
+chequear('no deja bloquear el loopback', empty($r['ok']), json_encode($r));
+$r = vin_ip_bloquear($pdo, 'no-soy-una-ip', true, 'nahuel', 'x', 1);
+chequear('ni una IP invalida', empty($r['ok']), json_encode($r));
+
+/* EL RADIO: cuanta gente se lleva puesta. Es lo que el CRM muestra ANTES de
+   que el operador apriete, y la diferencia entre bloquear a un pesado y
+   bloquear a cinco que no hicieron nada. */
+$pdo->prepare("DELETE FROM altas WHERE ip = ?")->execute(["200.45.77.91"]);
+foreach (['tv_ip_a','tv_ip_b'] as $u) {
+    $usuario($u);
+    $pdo->prepare("INSERT INTO altas (usuario, password, estado, origen, ip, pedido_en)
+                   VALUES (?, 'clave123456', 'ok', 'landing', '200.45.77.91', NOW())")->execute([$u]);
+}
+chequear('el radio cuenta las cuentas de esa IP',
+         vin_ip_cuantas_cuentas($pdo, '200.45.77.91') === 2,
+         (string)vin_ip_cuantas_cuentas($pdo, '200.45.77.91'));
+$pdo->prepare("DELETE FROM bloqueos_ip WHERE ip LIKE '200.45.%'")->execute();
+$pdo->prepare("DELETE FROM altas WHERE ip = ?")->execute(["200.45.77.91"]);
+
 echo "\n=== 6. Nada de esto puede tumbar una ficha ===\n";
 /* vin_relacionados corre al abrir CADA conversación del CRM. Un vínculo que no
    se pudo calcular no puede impedir que el operador vea a su jugador. */

@@ -66,6 +66,12 @@ require_once __DIR__ . '/telegram_lib.php';
    arriba porque el primer uso está en el flujo del bot apagado, fuera de
    toda función. */
 require_once __DIR__ . '/vinculos_lib.php';
+/* ip_cliente(): la IP del jugador y no el edge de Cloudflare. Se carga acá
+   arriba y no dentro de la función que la usa primero, porque ahora la miran
+   DOS cosas en puntos distintos del archivo --el límite de tasa y el corte por
+   IP-- y hacerla depender de cuál corra antes es la clase de orden que un día
+   alguien cambia sin darse cuenta. */
+require_once __DIR__ . '/ip_cliente.php';
 // El CRM es opcional: si crm_lib.php no esta subido, el chat sigue funcionando.
 $crmLib = __DIR__ . '/crm_lib.php';
 if (is_file($crmLib)) { require_once $crmLib; }
@@ -568,7 +574,30 @@ $corteBloqueado = $usuarioCliente !== '' && function_exists('vin_bloqueado')
    identificada. El umbral y el apagado viven en MULTICUENTA_MAX. */
 $corteMulticuenta = !$corteBloqueado && function_exists('vin_multicuenta_excedida')
     && vin_multicuenta_excedida($pdo, $usuarioCliente, (string)($GLOBALS['CB_DEVICE_ID'] ?? ''));
-if ($corteBloqueado || $corteMulticuenta) {
+
+/* Y EL ULTIMO RECURSO: la IP. Cubre al unico que los otros dos no alcanzan --
+   el que no tiene cuenta NI app, llega por el navegador, molesta, borra el
+   `session_id` y vuelve (pedido del dueño, 18/09/2026).
+
+   Se deja para el final a proposito: es el corte mas romo, porque una IP la
+   comparten una familia, un WiFi o el NAT de la telefonica. Nada lo pone solo,
+   siempre es un operador, y el caso normal vence solo (ver vinculos_lib).
+
+   La IP se anota ANTES de cortar, en la conversacion: sin eso el operador no
+   tiene QUE bloquear cuando el que molesta no tiene cuenta. */
+$ipChat = function_exists('ip_cliente') ? ip_cliente() : '';
+if ($ipChat !== '' && $sessionId !== '') {
+    try {
+        $pdo->prepare(
+            "UPDATE conversaciones SET ip = ?, ip_vista_en = NOW()
+              WHERE session_id = ? OR clave = ?"
+        )->execute([$ipChat, $sessionId, $usuarioCliente !== '' ? $usuarioCliente : ('anon:' . $sessionId)]);
+    } catch (Throwable $e) { /* sin la migracion 73 no hay columna: se sigue */ }
+}
+$corteIp = !$corteBloqueado && !$corteMulticuenta && $ipChat !== ''
+    && function_exists('vin_ip_bloqueada') && vin_ip_bloqueada($pdo, $ipChat) !== null;
+
+if ($corteBloqueado || $corteMulticuenta || $corteIp) {
     $ultimoUser = '';
     for ($i = count($historial) - 1; $i >= 0; $i--) {
         if ((($historial[$i]['role'] ?? '') === 'user') && !empty($historial[$i]['content'])) {

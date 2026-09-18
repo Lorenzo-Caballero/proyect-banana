@@ -695,3 +695,111 @@ function vin_avisar_multicuenta(PDO $pdo, string $usuario): void
         error_log('vin_avisar_multicuenta: ' . $e->getMessage());
     }
 }
+
+/* ===========================================================================
+ * BLOQUEO POR IP — el último recurso, y el más romo.
+ *
+ * EL PEDIDO (Nahuel, 18/09/2026): *"ver si se puede bloquear a un jugador
+ * pesado por IP o algo así, para que no pueda hablar al chat ni siquiera"*.
+ *
+ * El bloqueo por USUARIO ya corta todo, y vin_multicuenta_excedida() alcanza
+ * al anónimo por su aparato. Queda uno solo sin cubrir: el que no tiene cuenta
+ * NI app, llega por el navegador, molesta, borra el `session_id` y vuelve.
+ * Contra ese lo único que queda es la IP.
+ *
+ * ESTO NO SE PODÍA HACER AYER. Hasta el 18/09/2026 `REMOTE_ADDR` era el edge
+ * de Cloudflare --una sola "IP" con 124 cuentas-- así que bloquear una habría
+ * dejado sin chat a todos los que entraran por ahí, sin un solo error visible.
+ * Lo que lo habilita es ip_cliente() (api/ip_cliente.php).
+ *
+ * Y AUN ASÍ UNA IP NO ES UNA PERSONA: la comparten una familia, un WiFi, el
+ * NAT de la telefónica. Por eso:
+ *   - nada automático escribe acá, siempre es un operador;
+ *   - el caso normal lleva vencimiento (el pesado de hoy no es un enemigo
+ *     eterno) y `vin_ip_bloquear()` lo pide en horas;
+ *   - vin_ip_cuantas_cuentas() existe para mirar el radio ANTES de apretar.
+ * =========================================================================== */
+
+/** ¿Esta IP está bloqueada ahora? Devuelve el motivo, o null. */
+function vin_ip_bloqueada(PDO $pdo, string $ip): ?string
+{
+    $ip = trim($ip);
+    if ($ip === '' || $ip === '127.0.0.1' || $ip === '::1') { return null; }
+    try {
+        $st = $pdo->prepare(
+            "SELECT COALESCE(motivo, '') FROM bloqueos_ip
+              WHERE ip = ? AND levantado_en IS NULL
+                AND (hasta IS NULL OR hasta > NOW())
+              LIMIT 1"
+        );
+        $st->execute([$ip]);
+        $m = $st->fetchColumn();
+        return $m === false ? null : (string)$m;
+    } catch (Throwable $e) {
+        // Sin la migración 73 no hay bloqueo por IP: el chat sigue como siempre.
+        return null;
+    }
+}
+
+/**
+ * Cuántas cuentas se registraron desde esa IP. Es el RADIO del bloqueo: si son
+ * cinco, bloquearla saca del chat a cinco personas que quizá no tienen nada que
+ * ver. Se muestra antes de bloquear, nunca después.
+ */
+function vin_ip_cuantas_cuentas(PDO $pdo, string $ip): int
+{
+    $ip = trim($ip);
+    if ($ip === '') { return 0; }
+    try {
+        $st = $pdo->prepare(
+            "SELECT COUNT(DISTINCT usuario) FROM altas WHERE ip = ?"
+        );
+        $st->execute([$ip]);
+        return (int)$st->fetchColumn();
+    } catch (Throwable $e) { return 0; }
+}
+
+/**
+ * Bloquea o levanta una IP. `$horas` 0 = sin vencimiento (hay que quererlo).
+ * Idempotente: re-bloquear la misma IP actualiza el motivo y el vencimiento.
+ */
+function vin_ip_bloquear(PDO $pdo, string $ip, bool $bloquear,
+                         string $operador = '', string $motivo = '',
+                         int $horas = 24): array
+{
+    $ip = trim($ip);
+    if ($ip === '') { return ['ok' => false, 'error' => 'Falta la IP']; }
+    if (filter_var($ip, FILTER_VALIDATE_IP) === false) {
+        return ['ok' => false, 'error' => 'Esa no es una IP válida'];
+    }
+    /* Ni loopback ni la del propio server: bloquearlas deja al CRM hablando
+       solo. Las altas hechas desde un script llevan 127.0.0.1. */
+    if (in_array($ip, ['127.0.0.1', '::1'], true)) {
+        return ['ok' => false, 'error' => 'Esa IP es la del propio servidor'];
+    }
+    try {
+        if ($bloquear) {
+            $hasta = $horas > 0 ? date('Y-m-d H:i:s', time() + $horas * 3600) : null;
+            $pdo->prepare(
+                "INSERT INTO bloqueos_ip (ip, motivo, operador, hasta)
+                 VALUES (?,?,?,?)
+                 ON DUPLICATE KEY UPDATE motivo = VALUES(motivo),
+                                         operador = VALUES(operador),
+                                         hasta = VALUES(hasta),
+                                         levantado_en = NULL,
+                                         levantado_por = NULL"
+            )->execute([$ip, mb_substr($motivo, 0, 255) ?: null,
+                        mb_substr($operador, 0, 60) ?: null, $hasta]);
+            return ['ok' => true, 'ip' => $ip, 'hasta' => $hasta,
+                    'cuentas' => vin_ip_cuantas_cuentas($pdo, $ip)];
+        }
+        $pdo->prepare(
+            "UPDATE bloqueos_ip SET levantado_en = NOW(), levantado_por = ?
+              WHERE ip = ? AND levantado_en IS NULL"
+        )->execute([mb_substr($operador, 0, 60) ?: null, $ip]);
+        return ['ok' => true, 'ip' => $ip, 'hasta' => null];
+    } catch (Throwable $e) {
+        error_log('vin_ip_bloquear: ' . $e->getMessage());
+        return ['ok' => false, 'error' => 'Falta la migración 73 (bloqueos_ip)'];
+    }
+}
