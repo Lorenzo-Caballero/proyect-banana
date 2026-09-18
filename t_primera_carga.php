@@ -191,6 +191,69 @@ echo "\n=== 5. La segunda transferencia, que ya andaba bien ===\n";
     chequear('y el bono de bienvenida quedó UNA sola vez', (int)$n['c'] === 1, json_encode($n));
 }
 
+echo "
+=== Una carga del CRM que NO entro no puede quemar el bono ===
+";
+
+/* EL PROBLEMA (medido el 18/09/2026). `crm_saldo()` escribe la fila de
+   `movimientos` AL ENCOLAR, para que el operador vea el movimiento en la ficha
+   en el acto. Si despues la carga falla, queda un registro afirmando que la
+   plata se movio.
+
+   Con los depositos rotos por el cambio de dominio, las acciones #157 y #158
+   (holacapo491, 5.000 cada una) terminaron en `error` y las dos dejaron su
+   movimiento: el CRM mostraba 10.000 cargados que nunca entraron a ganamos.
+
+   Y el daño no es cosmetico, que es lo que este bloque viene a fijar:
+   rl_es_primera_carga() cuenta como "ya cargo" cualquier movimiento de tipo
+   'saldo' con monto > 0 y origen 'crm'. O sea que una carga FALLIDA le quema
+   al jugador el bono de bienvenida -- cuando despues carga de verdad, ya no
+   es su primera. */
+$pdo->prepare("INSERT INTO usuarios (id, username, balance, coins, bonus) VALUES (?,?,0,0,0)")
+    ->execute([crc32('prim_fallida'), 'prim_fallida']);
+
+chequear('sin nada, es su primera carga',
+         rl_es_primera_carga($pdo, 'prim_fallida') === 1);
+
+/* El movimiento que deja crm_saldo() al encolar. */
+$pdo->prepare("INSERT INTO movimientos (usuario, tipo, monto, motivo, origen)
+               VALUES ('prim_fallida','saldo',5000,'carga del CRM','crm')")->execute();
+chequear('con el movimiento del CRM, ya NO es la primera',
+         rl_es_primera_carga($pdo, 'prim_fallida') === 0,
+         'esto es lo que le quema el bono si la carga despues falla');
+
+/* Lo que hace acciones_cola.php cuando la carga se marca `error`. */
+$pdo->prepare("DELETE FROM movimientos
+                WHERE usuario = 'prim_fallida' AND tipo='saldo' AND origen='crm'
+                  AND monto = 5000 ORDER BY id DESC LIMIT 1")->execute();
+chequear('borrado el movimiento, vuelve a ser su primera carga',
+         rl_es_primera_carga($pdo, 'prim_fallida') === 1,
+         'el bono de bienvenida se le devuelve');
+
+/* Y QUE EL BORRADO SEA SOLO CON `error`. Es la regla que gobierna todo
+   acciones_cola.php: `error` es "se confirmo que NO paso"; `revisar` es "no se
+   pudo confirmar", y ahi la plata puede haber entrado igual -- borrar el
+   registro seria esconderla. Posicional porque acciones_cola.php es un
+   endpoint y no se puede requerir desde un test. */
+$srcAC = file_get_contents(__DIR__ . '/api/acciones_cola.php');
+$iDel  = strpos($srcAC, "DELETE FROM movimientos");
+chequear('acciones_cola borra el movimiento de una carga fallida', $iDel !== false);
+if ($iDel !== false) {
+    $antes = substr($srcAC, 0, $iDel);
+    $guard = strrpos($antes, "if (\$estado === 'error')");
+    chequear('y lo hace SOLO dentro del guard de `error`',
+             $guard !== false && ($iDel - $guard) < 1200,
+             'si esto corre con `revisar` se esconde plata que pudo haber entrado');
+    chequear('acotado a una sola fila (LIMIT 1)',
+             str_contains(substr($srcAC, $iDel, 700), 'LIMIT 1'),
+             'dos cargas iguales y una sola fallida: la otra tiene que sobrevivir');
+}
+
+foreach (['acciones_saldo', 'movimientos'] as $tb) {
+    $pdo->prepare("DELETE FROM $tb WHERE usuario = 'prim_fallida'")->execute();
+}
+$pdo->prepare("DELETE FROM usuarios WHERE username = 'prim_fallida'")->execute();
+
 foreach (['prim_fn', 'prim_nuevo', 'prim_juego', 'prim_mano', 'prim_segunda'] as $u) {
     foreach (['acciones_saldo', 'movimientos', 'recargas', 'altas'] as $t) {
         $pdo->prepare("DELETE FROM $t WHERE usuario = ?")->execute([$u]);

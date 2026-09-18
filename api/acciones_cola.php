@@ -304,6 +304,66 @@ try {
             exit;
         }
 
+        /* ---------------------------------------------------------------
+           UNA CARGA QUE NO ENTRO NO PUEDE DEJAR UN MOVIMIENTO QUE DIGA QUE SI.
+
+           `crm_saldo()` escribe la fila de `movimientos` AL ENCOLAR, no al
+           ejecutar -- para que el operador vea el movimiento en la ficha en el
+           acto. El precio es que si despues la carga falla, queda un registro
+           afirmando que la plata se movio.
+
+           MEDIDO EL 18/09/2026, con los depositos rotos por el dominio: las
+           acciones #157 y #158 (holacapo491, 5.000 cada una) terminaron en
+           `error` y las dos dejaron su movimiento. El CRM mostraba 10.000
+           cargados que nunca entraron a ganamos.
+
+           Y no es solo cosmetico. `rl_es_primera_carga()` cuenta como "ya
+           cargo" cualquier `movimientos` de tipo 'saldo' con monto > 0 y
+           origen 'crm'. O sea que una carga FALLIDA le quema al jugador el
+           bono de bienvenida: cuando despues carga de verdad, ya no es su
+           primera.
+
+           SOLO SE BORRA CON `error`, NUNCA CON `revisar`. Es la misma regla
+           que gobierna todo este archivo: `error` es "se confirmo que NO
+           paso"; `revisar` es "no se pudo confirmar", y ahi la plata puede
+           haber entrado igual -- borrar el registro seria esconderla. Un
+           `revisar` ya queda marcado para que lo mire una persona.
+
+           Se acota por usuario, monto, origen y ventana de 10 minutos, y se
+           borra UNA sola fila (LIMIT 1): si el operador cargo dos veces lo
+           mismo y solo una fallo, tiene que sobrevivir la otra. */
+        if ($estado === 'error') {
+            try {
+                $q = $pdo->prepare(
+                    "SELECT usuario, tipo, monto, creada_en, origen
+                       FROM acciones_saldo WHERE id = ?"
+                );
+                $q->execute([$id]);
+                $a = $q->fetch(PDO::FETCH_ASSOC) ?: [];
+                if (($a['origen'] ?? '') === 'crm' && ($a['tipo'] ?? '') === 'cargar') {
+                    $signo = (int) round((float) $a['monto']);
+                    $del = $pdo->prepare(
+                        "DELETE FROM movimientos
+                          WHERE usuario = ? AND tipo = 'saldo' AND origen = 'crm'
+                            AND monto = ?
+                            AND creado_en BETWEEN DATE_SUB(?, INTERVAL 1 MINUTE)
+                                              AND DATE_ADD(?, INTERVAL 10 MINUTE)
+                          ORDER BY id DESC LIMIT 1"
+                    );
+                    $del->execute([$a['usuario'], $signo, $a['creada_en'], $a['creada_en']]);
+                    if ($del->rowCount() > 0) {
+                        error_log("acciones_cola: accion $id en error -> borrado el movimiento "
+                                . "de {$a['usuario']} por {$signo} (la carga no entro)");
+                    }
+                }
+            } catch (Throwable $e) {
+                // Que no se pueda limpiar el registro NO puede impedir que la
+                // accion quede marcada como fallida: eso es lo que frena el
+                // reintento y lo que ve el operador.
+                error_log('acciones_cola/limpiar movimiento: ' . $e->getMessage());
+            }
+        }
+
         // El saldo que el bot acaba de LEER EN EL PANEL es la mejor verdad que
         // vamos a tener: sale de la plataforma, no del navegador del jugador.
         // Guardarlo aca hace que el CRM y el chatbot dejen de mostrar un numero
