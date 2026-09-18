@@ -715,6 +715,19 @@ chequear('la IP se bloquea con su propia accion',
 
 /* Y que el backend tenga las dos acciones que la pantalla usa. */
 $srcCrm = file_get_contents(__DIR__ . '/api/crm.php');
+/* DESBLOQUEAR LA IP TIENE QUE SER POSIBLE DESDE LA PANTALLA. Sin esto, un
+   bloqueo 'sin vencimiento' quedaba puesto para siempre: el de 24 h se cae
+   solo, pero el permanente no tenia donde levantarse. La MISMA casilla sirve
+   para las dos direcciones y lo que ofrece lo decide el estado de la IP, no
+   el del jugador -- se puede tener la cuenta bloqueada y la IP libre. */
+chequear('la casilla ofrece desbloquear cuando la IP ya esta bloqueada',
+         str_contains($crm, 'Desbloquear su IP'));
+chequear('y manda bloquear:false en ese caso',
+         str_contains($crm, 'ipBloquear'),
+         'sin esto el boton de desbloquear volveria a bloquear');
+chequear('las duraciones se esconden al desbloquear',
+         str_contains($crm, 'sacar un bloqueo no'),
+         'elegir 24 h para levantar algo no significa nada');
 chequear('el server atiende ip_radio y bloquear_ip',
          str_contains($srcCrm, "'ip_radio'") && str_contains($srcCrm, "'bloquear_ip'"));
 

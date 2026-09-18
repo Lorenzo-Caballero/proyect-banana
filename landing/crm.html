@@ -12315,21 +12315,37 @@
           + fuertes.map(v => "@" + v.usuario).join(", ");
       }
 
-      // --- IP --- (solo al bloquear; desbloquear una IP se hace aparte)
+      /* --- IP ---
+         La misma casilla sirve para las dos direcciones, y eso es a propósito:
+         si el bloqueo de la IP solo se pudiera poner desde acá pero no sacar,
+         un "sin vencimiento" quedaría sin forma de levantarse desde la
+         pantalla. Qué se ofrece depende del estado real de la IP, no de si
+         estamos bloqueando o desbloqueando al jugador — son dos cosas
+         separadas (se puede tener la cuenta bloqueada y la IP libre, o al
+         revés). */
       $("#bqOpIp").style.display = "none";
       $("#bqIpDur").style.display = "none";
       $("#bqIp").checked = false;
-      if(!estaba && st.convId){
+      if(st.convId){
         jpost({accion:"ip_radio", conversacion_id: st.convId}).then(d=>{
           if(!d || !d.ok || !d.ip) return;      // sin IP conocida: no se ofrece
           ipDato = d;
           $("#bqOpIp").style.display = "";
-          $("#bqIpD").textContent =
-            `Corta el chat a cualquiera que entre desde ${d.ip}, tenga cuenta o no. `
-            + (d.cuentas > 1
-                ? `OJO: desde esa IP se registraron ${d.cuentas} cuentas — puede ser una familia o un WiFi compartido.`
-                : "Es la IP desde la que está escribiendo ahora.")
-            + (d.bloqueada ? " (ya está bloqueada)" : "");
+          const tit = $("#bqOpIp").querySelector(".t");
+          if(d.bloqueada){
+            tit.textContent = "Desbloquear su IP";
+            $("#bqIpD").textContent =
+              `${d.ip} está bloqueada ahora. Al sacarla, cualquiera que entre desde `
+              + `ahí vuelve a poder escribir por el chat`
+              + (d.cuentas > 1 ? ` — son ${d.cuentas} cuentas.` : ".");
+          } else {
+            tit.textContent = "Bloquear también su IP";
+            $("#bqIpD").textContent =
+              `Corta el chat a cualquiera que entre desde ${d.ip}, tenga cuenta o no. `
+              + (d.cuentas > 1
+                  ? `OJO: desde esa IP se registraron ${d.cuentas} cuentas — puede ser una familia o un WiFi compartido.`
+                  : "Es la IP desde la que está escribiendo ahora.");
+          }
         }).catch(()=>{});
       }
 
@@ -12342,7 +12358,12 @@
       const porFuera = (e)=>{ if(e.target === back) cerrar(null); };
       const porEsc   = (e)=>{ if(e.key === "Escape") cerrar(null); };
 
-      $("#bqIp").onchange = ()=>{ $("#bqIpDur").style.display = $("#bqIp").checked ? "flex" : "none"; };
+      // Las duraciones solo tienen sentido al BLOQUEAR: sacar un bloqueo no
+      // dura nada.
+      $("#bqIp").onchange = ()=>{
+        const poner = $("#bqIp").checked && !(ipDato && ipDato.bloqueada);
+        $("#bqIpDur").style.display = poner ? "flex" : "none";
+      };
       $("#bqIpDur").querySelectorAll(".bq-h").forEach(b=>{
         b.onclick = ()=>{
           horas = parseInt(b.getAttribute("data-h"), 10);
@@ -12353,7 +12374,9 @@
       $("#bqOk").onclick = ()=> cerrar({
         motivo: verMotivo ? $("#bqMotivo").value.trim() : "",
         vinculadas: hayVinc && $("#bqVinc").checked,
-        ip: (!estaba && $("#bqIp").checked && ipDato) ? ipDato.ip : "",
+        ip: ($("#bqIp").checked && ipDato) ? ipDato.ip : "",
+        // Qué hacer con la IP: lo decide SU estado, no el del jugador.
+        ipBloquear: !(ipDato && ipDato.bloqueada),
         horas
       });
       back.addEventListener("click", porFuera);
@@ -12385,11 +12408,14 @@
        bloqueo de la cuenta ya quedó hecho -- se avisa, no se deshace. */
     let avisoIp = "";
     if(eleccion.ip){
-      const di = await jpost({accion:"bloquear_ip", ip: eleccion.ip, bloquear: true,
+      const di = await jpost({accion:"bloquear_ip", ip: eleccion.ip,
+                              bloquear: eleccion.ipBloquear,
                               motivo: eleccion.motivo, horas: eleccion.horas});
       avisoIp = di && di.ok
-        ? ` + IP ${eleccion.ip} ${eleccion.horas > 0 ? "por " + eleccion.horas + " h" : "sin vencimiento"}`
-        : " (la IP no se pudo bloquear)";
+        ? (eleccion.ipBloquear
+            ? ` + IP ${eleccion.ip} ${eleccion.horas > 0 ? "por " + eleccion.horas + " h" : "sin vencimiento"}`
+            : ` + IP ${eleccion.ip} liberada`)
+        : (eleccion.ipBloquear ? " (la IP no se pudo bloquear)" : " (la IP no se pudo liberar)");
     }
 
     const n = (d.usuarios || [st.usuario]).length;
