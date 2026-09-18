@@ -254,6 +254,46 @@ function au_query_base(): string
       FROM retiros_panel rp
       LEFT JOIN operaciones_panel op
              ON op.payment_id = rp.request_id AND op.tipo = 1
+
+      UNION ALL
+
+      /* ---- LO QUE HIZO UNA PERSONA (crm_bitacora) ----
+         EL HUECO (Nahuel, 18/09/2026): pidio que si alguien bloquea a una
+         persona quede asentado ahi, y que si alguien hizo un retiro manual o
+         cargo fichas y puso un detalle, tambien.
+
+         Estaba todo registrado y NADA se veía. `crm_bitacora` tenía 308 filas
+         --14 bloqueos, 12 cancelaciones de retiro con su motivo escrito a
+         mano, 4 aprobaciones-- y Auditoría no la miraba: las otras cuatro
+         fuentes cuentan qué le pasó a la PLATA, y ésta cuenta qué hizo una
+         PERSONA. Faltaba justamente la mitad que una auditoría existe para
+         responder: quién decidió esto.
+
+         El `usuario` sale del detalle cuando el detalle lo nombra (los
+         bloqueos guardan '@juan · motivo'), y si no queda vacío: es una acción
+         sobre el sistema, no sobre un jugador.
+
+         Monto 0: ninguna de estas mueve plata por sí misma. La que sí la mueve
+         --aprobar un retiro-- ya aparece por `acciones_saldo` con su monto; acá
+         queda el rastro de QUIÉN la aprobó, que es lo que faltaba. */
+      SELECT
+        b.creado_en                                                            AS fecha_orden,
+        b.creado_en                                                            AS fecha,
+        'accion'                                                               AS tipo,
+        b.accion COLLATE utf8mb4_unicode_ci                                    AS subtipo,
+        CASE WHEN b.detalle REGEXP '@[A-Za-z0-9._-]+'
+             THEN REGEXP_REPLACE(b.detalle, '^.*?@([A-Za-z0-9._-]+).*$', '\\1')
+             ELSE '' END COLLATE utf8mb4_unicode_ci                            AS usuario,
+        0                                                                      AS monto,
+        b.operador COLLATE utf8mb4_unicode_ci                                  AS operador,
+        'humano'                                                               AS actor_tipo,
+        CONCAT(REPLACE(b.accion, '_', ' '),
+               CASE WHEN b.detalle IS NOT NULL AND b.detalle <> ''
+                    THEN CONCAT(' — ', b.detalle) ELSE '' END)
+          COLLATE utf8mb4_unicode_ci                                           AS detalle,
+        b.id                                                                   AS referencia,
+        'crm_bitacora' COLLATE utf8mb4_unicode_ci                              AS fuente
+      FROM crm_bitacora b
     ";
 }
 
