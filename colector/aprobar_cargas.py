@@ -95,6 +95,7 @@ import argparse
 import json
 import logging
 import os
+from urllib.parse import quote
 import sys
 import time
 from datetime import datetime, timedelta
@@ -1083,6 +1084,82 @@ def _usuarios_paginas(ctx) -> list:
     return todos
 
 
+ACTIVOS_MINUTOS = int(os.environ.get("ACTIVOS_MINUTOS", "15"))
+ACTIVOS_TOPE    = int(os.environ.get("ACTIVOS_TOPE", "60"))
+
+
+def refrescar_saldos_activos(ctx, solo_ver: bool) -> None:
+    """El saldo de los jugadores que estan haciendo algo, en CADA pasada.
+
+    POR QUE EXISTE (Nahuel, 18/09/2026): *"muchas veces las personas dicen
+    quiero retirar 5000 y el bot le dice no tenes 5000, tenes 1000, y eso es
+    porque el saldo en el CRM no se esta actualizando lo suficientemente
+    rapido"*. Y es exacto: `fichas_pedir_retiro()` decide con `usuarios.balance`,
+    que es el espejo, y el espejo completo corre cada 5 minutos porque son ~62
+    paginas y casi un minuto de trabajo. El jugador acaba de ganar, pide
+    retirar, y el bot le discute con un numero viejo.
+
+    Espejar los 3.000 mas seguido no entra en un minuto. Pero el panel deja
+    pedir UN jugador (`?username=`, verificado el 18/09: devuelve 1 fila), asi
+    que refrescar a los que estan activos cuesta una llamada por cabeza -- y
+    los activos son un punado.
+
+    Va en cada pasada del cron (un minuto), asi que el peor caso para alguien
+    que esta hablando pasa de 5 minutos a 1.
+
+    Best-effort de punta a punta, igual que el espejo completo: esto no decide
+    nada. Si falla, el espejo de los 5 minutos sigue siendo la red.
+    """
+    key = os.environ.get("API_KEY", "")
+    if not key or solo_ver:
+        return
+    try:
+        r = ctx.request.get(
+            f"{_url_usuarios()}?accion=activos&minutos={ACTIVOS_MINUTOS}&limite={ACTIVOS_TOPE}",
+            headers={"X-API-Key": key}, timeout=30_000)
+        nombres = ((r.json() or {}).get("usuarios") or [])
+    except Exception as e:
+        log.warning("saldos activos: no pude pedir la lista: %s", e)
+        return
+    if not nombres:
+        return
+
+    frescos = []
+    for nombre in nombres:
+        try:
+            url = (f"{PANEL_API}/agent_admin/user/?count=5&page=0"
+                   f"&username={quote(str(nombre))}")
+            items = _usuarios_items(_json(ctx.request.get(url, timeout=20_000))) or []
+            for u in items:
+                if not isinstance(u, dict):
+                    continue
+                # El filtro del panel es por prefijo, no exacto: se queda SOLO
+                # el que coincide. Sin esto, pedir "juan" traeria "juan2" y le
+                # escribiriamos a la fila equivocada el saldo de otro.
+                un = str(u.get("username") or u.get("login") or "")
+                if un.lower() == str(nombre).lower():
+                    frescos.append(_usuario_normalizado(u))
+                    break
+        except DesafioWAF:
+            # Un challenge en el medio corta esto y nada mas: la pasada sigue.
+            log.info("saldos activos: challenge del WAF, lo dejo para la proxima")
+            return
+        except Exception as e:
+            log.info("saldos activos: %s -> %s", nombre, str(e)[:80])
+
+    if not frescos:
+        return
+    try:
+        r = ctx.request.post(_url_usuarios(), headers={"X-API-Key": key},
+                             data={"usuarios": frescos}, timeout=45_000)
+        d = r.json() or {}
+        if d.get("ok"):
+            log.info("saldos activos: %d de %d jugador(es) refrescado(s)",
+                     int(d.get("guardados") or 0), len(nombres))
+    except Exception as e:
+        log.warning("saldos activos: no pude guardar: %s", e)
+
+
 def sincronizar_usuarios(ctx, solo_ver: bool, forzar: bool = False) -> None:
     """Espeja el saldo de todos los jugadores en la tabla `usuarios`.
 
@@ -1199,6 +1276,10 @@ def main() -> int:
                 # de la pasada que no decide nada -- si tarda o falla, las
                 # cargas y los retiros ya se resolvieron.
                 sincronizar_usuarios(ctx, args.ver)
+                # Y el saldo de los que estan hablando AHORA, que es el que el
+                # bot va a usar para contestarles. Una llamada por cabeza, en
+                # cada pasada: baja el peor caso de 5 minutos a 1.
+                refrescar_saldos_activos(ctx, args.ver)
                 if n:
                     log.info("%d carga(s) aprobada(s)", n)
             except DesafioWAF as e:

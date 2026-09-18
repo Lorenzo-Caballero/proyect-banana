@@ -22,6 +22,60 @@ if ($key === '' || strlen($key) < 16 || !hash_equals($key, $enviada)) {
     echo json_encode(['ok' => false, 'error' => 'No autorizado']);
     exit;
 }
+/* ---------------------------------------------------------------------------
+   GET ?accion=activos  ->  { "ok":true, "usuarios":[ "juan123", ... ] }
+
+   QUIÉNES NECESITAN EL SALDO FRESCO AHORA. El espejo completo pagina ~3.000
+   jugadores y por eso corre cada 5 minutos: en el peor caso el CRM y el bot
+   contestan con un saldo de hace 5 minutos.
+
+   EL COSTO (Nahuel, 18/09/2026): *"muchas veces las personas dicen quiero
+   retirar 5000 y el bot le dice no tenés 5000, tenés 1000, y eso es porque el
+   saldo en el CRM no se está actualizando lo suficientemente rápido"*. Y es
+   exacto: `fichas_pedir_retiro()` decide con `usuarios.balance`, que es el
+   espejo. El jugador acaba de ganar, pide retirar, y el bot le discute con un
+   número viejo.
+
+   La salida no es espejar más seguido a los 3.000 --son 62 páginas y ~50
+   segundos, no entra en un minuto-- sino espejar SOLO a los que están
+   haciendo algo. El panel deja pedir un jugador puntual
+   (`?username=`, verificado el 18/09: devuelve 1 fila), así que refrescar a
+   los activos cuesta una llamada por cabeza.
+
+   "Activo" es quien podría estar por preguntar su saldo: escribió en el chat,
+   o se le movió plata. Lo normal es un puñado; el tope está para que una noche
+   rara no convierta esto en el espejo completo por la puerta de atrás.
+   --------------------------------------------------------------------------- */
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['accion'] ?? '') === 'activos') {
+    $min  = max(1, min(120, (int)($_GET['minutos'] ?? 15)));
+    $tope = max(1, min(200, (int)($_GET['limite']  ?? 60)));
+    $lista = [];
+    try {
+        $st = $pdo->prepare(
+            "SELECT DISTINCT u.username
+               FROM usuarios u
+              WHERE u.username <> ''
+                AND (
+                     EXISTS (SELECT 1 FROM mensajes m
+                               JOIN conversaciones c ON c.id = m.conversacion_id
+                              WHERE c.clave COLLATE utf8mb4_unicode_ci = u.username
+                                AND m.creado_en > DATE_SUB(NOW(), INTERVAL ? MINUTE))
+                  OR EXISTS (SELECT 1 FROM movimientos v
+                              WHERE v.usuario COLLATE utf8mb4_unicode_ci = u.username
+                                AND v.creado_en > DATE_SUB(NOW(), INTERVAL ? MINUTE))
+                    )
+              LIMIT $tope"
+        );
+        $st->execute([$min, $min]);
+        $lista = $st->fetchAll(PDO::FETCH_COLUMN) ?: [];
+    } catch (Throwable $e) {
+        error_log('usuarios_sync/activos: ' . $e->getMessage());
+    }
+    echo json_encode(['ok' => true, 'usuarios' => array_values($lista),
+                      'minutos' => $min], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     http_response_code(405);
     echo json_encode(['ok' => false, 'error' => 'Usa POST']);
