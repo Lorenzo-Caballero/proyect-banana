@@ -256,5 +256,44 @@ chequear('las reglas fijas siguen yendo despues de lo que escribio el operador',
 chequear('el campo libre arranca vacio: ninguna promo inventada de fabrica',
          CB_DEF_REGLAS_EXTRA === '');
 
+echo "\n=== Bonos y app: lo que el bot tiene que saber ===\n";
+
+/* Nahuel (item 4, 18/09/2026): *"el bot habla mal con respecto a los bonos y
+   la app; debe consultar todo eso, bonos activos y tener contexto sobre lo de
+   la app"*.
+
+   Las secciones existian --mi primera lectura dijo que no, y estaba mal: las
+   busque por las palabras equivocadas-- pero les faltaba lo de hoy: que
+   NINGUN bono se acredita sin una carga. Sin esa regla el bot felicita por un
+   premio, el jugador mira el saldo a los diez segundos, no lo encuentra, y el
+   bot no tiene con que explicarlo. */
+$reglas = CB_REGLAS_FIJAS;
+
+chequear('la regla de que todo bono va con la carga esta escrita',
+         str_contains($reglas, 'NINGUN BONO SE ACREDITA SIN UNA CARGA'));
+chequear('y dice que al cargar cobra lo cargado MAS el bono',
+         str_contains($reglas, 'MAS el bono'));
+chequear('cubre el caso "gane 500 y no los veo"',
+         str_contains($reglas, 'no los veo'),
+         'es la pregunta que va a recibir, no una hipotesis');
+
+chequear('el bono de la app esta en la seccion de la app',
+         str_contains($reglas, 'HAY UN BONO POR INSTALARLA'));
+chequear('y aclara que tampoco se acredita por instalar',
+         str_contains($reglas, 'PROXIMA CARGA'));
+chequear('no le ofrece la app a quien ya la tiene',
+         str_contains($reglas, 'YA la tiene instalada, no se la ofrezcas'));
+
+/* Y QUE EL BOT PUEDA CONSULTAR LOS BONOS DEL JUGADOR. Antes de hoy el chat no
+   miraba `bonos_pendientes` en NINGUN lado: la regla sola no alcanza si no
+   sabe cuanto le debemos a este. */
+$srcCb = file_get_contents(__DIR__ . '/api/chatbot.php');
+chequear('existe el bloque de bonos pendientes',
+         str_contains($srcCb, 'function chatbot_bloque_bonos'));
+chequear('y se agrega al bloque de IDENTIDAD',
+         str_contains($srcCb, 'chatbot_bloque_bonos($pdo, $usuarioCliente)'));
+chequear('sale de bonos_pendientes, la misma tabla que la ficha del CRM',
+         str_contains($srcCb, 'FROM bonos_pendientes'));
+
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);
 exit($fail > 0 ? 1 : 0);

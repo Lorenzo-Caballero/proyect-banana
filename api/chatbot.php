@@ -635,7 +635,8 @@ if ($usuarioCliente !== '') {
           . "- NO llames a identificar_usuario.\n"
           . "- Saludalo por su nombre y pasa directo a lo que necesite.\n"
           . "- Usa ese usuario para las recargas y las consultas."
-          . chatbot_bloque_estado_app($pdo, $usuarioCliente);
+          . chatbot_bloque_estado_app($pdo, $usuarioCliente)
+          . chatbot_bloque_bonos($pdo, $usuarioCliente);
 } else {
     $sys .= "\n\nIDENTIDAD (esto manda sobre todo lo anterior):\n"
           . "El jugador NO inicio sesion. No sabes quien es.\n"
@@ -3032,4 +3033,54 @@ function limite_por_ip($max, $ventanaSeg)
     $hits[] = $ahora;
     @file_put_contents($f, implode(',', $hits), LOCK_EX);
     return true;
+}
+
+/**
+ * Lo que el jugador TIENE PENDIENTE de cobrar, para el bloque de IDENTIDAD.
+ *
+ * POR QUE EXISTE (Nahuel, 18/09/2026, item 4): *"el bot habla mal con respecto
+ * a los bonos y la app; debe consultar todo eso, bonos activos"*.
+ *
+ * Y tenia razon de una forma concreta: el chat NO MIRABA `bonos_pendientes` en
+ * ningun lado. Un jugador que gano 500 en la ruleta preguntaba "¿y mis fichas?"
+ * y el bot no tenia el dato -- asi que improvisaba. Peor todavia desde hoy, que
+ * NINGUN bono se acredita sin una carga: sin este bloque el bot no puede
+ * explicar por que el premio no esta en el saldo, que es exactamente la
+ * pregunta que va a recibir.
+ *
+ * Es el mismo dato que muestra la ficha del CRM (bono_pendiente_total), dicho
+ * en la forma en que el bot tiene que repetirlo.
+ */
+function chatbot_bloque_bonos(PDO $pdo, string $usuario): string
+{
+    $usuario = trim($usuario);
+    if ($usuario === '') { return ''; }
+    try {
+        $st = $pdo->prepare(
+            "SELECT tipo, COUNT(*) AS cant, COALESCE(SUM(valor),0) AS suma
+               FROM bonos_pendientes
+              WHERE usuario = ? AND estado = 'pendiente'
+              GROUP BY tipo"
+        );
+        $st->execute([$usuario]);
+        $fichas = 0; $pct = 0; $giros = 0;
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            if ($r['tipo'] === 'fichas') { $fichas += (int)$r['suma']; }
+            if ($r['tipo'] === 'pct')    { $pct    += (int)$r['cant']; }
+            if ($r['tipo'] === 'giro')   { $giros  += (int)$r['cant']; }
+        }
+        $partes = [];
+        if ($fichas > 0) { $partes[] = number_format($fichas, 0, ',', '.') . ' fichas'; }
+        if ($pct > 0)    { $partes[] = $pct . ($pct === 1 ? ' bono de porcentaje' : ' bonos de porcentaje'); }
+        if ($giros > 0)  { $partes[] = $giros . ($giros === 1 ? ' giro de ruleta' : ' giros de ruleta'); }
+        if (!$partes) { return ''; }
+
+        return "\n- BONOS PENDIENTES: tiene " . implode(' + ', $partes) . ' esperando. '
+             . 'NO estan en su saldo todavia: se acreditan SOLOS con su proxima carga. '
+             . 'Si pregunta por que no los ve, decile exactamente eso -- no es un error '
+             . 'ni se le perdio nada.';
+    } catch (Throwable $e) {
+        // Sin la migracion 33 no hay bonos pendientes: el chat sigue igual.
+        return '';
+    }
 }
