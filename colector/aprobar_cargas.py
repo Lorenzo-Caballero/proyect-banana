@@ -95,7 +95,7 @@ import argparse
 import json
 import logging
 import os
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 import sys
 import time
 from datetime import datetime, timedelta
@@ -185,6 +185,78 @@ def _json(r):
         raise DesafioWAF(f"respuesta no-JSON del panel: {txt[:200]}")
 
 
+WAF_INTENTOS = int(os.environ.get("WAF_INTENTOS", "3"))   # el original + 2
+WAF_ESPERA_S = float(os.environ.get("WAF_ESPERA_S", "1.5"))
+
+
+def _despejar_waf(ctx) -> bool:
+    """Vuelve a cargar una pagina del panel para que el NAVEGADOR resuelva el
+    challenge y refresque la cookie de clearance.
+
+    `ctx.request` no ejecuta JavaScript: puede llevar la cookie que ya tiene,
+    pero no puede conseguir una nueva. La pagina si -- es Chromium de verdad --
+    y comparte el almacen de cookies del contexto, asi que apenas la resuelve
+    las llamadas de la API vuelven a pasar.
+
+    Best-effort: si no hay pagina abierta o el goto falla, se devuelve False y
+    el que llamo reintenta igual (a veces el challenge es de una sola request).
+    """
+    try:
+        pags = [q for q in ctx.pages if not q.is_closed()]
+        if not pags:
+            return False
+        pag = pags[0]
+        pag.goto(USERS_URL, wait_until="domcontentloaded", timeout=30_000)
+        pag.wait_for_timeout(2500)
+        return True
+    except Exception as e:
+        log.info("no pude despejar el challenge: %s", str(e)[:120])
+        return False
+
+
+def leer_json(ctx, url: str, que: str, **kw):
+    """Una LECTURA del panel que sobrevive un challenge del WAF.
+
+    POR QUE EXISTE (18/09/2026). El WAF (ServicePipe) desafia de a ratos y
+    contesta 200 con HTML. Hasta hoy eso abortaba la tarea entera y se
+    reintentaba "en la proxima vuelta" -- que para el espejo de saldos son 5
+    minutos, y para el libro 15. Medido esa tarde: TRES de seis pasadas del
+    espejo murieron asi, y un jugador recien creado estuvo veinte minutos sin
+    aparecer en el CRM.
+
+    REINTENTAR ES SEGURO, Y ESE ES EL PUNTO: un challenge prueba que la request
+    NO llego al backend (lo contesto el WAF, que esta delante). Repetirla no
+    puede duplicar nada.
+
+    POR ESO ESTO ES SOLO PARA LECTURAS. No envolver con esto un aprobar, un
+    rechazar ni un retiro: ahi la respuesta ilegible no prueba que no haya
+    pasado nada, y reintentar a ciegas paga dos veces. Esas siguen como estan.
+
+    Tambien es barato: el challenge pega al principio (medido: a los 6 segundos
+    de arrancar la pasada, no en la pagina 50), y una pasada normal dura 6-9
+    segundos sobre un minuto de presupuesto. Dos reintentos entran de sobra.
+    """
+    ultimo = None
+    for intento in range(1, WAF_INTENTOS + 1):
+        try:
+            return _json(ctx.request.get(url, **kw))
+        except DesafioWAF as e:
+            ultimo = e
+            if intento >= WAF_INTENTOS:
+                break
+            # El primer reintento es pelado: muchas veces el challenge es de una
+            # request suelta y la siguiente pasa. Recien el segundo paga el
+            # precio de recargar la pagina, que es lo unico que consigue una
+            # cookie de clearance nueva.
+            if intento >= 2:
+                _despejar_waf(ctx)
+            else:
+                time.sleep(WAF_ESPERA_S)
+            log.info("%s: challenge del WAF, reintento (%d de %d)",
+                     que, intento + 1, WAF_INTENTOS)
+    raise ultimo if ultimo else DesafioWAF(que)
+
+
 def traer_solicitudes(ctx, dias: int) -> tuple[list, list] | None:
     """Las solicitudes pendientes en el panel, separadas: (depositos, retiros).
 
@@ -207,16 +279,34 @@ def traer_solicitudes(ctx, dias: int) -> tuple[list, list] | None:
         "count": 50,
         "page": 0,
     }
-    try:
-        r = ctx.request.get(SOLICITUDES, params=params, timeout=30_000)
-    except Exception as e:
-        log.error("no pude leer las solicitudes: %s", e)
-        return None
-    if not r.ok:
-        log.error("el panel respondio %s al listar solicitudes", r.status)
-        return None
+    # ESTA ES LA LECTURA DE LA PLATA: la que dice que cargas estan esperando
+    # aprobacion. Un challenge aca le cuesta al jugador un minuto de espera con
+    # la transferencia ya hecha, asi que se reintenta igual que el resto -- pero
+    # con el chequeo de r.ok intacto, que no se puede perder: un 401 tiene cuerpo
+    # JSON y pasaria por leer_json como si fuera una respuesta buena.
+    data = None
+    for intento in range(1, WAF_INTENTOS + 1):
+        try:
+            r = ctx.request.get(SOLICITUDES, params=params, timeout=30_000)
+        except Exception as e:
+            log.error("no pude leer las solicitudes: %s", e)
+            return None
+        if not r.ok:
+            log.error("el panel respondio %s al listar solicitudes", r.status)
+            return None
+        try:
+            data = _json(r)
+            break
+        except DesafioWAF:
+            if intento >= WAF_INTENTOS:
+                raise
+            if intento >= 2:
+                _despejar_waf(ctx)
+            else:
+                time.sleep(WAF_ESPERA_S)
+            log.info("solicitudes: challenge del WAF, reintento (%d de %d)",
+                     intento + 1, WAF_INTENTOS)
 
-    data = _json(r)
     # Dos formas de respuesta segun por donde se mire: la API envuelve en
     # `result`, pero en DevTools se ve el objeto de adentro. Se aceptan las dos.
     cuerpo = data.get("result") if isinstance(data.get("result"), dict) else data
@@ -801,12 +891,7 @@ def revisar_stock(ctx, solo_ver: bool) -> None:
     if not key:
         return
     try:
-        r = ctx.request.get(PANEL_API + "/agent_admin/user/", timeout=20_000)
-        txt = r.text()
-        if txt.strip()[:1] == "<":
-            log.warning("stock: el panel contesto HTML (WAF/login), no leo el saldo")
-            return
-        d = json.loads(txt) or {}
+        d = leer_json(ctx, PANEL_API + "/agent_admin/user/", "stock", timeout=20_000) or {}
         saldo = ((d.get("result") or {}).get("source_user") or {}).get("balance")
         if saldo is None:
             log.warning("stock: la respuesta no trae result.source_user.balance")
@@ -883,14 +968,12 @@ def _libro_paginas(ctx, tipo: int, dias: int, max_paginas: int = 60) -> list:
             "count": 50,
             "page": pagina,
         }
-        r = ctx.request.get(HISTORIAL, params=params, timeout=30_000)
-        txt = r.text()
-        if txt.strip()[:1] == "<":
-            # El challenge de ServicePipe contesta 200 con HTML. Cortar y
-            # reintentar en la proxima vuelta es lo correcto: seguir paginando
-            # guardaria un libro incompleto como si estuviera completo.
-            raise DesafioWAF("el panel contesto HTML al leer el libro")
-        data = json.loads(txt) or {}
+        # El challenge de ServicePipe contesta 200 con HTML, y seguir paginando
+        # guardaria un libro incompleto como si estuviera completo. Se reintenta
+        # la pagina; si igual no sale, leer_json levanta DesafioWAF y la
+        # sincronizacion entera se corta, que es lo correcto.
+        data = leer_json(ctx, HISTORIAL + "?" + urlencode(params),
+                         f"libro (tipo {tipo}, pagina {pagina})", timeout=30_000) or {}
         cuerpo = data.get("result") if isinstance(data.get("result"), dict) else data
         items = cuerpo.get("items") if isinstance(cuerpo, dict) else None
         if not isinstance(items, list) or not items:
@@ -1059,12 +1142,17 @@ def _usuarios_items(data):
 def _usuarios_paginas(ctx) -> list:
     """Todos los jugadores del agente, paginados.
 
-    Levanta DesafioWAF si el WAF se mete en el medio, y eso corta la pasada
-    entera a proposito: media lista espejada se veria igual que una completa y
-    dejaria saldos viejos marcados como recien leidos, que es justo la mentira
-    que este espejo viene a sacar.
+    Levanta DesafioWAF si el WAF se mete en el medio y no se deja despejar, y
+    eso corta la pasada entera a proposito: media lista espejada se veria igual
+    que una completa y dejaria saldos viejos marcados como recien leidos, que
+    es justo la mentira que este espejo viene a sacar.
+
+    EL REINTENTO VA POR PAGINA Y NO ALREDEDOR DE TODA LA FUNCION. Son ~62
+    paginas y casi un minuto de trabajo: si el challenge pega en la 50, volver
+    a empezar cuesta las 50 que ya salieron bien y no entra en el minuto del
+    cron. Reintentando la pagina que fallo, un challenge cuesta una request.
     """
-    me = _json(ctx.request.get(f"{PANEL_API}/user/check", timeout=30_000))
+    me = leer_json(ctx, f"{PANEL_API}/user/check", "espejo de saldos", timeout=30_000)
     agent_id = ((me or {}).get("result") or {}).get("id")
     if not agent_id:
         raise DesafioWAF("el panel no dijo quienes somos (sin agent_id)")
@@ -1073,7 +1161,8 @@ def _usuarios_paginas(ctx) -> list:
     while pagina < USUARIOS_MAX_PAGINAS:
         url = (f"{PANEL_API}/agent_admin/user/?count={USUARIOS_POR_PAGINA}&page={pagina}"
                f"&user_id={agent_id}&is_banned=false&is_direct_structure=false")
-        items = _usuarios_items(_json(ctx.request.get(url, timeout=45_000))) or []
+        items = _usuarios_items(
+            leer_json(ctx, url, f"espejo de saldos (pagina {pagina})", timeout=45_000)) or []
         if not items:
             break
         todos += [_usuario_normalizado(u) for u in items if isinstance(u, dict)]
@@ -1125,11 +1214,16 @@ def refrescar_saldos_activos(ctx, solo_ver: bool) -> None:
         return
 
     frescos = []
+    # Cuantos jugadores seguidos se cayeron por el WAF. Un challenge suelto lo
+    # arregla el reintento; si se cayeron tres al hilo el WAF esta cerrado y
+    # seguir pidiendo 60 veces solo gasta el minuto de la pasada.
+    seguidos = 0
     for nombre in nombres:
         try:
             url = (f"{PANEL_API}/agent_admin/user/?count=5&page=0"
                    f"&username={quote(str(nombre))}")
-            items = _usuarios_items(_json(ctx.request.get(url, timeout=20_000))) or []
+            items = _usuarios_items(
+                leer_json(ctx, url, f"saldo de {nombre}", timeout=20_000)) or []
             for u in items:
                 if not isinstance(u, dict):
                     continue
@@ -1141,11 +1235,20 @@ def refrescar_saldos_activos(ctx, solo_ver: bool) -> None:
                     frescos.append(_usuario_normalizado(u))
                     break
         except DesafioWAF:
-            # Un challenge en el medio corta esto y nada mas: la pasada sigue.
-            log.info("saldos activos: challenge del WAF, lo dejo para la proxima")
-            return
+            seguidos += 1
+            if seguidos >= 3:
+                log.info("saldos activos: el WAF no afloja, dejo el resto "
+                         "para la proxima (%d refrescado(s))", len(frescos))
+                break
+            # ANTES ESTE ERA UN `return` Y SE PERDIAN TODOS. Un challenge sobre
+            # UN jugador no dice nada de los otros, y justamente el que sigue
+            # puede ser el que esta pidiendo un retiro ahora mismo. Se lo saltea
+            # a el y la lista sigue.
+            log.info("saldos activos: %s quedo sin refrescar (WAF)", nombre)
+            continue
         except Exception as e:
             log.info("saldos activos: %s -> %s", nombre, str(e)[:80])
+        seguidos = 0
 
     if not frescos:
         return
