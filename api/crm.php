@@ -353,6 +353,40 @@ function bono_pendiente_total(PDO $pdo, string $usuario): array
             if ($r['tipo'] === 'pct')    { $out['pct_cantidad'] += (int)$r['cant']; }
             if ($r['tipo'] === 'giro')   { $out['giro_cantidad'] += (int)$r['cant']; }
         }
+
+        /* EL BONO DE LA APP TAMBIEN SE DEBE, Y NO SE VEIA EN NINGUN LADO.
+           No vive en `bonos_pendientes` sino como un marcador en `movimientos`
+           (monto 0, origen 'bono_app'), que es su candado de "esta instalacion
+           ya fue atendida". Como esta funcion solo miraba `bonos_pendientes`,
+           un jugador con el bono de la app esperando mostraba "Bono pendiente:
+           0" -- el operador no tenia forma de saber que le debiamos fichas.
+
+           Se suma aca en vez de mudar el mecanismo a `bonos_pendientes` porque
+           el que paga es uno solo (`notif_app_bono_liberar`, atado al
+           marcador): tener la deuda en dos tablas seria el camino corto a
+           pagarla dos veces. La ficha lo lee, no lo duplica.
+
+           El marcador cuenta como pendiente solo si NO hay ya un pago
+           (monto > 0): esa es la misma condicion que usa el liberador. */
+        try {
+            $ap = $pdo->prepare(
+                "SELECT SUM(monto = 0) AS marcador, SUM(monto > 0) AS pagado
+                   FROM movimientos WHERE usuario = ? AND origen = 'bono_app'"
+            );
+            $ap->execute([$usuario]);
+            $m = $ap->fetch(PDO::FETCH_ASSOC) ?: [];
+            if ((int)($m['marcador'] ?? 0) > 0 && (int)($m['pagado'] ?? 0) === 0) {
+                $fichasApp = 0;
+                if (function_exists('cfg_crm_activo') && cfg_crm_activo($pdo, 'app_promo_activa')) {
+                    $fichasApp = max(0, (int)(cfg_crm($pdo, 'app_bono_fichas') ?? 0));
+                }
+                $out['fichas'] += $fichasApp;
+                $out['app_fichas'] = $fichasApp;
+            }
+        } catch (Throwable $e) {
+            error_log('bono_pendiente_total/app: ' . $e->getMessage());
+        }
+
         return $out;
     } catch (Throwable $e) {
         return ['fichas' => 0, 'pct_cantidad' => 0, 'giro_cantidad' => 0];

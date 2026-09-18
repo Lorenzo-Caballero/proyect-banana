@@ -14,7 +14,11 @@
  *   2. Cuando entra su primera plata, notif_app_bono_liberar() paga UNA vez:
  *      bonus + movimientos(monto>0) + depósito solo-bono en acciones_saldo.
  *      Repetir la liberación no duplica.
- *   3. El que instala DESPUES de haber cargado cobra en el acto (como antes).
+ *   3. El que instala DESPUES de haber cargado TAMPOCO cobra en el acto:
+ *      tambien espera su proxima carga. Hasta el 18/09/2026 ese caso
+ *      acreditaba al toque --plata jugable por instalar una app, sin
+ *      poner un peso ese dia-- y el dueño pidio que no hubiera
+ *      excepciones: los bonos siempre se acreditan CON una carga.
  *   4. Repetir el registro del dispositivo no duplica ni marcador ni bono.
  *   5. Un registro WEB no acredita ni marca tiene_app; el que cargó pero
  *      nunca instaló no cobra nada al liberar (sin marcador no hay promesa).
@@ -147,12 +151,26 @@ ok($bonoExiste($U), 'el bono existe: encolado al juego o en el contador');
 notif_app_bono_liberar($pdo, $U);   // otra carga del mismo jugador
 ok($movs($U) === 1, 'liberar de nuevo NO duplica');
 
-// ---- 4. instala DESPUES de haber cargado: cobra en el acto ------------------
-echo "4. Instala con una carga ya hecha\n";
+// ---- 4. instala DESPUES de haber cargado: TAMPOCO cobra en el acto ---------
+/* LA EXCEPCION QUE SE FUE. Este bloque probaba que al que ya habia cargado se
+   le acreditaba el bono al instalar. Era cierto y estaba puesto a proposito,
+   pero el dueño pidio la regla sin excepciones (18/09/2026): ningun bono se
+   acredita sin una carga. Instalar la app no es cargar, ni siquiera para el
+   que cargo el mes pasado.
+   Lo que lo hace seguro es que notif_app_bono_liberar() dispara con CUALQUIER
+   carga, no solo la primera: el que ya cargo antes lo cobra en la siguiente. */
+echo "4. Instala con una carga ya hecha: igual espera la proxima\n";
 $cargar($U6);
 notif_registrar_dispositivo($pdo, 't-appbono-c', $U6, 'android', 'Pixel', '1.0', true);
-ok($movs($U6) === 1, 'cobra en el acto (ya tenia su primera carga)');
-ok($marcas($U6) === 0, 'sin marcador: no habia nada que prometer');
+ok($movs($U6) === 0, 'NO cobra en el acto, aunque ya hubiera cargado');
+ok($marcas($U6) === 1, 'queda el marcador, esperando su proxima carga');
+
+/* Y que esa proxima carga se lo pague: sin esto el cambio de arriba seria
+   quitarle el bono, no diferirlo. */
+$cargar($U6);
+notif_app_bono_liberar($pdo, $U6);
+ok($movs($U6) === 1, 'y su proxima carga si lo paga');
+ok($bonoExiste($U6), 'el bono existe: encolado al juego o en el contador');
 
 // ---- 5. registro web / cargo sin instalar -----------------------------------
 echo "5. El navegador no participa\n";

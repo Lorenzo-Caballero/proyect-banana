@@ -278,18 +278,14 @@ if (!function_exists('notif_crear')) {
             $fichas = max(0, (int)(cfg_crm($pdo, 'app_bono_fichas') ?? 0));
         }
 
-        $acreditado = false;
-        $pendiente  = false;
+        /* SE FUE `$yaCargo` Y CON EL LA CONSULTA A rl_es_primera_carga().
+           Servia para decidir si el bono se acreditaba en el acto (al que ya
+           habia cargado) o quedaba esperando. Desde el 18/09/2026 no hay esa
+           bifurcacion: ningun bono se acredita sin una carga, asi que la
+           pregunta ya no cambia nada y preguntarla era trabajo y una lectura
+           de mas en un camino que corre en cada instalacion. */
+        $pendiente = false;
         if ($fichas > 0) {
-            // La definicion de "ya cargo" vive en recargas_lib; carga perezosa
-            // porque esto corre una sola vez en la vida del jugador y el resto
-            // de esta lib no la necesita.
-            if (!function_exists('rl_es_primera_carga') && is_file(__DIR__ . '/recargas_lib.php')) {
-                require_once __DIR__ . '/recargas_lib.php';
-            }
-            $yaCargo = function_exists('rl_es_primera_carga')
-                    && rl_es_primera_carga($pdo, $usuario) === 0;
-
             /* EL BONO ES POR PERSONA, NO POR CUENTA (16/09/2026).
                El candado de abajo es por `usuario`, asi que una cuenta nueva =
                un bono nuevo. Nahuel encontro a alguien cobrandolo varias veces:
@@ -342,26 +338,35 @@ if (!function_exists('notif_crear')) {
                    de monto 0 pase lo que pase, y ese marcador es exactamente lo
                    que notif_app_bono_liberar() cobra en la primera carga. O
                    sea: el bono se pagaba igual, un rato despues. */
+                /* NINGUN BONO SE ACREDITA SIN UNA CARGA. NUNCA, TAMPOCO AL QUE
+                   YA CARGO ANTES.
+
+                   Hasta el 18/09/2026 habia dos ramas: al que ya habia cargado
+                   alguna vez se le sumaba el bono A `usuarios.bonus` EN EL
+                   ACTO --plata jugable por instalar una app, sin poner un peso
+                   ese dia-- y solo al que nunca habia cargado se le dejaba
+                   esperando. La regla que pidio el dueño no distingue:
+
+                     *"los bonos que ganen con la ruleta o los bonos por
+                     descargar la aplicacion siempre sean con carga: luego de
+                     que ellos cargan, se le acreditan"*.
+
+                   Es la misma regla que la ruleta ya cumple desde hoy (ver
+                   ruleta.php), y ahora no hay excepcion: se deja SIEMPRE el
+                   marcador y lo libera `notif_app_bono_liberar()` en la
+                   proxima carga -- que dispara con CUALQUIER carga, no solo la
+                   primera, asi que el que ya cargo antes lo cobra en la
+                   siguiente.
+
+                   El marcador va con monto 0 a proposito: no es plata, no
+                   entra en ningun conteo de ingresos (todos filtran monto > 0)
+                   y en la ficha del CRM se lee como lo que es. */
                 if (!$ya->fetch() && !$yaLoCobroOtro) {
-                    if ($yaCargo) {
-                        $pdo->prepare(
-                            "UPDATE usuarios SET bonus = bonus + ? WHERE username = ?"
-                        )->execute([$fichas, $usuario]);
-                        $pdo->prepare(
-                            "INSERT INTO movimientos (usuario, tipo, monto, motivo, origen)
-                             VALUES (?, 'bono', ?, 'Bono por instalar la app', 'bono_app')"
-                        )->execute([$usuario, $fichas]);
-                        $acreditado = true;
-                    } else {
-                        // El marcador. Monto 0 a proposito: no es plata, no
-                        // entra en ningun conteo (todos filtran monto > 0) y
-                        // en la ficha del CRM se lee como lo que es.
-                        $pdo->prepare(
-                            "INSERT INTO movimientos (usuario, tipo, monto, motivo, origen)
-                             VALUES (?, 'bono', 0, 'Bono de la app: espera su primera carga', 'bono_app')"
-                        )->execute([$usuario]);
-                        $pendiente = true;
-                    }
+                    $pdo->prepare(
+                        "INSERT INTO movimientos (usuario, tipo, monto, motivo, origen)
+                         VALUES (?, 'bono', 0, 'Bono de la app: espera su próxima carga', 'bono_app')"
+                    )->execute([$usuario]);
+                    $pendiente = true;
                 }
                 $pdo->commit();
             } catch (Throwable $e) {
@@ -370,9 +375,11 @@ if (!function_exists('notif_crear')) {
             }
         }
 
-        if ($acreditado) {
-            notif_app_bono_entregar($pdo, $usuario, $fichas);
-        } elseif ($pendiente) {
+        /* YA NO HAY RAMA DE "ACREDITADO EN EL ACTO": instalar la app nunca
+           acredita, siempre deja el bono esperando la carga (ver arriba).
+           notif_app_bono_entregar() sigue existiendo porque es quien paga de
+           verdad -- la llama notif_app_bono_liberar() cuando la carga entra. */
+        if ($pendiente) {
             // La condicion se cuenta ACA, con la app recien instalada --
             // nunca en la promo del navegador (pedido explicito de Nahuel).
             try {
@@ -392,11 +399,9 @@ if (!function_exists('notif_crear')) {
 
         if (function_exists('tg_evento')) {
             $lineas = ['Jugador' => $usuario];
-            $lineas['Bono'] = $acreditado
-                ? number_format($fichas, 0, ',', '.') . ' fichas acreditadas'
-                : ($pendiente
-                    ? number_format($fichas, 0, ',', '.') . ' fichas a la espera de su primera carga'
-                    : 'sin bono (promo apagada o ya cobrado)');
+            $lineas['Bono'] = $pendiente
+                ? number_format($fichas, 0, ',', '.') . ' fichas a la espera de su próxima carga'
+                : 'sin bono (promo apagada o ya cobrado)';
             tg_evento($pdo, 'app', '📱 Instaló la app', $lineas);
         }
     }
