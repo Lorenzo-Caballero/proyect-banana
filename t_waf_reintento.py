@@ -236,6 +236,13 @@ print('\n=== 9. Y retoma donde quedo ===')
 # Sin esto se leerian siempre las mismas primeras 1.500 filas y los ultimos
 # --los jugadores mas nuevos, justo los que importan-- no se espejarian nunca.
 chequear('arranca donde termino el anterior', '_pagina_inicial()' in fuente_fn)
+
+# Y el otro motivo para retomar: que el WAF se plante en UNA pagina. Medido el
+# 18/09: se planto en la 9 y agoto los cuatro intentos, y con eso se
+# descartaban las nueve anteriores -- 450 jugadores que ya estaban leidos.
+chequear('si el WAF se planta en una pagina, no se pierden las anteriores',
+         'if not todos:' in fuente_fn and 'raise' in fuente_fn,
+         'guardar 450 lecturas buenas es mejor que tirarlas')
 chequear('y al llegar al final vuelve a cero',
          '_guardar_pagina(0)' in fuente_fn,
          'si no, las primeras paginas se quedan sin leer para siempre')

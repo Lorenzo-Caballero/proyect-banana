@@ -1256,8 +1256,26 @@ def _usuarios_paginas(ctx) -> list:
             break
         url = (f"{PANEL_API}/agent_admin/user/?count={USUARIOS_POR_PAGINA}&page={pagina}"
                f"&user_id={agent_id}&is_banned=false&is_direct_structure=false")
-        items = _usuarios_items(
-            leer_json(ctx, url, f"espejo de saldos (pagina {pagina})", timeout=45_000)) or []
+        try:
+            items = _usuarios_items(
+                leer_json(ctx, url, f"espejo de saldos (pagina {pagina})", timeout=45_000)) or []
+        except DesafioWAF:
+            # NO SE TIRA LO QUE YA SALIO BIEN. Medido el 18/09/2026: el WAF se
+            # planto en la pagina 9 y agoto los cuatro intentos, y con eso se
+            # descartaban las nueve paginas anteriores -- 450 jugadores que ya
+            # estaban leidos. Se guarda lo que hay y la proxima pasada retoma
+            # justo en la que fallo.
+            #
+            # Si ni la primera salio no hay nada que guardar, y ahi si conviene
+            # que la excepcion suba: el que llama lo registra como "waf", que es
+            # lo que el indicador de salud tiene que ver.
+            if not todos:
+                raise
+            log.warning("espejo de saldos: el WAF se planto en la pagina %d. "
+                        "Guardo las %d anteriores y retomo ahi.", pagina, pagina)
+            _guardar_pagina(pagina)
+            completo = False
+            break
         if not items:
             break
         todos += [_usuario_normalizado(u) for u in items if isinstance(u, dict)]
