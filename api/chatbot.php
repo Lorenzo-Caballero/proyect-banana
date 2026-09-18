@@ -559,8 +559,16 @@ if (!$botActivo || !$iaEsteChat) {
    bloqueo estuvo mal puesto. Y no se repite en cada mensaje — mismo patron
    que el aviso de "te responde un agente", que ya produjo 15 repeticiones
    seguidas una vez. */
-if ($usuarioCliente !== '' && function_exists('vin_bloqueado')
-    && vin_bloqueado($pdo, $usuarioCliente)) {
+$corteBloqueado = $usuarioCliente !== '' && function_exists('vin_bloqueado')
+    && vin_bloqueado($pdo, $usuarioCliente);
+/* Y TAMBIEN AL MULTICUENTA, sin esperar el bloqueo (pedido del dueño,
+   18/09/2026: "que ni siquiera pueda hablar al chat si tiene mas de dos
+   cuentas la misma persona"). Corta por el aparato — alcanza al anonimo,
+   que es como opera el que abre cuentas — o por las señales de la cuenta
+   identificada. El umbral y el apagado viven en MULTICUENTA_MAX. */
+$corteMulticuenta = !$corteBloqueado && function_exists('vin_multicuenta_excedida')
+    && vin_multicuenta_excedida($pdo, $usuarioCliente, (string)($GLOBALS['CB_DEVICE_ID'] ?? ''));
+if ($corteBloqueado || $corteMulticuenta) {
     $ultimoUser = '';
     for ($i = count($historial) - 1; $i >= 0; $i--) {
         if ((($historial[$i]['role'] ?? '') === 'user') && !empty($historial[$i]['content'])) {
@@ -572,7 +580,8 @@ if ($usuarioCliente !== '' && function_exists('vin_bloqueado')
            ? 'En este momento no puedo ayudarte por acá. Tu caso lo tiene que revisar un agente.'
            : '';
     if (function_exists('crm_registrar_turno')) {
-        crm_registrar_turno($pdo, $sessionId, $ultimoUser, $aviso, $usuarioCliente);
+        crm_registrar_turno($pdo, $sessionId, $ultimoUser, $aviso,
+                            $usuarioCliente !== '' ? $usuarioCliente : null);
     }
     echo json_encode(['ok' => true, 'respuesta' => $aviso, 'bot_desactivado' => true],
                      JSON_UNESCAPED_UNICODE);
@@ -2342,6 +2351,15 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
            existe y el alta sigue — el freno nunca puede alcanzar a un
            navegador limpio de un jugador nuevo. */
         $devAlta = (string)($GLOBALS['CB_DEVICE_ID'] ?? '');
+        /* TOPE POR DISPOSITIVO (18/09/2026): dos cuentas por instalacion y la
+           siguiente se rechaza SOLA — el freno automatico que no espera a que
+           un operador bloquee a nadie. */
+        if ($devAlta !== '' && function_exists('alta_tope_dispositivo_superado')) {
+            $topeDev = alta_tope_dispositivo_superado($pdo, $devAlta);
+            if ($topeDev !== null) {
+                return ['ok' => false, 'codigo' => 'tope_cuentas', 'error' => $topeDev];
+            }
+        }
         if ($devAlta !== '' && function_exists('vin_bloqueado_por_senal')
             && vin_bloqueado_por_senal($pdo, ['device_id' => $devAlta]) !== null) {
             return ['ok' => false, 'codigo' => 'bloqueado',

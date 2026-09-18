@@ -231,6 +231,40 @@ foreach (['lp.html', 'bono.html', 'registro.html'] as $pag) {
                           "localStorage.getItem('goldpaw_device')"));
 }
 
+echo "\n=== 5g. Mas de DOS cuentas la misma persona = ni chat ===\n";
+
+/* Pedido del dueño (18/09/2026): "que ni siquiera pueda hablar al chat si
+   tiene mas de dos cuentas la misma persona". ES un corte automatico —
+   decision del dueño que dio vuelta el "nada se bloquea solo" de este
+   archivo; el costo (telefono compartido legitimo) lo absorbe el agente,
+   porque el chat sigue entrando al CRM. */
+$limpiar();
+$usuario('tv_mc1'); $usuario('tv_mc2'); $usuario('tv_mc3');
+vin_anotar_dispositivo($pdo, 'dev-mc', 'tv_mc1');
+vin_anotar_dispositivo($pdo, 'dev-mc', 'tv_mc2');
+chequear('DOS cuentas en el aparato no cortan nada',
+         !vin_multicuenta_excedida($pdo, '', 'dev-mc'));
+vin_anotar_dispositivo($pdo, 'dev-mc', 'tv_mc3');
+chequear('la TERCERA corta el chat, incluso anonimo (asi opera el que abre cuentas)',
+         vin_multicuenta_excedida($pdo, '', 'dev-mc'));
+chequear('otro aparato sigue como si nada',
+         !vin_multicuenta_excedida($pdo, '', 'dev-ajeno'));
+
+$huella('tv_mc1', '20999888777', '');
+$huella('tv_mc2', '20999888777', '');
+$huella('tv_mc3', '20999888777', '');
+chequear('tres cuentas pagando del MISMO banco cortan por usuario, sin device',
+         vin_multicuenta_excedida($pdo, 'tv_mc1', ''));
+chequear('max=0 lo apaga entero (MULTICUENTA_MAX en config)',
+         !vin_multicuenta_excedida($pdo, 'tv_mc1', 'dev-mc', 0));
+chequear('sin usuario y sin device no corta a nadie',
+         !vin_multicuenta_excedida($pdo, '', ''));
+
+/* Y el chat lo usa de verdad (posicional). */
+chequear('chatbot.php corta al multicuenta antes de la IA',
+         str_contains(file_get_contents(__DIR__ . '/api/chatbot.php'),
+                      'vin_multicuenta_excedida('));
+
 echo "
 === 5b. La IP NO vincula a nadie, y eso es a proposito ===
 ";

@@ -476,6 +476,58 @@ function vin_bloqueado_por_senal(PDO $pdo, array $senales): ?string
 }
 
 /**
+ * ¿Esta persona tiene MÁS cuentas de las permitidas? (Pedido del dueño,
+ * 18/09/2026: "que ni siquiera pueda hablar al chat si tiene más de dos
+ * cuentas la misma persona".)
+ *
+ * Mira dos cosas, cualquiera alcanza:
+ *   - cuántas cuentas DISTINTAS usaron este aparato (dispositivos_usuarios);
+ *   - cuántas cuentas son la misma persona que $usuario por señales DURAS
+ *     (comprobante, cuenta bancaria, celular — vin_relacionados).
+ *
+ * ES UN CORTE AUTOMÁTICO, y hay que decirlo con todas las letras porque este
+ * archivo sostenía lo contrario ("nada se bloquea solo"): la decisión la dio
+ * vuelta el dueño, dos veces el mismo día ("en vez de tanta alarma...").
+ * El costo asumido es el teléfono compartido legítimo (una pareja, tres
+ * hermanos): a la tercera cuenta el bot deja de atenderlos y los deriva a un
+ * agente, que es quien puede mirar el caso — el chat sigue entrando al CRM.
+ * Ajustable sin deploy: 'MULTICUENTA_MAX' en config.local.php (0 = apagado).
+ *
+ * Best-effort hacia PERMITIR: sin migración 69 o ante un error, false.
+ */
+function vin_multicuenta_excedida(PDO $pdo, string $usuario, string $deviceId = '', ?int $max = null): bool
+{
+    if ($max === null) {
+        $v = function_exists('cfg') ? cfg('MULTICUENTA_MAX', '') : '';
+        $max = ($v === '' || $v === null) ? 2 : (int)$v;
+    }
+    if ($max <= 0) { return false; }
+
+    $deviceId = mb_substr(trim($deviceId), 0, 64);
+    if ($deviceId !== '') {
+        try {
+            $q = $pdo->prepare(
+                "SELECT COUNT(DISTINCT usuario) FROM dispositivos_usuarios WHERE device_id = ?"
+            );
+            $q->execute([$deviceId]);
+            if ((int)$q->fetchColumn() > $max) { return true; }
+        } catch (Throwable $e) { /* sin migración 69 */ }
+    }
+
+    $usuario = trim($usuario);
+    if ($usuario !== '') {
+        try {
+            $fuertes = 0;
+            foreach (vin_relacionados($pdo, $usuario) as $v2) {
+                if (vin_senal_fuerte($v2['senales'])) { $fuertes++; }
+            }
+            if ($fuertes + 1 > $max) { return true; }
+        } catch (Throwable $e) { /* un vínculo incalculable no corta un chat */ }
+    }
+    return false;
+}
+
+/**
  * Anotar que esta cuenta usó este celular. Best-effort y en el camino del
  * registro de dispositivos, que ya corre siempre.
  *

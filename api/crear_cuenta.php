@@ -192,6 +192,18 @@ if ($metodo === 'POST') {
            chat, donde el corte del bot lo deriva a un agente. */
         $device = mb_substr(trim((string)($body['device'] ?? '')), 0, 64);
         if ($device !== '') {
+            /* TOPE POR DISPOSITIVO (18/09/2026): dos cuentas por instalacion
+               y la siguiente se rechaza SOLA, sin esperar a que un operador
+               bloquee a nadie — es el freno automatico que reemplaza a la
+               alarma de la ficha. Va antes que la señal de bloqueado porque
+               no depende de ella. */
+            $topeDev = alta_tope_dispositivo_superado($pdo, $device);
+            if ($topeDev !== null) {
+                http_response_code(403);
+                echo json_encode(['ok' => false, 'codigo' => 'tope_cuentas', 'error' => $topeDev],
+                    JSON_UNESCAPED_UNICODE);
+                exit;
+            }
             require_once __DIR__ . '/vinculos_lib.php';
             if (vin_bloqueado_por_senal($pdo, ['device_id' => $device]) !== null) {
                 http_response_code(403);

@@ -650,6 +650,41 @@ foreach (['api/crear_cuenta.php', 'api/chatbot.php'] as $arch) {
              $posDedup !== false && $posTope !== false && $posTope > $posDedup);
 }
 
+// ===========================================================================
+echo "\n=== 11. Tope de cuentas por DISPOSITIVO (el freno automatico) ===\n";
+
+/* Pedido del dueño (18/09/2026): "en vez de tanta alarma quiero que
+   imposibilites al jugador crear una nueva cuenta". Dos cuentas por
+   instalacion (dispositivos_usuarios) y la siguiente se rechaza SOLA, sin
+   esperar a que un operador bloquee a nadie. */
+
+$pdo->exec("DELETE FROM dispositivos_usuarios WHERE device_id LIKE 'tst-dev-%'");
+chequear('el default es 2 cuentas por dispositivo', alta_max_por_device() === 2);
+chequear('sin device no frena (un navegador limpio no tiene: jamas alcanza a un jugador nuevo)',
+         alta_tope_dispositivo_superado($pdo, '') === null);
+chequear('con 0 cuentas puede', alta_tope_dispositivo_superado($pdo, 'tst-dev-tope') === null);
+
+$insD = $pdo->prepare("INSERT INTO dispositivos_usuarios (device_id, usuario) VALUES ('tst-dev-tope', ?)");
+$insD->execute(['tstDev1']);
+chequear('con 1 cuenta todavia puede', alta_tope_dispositivo_superado($pdo, 'tst-dev-tope') === null);
+$insD->execute(['tstDev2']);
+chequear('con 2 cuentas la tercera se RECHAZA, sin que nadie bloquee nada',
+         alta_tope_dispositivo_superado($pdo, 'tst-dev-tope') !== null);
+chequear('el mensaje no nombra el dispositivo (no regalarle la vuelta)',
+         stripos((string)alta_tope_dispositivo_superado($pdo, 'tst-dev-tope'), 'dispositivo') === false
+         && stripos((string)alta_tope_dispositivo_superado($pdo, 'tst-dev-tope'), 'celular') === false);
+chequear('otro aparato no se ve afectado',
+         alta_tope_dispositivo_superado($pdo, 'tst-dev-otro') === null);
+$pdo->exec("DELETE FROM dispositivos_usuarios WHERE device_id LIKE 'tst-dev-%'");
+
+/* Conectado en los dos caminos de alta (posicional: un freno sin caller es
+   exactamente el bug que ya tuvimos con vin_bloqueado_por_senal). */
+foreach (['api/crear_cuenta.php', 'api/chatbot.php'] as $arch) {
+    chequear("$arch llama al tope por dispositivo",
+             str_contains(file_get_contents(__DIR__ . '/' . $arch),
+                          'alta_tope_dispositivo_superado('));
+}
+
 limpiar($pdo);
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);
 exit($fail > 0 ? 1 : 0);

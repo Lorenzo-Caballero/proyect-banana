@@ -476,6 +476,61 @@ function alta_max_por_ip(): int
     return ($v === '' || $v === null) ? ALTAS_MAX_POR_IP : max(0, (int)$v);
 }
 
+// Tope de cuentas POR DISPOSITIVO (pedido del dueño, 18/09/2026: "en vez de
+// tanta alarma quiero que imposibilites al jugador crear una nueva cuenta").
+// Es el freno AUTOMATICO que el bloqueo no da: el freno por señal de
+// bloqueado (vin_bloqueado_por_senal) recien corta cuando un operador
+// bloqueo a alguien — hasta ese momento la ficha solo alarmaba mientras la
+// misma instalacion abria su tercera y cuarta cuenta. Este tope no espera a
+// nadie: dos cuentas por aparato (dispositivos_usuarios, migracion 69) y la
+// siguiente se rechaza sola.
+//
+// El device_id es la señal MAS fuerte que tenemos en el alta (un UUID por
+// instalacion; en produccion junto 3 cuentas del mismo abusador), pero vive
+// en el localStorage: quien lo borra la esquiva. Para eso quedan el tope por
+// IP y el freno por bloqueado — capas, no una bala de plata. Un navegador
+// limpio no tiene device y pasa: este freno jamas alcanza a un jugador nuevo.
+//
+// Ajustable sin deploy en api/config.local.php: 'ALTAS_MAX_POR_DEVICE' => 3
+// (0 = apagado). La excepcion legitima (una familia con un celular) la
+// resuelve un agente por el CRM, que no pasa por aca.
+const ALTAS_MAX_POR_DEVICE = 2;
+
+function alta_max_por_device(): int
+{
+    $v = function_exists('cfg') ? cfg('ALTAS_MAX_POR_DEVICE', '') : '';
+    return ($v === '' || $v === null) ? ALTAS_MAX_POR_DEVICE : max(0, (int)$v);
+}
+
+/**
+ * Devuelve el mensaje de rechazo si este dispositivo ya tiene el máximo de
+ * cuentas, o null si todavía puede. Cuenta cuentas DISTINTAS que usaron el
+ * aparato (el historial de dispositivos_usuarios), no altas: es lo que mide
+ * "la persona de este celular". Best-effort hacia PERMITIR, como el tope por
+ * IP — sin la migración 69 no hay señal y el alta sigue.
+ */
+function alta_tope_dispositivo_superado(PDO $pdo, string $device): ?string
+{
+    $max = alta_max_por_device();
+    $device = mb_substr(trim($device), 0, 64);
+    if ($max === 0 || $device === '') {
+        return null;
+    }
+    try {
+        $q = $pdo->prepare("SELECT COUNT(DISTINCT usuario) FROM dispositivos_usuarios WHERE device_id = ?");
+        $q->execute([$device]);
+        if ((int)$q->fetchColumn() >= $max) {
+            // Sin nombrar el dispositivo ni el mecanismo: decirle al que abusa
+            // como lo detectamos es regalarle la vuelta (mismo criterio que el
+            // tope por IP).
+            return 'Ya creaste el máximo de cuentas permitido. Entrá con la cuenta que ya tenés; si no te acordás el usuario o la clave, escribinos por el chat.';
+        }
+    } catch (Throwable $e) {
+        // Sin la migración 69 no existe la tabla: el sistema sigue como antes.
+    }
+    return null;
+}
+
 /**
  * Devuelve el mensaje de rechazo si esta IP ya creó el máximo de cuentas, o
  * null si todavía puede. Cuentan las vivas y las en curso (pendiente,
