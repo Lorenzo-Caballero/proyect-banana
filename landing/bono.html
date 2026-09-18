@@ -565,6 +565,10 @@
           usuario: u, sid: sid, promo: PROMO, ref: REF,
           pub: PUB, fbclid: FBCLID,
           fbp: cookies.fbp || '', fbc: cookies.fbc || '',
+          // El id de instalación del widget, si este navegador ya usó el
+          // sitio: el server frena el alta si el aparato es el de un
+          // bloqueado (vinculos_lib). Vacío en un navegador limpio.
+          device: (function(){ try { return localStorage.getItem('goldpaw_device') || ''; } catch(e){ return ''; } })(),
         })
       });
       const data = await res.json().catch(()=> ({}));

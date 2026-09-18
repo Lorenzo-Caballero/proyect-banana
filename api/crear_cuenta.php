@@ -183,6 +183,25 @@ if ($metodo === 'POST') {
             exit;
         }
 
+        /* EL CELULAR DE UN BLOQUEADO NO ABRE CUENTAS NUEVAS (migracion 69,
+           mismo freno que el alta por chat). `device` es el localStorage
+           'goldpaw_device' del widget, que las landings mandan si existe en
+           este navegador; un navegador limpio no lo tiene y el alta sigue —
+           la señal solo alcanza a quien YA uso el sitio con una cuenta que
+           despues se bloqueo. El mensaje no revela el motivo: lo manda al
+           chat, donde el corte del bot lo deriva a un agente. */
+        $device = mb_substr(trim((string)($body['device'] ?? '')), 0, 64);
+        if ($device !== '') {
+            require_once __DIR__ . '/vinculos_lib.php';
+            if (vin_bloqueado_por_senal($pdo, ['device_id' => $device]) !== null) {
+                http_response_code(403);
+                echo json_encode(['ok' => false, 'codigo' => 'bloqueado',
+                    'error' => 'No pudimos crear la cuenta. Escribinos por el chat.'],
+                    JSON_UNESCAPED_UNICODE);
+                exit;
+            }
+        }
+
         // Se resuelve un username LIBRE a partir de lo que puso el jugador
         // -- ver el porqué en el docblock de arriba. La carrera entre dos
         // requests CONCURRENTES del mismo navegador la achica el dedup de

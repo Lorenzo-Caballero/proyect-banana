@@ -163,6 +163,32 @@ if (!function_exists('notif_crear')) {
                 }
                 if (function_exists('vin_anotar_dispositivo')) {
                     vin_anotar_dispositivo($pdo, $deviceId, $usuario);
+
+                    /* EL CELULAR DE UN BLOQUEADO ENTRO CON OTRA CUENTA. El
+                       alta por chat/landing ya la habria frenado, asi que si
+                       esta cuenta existe vino por otra via (el panel, un alta
+                       anterior al bloqueo). No se bloquea sola —un celular se
+                       presta, y el bloqueo es decision de una persona (ver
+                       vinculos_lib)— pero el operador se entera YA, con el
+                       boton de la ficha a un click. Dedupe por par
+                       bloqueado+cuenta: un aviso, no uno por sondeo. */
+                    if (function_exists('vin_bloqueado') && function_exists('vin_bloqueado_por_senal')
+                        && !vin_bloqueado($pdo, $usuario)) {
+                        $duenoBloq = vin_bloqueado_por_senal($pdo, ['device_id' => $deviceId]);
+                        if ($duenoBloq !== null) {
+                            if (!function_exists('tg_evento') && is_file(__DIR__ . '/telegram_lib.php')) {
+                                require_once __DIR__ . '/telegram_lib.php';
+                            }
+                            if (function_exists('tg_evento')) {
+                                tg_evento($pdo, 'salud', '🚫 El celular de un bloqueado entró con otra cuenta', [
+                                    'Cuenta nueva' => $usuario,
+                                    'Bloqueado'    => $duenoBloq,
+                                    'Qué pasó'  => 'El mismo aparato de un jugador bloqueado inició sesión con esta cuenta.',
+                                    'Qué hacer' => 'Abrí la ficha de ' . $usuario . ' en el CRM y bloquealo con «también las vinculadas» si corresponde.',
+                                ], 'dev_bloq_' . $duenoBloq . '_' . $usuario);
+                            }
+                        }
+                    }
                 }
             }
 

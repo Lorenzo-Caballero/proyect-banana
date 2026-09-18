@@ -399,6 +399,21 @@ if ($tokenCli !== '' && function_exists('jwt_verificar')) {
     }
 }
 
+/* El device_id del widget (localStorage 'goldpaw_device', el mismo con el que
+   se registran las notificaciones). Dos usos, los dos de vinculos_lib:
+   engordar dispositivos_usuarios con cada turno identificado —antes solo lo
+   alimentaba el registro de push, o sea que un chat sin notificaciones no
+   dejaba rastro— y frenar crear_cuenta cuando el aparato es el de un
+   bloqueado. En $GLOBALS porque la herramienta corre en otra funcion.
+   Como todo lo que manda el navegador, es un INDICIO, no una prueba: quien lo
+   borra esquiva la señal, pero el que la deja se ata solo — y en la practica
+   (16-17/09) es la señal que mas cuentas del mismo abusador juntó. */
+$GLOBALS['CB_DEVICE_ID'] = mb_substr(trim((string)($body['device_id'] ?? '')), 0, 64);
+if ($GLOBALS['CB_DEVICE_ID'] !== '' && $usuarioCliente !== ''
+    && function_exists('vin_anotar_dispositivo')) {
+    vin_anotar_dispositivo($pdo, $GLOBALS['CB_DEVICE_ID'], $usuarioCliente);
+}
+
 // Config editable desde el CRM (tabla config_chatbot, migracion 26). Si la
 // tabla no existe o el contexto esta vacio, se cae a la constante CONTEXTO de
 // arriba, asi nada se rompe si no se corrio la migracion. `activo`=0 apaga la
@@ -517,6 +532,42 @@ if (!$botActivo || !$iaEsteChat) {
     if (function_exists('crm_registrar_turno')) {
         crm_registrar_turno($pdo, $sessionId, $ultimoUser, $aviso,
             $usuarioCliente !== '' ? $usuarioCliente : null);
+    }
+    echo json_encode(['ok' => true, 'respuesta' => $aviso, 'bot_desactivado' => true],
+                     JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+/* JUGADOR BLOQUEADO (migracion 69): el bot NO lo atiende. Hasta hoy el
+   bloqueo cortaba las operaciones (cargar, retirar, crear recarga) pero el
+   bot le seguia conversando — o sea que el servicio seguia abierto para la
+   persona a la que decidimos no venderle. Pedido del dueño (18/09/2026):
+   "bloquea el acceso completamente".
+
+   Lo que se mantiene, igual que en vin_avisos_mudos(): sus mensajes SIGUEN
+   entrando al CRM (crm_registrar_turno abajo) — hace falta para ver que esta
+   intentando y para revertir un bloqueo mal puesto. Lo que se corta es el
+   SERVICIO: ni IA, ni herramientas, ni Telegram.
+
+   La respuesta fija no dice "bloqueado" ni como lo detectamos (mismo criterio
+   que fichas_lib): lo manda con un agente, que es ademas lo correcto si el
+   bloqueo estuvo mal puesto. Y no se repite en cada mensaje — mismo patron
+   que el aviso de "te responde un agente", que ya produjo 15 repeticiones
+   seguidas una vez. */
+if ($usuarioCliente !== '' && function_exists('vin_bloqueado')
+    && vin_bloqueado($pdo, $usuarioCliente)) {
+    $ultimoUser = '';
+    for ($i = count($historial) - 1; $i >= 0; $i--) {
+        if ((($historial[$i]['role'] ?? '') === 'user') && !empty($historial[$i]['content'])) {
+            $ultimoUser = (string)$historial[$i]['content'];
+            break;
+        }
+    }
+    $aviso = chatbot_bloqueado_aviso_toca($pdo, $sessionId, $usuarioCliente)
+           ? 'En este momento no puedo ayudarte por acá. Tu caso lo tiene que revisar un agente.'
+           : '';
+    if (function_exists('crm_registrar_turno')) {
+        crm_registrar_turno($pdo, $sessionId, $ultimoUser, $aviso, $usuarioCliente);
     }
     echo json_encode(['ok' => true, 'respuesta' => $aviso, 'bot_desactivado' => true],
                      JSON_UNESCAPED_UNICODE);
@@ -1574,6 +1625,39 @@ function chatbot_aviso_agente_toca(PDO $pdo, string $sessionId, string $usuario)
     }
 }
 
+/**
+ * ¿Toca decirle al BLOQUEADO que lo vea un agente? Mismo esquema que
+ * chatbot_aviso_agente_toca (y mismo motivo: la respuesta fija repetida en
+ * cada mensaje es un robot escupiendo la misma frase quince veces), con dos
+ * diferencias: el ancla es el texto del aviso de bloqueo, y si lo ultimo lo
+ * dijo un agente tampoco se repite — el agente ya lo esta atendiendo.
+ */
+function chatbot_bloqueado_aviso_toca(PDO $pdo, string $sessionId, string $usuario): bool
+{
+    if (!function_exists('crm_conversacion_id')) { return true; }
+    try {
+        $conv = crm_conversacion_id($pdo, $sessionId, $usuario !== '' ? $usuario : null);
+        if ($conv <= 0) { return true; }
+        $st = $pdo->prepare(
+            "SELECT rol, texto, TIMESTAMPDIFF(MINUTE, creado_en, NOW()) AS hace
+               FROM mensajes
+              WHERE conversacion_id = ? AND rol IN ('agente', 'bot')
+              ORDER BY id DESC LIMIT 1"
+        );
+        $st->execute([$conv]);
+        $ult = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$ult) { return true; }
+        if ((string)$ult['rol'] === 'agente') { return false; }
+        if (!str_contains((string)$ult['texto'], 'lo tiene que revisar un agente')) {
+            return true;
+        }
+        return (int)$ult['hace'] >= AVISO_AGENTE_MIN;
+    } catch (Throwable $e) {
+        error_log('chatbot_bloqueado_aviso_toca: ' . $e->getMessage());
+        return true;
+    }
+}
+
 function chatbot_avisar_derivada_escribio(PDO $pdo, string $sessionId, string $usuario, string $texto): void
 {
     if (!function_exists('tg_evento')) { return; }
@@ -2193,6 +2277,22 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
                     'error' => 'Ya tenés el máximo de cuentas permitido, así que no se puede '
                              . 'crear otra. Entrá con la que ya tenés; si no te acordás el '
                              . 'usuario o la clave, decime y te ayudo con eso.'];
+        }
+
+        /* EL CELULAR DE UN BLOQUEADO NO ABRE CUENTAS NUEVAS. Es la pieza que
+           corta la cadena (vin_bloqueado_por_senal existia desde la migracion
+           69 pero NADIE la llamaba): bloquear las cuentas de hoy no sirve si
+           la persona se crea la siguiente en dos minutos desde el mismo
+           aparato — que es exactamente lo que venia pasando. El device_id
+           llega con el turno (ver $GLOBALS arriba); sin el, la señal no
+           existe y el alta sigue — el freno nunca puede alcanzar a un
+           navegador limpio de un jugador nuevo. */
+        $devAlta = (string)($GLOBALS['CB_DEVICE_ID'] ?? '');
+        if ($devAlta !== '' && function_exists('vin_bloqueado_por_senal')
+            && vin_bloqueado_por_senal($pdo, ['device_id' => $devAlta]) !== null) {
+            return ['ok' => false, 'codigo' => 'bloqueado',
+                    'error' => 'No se puede crear una cuenta desde acá. '
+                             . 'Decile que su caso lo tiene que revisar un agente.'];
         }
 
         /* EL NOMBRE SE GENERA IGUAL QUE EN LA LANDING: holaJuan123, siempre.

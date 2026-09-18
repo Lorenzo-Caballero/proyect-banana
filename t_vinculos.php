@@ -195,6 +195,42 @@ vin_bloquear($pdo, 'tv_malo', false, 'nahuel');
 chequear('sin nadie bloqueado, la misma cuenta bancaria no frena nada',
          vin_bloqueado_por_senal($pdo, ['cuit' => '20555444333']) === null);
 
+/* EL CELULAR DE UN BLOQUEADO (18/09/2026). Es la señal que corta la cadena en
+   el caso real: el abusador creaba cuenta tras cuenta desde la MISMA
+   instalación (3 cuentas con el mismo device_id en producción). */
+$usuario('tv_malo2');
+vin_anotar_dispositivo($pdo, 'dev-test-bloq', 'tv_malo2');
+vin_bloquear($pdo, 'tv_malo2', true, 'nahuel', 'multicuenta');
+chequear('el celular de un bloqueado frena el alta',
+         vin_bloqueado_por_senal($pdo, ['device_id' => 'dev-test-bloq']) === 'tv_malo2');
+chequear('otro celular no frena nada',
+         vin_bloqueado_por_senal($pdo, ['device_id' => 'dev-test-otro']) === null);
+$pdo->exec("DELETE FROM dispositivos_usuarios WHERE device_id = 'dev-test-bloq'");
+
+/* Y EL FRENO TIENE QUE ESTAR CONECTADO. vin_bloqueado_por_senal() existió
+   desde la migración 69 con el docblock "es el chequeo del alta nueva"... y
+   NADIE la llamaba: el freno estaba escrito y desenchufado, y el bloqueado
+   siguió abriendo cuentas. Posicional sobre el código, porque ningún test de
+   comportamiento ve una función que nadie llama. */
+$srcCrearCta = file_get_contents(__DIR__ . '/api/crear_cuenta.php');
+$srcChatEndp = file_get_contents(__DIR__ . '/api/chatbot.php');
+chequear('crear_cuenta.php (landing) llama al freno por señal',
+         str_contains($srcCrearCta, 'vin_bloqueado_por_senal('));
+chequear('el alta por chat también lo llama',
+         str_contains($srcChatEndp, 'vin_bloqueado_por_senal('));
+chequear('el chat corta al bloqueado antes de la IA',
+         str_contains($srcChatEndp, 'vin_bloqueado($pdo, $usuarioCliente)'));
+/* Sin el device_id del navegador la señal no existe: los cuatro fronts que
+   crean cuentas o conversan lo tienen que mandar. */
+chequear('el widget manda device_id en el turno del chat',
+         str_contains(file_get_contents(__DIR__ . '/landing/widget.js'),
+                      'device_id: ls("goldpaw_device")'));
+foreach (['lp.html', 'bono.html', 'registro.html'] as $pag) {
+    chequear("$pag manda el device con el alta",
+             str_contains(file_get_contents(__DIR__ . '/landing/' . $pag),
+                          "localStorage.getItem('goldpaw_device')"));
+}
+
 echo "
 === 5b. La IP NO vincula a nadie, y eso es a proposito ===
 ";

@@ -1973,6 +1973,10 @@
            compartido): lo usa crear_cuenta del chatbot para anotar quien lo
            invito. El server lo re-valida entero. */
         ref_codigo: ls("gp_ref") || undefined,
+        /* El id de instalacion (el mismo de las notificaciones): el server lo
+           usa como señal de vinculos_lib — anota que este aparato uso esta
+           cuenta, y frena crear_cuenta si el aparato es el de un bloqueado. */
+        device_id: ls("goldpaw_device") || undefined,
         /* Cookies del Pixel de Meta. Son lo que ata el evento al click del
            anuncio: sin ellas el backend manda el Contact/Purchase pero Meta
            no puede atribuirlo a ninguna campaña. metaCookies() la define
