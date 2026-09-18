@@ -240,3 +240,75 @@ function landings_toggle(PDO $pdo, int $id): ?bool
         return null;
     }
 }
+
+/**
+ * Cuánta historia tiene una landing: registros que trajo y plata de pauta
+ * cargada. Es lo que decide si se puede borrar y lo que el CRM muestra al lado
+ * del nombre.
+ */
+function landings_historia(PDO $pdo, string $slug): array
+{
+    $out = ['altas' => 0, 'gasto' => 0.0];
+    $slug = trim($slug);
+    if ($slug === '') { return $out; }
+    try {
+        $st = $pdo->prepare("SELECT COUNT(*) FROM altas WHERE origen = ?");
+        $st->execute(['lp:' . $slug]);
+        $out['altas'] = (int)$st->fetchColumn();
+    } catch (Throwable $e) { /* best-effort */ }
+    try {
+        $st = $pdo->prepare("SELECT COALESCE(SUM(monto),0) FROM gasto_diario WHERE landing_slug = ?");
+        $st->execute([$slug]);
+        $out['gasto'] = (float)$st->fetchColumn();
+    } catch (Throwable $e) { /* sin migración 65 no hay gasto por landing */ }
+    return $out;
+}
+
+/**
+ * Borra una landing, SOLO si no tiene historia.
+ *
+ * POR QUE LA CONDICION (Nahuel, 18/09/2026): *"si tenemos muchísimas landings
+ * es medio molesto cuando entramos a ese apartado"*. Y es cierto: al mirar el
+ * 18/09 había seis, dos con historia real y cuatro vacías creadas probando —
+ * tres de ellas llamadas «50».
+ *
+ * PERO BORRAR UNA CON HISTORIA ROMPE LOS REPORTES, y no de una forma ruidosa.
+ * El vínculo con los datos es el `slug`: `altas.origen` guarda 'lp:<slug>' y
+ * `gasto_diario.landing_slug` el mismo texto. Ninguna de esas tablas tiene
+ * clave foránea contra `landings` — están sueltas a propósito, para que el
+ * historial sobreviva a que alguien edite o pause la landing. El precio es que
+ * al borrar la fila esos registros no desaparecen: quedan apuntando a un slug
+ * que ya no existe, y Publicidad pasa a mostrar altas y gasto que no se pueden
+ * atribuir a nada. El número de la campaña deja de cerrar y no hay forma de
+ * saber por qué.
+ *
+ * Por eso: se borra lo que NO trajo a nadie ni tiene plata cargada (que es
+ * justo el desorden que molesta), y lo que sí tiene historia se PAUSA. Pausar
+ * la saca de la circulación sin tocar un solo dato.
+ */
+function landings_borrar(PDO $pdo, int $id): array
+{
+    if ($id <= 0) { return ['ok' => false, 'error' => 'Falta el id']; }
+    try {
+        $st = $pdo->prepare("SELECT slug, nombre FROM landings WHERE id = ? LIMIT 1");
+        $st->execute([$id]);
+        $l = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$l) { return ['ok' => false, 'error' => 'Esa landing no existe']; }
+
+        $h = landings_historia($pdo, (string)$l['slug']);
+        if ($h['altas'] > 0 || $h['gasto'] > 0) {
+            return ['ok' => false, 'codigo' => 'tiene_historia',
+                    'altas' => $h['altas'], 'gasto' => $h['gasto'],
+                    'error' => 'Esta landing trajo ' . $h['altas'] . ' registro(s)'
+                             . ($h['gasto'] > 0 ? ' y tiene $' . number_format($h['gasto'], 0, ',', '.')
+                                                . ' de pauta cargada' : '')
+                             . '. Borrarla dejaría esos datos sin dueño en Publicidad. '
+                             . 'Pausala: sale de la lista y el historial queda intacto.'];
+        }
+        $pdo->prepare("DELETE FROM landings WHERE id = ?")->execute([$id]);
+        return ['ok' => true, 'slug' => (string)$l['slug'], 'nombre' => (string)$l['nombre']];
+    } catch (Throwable $e) {
+        error_log('landings_borrar: ' . $e->getMessage());
+        return ['ok' => false, 'error' => 'No se pudo borrar'];
+    }
+}

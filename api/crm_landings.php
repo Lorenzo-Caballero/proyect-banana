@@ -150,6 +150,20 @@ if ($metodo === 'POST') {
             lp_salir(['ok' => true, 'activa' => $nuevo]);
         }
 
+        /* Borrar SOLO lo que no trajo a nadie. Una landing con historia se
+           pausa: su slug vive en `altas.origen` y `gasto_diario`, y borrarla
+           dejaria esos registros sin dueño en Publicidad. Ver
+           landings_borrar(). */
+        if ($accion === 'borrar') {
+            $id  = (int)($body['id'] ?? 0);
+            $res = landings_borrar($pdo, $id);
+            if (!empty($res['ok'])) {
+                crm_bitacora($pdo, $operador, 'landing_borrar',
+                             "id=$id slug=" . ($res['slug'] ?? '?'));
+            }
+            lp_salir($res, !empty($res['ok']) ? 200 : 409);
+        }
+
         lp_salir(['ok' => false, 'error' => 'Acción desconocida'], 400);
     } catch (Throwable $e) {
         error_log('crm_landings POST: ' . $e->getMessage());
@@ -171,6 +185,11 @@ if ($metodo === 'GET') {
                 $l['config'] = landings_config_completa((string)$l['plantilla'], $l['config']);
                 $l['bono_pct'] = (int)$l['bono_pct'];
                 $l['activa']   = (int)$l['activa'];
+                /* Cuanto trajo cada una. Con esto el CRM puede ordenar por lo
+                   que sirvio, decir "no trajo a nadie" y habilitar Borrar solo
+                   donde corresponde -- en vez de ofrecer un boton que despues
+                   rebota. */
+                $l += landings_historia($pdo, (string)$l['slug']);
                 $landings[] = $l;
             }
             lp_salir([

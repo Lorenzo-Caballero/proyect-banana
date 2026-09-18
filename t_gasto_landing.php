@@ -180,6 +180,63 @@ chequear('y el total baja exactamente lo borrado',
 chequear('un periodo sin gasto da lista vacia',
          publicidad_gasto_todo($pdo, '2026-01-01', '2026-01-31') === []);
 
+echo "\n=== Borrar una landing: solo la que no trajo a nadie ===\n";
+
+/* Nahuel (18/09/2026): *"si tenemos muchisimas landings es medio molesto
+   cuando entramos a ese apartado"*. Al mirar habia seis: dos con historia
+   real y CUATRO vacias creadas probando, tres llamadas «50».
+
+   PERO BORRAR UNA CON HISTORIA ROMPE LOS REPORTES, y en silencio. El vinculo
+   con los datos es el slug: `altas.origen` guarda lp:<slug> y
+   `gasto_diario.landing_slug` el mismo texto, sin clave foranea -- a
+   proposito, para que el historial sobreviva a editar o pausar la landing. Al
+   borrar la fila, esos registros quedan apuntando a un slug que ya no existe
+   y Publicidad muestra altas y gasto que no se pueden atribuir a nada. */
+require_once __DIR__ . '/api/landings_lib.php';
+$pdo->exec("DELETE FROM landings WHERE slug LIKE 'tlp-b%'");
+$pdo->exec("DELETE FROM altas WHERE origen = 'lp:tlp-b-con'");
+$pdo->exec("DELETE FROM gasto_diario WHERE landing_slug LIKE 'tlp-b%'");
+
+$pdo->prepare("INSERT INTO landings (slug, nombre, plantilla, bono_pct, activa)
+               VALUES ('tlp-b-sin', 'sin historia', 'bono', 50, 0)")->execute();
+$id1 = (int)$pdo->lastInsertId();
+$r = landings_borrar($pdo, $id1);
+chequear('una landing sin historia se borra', !empty($r['ok']), json_encode($r));
+$q = $pdo->prepare('SELECT COUNT(*) FROM landings WHERE id = ?'); $q->execute([$id1]);
+chequear('y desaparece de verdad', (int)$q->fetchColumn() === 0);
+
+$pdo->prepare("INSERT INTO landings (slug, nombre, plantilla, bono_pct, activa)
+               VALUES ('tlp-b-con', 'con historia', 'bono', 50, 0)")->execute();
+$id2 = (int)$pdo->lastInsertId();
+$pdo->prepare("INSERT INTO altas (usuario, password, estado, origen, pedido_en)
+               VALUES ('tlp_bu1', 'clave123456', 'ok', 'lp:tlp-b-con', NOW())")->execute();
+$r = landings_borrar($pdo, $id2);
+chequear('una landing con registros NO se borra', empty($r['ok']), json_encode($r));
+chequear('dice cuantos registros trajo', (int)($r['altas'] ?? 0) === 1, json_encode($r));
+chequear('y ofrece pausarla en vez de borrarla',
+         str_contains((string)($r['error'] ?? ''), 'Pausala'),
+         'sin una salida, el operador queda trabado con la landing ahi');
+$q->execute([$id2]);
+chequear('sigue existiendo', (int)$q->fetchColumn() === 1);
+
+/* Y la que no trajo gente pero SI tiene plata de pauta cargada tampoco: ese
+   gasto es parte del calculo de CPA y ROAS. */
+$pdo->exec("DELETE FROM altas WHERE origen = 'lp:tlp-b-con'");
+$pdo->prepare("INSERT INTO gasto_diario (fecha, landing_slug, monto)
+               VALUES (CURDATE(), 'tlp-b-con', 5000)")->execute();
+$r = landings_borrar($pdo, $id2);
+chequear('con pauta cargada tampoco se borra', empty($r['ok']), json_encode($r));
+
+/* El CRM no ofrece el boton donde va a rebotar: ofrecerlo y despues negarlo
+   es peor que no ofrecerlo. */
+$crmSrc = file_get_contents(__DIR__ . '/landing/crm.html');
+chequear('el CRM solo muestra Borrar si no trajo nada',
+         str_contains($crmSrc, '(l.altas > 0 || l.gasto > 0) ? "" :'));
+chequear('y muestra el slug, porque los nombres se repiten',
+         str_contains($crmSrc, 'Es lo que va en el link'));
+
+$pdo->exec("DELETE FROM gasto_diario WHERE landing_slug LIKE 'tlp-b%'");
+$pdo->exec("DELETE FROM landings WHERE slug LIKE 'tlp-b%'");
 $limpiar();
 echo "\n---------------------------------------\n";
 printf("%d OK, %d fallas\n", $ok, $fail);

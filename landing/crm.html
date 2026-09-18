@@ -2207,6 +2207,7 @@
   .lp-link input{flex:1;min-width:0;background:var(--panel);border:1px solid var(--line);
     border-radius:9px;padding:7px 9px;color:var(--muted);font-size:12px}
   .lp-card-acciones{display:flex;gap:8px;flex-wrap:wrap}
+  .lp-btn-mini.peligro{border-color:#7a4247;color:#e5595d}
   .lp-btn-mini{background:none;border:1px solid var(--line);color:var(--txt);border-radius:9px;
     padding:6px 11px;font-size:12.5px;font-weight:600;cursor:pointer}
   .lp-btn-mini:hover{background:var(--panel3)}
@@ -13406,6 +13407,12 @@ ${cuando}.
           <span class="lp-chip ${l.bono_pct > 0 ? "bono" : ""}">${l.bono_pct > 0 ? "Bono " + l.bono_pct + "%" : "Sin bono"}</span>
           <span class="lp-chip">${esc((lpPlantillas[l.plantilla] || {}).nombre || l.plantilla)}</span>
           ${l.activa ? "" : `<span class="lp-chip off">Pausada</span>`}
+          <!-- LO QUE TRAJO, que es lo unico que dice si vale la pena tenerla.
+               Y el SLUG, porque los nombres se repiten: al 18/09/2026 habia
+               tres landings llamadas «50» y la unica forma de distinguirlas es
+               el link. -->
+          <span class="lp-chip">${l.altas > 0 ? l.altas + " registro" + (l.altas === 1 ? "" : "s") : "no trajo a nadie"}</span>
+          <span class="lp-chip" title="Es lo que va en el link">${esc(l.slug)}</span>
         </div>
         <div class="lp-link">
           <input readonly value="${esc(url)}" onfocus="this.select()">
@@ -13415,6 +13422,15 @@ ${cuando}.
           <button class="lp-btn-mini" data-acc="editar">Editar</button>
           <button class="lp-btn-mini" data-acc="abrir" data-url="${esc(url)}">Abrir</button>
           <button class="lp-btn-mini" data-acc="toggle">${l.activa ? "Pausar" : "Activar"}</button>
+          <!-- BORRAR SOLO LO QUE NO TRAJO A NADIE NI TIENE PAUTA CARGADA. Con
+               historia el boton no aparece: su slug vive en altas.origen y en
+               gasto_diario, y borrarla dejaria esos registros sin dueño en
+               Publicidad -- los numeros de la campaña dejarian de cerrar sin
+               que nada avise. Esas se pausan, que las saca de la vista sin
+               tocar un dato. Ofrecer el boton y despues rebotarlo seria peor
+               que no ofrecerlo. -->
+          ${(l.altas > 0 || l.gasto > 0) ? "" :
+            `<button class="lp-btn-mini peligro" data-acc="borrar">Borrar</button>`}
         </div>
       </div>`;
     }).join("");
@@ -13439,6 +13455,26 @@ ${cuando}.
     }
     if(acc === "editar"){
       lpEditar(id);
+      return;
+    }
+    if(acc === "borrar"){
+      const l = lpLandings.find(x => x.id === id) || {};
+      if(!confirm(`¿Borrar la landing «${l.nombre || id}»?
+
+`
+                + `No trajo ningún registro ni tiene pauta cargada, así que no se `
+                + `pierde ningún dato. El link ${lpUrlPublica(l.slug || "")} deja de funcionar.`)) return;
+      btn.disabled = true;
+      try{
+        const r = await apiFetch(API_LP, {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({accion:"borrar", id}),
+        });
+        const d = await r.json();
+        if(!d.ok){ toast(d.error || "No se pudo borrar"); btn.disabled = false; return; }
+        toast(`Landing «${d.nombre || ""}» borrada`);
+        lpAbrir();               // recarga la lista entera
+      }catch(e){ if(!esSesionRequerida(e)) toast("No se pudo borrar"); btn.disabled = false; }
       return;
     }
     if(acc === "toggle"){
