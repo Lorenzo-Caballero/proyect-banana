@@ -2208,11 +2208,22 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
         $st = $pdo->prepare("SELECT tiene_app FROM usuarios WHERE username = ? LIMIT 1");
         $st->execute([$u]);
         $fila = $st->fetch(PDO::FETCH_ASSOC);
-        // tiene_app viaja con la identificacion (pedido del dueño, 18/09/2026):
-        // sin este dato el bot le ofrecia descargar la app a quien ya la tiene,
-        // o hablaba del bono sin saber si aplica.
+        /* tiene_app viaja con la identificacion (pedido del dueño, 18/09/2026):
+           sin este dato el bot le ofrecia descargar la app a quien ya la tiene,
+           o hablaba del bono sin saber si aplica.
+
+           Y VIAJA CON LA INSTRUCCION, no solo con el booleano. El bloque de
+           IDENTIDAD --que si trae las reglas de que decir-- solo se arma para
+           el jugador que el widget ya identifico; el que llega anonimo y se
+           identifica ACA recibia un `tiene_app: true` pelado y ninguna regla
+           sobre que hacer con el. Un dato sin instruccion lo completa el modelo
+           como puede, y de ahi salen las respuestas raras sobre la app y el
+           bono. Se reusa la MISMA funcion que el bloque de identidad para que
+           las dos puertas digan lo mismo. */
+        $guia = $fila !== false ? trim(chatbot_bloque_estado_app($pdo, $u), " \n-") : '';
         return ['ok' => true, 'usuario' => $u, 'existe' => $fila !== false,
-                'tiene_app' => $fila !== false && !empty($fila['tiene_app'])];
+                'tiene_app' => $fila !== false && !empty($fila['tiene_app']),
+                'que_decir'  => $guia];
     }
     if ($nombre === 'crear_cuenta') {
         // Ya tiene sesion: no hay nada que crear. Sin esto, un jugador logueado
