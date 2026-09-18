@@ -357,6 +357,11 @@ chequear('saca el usuario de un bloqueo sin arroba',
 /* Y que los escritores nuevos guarden texto legible: cancelar un retiro
    guardaba un JSON crudo que en la pantalla habia que decodificar a ojo. */
 $srcRet = file_get_contents(__DIR__ . '/api/crm_retiros.php');
+/* Y aprobar tambien: "aprobar retiro - id 188" obligaba a ir a buscar a otra
+   pantalla a quien se le aprobo un retiro de cuanto. */
+chequear('aprobar un retiro dice a quien y por cuanto',
+         str_contains($srcRet, 'function ret_referencia')
+         && str_contains($srcRet, "'aprobar_retiro', ret_referencia("));
 chequear('cancelar un retiro deja constancia en castellano',
          str_contains($srcRet, "'retiro #' . " . chr(36) . 'id'),
          'un JSON en la columna Detalle no lo lee nadie');

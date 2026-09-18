@@ -321,6 +321,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     }
 }
 
+/**
+ * A QUIEN Y POR CUANTO, para la bitácora.
+ *
+ * Auditoría mostraba «aprobar retiro — id 188». El id es la referencia, no el
+ * hecho: para saber a quién se le aprobó un retiro de cuánto había que ir a
+ * buscar esa fila a otra pantalla, que es exactamente lo que una auditoría
+ * existe para evitar. Ahora dice «retiro #188 de @holajuan por $4.000».
+ *
+ * El `@` no es adorno: es de donde crm_auditoria.php saca el nombre del
+ * jugador para ponerlo en su columna.
+ *
+ * Si la fila no está (se borró, falta una migración) devuelve el id solo: una
+ * acción registrada a medias es mejor que una acción sin registrar.
+ */
+function ret_referencia(PDO $pdo, int $id): string
+{
+    try {
+        $q = $pdo->prepare("SELECT usuario, monto FROM acciones_saldo WHERE id = ? LIMIT 1");
+        $q->execute([$id]);
+        $f = $q->fetch(PDO::FETCH_ASSOC);
+    } catch (Throwable $e) { $f = null; }
+    if (!$f) { return 'retiro #' . $id; }
+    return 'retiro #' . $id . ' de @' . $f['usuario']
+         . ' por $' . number_format((float)$f['monto'], 0, ',', '.');
+}
+
 // ============================== POST ========================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $body   = json_decode(file_get_contents('php://input'), true) ?: [];
@@ -345,7 +371,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 salir(['ok' => false,
                        'error' => 'Ese retiro ya no está esperando aprobación (quizás otro operador lo aprobó o cambió de estado).'], 409);
             }
-            crm_bitacora($pdo, $operador, 'aprobar_retiro', "id $id");
+            crm_bitacora($pdo, $operador, 'aprobar_retiro', ret_referencia($pdo, $id));
 
             /* ---- HG Cash: aprobar TAMBIEN dispara el pago de la plata ----
                El worker de Python sigue haciendo SU mitad (descontar el saldo
@@ -453,7 +479,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($st->rowCount() === 0) {
                 salir(['ok' => false, 'error' => 'Ese retiro ya no está en error (puede que otro operador ya lo haya tocado).'], 409);
             }
-            crm_bitacora($pdo, $operador, 'reintentar_retiro', "id $id");
+            crm_bitacora($pdo, $operador, 'reintentar_retiro', ret_referencia($pdo, $id));
             salir(['ok' => true]);
         }
 
