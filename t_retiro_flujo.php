@@ -206,6 +206,43 @@ chequear('la ficha devuelve el id de cada pedido abierto',
          'sin id el aviso es solo texto');
 chequear('y dice cual se puede cancelar', str_contains($srcCrm, "'cancelable' =>"));
 
+echo "\n=== 7. Y la decision se entiende sin adivinar ===\n";
+
+/* Nahuel, 18/09/2026: *"que al operador se le describa bien lo que significa
+   la opcion aceptar y cancelar"*. Tenia razon: era un confirm() del
+   navegador, que tiene dos botones con nombre FIJO --"Aceptar" y
+   "Cancelar"-- y sobre plata ajena eso no dice nada (aceptar QUE). Peor: ahi
+   "Cancelar" significaba "retirar igual y dejar el pedido abierto", o sea lo
+   contrario de lo que la palabra sugiere.
+
+   Ahora es un modal propio con tres opciones con nombre y una linea abajo
+   explicando que hace cada una. */
+$crm = file_get_contents(__DIR__ . "/landing/crm.html");
+
+chequear('la decision tiene su propio modal', str_contains($crm, 'backRetDec'));
+chequear('y ya no la resuelve un confirm() del navegador',
+         !str_contains($crm, 'Aceptar = retiro y cancelo'),
+         'confirm() no deja renombrar los botones');
+
+/* Las TRES salidas tienen que existir. Sin la tercera, el operador que abre
+   el modal por error no tiene forma de salir sin mover plata. */
+chequear('opcion: retirar y cancelar el pedido', str_contains($crm, 'rdCancelar'));
+chequear('opcion: retirar y dejarlo abierto',    str_contains($crm, 'rdDejar'));
+chequear('opcion: no retirar nada',              str_contains($crm, 'rdNada'));
+
+/* Y que cada una este DESCRIPTA, no solo nombrada: es todo el pedido. */
+chequear('cada opcion lleva su descripcion', str_contains($crm, 'rdCancelarD')
+                                          && str_contains($crm, 'rdDejarD'));
+chequear('la descripcion dice cuanto se retira de MAS si se deja abierto',
+         str_contains($crm, 'se le retiran '),
+         'el riesgo tiene que estar en plata, no en abstracto');
+
+/* Salirse sin elegir (Escape, click afuera) no puede dejar la promesa
+   colgada ni retirar por las dudas: ante la duda, no se toca la plata. */
+chequear('salirse sin elegir NO retira',
+         str_contains($crm, 'porEsc') && str_contains($crm, 'porFuera'),
+         'sin esto el modal se cierra y la promesa queda colgada');
+
 echo "\n---------------------------------------\n";
 printf("%d OK, %d fallas\n", $ok, $fail);
 exit($fail === 0 ? 0 : 1);
