@@ -498,6 +498,21 @@ try {
             notif_app_bono_liberar($pdo, $usuario);
         }
 
+        /* Y el bono PENDIENTE (ruleta, prometido del CRM, fidelizacion):
+           hasta la auditoria del 18/09/2026 solo se aplicaba en rl_acreditar
+           (camino B) — el que cargaba por el boton del juego no lo cobraba
+           nunca. Mismo criterio que el bono de la app de arriba. */
+        if (!function_exists('crmnotif_bono_aplicar_fuera_de_recarga')
+            && is_file(__DIR__ . '/crm_notificaciones.php')) {
+            require_once __DIR__ . '/crm_notificaciones.php';
+        }
+        if (!function_exists('crm_cargar') && is_file(__DIR__ . '/crm_lib.php')) {
+            require_once __DIR__ . '/crm_lib.php';
+        }
+        if (function_exists('crmnotif_bono_aplicar_fuera_de_recarga')) {
+            crmnotif_bono_aplicar_fuera_de_recarga($pdo, $usuario, (int)round($monto));
+        }
+
         /* El aviso al multicuenta, si la huella que se aprendio en esta
            aprobacion acaba de unir dos cuentas. Post-commit a proposito: el
            aviso puede terminar en un curl a Telegram y adentro de la

@@ -142,6 +142,23 @@ if (!function_exists('crm_conversacion_id')) {
             if (function_exists('notif_app_bono_liberar')) {
                 notif_app_bono_liberar($pdo, $usuario);
             }
+            /* Y el bono PENDIENTE (ruleta, prometido, fidelizacion): una carga
+               manual tambien es una carga (auditoria del 18/09/2026 — antes
+               solo lo aplicaba el camino B y el jugador no cobraba nunca). */
+            if (!function_exists('crmnotif_bono_aplicar_fuera_de_recarga')
+                && is_file(__DIR__ . '/crm_notificaciones.php')) {
+                require_once __DIR__ . '/crm_notificaciones.php';
+            }
+            if (!function_exists('fichas_pedir_carga') && is_file(__DIR__ . '/fichas_lib.php')) {
+                require_once __DIR__ . '/fichas_lib.php';
+            }
+            if (function_exists('crmnotif_bono_aplicar_fuera_de_recarga')) {
+                try {
+                    crmnotif_bono_aplicar_fuera_de_recarga($pdo, $usuario, (int)round($monto));
+                } catch (Throwable $e) {
+                    error_log('crm_saldo (bono pendiente): ' . $e->getMessage());
+                }
+            }
         }
         return ['ok' => true];
     }

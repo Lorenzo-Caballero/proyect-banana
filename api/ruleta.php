@@ -296,7 +296,7 @@ try {
         $pdo->beginTransaction();
         try {
             $st = $pdo->prepare(
-                "SELECT id FROM ruleta_giros_cortesia
+                "SELECT id, bono_pendiente_id FROM ruleta_giros_cortesia
                   WHERE usuario = ? AND estado = 'pendiente'
                   ORDER BY creado_en ASC LIMIT 1 FOR UPDATE"
             );
@@ -315,6 +315,20 @@ try {
             if ($upd->rowCount() !== 1) {
                 $pdo->rollBack();
                 salir(['ok' => false, 'error' => 'Ese giro ya fue usado.']);
+            }
+            /* EL BONO 'giro' QUE PROMETIO ESTE GIRO SE MARCA APLICADO ACA.
+               No lo hacia NADIE (encontrado en la auditoria del 18/09/2026):
+               el unico UPDATE a 'aplicado' filtra tipo IN ('fichas','pct'),
+               asi que cada giro usado seguia contando como "1×giro" pendiente
+               en la ficha del jugador PARA SIEMPRE — el "muestra cualquier
+               cosa como bono pendiente" que reporto el dueño. El premio del
+               giro sigue su propio camino (bono pendiente de fichas, abajo);
+               esta fila ya cumplio. La migracion 71 repara las viejas. */
+            if (!empty($g['bono_pendiente_id'])) {
+                $pdo->prepare(
+                    "UPDATE bonos_pendientes SET estado = 'aplicado', aplicado_en = NOW()
+                      WHERE id = ? AND tipo = 'giro' AND estado = 'pendiente'"
+                )->execute([(int)$g['bono_pendiente_id']]);
             }
             $pdo->commit();
         } catch (Throwable $e) {

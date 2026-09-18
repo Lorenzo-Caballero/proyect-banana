@@ -438,7 +438,7 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
      * Nunca lanza: la llama rl_acreditar() y un problema acá no puede hacer
      * que la recarga (ya efectivamente acreditada) parezca fallida.
      */
-    function crmnotif_bono_aplicar_en_recarga(PDO $pdo, string $usuario, int $recargaId, int $montoRecarga): int
+    function crmnotif_bono_aplicar_en_recarga(PDO $pdo, string $usuario, ?int $recargaId, int $montoRecarga): int
     {
         /* Devuelve el MONTO acreditado (0 si no habia bono): el caller lo suma
            a $recarga['bono'] para que rl_cargar_al_juego_auto lo deposite EN
@@ -469,7 +469,7 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
             $pdo->prepare(
                 "UPDATE bonos_pendientes SET estado='aplicado', aplicado_en=NOW(), recarga_id=?
                   WHERE id=? AND estado='pendiente'"
-            )->execute([$recargaId, $b['id']]);
+            )->execute([$recargaId ?: null, $b['id']]);
 
             // El festejo: hasta ahora el bono se aplicaba en silencio y el
             // jugador no tenia forma de enterarse de que lo cobro.
@@ -499,5 +499,37 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
             error_log('crmnotif_bono_aplicar_en_recarga: ' . $e->getMessage());
         }
         return 0;
+    }
+
+    /**
+     * Aplica el bono pendiente cuando la plata entró SIN una recarga nuestra:
+     * el camino A (botón «Depósitos» del juego, peticiones_cola.php) o la
+     * carga manual del CRM (crm_saldo). Encontrado en la auditoría del
+     * 18/09/2026: los bonos pendientes solo se aplicaban en rl_acreditar()
+     * (camino B) — un jugador que ganaba en la ruleta y después cargaba por
+     * el botón del juego no cobraba NUNCA. El bono de la app no tenía este
+     * agujero porque notif_app_bono_liberar() sí está enganchado en los
+     * cuatro caminos; esto empareja.
+     *
+     * En el camino B el bono viaja DENTRO del mismo depósito. Acá la plata ya
+     * está en el juego, así que después de acreditarlo al contador se encola
+     * un depósito solo-bono (monto 0, bono N) — el mismo mecanismo de
+     * notif_app_bono_entregar(), que debita el contador al depositar: no se
+     * paga dos veces. Best-effort entero: post-commit en los dos callers.
+     */
+    function crmnotif_bono_aplicar_fuera_de_recarga(PDO $pdo, string $usuario, int $montoCarga): int
+    {
+        $monto = crmnotif_bono_aplicar_en_recarga($pdo, $usuario, null, $montoCarga);
+        if ($monto > 0 && function_exists('fichas_pedir_carga')) {
+            try {
+                fichas_pedir_carga($pdo, $usuario, 0, 'crm_bono', false, $monto);
+            } catch (Throwable $e) {
+                // El bono ya quedó en el contador: un agente lo manda con
+                // «Bonos al juego». Peor sería marcarlo no-aplicado y pagarlo
+                // de nuevo.
+                error_log('crmnotif_bono_aplicar_fuera_de_recarga (deposito): ' . $e->getMessage());
+            }
+        }
+        return $monto;
     }
 }

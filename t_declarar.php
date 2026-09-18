@@ -178,6 +178,59 @@ chequear('acredita solo con el titular, sin nro de operacion',
          ($r['estado'] ?? '') === 'acreditada' && acreditado($pdo, 'tdec_evi') === 3000,
          json_encode($r) . ' acreditado=' . acreditado($pdo, 'tdec_evi'));
 
+// ===========================================================================
+echo "\n=== Alertas del comprobante (auditoria del 18/09/2026) ===\n";
+/* El bot tiene que poder decir "ese comprobante ya fue usado / ya fue
+   declarado / es de otro monto". Son AVISOS al modelo: la declaracion se
+   guarda igual y la plata la sigue decidiendo el mail del banco. */
+limpiar($pdo);
+usuario($pdo, 'tdec_al1');
+usuario($pdo, 'tdec_al2');
+
+// 1. La plata de esa operacion YA se acredito (pagos estado='usado').
+$pdo->prepare("INSERT INTO pagos (id_unico, monto, remitente, nro_transaccion, estado, recarga_id)
+               VALUES ('TDEC-USADO-778899', 2000, 'CARLOS GOMEZ', '778899112233', 'usado', 12345)")->execute();
+recarga($pdo, 'tdec_al1', 2000.00);
+$r = rl_declarar_pago($pdo, 'tdec_al1', 'CARLOS GOMEZ', '778899112233');
+$alertas = implode(' | ', $r['alertas'] ?? []);
+chequear('avisa COMPROBANTE YA USADO', str_contains($alertas, 'YA USADO'), $alertas);
+chequear('pero la declaracion se guarda igual (estado pendiente, no rechazo)',
+         ($r['estado'] ?? '') === 'pendiente', json_encode($r));
+
+// 2. Otro usuario ya declaro ese mismo numero (la señal de vinculos, dicha en
+//    el momento).
+recarga($pdo, 'tdec_al2', 2000.00);
+$r = rl_declarar_pago($pdo, 'tdec_al2', 'OTRO TITULAR', '778899112233');
+$alertas = implode(' | ', $r['alertas'] ?? []);
+chequear('avisa YA DECLARADO y que fue OTRA cuenta',
+         str_contains($alertas, 'YA DECLARADO') && str_contains($alertas, 'OTRA cuenta'), $alertas);
+
+// 3. El monto del comprobante no coincide con la recarga pendiente. Este
+//    parametro existia desde la migracion 45 y NO SE USABA para nada.
+limpiar($pdo);
+usuario($pdo, 'tdec_al3');
+recarga($pdo, 'tdec_al3', 5000.00);
+$r = rl_declarar_pago($pdo, 'tdec_al3', 'ANA LOPEZ', '', 500.0);
+$alertas = implode(' | ', $r['alertas'] ?? []);
+chequear('avisa MONTO DISTINTO ($500 contra $5000)', str_contains($alertas, 'MONTO DISTINTO'), $alertas);
+
+// 4. Todo en orden: sin alertas (un numero nuevo y el monto justo no acusan).
+limpiar($pdo);
+usuario($pdo, 'tdec_al4');
+recarga($pdo, 'tdec_al4', 3000.00);
+$r = rl_declarar_pago($pdo, 'tdec_al4', 'JUAN PEREZ', '999888777666', 3000.0);
+chequear('sin motivo, sin alertas', ($r['alertas'] ?? ['x']) === [], json_encode($r['alertas'] ?? null));
+
+// 5. Numeros cortos no acusan a nadie (los tipea cualquiera).
+limpiar($pdo);
+usuario($pdo, 'tdec_al5');
+$pdo->prepare("INSERT INTO pagos (id_unico, monto, remitente, nro_transaccion, estado)
+               VALUES ('TDEC-CORTO', 100, 'X', '123', 'usado')")->execute();
+recarga($pdo, 'tdec_al5', 100.00);
+$r = rl_declarar_pago($pdo, 'tdec_al5', 'ALGUIEN', '123', 100.0);
+chequear('un numero de 3 digitos no dispara YA USADO',
+         !str_contains(implode(' ', $r['alertas'] ?? []), 'YA USADO'));
+
 limpiar($pdo);
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);
 exit($fail > 0 ? 1 : 0);
