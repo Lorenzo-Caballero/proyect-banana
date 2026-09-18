@@ -8243,9 +8243,9 @@
       if (u.bloqueado){
         const b = u.bloqueo || {};
         elBloq.innerHTML = `<b>🚫 Bloqueado</b>` +
-          `El bot no le habla (lo deriva a un agente), y no puede cargar, retirar, ` +
-          `pedir una recarga ni crear otra cuenta desde su celular. ` +
-          `Sus mensajes siguen entrando acá, para ver qué intenta.` +
+          `No puede escribir en el chat (el campo se le deshabilita y lo deriva a ` +
+          `un agente), ni cargar, retirar, pedir una recarga o crear otra cuenta ` +
+          `desde su celular.` +
           (b.motivo ? `<br><b>Motivo:</b> ${esc(b.motivo)}` : "") +
           (b.por ? `<br><span style="color:var(--muted)">Lo bloqueó ${esc(b.por)}` +
                    (b.desde ? ` el ${esc(String(b.desde).slice(0,16))}` : "") + `</span>` : "") +
