@@ -841,7 +841,9 @@ def avisar_retiros(ctx, retiros: list, solo_ver: bool) -> None:
         log.warning("no pude pedir los avisos de retiros: %s", e)
 
 
-STOCK_CADA_MIN = 10          # cada cuanto se mira nuestro stock de fichas
+# 5 y no 10: es UNA request, y avisa cuando nos estamos quedando sin fichas
+# para pagar. Enterarse diez minutos tarde de eso no tiene ninguna ventaja.
+STOCK_CADA_MIN = int(os.environ.get("STOCK_CADA_MIN", "5"))
 _STOCK_MARCA = "/tmp/gp_stock_visto"
 
 
@@ -919,7 +921,14 @@ def revisar_stock(ctx, solo_ver: bool) -> None:
 # ---------------------------------------------------------------------------
 # El LIBRO: lo que la plataforma ejecuto de verdad
 # ---------------------------------------------------------------------------
-LIBRO_CADA_MIN = 15          # cada cuanto se sincroniza
+# 5 Y NO 15 (18/09/2026). El libro no es un dato de consulta: es lo que evita
+# pagar un retiro dos veces. La pantalla de Retiros pendientes cruza cada
+# pedido contra `operaciones_panel` y avisa *"esto ya figura hecho en el
+# panel"*, asi que con 15 minutos de atraso un operador podia pagar a mano en
+# el panel y otro aprobar el mismo pedido en el CRM sin ver el aviso -- que es
+# exactamente lo que paso el 16/09 con tres de cuatro retiros.
+# Cuesta 4-6 requests y un par de segundos, sobre un minuto de presupuesto.
+LIBRO_CADA_MIN = int(os.environ.get("LIBRO_CADA_MIN", "5"))
 LIBRO_DIAS     = 30          # ventana de la sincronizacion rutinaria
 _LIBRO_MARCA   = "/tmp/gp_libro_visto"
 HISTORIAL      = f"{PANEL_API}/agent_admin/payment/requests/history/"
