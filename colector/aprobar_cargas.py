@@ -185,14 +185,21 @@ def _json(r):
         raise DesafioWAF(f"respuesta no-JSON del panel: {txt[:200]}")
 
 
-WAF_INTENTOS = int(os.environ.get("WAF_INTENTOS", "3"))   # el original + 2
-# MEDIDO EN PRODUCCION (18/09/2026, primera hora con el reintento puesto): el
-# WAF desafia cada 5-7 paginas y TODOS los challenges se resolvieron en el
-# segundo intento, sin necesidad de recargar la pagina. O sea que la espera no
-# es lo que lo arregla -- el challenge es por request, y la siguiente pasa.
-# Con 1,5 s y ~12 challenges por barrido eran 18 segundos regalados sobre un
-# presupuesto de 60. Medio segundo alcanza.
-WAF_ESPERA_S = float(os.environ.get("WAF_ESPERA_S", "0.5"))
+WAF_INTENTOS = int(os.environ.get("WAF_INTENTOS", "4"))   # el original + 3
+# CUANTO SE ESPERA ANTES DE CADA REINTENTO, medido en produccion el 18/09/2026.
+#
+# Con 1,5 s: un barrido completo recibio 10 challenges y los 10 se resolvieron
+# en el SEGUNDO intento. Ninguno llego al tercero.
+#
+# De ahi se saco la conclusion equivocada --"la espera no es lo que lo arregla,
+# el challenge es por request"-- y se bajo a 0,5 s. El primer barrido con ese
+# valor se quedo sin intentos en la pagina 1: tres challenges seguidos en cinco
+# segundos. Se resolvian en el segundo intento POR la espera, no a pesar de
+# ella: el WAF desafia de a rafagas y hay que dejarlas pasar.
+#
+# Por eso ahora la espera CRECE. La rafaga corta se paga barato (1,5 s, que es
+# el caso normal) y la larga tiene tiempo de aflojar sin gastar intentos.
+WAF_ESPERAS_S = [1.5, 3.0, 5.0]
 
 
 def _despejar_waf(ctx) -> bool:
@@ -250,14 +257,14 @@ def leer_json(ctx, url: str, que: str, **kw):
             ultimo = e
             if intento >= WAF_INTENTOS:
                 break
-            # El primer reintento es pelado: muchas veces el challenge es de una
-            # request suelta y la siguiente pasa. Recien el segundo paga el
-            # precio de recargar la pagina, que es lo unico que consigue una
-            # cookie de clearance nueva.
-            if intento >= 2:
+            # La espera primero, siempre: es lo que deja pasar la rafaga y lo
+            # que resolvio los 10 challenges del barrido medido. La recarga de
+            # la pagina --3 segundos, y en la unica medicion que llego hasta
+            # ahi no alcanzo a despejar nada-- queda para el ANTEULTIMO
+            # intento: si la rafaga no aflojo sola, puede ser la cookie.
+            time.sleep(WAF_ESPERAS_S[min(intento - 1, len(WAF_ESPERAS_S) - 1)])
+            if intento == WAF_INTENTOS - 1:
                 _despejar_waf(ctx)
-            else:
-                time.sleep(WAF_ESPERA_S)
             log.info("%s: challenge del WAF, reintento (%d de %d)",
                      que, intento + 1, WAF_INTENTOS)
     raise ultimo if ultimo else DesafioWAF(que)

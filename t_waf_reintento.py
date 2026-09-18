@@ -90,7 +90,7 @@ def correr(respuestas, intentos=3):
         '_json': lambda x: x,
         'DesafioWAF': DesafioWAF,
         'WAF_INTENTOS': intentos,
-        'WAF_ESPERA_S': 0,
+        'WAF_ESPERAS_S': [0, 0, 0],   # sin dormir: el test mide intentos, no relojes
         'time': type('t', (), {'sleep': staticmethod(
             lambda s: dormido.__setitem__('s', dormido['s'] + s))}),
         '_despejar_waf': lambda ctx: (setattr(ctx, 'despejes', ctx.despejes + 1), True)[1],
@@ -119,17 +119,40 @@ chequear('el primer reintento NO recarga la pagina', panel.despejes == 0,
 
 print('\n=== 3. Si insiste, se despeja con el navegador ===')
 # `ctx.request` no ejecuta JavaScript: puede llevar la cookie de clearance que
-# ya tiene, pero no conseguir una nueva. Eso solo lo hace la pagina.
-panel, d, err = correr(['waf', 'waf', 'ok'])
-chequear('el tercer intento sale', err is None and d == {'dato': 'ok'})
-chequear('y antes se recargo la pagina del panel', panel.despejes == 1,
+# ya tiene, pero no conseguir una nueva. Eso solo lo hace la pagina. Va en el
+# ANTEULTIMO intento: recargar cuesta ~3 s y en la unica medicion que llego
+# hasta ahi no despejo nada, asi que primero se deja pasar la rafaga.
+panel, d, err = correr(['waf', 'waf', 'waf', 'ok'], intentos=4)
+chequear('el cuarto intento sale', err is None and d == {'dato': 'ok'})
+chequear('y antes se recargo la pagina del panel UNA vez', panel.despejes == 1,
          'despejes=%s' % panel.despejes)
+panel, d, err = correr(['waf', 'ok'], intentos=4)
+chequear('pero una rafaga corta no paga esa recarga', panel.despejes == 0,
+         'son 3 s y el caso normal se resuelve solo esperando')
 
 print('\n=== 4. Si el WAF no afloja, se rinde (no queda girando) ===')
-panel, d, err = correr(['waf', 'waf', 'waf', 'waf', 'waf'])
+panel, d, err = correr(['waf'] * 9, intentos=4)
 chequear('levanta DesafioWAF', isinstance(err, DesafioWAF), 'err=%r' % err)
-chequear('despues de exactamente 3 intentos', panel.pedidos == 3,
+chequear('despues de exactamente 4 intentos', panel.pedidos == 4,
          'pedidos=%s -- de mas se come el minuto del cron' % panel.pedidos)
+
+print('\n=== 4b. La espera CRECE, que es lo que deja pasar la rafaga ===')
+# El 18/09 se bajo a una espera fija de 0,5 s razonando que "el challenge es por
+# request y la siguiente pasa". El primer barrido con ese valor se quedo sin
+# intentos en la pagina 1, con tres challenges en cinco segundos: se resolvian
+# en el segundo intento POR la espera, no a pesar de ella.
+esperas = [n for n in ast.walk(arbol)
+           if isinstance(n, ast.Assign)
+           and any(getattr(x, 'id', '') == 'WAF_ESPERAS_S' for x in n.targets)]
+chequear('las esperas son una lista, no un numero fijo', len(esperas) == 1)
+valores = [v.value for v in esperas[0].value.elts] if esperas else []
+chequear('y cada una es mas larga que la anterior',
+         len(valores) >= 3 and all(valores[i] < valores[i + 1]
+                                   for i in range(len(valores) - 1)),
+         'valores=%s' % valores)
+chequear('la primera es la que se midio funcionando (1,5 s)',
+         bool(valores) and valores[0] == 1.5,
+         'con 0,5 s se quedo sin intentos en el primer barrido')
 
 # ---------------------------------------------------------------------------
 print('\n=== 5. NUNCA una escritura ===')
