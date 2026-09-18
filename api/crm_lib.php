@@ -90,10 +90,38 @@ if (!function_exists('crm_conversacion_id')) {
         $st->execute([$usuario]);
         if (!$st->fetchColumn()) { return ['ok' => false, 'error' => 'El usuario no existe']; }
 
+        /* UN RETIRO QUE HACE EL OPERADOR YA VIENE APROBADO, y la distincion es
+           todo el punto de esta linea.
+
+           `aprobado = 1` es lo que la cola exige para entregarle un retiro al
+           worker (acciones_cola.php: "tipo = 'retirar' AND aprobado = 1").
+           Existe porque sacarle plata a alguien tiene que decidirlo una
+           persona -- pero la persona ES quien aprieta este boton. Dejarlo en 0
+           lo mandaba a esperar su PROPIA aprobacion en la pantalla de Retiros:
+           el operador retiraba, en ganamos no pasaba nada, y no habia nada que
+           dijera por que.
+
+           Pedido de Nahuel (18/09/2026): *"si yo aprieto retiro y le saco
+           todas sus fichas, quiero que efectivamente se retiren todas las
+           fichas en ganamos... si el jugador solicita un retiro me aparece en
+           retiros pendientes, pero fuera de eso quiero poder depositarle o
+           retirarle fichas discrecionalmente desde esos botones"*.
+
+           LA APROBACION SIGUE EXISTIENDO PARA LO QUE PIDE EL JUGADOR. Esos no
+           pasan por aca: los crea `fichas_pedir_retiro()` (fichas_lib.php) con
+           el default 0, vengan del chat o del boton de adentro del juego. Esos
+           siguen esperando en Retiros pendientes, que es donde tienen que
+           esperar -- ahi el que decide no es el que pidio.
+
+           El retiro del operador igual aparece en esa pantalla hasta que el
+           worker lo ejecuta (un minuto): se ve lo que esta pasando, no se pide
+           permiso para hacerlo. */
+        $aprobado = ($tipo === 'retirar') ? 1 : 0;
+
         $pdo->beginTransaction();
         try {
-            $pdo->prepare("INSERT INTO acciones_saldo (usuario, tipo, monto, motivo) VALUES (?,?,?,?)")
-                ->execute([$usuario, $tipo, $monto, $motivo !== '' ? $motivo : null]);
+            $pdo->prepare("INSERT INTO acciones_saldo (usuario, tipo, monto, motivo, aprobado) VALUES (?,?,?,?,?)")
+                ->execute([$usuario, $tipo, $monto, $motivo !== '' ? $motivo : null, $aprobado]);
             $signed = ($tipo === 'retirar') ? -$monto : $monto;
             $pdo->prepare("INSERT INTO movimientos (usuario, tipo, monto, motivo, origen, operador) VALUES (?,?,?,?,?,?)")
                 ->execute([$usuario, 'saldo', (int)round($signed), $motivo !== '' ? $motivo : null, 'crm', $operador]);
