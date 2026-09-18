@@ -173,17 +173,29 @@ function ficha_usuario(PDO $pdo, string $usuario): ?array
        distintas sobre la misma plata. */
     $r['retiros_abiertos'] = [];
     try {
+        /* VA EL `id`, y es lo que permite ACTUAR sobre el pedido y no solo
+           mirarlo. El aviso del modal existia desde el 15/09 pero era un texto:
+           el operador leia "ya tiene un pedido abierto", igual retiraba a mano,
+           y el pedido quedaba vivo para que OTRO operador lo aprobara despues.
+           Avisarle al primero no protege del segundo. Con el id, el retiro
+           manual puede cancelarlo en el mismo acto (ver `cancelar` en
+           retirar_saldo). */
         $sr = $pdo->prepare(
-            "SELECT monto, estado FROM acciones_saldo
+            "SELECT id, monto, estado FROM acciones_saldo
               WHERE usuario = ? AND tipo = 'retirar'
                 AND estado IN ('pendiente','procesando','revisar','error')
               ORDER BY creada_en DESC LIMIT 5"
         );
         $sr->execute([$usuario]);
         foreach ($sr->fetchAll(PDO::FETCH_ASSOC) as $f) {
-            $r['retiros_abiertos'][] = ['monto' => (float)$f['monto'],
+            /* `procesando` ya lo tiene el worker: cancelarlo desde aca seria
+               cerrar en la base algo que puede estar ejecutandose en el panel
+               en este mismo segundo. Se muestra, no se ofrece cancelar. */
+            $r['retiros_abiertos'][] = ['id' => (int)$f['id'],
+                                        'monto' => (float)$f['monto'],
                                         'estado' => (string)$f['estado'],
-                                        'del_juego' => false];
+                                        'del_juego' => false,
+                                        'cancelable' => (string)$f['estado'] !== 'procesando'];
         }
     } catch (Throwable $e) {
         error_log('ficha_usuario/retiros: ' . $e->getMessage());
@@ -196,9 +208,15 @@ function ficha_usuario(PDO $pdo, string $usuario): ?array
         );
         $sp->execute([$usuario]);
         foreach ($sp->fetchAll(PDO::FETCH_ASSOC) as $f) {
-            $r['retiros_abiertos'][] = ['monto' => (float)$f['monto'],
+            /* Los del juego NO se pueden cancelar desde aca: viven del lado
+               de ganamos y se resuelven en SU panel. Se avisan igual --son la
+               mitad del riesgo de pagar dos veces-- pero el operador tiene que
+               ir a cerrarlos alla. */
+            $r['retiros_abiertos'][] = ['id' => 0,
+                                        'monto' => (float)$f['monto'],
                                         'estado' => 'pendiente',
-                                        'del_juego' => true];
+                                        'del_juego' => true,
+                                        'cancelable' => false];
         }
     } catch (Throwable $e) {
         // Sin la migracion 64 no hay espejo del juego: se avisa lo que se pueda.
@@ -1730,6 +1748,95 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $monto   = (float)($body['monto'] ?? 0);
             $motivo  = mb_substr((string)($body['motivo'] ?? ''), 0, 200);
             $tipo    = $accion === 'retirar_saldo' ? 'retirar' : 'cargar';
+
+            /* =============================================================
+               RETIRO A MANO CON UN PEDIDO ABIERTO: NO SE HACE A CIEGAS.
+
+               EL CASO (Nahuel, 18/09/2026): *"si una persona tiene cien mil
+               fichas y solicita un retiro de veinte mil, un operador puede
+               hacerle ese retiro a mano. Pero si ese jugador previamente hizo
+               una solicitud desde el boton de retiros, esa solicitud queda
+               activa y viene otro empleado y le vuelve a retirar otras 20.000
+               cuando la apruebe"*.
+
+               Ya habia un aviso en el modal desde el 15/09, y no alcanza: es
+               un texto que se lee una vez, y el que paga dos veces es el
+               SEGUNDO operador, que nunca lo vio. La proteccion tiene que
+               estar acá, del lado del server, donde pasan los dos.
+
+               Por eso el retiro manual EXIGE decir qué se hace con lo que
+               estaba abierto. Sin `confirmado`, se rechaza con la lista para
+               que el cliente la muestre. No es burocracia: es la unica forma
+               de que quede una decision explicita antes de sacar plata dos
+               veces sobre el mismo saldo.
+
+               Es solo para RETIRAR. Cargar de mas no tiene esta simetria: dos
+               cargas son dos cargas, y el jugador no pierde nada.
+               ============================================================= */
+            if ($tipo === 'retirar') {
+                $abiertos = [];
+                try {
+                    $sa = $pdo->prepare(
+                        "SELECT id, monto, estado FROM acciones_saldo
+                          WHERE usuario = ? AND tipo = 'retirar'
+                            AND estado IN ('pendiente','procesando','revisar','error')
+                          ORDER BY creada_en DESC LIMIT 5"
+                    );
+                    $sa->execute([$usuario]);
+                    foreach ($sa->fetchAll(PDO::FETCH_ASSOC) as $f) {
+                        $abiertos[] = ['id' => (int)$f['id'], 'monto' => (float)$f['monto'],
+                                       'estado' => (string)$f['estado'], 'del_juego' => false];
+                    }
+                } catch (Throwable $e) { error_log('retirar/abiertos: ' . $e->getMessage()); }
+                try {
+                    $sp = $pdo->prepare(
+                        "SELECT monto FROM retiros_panel
+                          WHERE username = ? AND estado = 'abierto' LIMIT 5"
+                    );
+                    $sp->execute([$usuario]);
+                    foreach ($sp->fetchAll(PDO::FETCH_ASSOC) as $f) {
+                        $abiertos[] = ['id' => 0, 'monto' => (float)$f['monto'],
+                                       'estado' => 'pendiente', 'del_juego' => true];
+                    }
+                } catch (Throwable $e) { /* sin migracion 64 no hay espejo */ }
+
+                if ($abiertos && empty($body['confirmado'])) {
+                    salir(['ok' => false, 'codigo' => 'retiros_abiertos',
+                           'abiertos' => $abiertos,
+                           'error' => 'Este jugador ya tiene un pedido de retiro abierto. '
+                                    . 'Confirmá qué hacer con él antes de retirarle a mano.'], 409);
+                }
+
+                /* CANCELAR LOS QUE EL OPERADOR ELIGIO. Va ANTES de crear el
+                   retiro nuevo: si algo falla despues, lo peor que queda es un
+                   pedido cancelado de mas -- visible y reversible. Al reves
+                   quedaria el retiro hecho Y el pedido vivo, que es justo el
+                   doble pago que esto viene a evitar.
+
+                   Solo `pendiente`: un `procesando` ya lo tiene el worker y
+                   cerrarlo en la base no lo frena en el panel. */
+                $aCancelar = $body['cancelar'] ?? [];
+                if (is_array($aCancelar) && $aCancelar) {
+                    $cancel = $pdo->prepare(
+                        "UPDATE acciones_saldo
+                            SET estado = 'cancelada',
+                                mensaje = CONCAT(COALESCE(mensaje,''),
+                                          ' | cancelado por ', ?, ' al retirar a mano desde la ficha')
+                          WHERE id = ? AND usuario = ? AND tipo = 'retirar'
+                            AND estado = 'pendiente'"
+                    );
+                    foreach ($aCancelar as $cid) {
+                        $cid = (int)$cid;
+                        if ($cid <= 0) { continue; }
+                        $cancel->execute([mb_substr((string)$operador, 0, 60), $cid, $usuario]);
+                        if ($cancel->rowCount() > 0) {
+                            crm_bitacora($pdo, $operador, 'cancelar_retiro',
+                                         "id $cid (al retirar a mano de @$usuario)");
+                        }
+                    }
+                }
+            }
+
             $r = crm_saldo($pdo, $usuario, $tipo, $monto, $motivo, $operador);
             if (!$r['ok']) { salir($r, 400); }
 

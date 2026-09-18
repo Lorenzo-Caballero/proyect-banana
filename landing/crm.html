@@ -12229,11 +12229,47 @@
       }
     }
 
+    /* RETIRO A MANO CON UN PEDIDO ABIERTO: se decide acá, no se avisa y ya.
+       El aviso de arriba del modal existe desde el 15/09 y no alcanzaba: es un
+       texto que se lee al abrir, y el que termina pagando dos veces es el
+       SEGUNDO operador, que nunca lo vio. Lo que cierra el agujero es cancelar
+       el pedido viejo en el mismo acto -- así desaparece de la pantalla de
+       Retiros y nadie lo aprueba después.
+       El server exige esta decisión igual (`confirmado`), así que saltearse
+       este diálogo no alcanza para pagar dos veces. */
+    let confirmado = false, aCancelar = [];
+    if(st.accion === "retirar_saldo"){
+      const abiertos = st.retirosAbiertos || [];
+      if(abiertos.length){
+        const cancelables = abiertos.filter(x => x.cancelable && x.id > 0);
+        const delJuego    = abiertos.filter(x => x.del_juego);
+        const lista = abiertos.map(x =>
+          `  · ${money(x.monto)} ${x.del_juego ? "(pedido en el juego)" : "(" + x.estado + ")"}`).join("\n");
+        let txt = `@${st.usuario} ya tiene ${abiertos.length === 1 ? "un pedido de retiro abierto" : abiertos.length + " pedidos de retiro abiertos"}:\n\n${lista}\n\n`
+                + `Vas a retirarle ${money(monto)} a mano AHORA.\n\n`;
+        if(cancelables.length){
+          txt += `¿Cancelo ${cancelables.length === 1 ? "ese pedido" : "esos pedidos"} para que nadie lo apruebe después?\n\n`
+               + `Aceptar = retiro y cancelo.\nCancelar = retiro y los dejo abiertos.`;
+          if(confirm(txt)) aCancelar = cancelables.map(x => x.id);
+          else if(!confirm(`Los dejo abiertos. Ojo: otro operador puede aprobarlos y se le retira DOS veces.\n\n¿Sigo igual?`)) return;
+        } else {
+          /* Los del juego no se pueden cerrar desde acá: viven del lado de
+             ganamos. Se dice dónde hay que ir, que es lo único útil. */
+          txt += delJuego.length
+            ? `Esos pedidos son del botón de adentro del juego: hay que cerrarlos EN EL PANEL de ganamos, no se puede desde acá.\n\n¿Seguís?`
+            : `¿Seguís?`;
+          if(!confirm(txt)) return;
+        }
+        confirmado = true;
+      }
+    }
+
     const btn=$("#mOk"); btn.disabled=true; btn.textContent="…";
     const d = promesa
       ? await jpost({accion:"bono_crear", usuario:st.usuario,
                      tipo: bt, valor: bt === "giro" ? 0 : monto})
-      : await jpost({accion:st.accion, usuario:st.usuario, monto, motivo:$("#mMotivo").value, conversacion_id:st.convId});
+      : await jpost({accion:st.accion, usuario:st.usuario, monto, motivo:$("#mMotivo").value,
+                     conversacion_id:st.convId, confirmado, cancelar:aCancelar});
     /* VOLVÍA A DECIR "Cargar" SIEMPRE, también en el modal de retirar: es el
        mismo bug que ya se había arreglado al ABRIR el modal y que sobrevivió en
        el camino de vuelta. Si el retiro fallaba, el botón quedaba diciendo
@@ -12258,7 +12294,20 @@
       }
       else toast(st.accion==="retirar_saldo" ? "Retiro encolado en ganamos" : "Carga de saldo encolada en ganamos");
       abrir(st.convId);
-    } else { toast(d.error || "No se pudo"); }
+    }
+    /* EL SERVER RECHAZO POR UN PEDIDO ABIERTO QUE ESTA PANTALLA NO CONOCIA.
+       Pasa de verdad: la ficha se carga una vez y el jugador puede pedir un
+       retiro desde el juego un minuto despues, o puede haberlo creado otro
+       operador. La lista viene en la respuesta, asi que se refresca la ficha y
+       se dice que lo intente otra vez -- ahora con el dato a la vista. No se
+       reintenta solo: lo que falta es una DECISION, no un click. */
+    else if(d.codigo === "retiros_abiertos"){
+      st.retirosAbiertos = Array.isArray(d.abiertos) ? d.abiertos : [];
+      const lista = st.retirosAbiertos.map(x =>
+        `${money(x.monto)} ${x.del_juego ? "(en el juego)" : "(" + x.estado + ")"}`).join(", ");
+      toast(`Apareció un pedido de retiro abierto (${lista}). Probá de nuevo y decidí qué hacer con él.`);
+    }
+    else { toast(d.error || "No se pudo"); }
   });
 
   /* ---------- Notificaciones: vista de página completa (Enviar / Historial

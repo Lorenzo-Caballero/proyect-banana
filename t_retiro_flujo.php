@@ -145,6 +145,67 @@ if ($hayPanel) {
 $pdo->exec("DELETE FROM acciones_saldo WHERE usuario='$U'");
 $pdo->exec("DELETE FROM usuarios WHERE username='$U'");
 
+echo "\n=== 6. Retirar a mano con un pedido abierto: hay que decidir ===\n";
+
+/* EL CASO (Nahuel, 18/09/2026): *"si una persona tiene cien mil fichas y
+   solicita un retiro de veinte mil, un operador puede hacerle ese retiro a
+   mano. Pero si ese jugador previamente hizo una solicitud desde el boton de
+   retiros, esa solicitud queda activa y viene otro empleado y le vuelve a
+   retirar otras 20.000 cuando la apruebe"*.
+
+   Desde el 15/09 habia un aviso en el modal, y no alcanzaba: es un texto que
+   se lee al abrir, y EL QUE PAGA DOS VECES ES EL SEGUNDO OPERADOR, que nunca
+   lo vio. Avisarle al primero no protege del segundo.
+
+   Lo que cierra el agujero son dos cosas, y las dos se chequean aca:
+     - el server EXIGE `confirmado` para retirar a mano si hay algo abierto
+       (una guarda de UI no protege a otro operador, ni a otro cliente);
+     - y el retiro manual puede CANCELAR el pedido viejo en el mismo acto, que
+       es lo que lo saca de la pantalla de Retiros para que nadie lo apruebe.
+
+   Posicional sobre crm.php porque es un endpoint: requerirlo desde un test
+   arranca una request. */
+$srcCrm = file_get_contents(__DIR__ . "/api/crm.php");
+$iGuard = strpos($srcCrm, "'codigo' => 'retiros_abiertos'");
+
+chequear('el server rechaza el retiro manual si hay pedidos abiertos', $iGuard !== false);
+chequear('y solo cuando el operador NO confirmo',
+         str_contains($srcCrm, "empty(" . chr(36) . "body['confirmado'])"),
+         'sin esto el operador no podria retirar nunca');
+chequear('devuelve la lista, no solo el error',
+         $iGuard !== false && str_contains(substr($srcCrm, $iGuard, 300), "'abiertos'"),
+         'el operador tiene que ver QUE hay abierto para poder decidir');
+
+/* La guarda mira LAS DOS colas. Mirar solo la nuestra deja pasar justo el caso
+   del reporte: el pedido hecho desde el boton de adentro del juego. */
+$bloque = $iGuard !== false ? substr($srcCrm, max(0, $iGuard - 2400), 2400) : '';
+chequear('mira la cola nuestra (acciones_saldo)', str_contains($bloque, 'FROM acciones_saldo'));
+chequear('y la del juego (retiros_panel)',       str_contains($bloque, 'FROM retiros_panel'));
+chequear('la guarda es solo del retiro, no de la carga',
+         str_contains($bloque, "if (" . chr(36) . "tipo === 'retirar')"));
+
+/* La cancelacion: solo `pendiente`. Un `procesando` ya lo tiene el worker y
+   cerrarlo en la base no lo frena en el panel -- quedaria "cancelado" de este
+   lado y ejecutado del otro, que es peor que no cancelarlo. */
+$iCanc = strpos($srcCrm, "SET estado = 'cancelada'");
+chequear('puede cancelar el pedido viejo en el mismo acto', $iCanc !== false);
+if ($iCanc !== false) {
+    $c = substr($srcCrm, $iCanc, 460);
+    chequear('solo los `pendiente`, nunca uno en curso',
+             str_contains($c, "estado = 'pendiente'"),
+             'un procesando ya lo tiene el worker: cancelarlo aca no lo frena');
+    chequear('y solo los de ESE jugador',
+             str_contains($c, 'usuario = ?'),
+             'sin esto un id suelto cancela el retiro de cualquiera');
+}
+
+/* Y que la ficha mande el `id`: sin el, el modal puede AVISAR pero no CANCELAR
+   -- que es exactamente lo que pasaba desde el 15/09. */
+chequear('la ficha devuelve el id de cada pedido abierto',
+         str_contains($srcCrm, "[] = ['id' => (int)" . chr(36) . "f['id']"),
+         'sin id el aviso es solo texto');
+chequear('y dice cual se puede cancelar', str_contains($srcCrm, "'cancelable' =>"));
+
 echo "\n---------------------------------------\n";
 printf("%d OK, %d fallas\n", $ok, $fail);
 exit($fail === 0 ? 0 : 1);
