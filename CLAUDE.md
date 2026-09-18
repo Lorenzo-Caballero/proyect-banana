@@ -837,6 +837,31 @@ jugadores.
   > del cron. El arreglo de fondo (que el compose lo monte como volumen) sigue
   > pedido a Fauno.
 
+- **El WAF desafía CADA 5-7 PÁGINAS, no «de a ratos».** Medido el 18/09/2026:
+  un barrido del espejo de saldos (62 páginas) recibió **10 challenges**. Hasta
+  ese día no se sabía, porque el primero abortaba la pasada entera y nunca se
+  veían los otros nueve — o sea que **el espejo simplemente no podía terminar**
+  cuando el WAF estaba así (tres de seis pasadas muertas en una hora).
+
+  > Lo que lo arregla es `leer_json()` en `colector/aprobar_cargas.py`:
+  > reintenta la LECTURA que falló. Un challenge prueba que la request no llegó
+  > al backend, así que repetirla no puede duplicar nada — pero por eso mismo
+  > **nunca se envuelve una escritura** (`aprobar`, `rechazar`,
+  > `retirar_del_jugador`, `fijar_bono`, `confirmar`): ahí una respuesta
+  > ilegible no prueba nada y reintentar paga dos veces. `t_waf_reintento.py`
+  > falla si alguien lo hace.
+  >
+  > Los diez challenges se resolvieron **todos en el segundo intento**, sin
+  > recargar la página: el challenge es por request y la siguiente pasa. La
+  > recarga (`_despejar_waf`) queda para el tercer intento.
+  >
+  > El precio es tiempo: el barrido pasó de 53 a 65 segundos, sobre un cron que
+  > corre cada minuto con `flock -w 45` (una pasada de más de ~105 s le hace
+  > perder el turno a la siguiente, y ahí van las cargas y los retiros). Por eso
+  > el barrido tiene presupuesto (`USUARIOS_MAX_SEG`) y **retoma en la página
+  > donde lo cortó**. Cortar es honesto desde la migración 68: `saldo_visto_en`
+  > es por fila, así que el que no se alcanzó a leer conserva su fecha vieja.
+
 - **Los avisos de Telegram salen de DOS lugares, y solo uno deja rastro.**
   `tg_evento()` (PHP) registra en `tg_avisos` cuando lleva clave de dedupe; los
   **watchdogs de `scripts/*.sh`** (`monitor-cargas.sh`, `monitor-altas.sh`,
