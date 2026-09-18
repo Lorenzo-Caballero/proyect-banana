@@ -226,6 +226,44 @@ chequear('y lo define ANTES del primer require',
          $posFlag !== false && $posReq !== false && $posFlag < $posReq,
          'un flag que llega tarde no apaga nada');
 
+echo "\n=== Una carga a mano NO es una compra ===\n";
+
+/* MEDIDO EL 18/09/2026, antes de prender la publicidad: en 14 dias se le
+   mandaron a Meta 14 `Purchase` por cargas con origen 'crm', $106.007 en
+   total. Ninguna la pago el jugador -- son cargas de prueba, correcciones,
+   regalos, y las que el operador cubre a mano cuando el deposito automatico
+   falla. Las compras de verdad (origen 'recarga', $364.120 en el mismo
+   periodo) salen por rl_notificar_acreditada().
+
+   El daño no es un numero feo: Meta OPTIMIZA la pauta con estos eventos.
+   Decirle que 14 personas compraron sin haber comprado le enseña a buscar
+   gente parecida a alguien que recibe fichas gratis, y eso se paga en cada
+   impresion.
+
+   El criterio es el mismo que se aplico hoy al watchdog de cargas: no se
+   afirma lo que no se puede probar. Una carga 'crm' no tiene fila en
+   `recargas` ni en `pagos`.
+
+   Posicional: acciones_cola.php es un endpoint y no se puede requerir. */
+$srcAC = file_get_contents(__DIR__ . '/api/acciones_cola.php');
+$iP = strpos($srcAC, "meta_evento(" . chr(36) . "pdo, 'Purchase'");
+chequear('acciones_cola sigue reportando Purchase', $iP !== false);
+$guard = $iP !== false ? substr($srcAC, max(0, $iP - 900), 900) : '';
+chequear('pero NO para una carga manual del CRM',
+         str_contains($guard, 'esManual'),
+         'una carga a mano no tiene pago detras: no se puede afirmar una compra');
+chequear('la condicion mira origen = crm',
+         str_contains($srcAC, "(" . chr(36) . "a['origen'] ?? '') === 'crm'"));
+
+/* Y QUE NO SE LLEVE PUESTAS LAS EXCLUSIONES QUE YA ESTABAN: la carga que
+   viene de una recarga (esa la reporta recargas_lib, seria doble) y la que es
+   todo bono (un regalo de la casa, no un ingreso). */
+chequear('sigue sin reportar la carga que viene de una recarga',
+         str_contains($guard, 'deRecarga'),
+         'si no, cada transferencia contaria dos veces');
+chequear('y sigue sin reportar un deposito que es todo bono',
+         str_contains($guard, 'esRegalo'));
+
 cfg_crm_guardar($pdo, ['meta_activo' => '0', 'meta_pixel_id' => '',
                        'meta_capi_token' => ''], 'test');
 limpiar($pdo);

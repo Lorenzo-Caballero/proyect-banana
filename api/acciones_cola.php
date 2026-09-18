@@ -540,7 +540,40 @@ try {
                 $esRegalo = $bonoDep > 0
                          && (int)($a['coins_debitados'] ?? 0) === 0
                          && (float)($a['monto'] ?? 0) <= $bonoDep;
-                if (($a['tipo'] ?? '') === 'cargar' && !$deRecarga && !$esRegalo) {
+
+                /* UNA CARGA A MANO NO ES UNA COMPRA, y reportarla como tal es
+                   peor que no reportar nada.
+
+                   MEDIDO EL 18/09/2026, antes de prender la publicidad: en 14
+                   dias se le mandaron a Meta 14 `Purchase` por cargas con
+                   origen 'crm', $106.007 en total. Ninguna la pago el jugador
+                   -- son cargas de prueba, correcciones, regalos, y las que el
+                   operador cubre a mano cuando el deposito automatico falla.
+                   Las compras de verdad (origen 'recarga', $364.120 en el
+                   mismo periodo) salen por rl_notificar_acreditada() y esas si
+                   estan bien.
+
+                   El daño no es un numero feo en un informe: Meta OPTIMIZA la
+                   pauta con estos eventos. Decirle que 14 personas compraron
+                   sin haber comprado le enseña a buscar gente parecida a
+                   alguien que recibe fichas gratis -- y eso se paga en cada
+                   impresion.
+
+                   EL CRITERIO, y es el mismo que ya se aplico hoy al watchdog
+                   de cargas: no se afirma lo que no se puede probar. Una carga
+                   'crm' no tiene fila en `recargas` ni en `pagos`: no hay
+                   ninguna evidencia de que haya entrado plata.
+
+                   SE PIERDE UN CASO LEGITIMO y vale decirlo: el operador que
+                   carga a mano porque el matcher no encontro la transferencia.
+                   Esa SI es una compra. El camino correcto para esa es
+                   acreditar la recarga desde Comprobantes --ahi el Purchase
+                   sale solo y bien-- y no la carga suelta desde la ficha. Un
+                   evento de menos sub-reporta; uno de mas desvia el algoritmo.
+                   Entre los dos errores, este es el barato. */
+                $esManual = ($a['origen'] ?? '') === 'crm';
+
+                if (($a['tipo'] ?? '') === 'cargar' && !$deRecarga && !$esRegalo && !$esManual) {
                     try {
                         require_once __DIR__ . '/meta_lib.php';
                         require_once __DIR__ . '/publicidad_lib.php';
