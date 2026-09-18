@@ -45,7 +45,7 @@ header('Cache-Control: no-store');
 /* Cada lectura del colector con su edad, para no obligar a nadie a restar
    fechas a ojo. Nunca lanza: si falta la config, viaja en null. */
 $colector = [];
-foreach (['espejo', 'libro', 'stock'] as $k) {
+foreach (['espejo', 'libro', 'stock', 'bancos'] as $k) {
     $edad = null;
     $est  = null;
     try {

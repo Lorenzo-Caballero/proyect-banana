@@ -117,6 +117,29 @@ foreach (['colector_espejo_en', 'colector_espejo_estado', 'colector_libro_en',
 }
 
 // ===========================================================================
+echo "\n=== 5b. La billetera del panel, que no la reporta nadie ===\n";
+
+/* ENCONTRADO EL 18/09/2026 auditando esto mismo: el cron horario de
+   sync_bancos.py apuntaba a un contenedor apagado y fallaba una vez por hora
+   en un log que nadie leia. `bancos_ganamos` llevaba 18 dias sin actualizarse.
+
+   Y no es un dato de consulta: rl_banco_panel() le GANA a lo configurado en el
+   panel del dueño, porque el jugador que pide un deposito adentro de la
+   plataforma ve la billetera del panel y el chat tiene que decir lo mismo. Si
+   el alias hubiera cambiado, el chat habria seguido dictando el viejo y esa
+   plata no se acreditaba nunca. No paso, pero fue suerte. */
+chequear('la billetera tambien se vigila',
+         str_contains($srcSalud, "'bancos' => ["));
+chequear('y se mira la TABLA, no un reporte',
+         str_contains($srcSalud, 'SELECT MAX(visto_en) FROM bancos_ganamos'),
+         'el chequeo no puede depender de que el que tiene que correr, corra');
+chequear('se calcula ANTES de guardar, o no se guardaria nunca',
+         strpos($srcSalud, 'FROM bancos_ganamos') < strpos($srcSalud, 'cfg_crm_guardar($pdo, $guardar'));
+chequear('con un umbral propio: espeja cada hora, no cada cinco minutos',
+         str_contains($srcSalud, "'bancos' => ['min' => 240"));
+chequear("y 'colector_bancos_en' esta en la lista blanca",
+         str_contains($srcCfg, "'colector_bancos_en'"));
+// ===========================================================================
 echo "\n=== 6. Y la regla que no se negocia: NUNCA reintentar una escritura ===\n";
 
 /* Un challenge prueba que la request no llego al backend, y por eso una

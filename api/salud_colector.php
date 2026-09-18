@@ -70,6 +70,11 @@ const SC_LIMITES = [
                  'duele' => 'Retiros pendientes deja de avisar «esto ya figura hecho en el panel»: se puede pagar dos veces.'],
     'stock'  => ['min' => 45, 'que' => 'nuestro stock de fichas',
                  'duele' => 'No vamos a enterarnos si nos estamos quedando sin fichas para pagar.'],
+    /* Este espeja cada hora, así que el umbral es otro. Y es el más caro de
+       los cuatro: si la billetera del panel cambió y el espejo no corrió, el
+       chat le sigue dictando la anterior a cada jugador que quiere cargar. */
+    'bancos' => ['min' => 240, 'que' => 'la billetera de cobro del panel',
+                 'duele' => 'Si cambió el alias, el chat le está dictando el viejo y esa plata no se acredita.'],
 ];
 
 function sc_salir(array $d, int $code = 200): void
@@ -102,6 +107,28 @@ foreach (array_keys(SC_LIMITES) as $k) {
 if (isset($body['challenges'])) {
     $guardar['colector_challenges'] = (string)max(0, (int)$body['challenges']);
 }
+/* ---- 1b. La billetera del panel, que no la reporta nadie ----------------
+   `bancos_ganamos` la espeja `sync_bancos.py`, que corre por su propio cron y
+   no pasa por acá. Se mira la tabla directamente, y eso es MEJOR que un
+   reporte: el chequeo no depende de que el que tiene que correr, corra -- que
+   es justamente lo que falló.
+
+   NO ES UN DATO DE CONSULTA. `rl_banco_panel()` le GANA a lo configurado en el
+   panel del dueño, porque el jugador que pide un depósito adentro de la
+   plataforma ve la billetera del panel y el chat tiene que decir lo mismo. Un
+   espejo viejo significa que si se cambió la billetera, el chat sigue dictando
+   la anterior y esa plata no se acredita nunca.
+
+   El 18/09/2026 llevaba 18 días sin actualizarse: el cron apuntaba a un
+   contenedor apagado y fallaba una vez por hora en un log que nadie leía. */
+try {
+    $bv = $pdo->query("SELECT MAX(visto_en) FROM bancos_ganamos")->fetchColumn();
+    $bt = ($bv !== false && $bv !== null) ? strtotime((string)$bv) : false;
+    if ($bt !== false) {
+        $guardar['colector_bancos_en'] = date('Y-m-d H:i:s', $bt);
+    }
+} catch (Throwable $e) { /* sin migracion 47: no se chequea, no se rompe */ }
+
 $guardar['colector_visto_en'] = date('Y-m-d H:i:s');
 
 try {
