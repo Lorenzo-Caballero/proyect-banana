@@ -239,15 +239,20 @@ function cf_dns_upsert($dominio, $cfg) {
     return [false, 'Cloudflare falló: ' . $msg];
 }
 
-/* El panel de agentes al que le pegan TODOS los bots de clientes.
-   agents.ganamos7.com desde el 16/09/2026 (decision del dueño): es el MISMO
-   backend que agents.ganamosonline.com (probado con login a mano: misma
-   cuenta, mismo saldo, mismos jugadores) pero servido por nginx pelado --
-   ganamosonline esta detras de Cloudflare y sus challenges intermitentes
-   trabaron altas y depositos. Una sola constante para que el run y la
-   comparacion de abajo no puedan divergir. */
-const PANEL_LOGIN_URL  = 'https://agents.ganamos7.com/';
-const PANEL_CREATE_URL = 'https://agents.ganamos7.com/user/create-player';
+/* El panel de agentes al que le pegan TODOS los bots de clientes. Una sola
+   constante para que el run y la comparacion de abajo no puedan divergir.
+
+   VOLVIO A ganamosonline el 18/09/2026. El cambio a ganamos7 del 16/09 se
+   apoyaba en que un alta de prueba salia por fast-path -- y esa prueba no
+   probaba nada: el endpoint de alta se aprende una vez y se guarda con la URL
+   ABSOLUTA en /datos/alta_endpoint.json, que quedo en ganamosonline. Las altas
+   nunca se movieron. El unico que cruzo de verdad fue el deposito, y contesto
+   {"status":1,"error_message":"Unauthorized"} -- JSON del backend, no un
+   challenge: la request llega y la sesion de ganamos7 no alcanza para
+   depositar. Dos dias sin acreditar una sola carga por API.
+   Ver scripts/arreglar-bot-altas.sh para la historia completa. */
+const PANEL_LOGIN_URL  = 'https://agents.ganamosonline.com/';
+const PANEL_CREATE_URL = 'https://agents.ganamosonline.com/user/create-player';
 
 /* SLUGS QUE YA TIENEN BOT PROPIO Y NO SE APROVISIONAN.
    `ganamoscrm` es NUESTRO propio negocio, y lo atienden desde antes del

@@ -6,15 +6,40 @@
 #   1. Apuntaba a agents.ganamos7.com "porque ganamosonline era el viejo".
 #   2. Sept 2026: se corrigio a agents.ganamosonline.com "porque ganamos7
 #      choca con el challenge anti-bot". Esa creencia tambien estaba mal.
-#   3. 16/09/2026, LA DEFINITIVA y esta vez con MEDICION + PRUEBA: los dos
-#      dominios son el MISMO panel (login a mano: misma cuenta NAHUELWIN26X,
-#      mismo ID 20284777, mismo saldo, mismos jugadores), pero ganamosonline
-#      esta detras de CLOUDFLARE (403 a curl pelado, challenges intermitentes
-#      que trabaron tres altas y dos depositos el 16/09) y ganamos7 es nginx
-#      pelado. Decision del dueño: se usa ganamos7 y no se cruza mas el WAF.
+#   3. 16/09/2026: se paso a agents.ganamos7.com. Los dos dominios son el MISMO
+#      panel (login a mano: misma cuenta NAHUELWIN26X, mismo ID 20284777, mismo
+#      saldo, mismos jugadores) y ganamosonline esta detras de Cloudflare. Se
+#      dio por probado que ganamos7 servia para ESCRIBIR porque un alta de
+#      prueba salio en 2 segundos por fast-path.
+#   4. 18/09/2026, VUELTA A ganamosonline. Esa prueba del punto 3 NO probaba lo
+#      que decia, y asi se descubrio:
 #
-# Si los challenges reaparecieran por ganamos7, medi primero (curl con y sin
-# UA de navegador, scripts/waf.php) antes de volver a tocar esto.
+#      Los depositos venian fallando desde el cambio, TODOS, con
+#          {"status":1,"result":{},"error_message":"Unauthorized"}
+#      mientras las altas seguian saliendo perfecto. Dos escrituras contra el
+#      "mismo" panel con la misma sesion, una anda y la otra no.
+#
+#      La explicacion estaba en /datos/alta_endpoint.json: el endpoint de alta
+#      se APRENDE una vez y se guarda con la URL ABSOLUTA. Quedo grabado en
+#      https://agents.ganamosonline.com/api/agent_admin/user/ y
+#      `crear_lote_por_fetch` lo usa tal cual (url = plantilla["url"]). O sea
+#      que las altas nunca se movieron: siguieron yendo al dominio viejo, con
+#      la cookie de sesion de ese dominio, y por eso funcionaban. El unico que
+#      de verdad cruzo a ganamos7 fue el deposito, y ahi Unauthorized.
+#
+#      Ese Unauthorized NO es un challenge: es JSON del backend. La request
+#      llega y el backend rechaza la sesion. O sea que la sesion de ganamos7
+#      sirve para leer pero no para depositar.
+#
+#      Se vuelve al dominio donde el sistema esta demostradamente entero HOY:
+#      las altas de hoy salen por ahi. El WAF se vuelve a atacar como se venia
+#      haciendo (menos concurrencia + reintento del challenge), que es lo que
+#      la medicion del 15/09 ya decia que era el problema real.
+#
+# ANTES DE VOLVER A TOCAR ESTO: que las altas salgan NO prueba que el dominio
+# ande, porque usan la URL grabada en alta_endpoint.json y no esta variable.
+# Lo que prueba algo es un DEPOSITO. Borra ese archivo si queres que el bot
+# re-aprenda el endpoint contra el dominio nuevo.
 #
 # Arregla las tres URLs del .env, verifica que la API conteste con la clave
 # que tiene el bot, y reinicia el contenedor.
@@ -32,8 +57,8 @@ CFG="${CFG:-/var/www/api/config.local.php}"
 DOMINIO="${DOMINIO:-ganamoscrm.online}"
 
 API_URL_NUEVA="https://$DOMINIO/gp-api/altas_cola.php"
-PANEL_URL_NUEVA="https://agents.ganamos7.com/user/create-player"
-LOGIN_URL_NUEVA="https://agents.ganamos7.com/"
+PANEL_URL_NUEVA="https://agents.ganamosonline.com/user/create-player"
+LOGIN_URL_NUEVA="https://agents.ganamosonline.com/"
 
 echo "==> Bot en:  $BOT_DIR"
 [ -f "$ENV" ] || { echo "!! No existe $ENV — pasá BOT_DIR=/ruta/al/bot" >&2; exit 1; }
