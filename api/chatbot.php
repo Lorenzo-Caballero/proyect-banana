@@ -2645,8 +2645,22 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
         if (!function_exists('rl_declarar_pago')) {
             return ['ok' => false, 'error' => 'Funcion no disponible (falta actualizar recargas_lib.php).'];
         }
+        /* LA HUELLA DEL ARCHIVO, ademas de lo que se leyo. Es la señal que
+           agarra al que reenvia LA MISMA foto aunque la vision lea mal, o
+           aunque el comprobante no traiga numero de operacion -- que es un
+           tercio de los casos (medido el 18/09/2026). sha1_file no: SHA-256
+           porque esto identifica algo que decide plata y no cuesta mas. */
+        $huellaImg = '';
+        try {
+            if (!empty($adj['ruta']) && is_file($adj['ruta'])) {
+                $h = @hash_file('sha256', $adj['ruta']);
+                if (is_string($h)) { $huellaImg = $h; }
+            }
+        } catch (Throwable $e) { /* sin huella se sigue igual: es una señal mas */ }
+
         $r = rl_declarar_pago($pdo, $u, (string)$d['remitente'], (string)$d['nro_transaccion'],
-                              $d['monto'] !== null ? (float)$d['monto'] : null, 'imagen');
+                              $d['monto'] !== null ? (float)$d['monto'] : null, 'imagen',
+                              (string)($d['fecha'] ?? ''), $huellaImg);
 
         /* COMPROBANTE VIEJO (pedido del dueño, 18/09/2026). La vision ahora
            devuelve la fecha normalizada (AAAA-MM-DD [HH:MM]); si se pudo leer

@@ -2244,8 +2244,23 @@ function rl_matchear_y_acreditar(PDO $pdo, string $idUnico, float $monto): array
  */
 function rl_declarar_pago(PDO $pdo, string $usuario, string $titular = '',
                           string $nroTrx = '', ?float $monto = null,
-                          string $origen = 'chat'): array
+                          string $origen = 'chat', string $fechaCmp = '',
+                          string $huella = ''): array
 {
+    /* `$fechaCmp` y `$huella` entran desde el 18/09/2026 (migracion 72) y son
+       lo que permite reconocer un comprobante repetido CUANDO NO HAY NUMERO DE
+       OPERACION. Medido ese dia: de 36 declaraciones, 24 traian numero -- para
+       el tercio restante ninguna alerta de reuso podia dispararse.
+         $fechaCmp  'AAAA-MM-DD HH:MM' que leyo la vision (o vacio)
+         $huella    SHA-256 del archivo subido (o vacio si vino por texto) */
+    $fechaCmp = trim($fechaCmp);
+    $huella   = preg_match('/^[a-f0-9]{64}$/i', trim($huella)) ? strtolower(trim($huella)) : '';
+    $fechaSql = null;
+    if (preg_match('/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/', $fechaCmp, $mF)
+        && checkdate((int)$mF[2], (int)$mF[3], (int)$mF[1])) {
+        $fechaSql = sprintf('%04d-%02d-%02d %02d:%02d:00', (int)$mF[1], (int)$mF[2], (int)$mF[3],
+                            isset($mF[4]) ? (int)$mF[4] : 0, isset($mF[5]) ? (int)$mF[5] : 0);
+    }
     $usuario = trim($usuario);
     if ($usuario === '') {
         return ['ok' => false, 'error' => 'Falta el usuario.'];
@@ -2277,23 +2292,46 @@ function rl_declarar_pago(PDO $pdo, string $usuario, string $titular = '',
         try {
             $pdo->prepare(
                 "UPDATE recargas
-                    SET titular_declarado = COALESCE(NULLIF(?, ''), titular_declarado),
-                        trx_declarada     = COALESCE(NULLIF(?, ''), trx_declarada)
+                    SET titular_declarado  = COALESCE(NULLIF(?, ''), titular_declarado),
+                        trx_declarada      = COALESCE(NULLIF(?, ''), trx_declarada),
+                        fecha_declarada    = COALESCE(?, fecha_declarada),
+                        comprobante_huella = COALESCE(NULLIF(?, ''), comprobante_huella)
                   WHERE id = ?"
-            )->execute([$titular, $nroTrx, $rec['id']]);
+            )->execute([$titular, $nroTrx, $fechaSql, $huella, $rec['id']]);
         } catch (Throwable $e) {
-            // trx_declarada es de 45_recarga_exacta, que puede faltar aunque
-            // exista titular_declarado (45_match_titular). Guardar el titular
-            // es lo que DESEMPATA -- no puede caerse porque falte la columna
-            // del numero de operacion, que ni siquiera se usa para casar.
+            /* LA ESCALERA BAJA DE A UN ESCALON, y hasta hoy se saltaba uno.
+               Las columnas llegaron en migraciones distintas: titular_declarado
+               en 45_match_titular, trx_declarada en 45_recarga_exacta, y
+               fecha_declarada + comprobante_huella en la 72. Una base a medio
+               migrar hace fallar el UPDATE de arriba ENTERO.
+
+               El fallback guardaba solo el titular, asi que en una base sin la
+               72 el numero de operacion se PERDIA -- y con el, las dos alertas
+               de reuso que cuelgan de el. Lo agarro t_declarar: el chequeo de
+               "YA DECLARADO" dejo de pasar apenas se agregaron las columnas
+               nuevas al UPDATE, porque la base de prueba todavia no tenia la
+               migracion. Sin ese test, el bug viajaba a produccion y vivia ahi
+               hasta que alguien corriera la 72.
+
+               Ahora se prueba con trx primero y recien despues solo el titular,
+               que es lo que DESEMPATA y lo unico que no se puede perder. */
             try {
                 $pdo->prepare(
                     "UPDATE recargas
-                        SET titular_declarado = COALESCE(NULLIF(?, ''), titular_declarado)
+                        SET titular_declarado = COALESCE(NULLIF(?, ''), titular_declarado),
+                            trx_declarada     = COALESCE(NULLIF(?, ''), trx_declarada)
                       WHERE id = ?"
-                )->execute([$titular, $rec['id']]);
+                )->execute([$titular, $nroTrx, $rec['id']]);
             } catch (Throwable $e2) {
-                error_log('rl_declarar_pago: no pude guardar el titular: ' . $e2->getMessage());
+                try {
+                    $pdo->prepare(
+                        "UPDATE recargas
+                            SET titular_declarado = COALESCE(NULLIF(?, ''), titular_declarado)
+                          WHERE id = ?"
+                    )->execute([$titular, $rec['id']]);
+                } catch (Throwable $e3) {
+                    error_log('rl_declarar_pago: no pude guardar el titular: ' . $e3->getMessage());
+                }
             }
         }
 
@@ -2358,6 +2396,62 @@ function rl_declarar_pago(PDO $pdo, string $usuario, string $titular = '',
             }
         } catch (Throwable $e) { /* sin migracion 45 no hay trx_declarada */ }
     }
+    /* ---- LAS DOS SEÑALES QUE NO DEPENDEN DEL NUMERO DE OPERACION ----
+       Las de arriba cuelgan las dos de `nroTrx`, y un tercio de los
+       comprobantes no lo trae (medido el 18/09/2026: 24 de 36). Para ese
+       tercio, hasta hoy, presentar dos veces el mismo comprobante no
+       disparaba nada. */
+
+    /* 1. LA MISMA IMAGEN. La mas barata y la mas dura para el caso simple: el
+          jugador que reenvia LA MISMA foto. No depende de que tan bien se leyo
+          -- si el archivo es identico, es el mismo comprobante. Un recorte
+          distinto ya cambia el hash, y por eso no reemplaza a las otras. */
+    if ($huella !== '') {
+        try {
+            $qh = $pdo->prepare(
+                "SELECT usuario FROM recargas
+                  WHERE comprobante_huella = ? AND id <> ? ORDER BY id DESC LIMIT 1"
+            );
+            $qh->execute([$huella, (int)$rec['id']]);
+            $otroImg = $qh->fetchColumn();
+            if ($otroImg !== false && $otroImg !== null) {
+                $alertas[] = 'MISMA IMAGEN: ese archivo de comprobante ya se presento antes'
+                           . ((string)$otroImg === $usuario ? ' en otra recarga suya' : ' desde OTRA cuenta')
+                           . '. Es exactamente la misma foto. Decile que ese comprobante ya '
+                           . 'fue presentado y que esta recarga necesita una transferencia nueva.';
+            }
+        } catch (Throwable $e) { /* sin migracion 72 no hay huella */ }
+    }
+
+    /* 2. LA MISMA TRANSFERENCIA, sin numero. Fecha + hora + monto + titular:
+          nadie transfiere dos veces el mismo importe, en el mismo minuto,
+          desde la misma cuenta. Se exigen las TRES cosas (fecha con hora,
+          monto y titular) porque con menos se acusa por casualidad -- dos
+          cargas de $1.000 el mismo dia son normales. */
+    if ($fechaSql !== null && $monto !== null && $monto > 0 && $titular !== '') {
+        try {
+            $qf = $pdo->prepare(
+                "SELECT usuario FROM recargas
+                  WHERE fecha_declarada = ?
+                    AND ABS(monto_pedido - ?) < 1
+                    AND titular_declarado IS NOT NULL
+                    AND LOWER(titular_declarado) = LOWER(?)
+                    AND id <> ?
+                  ORDER BY id DESC LIMIT 1"
+            );
+            $qf->execute([$fechaSql, $monto, $titular, (int)$rec['id']]);
+            $otraF = $qf->fetchColumn();
+            if ($otraF !== false && $otraF !== null) {
+                $alertas[] = 'MISMA TRANSFERENCIA: ya se declaro una transferencia del mismo '
+                           . 'importe, a la misma hora (' . $fechaCmp . ') y desde la misma '
+                           . 'cuenta'
+                           . ((string)$otraF === $usuario ? ' en otra recarga suya' : ' en OTRA cuenta')
+                           . '. Es la misma operacion presentada dos veces: decile que necesita '
+                           . 'una transferencia nueva.';
+            }
+        } catch (Throwable $e) { /* sin migracion 72 no hay fecha_declarada */ }
+    }
+
     // El monto del comprobante contra el de la recarga pendiente. Este
     // parametro existia desde la migracion 45 y no se usaba para nada.
     if ($monto !== null && $monto > 0

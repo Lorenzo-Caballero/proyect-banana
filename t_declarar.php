@@ -205,6 +205,68 @@ $alertas = implode(' | ', $r['alertas'] ?? []);
 chequear('avisa YA DECLARADO y que fue OTRA cuenta',
          str_contains($alertas, 'YA DECLARADO') && str_contains($alertas, 'OTRA cuenta'), $alertas);
 
+/* 2b. LAS DOS SEÑALES QUE NO NECESITAN NUMERO DE OPERACION (migracion 72).
+
+   Las alertas 1 y 2 cuelgan las dos de `nroTrx`. Medido en produccion el
+   18/09/2026: de 36 declaraciones, 24 traian numero. Para el tercio restante
+   presentar dos veces el mismo comprobante no disparaba NADA.
+
+   La fecha ya se leia --vision_lib la normaliza-- pero se usaba una vez para
+   decir "es viejo" y despues se tiraba: no quedaba en ninguna parte, asi que
+   no servia para reconocer la misma transferencia dos veces. */
+limpiar($pdo);
+usuario($pdo, 'tdec_h1'); usuario($pdo, 'tdec_h2');
+
+/* MISMA IMAGEN: el mismo archivo, sin numero de operacion en ninguna. */
+$HUELLA = str_repeat('ab', 32);   // 64 hex, como un sha256
+recarga($pdo, 'tdec_h1', 3000.00);
+rl_declarar_pago($pdo, 'tdec_h1', 'ANA LOPEZ', '', 3000.0, 'imagen', '', $HUELLA);
+recarga($pdo, 'tdec_h2', 3000.00);
+$r = rl_declarar_pago($pdo, 'tdec_h2', 'ANA LOPEZ', '', 3000.0, 'imagen', '', $HUELLA);
+$al = implode(' | ', $r['alertas'] ?? []);
+chequear('avisa MISMA IMAGEN aunque no haya nro de operacion',
+         str_contains($al, 'MISMA IMAGEN'), $al);
+chequear('y dice que fue OTRA cuenta', str_contains($al, 'OTRA cuenta'), $al);
+
+/* MISMA TRANSFERENCIA: sin numero y sin la misma imagen, pero misma fecha,
+   hora, monto y titular. */
+limpiar($pdo);
+usuario($pdo, 'tdec_f1'); usuario($pdo, 'tdec_f2');
+$FECHA = date('Y-m-d H:i', time() - 3600);   // hace una hora: no es 'viejo'
+recarga($pdo, 'tdec_f1', 4500.00);
+rl_declarar_pago($pdo, 'tdec_f1', 'PEDRO SOSA', '', 4500.0, 'imagen', $FECHA, '');
+recarga($pdo, 'tdec_f2', 4500.00);
+$r = rl_declarar_pago($pdo, 'tdec_f2', 'PEDRO SOSA', '', 4500.0, 'imagen', $FECHA, '');
+$al = implode(' | ', $r['alertas'] ?? []);
+chequear('avisa MISMA TRANSFERENCIA por fecha+hora+monto+titular',
+         str_contains($al, 'MISMA TRANSFERENCIA'), $al);
+
+/* Y QUE NO ACUSE POR CASUALIDAD. Dos cargas del mismo importe el mismo dia
+   son normales: si no coincide la HORA, no hay alerta. */
+limpiar($pdo);
+usuario($pdo, 'tdec_f3'); usuario($pdo, 'tdec_f4');
+recarga($pdo, 'tdec_f3', 4500.00);
+rl_declarar_pago($pdo, 'tdec_f3', 'PEDRO SOSA', '', 4500.0, 'imagen',
+                 date('Y-m-d H:i', time() - 7200), '');
+recarga($pdo, 'tdec_f4', 4500.00);
+$r = rl_declarar_pago($pdo, 'tdec_f4', 'PEDRO SOSA', '', 4500.0, 'imagen',
+                     date('Y-m-d H:i', time() - 3600), '');
+$al = implode(' | ', $r['alertas'] ?? []);
+chequear('misma plata y mismo titular pero OTRA hora: no acusa',
+         !str_contains($al, 'MISMA TRANSFERENCIA'), $al);
+
+/* LA ESCALERA DEL GUARDADO, que este test ya agarro una vez. Las columnas
+   llegaron en migraciones distintas; si el UPDATE completo falla, el fallback
+   NO puede perder `trx_declarada` -- de el cuelgan las dos alertas de reuso
+   que si tienen numero. Cuando se agregaron las columnas de la 72 al UPDATE,
+   el fallback viejo guardaba solo el titular y el chequeo de 'YA DECLARADO'
+   se cayo al toque. Posicional, porque el caso solo se da con una base a
+   medio migrar. */
+$src = file_get_contents(__DIR__ . '/api/recargas_lib.php');
+chequear('el fallback del guardado conserva el nro de operacion',
+         substr_count($src, "trx_declarada     = COALESCE(NULLIF(?, ''), trx_declarada)") >= 1,
+         'sin esto, una base sin la 72 pierde la trx y con ella las alertas');
+
 // 3. El monto del comprobante no coincide con la recarga pendiente. Este
 //    parametro existia desde la migracion 45 y NO SE USABA para nada.
 limpiar($pdo);
