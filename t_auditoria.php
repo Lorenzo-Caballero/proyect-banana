@@ -327,8 +327,159 @@ chequear('ninguna de estas filas cuenta como deposito ni retiro',
 
 $pdo->exec("DELETE FROM movimientos WHERE usuario LIKE 't_sg_%'");
 
+echo "\n=== 8. Lo que hizo una PERSONA tambien es auditoria ===\n";
+
+/* EL HUECO (Nahuel, 18/09/2026): pidio que si alguien bloquea a un jugador
+   quede asentado, y que si alguien cancela un retiro y escribe el motivo,
+   tambien.
+
+   Estaba todo registrado y NADA se veia: crm_bitacora tenia 308 filas --14
+   bloqueos, 12 cancelaciones con su motivo, 4 aprobaciones-- y la auditoria
+   no la miraba. Las otras cuatro fuentes cuentan que le paso a la PLATA;
+   esta cuenta que hizo una PERSONA, que es la mitad que una auditoria existe
+   para responder: quien decidio esto. */
+$srcAu = file_get_contents(__DIR__ . '/api/crm_auditoria.php');
+chequear('la bitacora es una fuente de la auditoria',
+         str_contains($srcAu, 'FROM crm_bitacora b'));
+
+/* El filtro tiene que conocer el tipo nuevo: una pestaña que no filtra
+   devuelve la lista entera, y eso es peor que no tener la pestaña. */
+chequear('el filtro por tipo acepta accion',
+         str_contains($srcAu, "'ajuste', 'accion'"));
+
+/* EL NOMBRE DEL JUGADOR, de las tres formas en que quedo escrito: con @,
+   dentro de un JSON, y suelto en los bloqueos. Buscar solo @ dejaba la
+   columna Usuario vacia justo en los bloqueos, que son los que mas se
+   buscan. */
+chequear('saca el usuario de un bloqueo sin arroba',
+         str_contains($srcAu, "b.accion = 'bloquear'"));
+
+/* Y que los escritores nuevos guarden texto legible: cancelar un retiro
+   guardaba un JSON crudo que en la pantalla habia que decodificar a ojo. */
+$srcRet = file_get_contents(__DIR__ . '/api/crm_retiros.php');
+chequear('cancelar un retiro deja constancia en castellano',
+         str_contains($srcRet, "'retiro #' . " . chr(36) . 'id'),
+         'un JSON en la columna Detalle no lo lee nadie');
+
+/* LOS ROTULOS. Esa columna mezcla ESTADOS (pendiente, pagado) con ORIGENES
+   (crm, ruleta) y por eso "ruleta" se leia como si fuera un estado. */
+$crmH = file_get_contents(__DIR__ . '/landing/crm.html');
+chequear('los origenes se explican, no se muestran crudos',
+         str_contains($crmH, 'Lo cargó un operador')
+         && str_contains($crmH, 'Premio de la ruleta'));
+chequear('ajuste deja de llamarse ajuste',
+         str_contains($crmH, 'ajuste:"Fichas"'),
+         'era el rotulo de seis cosas distintas');
+chequear('hay ayuda para los estados que no se entienden solos',
+         str_contains($crmH, 'AU_ESTADO_AYUDA'));
+chequear('y una pestaña para ver solo las acciones',
+         str_contains($crmH, 'data-tipo="accion"'));
+
+/* La referencia era un numero pelado: "#169" no dice de que. El campo `fuente`
+   viajaba en la respuesta desde el primer dia y no se mostraba en ningun lado. */
+chequear('el numero de referencia dice de que registro es',
+         str_contains($crmH, 'AU_FUENTE_TXT')
+         && str_contains($crmH, "crm_bitacora:\"Bit"));
+
+/* Y los encabezados, que son lo primero que se lee. */
+chequear('cada columna explica que hay debajo',
+         substr_count($crmH, '<th title="') >= 6
+         || str_contains($crmH, 'Estado u origen'));
+
+/* NADA CRUDO EN LA PANTALLA. El nombre interno de la accion
+   (`retiro_pagado_a_mano`) es el que le puso el programador; mostrarlo tal
+   cual repetiria el problema por el que se estaba revisando la pantalla. */
+chequear('las acciones se muestran redactadas, no con su nombre interno',
+         str_contains($crmH, 'AU_ACCION_TXT')
+         && str_contains($crmH, 'retiro_pagado_a_mano:"Marcó un retiro como pagado"'));
+
+/* Una accion no mueve plata: la columna Monto tiene que decir eso y no
+   "+0", que en una auditoria se lee como un movimiento de cero. */
+chequear('una accion no inventa un monto',
+         str_contains($crmH, 'const esMovimiento = f.tipo !== "accion"'));
+
+/* "Lo hizo el bot" era la pregunta literal, y el filtro la contestaba a
+   medias: el bot y el sistema iban en la misma bolsa de "automaticos". */
+chequear('se puede filtrar por el bot solo',
+         str_contains($srcAu, "\$actor === 'bot'")
+         && str_contains($crmH, '<option value="bot">'));
+chequear('y la pestaña vieja de automaticos sigue andando',
+         str_contains($srcAu, "\$actor === 'automatico'"),
+         'una pestaña abierta de antes del deploy no tiene que ver la lista entera');
+
+/* Y que las acciones no se cuelen en "manuales vs automaticos", que mide
+   la PLATA: son humanas por definicion y lo inflaban. */
+chequear('las acciones se cuentan aparte de los movimientos',
+         str_contains($srcAu, "\$r['tipo'] === 'accion') { \$acciones += "));
+
+/* El escritor del bloqueo, del otro lado del contrato: si no pone el @, la
+   auditoria no tiene de donde sacar el nombre. */
+$srcCrm = file_get_contents(__DIR__ . '/api/crm.php');
+chequear('un bloqueo nuevo deja el usuario con arroba',
+         str_contains($srcCrm, "implode(', @', "));
+
+
+/* ---------------------------------------------------------------------------
+   Y AHORA DE VERDAD: se escriben tres filas en la bitácora, una por cada forma
+   en que quedó guardado el nombre del jugador, y se lee lo que devuelve la
+   query. Los chequeos de arriba miran el código —sirven para que nadie saque
+   una rama sin darse cuenta— pero no prueban que MySQL haga lo que dice: un
+   REGEXP_REPLACE con la barra mal escapada pasa `php -l` y devuelve basura.
+   --------------------------------------------------------------------------- */
+$bitLimpiar = function () use ($pdo) {
+    $pdo->exec("DELETE FROM crm_bitacora WHERE operador = 'testaudit'");
+};
+$bitLimpiar();
+$pdo->exec("INSERT INTO crm_bitacora (operador, accion, detalle, creado_en) VALUES
+    ('testaudit', 'bloquear',       '@holatest001 · comprobantes falsos',                    NOW()),
+    ('testaudit', 'cancelar_retiro', 'retiro #9 de @holatest002 por \$2.000 · pidio dos veces', NOW()),
+    ('testaudit', 'bloquear',       'holatest003, holatest004 · multicuenta',                NOW()),
+    ('testaudit', 'bloquear_ip',    '190.1.2.3 · 24 h',                                      NOW()),
+    ('testaudit', 'resolver_deposito', '{\"id\":169,\"usuario\":\"holatest005\",\"monto\":2000}',  NOW())");
+
+$bit = $pdo->query(
+    "SELECT subtipo, usuario, monto, operador, actor_tipo, tipo, detalle
+       FROM (" . $SQL . ") x
+      WHERE operador = 'testaudit'
+      ORDER BY subtipo, usuario"
+)->fetchAll(PDO::FETCH_ASSOC);
+
+chequear('las cinco filas de la bitacora salen en la auditoria',
+         count($bit) === 5, 'salieron ' . count($bit));
+
+$porUsuario = [];
+foreach ($bit as $f) { $porUsuario[$f['usuario']] = $f; }
+
+chequear('con arroba: saca el nombre',            isset($porUsuario['holatest001']));
+chequear('dentro de una frase: saca el nombre',   isset($porUsuario['holatest002']));
+chequear('sin arroba (bloqueo viejo): lo rescata', isset($porUsuario['holatest003']),
+         'las 308 filas viejas se escribieron asi');
+chequear('un bloqueo por IP no inventa un jugador', isset($porUsuario['']),
+         'no hay usuario: se bloqueo una direccion, no una cuenta');
+/* La tercera forma: las que se guardaron con json_encode -- comprobantes,
+   peticiones y los retiros de antes de hoy. Son las mas dificiles de leer a
+   ojo y las que mas se consultan. */
+chequear('dentro de un JSON: saca el nombre', isset($porUsuario['holatest005']),
+         'asi quedaron guardadas las de comprobantes y peticiones');
+
+$b = $porUsuario['holatest001'] ?? [];
+chequear('la fila es de tipo accion',    ($b['tipo'] ?? '') === 'accion');
+chequear('no mueve plata',               (float)($b['monto'] ?? -1) === 0.0);
+chequear('la hizo una persona, con nombre y todo',
+         ($b['actor_tipo'] ?? '') === 'humano' && ($b['operador'] ?? '') === 'testaudit');
+chequear('y el detalle conserva el motivo que se escribio a mano',
+         str_contains($b['detalle'] ?? '', 'comprobantes falsos'),
+         'el motivo es el unico dato que puso una persona');
+
+/* El filtro de la pestaña Acciones, sobre la query real. */
+$soloAcciones = $pdo->query(
+    "SELECT COUNT(*) FROM (" . $SQL . ") x WHERE operador = 'testaudit' AND tipo = 'accion'"
+)->fetchColumn();
+chequear('la pestaña Acciones las agarra a las cinco', (int)$soloAcciones === 5);
+
 $limpiar();
 $libroLimpiar();
 $viejasLimpiar();   // el test se lleva TODO lo suyo, incluidas las tres viejas
+$bitLimpiar();
 echo "\n---------------------------------------\n$ok OK, $fail fallas\n";
 exit($fail > 0 ? 1 : 0);

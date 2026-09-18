@@ -281,9 +281,33 @@ function au_query_base(): string
         b.creado_en                                                            AS fecha,
         'accion'                                                               AS tipo,
         b.accion COLLATE utf8mb4_unicode_ci                                    AS subtipo,
-        CASE WHEN b.detalle REGEXP '@[A-Za-z0-9._-]+'
-             THEN REGEXP_REPLACE(b.detalle, '^.*?@([A-Za-z0-9._-]+).*$', '\\1')
-             ELSE '' END COLLATE utf8mb4_unicode_ci                            AS usuario,
+        /* EL NOMBRE DEL JUGADOR, DE LAS TRES FORMAS EN QUE QUEDO ESCRITO.
+           La bitacora la escriben una docena de lugares distintos y cada uno
+           guardo el detalle a su manera: unos con '@juan', el bloqueo con
+           'juan - motivo' sin arroba, y cancelar_retiro con un JSON entero.
+           Buscar solo '@' dejaba la columna Usuario vacia justo en los
+           bloqueos, que son los que mas se buscan.
+           Desde hoy los escritores usan '@' (ver crm_retiros), pero las 308
+           filas viejas siguen ahi y son las que uno va a consultar.
+
+           OJO CON LAS BARRAS. Esta SQL viaja adentro de un string de PHP con
+           comillas dobles, asi que para que MariaDB reciba la referencia al
+           grupo capturado hacen falta CUATRO barras -- igual que en la rama
+           de acciones_saldo, mas arriba. Con dos, PHP entrega una sola,
+           MariaDB se la come al leer el literal, y el reemplazo termina
+           siendo el numero pelado: la columna Usuario mostraba un 1 en vez
+           del nombre del jugador.
+           No lo agarro php -l ni un test que mirara el codigo. Lo agarro el
+           que escribe cuatro filas en la bitacora y lee lo que sale. */
+        CASE
+          WHEN b.detalle REGEXP '\"usuario\":\"[A-Za-z0-9._-]+\"'
+            THEN REGEXP_REPLACE(b.detalle, '^.*\"usuario\":\"([A-Za-z0-9._-]+)\".*$', '\\\\1')
+          WHEN b.detalle REGEXP '@[A-Za-z0-9._-]+'
+            THEN REGEXP_REPLACE(b.detalle, '^.*?@([A-Za-z0-9._-]+).*$', '\\\\1')
+          WHEN b.accion = 'bloquear' OR b.accion = 'desbloquear'
+            THEN REGEXP_REPLACE(b.detalle, '^([A-Za-z0-9._-]+).*$', '\\\\1')
+          ELSE ''
+        END COLLATE utf8mb4_unicode_ci                                         AS usuario,
         0                                                                      AS monto,
         b.operador COLLATE utf8mb4_unicode_ci                                  AS operador,
         'humano'                                                               AS actor_tipo,
@@ -318,14 +342,30 @@ function au_filtros(): array
     $params[] = $hasta . ' 23:59:59';
 
     $tipo = (string)($_GET['tipo'] ?? 'todos');
-    if (in_array($tipo, ['deposito', 'retiro', 'bono', 'ajuste'], true)) {
+    /* 'accion' es el tipo nuevo (crm_bitacora). Sin sumarlo aca la pestaña
+       Acciones del CRM no filtraba nada y devolvia la lista entera -- una
+       pestaña que miente es peor que una que no esta. */
+    if (in_array($tipo, ['deposito', 'retiro', 'bono', 'ajuste', 'accion'], true)) {
         $where[]  = 'tipo = ?';
         $params[] = $tipo;
     }
 
+    /* «¿Lo hizo el bot o lo hizo alguien?» es la pregunta textual de Nahuel, y
+       hasta hoy sólo se podía contestar a medias: el filtro ofrecía «humanos» o
+       «automáticos», y ahí adentro el bot y el sistema iban en la misma bolsa.
+       No son lo mismo: el bot le contesta al jugador y le mueve fichas, el
+       sistema acredita una transferencia que llegó al banco. Si algo salió mal
+       hay que poder mirar uno sin el otro.
+       'automatico' se sigue aceptando: es lo que manda una pestaña que quedó
+       abierta de antes del deploy, y no vale la pena que le devuelva la lista
+       entera por eso. */
     $actor = (string)($_GET['actor'] ?? 'todos');
     if ($actor === 'manual') {
         $where[] = "actor_tipo = 'humano'";
+    } elseif ($actor === 'bot') {
+        $where[] = "actor_tipo = 'bot'";
+    } elseif ($actor === 'sistema') {
+        $where[] = "actor_tipo = 'sistema'";
     } elseif ($actor === 'automatico') {
         $where[] = "actor_tipo IN ('bot','sistema')";
     }
@@ -399,13 +439,20 @@ try {
         $rows = $st->fetchAll(PDO::FETCH_ASSOC);
 
         $total = 0; $depCant = 0; $depMonto = 0; $retCant = 0; $retMonto = 0;
-        $manuales = 0; $automaticos = 0;
+        $manuales = 0; $automaticos = 0; $acciones = 0;
         foreach ($rows as $r) {
             $cant = (int)$r['cantidad'];
             $monto = (float)$r['monto'];
             $total += $cant;
             if ($r['tipo'] === 'deposito') { $depCant += $cant; $depMonto += $monto; }
             if ($r['tipo'] === 'retiro')   { $retCant += $cant; $retMonto += $monto; }
+            /* «Manuales vs automáticos» es la pregunta de Nahuel: *"si yo a
+               alguien le cargo manual o si lo hace el bot, que me diga ahí"*.
+               O sea, sobre la PLATA. Las acciones (bloquear, cancelar, aprobar)
+               son humanas por definición --no hay un bot que bloquee a nadie--
+               y sumarlas ahí inflaba «manuales» hasta que el indicador dejaba
+               de contestar lo que se le pregunta. Van contadas aparte. */
+            if ($r['tipo'] === 'accion') { $acciones += $cant; continue; }
             if ($r['actor_tipo'] === 'humano') { $manuales += $cant; } else { $automaticos += $cant; }
         }
 
@@ -415,6 +462,8 @@ try {
             'retiros'   => ['cantidad' => $retCant, 'monto' => (int)round($retMonto)],
             'manuales'    => $manuales,
             'automaticos' => $automaticos,
+            'acciones'    => $acciones,
+            'movimientos' => $total - $acciones,
         ]]);
     }
 
@@ -444,6 +493,7 @@ try {
         $stOps = $pdo->prepare(
             "SELECT DISTINCT operador FROM (" . au_query_base() . ") x
               WHERE fecha_orden BETWEEN ? AND ? AND operador IS NOT NULL
+                AND operador <> ''
                 AND LOWER(operador) NOT IN ('bot','sistema')
               ORDER BY operador"
         );

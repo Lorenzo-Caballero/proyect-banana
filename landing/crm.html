@@ -1468,6 +1468,16 @@
   .au-badge-tipo.retiro{background:var(--redSoft);color:var(--red)}
   .au-badge-tipo.bono{background:rgba(245,166,35,.16);color:var(--orange2)}
   .au-badge-tipo.ajuste{background:rgba(74,131,176,.16);color:var(--blue)}
+  /* El tipo nuevo: lo que hizo una persona (bloquear, cancelar, aprobar).
+     Va en gris y no en color de plata: no mueve un peso por si mismo, deja
+     constancia de quien decidio. */
+  .au-badge-tipo.accion{background:rgba(140,150,170,.16);color:var(--muted)}
+  /* Mismo gris para el badge de la columna Estado cuando la fila es una
+     accion: ahi no hay estado que semaforear, hay una frase. */
+  .au-badge-estado.accion{background:rgba(140,150,170,.16);color:var(--muted)}
+  /* El guion de "aca no va nada". Mas apagado que el texto, para que no se lea
+     como un dato. */
+  .au-nada{color:var(--muted);opacity:.55}
 
   .au-badge-estado{display:inline-block;font-size:10.5px;font-weight:700;padding:3px 9px;
     border-radius:999px;white-space:nowrap;background:var(--panel3);color:var(--muted)}
@@ -2716,7 +2726,10 @@
       <div class="au-kpi-card acento-azul" id="auKpiTotal">
         <div class="k">Total auditado</div>
         <div class="v" id="auKpiTotalV">…</div>
-        <div class="sub">operaciones</div>
+        <!-- El sub dejó de ser fijo: ahora dice de qué está hecho ese total,
+             porque desde que entró la bitácora son dos cosas distintas --
+             movimientos de plata y decisiones de una persona. -->
+        <div class="sub" id="auKpiTotalSub">operaciones</div>
       </div>
       <div class="au-kpi-card acento-verde" id="auKpiDepositos">
         <div class="k">Depósitos</div>
@@ -2728,7 +2741,8 @@
         <div class="v" id="auKpiRetirosV">…</div>
         <div class="sub" id="auKpiRetirosSub">—</div>
       </div>
-      <div class="au-kpi-card acento-naranja" id="auKpiActor">
+      <div class="au-kpi-card acento-naranja" id="auKpiActor"
+           title="Sobre los movimientos de plata: cuántos los hizo una persona y cuántos el sistema solo. Las acciones no cuentan acá: no hay bot que bloquee a nadie.">
         <div class="k">Manuales vs Automáticos</div>
         <div class="v" id="auKpiActorV">…</div>
         <div class="sub" id="auKpiActorSub">—</div>
@@ -2741,12 +2755,16 @@
         <button class="au-tab" data-tipo="deposito" type="button">Depósitos</button>
         <button class="au-tab" data-tipo="retiro" type="button">Retiros</button>
         <button class="au-tab" data-tipo="bono" type="button">Bonos</button>
-        <button class="au-tab" data-tipo="ajuste" type="button">Ajustes</button>
+        <button class="au-tab" data-tipo="ajuste" type="button" title="Movimientos de fichas: de una recarga, de una carga a mano, del botón Depósitos…">Fichas</button>
+        <!-- La pestaña nueva: lo que hizo una persona. Sin esto, la fuente que
+             se acaba de sumar a la auditoría solo se veía mezclada en «Todas». -->
+        <button class="au-tab" data-tipo="accion" type="button" title="Bloqueos, cancelaciones, aprobaciones: quién decidió qué">Acciones</button>
       </div>
-      <select id="auActor">
-        <option value="todos">Todos los actores</option>
-        <option value="manual">Solo humanos</option>
-        <option value="automatico">Solo automáticos</option>
+      <select id="auActor" title="Quién lo hizo: una persona desde el CRM, el chatbot, o el sistema solo (una transferencia que llegó al banco, un premio de la ruleta).">
+        <option value="todos">Quién lo hizo: todos</option>
+        <option value="manual">Lo hizo una persona</option>
+        <option value="bot">Lo hizo el bot</option>
+        <option value="sistema">Lo hizo el sistema solo</option>
       </select>
       <select id="auOperador">
         <option value="">Todos los operadores</option>
@@ -2764,9 +2782,17 @@
       <table class="mv-tabla">
         <thead>
           <tr>
-            <th>Fecha</th><th>Tipo</th><th>Usuario</th><th style="text-align:right">Monto</th>
-            <th>Estado</th><th>Operador</th><th class="au-col-detalle">Detalle</th>
-            <th class="au-col-referencia">Referencia</th>
+            <!-- CADA TITULO DICE QUE HAY DEBAJO. Nahuel leyó esta fila de
+                 encabezados y preguntó qué significaba la mitad; el tooltip es
+                 el lugar donde eso se contesta sin agrandar la tabla. -->
+            <th title="Cuándo pasó. En los retiros pedidos desde el juego, cuándo lo pidió el jugador (o cuándo se resolvió, si ya está cerrado).">Fecha</th>
+            <th title="Depósito y Retiro mueven plata de verdad. Fichas y Bono son los contadores de la casa. Acción es lo que decidió una persona: bloquear, cancelar, aprobar.">Tipo</th>
+            <th title="El jugador. Vacío en las acciones que no son sobre un jugador, como bloquear una IP.">Usuario</th>
+            <th style="text-align:right" title="En verde lo que entró, en rojo lo que salió. Las acciones no tienen monto.">Monto</th>
+            <th title="En qué quedó (pendiente, pagado, cancelado) o de dónde salió (la ruleta, una transferencia, un operador). Pasá el mouse por cada etiqueta para ver la explicación.">Estado u origen</th>
+            <th title="Quién lo hizo: el nombre del operador, el Bot, o el Sistema cuando no lo pidió nadie.">Operador</th>
+            <th class="au-col-detalle" title="Lo que quedó escrito, incluido el motivo que puso a mano el operador.">Detalle</th>
+            <th class="au-col-referencia" title="El número con el que quedó guardado. Pasá el mouse para ver en qué registro vive.">Referencia</th>
           </tr>
         </thead>
         <tbody id="auBody"></tbody>
@@ -9816,7 +9842,16 @@
   let auFiltros = { tipo:"todos", actor:"todos", operador:"", usuario:"", desde:"", hasta:"" };
   let auExpandidaId = null;
 
-  const AU_TIPO_TXT   = { deposito:"Depósito", retiro:"Retiro", bono:"Bono", ajuste:"Ajuste" };
+  /* "AJUSTE" NO DECIA NADA, y era el rotulo de seis cosas distintas: fichas de
+     una recarga, una carga a mano del operador, un deposito del boton del
+     juego... Nahuel: *"no entiendo bien que significa ajuste"*. El tipo crudo
+     no se puede partir sin tocar los filtros y los KPIs, asi que lo que cambia
+     es el nombre: "Fichas" dice de que se trata la fila, y el ORIGEN --que ya
+     viaja en la columna de al lado-- dice cual de las seis es.
+     "Acción" es el tipo nuevo: lo que hizo una persona (bloquear, cancelar,
+     aprobar), que hasta hoy no se veia en ningun lado. */
+  const AU_TIPO_TXT   = { deposito:"Depósito", retiro:"Retiro", bono:"Bono",
+                          ajuste:"Fichas", accion:"Acción" };
   const AU_ESTADO_COLOR = {
     acreditada:"verde", pagado:"verde", hecha:"verde", aplicado:"verde",
     pendiente:"", procesando:"azul", abierto:"",
@@ -9828,18 +9863,126 @@
        de verde sería afirmar que salió plata sin haberlo comprobado. */
     resuelto_panel:"naranja",
   };
+  /* ESTA COLUMNA MEZCLA DOS COSAS, y por eso no se entendia.
+     Nahuel (18/09/2026): *"no entiendo muy bien que significa el estado
+     pendiente, el estado CRM, el estado ruleta"*. Y tiene razon, porque no son
+     lo mismo:
+
+       · De un deposito o un retiro viene el ESTADO      -> pendiente, pagado…
+       · De un movimiento viene el ORIGEN                -> crm, ruleta, chatbot…
+
+     La columna se llama Estado y muestra las dos, asi que "ruleta" se lee como
+     si fuera un estado. Arreglarlo del lado de la base seria partir el UNION en
+     dos columnas y tocar filtros y KPIs; alcanza con decir cada cosa por su
+     nombre: los origenes se redactan como lo que son ("Lo cargó un operador"),
+     y el titulo del badge explica el resto.
+
+     Lo que NO se toca es el valor crudo: el filtro sigue siendo por `subtipo`. */
   const AU_ESTADO_TXT = {
+    // Estados de una recarga o un retiro: en qué punto quedó.
     acreditada:"Acreditado", pendiente:"Pendiente", cancelada:"Cancelado",
     vencida:"Vencido", revision:"En revisión", revisar:"Revisar",
     procesando:"Procesando", hecha:"Pagado", error:"Error", aplicado:"Aplicado",
     abierto:"Sin resolver", resuelto_panel:"Resuelto en el panel",
     pagado:"Pagado", rechazado:"Rechazado",
+    // Orígenes de un movimiento: de dónde salió, no en qué estado está.
+    crm:"Lo cargó un operador", ruleta:"Premio de la ruleta",
+    chatbot:"Por el chat", recarga:"Por una transferencia",
+    peticion:"Botón Depósitos del juego", sistema:"Automático",
+    bono_app:"Bono por la app", bono_bienvenida:"Bono de bienvenida",
+    slot777:"Premio del slot", raspa:"Premio del raspa",
+    fidelizacion:"Promo de fidelización",
+  };
+  /* El "por qué" de cada rótulo, para el que pasa el mouse. Solo donde el
+     nombre corto no alcanza. */
+  const AU_ESTADO_AYUDA = {
+    pendiente:"Todavía no pasó: la transferencia no llegó o el retiro espera aprobación.",
+    revisar:"El sistema no pudo confirmar si pasó. Lo tiene que mirar una persona.",
+    revision:"Entró plata pero no se pudo saber de quién. Está en Comprobantes.",
+    vencida:"Se pidió la recarga y la transferencia nunca llegó.",
+    resuelto_panel:"Se cerró en el panel de ganamos y no sabemos si se pagó o se rechazó.",
+    crm:"Un operador lo cargó o lo retiró a mano desde el CRM.",
+    sistema:"Lo hizo el sistema solo, sin que nadie lo pidiera.",
+    peticion:"El jugador lo pidió con el botón Depósitos de adentro del juego.",
+  };
+  /* LAS ACCIONES, DICHAS EN CASTELLANO.
+     Las filas de tipo «Acción» traen en esa columna el nombre interno con el
+     que quedaron guardadas: `retiro_pagado_a_mano`, `peticion_cerrada_a_mano`,
+     `cobro_coins_por_peso`. Es el nombre que le puso el programador, no el que
+     usa el que audita, y mostrarlo crudo repetiría exactamente el problema por
+     el que esta pantalla se estaba revisando.
+     Se redactan en PASADO y con sujeto tácito —«Bloqueó al jugador»— porque la
+     columna de al lado dice quién: leído de corrido, la fila arma la frase.
+     Lo que no esté acá cae al nombre interno con los guiones bajos cambiados
+     por espacios: una acción vieja o recién agregada se sigue leyendo, nada más
+     que peor. */
+  /* De dónde salió cada fila. Cinco tablas distintas alimentan esta pantalla y
+     el número de referencia solo significa algo sabiendo cuál. */
+  const AU_FUENTE_TXT = {
+    recargas:"Recarga por transferencia",
+    acciones_saldo:"Retiro pedido por el chat",
+    movimientos:"Movimiento de fichas o de saldo",
+    retiros_panel:"Retiro pedido adentro del juego",
+    crm_bitacora:"Bitácora del CRM: lo que hizo un operador",
+  };
+  const AU_ACCION_TXT = {
+    // Jugadores
+    bloquear:"Bloqueó al jugador", desbloquear:"Desbloqueó al jugador",
+    bloquear_ip:"Bloqueó la IP", desbloquear_ip:"Liberó la IP",
+    // Retiros
+    aprobar_retiro:"Aprobó un retiro",
+    cancelar_retiro:"Canceló un pedido de retiro",
+    retiro_pagado_a_mano:"Marcó un retiro como pagado",
+    retiro_pagado_deshecho:"Deshizo un retiro que estaba pagado",
+    reintentar_retiro:"Reintentó un retiro",
+    liberar_retiros_trabados:"Destrabó retiros trabados",
+    hg_pago_retiro:"Pagó un retiro por HG Cash",
+    hg_pago_fallo:"Falló el pago por HG Cash",
+    // Cargas y comprobantes
+    destrabar_deposito:"Destrabó un depósito",
+    resolver_deposito:"Resolvió un comprobante",
+    cancelar_recarga:"Canceló una recarga",
+    peticion_cerrada_a_mano:"Cerró a mano un pedido de carga",
+    peticion_rechazo_pedido:"Pidió rechazar una carga",
+    recaudar_pedir:"Pidió recaudar del panel",
+    bonos_al_juego:"Pasó bonos al juego",
+    // Chat
+    marcar_leidas:"Marcó chats como leídos",
+    marcar_leidas_todas:"Marcó todos los chats como leídos",
+    conversacion_archivar:"Archivó el chat",
+    conversacion_desarchivar:"Sacó el chat del archivo",
+    conversacion_eliminar:"Borró el chat",
+    quitar_derivada:"Sacó el chat de derivados",
+    mensaje_borrar:"Borró un mensaje",
+    difusion_seleccion:"Mandó una difusión",
+    difusion_sin_chat:"Difundió a los que nunca escribieron",
+    referidos_difundir:"Difundió el programa de referidos",
+    // Promociones
+    bono_crear:"Creó un bono", bono_borrar:"Borró un bono",
+    fid_guardar:"Cambió la promo de fidelización",
+    // Publicidad
+    landing_crear:"Creó una landing", landing_editar:"Editó una landing",
+    landing_activar:"Activó una landing", landing_pausar:"Pausó una landing",
+    landing_archivar:"Archivó una landing",
+    landing_desarchivar:"Sacó del archivo una landing",
+    landing_borrar:"Borró una landing",
+    publicista_crear:"Agregó un publicista", publicista_editar:"Editó un publicista",
+    publicista_pausar:"Pausó un publicista", publicista_reactivar:"Reactivó un publicista",
+    // Cómo cobro
+    cobro_metodo:"Cambió el método de cobro",
+    cobro_coins_por_peso:"Cambió cuántas fichas vale un peso",
+    cobro_modo_seleccion:"Cambió cómo se elige la cuenta de cobro",
+    cobro_hg_propio:"Cambió el HG Cash propio",
+    cobro_cuenta_agregar:"Agregó una cuenta de cobro",
+    cobro_cuenta_editar:"Editó una cuenta de cobro",
+    cobro_cuenta_borrar:"Borró una cuenta de cobro",
   };
   /* El punto de color de cada tipo. Un <span> pintado por CSS en vez de un
      emoji de círculo: el emoji cambia de tamaño según el sistema y movía
      el texto de la columna de un renglón a otro. */
   const AU_BADGE_COLOR = { deposito:"var(--green)", retiro:"var(--red)",
-                          bono:"var(--orange2)", ajuste:"var(--violet)" };
+                          bono:"var(--orange2)", ajuste:"var(--violet)",
+                          accion:"var(--blue)" };
   const AU_BADGE_ICO = Object.fromEntries(Object.entries(AU_BADGE_COLOR)
     .map(([k, c]) => [k, `<span class="au-punto" style="background:${c}"></span>`]));
 
@@ -9892,10 +10035,20 @@
     return `<span class="au-operador ninguno">—</span>`;
   }
 
-  function auEstadoBadge(subtipo){
+  function auEstadoBadge(subtipo, tipo){
+    /* Dos vocabularios en la misma columna. En una fila de plata, `subtipo` es
+       el estado o el origen; en una de tipo «Acción» es qué hizo la persona, y
+       traducirlo con el diccionario equivocado dejaba ahí el nombre interno. */
+    if (tipo === "accion") {
+      const txt = AU_ACCION_TXT[subtipo] || String(subtipo || "").replace(/_/g, " ");
+      return `<span class="au-badge-estado accion" title="Quedó registrado en la bitácora del CRM · ${esc(subtipo || "")}">${esc(txt)}</span>`;
+    }
     const color = AU_ESTADO_COLOR[subtipo] ?? "";
-    const txt = AU_ESTADO_TXT[subtipo] ?? subtipo;
-    return `<span class="au-badge-estado ${color}">${esc(txt)}</span>`;
+    const txt   = AU_ESTADO_TXT[subtipo] ?? subtipo;
+    /* El title lleva la explicacion cuando el rotulo corto no alcanza, y si no
+       el valor crudo -- que es lo que hay que poner en el filtro. */
+    const ayuda = AU_ESTADO_AYUDA[subtipo] || subtipo;
+    return `<span class="au-badge-estado ${color}" title="${esc(ayuda)}">${esc(txt)}</span>`;
   }
 
   function auFilaHtml(f, idx){
@@ -9911,6 +10064,11 @@
        MAGNITUDES (siempre positivas) y ahi el sentido lo da el tipo;
        `ajuste` y `bono` salen de `movimientos`, donde el monto ya viene
        firmado y el tipo no alcanza para saberlo. */
+    /* Y una accion NO TIENE MONTO. Bloquear a alguien no mueve un peso, pero
+       la columna se llenaba igual: `monto` viene 0, `0 >= 0` da "entra", y la
+       fila mostraba "+0" en verde -- que en una auditoria de plata se lee como
+       un movimiento de cero, no como "aca no hubo movimiento". Un guion. */
+    const esMovimiento = f.tipo !== "accion";
     const porTipo = f.tipo === "deposito" || f.tipo === "retiro";
     const neto    = Number(f.monto) || 0;
     const entra   = porTipo ? (f.tipo === "deposito") : (neto >= 0);
@@ -9932,14 +10090,17 @@
         <span class="au-fecha-mobile" style="display:none">${auFechaMobile(f.fecha)}</span>
       </td>
       <td><span class="au-badge-tipo ${esc(f.tipo)}" title="${esc(AU_TIPO_TXT[f.tipo]||f.tipo)}">${AU_BADGE_ICO[f.tipo]||""}<span class="au-tipo-txt">${esc(AU_TIPO_TXT[f.tipo]||f.tipo)}</span></span></td>
-      <td data-usuario="${esc(f.usuario)}" title="${esc(f.usuario)}">@${esc(f.usuario)}</td>
-      <td class="au-monto ${signo}">${montoTxt}</td>
-      <td>${auEstadoBadge(f.subtipo)}</td>
+      <td data-usuario="${esc(f.usuario)}" title="${esc(f.usuario)}">${f.usuario ? "@"+esc(f.usuario) : '<span class="au-nada">—</span>'}</td>
+      <td class="au-monto ${signo}">${esMovimiento ? montoTxt : '<span class="au-nada">—</span>'}</td>
+      <td>${auEstadoBadge(f.subtipo, f.tipo)}</td>
       <td>${auOperadorHtml(f)}</td>
       <td class="au-col-detalle au-detalle" title="${esc(f.detalle||"")}">${esc(detalleCorto)}
         <div class="au-detalle-mobile">${esc(f.detalle||"—")} · <span class="au-referencia">#${f.referencia}</span></div>
       </td>
-      <td class="au-col-referencia"><span class="au-referencia">#${f.referencia}</span></td>
+      <!-- El campo fuente viajaba en la respuesta desde siempre y no se
+           mostraba en ningún lado. Es lo que convierte a un #169 pelado en un
+           dato con el que se puede hacer algo: dice de qué registro es. -->
+      <td class="au-col-referencia"><span class="au-referencia" title="${esc(AU_FUENTE_TXT[f.fuente]||f.fuente||"")}">#${f.referencia}</span></td>
     </tr>`;
   }
 
@@ -9965,9 +10126,16 @@
   function auPintarKpis(k){
     if(!k){
       ["auKpiTotalV","auKpiDepositosV","auKpiRetirosV","auKpiActorV"].forEach(id=>$("#"+id).textContent = "—");
+      $("#auKpiTotalSub").textContent = "operaciones";
       return;
     }
     $("#auKpiTotalV").textContent = nf.format(k.total_operaciones);
+    /* Los campos `movimientos` y `acciones` son nuevos: si el server todavía no
+       los manda (una pestaña abierta de antes del deploy), se deja el sub de
+       siempre en vez de escribir "undefined". */
+    $("#auKpiTotalSub").textContent = (k.acciones > 0)
+      ? `${nf.format(k.movimientos)} de plata · ${nf.format(k.acciones)} acciones`
+      : "operaciones";
     $("#auKpiDepositosV").textContent = "$" + nf.format(k.depositos.monto);
     $("#auKpiDepositosSub").textContent = `${nf.format(k.depositos.cantidad)} depósito${k.depositos.cantidad===1?"":"s"}`;
     $("#auKpiRetirosV").textContent = "$" + nf.format(k.retiros.monto);

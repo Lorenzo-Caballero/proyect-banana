@@ -681,12 +681,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 );
             }
 
-            crm_bitacora($pdo, $operador, 'cancelar_retiro', json_encode([
-                'id'      => $id,
-                'usuario' => $fila['usuario'],
-                'monto'   => (float)$fila['monto'],
-                'nota'    => $nota,
-            ], JSON_UNESCAPED_UNICODE));
+            /* EN CASTELLANO Y NO EN JSON. Esta línea se lee en Auditoría, y
+               ahí `{"id":169,"usuario":"holagustavo861","monto":2000,...}` es
+               ruido: el operador tiene que decodificar a ojo lo que podría
+               estar escrito. Los mismos datos, en el orden en que se
+               preguntan: a quién, cuánto, y por qué -- que es la nota que el
+               CRM ya obliga a escribir.
+               El `@` adelante no es adorno: es lo que le permite a la
+               auditoría sacar el nombre del jugador y ponerlo en su columna
+               (ver la rama crm_bitacora de crm_auditoria.php). */
+            crm_bitacora($pdo, $operador, 'cancelar_retiro',
+                'retiro #' . $id . ' de @' . $fila['usuario']
+                . ' por $' . number_format((float)$fila['monto'], 0, ',', '.')
+                . ($nota !== '' ? ' · ' . $nota : ''));
 
             salir(['ok' => true, 'id' => $id, 'estado' => 'cancelada']);
         }

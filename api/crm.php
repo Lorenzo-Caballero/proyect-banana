@@ -1438,9 +1438,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($res['ok']) {
                 $tocadas = $res['usuarios'] ?? [$u];
+                /* CON ARROBA, y no es un adorno: es lo que le deja a Auditoría
+                   sacar el nombre del jugador y ponerlo en su columna (ver la
+                   rama `crm_bitacora` de crm_auditoria.php). Sin el `@`, el
+                   bloqueo quedaba registrado pero con la columna Usuario vacía
+                   -- justo en las filas que más se buscan. Las viejas siguen
+                   sin él y la auditoría las rescata por el nombre de la acción;
+                   las nuevas ya no dependen de ese rescate. */
                 crm_bitacora($pdo, $operador,
                              $on ? 'bloquear' : 'desbloquear',
-                             implode(', ', $tocadas) . ($mot !== '' ? ' · ' . $mot : ''));
+                             '@' . implode(', @', $tocadas)
+                             . ($mot !== '' ? ' · ' . $mot : ''));
             }
             salir($res, $res['ok'] ? 200 : 400);
         }
