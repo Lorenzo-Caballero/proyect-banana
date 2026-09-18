@@ -309,6 +309,75 @@ $pdo->exec("DELETE FROM acciones_saldo WHERE usuario='test_lim'");
 ponerLimite($pdo, 'lim_retiro_max_dia', '0');
 
 // ===========================================================================
+echo "\n=== El bot no desmiente al jugador con un saldo viejo ===\n";
+
+/* EL CASO (Nahuel, 18/09/2026): *"muchas veces las personas dicen quiero
+   retirar 5000 y el bot le dice no tenes 5000, tenes 1000"*.
+
+   Cuando eso pasa con una lectura fresca, el bot tiene razon. Cuando pasa con
+   una de hace cinco minutos, el bot esta discutiendo con un numero que ya no
+   existe -- y el jugador, que acaba de ver su saldo en la pantalla del juego,
+   sabe que le estan mintiendo.
+
+   `usuarios.balance` es un ESPEJO: lo refresca el colector. `saldo_visto_en`
+   (migracion 68) dice CUANDO se leyo, y hasta hoy nadie lo miraba para esto. */
+limpiarLimites($pdo);
+
+// --- lectura FRESCA: el bot puede (y debe) decir que no alcanza -------------
+prepararJugador($pdo, $ID, 1000);
+$pdo->exec("UPDATE usuarios SET saldo_visto_en = NOW() WHERE id=$ID");
+$r = fichas_pedir_retiro($pdo, 'test_lim', 5000, 'test');
+chequear('con el saldo recien leido, sigue diciendo que no alcanza',
+         ($r['codigo'] ?? '') === 'sin_saldo',
+         'codigo=' . ($r['codigo'] ?? '?') . ' -- desmentir con un dato fresco esta bien');
+
+// --- lectura VIEJA: mismo saldo, misma plata, otra respuesta ----------------
+$pdo->exec("DELETE FROM acciones_saldo WHERE usuario='test_lim'");
+$pdo->exec("UPDATE usuarios SET saldo_visto_en = NOW() - INTERVAL 10 MINUTE WHERE id=$ID");
+$r = fichas_pedir_retiro($pdo, 'test_lim', 5000, 'test');
+chequear('con el saldo viejo, NO lo desmiente',
+         ($r['codigo'] ?? '') === 'saldo_incierto',
+         'codigo=' . ($r['codigo'] ?? '?'));
+chequear('y lo dice como lo que es: lo que le FIGURA',
+         str_contains(mb_strtolower($r['error'] ?? ''), 'me figura'),
+         'error=' . ($r['error'] ?? ''));
+chequear('sin afirmar que no le alcanza',
+         !str_contains(mb_strtolower($r['error'] ?? ''), 'y querés retirar'));
+
+/* Y NO CREA EL PEDIDO. Lo que se decidio es avisar, no encolar a ciegas: un
+   retiro creado sobre un saldo que no sabemos es un pedido que alguien tiene
+   que cancelar despues. */
+$hay = (int)$pdo->query("SELECT COUNT(*) FROM acciones_saldo
+                          WHERE usuario='test_lim' AND tipo='retirar'")->fetchColumn();
+chequear('y no deja un pedido colgado', $hay === 0, "pedidos=$hay");
+
+/* El mismo criterio en el chequeo del minimo, que afirmaba igual. */
+$pdo->exec("UPDATE usuarios SET balance = 10 WHERE id=$ID");
+$pdo->exec("UPDATE usuarios SET saldo_visto_en = NOW() - INTERVAL 10 MINUTE WHERE id=$ID");
+$r = fichas_pedir_retiro($pdo, 'test_lim', 5000, 'test');
+chequear('el minimo tampoco se afirma con un dato viejo',
+         ($r['codigo'] ?? '') === 'saldo_incierto',
+         'codigo=' . ($r['codigo'] ?? '?'));
+
+/* NUNCA LEIDO es el peor caso, no el mejor: sin fecha no sabemos nada de ese
+   numero, asi que se trata como viejo. */
+$pdo->exec("UPDATE usuarios SET balance = 1000, saldo_visto_en = NULL WHERE id=$ID");
+$r = fichas_pedir_retiro($pdo, 'test_lim', 5000, 'test');
+chequear('un saldo que nunca leimos tampoco se afirma',
+         ($r['codigo'] ?? '') === 'saldo_incierto',
+         'codigo=' . ($r['codigo'] ?? '?'));
+
+/* Derivar no puede depender de que el modelo obedezca una regla del prompt: el
+   que queda esperando es alguien que dice tener plata y no puede sacarla. */
+$srcChat = file_get_contents(__DIR__ . '/api/chatbot.php');
+chequear('el chat lo pasa a un agente sin preguntarle al modelo',
+         str_contains($srcChat, "=== 'saldo_incierto'")
+         && str_contains($srcChat, "'pasar_a_agente'"));
+$srcCtx = file_get_contents(__DIR__ . '/api/chatbot_contexto.php');
+chequear('y el prompt le dice que no discuta el numero',
+         str_contains($srcCtx, 'saldo_incierto'));
+
+// ===========================================================================
 limpiarLimites($pdo);
 $pdo->exec("DELETE FROM usuarios WHERE id=$ID");
 $pdo->exec("DELETE FROM acciones_saldo WHERE usuario='test_lim'");

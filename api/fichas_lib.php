@@ -31,6 +31,16 @@ if (is_file(__DIR__ . '/vinculos_lib.php')) { require_once __DIR__ . '/vinculos_
  *  constantes solo aparecen si config_crm no responde -- y son los valores que
  *  regian antes de que los limites fueran configurables, asi que un fallo de
  *  lectura deja el sistema como estaba, nunca sin freno. */
+/* CUANTO PUEDE TENER UNA LECTURA DEL SALDO PARA QUE SE LA AFIRME COMO UN HECHO.
+   `usuarios.balance` es un ESPEJO del saldo de ganamos, no la verdad: lo
+   refresca el colector. Pasado este tiempo, el numero sigue sirviendo para
+   orientarse pero NO para desmentir a un jugador.
+   Dos minutos y no treinta segundos: los que estan hablando se refrescan en
+   cada pasada del cron, que es cada minuto, asi que en una conversacion en
+   curso la lectura casi siempre tiene menos de 60 segundos. Dos minutos deja
+   pasar lo normal y agarra lo que de verdad quedo viejo. */
+const FICHAS_SALDO_FRESCO_SEG = 120;
+
 const FICHAS_MIN_CARGA = 100;
 const FICHAS_MAX_CARGA = 500000;
 
@@ -707,6 +717,10 @@ function fichas_pedir_retiro(PDO $pdo, string $usuario, int $monto, string $orig
     // no como verdad final: el agente ve el saldo real en el panel antes de pagar.
     //
     // Solo SALDO: los BONOS (usuarios.bonus) NO se retiran y no se miran acá.
+    /* `saldo_visto_en` viaja junto al saldo (migracion 68): es CUANDO lo
+       leimos. Se pide aparte y con fallback porque una base sin esa migracion
+       tiene que seguir andando -- ahi la edad queda desconocida y se trata como
+       vieja, que es el lado seguro. */
     $st = $pdo->prepare("SELECT COALESCE(balance,0) AS balance FROM usuarios WHERE username = ?");
     $st->execute([$usuario]);
     $fila = $st->fetch();
@@ -714,6 +728,46 @@ function fichas_pedir_retiro(PDO $pdo, string $usuario, int $monto, string $orig
         return ['ok' => false, 'codigo' => 'sin_usuario', 'error' => 'Ese usuario no existe.'];
     }
     $saldo = (float)$fila['balance'];
+
+    $saldoEdad = null;   // segundos desde que leimos ese numero; null = no sabemos
+    try {
+        $sv = $pdo->prepare(
+            "SELECT TIMESTAMPDIFF(SECOND, saldo_visto_en, NOW()) AS edad
+               FROM usuarios WHERE username = ? AND saldo_visto_en IS NOT NULL"
+        );
+        $sv->execute([$usuario]);
+        $e = $sv->fetchColumn();
+        if ($e !== false && $e !== null) { $saldoEdad = max(0, (int)$e); }
+    } catch (Throwable $e) { /* sin migracion 68 */ }
+    $saldoViejo = ($saldoEdad === null || $saldoEdad > FICHAS_SALDO_FRESCO_SEG);
+
+    /* NO DESMENTIR AL JUGADOR CON UN NUMERO VIEJO (decision de Nahuel,
+       18/09/2026). Este es el caso que el reportaba: *"muchas veces las
+       personas dicen quiero retirar 5000 y el bot le dice no tenes 5000, tenes
+       1000"*. Cuando eso pasa con una lectura fresca, el bot tiene razon y hay
+       que decirselo. Cuando pasa con una de hace cinco minutos, el bot esta
+       discutiendo con un numero que ya no existe -- y el jugador, que acaba de
+       ver su saldo en la pantalla del juego, sabe que le estan mintiendo.
+
+       La salida no es creerle ni desmentirlo: es no AFIRMAR. Se devuelve el
+       numero igual (sirve para orientarse) pero con un codigo distinto, y la
+       regla del prompt hace que el bot lo diga como lo que es -- lo que le
+       figura-- y lo pase a una persona, que puede mirar el panel.
+
+       Se calcula aca, una sola vez, y lo usan los dos chequeos de abajo: el del
+       minimo y el del saldo insuficiente. Los dos afirmaban igual. */
+    $incierto = function (float $pide) use ($saldo, $saldoEdad): array {
+        $hace = $saldoEdad === null
+              ? 'y no sé de cuándo es'
+              : ('pero esa lectura es de hace ' .
+                 ($saldoEdad < 120 ? 'un rato'
+                                   : (int)round($saldoEdad / 60) . ' minutos'));
+        return ['ok' => false, 'codigo' => 'saldo_incierto', 'saldo' => $saldo,
+                'saldo_edad_seg' => $saldoEdad, 'pedido' => $pide,
+                'error' => 'Me figura un saldo de ' . number_format($saldo, 0, ',', '.') .
+                           ', ' . $hace . ', así que puede no estar al día. ' .
+                           'Que lo confirme un agente antes de seguir.'];
+    };
 
     // "Retirar todo" = todo el saldo (sin decimales). El monto lo pone el server,
     // no el jugador: así no depende de que el modelo copie bien la cifra.
@@ -726,6 +780,7 @@ function fichas_pedir_retiro(PDO $pdo, string $usuario, int $monto, string $orig
     // poco y exigir mas para pagar.
     $minRetiro = fichas_limite($pdo, 'lim_retiro_min', FICHAS_MIN_CARGA);
     if ($saldo < $minRetiro) {
+        if ($saldoViejo) { return $incierto((float)$monto); }
         return ['ok' => false, 'codigo' => 'saldo_bajo', 'saldo' => $saldo,
                 'error' => 'Tu saldo es de ' . number_format($saldo, 0, ',', '.') .
                            ', menos del mínimo para retirar (' . number_format($minRetiro, 0, ',', '.') . ').'];
@@ -746,6 +801,7 @@ function fichas_pedir_retiro(PDO $pdo, string $usuario, int $monto, string $orig
                     '. Si querés sacar más, hacelo en varios pedidos.'];
     }
     if ($saldo + 0.01 < $monto) {
+        if ($saldoViejo) { return $incierto((float)$monto); }
         return ['ok' => false, 'codigo' => 'sin_saldo', 'saldo' => $saldo,
                 'error' => 'Tu saldo es de ' . number_format($saldo, 0, ',', '.') .
                            ' y querés retirar ' . number_format($monto, 0, ',', '.') . '.'];

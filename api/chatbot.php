@@ -2215,8 +2215,31 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
                     'error' => 'Necesito que inicies sesión en la página para registrar el retiro.'];
         }
         $todo = !empty($args['todo']);
-        return fichas_pedir_retiro($pdo, $usuarioSesion, (int)($args['cantidad'] ?? 0), 'chatbot',
-                                   $todo, trim((string)($args['cbu_o_alias'] ?? '')));
+        $r = fichas_pedir_retiro($pdo, $usuarioSesion, (int)($args['cantidad'] ?? 0), 'chatbot',
+                                 $todo, trim((string)($args['cbu_o_alias'] ?? '')));
+
+        /* SALDO VIEJO -> LO MIRA UNA PERSONA, Y ESO NO SE LE DELEGA AL MODELO.
+           `saldo_incierto` significa que el espejo no está lo bastante fresco
+           como para desmentir al jugador. La regla del prompt le dice al bot
+           cómo contestarlo, pero DERIVAR no puede depender de que la obedezca:
+           el que queda esperando es alguien que dice tener plata y no puede
+           sacarla, que es exactamente el caso en el que nadie quiere que el
+           bot improvise.
+           Se llama a la misma herramienta de siempre en vez de repetir acá su
+           lógica (marcar la conversación, avisar por Telegram, no reavisar de
+           más): una derivación que no avisa igual que las otras es una
+           derivación que nadie ve. */
+        if (($r['codigo'] ?? '') === 'saldo_incierto') {
+            try {
+                ejecutar_tool($pdo, 'pasar_a_agente',
+                              ['motivo' => 'Pidió retirar ' . (int)($args['cantidad'] ?? 0)
+                                         . ' y el saldo que tenemos espejado está viejo'],
+                              $usuarioSesion, $sesionVerificada, $sid);
+            } catch (Throwable $e) {
+                error_log('retirar_del_juego/saldo_incierto: no pude derivar: ' . $e->getMessage());
+            }
+        }
+        return $r;
     }
     if ($nombre === 'identificar_usuario') {
         $u = trim((string)($args['usuario'] ?? ''));

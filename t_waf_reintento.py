@@ -179,6 +179,54 @@ dentro_del_while = any(
 chequear('la llamada con reintento esta adentro del bucle', dentro_del_while,
          'envolver la funcion entera cuesta las 50 paginas que ya salieron bien')
 
+
+# ---------------------------------------------------------------------------
+print('\n=== 8. El barrido tiene presupuesto de tiempo ===')
+# MEDIDO EL 18/09/2026, primera hora con el reintento puesto: el WAF desafia
+# cada 5-7 paginas, y con eso el barrido de 62 paginas paso de 53 a 68
+# segundos. El cron corre cada minuto con `flock -w 45`, o sea que una pasada
+# de mas de ~105 s le hace perder el turno a la siguiente -- y en esa siguiente
+# van las cargas y los retiros, que es la plata.
+f = next(n for n in arbol.body
+         if isinstance(n, ast.FunctionDef) and n.name == '_usuarios_paginas')
+fuente_fn = ast.get_source_segment(fuente, f) or ''
+chequear('corta si se pasa del presupuesto', 'USUARIOS_MAX_SEG' in fuente_fn,
+         'sin esto un dia peor de WAF le come la pasada a las cargas')
+chequear('y guarda lo que alcanzo a leer',
+         'completo = False' in fuente_fn and 'break' in fuente_fn)
+
+print('\n=== 9. Y retoma donde quedo ===')
+# Sin esto se leerian siempre las mismas primeras 1.500 filas y los ultimos
+# --los jugadores mas nuevos, justo los que importan-- no se espejarian nunca.
+chequear('arranca donde termino el anterior', '_pagina_inicial()' in fuente_fn)
+chequear('y al llegar al final vuelve a cero',
+         '_guardar_pagina(0)' in fuente_fn,
+         'si no, las primeras paginas se quedan sin leer para siempre')
+
+# Las dos funciones de la marca se corren de verdad: son tres lineas y un
+# archivo, pero si se equivocan el espejo se queda mirando media tabla.
+import tempfile, time as _t
+ns2 = {'os': os, 'time': _t}
+for nombre in ('_pagina_inicial', '_guardar_pagina'):
+    g = next(n for n in arbol.body
+             if isinstance(n, ast.FunctionDef) and n.name == nombre)
+    exec(compile(ast.Module(body=[g], type_ignores=[]), '<t>', 'exec'), ns2)
+marca = os.path.join(tempfile.gettempdir(), 'gp_test_pagina')
+ns2['_USUARIOS_PAGINA'] = marca
+if os.path.exists(marca):
+    os.remove(marca)
+chequear('sin marca, arranca en la pagina 0', ns2['_pagina_inicial']() == 0)
+ns2['_guardar_pagina'](37)
+chequear('guarda y devuelve donde quedo', ns2['_pagina_inicial']() == 37)
+ns2['_guardar_pagina'](0)
+chequear('un barrido completo la vuelve a cero', ns2['_pagina_inicial']() == 0)
+# Una marca olvidada no puede dejar las primeras paginas sin leer para siempre.
+ns2['_guardar_pagina'](50)
+os.utime(marca, (_t.time() - 3600, _t.time() - 3600))
+chequear('una marca de hace una hora se ignora', ns2['_pagina_inicial']() == 0,
+         'si no, un corte raro deja media tabla sin espejar para siempre')
+os.remove(marca)
+
 print('\n---------------------------------------')
 print('%d OK, %d fallas' % (ok, fallas))
 sys.exit(1 if fallas else 0)

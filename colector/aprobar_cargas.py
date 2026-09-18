@@ -186,7 +186,13 @@ def _json(r):
 
 
 WAF_INTENTOS = int(os.environ.get("WAF_INTENTOS", "3"))   # el original + 2
-WAF_ESPERA_S = float(os.environ.get("WAF_ESPERA_S", "1.5"))
+# MEDIDO EN PRODUCCION (18/09/2026, primera hora con el reintento puesto): el
+# WAF desafia cada 5-7 paginas y TODOS los challenges se resolvieron en el
+# segundo intento, sin necesidad de recargar la pagina. O sea que la espera no
+# es lo que lo arregla -- el challenge es por request, y la siguiente pasa.
+# Con 1,5 s y ~12 challenges por barrido eran 18 segundos regalados sobre un
+# presupuesto de 60. Medio segundo alcanza.
+WAF_ESPERA_S = float(os.environ.get("WAF_ESPERA_S", "0.5"))
 
 
 def _despejar_waf(ctx) -> bool:
@@ -1085,6 +1091,49 @@ USUARIOS_POR_POST = 300      # tamano del lote hacia nuestro server
 USUARIOS_MAX_PAGINAS = 200   # 10.000 jugadores: freno duro, no un limite real
 _USUARIOS_MARCA = "/tmp/gp_usuarios_visto"
 
+# CUANTO PUEDE DURAR UN BARRIDO ANTES DE CORTARLO Y SEGUIR EN LA PROXIMA.
+#
+# El cron corre cada minuto con `flock -w 45`, o sea que una pasada de mas de
+# ~105 segundos le hace perder el turno a la siguiente -- y en esa siguiente
+# van las cargas y los retiros, que es la plata. El barrido limpio tarda ~53 s;
+# con el WAF desafiando cada 5 paginas se midio 68 s. Todavia entra, pero no
+# hay margen para un dia peor.
+#
+# CORTAR Y GUARDAR LO LEIDO ES HONESTO, y no lo era antes de la migracion 68:
+# `saldo_visto_en` es POR FILA, asi que los jugadores que no se alcanzaron a
+# leer conservan su fecha vieja y el CRM los sigue mostrando como viejos. Nadie
+# queda marcado como recien leido sin haberlo sido. (El comentario de
+# _usuarios_paginas decia lo contrario: es de cuando la fecha era una sola para
+# toda la tabla.)
+#
+# Y no se pierde a nadie: se recuerda en que pagina quedo y la proxima arranca
+# ahi. Sin eso siempre se leerian los mismos primeros 1.500 y los ultimos --los
+# jugadores mas nuevos, justo los que importan-- no se espejarian nunca.
+USUARIOS_MAX_SEG = int(os.environ.get("USUARIOS_MAX_SEG", "70"))
+_USUARIOS_PAGINA = "/tmp/gp_usuarios_pagina"
+
+
+def _pagina_inicial() -> int:
+    """Donde quedo el barrido anterior. 0 si termino o si la marca es vieja."""
+    try:
+        if not os.path.isfile(_USUARIOS_PAGINA):
+            return 0
+        # Una marca olvidada nunca puede dejar las primeras paginas sin leer
+        # para siempre: pasada media hora se vuelve a empezar de cero.
+        if (time.time() - os.path.getmtime(_USUARIOS_PAGINA)) > 1800:
+            return 0
+        return max(0, int(open(_USUARIOS_PAGINA).read().strip() or "0"))
+    except Exception:
+        return 0
+
+
+def _guardar_pagina(pagina: int) -> None:
+    try:
+        with open(_USUARIOS_PAGINA, "w") as f:
+            f.write(str(max(0, pagina)))
+    except Exception:
+        pass
+
 
 def _url_usuarios() -> str:
     """De API_URL (.../gp-api/altas_cola.php) sacamos .../gp-api/usuarios_sync.php"""
@@ -1166,8 +1215,20 @@ def _usuarios_paginas(ctx) -> list:
     if not agent_id:
         raise DesafioWAF("el panel no dijo quienes somos (sin agent_id)")
 
-    todos, pagina = [], 0
+    arranque = time.monotonic()
+    # Se retoma donde quedo el barrido anterior si aquel se corto por tiempo.
+    pagina = _pagina_inicial()
+    if pagina:
+        log.info("espejo de saldos: retomo en la pagina %d", pagina)
+    todos, completo = [], True
     while pagina < USUARIOS_MAX_PAGINAS:
+        if time.monotonic() - arranque > USUARIOS_MAX_SEG:
+            log.warning("espejo de saldos: me pase de %d s en la pagina %d. Guardo "
+                        "lo leido y sigo desde ahi en el proximo barrido.",
+                        USUARIOS_MAX_SEG, pagina)
+            _guardar_pagina(pagina)
+            completo = False
+            break
         url = (f"{PANEL_API}/agent_admin/user/?count={USUARIOS_POR_PAGINA}&page={pagina}"
                f"&user_id={agent_id}&is_banned=false&is_direct_structure=false")
         items = _usuarios_items(
@@ -1179,6 +1240,10 @@ def _usuarios_paginas(ctx) -> list:
             break
         pagina += 1
         time.sleep(0.4)      # gentil con el WAF, igual que el sync viejo
+    # Se llego al final de la lista: el proximo barrido arranca de cero, asi las
+    # primeras paginas tampoco se quedan sin leer cuando hubo que retomar.
+    if completo:
+        _guardar_pagina(0)
     return todos
 
 
