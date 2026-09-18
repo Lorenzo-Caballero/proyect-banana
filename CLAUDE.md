@@ -267,6 +267,19 @@ contraseña y `contrasena` era un hash, se guardaba la clave en claro en
 espejo con `sync_usuarios.py`, que se loguea con Playwright y pagina
 `agents.ganamosonline.com/api` → `usuarios_sync.php` → tabla `usuarios`.
 
+> **Los que crea NUESTRO bot no esperan al espejo (18/09/2026).** `altas_cola.php`
+> los inserta en `usuarios` al confirmar el alta, con el `id_ganamos` que el bot
+> ya capturó. Antes el único camino era el espejo completo —cada 5 minutos, y el
+> WAF le come pasadas: tres de seis en una hora medida ese día— así que un
+> jugador recién creado podía pasar veinte minutos con el CRM diciendo *«no está
+> en la base de usuarios»* y sin poder recibir una ficha. Le pasó a
+> `holaCoco661` y el operador tuvo que cargarle a mano desde el panel.
+>
+> Ese INSERT lleva `ON DUPLICATE KEY UPDATE id = id` **a propósito**: no pisa
+> nada. El espejo sabe más que nosotros sobre un jugador que ya existe, y
+> escribir un `balance` 0 encima de uno con saldo sería peor que la demora que
+> esto vino a arreglar. El espejo pasa después y corrige saldo, nombre y fecha.
+
 ### El nombre de usuario lo genera el sistema, no lo elige el jugador
 
 **Todos los caminos** —landing, chat y CRM— pasan el nombre por
