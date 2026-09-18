@@ -2500,7 +2500,7 @@
       <div class="huella" id="uHuella" style="display:none"></div>
       <div class="saldos saldos2">
         <div class="sbox saldo" id="uSaldoBox"><div class="k">Saldo</div><div class="v" id="uSaldo">$0</div><div class="edad" id="uSaldoEdad"></div><div class="vivo" id="uSaldoVivo" style="display:none"></div></div>
-        <div class="sbox bono" id="uBonoBox" title="Bonos prometidos, aún no acreditados"><div class="k">Bono pendiente</div><div class="v" id="uBonos">0</div></div>
+        <div class="sbox bono" id="uBonoBox" title="Bonos prometidos, aún no acreditados: se acreditan solos con la próxima carga"><div class="k">Bono pendiente</div><div class="v" id="uBonos">0</div><div class="edad" id="uBonosSinDep" style="display:none"></div></div>
       </div>
       <div class="sec">
         <h4>Acciones</h4>
@@ -8302,16 +8302,27 @@
     // Bono pendiente: fichas fijas prometidas (en coins) + cuántas promesas
     // de % y de giro de ruleta sin acreditar todavía -- ver
     // bono_pendiente_total() en crm.php. No es el acumulado histórico.
+    //
+    // SOLO las promesas van en el número grande (18/09/2026). Antes se
+    // concatenaba también `usuarios.bonus` como "N sin depositar" en la misma
+    // caja, y la ficha terminaba mostrando "1.000 + 2×% + 500 sin depositar"
+    // bajo el rótulo «Bono pendiente» — dos conceptos distintos (lo prometido
+    // vs. lo ya acreditado que falta mandar al juego) leídos como uno. El
+    // contador sigue visible, pero abajo y con su propio nombre.
     const bp = u.bono_pendiente || {fichas:0, pct_cantidad:0, giro_cantidad:0};
     const partesBono = [];
     if(bp.fichas>0) partesBono.push(nf.format(bp.fichas));
     if(bp.pct_cantidad>0) partesBono.push(`${bp.pct_cantidad}×%`);
     if(bp.giro_cantidad>0) partesBono.push(`${bp.giro_cantidad}×giro`);
-    // El contador usuarios.bonus: bonos ya acreditados que todavia no fueron
-    // al juego (el boton «Bonos al juego» los manda). Sin esto el agente
-    // cargaba un bono y la ficha no cambiaba en nada.
-    if((u.bonus|0) > 0) partesBono.push(`${nf.format(u.bonus)} sin depositar`);
     $("#uBonos").textContent = partesBono.length ? partesBono.join(" + ") : "0";
+    // El contador usuarios.bonus: bonos ya acreditados que todavía no fueron
+    // al juego (el botón «Bonos al juego» los manda). Sin esto el agente
+    // cargaba un bono y la ficha no cambiaba en nada.
+    const sinDep = $("#uBonosSinDep");
+    if(sinDep){
+      sinDep.style.display = (u.bonus|0) > 0 ? "" : "none";
+      sinDep.textContent = (u.bonus|0) > 0 ? `${nf.format(u.bonus)} acreditados sin mandar al juego` : "";
+    }
 
     const flags=[];
     if(u.is_banned) flags.push(`<span class="flag ban">Baneado</span>`);

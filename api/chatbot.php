@@ -302,7 +302,10 @@ $TOOLS = [
             . '(boton del clip). Lee esa imagen con IA, saca monto/titular/nro de operacion y '
             . 'los matchea con su recarga: si el pago real ya llego, la acredita al instante. '
             . 'Llamala apenas diga que subio/mando/adjunto el comprobante ("listo", "ahi va", '
-            . '"te lo mande"). No le pidas los datos por texto si ya subio la foto.',
+            . '"te lo mande"). No le pidas los datos por texto si ya subio la foto. '
+            . 'Si la respuesta trae "alertas" (comprobante ya usado, ya declarado, viejo, o de '
+            . 'otro monto), DECISELO al jugador con esas palabras, con firmeza y sin disculpas: '
+            . 'esos avisos salen de la base, no los cuestiones.',
         'parameters' => [
             'type' => 'object',
             'properties' => [
@@ -337,7 +340,9 @@ $TOOLS = [
             . 'el nombre del TITULAR de la cuenta desde la que transfirio. Ese es el dato que '
             . 'importa: con el titular alcanza para casar el pago. Registra el dato y, si la '
             . 'plata ya llego, acredita al instante. Si tiene el comprobante en imagen, mejor '
-            . 'que lo suba al chat con el clip y usa verificar_comprobante.',
+            . 'que lo suba al chat con el clip y usa verificar_comprobante. '
+            . 'Si la respuesta trae "alertas" (operacion ya usada o ya declarada), deciselo '
+            . 'al jugador con esas palabras: salen de la base, no las cuestiones.',
         'parameters' => [
             'type' => 'object',
             'properties' => [
@@ -587,7 +592,8 @@ if ($usuarioCliente !== '') {
           . "- NO le pidas el nombre de usuario. Nunca. Ya lo sabes.\n"
           . "- NO llames a identificar_usuario.\n"
           . "- Saludalo por su nombre y pasa directo a lo que necesite.\n"
-          . "- Usa ese usuario para las recargas y las consultas.";
+          . "- Usa ese usuario para las recargas y las consultas."
+          . chatbot_bloque_estado_app($pdo, $usuarioCliente);
 } else {
     $sys .= "\n\nIDENTIDAD (esto manda sobre todo lo anterior):\n"
           . "El jugador NO inicio sesion. No sabes quien es.\n"
@@ -1626,6 +1632,49 @@ function chatbot_aviso_agente_toca(PDO $pdo, string $sessionId, string $usuario)
 }
 
 /**
+ * Lo que el bot sabe de la APP de este jugador (pedido del dueño,
+ * 18/09/2026: "que el chatbot pueda validar si tiene o no tiene la app").
+ * Se agrega al bloque IDENTIDAD del logueado. Best-effort: sin la columna o
+ * ante un error, no se dice nada y el chat sigue.
+ *
+ * El estado del bono usa el mismo marcador que notif_app_instalada():
+ * movimientos origen='bono_app' con monto=0 (esperando la carga) o monto>0
+ * (ya pagado). Con el marcador puesto, el bot tiene la frase exacta que pidio
+ * el dueño; sin este dato inventaba, o le ofrecia la descarga a quien ya la
+ * tiene.
+ */
+function chatbot_bloque_estado_app(PDO $pdo, string $usuario): string
+{
+    try {
+        $st = $pdo->prepare("SELECT tiene_app FROM usuarios WHERE username = ? LIMIT 1");
+        $st->execute([$usuario]);
+        $fila = $st->fetch(PDO::FETCH_ASSOC);
+        if ($fila === false) { return ''; }
+
+        $p = "\n- App de Android: " . (!empty($fila['tiene_app'])
+                ? 'YA la tiene instalada. NO le ofrezcas descargarla.'
+                : 'NO la tiene instalada.');
+
+        $q = $pdo->prepare(
+            "SELECT COALESCE(SUM(monto > 0), 0) AS pagado,
+                    COALESCE(SUM(monto = 0), 0) AS marcado
+               FROM movimientos WHERE usuario = ? AND origen = 'bono_app'"
+        );
+        $q->execute([$usuario]);
+        $b = $q->fetch(PDO::FETCH_ASSOC) ?: [];
+        if ((int)($b['pagado'] ?? 0) > 0) {
+            $p .= ' El bono por instalar la app YA se le acredito: no le prometas otro.';
+        } elseif ((int)($b['marcado'] ?? 0) > 0) {
+            $p .= ' Su bono por descargar la app YA ESTA ACTIVO y se le acredita solo '
+                . 'junto con su proxima carga. Si pregunta por el, decile exactamente eso.';
+        }
+        return $p;
+    } catch (Throwable $e) {
+        return '';
+    }
+}
+
+/**
  * ¿Toca decirle al BLOQUEADO que lo vea un agente? Mismo esquema que
  * chatbot_aviso_agente_toca (y mismo motivo: la respuesta fija repetida en
  * cada mensaje es un robot escupiendo la misma frase quince veces), con dos
@@ -2143,9 +2192,14 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
                     'error' => '¿Cuál es tu usuario del juego? '
                              . 'Es una sola palabra, sin espacios.'];
         }
-        $st = $pdo->prepare("SELECT 1 FROM usuarios WHERE username = ? LIMIT 1");
+        $st = $pdo->prepare("SELECT tiene_app FROM usuarios WHERE username = ? LIMIT 1");
         $st->execute([$u]);
-        return ['ok' => true, 'usuario' => $u, 'existe' => (bool)$st->fetchColumn()];
+        $fila = $st->fetch(PDO::FETCH_ASSOC);
+        // tiene_app viaja con la identificacion (pedido del dueño, 18/09/2026):
+        // sin este dato el bot le ofrecia descargar la app a quien ya la tiene,
+        // o hablaba del bono sin saber si aplica.
+        return ['ok' => true, 'usuario' => $u, 'existe' => $fila !== false,
+                'tiene_app' => $fila !== false && !empty($fila['tiene_app'])];
     }
     if ($nombre === 'crear_cuenta') {
         // Ya tiene sesion: no hay nada que crear. Sin esto, un jugador logueado
@@ -2560,12 +2614,35 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
         }
         $r = rl_declarar_pago($pdo, $u, (string)$d['remitente'], (string)$d['nro_transaccion'],
                               $d['monto'] !== null ? (float)$d['monto'] : null, 'imagen');
+
+        /* COMPROBANTE VIEJO (pedido del dueño, 18/09/2026). La vision ahora
+           devuelve la fecha normalizada (AAAA-MM-DD [HH:MM]); si se pudo leer
+           y la operacion es de hace mas de 24 horas, el bot lo dice. 24 hs
+           porque una transferencia real llega por el mail del banco en
+           minutos: un comprobante de ayer que "todavia no entro" no esta
+           demorado, esta reciclado. Solo un aviso — la plata la decide el
+           matcher; y una fecha que no parsea no acusa a nadie. */
+        $fechaCmp = trim((string)($d['fecha'] ?? ''));
+        if (preg_match('/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/', $fechaCmp, $m)) {
+            $ts = mktime(isset($m[4]) ? (int)$m[4] : 12, isset($m[5]) ? (int)$m[5] : 0, 0,
+                         (int)$m[2], (int)$m[3], (int)$m[1]);
+            if ($ts !== false && checkdate((int)$m[2], (int)$m[3], (int)$m[1])
+                && $ts < time() - 24 * 3600) {
+                $r['alertas'] = $r['alertas'] ?? [];
+                $r['alertas'][] = 'COMPROBANTE VIEJO: la transferencia es del ' . $fechaCmp
+                    . ', hace mas de un dia. Una transferencia real se acredita en minutos: '
+                    . 'decile que ese comprobante es viejo y que esta recarga necesita una '
+                    . 'transferencia nueva.';
+            }
+        }
+
         // Lo leido viaja al modelo para que se lo confirme al jugador
         // ("veo tu transferencia de $500 desde la cuenta de Juan Perez...").
         $r['comprobante_leido'] = [
             'monto'           => $d['monto'],
             'remitente'       => $d['remitente'],
             'nro_transaccion' => $d['nro_transaccion'],
+            'fecha'           => $d['fecha'],
             'entidad'         => $d['entidad'],
         ];
         return $r;

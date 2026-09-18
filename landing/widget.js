@@ -3046,7 +3046,12 @@
       .then(function (d){
         if (d.ok){
           resR.className = "gpr-res show";
-          resR.innerHTML = "<b>+" + d.bonus + " bonos</b>Acreditados en tu cuenta. ¡Volvé mañana!";
+          // Desde el 18/09/2026 el premio queda PENDIENTE y entra con la
+          // próxima carga (d.pendiente). El texto viejo queda de respaldo
+          // para un server sin la migración 33, que acredita en el acto.
+          resR.innerHTML = "<b>+" + d.bonus + " bonos</b>" + (d.pendiente
+            ? "Se acreditan solos junto con tu próxima carga. ¡Volvé mañana!"
+            : "Acreditados en tu cuenta. ¡Volvé mañana!");
           inUser.style.display = "none";
           btnR.style.display = "none";
           $("gpr-skip").textContent = "Listo";

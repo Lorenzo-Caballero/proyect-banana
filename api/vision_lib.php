@@ -138,7 +138,7 @@ Respondé SOLO este JSON (sin markdown, sin texto extra):
  "remitente": "nombre del titular de la cuenta que ENVIÓ la plata" o "",
  "destinatario": "nombre del titular que RECIBIÓ" o "",
  "nro_transaccion": "número de operación/transacción/comprobante tal cual figura" o "",
- "fecha": "fecha y hora que figura" o "",
+ "fecha": "fecha y hora de la operación NORMALIZADA como AAAA-MM-DD HH:MM (24hs; sin hora legible, AAAA-MM-DD; ojo que en Argentina la fecha corta es día/mes/año)" o "",
  "entidad": "banco o billetera del emisor" o ""}
 Reglas: es_comprobante=false si la imagen NO es un comprobante de transferencia
 (un meme, un chat, una foto cualquiera). No inventes datos: si un campo no se

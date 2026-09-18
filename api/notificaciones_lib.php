@@ -376,9 +376,14 @@ if (!function_exists('notif_crear')) {
             // La condicion se cuenta ACA, con la app recien instalada --
             // nunca en la promo del navegador (pedido explicito de Nahuel).
             try {
+                // La frase es del dueño (18/09/2026): "tu bono por descargar
+                // la app ya está activo, te lo acreditamos en tu próxima
+                // carga". El bot dice lo mismo (chatbot_bloque_estado_app):
+                // un solo mensaje, igual en todos los canales.
                 notif_crear($pdo, $usuario,
-                    '🎁 Tenés ' . number_format($fichas, 0, ',', '.') . ' fichas esperándote',
-                    'Se acreditan solas apenas hagas tu primera carga. ¡Hacela y son tuyas!',
+                    '🎁 Tu bono por descargar la app ya está activo',
+                    'Las ' . number_format($fichas, 0, ',', '.')
+                    . ' fichas te las acreditamos solas junto con tu próxima carga. ¡Hacela y son tuyas!',
                     'bono', null, 'app');
             } catch (Throwable $e) {
                 error_log('notif_app_instalada (notif pendiente): ' . $e->getMessage());

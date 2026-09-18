@@ -2315,6 +2315,59 @@ function rl_declarar_pago(PDO $pdo, string $usuario, string $titular = '',
         }
     }
 
+    /* AVISOS SOBRE EL COMPROBANTE (pedido del dueño, 18/09/2026: que el bot
+       sea capaz de decir "ese comprobante ya fue usado" o "es de otro
+       monto"). Son avisos PARA EL MODELO, que los transmite; la decision de
+       plata sigue siendo del matcher con el mail del banco — aca no se
+       rechaza ni se acredita nada. Best-effort: un fallo en un aviso no puede
+       frenar la declaracion. Se piden >= 6 digitos, como en vinculos_lib: los
+       numeros cortos los tipea cualquiera. */
+    $alertas = [];
+    if ($nroTrx !== '' && mb_strlen($nroTrx) >= 6) {
+        try {
+            // La señal FUERTE: la plata de esa operacion ya se acredito.
+            $pg = $pdo->prepare(
+                "SELECT 1 FROM pagos
+                  WHERE (nro_transaccion = ? OR id_unico = ?) AND estado = 'usado'
+                  LIMIT 1"
+            );
+            $pg->execute([$nroTrx, $nroTrx]);
+            if ($pg->fetchColumn()) {
+                $alertas[] = 'COMPROBANTE YA USADO: la transferencia con ese numero de '
+                           . 'operacion ya fue acreditada a una recarga anterior. Decile que '
+                           . 'ese comprobante ya se uso y que esta recarga necesita una '
+                           . 'transferencia nueva.';
+            }
+        } catch (Throwable $e) { error_log('rl_declarar_pago (trx usada): ' . $e->getMessage()); }
+        try {
+            // La señal de intento: alguien (el mismo u otra cuenta) ya declaro
+            // este mismo numero en otra recarga. Es la señal 'comprobante' de
+            // vinculos_lib, dicha en el momento en vez de solo en la ficha.
+            $qd = $pdo->prepare(
+                "SELECT usuario FROM recargas
+                  WHERE trx_declarada = ? AND id <> ? ORDER BY id DESC LIMIT 1"
+            );
+            $qd->execute([$nroTrx, (int)$rec['id']]);
+            $otraDecl = $qd->fetchColumn();
+            if ($otraDecl !== false && $otraDecl !== null) {
+                $alertas[] = 'COMPROBANTE YA DECLARADO: ese mismo numero de operacion ya se '
+                           . 'declaro en otra recarga'
+                           . ((string)$otraDecl === $usuario ? ' suya' : ' de OTRA cuenta')
+                           . '. Decile que ese comprobante ya fue presentado y que cada '
+                           . 'recarga necesita una transferencia propia.';
+            }
+        } catch (Throwable $e) { /* sin migracion 45 no hay trx_declarada */ }
+    }
+    // El monto del comprobante contra el de la recarga pendiente. Este
+    // parametro existia desde la migracion 45 y no se usaba para nada.
+    if ($monto !== null && $monto > 0
+        && abs($monto - (float)$rec['monto_pedido']) >= 1) {
+        $alertas[] = 'MONTO DISTINTO: el comprobante dice $' . number_format($monto, 2, ',', '.')
+                   . ' pero la recarga pendiente es de $'
+                   . number_format((float)$rec['monto_pedido'], 2, ',', '.')
+                   . '. Avisale la diferencia; lo que se acredita lo decide el aviso del banco.';
+    }
+
     // Re-intentar los pagos en 'revision' de este monto: con el titular recien
     // declarado, uno que estaba trabado por ambiguedad puede desempatar ahora.
     $montoRec = (float)$rec['monto_pedido'];
@@ -2333,7 +2386,8 @@ function rl_declarar_pago(PDO $pdo, string $usuario, string $titular = '',
             if (($res['resultado'] ?? '') === 'acreditada'
                 && (string)($res['usuario'] ?? '') === $usuario) {
                 return ['ok' => true, 'estado' => 'acreditada', 'usuario' => $usuario,
-                        'coins' => (int)($res['coins'] ?? $rec['coins'])];
+                        'coins' => (int)($res['coins'] ?? $rec['coins']),
+                        'alertas' => $alertas];
             }
         }
     } catch (Throwable $e) {
@@ -2343,7 +2397,8 @@ function rl_declarar_pago(PDO $pdo, string $usuario, string $titular = '',
     // El pago todavia no entro (o no casa aun): el dato quedo guardado y espera
     // al aviso del banco. El chatbot dice "quedo anotada", nunca "ya esta".
     return ['ok' => true, 'estado' => 'pendiente', 'usuario' => $usuario,
-            'coins' => (int)$rec['coins'], 'monto_pedido' => $montoRec];
+            'coins' => (int)$rec['coins'], 'monto_pedido' => $montoRec,
+            'alertas' => $alertas];
 }
 
 /**

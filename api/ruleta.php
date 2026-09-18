@@ -9,9 +9,11 @@
  *           SIN acreditar. 1 giro por sesion por dia.
  *        { ok, indice, token, bonus, label, ya_giro, reclamado, mensaje }
  *   POST { accion:"reclamar", token, usuario }
- *        -> valida el usuario y ACREDITA el premio en usuarios.bonus.
+ *        -> valida el usuario y deja el premio PENDIENTE (bonos_pendientes):
+ *           se acredita solo junto con la proxima carga (18/09/2026). Sin la
+ *           migracion 33, degrada a acreditar en usuarios.bonus en el acto.
  *           1 reclamo por usuario por dia.
- *        { ok, bonus, usuario }  o  { ok:false, error/codigo }
+ *        { ok, bonus, usuario, pendiente }  o  { ok:false, error/codigo }
  *
  * Seguridad: el premio se decide en el server y queda atado al token; el cliente
  * no puede elegir cuanto gana ni reclamar un premio que no giro.
@@ -247,15 +249,33 @@ try {
             salir(['ok' => false, 'error' => 'Ese premio ya fue reclamado.']);
         }
 
-        if (function_exists('crm_cargar')) {
-            $r = crm_cargar($pdo, $usuario, 'bono', $bonus, 'Ruleta diaria', 'ruleta');
-            if (!$r['ok']) { salir(['ok' => false, 'error' => $r['error'] ?? 'No se pudo acreditar'], 400); }
-        } else {
-            $pdo->prepare("UPDATE usuarios SET bonus = bonus + ? WHERE username = ?")
-                ->execute([$bonus, $usuario]);
+        /* EL PREMIO QUEDA PENDIENTE Y SE ACREDITA CON LA CARGA (pedido del
+           dueño, 18/09/2026: "los bonos ganados en la ruleta también deben
+           ser con la carga; si no cargan, el bono queda pendiente"). Antes se
+           sumaba a usuarios.bonus en el acto: un premio jugable sin poner un
+           peso. Ahora entra a `bonos_pendientes` (migración 33) y lo aplica
+           crmnotif_bono_aplicar_en_recarga() junto con la próxima carga
+           acreditada — el MISMO mecanismo del bono prometido del CRM, así la
+           ficha del jugador lo muestra como pendiente y no hay dos maneras de
+           deber un bono. Sin la migración 33 se degrada al comportamiento
+           viejo (acreditar ya): perderle el premio al jugador es peor. */
+        $pendiente = false;
+        if (function_exists('crmnotif_bono_crear')) {
+            $rp = crmnotif_bono_crear($pdo, $usuario, 'fichas', $bonus, 'ruleta');
+            $pendiente = !empty($rp['ok']);
+        }
+        if (!$pendiente) {
+            if (function_exists('crm_cargar')) {
+                $r = crm_cargar($pdo, $usuario, 'bono', $bonus, 'Ruleta diaria', 'ruleta');
+                if (!$r['ok']) { salir(['ok' => false, 'error' => $r['error'] ?? 'No se pudo acreditar'], 400); }
+            } else {
+                $pdo->prepare("UPDATE usuarios SET bonus = bonus + ? WHERE username = ?")
+                    ->execute([$bonus, $usuario]);
+            }
         }
 
-        salir(['ok' => true, 'bonus' => $bonus, 'usuario' => $usuario]);
+        salir(['ok' => true, 'bonus' => $bonus, 'usuario' => $usuario,
+               'pendiente' => $pendiente]);
     }
 
     // ====================== GIRAR (CORTESÍA) ================================
@@ -305,16 +325,27 @@ try {
 
         $indice = elegir_indice();
         $bonus  = (int)PREMIOS[$indice]['bonus'];
+        // Mismo criterio que el reclamo normal (18/09/2026): el premio queda
+        // pendiente y entra con la próxima carga; sin migración 33, se
+        // acredita en el acto como antes.
+        $pendiente = false;
         if ($bonus > 0) {
-            if (function_exists('crm_cargar')) {
-                $r = crm_cargar($pdo, $usuario, 'bono', $bonus, 'Giro de cortesía', 'ruleta_cortesia');
-                if (!$r['ok']) { salir(['ok' => false, 'error' => $r['error'] ?? 'No se pudo acreditar'], 400); }
-            } else {
-                $pdo->prepare("UPDATE usuarios SET bonus = bonus + ? WHERE username = ?")->execute([$bonus, $usuario]);
+            if (function_exists('crmnotif_bono_crear')) {
+                $rp = crmnotif_bono_crear($pdo, $usuario, 'fichas', $bonus, 'ruleta_cortesia');
+                $pendiente = !empty($rp['ok']);
+            }
+            if (!$pendiente) {
+                if (function_exists('crm_cargar')) {
+                    $r = crm_cargar($pdo, $usuario, 'bono', $bonus, 'Giro de cortesía', 'ruleta_cortesia');
+                    if (!$r['ok']) { salir(['ok' => false, 'error' => $r['error'] ?? 'No se pudo acreditar'], 400); }
+                } else {
+                    $pdo->prepare("UPDATE usuarios SET bonus = bonus + ? WHERE username = ?")->execute([$bonus, $usuario]);
+                }
             }
         }
 
-        salir(['ok' => true, 'indice' => $indice, 'bonus' => $bonus, 'label' => PREMIOS[$indice]['label'], 'usuario' => $usuario]);
+        salir(['ok' => true, 'indice' => $indice, 'bonus' => $bonus, 'label' => PREMIOS[$indice]['label'],
+               'usuario' => $usuario, 'pendiente' => $pendiente]);
     }
 
     salir(['ok' => false, 'error' => 'accion desconocida'], 400);

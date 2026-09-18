@@ -125,8 +125,10 @@ $f = $leer($U);
 ok((int)$f['tiene_app'] === 1, 'tiene_app queda en 1');
 ok($movs($U) === 0, 'NO cobra el bono todavia (no tiene primera carga)');
 ok($marcas($U) === 1, 'queda el marcador (bono_app, monto 0)');
+// La frase es del dueño (18/09/2026): "tu bono ya está activo, te lo
+// acreditamos en tu próxima carga". El aviso tiene que decir eso.
 $st = $pdo->prepare(
-    "SELECT COUNT(*) FROM notificaciones WHERE usuario = ? AND cuerpo LIKE '%primera carga%'");
+    "SELECT COUNT(*) FROM notificaciones WHERE usuario = ? AND cuerpo LIKE '%próxima carga%'");
 $st->execute([$U]);
 ok((int)$st->fetchColumn() === 1, 'y el aviso en la app que explica la condicion');
 
