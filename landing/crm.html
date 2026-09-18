@@ -2208,6 +2208,11 @@
     border-radius:9px;padding:7px 9px;color:var(--muted);font-size:12px}
   .lp-card-acciones{display:flex;gap:8px;flex-wrap:wrap}
   .lp-btn-mini.peligro{border-color:#7a4247;color:#e5595d}
+  .lp-btn-mini.on{border-color:var(--violet);background:var(--violetSoft)}
+  /* La tarjeta archivada se ve apagada: sigue ahi, pero no compite con
+     las que estan en uso. */
+  .lp-card.archivada{opacity:.55}
+  .lp-arch-barra{display:flex;justify-content:flex-end;margin:0 0 10px}
   .lp-btn-mini{background:none;border:1px solid var(--line);color:var(--txt);border-radius:9px;
     padding:6px 11px;font-size:12.5px;font-weight:600;cursor:pointer}
   .lp-btn-mini:hover{background:var(--panel3)}
@@ -9271,7 +9276,7 @@
       // Aprobar: un retiro pedido por el jugador NO se ejecuta hasta que un
       // agente lo aprueba. Recién ahí el bot lo toma de la cola.
       if(esperaAprob){
-        btns.push(`<button class="btn-mini-accion exito" data-accion="aprobar" data-id="${r.id}" type="button">Aprobar</button>`);
+        btns.push(`<button class="btn-mini-accion exito" data-accion="aprobar" data-id="${r.id}" type="button" title="El bot le saca las fichas del juego. La transferencia la hacés vos.">Retirar las fichas</button>`);
       }
       if(r.estado==="error"){
         btns.push(`<button class="btn-mini-accion" data-accion="reintentar" data-id="${r.id}" type="button">Reintentar</button>`);
@@ -9282,7 +9287,12 @@
          al jugador al que acabas de pagarle. Por eso quedaban eternos: en la
          captura de Nahuel habia uno de 26 dias. */
       if(r.estado==="pendiente" || r.estado==="revisar" || r.estado==="error"){
-        btns.push(`<button class="btn-mini-accion exito" data-accion="pagado" data-id="${r.id}" type="button" title="Ya le transferiste: cerrar el pedido">Pagado</button>`);
+        /* NEUTRO Y NO VERDE, y el rotulo dice que es lo que hace. Habia DOS
+           botones verdes al lado --«Aprobar» y «Pagado»-- que parecian
+           equivalentes y hacen cosas opuestas: uno le saca las fichas del juego
+           y el otro no toca nada en ganamos. Este no mueve plata: solo cierra
+           el registro de algo que ya resolviste a mano. */
+        btns.push(`<button class="btn-mini-accion" data-accion="pagado" data-id="${r.id}" type="button" title="No toca ganamos: solo cierra el pedido de algo que ya resolviste a mano">Ya lo resolví</button>`);
       }
       /* Deshacer un "pagado a mano". Solo aparece en los que marco una persona
          -- se reconoce por el mensaje, la misma marca que usa la auditoria.
@@ -9352,7 +9362,12 @@
       </div>`;
     }).join("");
     $("#retList").querySelectorAll("[data-accion='aprobar']").forEach(btn=>{
-      btn.addEventListener("click", ()=> aprobarRetiro(+btn.getAttribute("data-id"), btn));
+      btn.addEventListener("click", ()=>{
+        // La fila entera y no solo el id: el aviso tiene que decir a QUIEN y
+        // CUANTO, que es lo que el operador esta por confirmar.
+        const fila = d.items.find(x=>x.id===+btn.getAttribute("data-id"));
+        aprobarRetiro(+btn.getAttribute("data-id"), btn, fila || {});
+      });
     });
     $("#retList").querySelectorAll("[data-accion='reintentar']").forEach(btn=>{
       btn.addEventListener("click", ()=> reintentarRetiro(+btn.getAttribute("data-id"), btn));
@@ -9408,46 +9423,83 @@
      quien ya le pagaste. La nota es obligatoria porque es la única constancia:
      del otro lado no queda comprobante automático. */
   async function marcarRetiroPagado(r, btn){
-    /* LO QUE SE OLVIDA NO ES LA TRANSFERENCIA, SON LAS FICHAS. Marcar
-       "Pagado" cierra el pedido y NO le saca el saldo del juego: si el agente
-       transfirió pero no se las descontó en ganamos, el jugador cobró Y se
-       quedó jugando la misma plata. Es lo que pasó el 15/09/2026 (pagó 4.280
-       al banco, sacó 4.000 del juego, quedaron 280 dando vueltas), así que la
-       pregunta va antes que la nota y en ese orden. */
+    /* "NO LE DEVUELVE EL SALDO" ERA LA FRASE QUE CONFUNDIA.
+       Nahuel (18/09/2026): *"había una ventanita que me decía que no se le
+       iban a descontar las fichas"*. Era esta, y su memoria es razonable: el
+       texto decia "No le devuelve el saldo" --o sea, no le devuelve la plata
+       al jugador-- pero se lee como "no se le descuentan las fichas", que es
+       lo contrario de lo que el boton hace.
+
+       Lo que este boton hace es UNA sola cosa: cerrar el registro. No toca
+       ganamos, no saca fichas, no transfiere. Es para cuando ya hiciste las
+       dos cosas a mano en el panel.
+
+       Y la pregunta de las fichas va PRIMERA porque es lo que se olvida: el
+       15/09/2026 alguien transfirio 4.280 al banco y saco 4.000 del juego --
+       quedaron 280 dando vueltas. */
+    const quien = "@" + (r.usuario || "");
     if(!confirm(
-      `Antes de cerrarlo: ¿ya le descontaste ${money(r.monto)} del saldo de @${r.usuario} en el panel de ganamos?\n\n` +
-      `"Pagado" solo cierra el pedido acá. NO le saca las fichas.\n` +
-      `Si no se las sacaste, el jugador cobró la transferencia y encima las sigue teniendo para jugar.`
+      `Cerrar el pedido de ${money(r.monto)} de ${quien}.
+
+` +
+      `Este boton NO hace nada en ganamos: ni le saca las fichas ni le transfiere.
+` +
+      `Solo marca que vos ya lo resolviste por tu cuenta.
+
+` +
+      `Antes de seguir: ¿ya le sacaste las ${money(r.monto)} del juego EN EL PANEL?
+` +
+      `Si no, cancelá esto y usá "Retirar las fichas" -- si no, cobra la transferencia y ` +
+      `encima se queda jugando la misma plata.`
     )) return;
     const nota = prompt(
-      `Marcar como PAGADO el retiro de ${money(r.monto)} de @${r.usuario}.
+      `¿Como lo resolviste? Queda como la unica constancia.
 
 ` +
-      `Esto NO transfiere nada: es para cuando YA le pagaste desde el panel.
-` +
-      `No le devuelve el saldo.
-
-` +
-      `¿Cómo se lo pagaste? (queda como constancia)`, "");
+      `Ej: "le transferi por Mercado Pago y le saque las fichas del panel".`, "");
     if(nota === null) return;
-    if(nota.trim().length < 8){ toast("Contá cómo lo pagaste, al menos 8 caracteres"); return; }
+    if(nota.trim().length < 8){ toast("Contá cómo lo resolviste, al menos 8 caracteres"); return; }
     btn.disabled = true; btn.textContent = "…";
     const d = await jpost({accion:"marcar_pagado", id:r.id, nota:nota.trim()}, API_RET);
     if(d.ok){
-      toast(d.mensaje || "Retiro marcado como pagado");
+      toast(d.mensaje || "Pedido cerrado");
       cargarRetiros(); actualizarBadgeRetiros();
     } else {
-      btn.disabled = false; btn.textContent = "Pagado";
-      toast(d.error || "No se pudo marcar");
+      btn.disabled = false; btn.textContent = "Ya lo resolví";
+      toast(d.error || "No se pudo cerrar");
     }
   }
 
-  async function aprobarRetiro(id, btn){
-    if(!confirm(`¿Aprobar el retiro #${id}? El bot lo va a ejecutar en el panel de ganamos.`)) return;
+  /* APROBAR ES LA MITAD DEL TRABAJO, y el texto viejo no lo decia.
+     Decia solo "el bot lo va a ejecutar en el panel de ganamos", que no
+     explica ni que le saca las fichas ni que la transferencia sigue
+     pendiente. Nahuel (18/09/2026) lo reporto al reves --se acordaba de un
+     cartel que decia que NO se le descontaban las fichas-- y tenia razon: ese
+     era el de "Pagado", redactado de una forma que se leia como este.
+     Las dos cosas que el operador necesita saber antes de apretar: que las
+     fichas SALEN, y que la plata todavia no. */
+  async function aprobarRetiro(id, btn, r){
+    r = r || {};
+    const quien = r.usuario ? "@" + r.usuario : "el jugador";
+    const cuanto = r.monto ? money(r.monto) : "el monto del pedido";
+    if(!confirm(
+      `Le saco ${cuanto} del juego a ${quien}.
+
+` +
+      `· Las fichas salen de su cuenta y pasan a tu stock. Lo hace el bot, en un minuto.
+` +
+      `· La plata NO se transfiere sola: eso lo hacés vos desde el banco.
+
+` +
+      `¿Le saco las fichas?`
+    )) return;
     btn.disabled = true; btn.textContent = "…";
     const d = await jpost({accion:"aprobar", id}, API_RET);
-    if(d.ok){ toast("Retiro aprobado, va a la cola"); cargarRetiros(); actualizarBadgeRetiros(); }
-    else { btn.disabled = false; btn.textContent = "Aprobar"; toast(d.error || "No se pudo aprobar"); }
+    if(d.ok){
+      toast("Fichas retiradas. Falta transferirle la plata.");
+      cargarRetiros(); actualizarBadgeRetiros();
+    }
+    else { btn.disabled = false; btn.textContent = "Retirar las fichas"; toast(d.error || "No se pudo aprobar"); }
   }
 
   async function reintentarRetiro(id, btn){
@@ -13354,10 +13406,11 @@ ${cuando}.
     return location.origin + TENANT_PREFIJO + "/lp.html?l=" + encodeURIComponent(slug);
   }
 
+  let lpVerArchivadas = false;
   async function lpAbrir(){
     lpMostrarLista();
     try{
-      const r = await apiFetch(API_LP + "?accion=listar");
+      const r = await apiFetch(API_LP + "?accion=listar" + (lpVerArchivadas ? "&archivadas=1" : ""));
       const d = await r.json();
       if(!d.ok) throw new Error(d.error || "error");
       lpPlantillas = d.plantillas || {};
@@ -13393,10 +13446,18 @@ ${cuando}.
         «Nueva landing»: elegís plantilla y bono, y te llevás un link listo para los anuncios.</div>`;
       return;
     }
-    cont.innerHTML = lpLandings.map(l => {
+    /* El interruptor para ver las archivadas. Va SIEMPRE, incluso sin
+       ninguna: si solo apareciera cuando hay archivadas, el operador que
+       archivo una no tendria como volver a encontrarla. */
+    const barra = `<div class="lp-arch-barra">
+        <button class="lp-btn-mini ${lpVerArchivadas ? "on" : ""}" id="lpVerArch" type="button">
+          ${lpVerArchivadas ? "Ocultar archivadas" : "Ver archivadas"}
+        </button>
+      </div>`;
+    cont.innerHTML = barra + lpLandings.map(l => {
       const c = l.config.colores || {};
       const url = lpUrlPublica(l.slug);
-      return `<div class="lp-card ${l.activa ? "" : "pausada"}" data-id="${l.id}">
+      return `<div class="lp-card ${l.activa ? "" : "pausada"} ${l.archivada ? "archivada" : ""}" data-id="${l.id}">
         <div class="lp-card-top">
           <b>${esc(l.nombre)}</b>
           <span class="lp-swatches">
@@ -13429,11 +13490,16 @@ ${cuando}.
                que nada avise. Esas se pausan, que las saca de la vista sin
                tocar un dato. Ofrecer el boton y despues rebotarlo seria peor
                que no ofrecerlo. -->
+          ${l.archivada
+            ? `<button class="lp-btn-mini" data-acc="archivar" data-a="0">Desarchivar</button>`
+            : `<button class="lp-btn-mini" data-acc="archivar" data-a="1" title="Sale de esta lista. El historial de Publicidad queda intacto.">Archivar</button>`}
           ${(l.altas > 0 || l.gasto > 0) ? "" :
             `<button class="lp-btn-mini peligro" data-acc="borrar">Borrar</button>`}
         </div>
       </div>`;
     }).join("");
+    const bVer = $("#lpVerArch");
+    if(bVer) bVer.onclick = ()=>{ lpVerArchivadas = !lpVerArchivadas; lpAbrir(); };
   }
 
   // Un solo listener para toda la lista (las tarjetas se redibujan enteras).
@@ -13455,6 +13521,32 @@ ${cuando}.
     }
     if(acc === "editar"){
       lpEditar(id);
+      return;
+    }
+    if(acc === "archivar"){
+      const l  = lpLandings.find(x => x.id === id) || {};
+      const on = btn.getAttribute("data-a") === "1";
+      /* Archivar no pierde nada, asi que no se pregunta. Pero SI se dice que
+         ademas la pausa: una landing fuera de la vista que siga creando
+         cuentas es la peor combinacion -- nadie la mira y nadie la controla. */
+      if(on && l.activa && !confirm(
+          `Archivar «${l.nombre || id}».
+
+`
+        + `Sale de esta lista y ademas se PAUSA: el link deja de funcionar.
+`
+        + `Su historial en Publicidad queda intacto, y se puede desarchivar cuando quieras.`)) return;
+      btn.disabled = true;
+      try{
+        const r = await apiFetch(API_LP, {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({accion:"archivar", id, archivar:on}),
+        });
+        const d = await r.json();
+        if(!d.ok){ toast(d.error || "No se pudo"); btn.disabled = false; return; }
+        toast(on ? "Landing archivada" : "Landing desarchivada (quedó pausada)");
+        lpAbrir();
+      }catch(e){ if(!esSesionRequerida(e)) toast("No se pudo"); btn.disabled = false; }
       return;
     }
     if(acc === "borrar"){

@@ -130,16 +130,70 @@ function landings_por_slug(PDO $pdo, string $slug, bool $soloActiva = true): ?ar
 }
 
 /** Todas las landings para la lista del CRM, más nuevas primero. */
-function landings_listar(PDO $pdo): array
+function landings_listar(PDO $pdo, bool $conArchivadas = false): array
 {
+    /* LAS ARCHIVADAS NO SE LISTAN, que es todo el punto de archivarlas. Se
+       piden explícitamente con $conArchivadas para la vista de archivo.
+       El ORDER pone primero las activas: lo que sirve arriba, lo pausado
+       abajo. Antes era por id DESC y la última que alguien creó probando
+       quedaba antes que la que trae el 80% de los registros. */
+    $where = $conArchivadas ? '' : 'WHERE COALESCE(archivada, 0) = 0';
     try {
         return $pdo->query(
-            "SELECT id, slug, nombre, plantilla, bono_pct, activa, config, creada_en, actualizada_en
-               FROM landings ORDER BY id DESC"
+            "SELECT id, slug, nombre, plantilla, bono_pct, activa,
+                    COALESCE(archivada, 0) AS archivada, config, creada_en, actualizada_en
+               FROM landings $where
+              ORDER BY activa DESC, id DESC"
         )->fetchAll(PDO::FETCH_ASSOC) ?: [];
     } catch (Throwable $e) {
-        error_log('landings_listar: ' . $e->getMessage());
-        return [];
+        /* Sin la migración 74 no existe `archivada`: se cae al listado de
+           siempre en vez de dejar la pantalla vacía. */
+        try {
+            return $pdo->query(
+                "SELECT id, slug, nombre, plantilla, bono_pct, activa, 0 AS archivada,
+                        config, creada_en, actualizada_en
+                   FROM landings ORDER BY activa DESC, id DESC"
+            )->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        } catch (Throwable $e2) {
+            error_log('landings_listar: ' . $e2->getMessage());
+            return [];
+        }
+    }
+}
+
+/**
+ * Archivar o desarchivar. NO borra nada: la landing sale de la lista del CRM y
+ * su historial sigue entero en Publicidad.
+ *
+ * ARCHIVAR IMPLICA PAUSAR, y no es un detalle de implementación: una landing
+ * fuera de la vista que siga creando cuentas es la peor combinación posible --
+ * nadie la mira y nadie la controla. Desarchivar NO la reactiva sola, por la
+ * simetría contraria: volver a mostrarla no puede volver a publicarla sin que
+ * alguien lo decida.
+ */
+function landings_archivar(PDO $pdo, int $id, bool $archivar): array
+{
+    if ($id <= 0) { return ['ok' => false, 'error' => 'Falta el id']; }
+    try {
+        $st = $pdo->prepare("SELECT nombre FROM landings WHERE id = ? LIMIT 1");
+        $st->execute([$id]);
+        $nombre = $st->fetchColumn();
+        if ($nombre === false) { return ['ok' => false, 'error' => 'Esa landing no existe']; }
+
+        if ($archivar) {
+            $pdo->prepare(
+                "UPDATE landings SET archivada = 1, archivada_en = NOW(), activa = 0 WHERE id = ?"
+            )->execute([$id]);
+        } else {
+            $pdo->prepare(
+                "UPDATE landings SET archivada = 0, archivada_en = NULL WHERE id = ?"
+            )->execute([$id]);
+        }
+        return ['ok' => true, 'id' => $id, 'nombre' => (string)$nombre,
+                'archivada' => $archivar];
+    } catch (Throwable $e) {
+        error_log('landings_archivar: ' . $e->getMessage());
+        return ['ok' => false, 'error' => 'Falta la migración 74 (landings.archivada)'];
     }
 }
 

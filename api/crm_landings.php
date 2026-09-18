@@ -150,6 +150,19 @@ if ($metodo === 'POST') {
             lp_salir(['ok' => true, 'activa' => $nuevo]);
         }
 
+        /* Archivar: sale de la lista, el historial queda. Es la salida para la
+           que SI trajo gente y por eso no se puede borrar. */
+        if ($accion === 'archivar') {
+            $id  = (int)($body['id'] ?? 0);
+            $res = landings_archivar($pdo, $id, !empty($body['archivar']));
+            if (!empty($res['ok'])) {
+                crm_bitacora($pdo, $operador,
+                             !empty($body['archivar']) ? 'landing_archivar' : 'landing_desarchivar',
+                             "id=$id");
+            }
+            lp_salir($res, !empty($res['ok']) ? 200 : 400);
+        }
+
         /* Borrar SOLO lo que no trajo a nadie. Una landing con historia se
            pausa: su slug vive en `altas.origen` y `gasto_diario`, y borrarla
            dejaria esos registros sin dueño en Publicidad. Ver
@@ -178,13 +191,16 @@ if ($metodo === 'GET') {
     try {
         if ($accion === 'listar') {
             $landings = [];
-            foreach (landings_listar($pdo) as $l) {
+            // ?archivadas=1 para la vista de archivo; por defecto no van.
+            $conArch = !empty($_GET['archivadas']);
+            foreach (landings_listar($pdo, $conArch) as $l) {
                 // La config viaja ya COMPLETA (defaults de la plantilla + lo
                 // guardado): el editor del CRM siempre arranca con todos los
                 // campos llenos, sin repetir el merge en JS.
                 $l['config'] = landings_config_completa((string)$l['plantilla'], $l['config']);
                 $l['bono_pct'] = (int)$l['bono_pct'];
-                $l['activa']   = (int)$l['activa'];
+                $l['activa']    = (int)$l['activa'];
+                $l['archivada'] = (int)($l['archivada'] ?? 0);
                 /* Cuanto trajo cada una. Con esto el CRM puede ordenar por lo
                    que sirvio, decir "no trajo a nadie" y habilitar Borrar solo
                    donde corresponde -- en vez de ofrecer un boton que despues

@@ -235,6 +235,46 @@ chequear('el CRM solo muestra Borrar si no trajo nada',
 chequear('y muestra el slug, porque los nombres se repiten',
          str_contains($crmSrc, 'Es lo que va en el link'));
 
+echo "\n=== Archivar: sale de la lista, el historial queda ===\n";
+
+/* Nahuel (18/09/2026): *"quiero que apliques la opcion de archivar, para que
+   no salgan visibles ahi y moleste"*.
+
+   Borrar no alcanzaba y a proposito: la que tiene historia NO se puede borrar
+   (rompe Publicidad). O sea que las que mas molestan --las viejas, que ya
+   trajeron gente-- no tenian forma de salir de la lista. Pausar tampoco:
+   una pausada se sigue viendo, solo deja de andar el link. Son dos cosas
+   distintas y hacian falta las dos. */
+$r = landings_archivar($pdo, $id2, true);
+chequear('se puede archivar una landing con historia', !empty($r['ok']), json_encode($r));
+
+$vis = array_column(landings_listar($pdo), 'slug');
+chequear('archivada, sale de la lista', !in_array('tlp-b-con', $vis, true));
+$todas = array_column(landings_listar($pdo, true), 'slug');
+chequear('pero se puede ver pidiendo las archivadas', in_array('tlp-b-con', $todas, true));
+
+/* ARCHIVAR IMPLICA PAUSAR. Una landing fuera de la vista que siga creando
+   cuentas es la peor combinacion: nadie la mira y nadie la controla. */
+$q2 = $pdo->prepare('SELECT activa FROM landings WHERE id = ?'); $q2->execute([$id2]);
+chequear('y queda pausada', (int)$q2->fetchColumn() === 0,
+         'archivada pero activa seria lo peor de los dos mundos');
+
+/* Y el historial no se toca: es todo el punto de archivar en vez de borrar. */
+$h = landings_historia($pdo, 'tlp-b-con');
+chequear('el gasto sigue ahi para Publicidad', (float)$h['gasto'] > 0, json_encode($h));
+
+/* Desarchivar NO la reactiva sola: volver a mostrarla no puede volver a
+   publicarla sin que alguien lo decida. */
+landings_archivar($pdo, $id2, false);
+$q2->execute([$id2]);
+chequear('desarchivar NO la reactiva sola', (int)$q2->fetchColumn() === 0);
+$vis = array_column(landings_listar($pdo), 'slug');
+chequear('pero vuelve a la lista', in_array('tlp-b-con', $vis, true));
+
+/* El CRM: el interruptor va SIEMPRE, incluso sin archivadas -- si apareciera
+   solo cuando hay, el que archivo una no tendria como volver a encontrarla. */
+chequear('el CRM tiene el boton de archivar', str_contains($crmSrc, "data-acc=\"archivar\""));
+chequear('y el interruptor para verlas', str_contains($crmSrc, 'lpVerArch'));
 $pdo->exec("DELETE FROM gasto_diario WHERE landing_slug LIKE 'tlp-b%'");
 $pdo->exec("DELETE FROM landings WHERE slug LIKE 'tlp-b%'");
 $limpiar();
