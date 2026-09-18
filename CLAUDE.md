@@ -855,6 +855,30 @@ jugadores.
   > recargar la página: el challenge es por request y la siguiente pasa. La
   > recarga (`_despejar_waf`) queda para el tercer intento.
   >
+  > **El mapa completo de qué pasa con un challenge en cada lugar** (auditado
+  > el 18/09/2026; lo vigila `t_waf_red.php`):
+  >
+  > | Dónde | Qué pasa | Red |
+  > |---|---|---|
+  > | Aprobar / rechazar una carga | reintenta; si persiste → `revisar` | una persona lo mira en el CRM |
+  > | Retirarle fichas al jugador | nunca `hecha` con respuesta ilegible → `revisar` | `t_retiro_api.py` |
+  > | Fijar el bono de una carga | no lo fija y sigue | la carga se aprueba igual, sin bono |
+  > | Alta de un jugador | reintenta (`es_challenge()`, bot repo) | `monitor-altas.sh` avisa si la cola se traba |
+  > | Solicitudes de carga (leer) | reintenta 4 veces | `monitor-cargas.sh` |
+  > | Espejo de saldos (leer) | reintenta por página, retoma si se pasa del presupuesto | **Telegram a los 20 min sin leer** |
+  > | Libro de operaciones (leer) | reintenta | **Telegram a los 30 min** |
+  > | Stock de fichas (leer) | reintenta | **Telegram a los 45 min** |
+  >
+  > **Las escrituras nunca reintentan a ciegas y las lecturas siempre
+  > reintentan**: es la misma regla mirada desde los dos lados. Lo que faltaba
+  > —y se agregó ese día— es el aviso: con el WAF tapando las lecturas **no se
+  > rompe nada visible**, el CRM abre y las cargas se aprueban, y lo único que
+  > pasa es que los saldos envejecen en silencio. `monitor-altas.sh` y
+  > `monitor-cargas.sh` dan **verde** en ese escenario porque miran el worker y
+  > la cola, no lo que el worker pudo leer. Ahora el colector reporta a
+  > `salud_colector.php` qué pudo leer en cada pasada, y `salud_bot.php` lo
+  > muestra desde afuera (`colector.espejo.hace_seg`).
+  >
   > El precio es tiempo: el barrido pasó de 53 a 65 segundos, sobre un cron que
   > corre cada minuto con `flock -w 45` (una pasada de más de ~105 s le hace
   > perder el turno a la siguiente, y ahí van las cargas y los retiros). Por eso
