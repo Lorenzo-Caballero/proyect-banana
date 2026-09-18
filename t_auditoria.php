@@ -380,6 +380,14 @@ chequear('hay ayuda para los estados que no se entienden solos',
 chequear('y una pestaña para ver solo las acciones',
          str_contains($crmH, 'data-tipo="accion"'));
 
+/* Quitarle un bono a alguien es una decision sobre su plata: tiene que decir
+   a quien, no "id=169". */
+$srcCrmB = file_get_contents(__DIR__ . '/api/crm.php');
+chequear('quitar un bono dice de quien era',
+         str_contains($srcCrmB, "'bono #' . " . chr(36) . "id . (" . chr(36) . "quien"));
+chequear('y el de la app tambien queda asentado',
+         str_contains($srcCrmB, "'bono_app_cancelar', '@' . " . chr(36) . "usuario"));
+
 /* La referencia era un numero pelado: "#169" no dice de que. El campo `fuente`
    viajaba en la respuesta desde el primer dia y no se mostraba en ningun lado. */
 chequear('el numero de referencia dice de que registro es',

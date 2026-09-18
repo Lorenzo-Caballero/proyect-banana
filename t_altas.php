@@ -685,6 +685,60 @@ foreach (['api/crear_cuenta.php', 'api/chatbot.php'] as $arch) {
                           'alta_tope_dispositivo_superado('));
 }
 
+// ===========================================================================
+echo "\n=== El jugador recien creado entra al CRM AHORA ===\n";
+
+/* EL PROBLEMA (Nahuel, 18/09/2026): *"no aparece este usuario en la base de
+   datos... le tuve que cargar manualmente porque no podia esperar"*.
+
+   El alta de `holaCoco661` cerro OK con el id de ganamos en la mano y veinte
+   minutos despues el CRM seguia diciendo "no esta en la base de usuarios": el
+   unico camino a `usuarios` era el espejo completo del panel, que corre cada 5
+   minutos y al que el WAF le come pasadas (tres de seis esa hora).
+
+   Lo que se prueba aca es lo unico que importa: que con el id y el nombre en
+   la mano la fila aparece, y que si el espejo ya la trajo NO se le pisa nada.
+   Es la mitad delicada: escribir un balance 0 encima de un jugador con saldo
+   es peor que la demora que vino a arreglar. */
+$espejarSQL = "INSERT INTO usuarios
+                 (id, username, balance, bonus, coins, is_banned, creation_date, saldo_visto_en)
+               VALUES (?, ?, 0, 0, 0, 0, NOW(), NOW())
+               ON DUPLICATE KEY UPDATE id = id";
+
+$pdo->prepare($espejarSQL)->execute([987654321, 'holaTstEspejo1']);
+$fila = $pdo->query("SELECT username, balance FROM usuarios WHERE id = 987654321")->fetch();
+chequear('el jugador aparece en usuarios apenas se confirma el alta',
+         ($fila['username'] ?? '') === 'holaTstEspejo1',
+         'sin esto el CRM dice "no esta en la base" y no se le puede cargar');
+
+/* Y AHORA LA PARTE QUE PUEDE HACER DAÑO: el mismo insert corriendo sobre un
+   jugador que el espejo ya trajo, con saldo de verdad. */
+$pdo->prepare("UPDATE usuarios SET balance = 7500, coins = 300 WHERE id = 987654321")->execute();
+$pdo->prepare($espejarSQL)->execute([987654321, 'holaTstEspejo1']);
+$fila = $pdo->query("SELECT balance, coins FROM usuarios WHERE id = 987654321")->fetch();
+chequear('y si ya estaba, no le pisa el saldo',
+         (float)$fila['balance'] === 7500.0 && (int)$fila['coins'] === 300,
+         'escribir 0 sobre un jugador con plata es peor que la demora');
+
+/* Ni siquiera si el bot repite el aviso con el nombre viejo despues de que la
+   cola lo renombro: la fila se busca por el id de ganamos, que no cambia. */
+$pdo->prepare($espejarSQL)->execute([987654321, 'holaTstOtroNombre']);
+$fila = $pdo->query("SELECT username FROM usuarios WHERE id = 987654321")->fetch();
+chequear('un aviso repetido no le cambia el nombre al jugador',
+         ($fila['username'] ?? '') === 'holaTstEspejo1');
+
+$pdo->prepare("DELETE FROM usuarios WHERE id = 987654321")->execute();
+
+/* Y que este conectado donde tiene que estar: en la rama que confirma el alta,
+   y solo cuando el bot mando el id de ganamos. */
+$srcCola = file_get_contents(__DIR__ . '/api/altas_cola.php');
+chequear('altas_cola espeja al confirmar el alta',
+         str_contains($srcCola, "if (\$estado === 'ok' && \$idGanamos > 0) {")
+         && str_contains($srcCola, 'INSERT INTO usuarios '));
+chequear('y nunca pisa una fila que ya existe',
+         str_contains($srcCola, 'ON DUPLICATE KEY UPDATE id = id'),
+         'el espejo del panel sabe mas que nosotros sobre un jugador viejo');
+
 limpiar($pdo);
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);
 exit($fail > 0 ? 1 : 0);

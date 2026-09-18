@@ -578,6 +578,60 @@ if ($accion === 'marcar' && $metodo === 'POST') {
                      mensaje=? WHERE id=? AND estado <> 'ok'";
         $pdo->prepare($sqlSimple)->execute([$mensaje, $id]);
     }
+    /* ---- EL JUGADOR ENTRA AL CRM AHORA, NO EN LA PROXIMA PASADA ----
+
+       EL PROBLEMA (Nahuel, 18/09/2026): *"revisá por qué no aparece este
+       usuario en la base de datos o simplemente tarda mucho en aparecer. Le
+       tuve que cargar manualmente porque no podía esperar"*.
+
+       Medido ese mismo dia sobre `holaCoco661`: el alta cerro OK a las 23:09
+       con `id_ganamos` 39001204 -- o sea que la cuenta existia y NOSOTROS
+       SABIAMOS SU ID-- y veinte minutos despues seguia sin figurar en
+       `usuarios`, con el CRM diciendo "no esta en la base de usuarios" y sin
+       poder cargarle una ficha.
+
+       La causa no era una demora: era que este archivo tiraba el dato. El
+       unico camino a `usuarios` era el espejo completo del panel
+       (`aprobar_cargas.py`, cada 5 minutos), y el WAF le come pasadas -- tres
+       de las ultimas seis esa misma hora. O sea que el piso eran 5 minutos y
+       el techo no lo ponia nadie.
+
+       Con el id y el nombre en la mano, esperar a leer de vuelta lo que ya
+       sabemos no tiene sentido. Se inserta aca y el espejo despues confirma.
+
+       Tres cuidados:
+       · ON DUPLICATE KEY no pisa NADA: si el espejo ya lo trajo, sus datos son
+         mejores que estos. Solo toca una fila que no existia.
+       · `balance` 0 no es un supuesto: un jugador recien creado no tiene
+         saldo, y por eso `saldo_visto_en` puede decir la verdad (lo sabemos
+         ahora). Si el operador le carga en el panel, la proxima pasada del
+         espejo lo corrige.
+       · Va en su propio try: esto es una comodidad. Si falla, el alta sigue
+         estando OK y el espejo lo trae como toda la vida. Lo que no puede
+         pasar es que un problema al espejar tumbe la confirmacion del alta. */
+    if ($estado === 'ok' && $idGanamos > 0) {
+        try {
+            $qN = $pdo->prepare("SELECT usuario FROM altas WHERE id = ?");
+            $qN->execute([$id]);
+            $nombreReal = trim((string)($qN->fetchColumn() ?: ''));
+            if ($nombreReal !== '') {
+                $cols = "(id, username, balance, bonus, coins, is_banned, creation_date";
+                $vals = "VALUES (?, ?, 0, 0, 0, 0, NOW()";
+                $hayVisto = true;
+                try { $pdo->query("SELECT saldo_visto_en FROM usuarios LIMIT 0"); }
+                catch (Throwable $e) { $hayVisto = false; }
+                $pdo->prepare(
+                    "INSERT INTO usuarios " . $cols . ($hayVisto ? ", saldo_visto_en)" : ")")
+                    . " " . $vals . ($hayVisto ? ", NOW())" : ")")
+                    . " ON DUPLICATE KEY UPDATE id = id"
+                )->execute([$idGanamos, mb_substr($nombreReal, 0, 80)]);
+            }
+        } catch (Throwable $e) {
+            error_log('altas_cola: no pude espejar el alta ' . $id
+                    . ' en usuarios (llega con el espejo): ' . $e->getMessage());
+        }
+    }
+
     /* CompleteRegistration para Meta: cuando el panel confirmo el alta, no
        cuando se encolo. Mismo criterio que el resto -- se reporta lo que paso,
        no lo que se pidio. `ref` con el id del alta hace el event_id

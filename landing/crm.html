@@ -582,6 +582,18 @@
      alguien lo iba a usar para pagar. */
   .sbox .vivo{font-size:10px;margin-top:2px;color:var(--violet2);font-weight:700}
   .sbox .edad.viejo{color:var(--amber,#f0a02a);font-weight:700}
+  /* El «ver» del bono pendiente: chiquito, dentro de la caja, y solo aparece
+     cuando hay algo que ver. Un boton que abre una lista vacia enseña a
+     ignorarlo. */
+  .sbox .verbonos{margin-top:5px;font-size:10px;font-weight:700;color:var(--violet2);
+    background:none;border:0;cursor:pointer;text-decoration:underline;padding:0}
+  .bonos-pend{margin-top:9px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:12px;padding:9px 11px;display:flex;flex-direction:column;gap:7px}
+  .bonos-pend .bp-t{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
+  .bp-item{display:flex;align-items:center;gap:9px;justify-content:space-between}
+  .bp-txt{font-size:12px;line-height:1.35}
+  .bp-txt b{color:var(--violet2)}
+  .bp-meta{display:block;font-size:10px;color:var(--muted);margin-top:1px}
   .sec{padding:4px 16px 18px}
   .sec h4{margin:16px 0 9px;font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px}
   .acts{display:flex;flex-direction:column;gap:9px}
@@ -2555,8 +2567,12 @@
       <div class="huella" id="uHuella" style="display:none"></div>
       <div class="saldos saldos2">
         <div class="sbox saldo" id="uSaldoBox"><div class="k">Saldo</div><div class="v" id="uSaldo">$0</div><div class="edad" id="uSaldoEdad"></div><div class="vivo" id="uSaldoVivo" style="display:none"></div></div>
-        <div class="sbox bono" id="uBonoBox" title="Bonos prometidos, aún no acreditados: se acreditan solos con la próxima carga"><div class="k">Bono pendiente</div><div class="v" id="uBonos">0</div><div class="edad" id="uBonosSinDep" style="display:none"></div></div>
+        <div class="sbox bono" id="uBonoBox" title="Bonos prometidos, aún no acreditados: se acreditan solos con la próxima carga"><div class="k">Bono pendiente</div><div class="v" id="uBonos">0</div><div class="edad" id="uBonosSinDep" style="display:none"></div><button class="verbonos" id="uBonosVer" type="button" style="display:none">ver y quitar</button></div>
       </div>
+      <!-- La lista de lo prometido, con su botón de quitar. Antes el número de
+           arriba era el final del camino: decía «1.000» y no había forma de
+           saber de qué promesa venía ni de sacarla. -->
+      <div class="bonos-pend" id="uBonosPend" style="display:none"></div>
       <div class="sec">
         <h4>Acciones</h4>
         <div class="acts grid2">
@@ -8456,6 +8472,16 @@
     if(bp.pct_cantidad>0) partesBono.push(`${bp.pct_cantidad}×%`);
     if(bp.giro_cantidad>0) partesBono.push(`${bp.giro_cantidad}×giro`);
     $("#uBonos").textContent = partesBono.length ? partesBono.join(" + ") : "0";
+    /* El botón de quitar aparece SOLO si hay algo prometido, y `bpApp` guarda
+       si adentro de ese número está el bono de la app -- que no vive en
+       `bonos_pendientes` y se cancela por otro camino. */
+    st.bonoApp = (bp.app_fichas | 0) > 0 ? (bp.app_fichas | 0) : 0;
+    const hayBono = partesBono.length > 0;
+    $("#uBonosVer").style.display = hayBono ? "" : "none";
+    /* Se cierra en cada repintado a propósito: la ficha se refresca sola cada
+       9 segundos y un panel que se queda abierto con datos viejos es peor que
+       uno cerrado. Se vuelve a abrir con un click. */
+    $("#uBonosPend").style.display = "none";
     // El contador usuarios.bonus: bonos ya acreditados que todavía no fueron
     // al juego (el botón «Bonos al juego» los manda). Sin esto el agente
     // cargaba un bono y la ficha no cambiaba en nada.
@@ -9958,7 +9984,8 @@
     difusion_sin_chat:"Difundió a los que nunca escribieron",
     referidos_difundir:"Difundió el programa de referidos",
     // Promociones
-    bono_crear:"Creó un bono", bono_borrar:"Borró un bono",
+    bono_crear:"Creó un bono", bono_borrar:"Le quitó un bono prometido",
+    bono_app_cancelar:"Le quitó el bono de la app",
     fid_guardar:"Cambió la promo de fidelización",
     // Publicidad
     landing_crear:"Creó una landing", landing_editar:"Editó una landing",
@@ -12373,6 +12400,80 @@
     const b = e.target.closest(".chip"); if(!b) return;
     st.bonoTipo = b.getAttribute("data-bt");
     bonoTipoPintar();
+  });
+
+  /* ---------- LOS BONOS PROMETIDOS DE ESTE JUGADOR ----------
+
+     EL PEDIDO (Nahuel, 18/09/2026): *"quiero que se puedan eliminar los bonos
+     pendientes que tiene una persona"*.
+
+     Cancelar ya se podía, pero solo en «Difusión y avisos», buscando al
+     jugador por nombre en otra pantalla -- o sea, lejos de donde aparece el
+     problema. El número de la ficha era el final del camino: decía «1.000» y
+     no se podía saber de qué promesa venía.
+
+     Son DOS orígenes distintos y por eso hay dos botones de cancelar:
+       · `bonos_pendientes`  (ruleta, promesas del CRM, fidelización) -> bono_borrar
+       · el bono de la app   (un marcador en `movimientos`)           -> bono_app_cancelar
+     El jugador no tiene por qué saber la diferencia, así que en pantalla se
+     ven igual; lo único que cambia es a qué acción va el botón. */
+  const BP_LABEL = { fichas:"fichas", pct:"% sobre su próxima carga", giro:"giro de ruleta" };
+
+  async function pintarBonosPendientes(){
+    const cont = $("#uBonosPend");
+    if(!st.usuario){ toast("Esta conversación no tiene usuario vinculado"); return; }
+    cont.style.display = "";
+    cont.innerHTML = `<div class="bp-t">Cargando…</div>`;
+
+    let bonos = [];
+    try{
+      const d = await jget({accion:"bonos_listar", usuario:st.usuario, estado:"pendiente"});
+      if(d.ok) bonos = d.bonos || [];
+    }catch(e){ /* el de la app se puede mostrar igual */ }
+
+    const filas = bonos.map(b=>{
+      const valorTxt = b.tipo==="giro" ? "1 giro de ruleta"
+                     : (b.tipo==="pct" ? `${b.valor}% sobre su próxima carga`
+                                       : `${nf.format(b.valor)} fichas`);
+      const quien = b.prometido_por ? `Lo prometió ${esc(b.prometido_por)}` : "Prometido por el sistema";
+      return `<div class="bp-item">
+        <div class="bp-txt"><b>${esc(valorTxt)}</b>
+          <span class="bp-meta">${quien} · ${esc((b.creado_en||"").slice(0,16))}</span></div>
+        <button class="btn-mini-accion peligro" data-quitar-bono="${b.id}" type="button">Quitar</button>
+      </div>`;
+    });
+
+    if(st.bonoApp > 0){
+      filas.push(`<div class="bp-item">
+        <div class="bp-txt"><b>${nf.format(st.bonoApp)} fichas por instalar la app</b>
+          <span class="bp-meta">Se le acreditan solas con su próxima carga</span></div>
+        <button class="btn-mini-accion peligro" data-quitar-app="1" type="button">Quitar</button>
+      </div>`);
+    }
+
+    cont.innerHTML = `<div class="bp-t">Bonos prometidos, sin acreditar</div>`
+      + (filas.length ? filas.join("") : `<div class="bp-txt">Nada pendiente.</div>`);
+
+    cont.querySelectorAll("[data-quitar-bono]").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        if(!confirm("¿Quitar este bono? El jugador deja de tenerlo prometido y no se le va a acreditar.")) return;
+        const d = await jpost({accion:"bono_borrar", id:+btn.getAttribute("data-quitar-bono")});
+        if(d.ok){ toast("Bono quitado"); abrir(st.convId); } else { toast(d.error || "No se pudo quitar"); }
+      });
+    });
+    const btnApp = cont.querySelector("[data-quitar-app]");
+    if(btnApp){
+      btnApp.addEventListener("click", async ()=>{
+        if(!confirm("¿Quitar el bono por instalar la app? Deja de deberse y no se le acredita en la próxima carga.")) return;
+        const d = await jpost({accion:"bono_app_cancelar", usuario:st.usuario});
+        if(d.ok){ toast("Bono de la app quitado"); abrir(st.convId); } else { toast(d.error || "No se pudo quitar"); }
+      });
+    }
+  }
+  $("#uBonosVer").addEventListener("click", ()=>{
+    const cont = $("#uBonosPend");
+    if(cont.style.display !== "none"){ cont.style.display = "none"; return; }
+    pintarBonosPendientes();
   });
 
   function abrirModal(accion, titulo, ganamos){

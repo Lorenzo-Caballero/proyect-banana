@@ -227,6 +227,61 @@ ok($armar() === null, 'con 0 fichas no viaja (un cartel de $0 es peor que ningun
 cfg_crm_guardar($pdo, ['app_bono_fichas' => '1000', 'app_promo_activa' => '0'], 'test');
 ok($armar() === null, 'apagada no viaja');
 
+// ---------------------------------------------------------------------------
+echo "\n== 10. Cancelar el bono de la app ==\n";
+
+/* EL PEDIDO (Nahuel, 18/09/2026): *"quiero que se puedan eliminar los bonos
+   pendientes que tiene una persona"*.
+
+   Los de `bonos_pendientes` ya se podian quitar. El de la app no, y es el que
+   mas aparece: no vive en esa tabla sino como un marcador en `movimientos`
+   (monto 0, origen 'bono_app'). La ficha mostraba «Bono pendiente: 1.000» y no
+   habia ninguna forma de sacarlo.
+
+   Se cancela moviendo el marcador a 'bono_app_cancelado'. Lo que se prueba es
+   que eso efectivamente APAGA la promesa -- que es lo unico que importa: si el
+   marcador sigue cobrable, cancelar no cancela nada. */
+$UC = 't_appbono_cancel';
+$cancelLimpiar = function () use ($pdo, $UC): void {
+    $pdo->prepare("DELETE FROM usuarios     WHERE username = ?")->execute([$UC]);
+    $pdo->prepare("DELETE FROM movimientos  WHERE usuario  = ?")->execute([$UC]);
+    $pdo->prepare("DELETE FROM acciones_saldo WHERE usuario = ?")->execute([$UC]);
+};
+$cancelLimpiar();
+$pdo->prepare("INSERT INTO usuarios (id, username, balance, coins, bonus, tiene_app) VALUES (990199, ?, 0, 0, 0, 1)")->execute([$UC]);
+$pdo->prepare("INSERT INTO movimientos (usuario, tipo, monto, motivo, origen)
+               VALUES (?, 'bono', 0, 'Bono de la app: espera su próxima carga', 'bono_app')")->execute([$UC]);
+
+// El mismo UPDATE que hace crm.php al apretar «Quitar».
+$pdo->prepare("UPDATE movimientos SET origen = 'bono_app_cancelado', motivo = ?
+                WHERE usuario = ? AND origen = 'bono_app' AND monto = 0")
+    ->execute(['Bono de la app cancelado por nahuel', $UC]);
+
+// LA PRUEBA QUE IMPORTA: la proxima carga ya no lo paga.
+notif_app_bono_liberar($pdo, $UC);
+$bonus = (float)$pdo->query("SELECT bonus FROM usuarios WHERE username = '$UC'")->fetchColumn();
+ok($bonus === 0.0, 'un bono cancelado NO se acredita en la proxima carga');
+
+$pagos = (int)$pdo->query("SELECT COUNT(*) FROM movimientos
+                            WHERE usuario = '$UC' AND origen = 'bono_app' AND monto > 0")->fetchColumn();
+ok($pagos === 0, 'y no deja ningun movimiento de pago');
+
+/* El historial no se borra: se cancelo, no es que nunca paso. */
+$rastro = (int)$pdo->query("SELECT COUNT(*) FROM movimientos
+                            WHERE usuario = '$UC' AND origen = 'bono_app_cancelado'")->fetchColumn();
+ok($rastro === 1, 'pero queda el rastro en el historial del jugador');
+
+/* Y EL AGUJERO QUE HABRIA QUEDADO: desinstalar y volver a instalar la app
+   devolvia la promesa que un humano acababa de sacar. El candado de
+   "esta instalacion ya fue atendida" ahora cuenta tambien la cancelada. */
+notif_app_instalada($pdo, $UC, 't-appbono-cancel-1', 'android', 'Test');
+$vuelve = (int)$pdo->query("SELECT COUNT(*) FROM movimientos
+                             WHERE usuario = '$UC' AND origen = 'bono_app'")->fetchColumn();
+ok($vuelve === 0, 'reinstalar la app no le devuelve el bono que le quitaron');
+
+$pdo->prepare("DELETE FROM dispositivos WHERE device_id = 't-appbono-cancel-1'")->execute();
+$cancelLimpiar();
+
 // ---- limpiar -----------------------------------------------------------------
 $limpiar();
 

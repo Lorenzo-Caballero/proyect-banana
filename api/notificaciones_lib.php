@@ -327,9 +327,14 @@ if (!function_exists('notif_crear')) {
                 // simultaneos del mismo jugador esperan aca y el segundo ve la
                 // fila del primero. Matchea el pago Y el marcador: cualquiera
                 // de los dos es "esta instalacion ya fue atendida".
+                /* 'bono_app_cancelado' cuenta como atendida IGUAL. Es el
+                   marcador que deja el operador al cancelar el bono desde la
+                   ficha; sin incluirlo aca, desinstalar y volver a instalar la
+                   app le devolvia la promesa que un humano acababa de sacar. */
                 $ya = $pdo->prepare(
                     "SELECT id FROM movimientos
-                      WHERE usuario = ? AND origen = 'bono_app' LIMIT 1 FOR UPDATE"
+                      WHERE usuario = ? AND origen IN ('bono_app', 'bono_app_cancelado')
+                      LIMIT 1 FOR UPDATE"
                 );
                 $ya->execute([$usuario]);
                 /* `!$yaLoCobroOtro` corta las DOS ramas, y tiene que ser asi:

@@ -2249,6 +2249,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             salir($r, $r['ok'] ? 200 : 400);
         }
+        /* ---- CANCELAR EL BONO DE LA APP ----
+           EL PEDIDO (Nahuel, 18/09/2026): *"quiero que se puedan eliminar los
+           bonos pendientes que tiene una persona"*.
+
+           Los de `bonos_pendientes` ya se podian cancelar (bono_borrar). El de
+           la app no, y es el que mas aparece: no vive en esa tabla sino como un
+           marcador en `movimientos` (monto 0, origen 'bono_app'), que es su
+           candado de "esta instalacion ya fue atendida". O sea que la ficha
+           mostraba «Bono pendiente: 1.000» y no habia forma de sacarlo.
+
+           Se cancela moviendo el marcador a 'bono_app_cancelado' en vez de
+           borrarlo, y eso hace tres cosas a la vez:
+             · notif_app_bono_liberar() deja de encontrarlo -> no lo paga;
+             · bono_pendiente_total() deja de contarlo -> la ficha baja;
+             · el movimiento queda en el historial del jugador, que es donde
+               tiene que quedar: se cancelo, no es que nunca paso.
+
+           Lo que NO se toca es un bono ya PAGADO (monto > 0): eso no es una
+           promesa pendiente, es plata que ya se entrego. */
+        if ($accion === 'bono_app_cancelar') {
+            $usuario = trim((string)($body['usuario'] ?? ''));
+            if ($usuario === '') { salir(['ok' => false, 'error' => 'Falta usuario'], 400); }
+            try {
+                $pag = $pdo->prepare(
+                    "SELECT COUNT(*) FROM movimientos
+                      WHERE usuario = ? AND origen = 'bono_app' AND monto > 0"
+                );
+                $pag->execute([$usuario]);
+                if ((int)$pag->fetchColumn() > 0) {
+                    salir(['ok' => false,
+                           'error' => 'Ese bono ya se le acreditó: no es una promesa pendiente.'], 409);
+                }
+                $st = $pdo->prepare(
+                    "UPDATE movimientos
+                        SET origen = 'bono_app_cancelado', motivo = ?
+                      WHERE usuario = ? AND origen = 'bono_app' AND monto = 0"
+                );
+                $st->execute(['Bono de la app cancelado por ' . $operador, $usuario]);
+                if ($st->rowCount() === 0) {
+                    salir(['ok' => false, 'error' => 'Ese jugador no tiene el bono de la app esperando.'], 404);
+                }
+                crm_bitacora($pdo, $operador, 'bono_app_cancelar', '@' . $usuario);
+                salir(['ok' => true]);
+            } catch (Throwable $e) {
+                error_log('bono_app_cancelar: ' . $e->getMessage());
+                salir(['ok' => false, 'error' => 'No se pudo cancelar'], 500);
+            }
+        }
+
         if ($accion === 'bono_editar') {
             $id    = (int)($body['id'] ?? 0);
             $tipo  = (string)($body['tipo'] ?? '');
@@ -2260,8 +2309,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($accion === 'bono_borrar') {
             $id = (int)($body['id'] ?? 0);
             if (!$id) { salir(['ok' => false, 'error' => 'Falta id'], 400); }
+            /* A QUIEN SE LE SACA, Y QUE. Se lee ANTES de borrarlo, que es la
+               unica oportunidad: despues la fila queda 'cancelado' y en
+               Auditoria solo se veia "id=169" -- un numero que no dice a quien
+               le sacamos que cosa. El `@` es de donde la auditoria saca el
+               nombre del jugador para ponerlo en su columna. */
+            $quien = '';
+            try {
+                $qB = $pdo->prepare("SELECT usuario, tipo, valor FROM bonos_pendientes WHERE id = ?");
+                $qB->execute([$id]);
+                if ($b = $qB->fetch(PDO::FETCH_ASSOC)) {
+                    $quien = '@' . $b['usuario'] . ' · '
+                           . ($b['tipo'] === 'giro' ? 'un giro de ruleta'
+                             : ($b['tipo'] === 'pct' ? $b['valor'] . '% en su proxima carga'
+                                                     : (int)$b['valor'] . ' fichas'));
+                }
+            } catch (Throwable $e) { /* el borrado no depende de esto */ }
             $ok = crmnotif_bono_borrar($pdo, $id);
-            if ($ok) { crm_bitacora($pdo, $operador, 'bono_borrar', "id=$id"); }
+            if ($ok) {
+                crm_bitacora($pdo, $operador, 'bono_borrar',
+                             'bono #' . $id . ($quien !== '' ? ' de ' . $quien : ''));
+            }
             salir(['ok' => $ok], $ok ? 200 : 400);
         }
 
