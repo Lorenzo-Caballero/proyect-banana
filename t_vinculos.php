@@ -265,6 +265,19 @@ chequear('chatbot.php corta al multicuenta antes de la IA',
          str_contains(file_get_contents(__DIR__ . '/api/chatbot.php'),
                       'vin_multicuenta_excedida('));
 
+/* Ademas el CAMPO de escribir se deshabilita (18/09/2026, "que directamente
+   no le permita enviar ni escribir"): mis_mensajes reporta chat_cerrado en
+   cada sondeo y el widget cierra (y reabre) la entrada con eso. */
+chequear('mis_mensajes.php reporta chat_cerrado',
+         str_contains(file_get_contents(__DIR__ . '/api/mis_mensajes.php'),
+                      "'chat_cerrado' => \$chatCerrado"));
+$srcW2 = file_get_contents(__DIR__ . '/landing/widget.js');
+chequear('el widget deshabilita la entrada al verlo',
+         str_contains($srcW2, 'function chatEntradaCerrada(')
+         && str_contains($srcW2, 'chat_cerrado'));
+chequear('y el sondeo manda el device para cortar tambien al anonimo',
+         str_contains($srcW2, '"&device=" + encodeURIComponent(ls("goldpaw_device")'));
+
 echo "
 === 5b. La IP NO vincula a nadie, y eso es a proposito ===
 ";

@@ -175,8 +175,26 @@ try {
         } catch (Throwable $e2) { /* best-effort */ }
     }
 
+    /* ¿EL CHAT ESTA CERRADO PARA ESTA PERSONA? (bloqueada, o con mas cuentas
+       de las permitidas — pedido del dueño, 18/09/2026: "que directamente no
+       le permita enviar ni escribir mensajes"). Con esto el widget
+       DESHABILITA el campo de escribir; el corte del lado del server en
+       chatbot.php queda de respaldo para quien esquive la UI. Best-effort
+       hacia ABIERTO: el chat de un jugador legitimo no se cierra por un
+       error de consulta. */
+    $chatCerrado = false;
+    try {
+        $device = mb_substr(trim((string)($_GET['device'] ?? '')), 0, 64);
+        if ($usuario !== '' || $device !== '') {
+            require_once __DIR__ . '/vinculos_lib.php';
+            $chatCerrado = ($usuario !== '' && vin_bloqueado($pdo, $usuario))
+                        || vin_multicuenta_excedida($pdo, $usuario, $device);
+        }
+    } catch (Throwable $e2) { $chatCerrado = false; }
+
     echo json_encode(['ok' => true, 'mensajes' => $msgs, 'ultimo_id' => $ultimo,
                       'leido_user_en' => $leidoUser,
+                      'chat_cerrado' => $chatCerrado,
                       'borrados' => $borrados], JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
     error_log('mis_mensajes: ' . $e->getMessage());

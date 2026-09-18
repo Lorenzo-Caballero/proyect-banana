@@ -583,7 +583,11 @@ if ($corteBloqueado || $corteMulticuenta) {
         crm_registrar_turno($pdo, $sessionId, $ultimoUser, $aviso,
                             $usuarioCliente !== '' ? $usuarioCliente : null);
     }
-    echo json_encode(['ok' => true, 'respuesta' => $aviso, 'bot_desactivado' => true],
+    // chat_cerrado: el widget deshabilita el campo de escribir al verlo
+    // (pedido del dueño, 18/09/2026). mis_mensajes.php manda el mismo flag
+    // en cada sondeo, que es lo que tambien lo REABRE tras un desbloqueo.
+    echo json_encode(['ok' => true, 'respuesta' => $aviso, 'bot_desactivado' => true,
+                      'chat_cerrado' => true],
                      JSON_UNESCAPED_UNICODE);
     exit;
 }
