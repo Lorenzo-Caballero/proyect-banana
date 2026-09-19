@@ -88,6 +88,46 @@ if (!function_exists('fid_tramos')) {
     }
 
     /**
+     * ¿ES HORA DE HABLARLE A ALGUIEN? Devuelve [abierta, desde, hasta].
+     *
+     * MEDIDO EL 19/09/2026 A LAS 02:37: la pasada de la 01:30 creo 14 avisos y
+     * entrego CERO. No era un bug, era la madrugada -- la push se entrega
+     * cuando el celular sondea y a esa hora no sondea nadie. Y le pega mas a
+     * esta campaña que a ninguna otra, porque apunta justo a los que hace dias
+     * que no abren la app.
+     *
+     * Se copia el patron de fichas_ventana_retiro(), incluido lo de evaluar en
+     * hora ARGENTINA y no en la del server, que corre en UTC: con date('G') una
+     * franja de 10 a 22 se aplicaria de 07 a 19 hora local.
+     *
+     * Config rota o incompleta = sin restriccion. Una campaña frenada por un
+     * typo del operador es peor que un aviso de mas a las once de la noche.
+     */
+    function fid_ventana(PDO $pdo): array
+    {
+        $libre = ['abierta' => true, 'desde' => '', 'hasta' => ''];
+        if (!function_exists('cfg_crm')) { return $libre; }
+        $desde = trim((string)(cfg_crm($pdo, 'fid_hora_desde') ?? ''));
+        $hasta = trim((string)(cfg_crm($pdo, 'fid_hora_hasta') ?? ''));
+        if ($desde === '' || $hasta === '') { return $libre; }
+        if (!preg_match('/^([01]?\d|2[0-3]):([0-5]\d)$/', $desde, $d)
+            || !preg_match('/^([01]?\d|2[0-3]):([0-5]\d)$/', $hasta, $h)) {
+            error_log('fid_ventana: horario invalido (' . $desde . ' - ' . $hasta . ')');
+            return $libre;
+        }
+        try {
+            $ahoraAr = new DateTime('now', new DateTimeZone('America/Argentina/Buenos_Aires'));
+        } catch (Throwable $e) { return $libre; }
+        $ahora = (int)$ahoraAr->format('G') * 60 + (int)$ahoraAr->format('i');
+        $ini   = (int)$d[1] * 60 + (int)$d[2];
+        $fin   = (int)$h[1] * 60 + (int)$h[2];
+        $dentro = $ini <= $fin
+            ? ($ahora >= $ini && $ahora < $fin)          // franja normal
+            : ($ahora >= $ini || $ahora < $fin);         // cruza la medianoche
+        return ['abierta' => $dentro, 'desde' => $desde, 'hasta' => $hasta];
+    }
+
+    /**
      * EL FILTRO DE PUBLICO, en SQL, segun `fid_publico`.
      *
      * POR QUE EXISTE (medido el 18/09/2026 sobre la unica pasada que corrio):
@@ -160,6 +200,15 @@ if (!function_exists('fid_tramos')) {
 
         if (!function_exists('cfg_crm_activo') || !cfg_crm_activo($pdo, 'fid_activa')) {
             return ['ok' => true, 'avisados' => 0, 'motivo' => 'campaña apagada'];
+        }
+        /* FUERA DE HORA NO SE LE HABLA A NADIE. Va DESPUES del latido a
+           proposito: la pasada corrio, y la vigilancia de salud_colector.php
+           tiene que verla viva -- que no sea hora de avisar no es que el cron
+           se murio. */
+        $ventana = fid_ventana($pdo);
+        if (!$ventana['abierta']) {
+            return ['ok' => true, 'avisados' => 0,
+                    'motivo' => 'fuera de horario (' . $ventana['desde'] . ' a ' . $ventana['hasta'] . ')'];
         }
         $tramos = fid_tramos($pdo);
         if (!$tramos) {

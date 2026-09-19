@@ -72,6 +72,11 @@ cfg_crm_guardar($pdo, [
     'fid_activa'   => '1',
     'fid_publico'  => 'app',
     'fid_dias_max' => '30',
+    /* SIN VENTANA HORARIA: un test que depende del reloj de pared pasa de
+       mañana y falla de madrugada, que es justo cuando uno lo corre para
+       arreglar algo. La ventana se prueba aparte, abajo. */
+    'fid_hora_desde' => '',
+    'fid_hora_hasta' => '',
     'fid_tramos' => '[{"dias":2,"pct":20},{"dias":3,"pct":25},{"dias":4,"pct":30},{"dias":7,"pct":40},{"dias":8,"pct":50,"ruleta":1}]',
 ], 'test');
 
@@ -306,6 +311,55 @@ ok($bonoDe($V) !== null, 'y al desbloquearlo vuelve a entrar');
 
 cfg_crm_guardar($pdo, ['fid_publico' => 'app', 'fid_dias_max' => '30'], 'test');
 $limpiar2();
+
+
+echo "\n== NO SE LE HABLA A NADIE DE MADRUGADA ==\n";
+
+/* MEDIDO EL 19/09/2026 A LAS 02:37: la pasada automatica de la 01:30 creo 14
+   avisos y entrego CERO. No era un bug -- era la madrugada. La push se entrega
+   cuando el celular sondea, y a esa hora no sondea nadie: los aparatos estaban
+   dormidos desde las 21:26, la 01:05 y la 01:30.
+
+   Y le pega mas a ESTA campaña que a ninguna otra, porque apunta justamente a
+   los que hace dias que no abren la app. */
+$pdo->prepare("UPDATE usuarios SET ultima_actividad = DATE_SUB(NOW(), INTERVAL 3 DAY) WHERE username = ?")->execute([$U]);
+$pdo->prepare("DELETE FROM fidelizacion_avisos WHERE usuario = ?")->execute([$U]);
+
+/* Una franja que NO incluye este momento, sea la hora que sea: se toma la hora
+   argentina actual y se define una ventana de una hora que ya paso. Asi el
+   test no depende del reloj de pared. */
+$ar = new DateTime('now', new DateTimeZone('America/Argentina/Buenos_Aires'));
+$h  = (int)$ar->format('G');
+$cerrada_ini = str_pad((string)(($h + 2) % 24), 2, '0', STR_PAD_LEFT) . ':00';
+$cerrada_fin = str_pad((string)(($h + 3) % 24), 2, '0', STR_PAD_LEFT) . ':00';
+cfg_crm_guardar($pdo, ['fid_hora_desde' => $cerrada_ini, 'fid_hora_hasta' => $cerrada_fin], 'test');
+$v = fid_ventana($pdo);
+ok($v['abierta'] === false, "fuera de la franja ($cerrada_ini a $cerrada_fin) esta cerrada");
+$r = fid_correr($pdo, 50);
+ok((int)$r['avisados'] === 0 && str_contains((string)($r['motivo'] ?? ''), 'fuera de horario'),
+   'y no se le avisa a nadie: ' . ($r['motivo'] ?? ''));
+
+/* PERO EL LATIDO SE SELLA IGUAL. Si no, la vigilancia de salud_colector.php
+   confundiria "no es hora de avisar" con "el cron se murio" -- y avisaria por
+   Telegram todas las noches. */
+ok(trim((string)cfg_crm($pdo, 'fid_visto_en')) !== '',
+   'pero la pasada queda registrada: no es que el cron se murio');
+
+// Y con la franja abierta vuelve a avisar.
+$abierta_ini = str_pad((string)(($h + 23) % 24), 2, '0', STR_PAD_LEFT) . ':00';
+$abierta_fin = str_pad((string)(($h + 2) % 24), 2, '0', STR_PAD_LEFT) . ':00';
+cfg_crm_guardar($pdo, ['fid_hora_desde' => $abierta_ini, 'fid_hora_hasta' => $abierta_fin], 'test');
+ok(fid_ventana($pdo)['abierta'] === true, "dentro de la franja ($abierta_ini a $abierta_fin) esta abierta");
+$r = fid_correr($pdo, 50);
+ok((int)$r['avisados'] === 1, 'y ahi si le avisa');
+
+/* Config incompleta o rota = sin restriccion. Una campaña frenada por un typo
+   del operador es peor que un aviso de mas a las once de la noche. */
+cfg_crm_guardar($pdo, ['fid_hora_desde' => '', 'fid_hora_hasta' => ''], 'test');
+ok(fid_ventana($pdo)['abierta'] === true, 'sin franja configurada, a cualquier hora');
+cfg_crm_guardar($pdo, ['fid_hora_desde' => 'cualquiera', 'fid_hora_hasta' => '22:00'], 'test');
+ok(fid_ventana($pdo)['abierta'] === true, 'una franja mal escrita se ignora, no frena la campaña');
+cfg_crm_guardar($pdo, ['fid_hora_desde' => '', 'fid_hora_hasta' => ''], 'test');
 
 // ---- limpiar ------------------------------------------------------------------
 cfg_crm_guardar($pdo, ['fid_activa' => '0'], 'test');

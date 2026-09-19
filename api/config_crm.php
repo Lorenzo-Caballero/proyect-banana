@@ -239,6 +239,26 @@ const CFG_CRM_DEFAULTS = [
        entra directo al bono mas caro. 0 = sin tope. */
     'fid_dias_max' => '30',
 
+    /* A QUE HORA PUEDE HABLARLE LA CAMPAÑA. Formato HH:MM, vacio = a
+       cualquier hora.
+
+       MEDIDO EL 19/09/2026 A LAS 02:37: la pasada automatica de la 01:30 creo
+       14 avisos y entrego CERO. No era un bug -- era la madrugada. La push se
+       entrega cuando el celular sondea, y a esa hora no sondea nadie: los
+       aparatos estaban dormidos desde las 21:26, las 01:05 y las 01:30.
+
+       Y le pega mas a ESTA campaña que a ninguna otra, porque apunta
+       justamente a los que hace dias que no abren la app. El aviso no se
+       pierde --queda encolado y se entrega cuando abran-- pero llega
+       descolgado del momento en que se penso, y puede sonarle a alguien a las
+       cinco de la manana.
+
+       El cron sigue corriendo cada hora (el latido se sella igual, asi que la
+       vigilancia no lo confunde con una tarea muerta): lo unico que se frena
+       es hablarle a la gente fuera de hora. */
+    'fid_hora_desde' => '10:00',
+    'fid_hora_hasta' => '22:00',
+
     // ----- Limites de carga y retiro, por cliente -----
     // Cada agencia tiene los suyos ("no cargo menos de 500", "no pago mas de
     // 100.000 por dia"). Antes eran constantes en fichas_lib.php, iguales
