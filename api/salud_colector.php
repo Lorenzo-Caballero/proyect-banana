@@ -90,6 +90,54 @@ const SC_LIMITES = [
                  'duele' => 'Si cambió el alias, el chat le está dictando el viejo y esa plata no se acredita.'],
 ];
 
+/* ---- LAS TAREAS QUE CORREN SOLAS ----------------------------------------
+   Lo mismo que arriba pero para los crons del server, y por el mismo motivo.
+
+   EL 18/09/2026 APARECIERON TRES TAREAS APUNTANDO A LA NADA, y las tres se
+   encontraron mirando a mano, no porque algo avisara:
+
+     · el cron de `sync_bancos.py` iba a un contenedor apagado hace dos dias y
+       fallaba una vez por hora en un log que nadie lee;
+     · el de `fidelizacion.php` NUNCA se instalo: la promo figura prendida en
+       el CRM, corrio una sola vez a mano, y desde entonces nada;
+     · el espejo de saldos moria en el primer challenge del WAF.
+
+   Un proceso que no corre no se queja. Simplemente no pasa nada -- y eso se ve
+   exactamente igual que "no habia nada que hacer". Por eso lo que se mira acá
+   NO es si el proceso vive, sino CUANDO FUE LA ULTIMA VEZ QUE FUNCIONO. Es el
+   unico criterio que hubiera atrapado las tres.
+
+   `activa_si` es lo que hace que esto no moleste: una promo apagada no tiene
+   por que correr, asi que no se la vigila. Si el dueño la prende desde el CRM,
+   empieza a vigilarse sola.
+
+   `arreglo` va en el mensaje. Un aviso que dice "algo no corre" y no dice que
+   hacer se aprende a ignorar en dos dias. */
+const SC_TAREAS = [
+    'fidelizacion' => [
+        'clave'     => 'fid_visto_en',
+        'min'       => 180,               // corre cada hora; a las 3 ya no es un tropiezo
+        'activa_si' => 'fid_activa',
+        'que'       => 'la promo de fidelización',
+        'duele'     => 'Los jugadores que cumplen la racha no reciben el bono que la promo les promete.',
+        'arreglo'   => 'bash /opt/goldpaw/scripts/instalar-cron-fidelizacion.sh',
+    ],
+    'difusiones' => [
+        'clave'     => 'difusiones_visto_en',
+        'min'       => 60,                // corre cada 10 min
+        'que'       => 'las difusiones programadas del chat',
+        'duele'     => 'Una difusión con hora puesta no le llega a nadie, y no queda ningún error.',
+        'arreglo'   => 'revisar el cron de difusiones_chat_procesar.php',
+    ],
+    'ruleta_aviso' => [
+        'clave'     => 'ruleta_aviso_visto_en',
+        'min'       => 1560,              // una vez por dia: 26 h de margen
+        'que'       => 'el aviso diario de la ruleta',
+        'duele'     => 'Los jugadores dejan de recibir el recordatorio del giro gratis.',
+        'arreglo'   => 'revisar el cron de ruleta_recordatorio.php',
+    ],
+];
+
 function sc_salir(array $d, int $code = 200): void
 {
     http_response_code($code);
@@ -133,10 +181,29 @@ try {
     error_log('salud_colector/guardar: ' . $e->getMessage());
 }
 
-/* ---- 2. ¿Alguna lectura quedó tan vieja que ya se nota? ------------------ */
+/* ---- 2. ¿Alguna lectura o tarea quedó tan vieja que ya se nota? ---------- */
 $avisados = [];
 $estado   = [];
-foreach (SC_LIMITES as $k => $lim) {
+
+/* Las dos tablas se recorren con el MISMO bucle a proposito: la pregunta es la
+   misma --"¿hace cuanto que esto no funciona?"-- y tener dos copias del
+   chequeo es como se pierde una. Lo unico que cambia es el titulo del aviso. */
+$aRevisar = [];
+foreach (SC_LIMITES as $k => $lim) { $aRevisar[$k] = $lim + ['lectura' => true]; }
+foreach (SC_TAREAS  as $k => $lim) { $aRevisar[$k] = $lim + ['lectura' => false]; }
+
+foreach ($aRevisar as $k => $lim) {
+    /* UNA TAREA APAGADA NO TIENE POR QUE CORRER. Sin esto, el aviso saltaria
+       por cada promo que el dueño decidio no usar -- y un aviso que molesta
+       por algo que esta bien es como se deja de mirar el canal. */
+    if (isset($lim['activa_si'])) {
+        try {
+            if (!function_exists('cfg_crm_activo') || !cfg_crm_activo($pdo, $lim['activa_si'])) {
+                $estado[$k] = ['hace_min' => null, 'limite_min' => $lim['min'], 'apagada' => true];
+                continue;
+            }
+        } catch (Throwable $e) { continue; }
+    }
     $edad = null;
     try {
         $v = trim((string)cfg_crm($pdo, $lim['clave'] ?? ('colector_' . $k . '_en')));
@@ -156,14 +223,21 @@ foreach (SC_LIMITES as $k => $lim) {
     /* La clave identifica el PROBLEMA, no el momento: mientras el WAF siga
        tapando, `tg_avisar_una_vez` no lo repite (salvo el re-aviso de
        `tg_repetir_min`, que existe para el que se pasa por alto). */
-    $ok = tg_evento($pdo, 'salud', '🕸️ El WAF nos está tapando la lectura del panel', [
-        'Qué no estamos pudiendo leer' => $lim['que'],
-        'Hace'                         => $edad . ' minutos',
-        'Qué significa'                => $lim['duele'],
-        'Qué hacer'                    => 'Suele aflojar solo. Si sigue, mirá '
-                                        . '/var/log/goldpaw-aprobar.log: cada challenge '
-                                        . 'queda anotado con su reintento.',
-    ], 'colector_' . $k . '_viejo');
+    $ok = $lim['lectura']
+        ? tg_evento($pdo, 'salud', '🕸️ El WAF nos está tapando la lectura del panel', [
+            'Qué no estamos pudiendo leer' => $lim['que'],
+            'Hace'                         => $edad . ' minutos',
+            'Qué significa'                => $lim['duele'],
+            'Qué hacer'                    => 'Suele aflojar solo. Si sigue, mirá '
+                                            . '/var/log/goldpaw-aprobar.log: cada challenge '
+                                            . 'queda anotado con su reintento.',
+        ], 'colector_' . $k . '_viejo')
+        : tg_evento($pdo, 'salud', '⏰ Algo que tenía que correr solo dejó de correr', [
+            'Qué dejó de correr' => $lim['que'],
+            'Última vez'         => 'hace ' . ($edad >= 120 ? round($edad / 60) . ' horas' : $edad . ' minutos'),
+            'Qué significa'      => $lim['duele'],
+            'Qué hacer'          => $lim['arreglo'],
+        ], 'tarea_' . $k . '_parada');
     if ($ok) { $avisados[] = $k; }
 }
 

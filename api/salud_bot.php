@@ -50,7 +50,15 @@ $colector = [];
    se mira `bancos_ganamos.visto_en`, que es ON UPDATE CURRENT_TIMESTAMP y mide
    cuándo CAMBIÓ la billetera -- no cuándo la leímos. */
 $CLAVES = ['espejo' => 'colector_espejo_en', 'libro' => 'colector_libro_en',
-           'stock'  => 'colector_stock_en',  'bancos' => 'bancos_sync_en'];
+           'stock'  => 'colector_stock_en',  'bancos' => 'bancos_sync_en',
+           /* Y las tareas que corren solas. El 18/09/2026 aparecieron TRES
+              apuntando a la nada y ninguna daba error visible: un proceso que
+              no corre no se queja, simplemente no pasa nada -- y eso se ve
+              igual que "no habia nada que hacer". Por eso lo que se informa es
+              cuando fue la ultima vez que FUNCIONO, no si vive. */
+           'fidelizacion' => 'fid_visto_en',
+           'difusiones'   => 'difusiones_visto_en',
+           'ruleta_aviso' => 'ruleta_aviso_visto_en'];
 foreach ($CLAVES as $k => $clave) {
     $edad = null;
     $est  = null;

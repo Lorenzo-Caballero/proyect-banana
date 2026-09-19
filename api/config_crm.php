@@ -386,6 +386,18 @@ const CFG_CRM_DEFAULTS = [
     'colector_stock_estado'  => '',
     'colector_challenges'    => '',   // challenges del WAF en el ultimo barrido
     'colector_visto_en'      => '',   // ultima vez que el colector reporto algo
+
+    /* LATIDOS DE LAS TAREAS QUE CORREN SOLAS. Cada una sella el suyo al
+       terminar; salud_colector.php avisa si alguno se queda quieto.
+
+       Existen por lo que aparecio el 18/09/2026 mirando a mano: TRES tareas
+       apuntando a la nada --el cron de bancos a un contenedor apagado, el de
+       fidelizacion que nunca se instalo, y el espejo muriendo en el primer
+       challenge-- y ninguna daba error visible. Un proceso que no corre no se
+       queja: simplemente no pasa nada, y eso se ve igual que "no habia nada
+       que hacer". */
+    'difusiones_visto_en'   => '',   // difusiones_chat_procesar.php (cada 10 min)
+    'ruleta_aviso_visto_en' => '',   // ruleta_recordatorio.php (una vez por dia)
 ];
 
 /** Cache por request: estas funciones se llaman varias veces por pedido. */

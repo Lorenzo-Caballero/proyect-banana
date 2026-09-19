@@ -1,6 +1,10 @@
 <?php
 /**
- * t_waf_red.php — la red que sostiene al sistema cuando el WAF gana.
+ * t_waf_red.php — la red que agarra lo que falla EN SILENCIO.
+ *
+ * Empezó por el WAF y terminó siendo más grande, porque el patrón resultó ser
+ * el mismo: lo peligroso no es lo que se rompe con un error a la vista, es lo
+ * que deja de pasar sin que nadie se entere.
  *
  * EL PEDIDO (Nahuel, 18/09/2026): *"quiero estar seguro de que si eso da algún
  * problema, haya algún método extra o alguna solución para cada uno de los
@@ -210,6 +214,63 @@ foreach (['aprobar', 'rechazar', 'retirar_del_jugador', 'fijar_bono'] as $fn) {
                  'si no reintenta, cada challenge deja trabajo manual');
     }
 }
+
+// ===========================================================================
+echo "\n=== 7. Lo que corre SOLO tambien se vigila ===\n";
+
+/* EL 18/09/2026 APARECIERON TRES TAREAS APUNTANDO A LA NADA, y las tres se
+   encontraron mirando a mano, no porque algo avisara:
+
+     · el cron de sync_bancos.py iba a un contenedor apagado hacia dos dias y
+       fallaba una vez por hora en un log que nadie lee;
+     · el de fidelizacion.php NUNCA se instalo: la promo figura prendida en el
+       CRM, corrio una sola vez a mano, y desde entonces nada (600 jugadores
+       con un bono prometido y el motor parado);
+     · el espejo de saldos moria en el primer challenge del WAF.
+
+   Un proceso que no corre NO SE QUEJA. Simplemente no pasa nada, y eso se ve
+   exactamente igual que "no habia nada que hacer". Por eso lo que se vigila no
+   es si el proceso vive --los dos watchdogs que ya habia miran eso y daban
+   verde-- sino cuando fue la ultima vez que FUNCIONO. */
+chequear('existe la tabla de tareas programadas',
+         str_contains($srcSalud, 'const SC_TAREAS'));
+foreach (['fidelizacion' => 'fid_visto_en',
+          'difusiones'   => 'difusiones_visto_en',
+          'ruleta_aviso' => 'ruleta_aviso_visto_en'] as $tarea => $clave) {
+    chequear("se vigila: $tarea", str_contains($srcSalud, "'" . $clave . "'"));
+    chequear("y '$clave' esta en la lista blanca", str_contains($srcCfg, "'" . $clave . "'"),
+             'cfg_crm_guardar descarta en silencio lo que no este');
+}
+
+/* Y que cada tarea SELLE su latido, o la vigilancia mira una fecha que nadie
+   escribe y avisa para siempre. */
+foreach (['api/difusiones_chat_procesar.php' => 'difusiones_visto_en',
+          'api/ruleta_recordatorio.php'      => 'ruleta_aviso_visto_en'] as $arch => $clave) {
+    chequear(basename($arch) . ' deja su latido',
+             str_contains(file_get_contents(__DIR__ . '/' . $arch), "'" . $clave . "'"));
+}
+
+/* UNA PROMO APAGADA NO TIENE POR QUE CORRER. Sin esto el aviso saltaria por
+   cada cosa que el dueño decidio no usar, y un canal que molesta por algo que
+   esta bien es un canal que se deja de mirar. */
+chequear('una tarea apagada no dispara aviso',
+         str_contains($srcSalud, "'activa_si' => 'fid_activa'")
+         && str_contains($srcSalud, "!cfg_crm_activo(\$pdo, \$lim['activa_si'])"));
+
+/* Y que el aviso diga QUE HACER. Uno que dice "algo no corre" y nada mas se
+   aprende a ignorar en dos dias. */
+chequear('el aviso trae el arreglo concreto',
+         str_contains($srcSalud, "'Qué hacer'          => \$lim['arreglo']")
+         && str_contains($srcSalud, 'instalar-cron-fidelizacion.sh'));
+
+/* El mismo bucle para las dos tablas: dos copias del chequeo es como se pierde
+   una (paso con el detector del challenge, que estaba escrito cuatro veces). */
+chequear('lecturas y tareas se revisan con el mismo bucle',
+         str_contains($srcSalud, '$aRevisar[$k] = $lim + ')
+         && substr_count($srcSalud, "if (\$edad === null || \$edad < \$lim['min'])") === 1);
+
+chequear('y salud_bot las muestra sin entrar al VPS',
+         str_contains($srcBot, "'fidelizacion' => 'fid_visto_en'"));
 
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);
 exit($fail > 0 ? 1 : 0);

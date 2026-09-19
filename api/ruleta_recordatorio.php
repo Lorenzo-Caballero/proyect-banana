@@ -138,6 +138,20 @@ try {
         $avisados++;
     }
 
+    /* EL LATIDO: cuando corrio esto por ultima vez.
+       Se sella DESPUES de hacer el trabajo y pase lo que pase con el resultado
+       --una pasada sin nada que hacer es una pasada igual--, porque lo que
+       vigila salud_colector.php no es si hubo trabajo sino si el cron sigue
+       vivo. El 18/09/2026 aparecieron TRES tareas apuntando a la nada (el cron
+       de bancos a un contenedor apagado, el de fidelizacion nunca instalado, y
+       el espejo muriendo en el primer challenge) y ninguna daba error visible.
+       Best-effort: si esto falla, la tarea ya hizo lo suyo. */
+    try {
+        if (function_exists('cfg_crm_guardar')) {
+            cfg_crm_guardar($pdo, ['ruleta_aviso_visto_en' => date('Y-m-d H:i:s')], 'cron');
+        }
+    } catch (Throwable $e) { /* el latido no puede tumbar la tarea */ }
+
     echo json_encode(['ok' => true, 'avisados' => $avisados]);
 } catch (Throwable $e) {
     error_log('ruleta_recordatorio: ' . $e->getMessage());
