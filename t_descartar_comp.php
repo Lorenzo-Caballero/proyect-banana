@@ -211,5 +211,109 @@ chequear('pero papa NO matchea con el mismo remitente',
          rl_similitud_nombres('HECTOR RAFAEL BAREIRO', comp_nombre_de_usuario('holapapa408')) < RL_UMBRAL_NOMBRE,
          'si matcheara cualquiera, la sugerencia seria una ruleta');
 
+/* =========================================================================
+   «YA SE LA CARGUE A MANO»: es de ese jugador, pero ya cobro por afuera
+   =========================================================================
+   EL PEDIDO (Nahuel, 19/09/2026): *"no me aparece alguna que diga descartar o
+   ya le cargue a mano... porque no quiero descartarlo, pero tampoco volver a
+   cargarle"*.
+
+   Se llama la funcion REAL (rl_marcar_cargado_a_mano) y no una copia del SQL:
+   el resto de esta suite replica el UPDATE de `descartar` porque
+   crm_comprobantes.php corre auth al incluirse, y esa copia se puede separar
+   del original sin que nadie se entere. Por eso esta accion vive en
+   recargas_lib, igual que rl_acreditar_directo(). */
+echo "\n=== Ya cargado a mano: resuelve sin mover un peso, y APRENDE ===\n";
+
+$UM = 't_mano_jugador';
+$PM = 't_mano_pago_1';
+$limpiarMano = function () use ($pdo, $UM, $PM): void {
+    $pdo->prepare("DELETE FROM pagos WHERE id_unico LIKE 't_mano_pago_%'")->execute();
+    foreach (['recargas' => 'usuario', 'movimientos' => 'usuario',
+              'huellas_pagador' => 'usuario', 'usuarios' => 'username'] as $tb => $col) {
+        try { $pdo->prepare("DELETE FROM $tb WHERE $col = ?")->execute([$UM]); } catch (Throwable $e) {}
+    }
+};
+$limpiarMano();
+$pdo->prepare("INSERT INTO usuarios (id, username, balance, coins, bonus)
+               VALUES (990777, ?, 0, 250, 40)")->execute([$UM]);
+$pdo->prepare(
+    "INSERT INTO pagos (id_unico, monto, remitente, cuit, cbu_origen, estado)
+     VALUES (?, 16000.00, 'HECTOR RAFAEL BAREIRO', '20360960030', '0000003100010000000001', 'revision')"
+)->execute([$PM]);
+
+$antes = enRevision($pdo);
+$r = rl_marcar_cargado_a_mano($pdo, $PM, $UM, 0, 'nahuel');
+chequear('lo marca ok', !empty($r['ok']), json_encode($r));
+chequear('y sale de la bandeja', enRevision($pdo) === $antes - 1);
+
+/* NO SE LE ACREDITA NADA. Es el punto entero: el jugador ya cobro. */
+$u = $pdo->prepare("SELECT coins, bonus FROM usuarios WHERE username = ?");
+$u->execute([$UM]);
+$saldo = $u->fetch(PDO::FETCH_ASSOC);
+chequear('NO le suma fichas ni bonos: 250/40 intactos',
+         (int)$saldo['coins'] === 250 && (int)$saldo['bonus'] === 40, json_encode($saldo));
+$mv = $pdo->prepare("SELECT COUNT(*) FROM movimientos WHERE usuario = ?");
+$mv->execute([$UM]);
+chequear('ni deja un movimiento de plata', (int)$mv->fetchColumn() === 0);
+
+/* LO QUE SI HACE, Y ES EL MOTIVO DE QUE NO SEA UN DESCARTE: aprende de que
+   cuenta paga esa persona, asi la proxima se resuelve sola. */
+chequear('dice que aprendio la huella', !empty($r['huella_aprendida']), json_encode($r));
+$h = $pdo->prepare("SELECT COUNT(*) FROM huellas_pagador WHERE usuario = ? AND cuit = '20360960030'");
+$h->execute([$UM]);
+chequear('y la huella CUIT -> jugador quedo guardada', (int)$h->fetchColumn() === 1,
+         'sin esto, la proxima transferencia de esa persona vuelve a revision');
+
+/* SE DISTINGUE DE UN DESCARTE EN LA AUDITORIA. Si los dos quedaran iguales no
+   habria forma de saber, mirando para atras, si esa plata era de alguien. */
+$pg = $pdo->prepare("SELECT estado, asignado_por FROM pagos WHERE id_unico = ?");
+$pg->execute([$PM]);
+$fila = $pg->fetch(PDO::FETCH_ASSOC);
+chequear("queda 'usado' con la marca a_mano:nahuel",
+         $fila['estado'] === 'usado' && $fila['asignado_por'] === 'a_mano:nahuel', json_encode($fila));
+chequear('que NO se confunde con un descarte', !str_starts_with((string)$fila['asignado_por'], 'descartado:'));
+
+// Y no se puede marcar dos veces: ya no esta en revision.
+$r2 = rl_marcar_cargado_a_mano($pdo, $PM, $UM, 0, 'nahuel');
+chequear('marcarlo dos veces no hace nada', empty($r2['ok']), json_encode($r2));
+
+/* LA CARGA PEDIDA QUE ESPERABA ESTA PLATA SE CANCELA. Si quedara abierta, una
+   transferencia posterior del mismo monto puede casar con ella y acreditarse
+   de nuevo -- exactamente lo que el operador vino a evitar. */
+$PM2 = 't_mano_pago_2';
+$pdo->prepare(
+    "INSERT INTO pagos (id_unico, monto, remitente, cuit, estado)
+     VALUES (?, 5000.00, 'ALGUIEN', '20111111112', 'revision')"
+)->execute([$PM2]);
+$pdo->prepare(
+    "INSERT INTO recargas (usuario, coins, monto_pedido, monto_base, estado, referencia, vence_en)
+     VALUES (?, 5000, 5000.00, 5000.00, 'pendiente', 'TMANO1', DATE_ADD(NOW(), INTERVAL 45 MINUTE))"
+)->execute([$UM]);
+$rid = (int)$pdo->lastInsertId();
+$r3 = rl_marcar_cargado_a_mano($pdo, $PM2, $UM, $rid, 'nahuel');
+chequear('cancela la carga pedida que esperaba esa plata',
+         (int)($r3['recargas_canceladas'] ?? 0) === 1, json_encode($r3));
+$rc = $pdo->prepare("SELECT estado FROM recargas WHERE id = ?");
+$rc->execute([$rid]);
+$est = (string)$rc->fetchColumn();
+chequear("y la deja 'cancelada', NO 'acreditada'", $est === 'cancelada',
+         'acreditada la meteria en Finanzas como una carga que este camino nunca hizo; dio ' . $est);
+
+/* Un comprobante sin CUIT ni CBU se resuelve igual: no hay nada que aprender,
+   pero eso no puede impedir sacarlo de la bandeja. */
+$PM3 = 't_mano_pago_3';
+$pdo->prepare("INSERT INTO pagos (id_unico, monto, remitente, estado)
+               VALUES (?, 700.00, 'SIN DATOS', 'revision')")->execute([$PM3]);
+$r4 = rl_marcar_cargado_a_mano($pdo, $PM3, $UM, 0, 'nahuel');
+chequear('sin CUIT ni CBU se resuelve igual', !empty($r4['ok']), json_encode($r4));
+chequear('pero avisa que no aprendio nada', empty($r4['huella_aprendida']), json_encode($r4));
+
+// Sin jugador no se marca: eso seria un descarte, que ya tiene su propia salida.
+$r5 = rl_marcar_cargado_a_mano($pdo, $PM3, '', 0, 'nahuel');
+chequear('sin jugador no se marca (para eso esta descartar)', empty($r5['ok']));
+
+$limpiarMano();
+
 printf("%d OK, %d fallas\n", $ok, $fail);
 exit($fail === 0 ? 0 : 1);

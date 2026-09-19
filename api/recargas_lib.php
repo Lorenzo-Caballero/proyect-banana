@@ -2800,3 +2800,106 @@ function rl_acreditar_directo(PDO $pdo, string $idUnico, string $usuario,
         return ['resultado' => 'error', 'error' => 'No se pudo acreditar.'];
     }
 }
+
+/**
+ * «YA SE LA CARGUE A MANO»: el comprobante ES de ese jugador, pero ya cobro
+ * por afuera del sistema. NO MUEVE UN PESO.
+ *
+ * EL PEDIDO (Nahuel, 19/09/2026): *"aparece la transferencia de Hector y me
+ * aparece si cargarle los 16.000 o la opcion de 'no es el'. Pero no me aparece
+ * alguna que diga descartar o ya le cargue a mano... porque no quiero
+ * descartarlo, pero tampoco volver a cargarle"*.
+ *
+ * NO ES UN DESCARTE, Y LA DIFERENCIA ES LA QUE PAGA. `descartar` dice *"esta
+ * transferencia no es de ningun jugador"* -- una propia, o de alguien que no
+ * juega. Esto dice lo contrario: si es de este jugador. Resolverlo A SU NOMBRE
+ * es lo que hace que se APRENDA la huella (CUIT/CBU -> jugador), y sin eso su
+ * proxima transferencia vuelve a caer en revision. Medido el 19/09/2026: el
+ * pago de HECTOR RAFAEL BAREIRO (CUIT 20360960030, $16.000) estaba en revision
+ * sin ninguna recarga que lo respaldara, o sea que iba a repetirse. Es la misma
+ * razon por la que rl_acreditar() aprende al final: *"cada comprobante que el
+ * operador resuelve a mano hoy es uno que se resuelve solo la proxima vez"*.
+ *
+ * NO TOCA coins NI bonus NI encola nada al juego. El jugador YA cobro; este
+ * camino solo cierra el comprobante y deja al sistema mas listo para la
+ * proxima. Por eso tampoco aplica el bono pendiente --a diferencia de
+ * rl_acreditar_directo()--: no hubo carga por aca que lo dispare, y aplicarlo
+ * le quemaria el bono al jugador sin darle nada.
+ *
+ * REVERSIBLE Y AUDITABLE: queda 'usado' con `asignado_por = 'a_mano:<op>'`, que
+ * lo distingue de un descarte ('descartado:') y de una acreditacion normal (el
+ * operador pelado). Devolverlo a 'revision' lo trae de vuelta a la bandeja.
+ *
+ * Y SI TENIA UNA CARGA PEDIDA ABIERTA, SE CANCELA: esa recarga esperaba ESTA
+ * transferencia, y dejarla abierta permite que una transferencia posterior del
+ * mismo monto case con ella y se acredite de nuevo -- justo lo que el operador
+ * vino a evitar. 'cancelada' y no 'acreditada': por el sistema no entro nada, y
+ * marcarla acreditada la meteria en Finanzas como una carga que nunca hizo.
+ *
+ * Devuelve ['ok'=>bool, 'error'?, 'huella_aprendida'=>bool, 'recargas_canceladas'=>int].
+ */
+function rl_marcar_cargado_a_mano(PDO $pdo, string $idUnico, string $usuario,
+                                  int $recargaId = 0, ?string $operador = null): array
+{
+    $idUnico = trim($idUnico);
+    $usuario = trim($usuario);
+    if ($idUnico === '' || $usuario === '') {
+        return ['ok' => false, 'error' => 'Faltan el comprobante o el jugador'];
+    }
+
+    $pago = null;
+    $canceladas = 0;
+    try {
+        $pdo->beginTransaction();
+
+        /* Solo desde 'revision', y FOR UPDATE: si otro operador lo resolvio
+           entremedio no se pisa. Mismo criterio que `descartar`. */
+        $st = $pdo->prepare(
+            "SELECT cuit, cbu_origen, remitente FROM pagos
+              WHERE id_unico = ? AND estado = 'revision' FOR UPDATE"
+        );
+        $st->execute([$idUnico]);
+        $pago = $st->fetch(PDO::FETCH_ASSOC);
+        if (!$pago) {
+            $pdo->rollBack();
+            return ['ok' => false, 'error' => 'Ese comprobante ya no está en revisión'];
+        }
+
+        // asignado_por es VARCHAR(60): 'a_mano:' (7) + 47 del operador entra.
+        $pdo->prepare(
+            "UPDATE pagos SET estado = 'usado', asignado_por = ?, asignado_en = NOW()
+              WHERE id_unico = ? AND estado = 'revision'"
+        )->execute(['a_mano:' . mb_substr((string)$operador, 0, 47), $idUnico]);
+
+        if ($recargaId > 0) {
+            $up = $pdo->prepare(
+                "UPDATE recargas SET estado = 'cancelada'
+                  WHERE id = ? AND usuario = ? AND estado IN ('pendiente','vencida')"
+            );
+            $up->execute([$recargaId, $usuario]);
+            $canceladas = $up->rowCount();
+        }
+
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) { $pdo->rollBack(); }
+        error_log('rl_marcar_cargado_a_mano: ' . $e->getMessage());
+        return ['ok' => false, 'error' => 'No se pudo marcar el comprobante'];
+    }
+
+    /* La huella va FUERA de la transaccion y NUNCA hace fallar la accion: el
+       comprobante ya quedo resuelto arriba, y no aprender de que cuenta paga
+       esta persona es una oportunidad perdida, no un error. */
+    $aprendida = false;
+    try {
+        rl_aprender_huella($pdo, $usuario, $pago);
+        $aprendida = trim((string)($pago['cuit'] ?? '')) !== ''
+                  || trim((string)($pago['cbu_origen'] ?? '')) !== '';
+    } catch (Throwable $e) {
+        error_log('rl_marcar_cargado_a_mano (huella): ' . $e->getMessage());
+    }
+
+    return ['ok' => true, 'usuario' => $usuario,
+            'huella_aprendida' => $aprendida, 'recargas_canceladas' => $canceladas];
+}
+

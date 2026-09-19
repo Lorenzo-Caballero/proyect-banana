@@ -231,33 +231,26 @@ $tipos = array_column($p, 'tipo');
 ok(count($p) === 2 && in_array('giro', $tipos, true) && in_array('pct', $tipos, true),
    'y un porcentaje nuevo no le pisa el giro');
 
-/* LO QUE EL JUGADOR GANO NO SE LE SACA. El premio de la ruleta NO se
-   acredita en ningun otro lado: la fila pendiente ES el premio. Si un bono
-   de campaña lo diera de baja, le desapareceria sin aviso lo que giro y vio
-   en pantalla. Y al reves: un premio chico no puede comerse un 25% prometido.
-   Los dos conviven y entran de a uno por carga. */
+/* EL PREMIO DE LA RULETA ENTRA EN LA REGLA, y esto se dio vuelta una vez.
+   El 19/09/2026 lo deje afuera razonando que un premio lo gano el jugador y
+   no se lo mandamos nosotros; Nahuel lo corrigio ese mismo dia: *"los bonos
+   que no se tienen que acumular son esos bonos clasicos, diarios y de ruleta
+   y de juegos"*. La familia es UNA: todo lo que sea plata sobre la proxima
+   carga compite por el mismo lugar, lo haya ganado o se lo hayamos dado. */
 $limpiarW();
 $pdo->prepare("INSERT INTO usuarios (id, username, balance, coins, bonus)
                VALUES (990601, ?, 0, 0, 0)")->execute([$W]);
 crmnotif_bono_crear($pdo, $W, 'fichas', 800, 'ruleta');
 $r = crmnotif_bono_crear($pdo, $W, 'pct', 25, 'fidelizacion');
 $p = $pendientes();
-ok(count($p) === 2, 'la campaña NO le borra el premio de la ruleta que gano');
-ok((int)($r['reemplazados'] ?? 0) === 0, 'y no dice haber reemplazado nada');
+ok(count($p) === 1 && (int)$p[0]['valor'] === 25,
+   'el bono de campaña reemplaza al premio de ruleta pendiente');
+ok((int)($r['reemplazados'] ?? 0) === 1, 'y lo informa');
 
 $r = crmnotif_bono_crear($pdo, $W, 'fichas', 150, 'ruleta_cortesia');
 $p = $pendientes();
-ok(count($p) === 3 && (int)($r['reemplazados'] ?? 0) === 0,
-   'y un premio de ruleta tampoco pisa el bono prometido: hace cola');
-
-/* Pero entre bonos PROMETIDOS la regla sigue valiendo aunque haya premios
-   en el medio: el 25% se va, los dos premios quedan. */
-crmnotif_bono_crear($pdo, $W, 'pct', 30, 'fidelizacion');
-$p = $pendientes();
-$vals = array_map('intval', array_column($p, 'valor'));
-sort($vals);
-ok($vals === [30, 150, 800],
-   'el bono prometido si se reemplaza entre premios, dio ' . implode('/', $vals));
+ok(count($p) === 1 && (int)$p[0]['valor'] === 150 && (int)($r['reemplazados'] ?? 0) === 1,
+   'y un premio de ruleta tambien reemplaza al bono prometido');
 
 /* EL QUE SE APLICA ES EL ULTIMO PROMETIDO, no el mas viejo. Es el que el
    jugador acaba de leer en el aviso. */

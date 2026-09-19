@@ -315,6 +315,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         salir(array_merge(['ok' => true], $r));
     }
 
+    /* «YA SE LA CARGUÉ A MANO»: la plata es de ese jugador, pero ya se la
+       acreditó por afuera del sistema, así que NO hay que cargarle nada — y
+       tampoco descartarla, porque sí es de él.
+
+       EL PEDIDO (Nahuel, 19/09/2026): *"no me aparece alguna que diga descartar
+       o ya le cargué a mano... porque no quiero descartarlo, pero tampoco
+       volver a cargarle"*.
+
+       Toda la lógica vive en rl_marcar_cargado_a_mano() (recargas_lib), igual
+       que `acreditar_directo`: acá sólo se valida lo que llegó. Es lo que
+       permite probarla de verdad — este archivo corre auth al incluirse, así
+       que un test no lo puede requerir, y la alternativa es replicarle el SQL
+       y que las dos copias se separen sin que nadie se entere. */
+    if ($accion === 'ya_cargado') {
+        $idUnico = trim((string)($body['pago_id'] ?? ''));
+        $usuario = trim((string)($body['usuario'] ?? ''));
+        if ($idUnico === '' || $usuario === '') {
+            salir(['ok' => false, 'error' => 'Faltan el comprobante o el jugador'], 400);
+        }
+        $r = rl_marcar_cargado_a_mano($pdo, $idUnico, $usuario,
+                                      (int)($body['recarga_id'] ?? 0), $operador);
+        salir($r, !empty($r['ok']) ? 200 : 409);
+    }
+
     /* Descartar un comprobante que NO es de ningún jugador: una transferencia
        propia (del operador) o de un tercero que no juega. Sin esto queda en
        'revision' para siempre -- sonando el aviso "sin resolver" y ocupando la

@@ -173,6 +173,49 @@ $a = fila($pdo, "SELECT monto FROM acciones_saldo WHERE usuario = ? AND tipo='ca
 chequear('EL DEPOSITO AL JUEGO ES 4200', (int)($a['monto'] ?? 0) === 4200, json_encode($a));
 $pdo->exec("DELETE FROM landings WHERE slug = 'promo40'");
 
+/* =========================================================================
+   9. EL BONO DE BIENVENIDA SI SE ACUMULA CON OTRO
+   =========================================================================
+   EL PEDIDO (Nahuel, 19/09/2026): *"los bonos que no se tienen que acumular
+   son esos bonos clasicos, diarios y de ruleta y de juegos. Pero los bonos de
+   bienvenida SI pueden acumularse con algun otro"*.
+
+   Hoy sale gratis, porque son dos mecanismos distintos: el de bienvenida lo
+   resuelve rl_bono_bienvenida_aplicar() contra `usuarios.bonus` en el momento
+   de acreditar, y el prometido sale de `bonos_pendientes`. rl_acreditar() los
+   suma explicitamente (`$bono + $bonoPrometido`).
+
+   Se prueba igual, y por una razon concreta: la regla de no-acumulacion vive
+   en crmnotif_bono_crear(), y la forma natural de "simplificarla" mas adelante
+   es mandar el bono de bienvenida por la misma tabla. El dia que alguien haga
+   eso, el de bienvenida empieza a pisar al prometido y al reves -- sin que
+   falle nada visible, porque el jugador simplemente cobra uno solo. Esto lo
+   frena. */
+echo "\n=== 9. Bienvenida + prometido: los DOS en la misma carga ===\n";
+limpiar($pdo, $U);
+require_once __DIR__ . '/api/crm_notificaciones.php';
+$pdo->prepare("DELETE FROM bonos_pendientes WHERE usuario = ?")->execute([$U]);
+$pdo->prepare("INSERT INTO altas (usuario, estado, origen) VALUES (?, 'ok', 'bono50')")->execute([$U]);
+crmnotif_bono_crear($pdo, $U, 'pct', 20, 'fidelizacion');
+$pdo->prepare(
+    "INSERT INTO recargas (usuario, coins, monto_pedido, monto_base, estado, referencia, vence_en)
+     VALUES (?, 3000, 3000.00, 3000.00, 'pendiente', 'TB9', DATE_ADD(NOW(), INTERVAL 45 MINUTE))"
+)->execute([$U]);
+$r9 = fila($pdo, "SELECT * FROM recargas WHERE usuario = ? LIMIT 1", [$U]);
+$pdo->beginTransaction();
+rl_acreditar($pdo, $r9, 'pago-test-bono-9', 'test', null, null);
+$pdo->commit();
+/* 1500 de bienvenida (50% de 3000) + 600 del prometido (20% de 3000). */
+chequear('cobra los dos: 1500 de bienvenida + 600 prometido = 2100',
+         (int)($r9['bono'] ?? 0) === 2100, json_encode($r9['bono'] ?? null));
+$b = fila($pdo, "SELECT estado FROM bonos_pendientes WHERE usuario = ? ORDER BY id DESC LIMIT 1", [$U]);
+chequear('y el prometido queda marcado aplicado', ($b['estado'] ?? '') === 'aplicado', json_encode($b));
+rl_cargar_al_juego_auto($pdo, $r9);
+$a = fila($pdo, "SELECT monto FROM acciones_saldo WHERE usuario = ? AND tipo='cargar' ORDER BY id DESC LIMIT 1", [$U]);
+chequear('EL DEPOSITO AL JUEGO ES 5100 (3000 + 2100)',
+         (int)($a['monto'] ?? 0) === 5100, json_encode($a));
+$pdo->prepare("DELETE FROM bonos_pendientes WHERE usuario = ?")->execute([$U]);
+
 limpiar($pdo, $U);
 $pdo->prepare("DELETE FROM usuarios WHERE username = ?")->execute([$U]);
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);

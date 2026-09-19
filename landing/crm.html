@@ -2173,6 +2173,19 @@
   .nv-ef-num{min-width:118px;text-align:right;color:var(--muted);font-size:11px}
   /* Los transaccionales, apagados: están para que se vea que existen, no
      para compararlos con una promo. */
+  /* Las dos salidas que no mueven plata, al pie del comprobante. */
+  .cd-salidas{margin-top:14px;padding-top:12px;border-top:1px solid var(--linea,#e4e4e7);
+    display:flex;flex-direction:column;gap:9px}
+  .cd-salida{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+  .cd-salida span{font-size:12px;color:var(--muted)}
+  .cd-btn-sec{background:none;border:1px solid var(--linea,#d4d4d8);color:var(--muted);
+    border-radius:8px;padding:6px 12px;font-size:12.5px;cursor:pointer;white-space:nowrap}
+  .cd-btn-sec:hover{color:var(--txt);border-color:var(--muted)}
+  /* El tercer botón de la sugerencia: presente, pero que no compita con el
+     sí/no -- es la salida excepcional, no una de las dos respuestas. */
+  .cs-mano{background:none;border:1px solid var(--linea,#d4d4d8);color:var(--muted);
+    border-radius:8px;padding:8px 13px;font-size:12.5px;cursor:pointer}
+  .cs-mano:hover{color:var(--txt);border-color:var(--muted)}
   .nv-ef-fila.es-trx{opacity:.55}
   .nv-ef-fila.es-trx .nv-ef-barra i{background:var(--muted)}
   .nv-ef-nom .trx{font-style:normal;cursor:help;color:var(--muted)}
@@ -9483,10 +9496,17 @@
       <div class="cs-acciones">
         <button class="cs-si" id="csSi" type="button">Sí, cargarle ${monto}</button>
         <button class="cs-no" id="csNo" type="button">No es él</button>
+        <!-- EL TERCER CASO, que faltaba y es el más común cuando el operador no
+             puede esperar: la plata ES de él, pero ya se la cargó por afuera.
+             Sin este botón las únicas salidas eran cargarle de nuevo o
+             descartarlo como si no fuera de nadie. -->
+        <button class="cs-mano" id="csMano" type="button"
+                title="La transferencia es de él y ya le acreditaste la plata por afuera. No se le carga nada: el comprobante queda resuelto a su nombre y el sistema aprende de qué cuenta paga, así la próxima se resuelve sola.">Ya se la cargué a mano</button>
       </div>
     </div>`;
 
     $("#csSi").addEventListener("click", ()=> aprobarSugerencia(s, d));
+    $("#csMano").addEventListener("click", ()=> marcarYaCargado(s.usuario, s.recarga_id, $("#csMano")));
     $("#csNo").addEventListener("click", ()=>{
       /* No se descarta nada: se abre la búsqueda. La sugerencia se va para que
          no quede compitiendo con lo que el operador está por elegir. */
@@ -9494,6 +9514,36 @@
         o descartá el comprobante si no es de ninguno.</div>`;
       if(otro){ otro.style.display = "block"; $("#compQ")?.focus(); }
     });
+  }
+
+  /* «YA SE LA CARGUÉ A MANO»: es de ese jugador, pero ya cobró por afuera.
+     EL PEDIDO (Nahuel, 19/09/2026): *"no me aparece alguna que diga descartar
+     o ya le cargé a mano... porque no quiero descartarlo, pero tampoco volver
+     a cargarle"*.
+
+     NO ES DESCARTAR. Descartar dice "no es de ningún jugador"; esto dice "sí
+     es de él y ya cobró". La diferencia no es cosmética: resolverlo a nombre
+     del jugador es lo que hace que el sistema APRENDA de qué cuenta paga, y
+     sin eso su próxima transferencia vuelve a caer en revisión. */
+  async function marcarYaCargado(usuario, recargaId, btn){
+    if(!compPagoActual) return;
+    if(!confirm(`¿Marcar esta transferencia como ya cargada a mano a @${usuario}?\n\n`+
+                `NO se le acredita nada: se da por hecho que ya tiene la plata.\n`+
+                `El comprobante sale de la bandeja y el sistema aprende de qué `+
+                `cuenta paga, así la próxima se resuelve sola.`)) return;
+    const texto = btn ? btn.textContent : "";
+    if(btn){ btn.disabled = true; btn.textContent = "Marcando…"; }
+    const r = await jpost({accion:"ya_cargado", pago_id:compPagoActual.id_unico,
+                           usuario, recarga_id:recargaId||0}, API_COMP);
+    if(r.ok){
+      toast(r.huella_aprendida
+        ? `Marcado como ya cargado a @${usuario} · la próxima se resuelve sola`
+        : `Marcado como ya cargado a @${usuario}`);
+      actualizarBadgeComp(); cargarComprobantes();
+    } else {
+      if(btn){ btn.disabled = false; btn.textContent = texto; }
+      toast(r.error || "No se pudo marcar");
+    }
   }
 
   /* Aprobar la sugerencia es exactamente la acción que ya existía: asignarle el
@@ -9544,12 +9594,32 @@
         <button class="btn-asignar" id="cdBtn" type="button">Acreditar fichas</button>
       </div>
       ${sug ? `<div class="cd-directo-hint">Sugerido: <b>@${esc(sug)}</b> ya cargó antes desde esta misma cuenta bancaria.</div>` : ""}
-      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--linea, #e4e4e7);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
-        <span style="font-size:12px;color:var(--muted)">¿No es de ningún jugador? (una transferencia tuya o de un tercero)</span>
-        <button id="cdDescartar" type="button" style="background:none;border:1px solid var(--linea,#d4d4d8);color:var(--muted);border-radius:8px;padding:6px 12px;font-size:12.5px;cursor:pointer">Descartar</button>
+      <!-- LAS DOS SALIDAS QUE NO MUEVEN PLATA, y son distintas entre sí:
+           «ya cargado a mano» dice que la transferencia SÍ es de ese jugador y
+           que ya cobró por afuera (así el sistema aprende de qué cuenta paga);
+           «descartar» dice que no es de ningún jugador. Confundirlas pierde la
+           huella y la próxima transferencia vuelve a caer en revisión. -->
+      <div class="cd-salidas">
+        <div class="cd-salida">
+          <span>¿Ya se la cargaste a mano? Es de ese jugador y ya tiene la plata</span>
+          <button id="cdManoBtn" type="button" class="cd-btn-sec">Ya se la cargué a mano</button>
+        </div>
+        <div class="cd-salida">
+          <span>¿No es de ningún jugador? (una transferencia tuya o de un tercero)</span>
+          <button id="cdDescartar" type="button" class="cd-btn-sec">Descartar</button>
+        </div>
       </div>`;
     $("#cdBtn").addEventListener("click", acreditarDirecto);
     const dsc = $("#cdDescartar"); if(dsc) dsc.addEventListener("click", descartarComprobante);
+    const mano = $("#cdManoBtn");
+    if(mano) mano.addEventListener("click", ()=>{
+      /* Toma el jugador del campo de arriba: acá no hay sugerencia aceptada,
+         el operador acaba de escribir de quién es. Sin nombre no se puede
+         marcar -- sin jugador esto sería un descarte, que ya tiene su botón. */
+      const u = ($("#cdUser")?.value || "").trim();
+      if(!u){ toast("Poné el jugador: sin nombre no se puede marcar (si no es de nadie, descartalo)"); $("#cdUser")?.focus(); return; }
+      marcarYaCargado(u, 0, mano);
+    });
   }
 
   /* Descartar: la transferencia NO es de ningún jugador (propia o de un tercero).

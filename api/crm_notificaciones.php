@@ -16,15 +16,6 @@ declare(strict_types=1);
 
 defined('CRMNOTIF_BONO_TIPOS') || define('CRMNOTIF_BONO_TIPOS', ['fichas', 'pct', 'giro']);
 
-/* LOS BONOS QUE EL JUGADOR GANO, no los que le mandamos. Los premios de la
-   ruleta viven en la misma tabla que los bonos prometidos, pero no son lo
-   mismo: uno lo giró él y lo vio en pantalla, el otro se lo mandamos nosotros.
-   Por eso un bono nuevo no los da de baja (ver crmnotif_bono_crear).
-
-   Estos son los valores de `prometido_por` que escribe api/ruleta.php. Si
-   aparece un premio nuevo que el jugador gana, va acá. */
-defined('BONO_GANADO') || define('BONO_GANADO', ['ruleta', 'ruleta_cortesia']);
-
 if (!function_exists('crmnotif_alcance_inactivos')) {
 
     /**
@@ -906,35 +897,35 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
                otra cosa y no tiene por qué perderse porque le llegó un
                porcentaje. Ese es el único motivo de la lista de tipos.
 
-               Y NO SE TOCA LO QUE EL JUGADOR GANO. El premio de la ruleta NO
-               se acredita en ningún otro lado: esta fila ES el premio
-               (`ruleta.php` dejó de sumar a `usuarios.bonus` el 18/09/2026).
-               Si un bono de campaña lo diera de baja, al jugador le
-               desaparecerían sin aviso las fichas que giró y vio en pantalla
-               -- y al revés, un premio chico le comería un 25% prometido.
-               Lo que el dueño pidió que no se acumule es lo que le MANDAMOS,
-               y el motivo que dio --sumar bonos superiores al 100%-- es de
-               porcentajes, no de un premio de monto fijo y acotado por la
-               tabla de la ruleta.
+               EL PREMIO DE LA RULETA ENTRA EN LA REGLA, y esto se dio vuelta
+               una vez. El 19/09/2026 lo deje afuera por mi cuenta razonando
+               que un premio lo gano el jugador y no se lo mandamos nosotros;
+               Nahuel lo corrigio ese mismo dia: *"los bonos que no se tienen
+               que acumular son esos bonos clasicos, diarios y de ruleta y de
+               juegos"*. O sea que la familia es UNA sola: todo lo que sea
+               plata sobre la proxima carga compite por el mismo lugar, lo
+               haya ganado o se lo hayamos regalado.
 
-               O sea: un premio de ruleta no reemplaza a nadie y nadie lo
-               reemplaza a él; hace cola y entra en la carga siguiente. Los
-               dos pendientes NO se suman en una misma carga, porque
-               `crmnotif_bono_aplicar_en_recarga` aplica UNO por carga.
+               EL BONO DE BIENVENIDA NO ESTA ACA Y SI SE ACUMULA -- *"los
+               bonos de bienvenida si pueden acumularse con algun otro"*. No
+               hace falta ninguna excepcion para eso: no vive en esta tabla.
+               Lo aplica rl_bono_bienvenida_aplicar() contra `usuarios.bonus`
+               en el momento de acreditar la primera carga, y rl_acreditar()
+               los suma explicitamente (`$bono + $bonoPrometido`), asi que un
+               jugador de landing puede cobrar su 50% de bienvenida Y el
+               porcentaje que le prometio la campaña en la misma carga. Lo
+               cuida t_bono_carga.php.
 
                Queda como 'cancelado' y no borrado: se ve en la ficha del
-               jugador y en Auditoría qué se le prometió y qué lo reemplazó. */
+               jugador y en Auditoria que se le prometio y que lo reemplazo. */
             $reemplazados = 0;
-            $ganado = in_array($prometidoPor, BONO_GANADO, true);
-            if ($tipo !== 'giro' && !$ganado) {
-                $marcas = implode(',', array_fill(0, count(BONO_GANADO), '?'));
+            if ($tipo !== 'giro') {
                 $up = $pdo->prepare(
                     "UPDATE bonos_pendientes
                         SET estado = 'cancelado'
-                      WHERE usuario = ? AND estado = 'pendiente' AND tipo IN ('fichas','pct')
-                        AND prometido_por NOT IN ($marcas)"
+                      WHERE usuario = ? AND estado = 'pendiente' AND tipo IN ('fichas','pct')"
                 );
-                $up->execute(array_merge([mb_substr($usuario, 0, 50)], BONO_GANADO));
+                $up->execute([mb_substr($usuario, 0, 50)]);
                 $reemplazados = $up->rowCount();
             }
 
