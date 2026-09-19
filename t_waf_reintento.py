@@ -112,6 +112,44 @@ def correr(respuestas, intentos=3):
 ns_ultimo = {}
 
 
+print('\n=== 0. UN detector del 200 falso, con TODAS las firmas ===')
+# EL 200 FALSO ES EL PROBLEMA ENTERO: ServicePipe no devuelve 403, devuelve 200
+# con una pagina que redirige. Mirar el codigo HTTP no sirve; hay que mirar el
+# cuerpo.
+#
+# Estaba escrito CUATRO VECES con reglas distintas, y ninguna de las cuatro
+# reconocia la firma del <noscript> con refresh -- que el test del deposito
+# exige desde hace semanas. Un challenge con esa forma no se detectaba: no se
+# reintentaba, y la carga caia en 'revisar' esperando a una persona en vez de
+# salir sola. Con poco volumen se nota poco; escalando es la diferencia entre
+# una bandeja vacia y una llena de cosas que se resolvian solas.
+_ech = next(n for n in arbol.body
+            if isinstance(n, ast.FunctionDef) and n.name == 'es_challenge')
+nsd = {}
+exec(compile(ast.Module(body=[_ech], type_ignores=[]), '<t>', 'exec'), nsd)
+es_challenge = nsd['es_challenge']
+
+for firma, cuerpo in [
+    ('doctype html',        '<!DOCTYPE html><html><body>...</body></html>'),
+    ('el nombre del WAF',   '<div>Powered by ServicePipe</div>'),
+    ('la URL del desafio',  '<html><script src="/exhkqyad123.js"></script></html>'),
+    ('noscript + refresh',  '<html><head><noscript><meta http-equiv="refresh" '
+                            'content="0; url=/abc"></noscript></head></html>'),
+]:
+    chequear('reconoce la firma: %s' % firma, es_challenge(cuerpo) is True,
+             'si no se reconoce, no se reintenta y la operacion queda esperando a una persona')
+
+# Y LO QUE NO ES CHALLENGE, que importa igual o mas: repetir una escritura solo
+# es seguro cuando SABEMOS que no llego al backend.
+for que, cuerpo in [
+    ('la respuesta buena del panel', '{"status":0,"result":{}}'),
+    ('un error del backend en JSON', '{"status":1,"error_message":"Unauthorized"}'),
+    ('una pagina de error cualquiera', '<html><body>502 Bad Gateway</body></html>'),
+    ('un cuerpo vacio', ''),
+]:
+    chequear('NO confunde con challenge: %s' % que, es_challenge(cuerpo) is False,
+             'reintentar algo que si llego al backend es lo unico que paga dos veces')
+
 print('\n=== 1. Lo normal no cambia ===')
 panel, d, err = correr(['ok'])
 chequear('sin challenge, una sola llamada', panel.pedidos == 1 and err is None,

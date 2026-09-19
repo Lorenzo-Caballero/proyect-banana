@@ -15,8 +15,14 @@ contesto el WAF, la request no llego al backend), asi que se puede reintentar.
 import ast, io, json, os, sys
 
 fuente = io.open(os.path.join('colector', 'aprobar_cargas.py'), encoding='utf-8').read()
-fn = next(n for n in ast.parse(fuente).body
+_arbol = ast.parse(fuente)
+fn = next(n for n in _arbol.body
           if isinstance(n, ast.FunctionDef) and n.name == 'retirar_del_jugador')
+# El detector del 200 falso se saca DEL ARCHIVO, no se imita aca: asi este test
+# prueba el que de verdad corre. Antes estaba escrito cuatro veces con reglas
+# distintas y ninguna reconocia la firma del <noscript> con refresh.
+_esch = next(n for n in _arbol.body
+             if isinstance(n, ast.FunctionDef) and n.name == 'es_challenge')
 
 class _Resp:
     def __init__(self, status, cuerpo): self.status, self._c, self.ok = status, cuerpo, 200 <= status < 300
@@ -26,7 +32,7 @@ class _Ctx:
     def post(self, *a, **k): return _Ctx.resp
 
 ns = {'json': json, 'PANEL_API': 'https://x/api', 'OP_RETIRO': 1}
-exec(compile(ast.Module(body=[fn], type_ignores=[]), '<t>', 'exec'), ns)
+exec(compile(ast.Module(body=[_esch, fn], type_ignores=[]), '<t>', 'exec'), ns)
 
 def evaluar(status, cuerpo):
     class C:

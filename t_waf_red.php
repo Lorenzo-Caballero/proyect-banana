@@ -157,6 +157,21 @@ chequear('y el colector no puede inventar ese estado',
          str_contains($srcSalud, "if (isset(SC_LIMITES[\$k]['clave'])) { continue; }"),
          'lo escribe su propio cron: un body que lo mande estaria mintiendo');
 // ===========================================================================
+echo "\n=== 5c. El detector del 200 falso es UNO solo ===\n";
+
+/* ServicePipe no devuelve 403: devuelve 200 con una pagina que redirige, asi
+   que el codigo HTTP no dice nada y hay que mirar el cuerpo. Estaba escrito
+   CUATRO VECES con reglas distintas y ninguna reconocia la firma del
+   <noscript> con refresh -- la que el test del deposito exige desde hace
+   semanas. Un challenge con esa forma no se detectaba, no se reintentaba, y la
+   operacion caia en 'revisar' esperando a una persona. */
+chequear('existe es_challenge() y es el unico',
+         str_contains($srcCol, 'def es_challenge(')
+         && substr_count($srcCol, 'startswith("<!doctype html")') === 1,
+         'cuatro copias con reglas distintas es como se pierde una firma');
+chequear('y conoce la firma que faltaba',
+         str_contains($srcCol, '"<noscript" in cabeza'));
+// ===========================================================================
 echo "\n=== 6. Y la regla que no se negocia: NUNCA reintentar una escritura ===\n";
 
 /* Un challenge prueba que la request no llego al backend, y por eso una
@@ -176,6 +191,24 @@ foreach (['aprobar', 'rechazar', 'retirar_del_jugador', 'fijar_bono'] as $fn) {
     chequear("$fn() ante la duda no afirma",
              str_contains($cuerpo, 'revisar') || str_contains($cuerpo, 'return False'),
              'tiene que caer en revisar, nunca en hecha');
+    /* Pero SI vuelve a intentar cuando SABE que fue el WAF, y eso es lo que al
+       escalar decide si una carga sale sola o cae en 'revisar' esperando a una
+       persona: un challenge prueba que la request no llego al backend, asi que
+       repetirla es gratis.
+
+       Hay DOS formas validas de hacerlo y las dos estan bien:
+         · en linea, con la espera que crece (aprobar, rechazar);
+         · devolviendo la accion a la cola con 'reintentar', para que la tome
+           la pasada siguiente con la sesion fresca. Es lo que hace el retiro,
+           que es la escritura mas peligrosa de todas: ahi conviene la vuelta
+           limpia antes que insistir en caliente. */
+    if ($fn !== 'fijar_bono') {
+        chequear("$fn() vuelve a intentar un challenge",
+                 str_contains($cuerpo, 'es_challenge(')
+                 && (str_contains($cuerpo, 'WAF_ESPERAS_S')
+                     || str_contains($cuerpo, '"reintentar"')),
+                 'si no reintenta, cada challenge deja trabajo manual');
+    }
 }
 
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);

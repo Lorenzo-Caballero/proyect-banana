@@ -169,6 +169,52 @@ def url_cola() -> str:
     return base.rsplit("/", 1)[0] + "/peticiones_cola.php"
 
 
+def es_challenge(cuerpo: str) -> bool:
+    """¿Este 200 lo contesto el WAF y no el panel?
+
+    EL 200 FALSO ES EL PROBLEMA ENTERO. ServicePipe no devuelve 403: devuelve
+    200 con una pagina HTML que ejecuta JavaScript y redirige. Mirar el codigo
+    HTTP no sirve de nada -- hay que mirar el CUERPO.
+
+    ESTABA ESCRITO CUATRO VECES CON REGLAS DISTINTAS (medido el 18/09/2026), y
+    ninguna de las cuatro reconocia la firma del `<noscript>` con el refresh
+    --que es la que el test del deposito exige desde hace semanas--. Un
+    challenge con esa forma no se detectaba como challenge: no se reintentaba,
+    y la carga terminaba en 'revisar' esperando a una persona en vez de salir
+    sola. Con poco volumen se nota poco; escalando, es la diferencia entre una
+    bandeja vacia y una bandeja llena de cosas que podrian haberse resuelto
+    solas.
+
+    Las cuatro firmas, todas vistas en produccion o en los incidentes:
+      1. el documento arranca con <!doctype html> (el caso comun)
+      2. dice "servicepipe" (el nombre del proveedor del WAF)
+      3. lleva un /exhk... (la URL a la que redirige el desafio)
+      4. un <noscript> con http-equiv=refresh (la variante sin JS)
+
+    LO QUE NO ES CHALLENGE: HTML a secas. Se probo poner "empieza con <html" de
+    red y el test del retiro lo freno, con razon -- una pagina de error o un
+    redirect a login SI llegaron al backend, y reintentar eso es lo unico que
+    puede pagar dos veces. Un challenge tiene firma reconocible; el resto es
+    "no se que paso", y eso se resuelve yendo a 'revisar', no repitiendo.
+
+    O sea: esta funcion decide si REPETIR es seguro, no si la respuesta sirve.
+    Ante la duda devuelve False y el que llama tiene su propia red -- si no es
+    JSON valido, igual termina en 'revisar'.
+    """
+    if not cuerpo:
+        return False
+    cabeza = cuerpo.lstrip()[:2000].lower()
+    if cabeza.startswith("<!doctype html"):
+        return True
+    if "servicepipe" in cabeza:
+        return True
+    if "/exhk" in cuerpo[:2000]:
+        return True
+    if "<noscript" in cabeza and "http-equiv" in cabeza and "refresh" in cabeza:
+        return True
+    return False
+
+
 def _json(r):
     """Valida la respuesta del panel y detecta el challenge del WAF antes de
     intentar parsearla (si no, el error es un JSONDecodeError sin sentido)."""
@@ -176,8 +222,7 @@ def _json(r):
         txt = r.text()
     except Exception as e:
         raise DesafioWAF(f"no pude leer la respuesta: {e}")
-    cabeza = txt.lstrip()[:500].lower()
-    if cabeza.startswith("<!doctype html") or "servicepipe" in cabeza:
+    if es_challenge(txt):
         raise DesafioWAF("el panel devolvio HTML (challenge del WAF)")
     try:
         return r.json()
@@ -460,7 +505,7 @@ def retirar_del_jugador(ctx, id_ganamos: int, monto: float) -> tuple[str, str]:
 
     # Mismo detector de challenge que usa _json() en este archivo.
     cabeza = cuerpo.lstrip()[:500].lower()
-    if cabeza.startswith("<!doctype html") or "servicepipe" in cabeza or "/exhk" in cuerpo[:2000]:
+    if es_challenge(cuerpo):
         # El WAF contesto el: la request NO llego al backend, asi que no se
         # descontó nada. Se devuelve a la cola para reintentar -- no es
         # 'revisar' justamente porque aca SI sabemos que no paso nada.
@@ -608,7 +653,7 @@ def rechazar(ctx, request_id: int) -> tuple[str, str]:
     # solicitud seguia ABIERTA en el panel. Mismo arreglo: reintentar el
     # challenge (no llego al backend, es seguro) y 200 ilegible -> 'revisar'.
     cuerpo = ""
-    for _i in range(3):
+    for _i in range(WAF_INTENTOS):
         try:
             r = ctx.request.patch(url, data={"status": 0}, timeout=45_000)
         except Exception as e:
@@ -618,13 +663,19 @@ def rechazar(ctx, request_id: int) -> tuple[str, str]:
             cuerpo = r.text()
         except Exception:
             cuerpo = ""
-        cabeza = cuerpo.lstrip()[:500].lower()
-        if not (cabeza.startswith("<!doctype html") or "servicepipe" in cabeza
-                or "/exhk" in cuerpo[:2000]):
+        if not es_challenge(cuerpo):
             break
-        if _i == 2:
+        # MISMOS INTENTOS Y MISMA ESPERA QUE UNA LECTURA, y por el mismo motivo:
+        # un challenge prueba que la request no llego al backend. La espera
+        # crece porque el WAF desafia de a rafagas -- se midio el 18/09 que
+        # bajarla a un valor fijo chico gastaba los intentos adentro de la
+        # misma rafaga.
+        #
+        # Que esto reintente bien es lo que decide, al escalar, si una carga
+        # sale sola o cae en 'revisar' esperando a una persona.
+        if _i >= WAF_INTENTOS - 1:
             return "revisar", f"el WAF corto el rechazo (challenge persistente) | {cuerpo[:300]}"
-        time.sleep(1.5 * (_i + 1))
+        time.sleep(WAF_ESPERAS_S[min(_i, len(WAF_ESPERAS_S) - 1)])
     corto = cuerpo[:300]
 
     if r.ok:
@@ -661,7 +712,7 @@ def aprobar(ctx, request_id: int) -> tuple[str, str]:
     """
     url = f"{PANEL_API}/payment/deposit/{request_id}"
     cuerpo = ""
-    for _i in range(3):
+    for _i in range(WAF_INTENTOS):
         try:
             r = ctx.request.patch(url, data={"status": 1}, timeout=45_000)
         except Exception as e:
@@ -672,13 +723,19 @@ def aprobar(ctx, request_id: int) -> tuple[str, str]:
         except Exception:
             cuerpo = ""
         # Mismo detector que _json() y retirar_del_jugador().
-        cabeza = cuerpo.lstrip()[:500].lower()
-        if not (cabeza.startswith("<!doctype html") or "servicepipe" in cabeza
-                or "/exhk" in cuerpo[:2000]):
+        if not es_challenge(cuerpo):
             break
-        if _i == 2:
+        # MISMOS INTENTOS Y MISMA ESPERA QUE UNA LECTURA, y por el mismo motivo:
+        # un challenge prueba que la request no llego al backend. La espera
+        # crece porque el WAF desafia de a rafagas -- se midio el 18/09 que
+        # bajarla a un valor fijo chico gastaba los intentos adentro de la
+        # misma rafaga.
+        #
+        # Que esto reintente bien es lo que decide, al escalar, si una carga
+        # sale sola o cae en 'revisar' esperando a una persona.
+        if _i >= WAF_INTENTOS - 1:
             return "revisar", f"el WAF corto la aprobacion (challenge persistente) | {cuerpo[:300]}"
-        time.sleep(1.5 * (_i + 1))
+        time.sleep(WAF_ESPERAS_S[min(_i, len(WAF_ESPERAS_S) - 1)])
     corto = cuerpo[:300]
 
     if r.ok:
@@ -1111,7 +1168,26 @@ def sincronizar_libro(ctx, solo_ver: bool, dias: int = LIBRO_DIAS,
 # que ya hace para el libro y para el stock: no agrega ningun login, asi que el
 # problema de las dos sesiones desaparece.
 USUARIOS_CADA_MIN = int(os.environ.get("USUARIOS_CADA_MIN", "5"))
-USUARIOS_POR_PAGINA = 50     # lo que usaba sync_usuarios.py contra este endpoint
+# CUANTOS JUGADORES POR REQUEST. Es la palanca mas grande que tenemos contra el
+# WAF, y estuvo en 50 por herencia: es lo que usaba sync_usuarios.py.
+#
+# CADA PAGINA ES UNA OPORTUNIDAD DE QUE NOS DESAFIEN. Con 3.073 jugadores, 50
+# por pagina son 62 requests cada 5 minutos -- unas 750 por hora, que es de
+# lejos lo que mas expone al sistema. Las cargas y los retiros, incluso
+# escalando mucho, son un puñado al lado de eso.
+#
+# MEDIDO EN PRODUCCION el 18/09/2026 (3 muestras por tamaño):
+#
+#     count= 50   0,36 s/pagina  x 62 paginas  =  47 s el barrido
+#     count=200   0,52 s/pagina  x 16 paginas  =  15 s
+#     count=500   1,07 s/pagina  x  7 paginas  =  10 s
+#
+# O sea que 200 baja la exposicion 4 veces Y ademas el barrido tarda un tercio.
+# Se elige 200 y no 500 --que midio todavia mejor-- porque el comportamiento por
+# request se mantiene cerca de lo ya probado, y porque con 16 paginas un barrido
+# cortado a la mitad sigue guardando pedazos utiles. Subirlo es cambiar una
+# variable de entorno, una vez que se vea que 200 se porta bien.
+USUARIOS_POR_PAGINA = int(os.environ.get("USUARIOS_POR_PAGINA", "200"))
 USUARIOS_POR_POST = 300      # tamano del lote hacia nuestro server
 USUARIOS_MAX_PAGINAS = 200   # 10.000 jugadores: freno duro, no un limite real
 _USUARIOS_MARCA = "/tmp/gp_usuarios_visto"
