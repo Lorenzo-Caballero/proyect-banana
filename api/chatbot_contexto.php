@@ -536,6 +536,22 @@ ARRIBA (promos/avisos) y de los limites que figuren mas arriba.
   quedes en silencio ni le des una vuelta larga.
 - NUNCA inventes un porcentaje, un monto de bono ni una promo que no este
   escrita arriba. Si no figura, no existe.
+
+- LOS MINIMOS Y MAXIMOS SALEN SOLO DEL BLOQUE "LIMITES DE ESTE CASINO", y esta
+  es la regla que decide cuando dos partes del texto se contradicen. Ese bloque
+  lo arma el sistema con los MISMOS numeros que despues aplica; todo lo demas
+  --la informacion del operador, los ejemplos de respuesta, lo que hayas leido
+  mas arriba-- es texto que alguien escribio en algun momento y puede haber
+  quedado viejo.
+  · Si arriba dice un minimo y el bloque de limites dice otro, mandan LOS
+    LIMITES. No lo menciones ni pidas disculpas: deci el numero bueno.
+  · PASO EL 19/09/2026, y es exactamente asi como se rompe: el texto del
+    operador decia "el minimo por carga es 100 fichas" y hasta traia el ejemplo
+    *"¿cual es el minimo?" -> 100*, mientras el limite configurado era 1.000.
+    El bot contesto 100, el jugador pidio ese monto y el sistema se lo rechazo.
+    Un numero equivocado dicho con seguridad cuesta mas que no saberlo.
+  · Si NO hay bloque de limites, no inventes un minimo ni un maximo: decile que
+    eso se lo confirma un agente.
 - EL BONO DE BIENVENIDA NO ES UNO SOLO PARA TODOS. Cada promocion tiene el
   suyo, y hay promociones que no dan ninguno. Si en IDENTIDAD aparece una linea
   "BONO DE BIENVENIDA", ESA manda sobre cualquier promo escrita mas arriba: si
@@ -794,6 +810,10 @@ if (!function_exists('chatbot_bloque_limites')) {
         }
         return "LIMITES DE ESTE CASINO (los aplica el sistema, no son negociables):\n"
              . implode("\n", $lineas)
+             . "\n- ESTOS NUMEROS LE GANAN A CUALQUIER OTRO QUE HAYAS LEIDO MAS ARRIBA."
+             . "\n  Si en la informacion del operador figura otro minimo, otro maximo, o un"
+             . "\n  ejemplo de respuesta con una cifra distinta, ESE DATO ESTA VIEJO: el que"
+             . "\n  el sistema aplica es el de aca, y es el unico que podes decir."
              . "\n- Si el jugador pide algo fuera de estos limites, deciselo con el numero"
              . "\n  concreto ANTES de intentar la operacion. No lo hagas pasar por un"
              . "\n  rechazo que ya sabias que iba a venir."

@@ -119,8 +119,42 @@ $conLim = chatbot_armar_prompt(
 );
 chequear('el minimo de carga configurado aparece', str_contains($conLim, '500'));
 chequear('y el minimo de retiro tambien',    str_contains($conLim, '2.000'));
+/* Se busca el ENCABEZADO COMPLETO del bloque, no la frase suelta: desde el
+   19/09/2026 las reglas fijas nombran al bloque ("los minimos y maximos salen
+   SOLO del bloque LIMITES DE ESTE CASINO") para que le gane al texto del
+   operador cuando se contradicen. Con la frase suelta este chequeo se caia por
+   la mencion, no por el bloque -- y lo que tiene que garantizar es que sin
+   limites configurados no se imprima ninguna linea con numeros. */
 chequear('sin limites, no se inventa ninguna linea de limites',
-         !str_contains($vacio, 'LIMITES DE ESTE CASINO'));
+         !str_contains($vacio, 'LIMITES DE ESTE CASINO (los aplica el sistema'));
+chequear('ni una linea suelta de minimo o maximo',
+         !str_contains($vacio, 'Carga MINIMA') && !str_contains($vacio, 'Retiro MINIMO')
+         && !str_contains($vacio, 'Carga MAXIMA'));
+
+/* LOS LIMITES LE GANAN AL TEXTO DEL OPERADOR, y esto no es teorico.
+   El 19/09/2026 `juego_desc` decia "El minimo por carga es 100 fichas" y traia
+   el ejemplo *"¿cual es el minimo?" -> 100*, mientras lim_carga_min estaba en
+   1.000. El bot contesto 100, el jugador pidio ese monto y el sistema se lo
+   rechazo. El orden ya era correcto (los limites van DESPUES del texto), pero
+   un ejemplo de respuesta explicito le gana igual: hace falta decirlo. */
+$contradice = chatbot_armar_prompt(
+    ['bot_nombre' => '', 'bot_tono' => '',
+     'juego_desc' => 'El minimo por carga es 100 fichas.',
+     'reglas_extra' => ''],
+    ['carga_min' => 1000]
+);
+chequear('el numero viejo del operador sigue en el prompt (no se borra su texto)',
+         str_contains($contradice, '100 fichas'));
+chequear('pero el limite de verdad aparece DESPUES',
+         strpos($contradice, '1.000') > strpos($contradice, '100 fichas'),
+         'lo ultimo pesa mas: si el limite fuera primero, ganaria el texto viejo');
+chequear('y se le dice explicitamente cual manda',
+         str_contains($contradice, 'ESTOS NUMEROS LE GANAN A CUALQUIER OTRO'),
+         'sin esto el modelo repite el ejemplo del operador, que es lo que paso');
+chequear('la regla tambien esta en las reglas FIJAS, que van ultimas',
+         strpos($contradice, 'LOS MINIMOS Y MAXIMOS SALEN SOLO DEL BLOQUE')
+           > strpos($contradice, 'ESTOS NUMEROS LE GANAN A CUALQUIER OTRO'),
+         'las fijas ganan sobre lo editable: ahi es donde la regla no se puede borrar');
 
 // ===========================================================================
 echo "\n=== 6. El prompt no puede pedir herramientas que no existen ===\n";
