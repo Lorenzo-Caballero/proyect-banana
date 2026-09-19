@@ -152,5 +152,126 @@ chequear('el contador va aparte, con su propio nombre',
 
 limpiar($pdo, $U);
 $pdo->prepare("DELETE FROM usuarios WHERE username = ?")->execute([$U]);
+
+// ===========================================================================
+echo "\n=== LOS BONOS NO SE ACUMULAN ===\n";
+
+/* Esta suite usa chequear(pregunta, condicion); el bloque de abajo se escribio
+   con ok(condicion, pregunta), que es el orden de las OTRAS suites. Un puente
+   de una linea en vez de dar vuelta veinte llamadas a mano y arriesgar que una
+   quede al reves -- una asercion invertida pasa siempre y no protege nada. */
+if (!function_exists('ok')) {
+    function ok(bool $c, string $q, string $d = ''): void { chequear($q, $c, $d); }
+}
+
+/* EL PEDIDO (Nahuel, 19/09/2026): *"si a una persona le mandamos un bono del
+   20% y no lo usa, al siguiente dia cuando le mandamos uno del 25%, ese debe
+   ser el utilizable, no el anterior. El anterior debe ser dado de baja antes
+   de enviarle uno, porque si no las personas tardarian una semana en volver y
+   sumarian bonos superiores al 100%, cosa que no nos seria muy rentable"*.
+
+   Y tenia razon en preocuparse: sin esto la plata se apilaba de DOS maneras.
+   Una, `crmnotif_bono_aplicar_en_recarga` tomaba el MAS VIEJO (creado_en ASC),
+   asi que el 20% de ayer le ganaba al 25% de hoy. Dos, el que no se aplicaba
+   quedaba pendiente para la carga siguiente, asi que al final se pagaban
+   todos, de a uno por carga. */
+$W = 't_nocum_1';
+$limpiarW = function () use ($pdo, $W): void {
+    foreach (['usuarios' => 'username', 'bonos_pendientes' => 'usuario',
+              'movimientos' => 'usuario', 'ruleta_giros_cortesia' => 'usuario'] as $tb => $col) {
+        try { $pdo->prepare("DELETE FROM $tb WHERE $col = ?")->execute([$W]); } catch (Throwable $e) {}
+    }
+};
+$limpiarW();
+$pdo->prepare("INSERT INTO usuarios (id, username, balance, coins, bonus)
+               VALUES (990601, ?, 0, 0, 0)")->execute([$W]);
+
+$pendientes = function () use ($pdo, $W): array {
+    $st = $pdo->prepare("SELECT tipo, valor FROM bonos_pendientes
+                          WHERE usuario = ? AND estado = 'pendiente' ORDER BY id");
+    $st->execute([$W]);
+    return $st->fetchAll(PDO::FETCH_ASSOC);
+};
+
+crmnotif_bono_crear($pdo, $W, 'pct', 20, 'fidelizacion');
+$r = crmnotif_bono_crear($pdo, $W, 'pct', 25, 'fidelizacion');
+$p = $pendientes();
+ok(count($p) === 1 && (int)$p[0]['valor'] === 25,
+   'el segundo bono REEMPLAZA al primero: queda solo el 25%');
+ok((int)($r['reemplazados'] ?? 0) === 1, 'y se informa que dio de baja uno');
+
+/* El anterior queda con rastro, no borrado: en la ficha y en Auditoria tiene
+   que verse que se le prometio un 20% y que lo reemplazo un 25%. */
+$st = $pdo->prepare("SELECT COUNT(*) FROM bonos_pendientes WHERE usuario = ? AND estado = 'cancelado'");
+$st->execute([$W]);
+ok((int)$st->fetchColumn() === 1, 'el anterior queda dado de baja, con rastro');
+
+/* Tampoco se acumula entre ORIGENES distintos: un bono manual del CRM sobre
+   uno de la campaña es el mismo problema. */
+crmnotif_bono_crear($pdo, $W, 'pct', 30, 'nahuel');
+$p = $pendientes();
+ok(count($p) === 1 && (int)$p[0]['valor'] === 30,
+   'un bono manual tambien reemplaza al de la campaña');
+
+/* Y fichas contra porcentaje: los dos son plata sobre la carga. */
+crmnotif_bono_crear($pdo, $W, 'fichas', 500, 'nahuel');
+$p = $pendientes();
+ok(count($p) === 1 && $p[0]['tipo'] === 'fichas',
+   'un bono de fichas tambien reemplaza al de porcentaje');
+
+/* PERO EL GIRO DE LA RULETA NO ES DE ESA FAMILIA. Es una tirada gratis, no
+   plata sobre la carga: no tiene por que perderse porque le llego un
+   porcentaje, ni al reves. */
+crmnotif_bono_crear($pdo, $W, 'giro', 0, 'fidelizacion');
+$p = $pendientes();
+ok(count($p) === 2, 'el giro de ruleta convive: no compite con la plata');
+crmnotif_bono_crear($pdo, $W, 'pct', 40, 'fidelizacion');
+$p = $pendientes();
+$tipos = array_column($p, 'tipo');
+ok(count($p) === 2 && in_array('giro', $tipos, true) && in_array('pct', $tipos, true),
+   'y un porcentaje nuevo no le pisa el giro');
+
+/* LO QUE EL JUGADOR GANO NO SE LE SACA. El premio de la ruleta NO se
+   acredita en ningun otro lado: la fila pendiente ES el premio. Si un bono
+   de campaña lo diera de baja, le desapareceria sin aviso lo que giro y vio
+   en pantalla. Y al reves: un premio chico no puede comerse un 25% prometido.
+   Los dos conviven y entran de a uno por carga. */
+$limpiarW();
+$pdo->prepare("INSERT INTO usuarios (id, username, balance, coins, bonus)
+               VALUES (990601, ?, 0, 0, 0)")->execute([$W]);
+crmnotif_bono_crear($pdo, $W, 'fichas', 800, 'ruleta');
+$r = crmnotif_bono_crear($pdo, $W, 'pct', 25, 'fidelizacion');
+$p = $pendientes();
+ok(count($p) === 2, 'la campaña NO le borra el premio de la ruleta que gano');
+ok((int)($r['reemplazados'] ?? 0) === 0, 'y no dice haber reemplazado nada');
+
+$r = crmnotif_bono_crear($pdo, $W, 'fichas', 150, 'ruleta_cortesia');
+$p = $pendientes();
+ok(count($p) === 3 && (int)($r['reemplazados'] ?? 0) === 0,
+   'y un premio de ruleta tampoco pisa el bono prometido: hace cola');
+
+/* Pero entre bonos PROMETIDOS la regla sigue valiendo aunque haya premios
+   en el medio: el 25% se va, los dos premios quedan. */
+crmnotif_bono_crear($pdo, $W, 'pct', 30, 'fidelizacion');
+$p = $pendientes();
+$vals = array_map('intval', array_column($p, 'valor'));
+sort($vals);
+ok($vals === [30, 150, 800],
+   'el bono prometido si se reemplaza entre premios, dio ' . implode('/', $vals));
+
+/* EL QUE SE APLICA ES EL ULTIMO PROMETIDO, no el mas viejo. Es el que el
+   jugador acaba de leer en el aviso. */
+$limpiarW();
+$pdo->prepare("INSERT INTO usuarios (id, username, balance, coins, bonus)
+               VALUES (990601, ?, 0, 0, 0)")->execute([$W]);
+$pdo->prepare("INSERT INTO bonos_pendientes (usuario, tipo, valor, prometido_por, creado_en)
+               VALUES (?, 'pct', 20, 'test', NOW() - INTERVAL 2 DAY)")->execute([$W]);
+$pdo->prepare("INSERT INTO bonos_pendientes (usuario, tipo, valor, prometido_por, creado_en)
+               VALUES (?, 'pct', 25, 'test', NOW())")->execute([$W]);
+$monto = crmnotif_bono_aplicar_en_recarga($pdo, $W, null, 1000);
+ok($monto === 250, 'con dos pendientes se aplica el MAS NUEVO (250 = 25% de 1000), dio ' . var_export($monto, true));
+
+$limpiarW();
+
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);
 exit($fail > 0 ? 1 : 0);

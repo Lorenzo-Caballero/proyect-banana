@@ -16,6 +16,15 @@ declare(strict_types=1);
 
 defined('CRMNOTIF_BONO_TIPOS') || define('CRMNOTIF_BONO_TIPOS', ['fichas', 'pct', 'giro']);
 
+/* LOS BONOS QUE EL JUGADOR GANO, no los que le mandamos. Los premios de la
+   ruleta viven en la misma tabla que los bonos prometidos, pero no son lo
+   mismo: uno lo giró él y lo vio en pantalla, el otro se lo mandamos nosotros.
+   Por eso un bono nuevo no los da de baja (ver crmnotif_bono_crear).
+
+   Estos son los valores de `prometido_por` que escribe api/ruleta.php. Si
+   aparece un premio nuevo que el jugador gana, va acá. */
+defined('BONO_GANADO') || define('BONO_GANADO', ['ruleta', 'ruleta_cortesia']);
+
 if (!function_exists('crmnotif_alcance_inactivos')) {
 
     /**
@@ -770,6 +779,59 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
 
         $pdo->beginTransaction();
         try {
+            /* EL BONO NUEVO REEMPLAZA AL ANTERIOR, NO SE SUMA.
+               EL PEDIDO (Nahuel, 19/09/2026): *"si a una persona le mandamos un
+               bono del 20% y no lo usa, al siguiente día cuando le mandamos uno
+               del 25%, ese debe ser el utilizable, no el anterior. El anterior
+               debe ser dado de baja antes de enviarle uno, porque si no las
+               personas tardarían una semana en volver y sumarían bonos
+               superiores al 100%, cosa que no nos sería muy rentable"*.
+
+               Sin esto la plata se apila de dos maneras distintas:
+                 · `crmnotif_bono_aplicar_en_recarga` toma UNO por carga y el
+                   MAS VIEJO (ORDER BY creado_en ASC LIMIT 1), así que el 20%
+                   de ayer le gana al 25% de hoy -- justo al revés de lo que
+                   corresponde;
+                 · y el que no se aplicó queda pendiente para la carga
+                   siguiente, así que al final se pagan todos igual, de a uno.
+
+               SE DA DE BAJA SOLO SU MISMA FAMILIA. `fichas` y `pct` son plata
+               sobre la carga y compiten entre sí; un `giro` de la ruleta es
+               otra cosa y no tiene por qué perderse porque le llegó un
+               porcentaje. Ese es el único motivo de la lista de tipos.
+
+               Y NO SE TOCA LO QUE EL JUGADOR GANO. El premio de la ruleta NO
+               se acredita en ningún otro lado: esta fila ES el premio
+               (`ruleta.php` dejó de sumar a `usuarios.bonus` el 18/09/2026).
+               Si un bono de campaña lo diera de baja, al jugador le
+               desaparecerían sin aviso las fichas que giró y vio en pantalla
+               -- y al revés, un premio chico le comería un 25% prometido.
+               Lo que el dueño pidió que no se acumule es lo que le MANDAMOS,
+               y el motivo que dio --sumar bonos superiores al 100%-- es de
+               porcentajes, no de un premio de monto fijo y acotado por la
+               tabla de la ruleta.
+
+               O sea: un premio de ruleta no reemplaza a nadie y nadie lo
+               reemplaza a él; hace cola y entra en la carga siguiente. Los
+               dos pendientes NO se suman en una misma carga, porque
+               `crmnotif_bono_aplicar_en_recarga` aplica UNO por carga.
+
+               Queda como 'cancelado' y no borrado: se ve en la ficha del
+               jugador y en Auditoría qué se le prometió y qué lo reemplazó. */
+            $reemplazados = 0;
+            $ganado = in_array($prometidoPor, BONO_GANADO, true);
+            if ($tipo !== 'giro' && !$ganado) {
+                $marcas = implode(',', array_fill(0, count(BONO_GANADO), '?'));
+                $up = $pdo->prepare(
+                    "UPDATE bonos_pendientes
+                        SET estado = 'cancelado'
+                      WHERE usuario = ? AND estado = 'pendiente' AND tipo IN ('fichas','pct')
+                        AND prometido_por NOT IN ($marcas)"
+                );
+                $up->execute(array_merge([mb_substr($usuario, 0, 50)], BONO_GANADO));
+                $reemplazados = $up->rowCount();
+            }
+
             $pdo->prepare(
                 "INSERT INTO bonos_pendientes (usuario, tipo, valor, prometido_por, notificacion_id)
                  VALUES (?,?,?,?,?)"
@@ -783,7 +845,7 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
             }
 
             $pdo->commit();
-            return ['ok' => true, 'id' => $bonoId];
+            return ['ok' => true, 'id' => $bonoId, 'reemplazados' => $reemplazados];
         } catch (Throwable $e) {
             if ($pdo->inTransaction()) { $pdo->rollBack(); }
             error_log('crmnotif_bono_crear: ' . $e->getMessage());
@@ -904,10 +966,16 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
            aparecia nunca. El deposito solo-bono despues DEBITA ese mismo
            monto del contador (bono_debitado), asi que no se juega dos veces. */
         try {
+            /* EL MAS NUEVO, no el mas viejo. Decia `creado_en ASC`, asi que
+               con dos pendientes se aplicaba el de ayer y no el de hoy. Desde
+               que crear uno da de baja el anterior deberia haber siempre uno
+               solo, pero el orden importa igual: si por una carrera o por un
+               arreglo a mano quedaran dos, el que vale es el ULTIMO que se le
+               prometio -- que es el que el jugador acaba de leer en el aviso. */
             $st = $pdo->prepare(
                 "SELECT id, tipo, valor FROM bonos_pendientes
                   WHERE usuario = ? AND estado = 'pendiente' AND tipo IN ('fichas','pct')
-                  ORDER BY creado_en ASC LIMIT 1"
+                  ORDER BY creado_en DESC, id DESC LIMIT 1"
             );
             $st->execute([$usuario]);
             $b = $st->fetch(PDO::FETCH_ASSOC);

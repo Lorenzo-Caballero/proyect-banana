@@ -306,26 +306,24 @@ if (!function_exists('fid_tramos')) {
             return false;
         }
 
-        // 2) El bono: mejorar el de fidelización pendiente, o crear uno.
-        //    NUNCA se baja un % ya prometido: si por config quedó un 50%
-        //    pendiente y este escalón dice 30%, se respeta el 50 prometido.
+        /* 2) El bono. SIEMPRE se crea uno nuevo, y crearlo da de baja el
+              anterior (crmnotif_bono_crear).
+
+              ANTES SE "MEJORABA EN EL LUGAR": se buscaba el pendiente de la
+              campaña y se le subía el valor, sin bajarlo nunca. Daba el mismo
+              resultado mientras la escalera subiera, pero tenía dos problemas:
+              no dejaba rastro de que un 20% había sido reemplazado por un 25%
+              --en la ficha y en Auditoría aparecía uno solo, como si siempre
+              hubiera sido 25--, y no tocaba los bonos de OTRO origen, así que
+              un bono manual viejo seguía compitiendo con el de la campaña.
+
+              Consecuencia que conviene conocer: si se reconfiguran los
+              escalones hacia abajo, el bono pendiente de alguien PUEDE bajar.
+              Es lo pedido: manda el último que se le prometió, que es el que
+              el jugador acaba de leer en el aviso. */
         $bonoId = null;
         try {
-            $st = $pdo->prepare(
-                "SELECT id, valor FROM bonos_pendientes
-                  WHERE usuario = ? AND estado = 'pendiente' AND tipo = 'pct'
-                    AND prometido_por = 'fidelizacion'
-                  ORDER BY id DESC LIMIT 1"
-            );
-            $st->execute([$usuario]);
-            $b = $st->fetch(PDO::FETCH_ASSOC);
-            if ($b) {
-                $bonoId = (int)$b['id'];
-                if ((int)$b['valor'] < $tramo['pct']) {
-                    $pdo->prepare("UPDATE bonos_pendientes SET valor = ? WHERE id = ? AND estado = 'pendiente'")
-                        ->execute([$tramo['pct'], $bonoId]);
-                }
-            } elseif (function_exists('crmnotif_bono_crear')) {
+            if (function_exists('crmnotif_bono_crear')) {
                 $r = crmnotif_bono_crear($pdo, $usuario, 'pct', $tramo['pct'], 'fidelizacion');
                 if (!empty($r['ok'])) { $bonoId = (int)$r['id']; }
             }

@@ -123,10 +123,21 @@ $pdo->prepare("UPDATE usuarios SET ultima_actividad = DATE_SUB(NOW(), INTERVAL 8
 // misma racha: los candados viejos apuntan a OTRO actividad_ref, este es nuevo
 fid_correr($pdo);
 $b = $bono();
-ok($b !== null && (int)$b['valor'] === 50 && $b['estado'] === 'pendiente', 'el MISMO bono mejorado a 50 (no hay dos)');
-$st = $pdo->prepare("SELECT COUNT(*) FROM bonos_pendientes WHERE usuario = ? AND tipo = 'pct' AND prometido_por = 'fidelizacion'");
+ok($b !== null && (int)$b['valor'] === 50 && $b['estado'] === 'pendiente', 'el bono vigente ahora es de 50');
+
+/* EL INVARIANTE ES CUANTOS QUEDAN PENDIENTES, no cuantas filas hay. Desde el
+   19/09/2026 el bono nuevo no "mejora" al anterior en el lugar: lo da de baja
+   y crea otro, asi que en la ficha y en Auditoria se ve que un 40% fue
+   reemplazado por un 50% en vez de aparecer uno solo como si siempre hubiera
+   sido 50. Lo que NO puede pasar es que queden dos cobrables. */
+$st = $pdo->prepare("SELECT COUNT(*) FROM bonos_pendientes
+                      WHERE usuario = ? AND tipo = 'pct' AND estado = 'pendiente'");
 $st->execute([$U]);
-ok((int)$st->fetchColumn() === 1, 'sigue habiendo UN solo bono de fidelización');
+ok((int)$st->fetchColumn() === 1, 'y hay UN solo bono cobrable, no dos');
+$st = $pdo->prepare("SELECT COUNT(*) FROM bonos_pendientes
+                      WHERE usuario = ? AND tipo = 'pct' AND estado = 'cancelado'");
+$st->execute([$U]);
+ok((int)$st->fetchColumn() >= 1, 'y el anterior quedo dado de baja, con rastro');
 $st = $pdo->prepare("SELECT COUNT(*) FROM ruleta_giros_cortesia WHERE usuario = ? AND estado = 'pendiente'");
 $st->execute([$U]);
 ok((int)$st->fetchColumn() === 1, 'giro de cortesía regalado');
