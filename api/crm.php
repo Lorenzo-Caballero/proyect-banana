@@ -1335,7 +1335,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
            el canal sirve es el de los ACTIVOS. Ver crmnotif_cobertura(). */
         if ($accion === 'notif_cobertura') {
             salir(['ok' => true,
-                   'cobertura' => crmnotif_cobertura($pdo, (int)($_GET['dias'] ?? 30))]);
+                   'cobertura' => crmnotif_cobertura($pdo, (int)($_GET['dias'] ?? 7))]);
         }
 
         if ($accion === 'notif_historial') {

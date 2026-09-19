@@ -198,11 +198,12 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
      * `dias` es la ventana de "activo": 30 por default, movible desde el CRM
      * porque "activo" significa cosas distintas mirando una semana o un mes.
      */
-    function crmnotif_cobertura(PDO $pdo, int $dias = 30): array
+    function crmnotif_cobertura(PDO $pdo, int $dias = 7): array
     {
         $dias = max(1, min(365, $dias));
         $out = [
             'dias' => $dias,
+            'pico' => null,
             'padron'    => ['total' => 0, 'con_app' => 0, 'pct' => 0.0],
             'activos'   => ['total' => 0, 'con_app' => 0, 'pct' => 0.0],
             'celulares' => ['android' => 0, 'sondearon_24h' => 0, 'sondearon_7d' => 0],
@@ -243,6 +244,35 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
                 "SELECT COUNT(*) $cel AND visto_en > DATE_SUB(NOW(), INTERVAL 1 DAY)")->fetchColumn();
             $out['celulares']['sondearon_7d'] = (int)$pdo->query(
                 "SELECT COUNT(*) $cel AND visto_en > DATE_SUB(NOW(), INTERVAL 7 DAY)")->fetchColumn();
+
+            /* EL BACKFILL QUE ARRUINA EL NUMERO SI NADIE LO DICE.
+               `ultima_actividad` se lleno de una para todo el padron cuando
+               entro la migracion 46: medido el 19/09/2026, 2.832 de 3.081
+               jugadores tienen la MISMA fecha (2026-09-03). O sea que
+               cualquier ventana que llegue hasta ahi cuenta como "activo" a
+               casi todo el mundo, y el porcentaje con app se desploma de 27%
+               a 0,7% sin que haya cambiado nada real.
+
+               Es la trampa clasica de este dato: el numero se ve peor cuanto
+               mas grande se hace la ventana, y la conclusion natural --"la app
+               no prende"-- es exactamente la contraria a la verdad.
+
+               Se detecta solo: si UN dia concentra mas del 20% del padron, no
+               es actividad, es un relleno. Se informa con su fecha para que la
+               pantalla avise cuando la ventana lo alcanza. */
+            $pico = $pdo->query(
+                "SELECT DATE(ultima_actividad) f, COUNT(*) n
+                   FROM usuarios WHERE ultima_actividad IS NOT NULL
+                  GROUP BY f ORDER BY n DESC LIMIT 1"
+            )->fetch(PDO::FETCH_ASSOC);
+            if ($pico && $out['padron']['total'] > 0
+                && (int)$pico['n'] > $out['padron']['total'] * 0.2) {
+                $out['pico'] = [
+                    'fecha' => (string)$pico['f'],
+                    'n'     => (int)$pico['n'],
+                    'dias_atras' => (int)((time() - strtotime((string)$pico['f'])) / 86400),
+                ];
+            }
         } catch (Throwable $e) {
             error_log('crmnotif_cobertura: ' . $e->getMessage());
         }
