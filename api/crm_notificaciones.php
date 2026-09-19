@@ -477,6 +477,112 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
             ];
         } catch (Throwable $e) { error_log('crmnotif_metricas/fid: ' . $e->getMessage()); }
 
+        /* ---- 6. ¿SIRVIO? de los que recibieron, cuantos cargaron ---- */
+        try { $out['efectividad'] = crmnotif_efectividad($pdo, 30); }
+        catch (Throwable $e) { error_log('crmnotif_metricas/efect: ' . $e->getMessage()); }
+
+        return $out;
+    }
+
+    /**
+     * ¿CUANTOS DE LOS QUE RECIBIERON UN AVISO CARGARON DESPUES?
+     *
+     * EL PEDIDO (Nahuel, 19/09/2026): *"quiero ver qué tanta efectividad están
+     * teniendo. Es decir, a qué porcentaje de los que le mandamos notificación
+     * realmente cargaron"*.
+     *
+     * SE CUENTA SOBRE LOS QUE LA RECIBIERON, no sobre los que se les mandó. Un
+     * aviso encolado que nadie vio no le puede pedir nada a nadie -- y esa
+     * diferencia no es teórica: la fidelización mandó 600 y entregó 0.
+     *
+     * "Cargó después" es una carga acreditada entre la entrega y los 7 días
+     * siguientes. Se usa publicidad_sql_cargas(), la definición única de una
+     * carga en todo el CRM.
+     *
+     * HONESTIDAD SOBRE LO QUE MIDE: esto es CORRELACION, no causa. Un jugador
+     * que ya iba a cargar igual cuenta como convertido. Sirve para comparar
+     * TIPOS de aviso entre sí --cuál acompaña mejor una carga-- no para
+     * atribuirle la plata al aviso. Por eso se devuelve abierto por origen: la
+     * comparación entre filas dice algo; el número suelto, poco.
+     *
+     * Se calcula en PHP y no con un EXISTS correlacionado: son un par de miles
+     * de entregas y un par de miles de cargas, y cruzarlas acá es más rápido y
+     * mucho más fácil de leer que una consulta anidada sobre un UNION.
+     */
+    function crmnotif_efectividad(PDO $pdo, int $dias = 30): array
+    {
+        $dias = max(1, min(365, $dias));
+        /* La ventana TERMINA hace un día: a alguien que recibió el aviso hace
+           dos horas todavía no se le puede reprochar no haber cargado, y
+           contarlo como fracaso hunde el porcentaje sin decir nada. */
+        $out = ['dias' => $dias, 'total' => ['avisados' => 0, 'cargaron' => 0, 'pct' => 0.0],
+                'por_origen' => []];
+        try {
+            if (!function_exists('publicidad_sql_cargas')) { return $out; }
+
+            // 1) A quién le llegó, cuándo y de qué tipo era el aviso.
+            $st = $pdo->prepare(
+                "SELECT d.usuario, o.origen, MIN(o.creada_en) AS cuando
+                   FROM notificaciones o
+                   JOIN notificaciones_entregas e ON e.notificacion_id = o.id
+                   JOIN dispositivos d ON d.device_id = e.device_id
+                  WHERE o.creada_en >= DATE_SUB(NOW(), INTERVAL ? DAY)
+                    AND o.creada_en <  DATE_SUB(NOW(), INTERVAL 1 DAY)
+                    AND d.usuario IS NOT NULL AND d.usuario <> ''
+                  GROUP BY d.usuario, o.origen"
+            );
+            $st->execute([$dias]);
+            $avisos = $st->fetchAll(PDO::FETCH_ASSOC);
+            if (!$avisos) { return $out; }
+
+            // 2) Las cargas del período, una vez.
+            $cargas = publicidad_sql_cargas();
+            $sc = $pdo->prepare(
+                "SELECT usuario, cuando FROM ($cargas) c
+                  WHERE cuando >= DATE_SUB(NOW(), INTERVAL ? DAY)"
+            );
+            $sc->execute([$dias + 7]);
+            $porUsuario = [];
+            foreach ($sc->fetchAll(PDO::FETCH_ASSOC) as $c) {
+                $porUsuario[mb_strtolower((string)$c['usuario'])][] = strtotime((string)$c['cuando']);
+            }
+
+            // 3) El cruce.
+            $orig = [];
+            $vistosTotal = [];
+            $cargoTotal  = [];
+            foreach ($avisos as $a) {
+                $u  = mb_strtolower((string)$a['usuario']);
+                $o  = (string)$a['origen'] ?: 'otro';
+                $ts = strtotime((string)$a['cuando']);
+                if (!isset($orig[$o])) { $orig[$o] = ['avisados' => [], 'cargaron' => []]; }
+                $orig[$o]['avisados'][$u] = true;
+                $vistosTotal[$u] = true;
+                foreach ($porUsuario[$u] ?? [] as $tc) {
+                    if ($tc > $ts && $tc < $ts + 7 * 86400) {
+                        $orig[$o]['cargaron'][$u] = true;
+                        $cargoTotal[$u] = true;
+                        break;
+                    }
+                }
+            }
+
+            $pc = fn(int $n, int $de) => $de > 0 ? round($n * 100 / $de, 1) : 0.0;
+            $out['total'] = ['avisados' => count($vistosTotal), 'cargaron' => count($cargoTotal),
+                             'pct' => $pc(count($cargoTotal), count($vistosTotal))];
+            foreach ($orig as $o => $v) {
+                $out['por_origen'][] = [
+                    'origen' => $o,
+                    'avisados' => count($v['avisados']),
+                    'cargaron' => count($v['cargaron']),
+                    'pct' => $pc(count($v['cargaron']), count($v['avisados'])),
+                ];
+            }
+            // De mayor a menor conversión: arriba lo que funciona.
+            usort($out['por_origen'], fn($a, $b) => $b['pct'] <=> $a['pct']);
+        } catch (Throwable $e) {
+            error_log('crmnotif_efectividad: ' . $e->getMessage());
+        }
         return $out;
     }
 

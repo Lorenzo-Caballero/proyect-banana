@@ -2151,6 +2151,27 @@
   .nv-spark{display:flex;align-items:flex-end;gap:3px;height:22px;margin-top:6px}
   .nv-spark i{flex:1;background:var(--violet);border-radius:2px 2px 0 0;min-height:2px;opacity:.75}
   .nv-spark i:last-child{opacity:1}
+  .nv-cob-toggle{background:none;border:0;color:var(--txt);cursor:pointer;padding:0;
+    display:flex;align-items:center;gap:6px;font-size:13px}
+  .nv-cob-toggle .ch{color:var(--muted);transition:transform .15s}
+  .nv-cob-toggle[aria-expanded="false"] .ch{transform:rotate(-90deg)}
+  /* El tablero más compacto: con la página entera scrolleando ya no compite
+     por el alto, pero tampoco tiene por qué ocupar media pantalla. */
+  .nv-emb-paso{padding:8px 10px}
+  .nv-emb-paso .n{font-size:18px}
+  .nv-emb-paso .q{display:none}
+  @media (min-width:1100px){ .nv-emb-paso .q{display:block} }
+  .nv-cob-card{padding:8px 11px}
+  .nv-cob-card .v{font-size:17px}
+  /* Efectividad por tipo de aviso: una fila por origen, ordenadas por lo que
+     mejor convierte. */
+  .nv-efect{display:flex;flex-direction:column;gap:5px;margin-top:10px}
+  .nv-ef-fila{display:flex;align-items:center;gap:9px;font-size:12px}
+  .nv-ef-nom{min-width:104px;font-weight:700}
+  .nv-ef-barra{flex:1;height:7px;background:var(--panel3);border-radius:99px;overflow:hidden}
+  .nv-ef-barra i{display:block;height:100%;background:var(--violet);border-radius:99px}
+  .nv-ef-num{min-width:118px;text-align:right;color:var(--muted);font-size:11px}
+
 
   @media (max-width:720px){ .nv-cob-grid{grid-template-columns:1fr} }
   .nv-cob-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
@@ -2171,6 +2192,24 @@
   .nv-tab:hover{color:var(--txt)}
   .nv-tab.on{color:var(--violet2);border-bottom-color:var(--violet)}
   .nv-body{flex:1;overflow-y:auto;min-height:0}
+  /* NOTIFICACIONES SCROLLEA ENTERA, no por dentro.
+     EL REPORTE (Nahuel, 19/09/2026): *"la parte de abajo, donde hay que
+     scrollear, ocupa menos de la mitad de la pantalla y no se puede ver bien...
+     preferiría que toda la página se pueda scrollear"*.
+
+     La causa: `.view-panel{overflow:hidden}` recorta el panel y `.nv-body`
+     tiene su propio `overflow-y:auto`, así que el contenido real vivía en lo
+     que sobraba después del tablero -- y el tablero se llevaba la mitad. Es
+     además el scroll anidado, que ya está descripto arriba como lo peor en
+     táctil: el dedo nunca sabe cuál de los dos se va a mover.
+
+     Es el MISMO arreglo que ya existe para el celular (`.app .view-panel`),
+     acá aplicado siempre y solo a esta vista. Va por ID a propósito: un id le
+     gana a `.view-panel` y a `.nv-body` sin depender del orden de la hoja, que
+     es exactamente el problema que documenta el bloque de `.app` más arriba. */
+  #viewNotificaciones{overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain}
+  #viewNotificaciones .nv-body{flex:0 0 auto;overflow-y:visible;min-height:0}
+
   .nv-pane{display:none;padding:18px 20px}
   .nv-pane.on{display:block}
   .nv-enviar-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 28px}
@@ -3343,10 +3382,17 @@
          si gano o pierdo, si sirve de algo, y si lo que mando llega. -->
     <div class="nv-cob" id="nvCobertura">
       <div class="nv-cob-cab">
-        <b>La app, de un vistazo</b>
+        <!-- PLEGABLE, y se acuerda. El tablero es lo primero que se mira al
+             entrar, pero una vez visto estorba: lo que se usa todos los días
+             es lo de abajo. Se recuerda por navegador (localStorage): es una
+             comodidad de quien mira, no un dato del negocio. -->
+        <button class="nv-cob-toggle" id="nvCobToggle" type="button" aria-expanded="true">
+          <span class="ch">▾</span> <b>La app, de un vistazo</b>
+        </button>
         <label class="nv-cob-dias">Activo = jugó en los últimos
           <input type="number" id="nvCobDias" min="1" max="365" value="7"> días</label>
       </div>
+      <div id="nvCobCuerpo">
 
       <!-- EL EMBUDO. Cada escalón que se pierde tiene un arreglo distinto, por
            eso van separados: no instalan (bono por instalar), no permiten (el
@@ -3377,6 +3423,19 @@
           <div class="v">—</div>
           <div class="sub">—</div>
         </div>
+        <!-- LA EFECTIVIDAD: de los que RECIBIERON un aviso, cuántos cargaron
+             después. Se cuenta sobre los que lo recibieron y no sobre los que
+             se les mandó: un aviso encolado que nadie vio no le puede pedir
+             nada a nadie. -->
+        <div class="nv-cob-card destacada" id="nvCardEfect" title="De los jugadores a los que la app les ENTREGÓ un aviso, cuántos hicieron una carga en los 7 días siguientes. Es correlación, no causa: alguien que ya iba a cargar igual cuenta. Sirve para comparar tipos de aviso entre sí.">
+          <div class="k">Cargaron después del aviso</div>
+          <div class="v">—</div>
+          <div class="sub">—</div>
+        </div>
+      </div>
+      <!-- Abierto por tipo: la comparación entre filas dice algo, el número
+           suelto dice poco. -->
+      <div class="nv-efect" id="nvEfect"></div>
       </div>
     </div>
 
@@ -13703,7 +13762,67 @@ ${cuando}.
       cf.querySelector(".sub").textContent =
         `cobrados de ${nf.format(f.pendientes + f.cobrados)} prometidos (${f.pct}%)`;
     }
+
+    /* ---------- 6. ¿sirvió? de los que lo RECIBIERON, cuántos cargaron ------
+       EL PEDIDO (Nahuel, 19/09/2026): *"a qué porcentaje de los que le mandamos
+       notificación realmente cargaron"*.
+
+       Se cuenta sobre los que lo RECIBIERON y no sobre los que se les mandó: un
+       aviso encolado que nadie vio no le puede pedir nada a nadie, y esa
+       diferencia no es teórica -- la fidelización mandó 600 y entregó 0. */
+    const ef = m.efectividad;
+    const cef = $("#nvCardEfect");
+    if(cef && ef){
+      const bajo = ef.total.avisados < 20;
+      cef.querySelector(".v").textContent = bajo ? "—" : ef.total.pct + "%";
+      cef.querySelector(".sub").textContent = bajo
+        ? `Todavía poca muestra (${nf.format(ef.total.avisados)} avisados en ${ef.dias} días)`
+        : `${nf.format(ef.total.cargaron)} de ${nf.format(ef.total.avisados)} cargaron dentro de los 7 días`;
+    }
+    const contEf = $("#nvEfect");
+    if(contEf && ef){
+      const NOM = {fidelizacion:"Fidelización", promo:"Promos", ruleta:"Ruleta",
+                   crm_bono:"Bonos del CRM", carga:"Avisos de carga", recargas:"Recargas",
+                   chatbot:"Chat", crm:"Del CRM", app:"Bono de la app",
+                   difusion:"Difusiones", multicuenta:"Multicuenta", retiro:"Retiros"};
+      /* Solo los tipos con muestra suficiente: una fila de "1 de 1 = 100%"
+         arriba de todo sería la conclusión más ruidosa y más falsa de la
+         pantalla. */
+      const filas = (ef.por_origen||[]).filter(o => o.avisados >= 10);
+      contEf.innerHTML = !filas.length ? "" :
+        `<div class="nv-ef-fila" style="color:var(--muted);font-size:11px">
+           <span class="nv-ef-nom">Por tipo de aviso</span>
+           <span class="nv-ef-barra" style="background:none"></span>
+           <span class="nv-ef-num">cargaron / avisados</span></div>`
+        + filas.map(o=>`<div class="nv-ef-fila">
+            <span class="nv-ef-nom">${esc(NOM[o.origen]||o.origen)}</span>
+            <span class="nv-ef-barra"><i style="width:${Math.min(100,o.pct)}%"></i></span>
+            <span class="nv-ef-num">${o.pct}% · ${nf.format(o.cargaron)} de ${nf.format(o.avisados)}</span>
+          </div>`).join("");
+    }
   }
+
+  /* El tablero se pliega y se acuerda. Es lo primero que se mira al entrar,
+     pero una vez visto estorba: lo que se usa todos los días es lo de abajo.
+     localStorage porque es una comodidad de quien mira, no un dato del
+     negocio; envuelto en try/catch porque en una ventana privada tira. */
+  (function(){
+    const btn = $("#nvCobToggle"), cuerpo = $("#nvCobCuerpo");
+    if(!btn || !cuerpo) return;
+    const LLAVE = "gp_nv_tablero";
+    let abierto = true;
+    try{ abierto = localStorage.getItem(LLAVE) !== "0"; }catch(e){}
+    const pintar = ()=>{
+      cuerpo.hidden = !abierto;
+      btn.setAttribute("aria-expanded", abierto ? "true" : "false");
+    };
+    pintar();
+    btn.addEventListener("click", ()=>{
+      abierto = !abierto;
+      try{ localStorage.setItem(LLAVE, abierto ? "1" : "0"); }catch(e){}
+      pintar();
+    });
+  })();
   $("#nvCobDias")?.addEventListener("change", nvCargarCobertura);
 
   // ---- Historial de notificaciones ya enviadas ----

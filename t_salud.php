@@ -101,6 +101,62 @@ chequear('una app que dejo de sondear cuenta como baja',
 chequear('la retencion usa la definicion unica de carga',
          str_contains($srcN, 'publicidad_sql_cargas()'));
 
+
+// ===========================================================================
+echo "\n=== Efectividad: de los que lo RECIBIERON, cuantos cargaron ===\n";
+
+/* EL PEDIDO (Nahuel, 19/09/2026): *"a que porcentaje de los que le mandamos
+   notificacion realmente cargaron"*. */
+$srcN = file_get_contents(__DIR__ . '/api/crm_notificaciones.php');
+$crmH = file_get_contents(__DIR__ . '/landing/crm.html');
+
+chequear('existe la medicion de efectividad',
+         str_contains($srcN, 'function crmnotif_efectividad('));
+
+/* SE CUENTA SOBRE LOS QUE LA RECIBIERON, no sobre los que se les mando. Un
+   aviso encolado que nadie vio no le puede pedir nada a nadie -- y la
+   diferencia no es teorica: la fidelizacion mando 600 y entrego 0. */
+chequear('se cuenta sobre los ENTREGADOS, no sobre los creados',
+         str_contains($srcN, 'JOIN notificaciones_entregas e ON e.notificacion_id = o.id')
+         && str_contains($srcN, 'JOIN dispositivos d ON d.device_id = e.device_id'),
+         'mandar no es llegar: 600 creadas y 0 entregadas ya paso');
+
+/* La ventana TERMINA hace un dia: a alguien que recibio el aviso hace dos
+   horas todavia no se le puede reprochar no haber cargado, y contarlo como
+   fracaso hunde el porcentaje sin decir nada. */
+chequear('no cuenta como fracaso al que lo recibio recien',
+         str_contains($srcN, "AND o.creada_en <  DATE_SUB(NOW(), INTERVAL 1 DAY)"));
+
+chequear('usa la definicion unica de una carga',
+         str_contains($srcN, 'publicidad_sql_cargas()'));
+chequear('y mira solo las cargas POSTERIORES al aviso',
+         str_contains($srcN, '$tc > $ts && $tc < $ts + 7 * 86400'));
+
+/* Abierto por tipo: la comparacion entre filas dice algo, el numero suelto
+   dice poco. Y una fila de "1 de 1 = 100%" arriba de todo seria la conclusion
+   mas ruidosa y mas falsa de la pantalla. */
+chequear('se abre por tipo de aviso',
+         str_contains($srcN, "'por_origen'") && str_contains($crmH, 'id="nvEfect"'));
+chequear('y los tipos con muestra chica no se muestran',
+         str_contains($crmH, 'o.avisados >= 10'),
+         'una fila de 1 de 1 = 100% seria la conclusion mas falsa de la pantalla');
+chequear('con pocos avisados en total tampoco se da un porcentaje',
+         str_contains($crmH, 'ef.total.avisados < 20'));
+
+echo "\n=== La pantalla scrollea entera, no por dentro ===\n";
+
+/* EL REPORTE: *"la parte de abajo, donde hay que scrollear, ocupa menos de la
+   mitad de la pantalla... preferiria que toda la pagina se pueda scrollear"*.
+   La causa: .view-panel recorta y .nv-body tiene su propio overflow, asi que
+   el contenido real vivia en lo que sobraba despues del tablero. */
+chequear('la vista entera scrollea',
+         str_contains($crmH, '#viewNotificaciones{overflow-y:auto'));
+chequear('y el cuerpo deja de tener su propio scroll',
+         str_contains($crmH, '#viewNotificaciones .nv-body{flex:0 0 auto;overflow-y:visible'),
+         'el scroll anidado hace que el dedo no sepa cual se va a mover');
+chequear('el tablero se puede plegar',
+         str_contains($crmH, 'id="nvCobToggle"') && str_contains($crmH, 'gp_nv_tablero'));
+
 $limpiar();
 
 $recarga = function (string $u, string $cuando, float $monto) use ($pdo) {
