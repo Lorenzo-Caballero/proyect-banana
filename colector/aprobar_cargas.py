@@ -1543,7 +1543,10 @@ def reportar_salud(ctx, solo_ver: bool) -> None:
                              data=PASADA, timeout=20_000)
         d = r.json() or {}
         for cual in (d.get("avisados") or []):
-            log.warning("salud: avise por Telegram que hace rato no podemos leer %s", cual)
+            # El server decide de que se trata (una lectura tapada por el WAF o
+            # una tarea que dejo de correr) y arma el Telegram; aca solo queda
+            # el rastro en el log, sin adivinar cual de los dos fue.
+            log.warning("salud: avise por Telegram que '%s' hace rato que no funciona", cual)
     except Exception as e:
         log.info("salud: no pude reportar la pasada: %s", str(e)[:120])
 
