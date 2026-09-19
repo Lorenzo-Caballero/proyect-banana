@@ -26,6 +26,11 @@ declare(strict_types=1);
 require __DIR__ . '/config.php';
 require __DIR__ . '/db.php';
 require __DIR__ . '/crm_lib.php';
+/* Para sellar el latido de abajo. Sin esto, `function_exists('cfg_crm_guardar')`
+   da false y el latido se convierte en un no-op SILENCIOSO -- que es exactamente
+   la clase de falla que el latido viene a detectar. Paso: se desplego el sello,
+   el cron siguio corriendo bien, y el indicador marco 'nunca corrio' igual. */
+require_once __DIR__ . '/config_crm.php';
 
 header('Content-Type: application/json; charset=utf-8');
 

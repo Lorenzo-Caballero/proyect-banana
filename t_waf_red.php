@@ -245,11 +245,26 @@ foreach (['fidelizacion' => 'fid_visto_en',
 }
 
 /* Y que cada tarea SELLE su latido, o la vigilancia mira una fecha que nadie
-   escribe y avisa para siempre. */
+   escribe y avisa para siempre.
+
+   NO ALCANZA CON QUE EL SELLO ESTE ESCRITO: tiene que poder EJECUTARSE. La
+   primera version de este test miraba solo que la clave apareciera en el
+   archivo, y paso en verde con el latido roto -- ninguno de los dos endpoints
+   cargaba `config_crm.php`, asi que `function_exists('cfg_crm_guardar')` daba
+   false y el sello se convertia en un no-op SILENCIOSO. El cron corria bien,
+   contestaba ok, y el indicador marcaba "nunca corrio" igual.
+
+   Es la misma clase de falla que el latido viene a detectar, cometida por el
+   latido. De ahi el segundo chequeo. */
 foreach (['api/difusiones_chat_procesar.php' => 'difusiones_visto_en',
           'api/ruleta_recordatorio.php'      => 'ruleta_aviso_visto_en'] as $arch => $clave) {
+    $src = file_get_contents(__DIR__ . '/' . $arch);
     chequear(basename($arch) . ' deja su latido',
-             str_contains(file_get_contents(__DIR__ . '/' . $arch), "'" . $clave . "'"));
+             str_contains($src, "'" . $clave . "'"));
+    chequear(basename($arch) . ' PUEDE sellarlo (carga config_crm)',
+             str_contains($src, "require_once __DIR__ . '/config_crm.php'")
+             || str_contains($src, "require __DIR__ . '/config_crm.php'"),
+             'sin eso function_exists da false y el sello es un no-op silencioso');
 }
 
 /* UNA PROMO APAGADA NO TIENE POR QUE CORRER. Sin esto el aviso saltaria por
