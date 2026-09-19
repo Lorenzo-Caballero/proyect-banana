@@ -86,6 +86,61 @@ try {
         $orden = "ORDER BY FIELD(estado,'revision','error','esperando','aprobada','cerrada'),
                            primera_vez DESC
                   LIMIT 200";
+        /* ¿YA FIGURA HECHA EN EL PANEL? Se agrega como `hecho_en_panel` a
+           cada solicitud que todavia esta abierta.
+
+           ES EL MISMO CONTROL QUE YA TENIAN LOS RETIROS, y faltaba de este
+           lado. Nuestras tablas dicen lo que quisimos hacer; el libro
+           (`operaciones_panel`, migracion 67) dice lo que PASO -- "estar en el
+           libro es la prueba de que la operacion se ejecuto, y no estar es la
+           prueba de que no".
+
+           El riesgo es simetrico al de los retiros y cuesta igual: si la carga
+           ya se ejecuto en el panel y aca sigue abierta, rechazarla cancela algo
+           que el jugador ya cobro, y aprobarla se la paga dos veces.
+
+           ACA EL CRUCE ES EXACTO, POR ID, no como el de retiros. Un retiro del
+           chat no tiene id en el panel y hay que buscarlo por usuario + monto +
+           una ventana de dos horas; una solicitud de carga ES del panel, asi que
+           su `request_id` y el `payment_id` del libro son el mismo numero.
+           Verificado el 19/09/2026 contra produccion: las 5 solicitudes
+           aprobadas matchean por id y con el mismo monto.
+
+           Si el libro no esta (migracion 67 sin correr) la lista sale igual, sin
+           el aviso: es informacion de mas, no un requisito. */
+        $enElLibro = function (array $items) use ($pdo): array {
+            $abiertas = [];
+            foreach ($items as $it) {
+                if (in_array((string)($it['estado'] ?? ''), ['esperando','revision','error'], true)) {
+                    $abiertas[] = (int)$it['request_id'];
+                }
+            }
+            if (!$abiertas) { return $items; }
+            try {
+                $marcas = implode(',', array_fill(0, count($abiertas), '?'));
+                $st = $pdo->prepare(
+                    "SELECT payment_id, monto, cuando FROM operaciones_panel
+                      WHERE tipo = 0 AND payment_id IN ($marcas)"
+                );
+                $st->execute($abiertas);
+                $porId = [];
+                foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $o) {
+                    $porId[(int)$o['payment_id']] = [
+                        'cuando'     => (string)$o['cuando'],
+                        'payment_id' => (int)$o['payment_id'],
+                        'monto'      => (float)$o['monto'],
+                    ];
+                }
+                foreach ($items as $k => $it) {
+                    $rid = (int)($it['request_id'] ?? 0);
+                    if (isset($porId[$rid])) { $items[$k]['hecho_en_panel'] = $porId[$rid]; }
+                }
+            } catch (Throwable $e) {
+                error_log('crm_peticiones: sin libro para cruzar: ' . $e->getMessage());
+            }
+            return $items;
+        };
+
         $st = null;
         try {
             $st = $pdo->query("SELECT $cols, rechazo_pedido_en FROM peticiones_carga $orden");
@@ -106,6 +161,7 @@ try {
             $r['demorada']   = ($r['estado'] === 'esperando' && $r['minutos'] >= CRMP_ESPERA_MIN);
             return $r;
         }, $st->fetchAll(PDO::FETCH_ASSOC));
+        $items = $enElLibro($items);
         salir(['ok' => true, 'items' => $items, 'espera_min' => CRMP_ESPERA_MIN]);
     }
 

@@ -262,6 +262,88 @@ $pdo->exec("DELETE FROM pagos WHERE id_unico = 'TEST-DOBLE'");
 $pdo->exec("DELETE FROM usuarios WHERE username = 'test_dob'");
 $pdo->exec("DELETE FROM movimientos WHERE usuario = 'test_dob'");
 
+/* =========================================================================
+   ¿YA FIGURA HECHA EN EL PANEL? El cruce contra el libro
+   =========================================================================
+   Los retiros ya cruzaban contra `operaciones_panel` y avisaban "esto ya
+   figura hecho en el panel". Los depositos no, y corren el MISMO riesgo con
+   los dos signos: si la carga ya se ejecuto alla y aca sigue abierta,
+   rechazarla cancela algo que el jugador ya cobro, y aprobarla se la paga dos
+   veces.
+
+   Aca el cruce es EXACTO, por id, y esa es la diferencia con los retiros: un
+   retiro del chat no tiene id en el panel y hay que buscarlo por usuario +
+   monto + una ventana de horas; una solicitud de carga ES del panel, asi que su
+   `request_id` y el `payment_id` del libro son el mismo numero. Verificado
+   contra produccion el 19/09/2026: las 5 solicitudes aprobadas matchean por id
+   y con el mismo monto.
+
+   Se prueba la MISMA consulta que arma el endpoint. crm_peticiones.php corre
+   auth al incluirse, asi que no se puede requerir desde un test. */
+echo "\n=== El cruce contra el libro del panel ===\n";
+
+$pdo->exec("DELETE FROM peticiones_carga WHERE request_id IN (90000101, 90000102, 90000103)");
+$pdo->exec("DELETE FROM operaciones_panel WHERE payment_id IN (90000101, 90000102, 90000103)");
+
+$meter = function (int $rid, string $estado) use ($pdo): void {
+    $pdo->prepare(
+        "INSERT INTO peticiones_carga (request_id, username, monto, estado, primera_vez)
+         VALUES (?, 'test_lib', 5000, ?, NOW())"
+    )->execute([$rid, $estado]);
+};
+$meter(90000101, 'esperando');   // abierta Y ejecutada en el panel -> tiene que avisar
+$meter(90000102, 'esperando');   // abierta y NO ejecutada         -> no avisa
+$meter(90000103, 'aprobada');    // ya resuelta por el sistema     -> no hace falta el aviso
+
+foreach ([90000101, 90000103] as $rid) {
+    $pdo->prepare(
+        "INSERT INTO operaciones_panel (payment_id, tipo, username, monto, cuando)
+         VALUES (?, 0, 'test_lib', 5000, NOW())"
+    )->execute([$rid]);
+}
+
+/* La consulta del endpoint: solo las ABIERTAS se cruzan. */
+$abiertas = $pdo->query(
+    "SELECT request_id FROM peticiones_carga
+      WHERE username = 'test_lib' AND estado IN ('esperando','revision','error')"
+)->fetchAll(PDO::FETCH_COLUMN);
+$marcas = implode(',', array_fill(0, count($abiertas), '?'));
+$st = $pdo->prepare("SELECT payment_id FROM operaciones_panel
+                      WHERE tipo = 0 AND payment_id IN ($marcas)");
+$st->execute($abiertas);
+$enLibro = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+
+chequear('la solicitud abierta que YA se ejecuto en el panel queda marcada',
+         in_array(90000101, $enLibro, true),
+         'sin esto, rechazarla cancela algo que el jugador ya cobro');
+chequear('la que no se ejecuto NO se marca',
+         !in_array(90000102, $enLibro, true),
+         'un aviso de mas en cada fila se vuelve ruido y se deja de leer');
+chequear('y las ya resueltas ni se cruzan',
+         !in_array(90000103, $enLibro, true),
+         'el aviso es para decidir, y sobre una aprobada ya no hay nada que decidir');
+
+/* UN RETIRO CON EL MISMO ID NO CUENTA. `tipo` es lo unico que separa las dos
+   mitades del libro (0 deposito, 1 retiro) y olvidarlo haria que un retiro
+   viejo marque una carga como "ya hecha". */
+$pdo->prepare("UPDATE operaciones_panel SET tipo = 1 WHERE payment_id = 90000101")->execute();
+$st->execute($abiertas);
+$soloRetiro = array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+chequear('una operacion de RETIRO no marca una carga como hecha',
+         !in_array(90000101, $soloRetiro, true),
+         'tipo=0 es deposito y tipo=1 retiro: el filtro no es opcional');
+
+$pdo->exec("DELETE FROM peticiones_carga WHERE username = 'test_lib'");
+$pdo->exec("DELETE FROM operaciones_panel WHERE payment_id IN (90000101, 90000102, 90000103)");
+
+/* Y que el endpoint lo haga de verdad, no solo que la consulta sirva. */
+$srcP = file_get_contents(__DIR__ . '/api/crm_peticiones.php');
+chequear('el endpoint cruza contra el libro',
+         str_contains($srcP, 'hecho_en_panel') && str_contains($srcP, 'tipo = 0 AND payment_id IN'));
+chequear('y la pantalla lo muestra',
+         str_contains(file_get_contents(__DIR__ . '/landing/crm.html'),
+                      'p.hecho_en_panel'));
+
 limpiar($pdo);
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);
 exit($fail > 0 ? 1 : 0);

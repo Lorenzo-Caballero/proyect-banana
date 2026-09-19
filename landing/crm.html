@@ -9390,6 +9390,12 @@
           ${p.titular ? " · a nombre de " + esc(p.titular) : ""}
         </div>
         ${motivo ? `<div class="cr-sub" style="opacity:.8">${esc(motivo)}</div>` : ""}
+        ${p.hecho_en_panel ? `<div class="rr-yaesta">⚠️ <b>Ojo: esto ya figura hecho en el panel.</b>
+             Entraron ${money(p.hecho_en_panel.monto)} el
+             ${esc(String(p.hecho_en_panel.cuando).slice(5,16))}
+             (pago ${p.hecho_en_panel.payment_id}).
+             Si es la misma, <b>rechazarla le cancela algo que ya cobró</b> y aprobarla
+             se la paga dos veces — cerrala.</div>` : ""}
       </div>`;
     }).join("");
 
