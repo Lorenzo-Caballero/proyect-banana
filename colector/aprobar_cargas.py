@@ -1044,7 +1044,7 @@ def _libro_toca() -> bool:
         return True          # ante la duda, sincronizar: es una lectura
 
 
-def _libro_paginas(ctx, tipo: int, dias: int, max_paginas: int = 400) -> list:
+def _libro_paginas(ctx, tipo: int, dias: int, max_paginas: int = 2000) -> list:
     """Todas las paginas del historial para un tipo (0 deposito, 1 retiro).
 
     PAGINAR NO ES OPCIONAL: el endpoint devuelve `count` filas por pagina, asi
@@ -1064,8 +1064,12 @@ def _libro_paginas(ctx, tipo: int, dias: int, max_paginas: int = 400) -> list:
     `sincronizar_libro` lo guardaba como si estuviera completo.
 
     DOS CAMBIOS, y el segundo importa mas que el primero:
-      - el tope sube a 400 paginas (20.000 filas), que cubre con margen un
-        backfill de 400 dias del mes mas movido que tuvo el negocio;
+      - el tope sube a 2.000 paginas (100.000 filas). Se subio en dos pasos y
+        el aviso nuevo fue el que lo guio: con 400 paginas el backfill trajo
+        20.000 depositos y AVISO que seguia truncado -- noviembre, diciembre y
+        enero completos, febrero en adelante todavia en cero. Sin ese aviso se
+        habria dado por terminado otra vez. La pasada normal mira 30 dias
+        (~130 depositos, 3 paginas), asi que nunca se acerca al tope;
       - y si ALGUNA VEZ se alcanza, se avisa fuerte en vez de devolver en
         silencio. Un tope que se toca deja de ser un limite de seguridad y pasa
         a ser una mentira sobre los datos.
