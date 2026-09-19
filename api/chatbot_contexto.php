@@ -938,14 +938,32 @@ if (!function_exists('chatbot_contexto_dinamico')) {
            borra la fila (es dato del cliente) pero no entra al prompt. */
         $tono = CB_DEF_TONO;
 
-        /* juego_desc dejó de ser un campo del CRM (pasó al contexto fijo). Si
-           un operador lo había personalizado, ese texto NO se tira: se suma
-           acá como información suya. Sin esto, al desplegar el cambio el bot
-           perdería en silencio lo que ese cliente había escrito. */
-        $juego = trim((string)($campos['juego_desc'] ?? ''));
-        if ($juego !== '' && $juego !== trim(CB_DEF_JUEGO)) {
-            $extra = $extra === '' ? $juego : $extra . "\n" . $juego;
-        }
+        /* `juego_desc` YA NO ENTRA AL PROMPT, y sacarlo fue el arreglo de un
+           problema real.
+
+           Cuando "de que trata el juego" paso al contexto fijo, este campo dejo
+           de editarse desde el CRM pero se siguio inyectando "por si un
+           operador lo habia personalizado", para no perderle el texto a nadie.
+           La intencion era buena y el resultado fue un prompt fantasma: 4.134
+           caracteres que nadie ve, nadie puede editar y nadie audita, sumados
+           como "informacion del operador" en cada conversacion.
+
+           LO QUE DECIA EL NUESTRO, medido el 19/09/2026:
+             · *"El minimo por carga es 100 fichas"* y el ejemplo *"¿Cual es el
+               minimo?" -> 100*, con `lim_carga_min` en 1.000. El bot contestaba
+               100, el jugador pedia ese monto y el sistema se lo rechazaba.
+             · Y peor: *"NO le pidas que transfiera nada para esto"* y
+               *"¿Tengo que transferir?" -> Para esto no"*, cuando las reglas
+               fijas dicen "CARGAR FICHAS = QUE TRANSFIERA. Es el unico camino,
+               no hay otro". Describia un producto que no existe.
+
+           O sea el mismo incidente que ya motivo que las reglas fijas vayan
+           ULTIMAS --alguien escribio "cargaselo directo" en un campo libre y el
+           bot ofrecia fichas sin cobrar-- pero por una puerta que ni siquiera
+           se podia abrir para mirar.
+
+           Lo que el operador SI edita sigue entrando: `reglas_extra`, arriba.
+           Eso se ve y se cambia desde el CRM, que es la diferencia. */
 
         $p  = "Sos {$nombre}, del equipo de atención al cliente. Ayudás a los "
             . "jugadores con dudas y con la carga de fichas.\n\n";

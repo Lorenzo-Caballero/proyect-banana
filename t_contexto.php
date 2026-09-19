@@ -131,20 +131,36 @@ chequear('ni una linea suelta de minimo o maximo',
          !str_contains($vacio, 'Carga MINIMA') && !str_contains($vacio, 'Retiro MINIMO')
          && !str_contains($vacio, 'Carga MAXIMA'));
 
-/* LOS LIMITES LE GANAN AL TEXTO DEL OPERADOR, y esto no es teorico.
-   El 19/09/2026 `juego_desc` decia "El minimo por carga es 100 fichas" y traia
-   el ejemplo *"¿cual es el minimo?" -> 100*, mientras lim_carga_min estaba en
-   1.000. El bot contesto 100, el jugador pidio ese monto y el sistema se lo
-   rechazo. El orden ya era correcto (los limites van DESPUES del texto), pero
-   un ejemplo de respuesta explicito le gana igual: hace falta decirlo. */
-$contradice = chatbot_armar_prompt(
+/* EL PROMPT FANTASMA: `juego_desc` NO ENTRA MAS.
+   Dejo de ser un campo del CRM cuando "de que trata el juego" paso al contexto
+   fijo, pero se seguia inyectando "por si un operador lo habia personalizado".
+   Resultado, medido el 19/09/2026 en produccion: 4.134 caracteres que nadie ve,
+   nadie puede editar y nadie audita, sumados a cada conversacion -- y decian
+   "El minimo por carga es 100 fichas" (con el limite en 1.000) y "NO le pidas
+   que transfiera nada para esto" (cuando transferir es EL unico camino). */
+$fantasma = chatbot_armar_prompt(
     ['bot_nombre' => '', 'bot_tono' => '',
-     'juego_desc' => 'El minimo por carga es 100 fichas.',
+     'juego_desc' => 'FRASE_FANTASMA_QUE_NO_TIENE_QUE_APARECER',
      'reglas_extra' => ''],
     ['carga_min' => 1000]
 );
-chequear('el numero viejo del operador sigue en el prompt (no se borra su texto)',
-         str_contains($contradice, '100 fichas'));
+chequear('juego_desc NO se inyecta al prompt',
+         !str_contains($fantasma, 'FRASE_FANTASMA_QUE_NO_TIENE_QUE_APARECER'),
+         'un texto que no se puede ver ni editar desde el CRM no puede estar '
+         . 'dandole instrucciones al bot');
+
+/* LOS LIMITES LE GANAN AL TEXTO DEL OPERADOR. `reglas_extra` SI sigue entrando
+   --se ve y se edita desde el CRM-- asi que la contradiccion sigue siendo
+   posible por ese lado, y por eso la regla de precedencia tiene que estar
+   escrita y no depender solo del orden. */
+$contradice = chatbot_armar_prompt(
+    ['bot_nombre' => '', 'bot_tono' => '', 'juego_desc' => '',
+     'reglas_extra' => 'El minimo por carga es 100 fichas.'],
+    ['carga_min' => 1000]
+);
+chequear('lo que el operador SI edita sigue llegando al prompt',
+         str_contains($contradice, '100 fichas'),
+         'reglas_extra no se toca: es su campo y lo ve en el CRM');
 chequear('pero el limite de verdad aparece DESPUES',
          strpos($contradice, '1.000') > strpos($contradice, '100 fichas'),
          'lo ultimo pesa mas: si el limite fuera primero, ganaria el texto viejo');
