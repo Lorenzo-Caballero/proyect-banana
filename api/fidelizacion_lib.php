@@ -191,6 +191,15 @@ if (!function_exists('fid_tramos')) {
                FROM usuarios u
               WHERE u.ultima_actividad IS NOT NULL
                 AND u.is_banned = 0
+                /* Y EL BLOQUEO NUESTRO, que es otro. is_banned es el flag de
+                   ganamos; bloqueado es el que pone el operador desde el CRM
+                   --por comprobantes truchos, multicuenta, lo que sea-- y es
+                   el que se usa de verdad.
+                   Medido el 19/09/2026 en la primera pasada automatica: 4 de
+                   los 14 avisados estaban bloqueados aca, con motivos como
+                   cuenta trucha o comprobantes truchos escritos a mano por
+                   Nahuel. Les estabamos ofreciendo un bono para que vuelvan. */
+                AND u.bloqueado = 0
                 AND u.ultima_actividad <= DATE_SUB(NOW(), INTERVAL ? DAY)"
             . ($diasMax > 0 ? " AND u.ultima_actividad >= DATE_SUB(NOW(), INTERVAL "
                               . $diasMax . " DAY)" : "")

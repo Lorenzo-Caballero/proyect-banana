@@ -281,6 +281,29 @@ cfg_crm_guardar($pdo, ['fid_dias_max' => '0'], 'test');
 fid_correr($pdo, 50);
 ok($bonoDe($V) !== null, 'con el tope en 0 (sin tope) vuelve a entrar');
 
+echo "
+== A UN BLOQUEADO NO SE LE OFRECE NADA ==
+";
+
+/* Medido el 19/09/2026 en la primera pasada automatica: 4 de los 14 avisados
+   estaban bloqueados en el CRM, con motivos como cuenta trucha o comprobantes
+   truchos escritos a mano por Nahuel -- y les estabamos ofreciendo un bono
+   para que vuelvan.
+   El motor miraba `is_banned` (el flag de ganamos) y no `bloqueado` (el que
+   pone el operador desde el CRM, que es el que se usa de verdad). */
+$limpiar2();
+$pdo->prepare("INSERT INTO usuarios (id, username, balance, coins, bonus, tiene_app, notificaciones, bloqueado, ultima_actividad)
+               VALUES (990502, ?, 0, 0, 0, 1, 1, 1, DATE_SUB(NOW(), INTERVAL 3 DAY))")->execute([$V]);
+$pdo->prepare("INSERT INTO dispositivos (device_id, usuario, plataforma, permitido)
+               VALUES ('t-dev-fid-2', ?, 'android', 1)")->execute([$V]);
+cfg_crm_guardar($pdo, ['fid_publico' => 'app', 'fid_dias_max' => '30'], 'test');
+fid_correr($pdo, 50);
+ok($bonoDe($V) === null, 'bloqueado en el CRM: no entra aunque tenga la app');
+
+$pdo->prepare("UPDATE usuarios SET bloqueado = 0 WHERE username = ?")->execute([$V]);
+fid_correr($pdo, 50);
+ok($bonoDe($V) !== null, 'y al desbloquearlo vuelve a entrar');
+
 cfg_crm_guardar($pdo, ['fid_publico' => 'app', 'fid_dias_max' => '30'], 'test');
 $limpiar2();
 
