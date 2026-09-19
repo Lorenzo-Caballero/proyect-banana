@@ -13271,10 +13271,17 @@
       if(promesa){
         /* Se dice QUE quedo prometido y CUANDO se cobra: el operador acaba de
            decirle algo al jugador por el chat y tiene que poder confirmar que
-           coincide con lo que hizo. */
-        toast(bt === "pct"    ? `Prometido: ${monto}% en su próxima carga`
+           coincide con lo que hizo.
+
+           Y SE DICE SI DIO DE BAJA OTRO. Desde el 19/09/2026 un bono nuevo
+           reemplaza al pendiente en vez de sumarse (pedido de Nahuel: la gente
+           acumulaba bonos por encima del 100%). Eso esta bien, pero el
+           operador tiene que enterarse: acaba de prometerle 20% a alguien que
+           tenia 50% esperando, y si no lo ve se lo baja sin querer. */
+        toast((bt === "pct"   ? `Prometido: ${monto}% en su próxima carga`
             : bt === "giro"   ? "Le queda un giro de ruleta gratis"
-            :                   `Prometidas ${nf.format(monto)} fichas para su próxima carga`);
+            :                   `Prometidas ${nf.format(monto)} fichas para su próxima carga`)
+            + (d.reemplazados ? " · se dio de baja el bono que tenía pendiente" : ""));
       }
       else if(st.accion==="cargar_bono"){
         // al_juego dice si el deposito quedo encolado; si no (p.ej. habia una
@@ -13965,7 +13972,11 @@ ${cuando}.
     if(tipo!=="giro" && valor<=0){ toast("Poné un valor mayor a 0"); return; }
     const d = await jpost({accion:"bono_crear", usuario, tipo, valor});
     if(d.ok){
-      toast("Bono prometido");
+      // Si reemplazo uno pendiente hay que decirlo, no descubrirlo despues en
+      // la lista de abajo (ver el toast de la ficha del jugador).
+      toast(d.reemplazados
+        ? "Bono prometido · se dio de baja el que tenía pendiente"
+        : "Bono prometido");
       $("#nvBUsuario").value=""; $("#nvBValor").value="";
       cargarBonos();
     } else { toast(d.error || "No se pudo crear"); }
