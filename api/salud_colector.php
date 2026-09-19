@@ -72,8 +72,21 @@ const SC_LIMITES = [
                  'duele' => 'No vamos a enterarnos si nos estamos quedando sin fichas para pagar.'],
     /* Este espeja cada hora, así que el umbral es otro. Y es el más caro de
        los cuatro: si la billetera del panel cambió y el espejo no corrió, el
-       chat le sigue dictando la anterior a cada jugador que quiere cargar. */
-    'bancos' => ['min' => 240, 'que' => 'la billetera de cobro del panel',
+       chat le sigue dictando la anterior a cada jugador que quiere cargar.
+
+       `clave` propia porque este no lo reporta el colector: lo escribe
+       `bancos_sync.php` cuando corre su cron, y esa clave ya existía desde la
+       migración 47 exactamente para esto.
+
+       NO MIRAR `bancos_ganamos.visto_en`: es `ON UPDATE CURRENT_TIMESTAMP`, o
+       sea que mide cuándo CAMBIÓ la billetera, no cuándo la leímos -- MySQL no
+       lo dispara si la fila queda igual. Con una billetera estable esa columna
+       se queda en la fecha del día que se cargó (medido: 31/08, con el sync
+       corriendo), y un chequeo apoyado ahí avisaría para siempre. Es el mismo
+       error que ya costó `usuarios.actualizado_en`, y la migración 47 lo deja
+       escrito: por eso existe `bancos_sync_en` aparte. */
+    'bancos' => ['min' => 240, 'clave' => 'bancos_sync_en',
+                 'que' => 'la billetera de cobro del panel',
                  'duele' => 'Si cambió el alias, el chat le está dictando el viejo y esa plata no se acredita.'],
 ];
 
@@ -93,6 +106,9 @@ $body = json_decode(file_get_contents('php://input'), true) ?: $_POST;
 /* ---- 1. Guardar lo que el colector pudo hacer ---------------------------- */
 $guardar = [];
 foreach (array_keys(SC_LIMITES) as $k) {
+    // 'bancos' no lo reporta el colector (lo escribe su propio cron): si
+    // llegara en el body seria un dato inventado.
+    if (isset(SC_LIMITES[$k]['clave'])) { continue; }
     $estado = trim((string)($body[$k] ?? ''));
     if ($estado === '') { continue; }
     /* SOLO UNA LECTURA BUENA MUEVE LA FECHA. Un 'waf' o un 'parcial' no es un
@@ -107,28 +123,6 @@ foreach (array_keys(SC_LIMITES) as $k) {
 if (isset($body['challenges'])) {
     $guardar['colector_challenges'] = (string)max(0, (int)$body['challenges']);
 }
-/* ---- 1b. La billetera del panel, que no la reporta nadie ----------------
-   `bancos_ganamos` la espeja `sync_bancos.py`, que corre por su propio cron y
-   no pasa por acá. Se mira la tabla directamente, y eso es MEJOR que un
-   reporte: el chequeo no depende de que el que tiene que correr, corra -- que
-   es justamente lo que falló.
-
-   NO ES UN DATO DE CONSULTA. `rl_banco_panel()` le GANA a lo configurado en el
-   panel del dueño, porque el jugador que pide un depósito adentro de la
-   plataforma ve la billetera del panel y el chat tiene que decir lo mismo. Un
-   espejo viejo significa que si se cambió la billetera, el chat sigue dictando
-   la anterior y esa plata no se acredita nunca.
-
-   El 18/09/2026 llevaba 18 días sin actualizarse: el cron apuntaba a un
-   contenedor apagado y fallaba una vez por hora en un log que nadie leía. */
-try {
-    $bv = $pdo->query("SELECT MAX(visto_en) FROM bancos_ganamos")->fetchColumn();
-    $bt = ($bv !== false && $bv !== null) ? strtotime((string)$bv) : false;
-    if ($bt !== false) {
-        $guardar['colector_bancos_en'] = date('Y-m-d H:i:s', $bt);
-    }
-} catch (Throwable $e) { /* sin migracion 47: no se chequea, no se rompe */ }
-
 $guardar['colector_visto_en'] = date('Y-m-d H:i:s');
 
 try {
@@ -145,7 +139,7 @@ $estado   = [];
 foreach (SC_LIMITES as $k => $lim) {
     $edad = null;
     try {
-        $v = trim((string)cfg_crm($pdo, 'colector_' . $k . '_en'));
+        $v = trim((string)cfg_crm($pdo, $lim['clave'] ?? ('colector_' . $k . '_en')));
         if ($v !== '') {
             $t = strtotime($v);
             if ($t !== false) { $edad = max(0, (int)floor((time() - $t) / 60)); }

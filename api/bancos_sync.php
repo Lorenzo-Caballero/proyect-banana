@@ -56,11 +56,18 @@ try {
     $pdo->beginTransaction();
 
     $vistos = [];
+    /* `visto_en = NOW()` EXPLICITO. La columna es ON UPDATE CURRENT_TIMESTAMP,
+       y MySQL no lo dispara cuando la fila queda IGUAL -- que es el caso normal:
+       la billetera no cambia nunca. Sin esta linea la columna medía cuándo
+       CAMBIÓ la billetera y no cuándo la leímos, y se quedaba clavada en la
+       fecha del día que se cargó (medido el 18/09/2026: decía 31/08 con el sync
+       corriendo). Mismo error que `usuarios.actualizado_en`, mismo arreglo. */
     $up = $pdo->prepare(
         "INSERT INTO bancos_ganamos (id_ganamos, titular, details, tipo, posicion)
          VALUES (?,?,?,?,?)
          ON DUPLICATE KEY UPDATE titular = VALUES(titular), details = VALUES(details),
-                                 tipo = VALUES(tipo), posicion = VALUES(posicion)"
+                                 tipo = VALUES(tipo), posicion = VALUES(posicion),
+                                 visto_en = NOW()"
     );
     foreach ($bancos as $i => $b) {
         $id      = (int)($b['id'] ?? 0);

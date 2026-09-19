@@ -130,15 +130,32 @@ echo "\n=== 5b. La billetera del panel, que no la reporta nadie ===\n";
    plata no se acreditaba nunca. No paso, pero fue suerte. */
 chequear('la billetera tambien se vigila',
          str_contains($srcSalud, "'bancos' => ["));
-chequear('y se mira la TABLA, no un reporte',
-         str_contains($srcSalud, 'SELECT MAX(visto_en) FROM bancos_ganamos'),
-         'el chequeo no puede depender de que el que tiene que correr, corra');
-chequear('se calcula ANTES de guardar, o no se guardaria nunca',
-         strpos($srcSalud, 'FROM bancos_ganamos') < strpos($srcSalud, 'cfg_crm_guardar($pdo, $guardar'));
+chequear('se mide con bancos_sync_en, que es la clave que corresponde',
+         str_contains($srcSalud, "'clave' => 'bancos_sync_en'"),
+         'la escribe el cron del sync, no el colector');
+
+/* EL ERROR QUE COMETI Y QUE ESTE TEST FRENA A PARTIR DE AHORA. La primera
+   version miraba `bancos_ganamos.visto_en`, que es ON UPDATE
+   CURRENT_TIMESTAMP: mide cuando CAMBIO la billetera, no cuando la leimos --
+   MySQL no lo dispara si la fila queda igual, y una billetera no cambia nunca.
+   Medido el 18/09/2026: decia 31/08 con el sync corriendo, o sea que el aviso
+   habria saltado para siempre. Es el mismo error de `usuarios.actualizado_en`
+   que ya esta documentado en CLAUDE.md, y la migracion 47 lo habia previsto
+   creando `bancos_sync_en` justamente para esto. */
+chequear('y NO con visto_en, que mide otra cosa',
+         !str_contains($srcSalud, 'MAX(visto_en) FROM bancos_ganamos'),
+         'visto_en mide cuando cambio la billetera, no cuando la leimos');
+
+$srcBan = file_get_contents(__DIR__ . '/api/bancos_sync.php');
+chequear('y visto_en pasa a decir lo que su nombre dice',
+         str_contains($srcBan, 'visto_en = NOW()'),
+         'sin esto la columna se queda clavada en el dia que se cargo la billetera');
+
 chequear('con un umbral propio: espeja cada hora, no cada cinco minutos',
          str_contains($srcSalud, "'bancos' => ['min' => 240"));
-chequear("y 'colector_bancos_en' esta en la lista blanca",
-         str_contains($srcCfg, "'colector_bancos_en'"));
+chequear('y el colector no puede inventar ese estado',
+         str_contains($srcSalud, "if (isset(SC_LIMITES[\$k]['clave'])) { continue; }"),
+         'lo escribe su propio cron: un body que lo mande estaria mintiendo');
 // ===========================================================================
 echo "\n=== 6. Y la regla que no se negocia: NUNCA reintentar una escritura ===\n";
 

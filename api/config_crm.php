@@ -384,7 +384,6 @@ const CFG_CRM_DEFAULTS = [
     'colector_libro_estado'  => '',
     'colector_stock_en'      => '',
     'colector_stock_estado'  => '',
-    'colector_bancos_en'     => '',   // ultimo espejo de la billetera del panel
     'colector_challenges'    => '',   // challenges del WAF en el ultimo barrido
     'colector_visto_en'      => '',   // ultima vez que el colector reporto algo
 ];
