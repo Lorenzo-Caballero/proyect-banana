@@ -45,11 +45,17 @@ header('Cache-Control: no-store');
 /* Cada lectura del colector con su edad, para no obligar a nadie a restar
    fechas a ojo. Nunca lanza: si falta la config, viaja en null. */
 $colector = [];
-foreach (['espejo', 'libro', 'stock', 'bancos'] as $k) {
+/* `bancos` no lo reporta el colector: lo escribe el cron de bancos_sync.php en
+   su propia clave, que existe desde la migración 47 justamente para eso. Y NO
+   se mira `bancos_ganamos.visto_en`, que es ON UPDATE CURRENT_TIMESTAMP y mide
+   cuándo CAMBIÓ la billetera -- no cuándo la leímos. */
+$CLAVES = ['espejo' => 'colector_espejo_en', 'libro' => 'colector_libro_en',
+           'stock'  => 'colector_stock_en',  'bancos' => 'bancos_sync_en'];
+foreach ($CLAVES as $k => $clave) {
     $edad = null;
     $est  = null;
     try {
-        $v = trim((string)cfg_crm($pdo, 'colector_' . $k . '_en'));
+        $v = trim((string)cfg_crm($pdo, $clave));
         if ($v !== '') {
             $tt = strtotime($v);
             if ($tt !== false) { $edad = max(0, time() - $tt); }
