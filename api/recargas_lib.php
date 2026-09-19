@@ -1820,10 +1820,33 @@ function rl_notificar_acreditada(PDO $pdo, array $recarga): void
                     $st->execute([$usuario]);
                     $fila = $st->fetch(PDO::FETCH_ASSOC);
                     if ($fila && !(int)$fila['tiene_app'] && !rl_invito_app_hoy($pdo, $usuario)) {
+                        /* EL TEXTO DICE CUANDO SE COBRA, y antes decía otra cosa.
+                           Hasta el 19/09/2026 prometia las fichas *"solas,
+                           apenas entres con tu cuenta"*, o sea al iniciar
+                           sesión. El bono NO funciona así: instalar deja el
+                           bono RESERVADO y lo paga la carga siguiente
+                           (notif_app_bono_liberar, enganchado en los tres
+                           caminos de acreditación).
+
+                           No era un matiz. El 19/09/2026 holadaianjauregui878
+                           cargó 1.000, leyó esta invitación, instaló la app,
+                           entró con su cuenta -- que es exactamente lo que el
+                           mensaje le pedía -- y pasó 45 minutos preguntando
+                           dónde estaban sus 1.000 fichas, hasta que lo tuvo que
+                           atender un agente. El bot le decía lo correcto
+                           (CB_REGLAS_FIJAS lo dice bien) pero el jugador tenía
+                           por escrito lo contrario, y le creía al texto.
+
+                           La push que le llega AL INSTALAR ya decía lo bueno
+                           ("te las acreditamos solas junto con tu próxima
+                           carga"). Era este mensaje el que no coincidía -- y es
+                           el único de los dos que el jugador seguro lee, porque
+                           le llega al chat y no depende de tener la app. */
                         crm_avisar_jugador($pdo, $usuario,
-                            '🎁 Ah, y tenés un regalo más esperándote: instalá nuestra app y '
-                            . 'te acredito otras ' . number_format($fichasApp, 0, ',', '.')
-                            . ' fichas, solas, apenas entres con tu cuenta. Bajala de acá: '
+                            '🎁 Ah, y tenés un regalo más esperándote: instalá nuestra app y te '
+                            . 'reservo ' . number_format($fichasApp, 0, ',', '.')
+                            . ' fichas. Te las acredito solas con tu próxima carga, la que hagas '
+                            . 'después de instalarla. Bajala de acá: '
                             . $urlApp,
                             ['app_invite' => true]);
                     }

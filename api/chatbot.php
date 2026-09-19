@@ -1709,8 +1709,28 @@ function chatbot_bloque_estado_app(PDO $pdo, string $usuario): string
         if ((int)($b['pagado'] ?? 0) > 0) {
             $p .= ' El bono por instalar la app YA se le acredito: no le prometas otro.';
         } elseif ((int)($b['marcado'] ?? 0) > 0) {
-            $p .= ' Su bono por descargar la app YA ESTA ACTIVO y se le acredita solo '
-                . 'junto con su proxima carga. Si pregunta por el, decile exactamente eso.';
+            /* DECIA SOLO "YA ESTA ACTIVO", y el bot lo tradujo a "ya esta
+               cargado". Para el jugador "activo" y "acreditado" son lo mismo:
+               va a mirar su saldo, no lo va a encontrar y va a volver enojado.
+               Nahuel (19/09/2026): *"el bono deberia decir que esta pendiente o
+               que ya esta cargado y se le va a acreditar en la proxima carga,
+               deberia ser claro con ese tipo de cosas"*. Las dos mitades
+               --que esta reservado Y cuando entra-- van juntas siempre. */
+            $app = chatbot_bono_app_reservado($pdo, $usuario);
+            $cuanto = $app['fichas'] > 0
+                ? number_format($app['fichas'], 0, ',', '.') . ' fichas'
+                : 'Su bono';
+            $p .= ' BONO DE LA APP RESERVADO: ' . $cuanto . ' esperando. NO estan '
+                . 'acreditadas y no las va a ver en su saldo. Las cobra con su PROXIMA '
+                . 'CARGA, y las dos cosas se dicen JUNTAS: "estan reservadas" y "entran '
+                . 'con tu proxima carga". Nunca digas solo "ya esta activo" ni "ya lo '
+                . 'tenes": el jugador entiende que la plata esta y no la encuentra.';
+            if (!$app['cargo_despues']) {
+                $p .= ' Y la carga que lo cobra es una hecha DESPUES de instalar la app: '
+                    . 'todavia no hizo ninguna. Si te dice que ya cargo, tiene razon pero '
+                    . 'fue antes de instalarla -- no lo trates de equivocado, explicale que '
+                    . 'con la proxima le entra solo.';
+            }
         }
         return $p;
     } catch (Throwable $e) {
@@ -3136,6 +3156,66 @@ function chatbot_bloque_bienvenida(PDO $pdo, string $usuario): string
     }
 }
 
+/**
+ * EL BONO POR INSTALAR LA APP: cuanto tiene reservado y si ya hizo la carga
+ * que lo cobra. Devuelve ['fichas' => int, 'cargo_despues' => bool].
+ *
+ * El bono NO vive en `bonos_pendientes`: instalar la app deja un marcador en
+ * `movimientos` (origen 'bono_app', monto 0) y lo cobra la primera carga
+ * posterior -- notif_app_bono_liberar(), enganchado en los TRES caminos de
+ * acreditacion (transferencia, boton Depositos del juego, y la carga a mano
+ * del CRM). Cuando se paga queda otro movimiento del mismo origen con monto
+ * mayor a 0, y ese es el fin de la historia.
+ *
+ * `cargo_despues` es la pieza que faltaba y la que destraba la conversacion:
+ * si el jugador cargo ANTES de instalar, esa carga no cuenta, pero el contesta
+ * con toda razon que "si, ya cargue". Sin este dato el bot solo puede repetir
+ * la pregunta. Paso el 19/09/2026 con holadaianjauregui878: cargo 02:30,
+ * instalo 02:39, y estuvo media hora preguntando por fichas que estaban
+ * esperando una carga que todavia no habia hecho.
+ *
+ * Usa publicidad_sql_cargas(), LA definicion de "una carga" en todo el CRM
+ * (ver CLAUDE.md): escribir otra aca haria que el bot y Finanzas contaran
+ * cosas distintas.
+ */
+function chatbot_bono_app_reservado(PDO $pdo, string $usuario): array
+{
+    $nada = ['fichas' => 0, 'cargo_despues' => false];
+    $usuario = trim($usuario);
+    if ($usuario === '') { return $nada; }
+    try {
+        $st = $pdo->prepare(
+            "SELECT COALESCE(SUM(monto > 0), 0) AS pagado,
+                    COALESCE(SUM(monto = 0), 0) AS marcado,
+                    MIN(creado_en)              AS marcado_en
+               FROM movimientos WHERE usuario = ? AND origen = 'bono_app'"
+        );
+        $st->execute([$usuario]);
+        $b = $st->fetch(PDO::FETCH_ASSOC) ?: [];
+        // Pagado o sin marcador: no hay nada reservado que contar.
+        if ((int)($b['pagado'] ?? 0) > 0 || (int)($b['marcado'] ?? 0) === 0) { return $nada; }
+
+        $fichas = 0;
+        if (function_exists('cfg_crm')) {
+            $fichas = max(0, (int)(cfg_crm($pdo, 'app_bono_fichas') ?? 0));
+        }
+        if ($fichas <= 0) { return $nada; }
+
+        $cargoDespues = false;
+        $marcadoEn = (string)($b['marcado_en'] ?? '');
+        if ($marcadoEn !== '' && function_exists('publicidad_sql_cargas')) {
+            $cargas = publicidad_sql_cargas();
+            $sc = $pdo->prepare("SELECT 1 FROM ($cargas) c WHERE c.usuario = ? AND c.cuando > ? LIMIT 1");
+            $sc->execute([$usuario, $marcadoEn]);
+            $cargoDespues = (bool)$sc->fetchColumn();
+        }
+        return ['fichas' => $fichas, 'cargo_despues' => $cargoDespues];
+    } catch (Throwable $e) {
+        // Sin la columna, sin config o ante cualquier error: el chat sigue.
+        return $nada;
+    }
+}
+
 function chatbot_bloque_bonos(PDO $pdo, string $usuario): string
 {
     $usuario = trim($usuario);
@@ -3158,12 +3238,41 @@ function chatbot_bloque_bonos(PDO $pdo, string $usuario): string
         if ($fichas > 0) { $partes[] = number_format($fichas, 0, ',', '.') . ' fichas'; }
         if ($pct > 0)    { $partes[] = $pct . ($pct === 1 ? ' bono de porcentaje' : ' bonos de porcentaje'); }
         if ($giros > 0)  { $partes[] = $giros . ($giros === 1 ? ' giro de ruleta' : ' giros de ruleta'); }
+
+        /* EL BONO DE LA APP TAMBIEN VA ACA, y faltaba.
+           No vive en `bonos_pendientes` sino como un marcador en `movimientos`
+           (origen 'bono_app', monto 0), asi que esta lista --que las reglas
+           fijas le presentan al bot como "el dato exacto"-- no lo incluía.
+           El resultado es el chat de holadaianjauregui878 el 19/09/2026: tenía
+           1.000 fichas reservadas por la app y la única linea del contexto que
+           las mencionaba decía "YA ESTA ACTIVO", que el bot le tradujo como
+           "ya está acreditado". Un bono que el jugador tiene que poder
+           preguntar por su monto no puede faltar en la lista de sus bonos. */
+        $app = chatbot_bono_app_reservado($pdo, $usuario);
+        if ($app['fichas'] > 0) {
+            $partes[] = number_format($app['fichas'], 0, ',', '.') . ' fichas por instalar la app';
+        }
         if (!$partes) { return ''; }
 
-        return "\n- BONOS PENDIENTES: tiene " . implode(' + ', $partes) . ' esperando. '
-             . 'NO estan en su saldo todavia: se acreditan SOLOS con su proxima carga. '
-             . 'Si pregunta por que no los ve, decile exactamente eso -- no es un error '
-             . 'ni se le perdio nada.';
+        $txt = "\n- BONOS PENDIENTES: tiene " . implode(' + ', $partes) . ' esperando. '
+             . 'RESERVADOS, no acreditados: NO estan en su saldo y no los va a ver ahi. '
+             . 'Se acreditan SOLOS con su proxima carga. Si pregunta por que no los ve, '
+             . 'decile exactamente eso -- no es un error ni se le perdio nada. '
+             . 'Y NO le digas que "ya estan cargados" ni "ya los tenes": todavia no.';
+
+        /* LA TRAMPA DE "PRIMERA CARGA" vs "LA PROXIMA". El bono de la app lo
+           dispara una carga hecha DESPUES de instalar. Si el jugador ya cargo
+           antes de instalarla, contestar "si" a "¿ya hiciste tu primera
+           carga?" es verdad y no cobra igual -- y ahi la conversacion se traba,
+           que es literalmente lo que paso. Con este dato el bot puede decir
+           cual es el paso que falta en vez de repetir la pregunta. */
+        if ($app['fichas'] > 0 && !$app['cargo_despues']) {
+            $txt .= ' OJO CON EL DE LA APP: lo paga una carga hecha DESPUES de instalarla, '
+                  . 'y todavia no hizo ninguna. Si te dice que ya cargo, no lo contradigas: '
+                  . 'esa carga fue ANTES de instalar y por eso no lo cobro. Decile que con la '
+                  . 'proxima carga le entra solo.';
+        }
+        return $txt;
     } catch (Throwable $e) {
         // Sin la migracion 33 no hay bonos pendientes: el chat sigue igual.
         return '';
