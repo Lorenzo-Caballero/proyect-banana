@@ -1273,7 +1273,16 @@
   .comp-info .ci{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:11px 13px}
   .comp-info .ci .k{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
   .comp-info .ci .v{font-size:14px;font-weight:700;margin-top:3px;word-break:break-word}
-  .comp-cands{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+  /* CON TOPE Y SCROLL PROPIO. Sin esto la lista crecía hasta 20 candidatas
+     --unos 1.600px-- y empujaba el bloque de «acreditar directo» tan abajo que
+     el operador no lo encontraba: miraba una lista de jugadores que no eran el
+     suyo y concluía, con razón, que no había forma de resolverlo.
+     Nahuel lo reportó así: *"quiero resolverlo y no hay ningún botón para
+     aprobarlo"*. El botón estaba; estaba fuera de la pantalla. */
+  .comp-como{margin:0 0 4px;font-size:13px;font-weight:700}
+  .comp-ayuda{margin:0 0 4px;font-size:11.5px;color:var(--muted);line-height:1.5}
+  .comp-cands{display:flex;flex-direction:column;gap:8px;margin-top:12px;
+    max-height:min(46vh,340px);overflow-y:auto;padding-right:4px}
   .cand{display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--panel2);
     border:1px solid var(--line);border-radius:13px}
   .cand .cd-mid{flex:1;min-width:0}
@@ -1299,7 +1308,8 @@
 
   /* Acreditar sin recarga: para los comprobantes que no tienen ninguna y nunca
      la van a tener (los del boton "Depositos" de la plataforma, sobre todo). */
-  .comp-directo{margin-top:14px;padding-top:13px;border-top:1px dashed var(--line)}
+  .comp-directo{margin-top:14px;padding:13px 14px;border-radius:12px;
+    background:var(--panel2);border:1px solid var(--line)}
   .cd-directo-head b{display:block;font-size:13px;margin-bottom:2px}
   .cd-directo-head span{display:block;font-size:11.5px;color:var(--muted);line-height:1.45}
   .cd-directo-form{display:flex;gap:8px;margin-top:9px;flex-wrap:wrap}
@@ -2657,7 +2667,15 @@
       </div>
       <div id="compDetail" style="display:none">
         <div class="comp-info" id="compInfo"></div>
-        <h4 style="margin:0 0 9px;font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px">Asignar a una carga pedida</h4>
+        <!-- LAS DOS SALIDAS, dichas antes de la lista. El título decía solo
+             «Asignar a una carga pedida», así que si ninguna candidata era la
+             correcta la pantalla parecía no tener salida -- y la que sí tenía
+             quedaba abajo de 20 candidatas, fuera de la vista. -->
+        <h4 class="comp-como">¿De quién es esta transferencia?</h4>
+        <p class="comp-ayuda">Si es de alguna de estas cargas pedidas, <b>asignásela</b>.
+           Si no es de ninguna, abajo podés <b>acreditársela directo</b> al jugador
+           (le carga las fichas y el bono que corresponda), o <b>descartarla</b>
+           si no es de ningún jugador.</p>
         <label class="search">
           <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
           <input id="compQ" placeholder="Buscar por usuario, referencia o id…" autocomplete="off">
@@ -9285,13 +9303,15 @@
     const sug = (d.sugeridos || [])[0] || "";
     cont.innerHTML = `
       <div class="cd-directo-head">
-        <b>¿No es de ninguna de estas?</b>
-        <span>Acreditalo directo al jugador. El comprobante queda resuelto y no vuelve a aparecer.</span>
+        <b>¿No es de ninguna de estas? Acreditásela directo</b>
+        <span>Le carga las fichas al jugador —con su bono de bienvenida y el que
+              tenga prometido, si corresponde—, aprende de qué cuenta paga, y el
+              comprobante queda resuelto.</span>
       </div>
       <div class="cd-directo-form">
         <input class="cb-input" id="cdUser" placeholder="usuario del jugador" autocomplete="off" value="${esc(sug)}">
         <input class="cb-input" id="cdCoins" inputmode="numeric" value="${Math.round(d.pago.monto)}">
-        <button class="btn-asignar" id="cdBtn" type="button">Acreditar</button>
+        <button class="btn-asignar" id="cdBtn" type="button">Acreditar fichas</button>
       </div>
       ${sug ? `<div class="cd-directo-hint">Sugerido: <b>@${esc(sug)}</b> ya cargó antes desde esta misma cuenta bancaria.</div>` : ""}
       <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--linea, #e4e4e7);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">

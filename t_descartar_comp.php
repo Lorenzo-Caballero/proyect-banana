@@ -84,5 +84,59 @@ chequear('no le pisó el asignado_por con un descarte', $r2['asignado_por'] === 
 $pdo->prepare("DELETE FROM pagos WHERE id_unico LIKE 't_desc_%'")->execute();
 
 echo "\n---------------------------------------\n";
+
+// ===========================================================================
+echo "\n=== La salida de un comprobante tiene que VERSE ===\n";
+
+/* EL REPORTE (Nahuel, 19/09/2026): *"acabo de encontrar un comprobante que
+   está sin resolver, quiero resolverlo y no hay ningún botón para aprobarlo"*.
+
+   El botón estaba. Estaba fuera de la pantalla: `.comp-cands` no tenía tope de
+   alto, así que con 20 candidatas la lista medía ~1.600px y empujaba el bloque
+   de «acreditar directo» tan abajo que no se encontraba. El operador miraba
+   una lista de jugadores que no eran el suyo y concluía, con razón, que no
+   había forma de resolverlo.
+
+   Medido ese día sobre el comprobante real que lo disparó ($16.000 de HECTOR
+   RAFAEL BAREIRO): el backend devolvía 5 candidatas y ninguna era la suya. */
+$crmH = file_get_contents(__DIR__ . '/landing/crm.html');
+
+chequear('la lista de candidatas tiene tope y scroll propio',
+         str_contains($crmH, '.comp-cands{display:flex;flex-direction:column;gap:8px;margin-top:12px;')
+         && str_contains($crmH, 'max-height:min(46vh,340px);overflow-y:auto'),
+         'sin tope, 20 candidatas empujan la salida fuera de la pantalla');
+
+chequear('y el encabezado nombra las DOS salidas, no solo asignar',
+         str_contains($crmH, '¿De quién es esta transferencia?')
+         && str_contains($crmH, 'acreditársela directo'),
+         'si ninguna candidata sirve, la pantalla parecia no tener salida');
+
+/* Y que las tres acciones sigan existiendo del lado del server. */
+$srcComp = file_get_contents(__DIR__ . '/api/crm_comprobantes.php');
+foreach (['asignar' => 'asignarla a una carga pedida',
+          'acreditar_directo' => 'acreditarle las fichas al jugador',
+          'descartar' => 'sacarla de la bandeja sin dar plata'] as $acc => $que) {
+    chequear("se puede $que", str_contains($srcComp, "\$accion === '" . $acc . "'"));
+}
+
+/* ACREDITAR DIRECTO NO ES SOLO SUMAR FICHAS: tiene que hacer lo mismo que una
+   recarga normal, o el jugador resuelto a mano pierde lo que le corresponde.
+   Ya paso: este camino se salteaba el bono de bienvenida y el prometido. */
+$srcRl = file_get_contents(__DIR__ . '/api/recargas_lib.php');
+$i = strpos($srcRl, 'function rl_acreditar_directo(');
+/* `$j === false` cuando es la ULTIMA funcion del archivo, que es el caso.
+   Sin este guard, substr($s, $i, false - $i) recibe un largo NEGATIVO y
+   devuelve vacio: el test daba en rojo por su propio bug, no por el codigo. */
+$j = strpos($srcRl, "\nfunction ", $i + 10);
+$cuerpo = $j === false ? substr($srcRl, $i) : substr($srcRl, $i, $j - $i);
+chequear('acreditar directo suma las fichas',
+         str_contains($cuerpo, 'SET coins = coins + ?'));
+chequear('y da el bono de bienvenida que corresponda',
+         str_contains($cuerpo, 'rl_bono_bienvenida_aplicar('));
+chequear('y aplica el bono que tuviera prometido',
+         str_contains($cuerpo, 'crmnotif_bono_aplicar_en_recarga(')
+         || str_contains($cuerpo, 'bono_aplicar'),
+         'un comprobante resuelto a mano se salteaba el bono de fidelizacion');
+
 printf("%d OK, %d fallas\n", $ok, $fail);
 exit($fail === 0 ? 0 : 1);
