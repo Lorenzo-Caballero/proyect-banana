@@ -91,9 +91,11 @@ chequear('y el mensaje dice QUE SIGNIFICA, no solo que fallo',
          'un aviso que no dice que hacer se aprende a ignorar');
 
 /* NUNCA LO VIMOS no es lo mismo que QUEDO VIEJO: el dia del deploy todas las
-   fechas estan vacias, y avisar ahi es ruido garantizado. */
-chequear('una fecha que nunca existio no dispara aviso',
-         str_contains($srcSalud, 'if ($edad === null || $edad < $lim[\'min\']) { continue; }'));
+   fechas estan vacias y avisar ahi seria ruido garantizado. Lo que cambio
+   despues es que "nunca" tampoco se queda callado PARA SIEMPRE (seccion 7). */
+chequear('el dia del deploy, una fecha vacia no molesta',
+         str_contains($srcSalud, 'if ($edad === null) {'),
+         'todas las fechas empiezan vacias: avisar ahi seria ruido');
 
 // ===========================================================================
 echo "\n=== 4. Se puede mirar desde afuera, sin entrar al VPS ===\n";
@@ -267,10 +269,34 @@ chequear('el aviso trae el arreglo concreto',
    una (paso con el detector del challenge, que estaba escrito cuatro veces). */
 chequear('lecturas y tareas se revisan con el mismo bucle',
          str_contains($srcSalud, '$aRevisar[$k] = $lim + ')
-         && substr_count($srcSalud, "if (\$edad === null || \$edad < \$lim['min'])") === 1);
+         && substr_count($srcSalud, 'foreach ($aRevisar as $k => $lim)') === 1,
+         'dos copias del chequeo es como se pierde una');
 
 chequear('y salud_bot las muestra sin entrar al VPS',
          str_contains($srcBot, "'fidelizacion' => 'fid_visto_en'"));
+
+/* EL AGUJERO QUE TENIA ESTE MISMO DISEÑO, y que es el caso de la
+   fidelizacion: una tarea cuyo cron NUNCA se instalo se queda en "nunca
+   corrio" para siempre, y "nunca" no dispara aviso -- porque el dia del
+   deploy todas las fechas estan vacias y avisar ahi seria ruido.
+
+   La fidelizacion solo se descubrio porque alguien la habia corrido UNA vez a
+   mano y esa fecha envejecio. Sin esa casualidad, seguiria invisible.
+
+   Se ancla con 'tareas_vigilando_desde': pasada su ventana desde que la
+   empezamos a mirar, "nunca corrio" tambien avisa -- y con otro mensaje,
+   porque el problema es otro: no es que se paro, es que nunca arranco. */
+chequear('"nunca corrio" tambien envejece',
+         str_contains($srcSalud, "'tareas_vigilando_desde'")
+         && str_contains($srcSalud, 'NUNCA corrió'));
+chequear('y se ancla en cuando lo empezamos a mirar',
+         str_contains($srcSalud, "\$vigDesde < \$lim['min']"));
+chequear("y 'tareas_vigilando_desde' esta en la lista blanca",
+         str_contains($srcCfg, "'tareas_vigilando_desde'"));
+/* Pero NO para las lecturas: una lectura sin fecha es el colector que todavia
+   no reporto, y de eso ya avisa su propio indicador. */
+chequear('una LECTURA sin fecha no dispara ese aviso',
+         str_contains($srcSalud, "if (\$lim['lectura'] || \$vigDesde === null"));
 
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);
 exit($fail > 0 ? 1 : 0);

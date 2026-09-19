@@ -398,6 +398,13 @@ const CFG_CRM_DEFAULTS = [
        que hacer". */
     'difusiones_visto_en'   => '',   // difusiones_chat_procesar.php (cada 10 min)
     'ruleta_aviso_visto_en' => '',   // ruleta_recordatorio.php (una vez por dia)
+
+    /* DESDE CUANDO ESTAMOS MIRANDO. Sin esto, una tarea que no corrio NUNCA
+       se queda en null para siempre y no avisa jamas -- que es exactamente el
+       caso de la fidelizacion: su cron nunca se instalo, y solo se descubrio
+       porque alguien la habia corrido a mano una vez y esa fecha envejecio.
+       Con este ancla, "nunca corrio" tambien envejece. */
+    'tareas_vigilando_desde' => '',
 ];
 
 /** Cache por request: estas funciones se llaman varias veces por pedido. */

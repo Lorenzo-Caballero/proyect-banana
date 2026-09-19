@@ -185,6 +185,32 @@ try {
 $avisados = [];
 $estado   = [];
 
+/* DESDE CUANDO ESTAMOS MIRANDO, y por qué hace falta.
+   «Nunca corrió» no dispara aviso, a propósito: el día del deploy todas las
+   fechas están vacías y avisar ahí sería ruido garantizado. Pero eso deja un
+   agujero que NO es teórico: una tarea cuyo cron nunca se instaló se queda en
+   «nunca» para siempre y no avisa jamás.
+
+   Es literalmente lo que pasó con la fidelización. Su cron nunca se puso, y
+   solo se descubrió porque alguien la había corrido UNA vez a mano el 16/09 y
+   esa fecha envejeció hasta que la miramos. Sin esa casualidad, seguiría
+   invisible.
+
+   Con este ancla, «nunca corrió» también envejece: pasada su ventana desde que
+   la empezamos a mirar, se avisa igual -- y el mensaje dice otra cosa, porque
+   el problema es otro (no es que se paró: es que nunca arrancó). */
+$vigDesde = null;
+try {
+    $vd = trim((string)cfg_crm($pdo, 'tareas_vigilando_desde'));
+    if ($vd === '') {
+        cfg_crm_guardar($pdo, ['tareas_vigilando_desde' => date('Y-m-d H:i:s')], 'colector');
+        $vigDesde = 0;
+    } else {
+        $tvd = strtotime($vd);
+        if ($tvd !== false) { $vigDesde = max(0, (int)floor((time() - $tvd) / 60)); }
+    }
+} catch (Throwable $e) { /* sin config_crm no se avisa, no se rompe */ }
+
 /* Las dos tablas se recorren con el MISMO bucle a proposito: la pregunta es la
    misma --"¿hace cuanto que esto no funciona?"-- y tener dos copias del
    chequeo es como se pierde una. Lo unico que cambia es el titulo del aviso. */
@@ -215,10 +241,25 @@ foreach ($aRevisar as $k => $lim) {
 
     $estado[$k] = ['hace_min' => $edad, 'limite_min' => $lim['min']];
 
-    /* `null` es «nunca lo vimos», y eso NO se avisa: es lo que pasa la primera
-       vez que corre este archivo, y un aviso ahí sería ruido el día del
-       deploy. Lo que se avisa es una fecha que existe y quedó vieja. */
-    if ($edad === null || $edad < $lim['min']) { continue; }
+    /* NUNCA CORRIO. No se avisa el día del deploy --todas las fechas están
+       vacías y eso sería ruido-- pero sí una vez que llevamos mirando más de
+       lo que esa tarea tarda en correr. Ahí «nunca» deja de ser «todavía no» y
+       pasa a ser «su cron no existe».
+       Solo para tareas: una LECTURA sin fecha es el colector que todavía no
+       reportó, y de eso ya avisa su propio indicador. */
+    if ($edad === null) {
+        if ($lim['lectura'] || $vigDesde === null || $vigDesde < $lim['min']) { continue; }
+        $ok = tg_evento($pdo, 'salud', '⏰ Algo que tenía que correr solo NUNCA corrió', [
+            'Qué nunca corrió' => $lim['que'],
+            'Lo miramos desde' => 'hace ' . ($vigDesde >= 120 ? round($vigDesde / 60) . ' horas'
+                                                              : $vigDesde . ' minutos'),
+            'Qué significa'    => $lim['duele'],
+            'Qué hacer'        => $lim['arreglo'] . ' (lo más probable: su cron no está puesto)',
+        ], 'tarea_' . $k . '_nunca');
+        if ($ok) { $avisados[] = $k; }
+        continue;
+    }
+    if ($edad < $lim['min']) { continue; }
 
     /* La clave identifica el PROBLEMA, no el momento: mientras el WAF siga
        tapando, `tg_avisar_una_vez` no lo repite (salvo el re-aviso de
