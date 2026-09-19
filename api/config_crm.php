@@ -479,8 +479,33 @@ const CFG_CRM_DEFAULTS = [
     'tareas_vigilando_desde' => '',
 ];
 
-/** Cache por request: estas funciones se llaman varias veces por pedido. */
-$GLOBALS['__cfg_crm_cache'] = null;
+/* CACHE POR CONEXION, NO POR PROCESO. Las funciones de config se llaman
+   varias veces por pedido y sin cache serian varias consultas iguales.
+
+   PERO LA CLAVE ES EL `$pdo`, y antes no lo era: habia UN solo
+   `$GLOBALS['__cfg_crm_cache']` para todo el proceso, asi que el primer cliente
+   que se leia le dejaba SU configuracion a todos los que venian despues. En un
+   endpoint no se nota --un request es un solo cliente-- pero
+   `panel/provisionar.php` recorre TODOS los tenants en una sola corrida, cada
+   minuto.
+
+   EL DAÑO, medido el 19/09/2026 y reproducido: el tenant `ganamos` no tiene
+   Telegram configurado, pero al leerse despues de `ganamoscrm` heredaba su
+   token y su chat_id. Como `ganamos` es un tenant sin movimiento, su chequeo de
+   "no hay ninguna actividad" daba positivo y le mandaba a NAHUEL *"hace 36
+   horas que no hay NINGUNA actividad"*, sobre un negocio que estaba trabajando
+   normal. El mensaje no dice de que cliente es, asi que no habia forma de
+   darse cuenta leyendolo. Y como el numero de horas sube solo, cada hora
+   contaba como contenido nuevo y volvia a salir.
+
+   Esto NO era solo los avisos: cualquier cfg_crm() despues del primer tenant
+   contestaba con la config equivocada -- promos, limites, la cuenta de cobro.
+
+   WeakMap y no un array con spl_object_id(): los ids se reciclan cuando el
+   objeto muere, asi que una conexion nueva podria caer en la entrada de una
+   vieja y volver a mezclar clientes. El WeakMap suelta la entrada junto con la
+   conexion, que es exactamente la vida util que tiene que tener. */
+$GLOBALS['__cfg_crm_cache'] = new WeakMap();
 
 /**
  * Todos los ajustes, con los defaults ya aplicados.
@@ -491,8 +516,15 @@ $GLOBALS['__cfg_crm_cache'] = null;
 if (!function_exists('cfg_crm_todo')) {
 function cfg_crm_todo(PDO $pdo): array
 {
-    if ($GLOBALS['__cfg_crm_cache'] !== null) {
-        return $GLOBALS['__cfg_crm_cache'];
+    /* Si alguien dejo el global en otra cosa (codigo viejo que lo ponia en
+       null para invalidar), se rearma en vez de explotar: el sitio tiene que
+       seguir andando, y como mucho pierde el cache de esa vuelta. */
+    if (!($GLOBALS['__cfg_crm_cache'] ?? null) instanceof WeakMap) {
+        $GLOBALS['__cfg_crm_cache'] = new WeakMap();
+    }
+    $cache = $GLOBALS['__cfg_crm_cache'];
+    if (isset($cache[$pdo])) {
+        return $cache[$pdo];
     }
     $vals = CFG_CRM_DEFAULTS;
     try {
@@ -508,7 +540,7 @@ function cfg_crm_todo(PDO $pdo): array
     } catch (Throwable $e) {
         error_log('config_crm: no pude leer la tabla (¿falta la migración 38?): ' . $e->getMessage());
     }
-    $GLOBALS['__cfg_crm_cache'] = $vals;
+    $cache[$pdo] = $vals;
     return $vals;
 }
 }
@@ -540,6 +572,31 @@ function cfg_crm_activo(PDO $pdo, string $clave): bool
 }
 
 /**
+ * Olvida lo cacheado para esa conexión, o para todas si no se pasa ninguna.
+ *
+ * ES LA FORMA PUBLICA DE INVALIDAR, y existe porque antes no habia: quien
+ * necesitaba releer la tabla --los tests, sobre todo, que escriben la config
+ * con SQL crudo-- ponia `$GLOBALS['__cfg_crm_cache']` en null a mano. Eso ata
+ * a quien llama con el nombre y la FORMA de una variable interna, y se noto al
+ * cambiarla: el cache paso de un valor suelto a un WeakMap por conexion y
+ * once chequeos de Finanzas se cayeron sin que la logica de Finanzas hubiera
+ * cambiado en nada.
+ *
+ * `cfg_crm_guardar()` ya la llama sola: esto es para el que escribe la tabla
+ * por otro camino.
+ */
+if (!function_exists('cfg_crm_olvidar')) {
+function cfg_crm_olvidar(?PDO $pdo = null): void
+{
+    if (!($GLOBALS['__cfg_crm_cache'] ?? null) instanceof WeakMap || $pdo === null) {
+        $GLOBALS['__cfg_crm_cache'] = new WeakMap();
+        return;
+    }
+    unset($GLOBALS['__cfg_crm_cache'][$pdo]);
+}
+}
+
+/**
  * Guarda varios ajustes de una. Ignora las claves desconocidas.
  * Devuelve cuántos guardó.
  */
@@ -562,7 +619,7 @@ function cfg_crm_guardar(PDO $pdo, array $vals, string $operador = ''): int
         $st->execute([$k, (string)$v, $operador !== '' ? $operador : null]);
         $n++;
     }
-    $GLOBALS['__cfg_crm_cache'] = null;   // el próximo lector ve lo nuevo
+    cfg_crm_olvidar($pdo);   // el próximo lector ve lo nuevo
     return $n;
 }
 }

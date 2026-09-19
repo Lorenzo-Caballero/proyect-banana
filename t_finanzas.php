@@ -253,7 +253,7 @@ foreach (['recargas','movimientos','acciones_saldo','operaciones_panel','gasto_d
     try { $pdo->exec("DELETE FROM $tb"); } catch (Throwable $e) {}
 }
 $pdo->exec("DELETE FROM config_crm WHERE clave = 'fin_medir_desde'");
-$GLOBALS['__cfg_crm_cache'] = null;
+cfg_crm_olvidar($pdo);   // se escribio la config con SQL crudo: hay que releer
 
 chequear('sin ningun dato todavia, no hay ancla',
          fn_medir_desde($pdo)['desde'] === null, json_encode(fn_medir_desde($pdo)));
@@ -268,18 +268,18 @@ chequear('automatico: arranca en el primer dato propio',
    vieja que no corresponde mezclar. */
 $pdo->exec("INSERT INTO config_crm (clave,valor) VALUES ('fin_medir_desde','2019-03-04')
             ON DUPLICATE KEY UPDATE valor=VALUES(valor)");
-$GLOBALS['__cfg_crm_cache'] = null;
+cfg_crm_olvidar($pdo);   // se escribio la config con SQL crudo: hay que releer
 $a2 = fn_medir_desde($pdo);
 chequear('la fecha configurada le gana a la automatica',
          $a2['desde'] === '2019-03-04' && $a2['fuente'] === 'config', json_encode($a2));
 
 /* Una fecha con formato raro se ignora en vez de romper todo el modulo. */
 $pdo->exec("UPDATE config_crm SET valor='el lunes' WHERE clave='fin_medir_desde'");
-$GLOBALS['__cfg_crm_cache'] = null;
+cfg_crm_olvidar($pdo);   // se escribio la config con SQL crudo: hay que releer
 chequear('una fecha ilegible cae al automatico',
          fn_medir_desde($pdo)['fuente'] === 'auto');
 $pdo->exec("DELETE FROM config_crm WHERE clave = 'fin_medir_desde'");
-$GLOBALS['__cfg_crm_cache'] = null;
+cfg_crm_olvidar($pdo);   // se escribio la config con SQL crudo: hay que releer
 
 echo "\n=== 8a. El hueco se AVISA, no se aplica solo ===\n";
 /* Mover todos los numeros sin que nadie lo pida es la clase de magia que
@@ -313,7 +313,7 @@ $libro(U . 'nuevo',   '2019-06-02 10:00:00',  2000.0, 1);
 
 $pdo->exec("INSERT INTO config_crm (clave,valor) VALUES ('fin_medir_desde','2019-06-01')
             ON DUPLICATE KEY UPDATE valor=VALUES(valor)");
-$GLOBALS['__cfg_crm_cache'] = null;
+cfg_crm_olvidar($pdo);   // se escribio la config con SQL crudo: hay que releer
 
 $f = fn_foto($pdo, 0.20);
 chequear('la foto dice desde cuando mide', $f['desde'] === '2019-06-01', json_encode($f['desde']));
@@ -328,14 +328,14 @@ chequear('el resultado acumulado cierra',
 /* Y sin ancla manual, con la etapa vieja adentro, el numero cambia: es la
    prueba de que el corte hace algo. */
 $pdo->exec("DELETE FROM config_crm WHERE clave = 'fin_medir_desde'");
-$GLOBALS['__cfg_crm_cache'] = null;
+cfg_crm_olvidar($pdo);   // se escribio la config con SQL crudo: hay que releer
 $f2 = fn_foto($pdo, 0.20);
 chequear('sin el corte, la etapa vieja entra y el numero es otro',
          $f2['desde'] === '2018-01-01' && abs($f2['resultado'] - $f['resultado']) > 1000,
          json_encode([$f2['desde'], $f2['resultado']]));
 
 $pdo->rollBack();
-$GLOBALS['__cfg_crm_cache'] = null;
+cfg_crm_olvidar($pdo);   // se escribio la config con SQL crudo: hay que releer
 
 echo "\n=== 8b. El stock y para cuantos dias alcanza ===\n";
 /* `dias` es lo que de verdad sirve: un umbral fijo ("avisame bajo 50.000") no
@@ -343,7 +343,7 @@ echo "\n=== 8b. El stock y para cuantos dias alcanza ===\n";
    12/09/2026, cuando la cuenta se quedo sin fichas y la plataforma empezo a
    rechazar depositos en silencio. */
 $pdo->exec("DELETE FROM config_crm WHERE clave IN ('stock_fichas','stock_fichas_en')");
-$GLOBALS['__cfg_crm_cache'] = null;
+cfg_crm_olvidar($pdo);   // se escribio la config con SQL crudo: hay que releer
 $s = fn_stock($pdo, 0.20);
 chequear('sin lectura del worker, el stock es null (no cero)', $s['fichas'] === null);
 chequear('y los dias tampoco se inventan', $s['dias'] === null);
@@ -353,7 +353,7 @@ chequear('y los dias tampoco se inventan', $s['dias'] === null);
    lo de antes de escribir. */
 $pdo->prepare("INSERT INTO config_crm (clave, valor) VALUES ('stock_fichas', '80000')
                ON DUPLICATE KEY UPDATE valor = VALUES(valor)")->execute();
-$GLOBALS['__cfg_crm_cache'] = null;
+cfg_crm_olvidar($pdo);   // se escribio la config con SQL crudo: hay que releer
 $s = fn_stock($pdo, 0.20);
 chequear('con lectura, trae el stock', abs((float)$s['fichas'] - 80000.0) < 0.01,
          json_encode($s['fichas']));
@@ -385,7 +385,7 @@ chequear('la ventana promedia, no toma el ultimo dia',
 /* Una lectura que no es un numero NO se toma como cero: un stock de cero
    inventado es una alarma falsa, y una alarma falsa quema a las que vengan. */
 $pdo->prepare("UPDATE config_crm SET valor = 'sin datos' WHERE clave = 'stock_fichas'")->execute();
-$GLOBALS['__cfg_crm_cache'] = null;
+cfg_crm_olvidar($pdo);   // se escribio la config con SQL crudo: hay que releer
 $s = fn_stock($pdo, 0.20);
 chequear('una lectura ilegible da null, no cero', $s['fichas'] === null, json_encode($s['fichas']));
 
@@ -547,14 +547,14 @@ echo "\n=== 9d. La comision de la pasarela ===\n";
    virtuales no se cobra nada, y ese es el default a proposito: cobrar una
    comision que no existe le haria ver a alguien una perdida inventada. */
 $pdo->exec("DELETE FROM config_crm WHERE clave LIKE 'fin_comision%'");
-$GLOBALS['__cfg_crm_cache'] = null;
+cfg_crm_olvidar($pdo);   // se escribio la config con SQL crudo: hay que releer
 $c = fn_comisiones($pdo, $D, $H, 100000.0, 50000.0);
 chequear('sin configurar no descuenta nada', $c['total'] === 0.0, json_encode($c));
 chequear('y lo dice', $c['fuente'] === 'ninguna', (string)$c['fuente']);
 
 $pdo->exec("INSERT INTO config_crm (clave,valor) VALUES ('fin_comision_entrada','4'),('fin_comision_salida','1')
             ON DUPLICATE KEY UPDATE valor=VALUES(valor)");
-$GLOBALS['__cfg_crm_cache'] = null;
+cfg_crm_olvidar($pdo);   // se escribio la config con SQL crudo: hay que releer
 $c = fn_comisiones($pdo, $D, $H, 100000.0, 50000.0);
 chequear('cobra distinto por entrada y por salida',
          abs($c['entrada'] - 4000.0) < 0.01 && abs($c['salida'] - 500.0) < 0.01, json_encode($c));
@@ -562,11 +562,11 @@ chequear('y el total suma las dos', abs($c['total'] - 4500.0) < 0.01, json_encod
 
 /* Un porcentaje negativo no puede REGALAR plata. */
 $pdo->exec("UPDATE config_crm SET valor='-5' WHERE clave='fin_comision_entrada'");
-$GLOBALS['__cfg_crm_cache'] = null;
+cfg_crm_olvidar($pdo);   // se escribio la config con SQL crudo: hay que releer
 $c = fn_comisiones($pdo, $D, $H, 100000.0, 50000.0);
 chequear('un porcentaje negativo se ignora', $c['entrada'] === 0.0, json_encode($c));
 $pdo->exec("DELETE FROM config_crm WHERE clave LIKE 'fin_comision%'");
-$GLOBALS['__cfg_crm_cache'] = null;
+cfg_crm_olvidar($pdo);   // se escribio la config con SQL crudo: hay que releer
 
 // ===========================================================================
 echo "\n=== 9e. Lo que deja un jugador en toda su vida ===\n";
@@ -749,7 +749,7 @@ foreach (['recargas','movimientos','acciones_saldo','operaciones_panel','gasto_d
     try { $pdo->exec("DELETE FROM $tb"); } catch (Throwable $e) {}
 }
 $pdo->exec("DELETE FROM config_crm WHERE clave IN ('fin_medir_desde','fin_dias_activo')");
-$GLOBALS['__cfg_crm_cache'] = null;
+cfg_crm_olvidar($pdo);   // se escribio la config con SQL crudo: hay que releer
 
 $hace = fn($d) => date('Y-m-d H:i:s', strtotime("-$d days"));
 
@@ -806,7 +806,7 @@ chequear('con corte de 60 dias, los tres',
          end($serie60)['activos'] === 3, json_encode(end($serie60)));
 
 $pdo->rollBack();
-$GLOBALS['__cfg_crm_cache'] = null;
+cfg_crm_olvidar($pdo);   // se escribio la config con SQL crudo: hay que releer
 
 echo "\n=== 9h. La bola de nieve ===\n";
 /* Dos lineas por dia: lo que se gasto en pauta y lo que dejaron los jugadores
