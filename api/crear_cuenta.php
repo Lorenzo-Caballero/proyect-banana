@@ -258,6 +258,27 @@ if ($metodo === 'POST') {
         } elseif (preg_match('/^lp:([a-z0-9-]{1,24})$/', $promo, $mLp)
                   && landings_por_slug($pdo, $mLp[1]) !== null) {
             $origen = 'lp:' . $mLp[1];
+        } elseif (preg_match('/^lp:([a-z0-9-]{1,24})$/', $promo, $mLp)) {
+            /* VINO DE UNA LANDING QUE YA NO ESTA ACTIVA, y eso le acaba de
+               costar el bono de bienvenida.
+
+               La landing pausada devuelve 404 (landing_publica.php), asi que
+               normalmente el jugador ni la ve. El caso real es el que la tenia
+               ABIERTA cuando se pauso o archivo: la pagina ya cargada le
+               siguio prometiendo el bono, se registro, y del lado de aca cae
+               en 'landing' -- que no paga nada.
+
+               Cortar el bono es lo correcto (una promo apagada no puede seguir
+               pagando para siempre), pero que pase EN SILENCIO no: el jugador
+               vio una promesa. Con este log queda el rastro para cargarselo a
+               mano desde el CRM si corresponde.
+
+               Le paso a holaCoco661 el 18/09/2026 y no quedo constancia en
+               ningun lado. */
+            error_log('crear_cuenta: ' . $usuarioFinal . ' se registro con la promo '
+                . $promo . ' pero esa landing no esta activa: queda SIN bono de '
+                . 'bienvenida. Si tenia la pagina abierta, vio la promesa -- '
+                . 'revisar y cargarselo a mano desde el CRM.');
         }
 
         $r = alta_encolar($pdo, [
