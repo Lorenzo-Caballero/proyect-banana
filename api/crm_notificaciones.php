@@ -279,6 +279,198 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
         return $out;
     }
 
+    /**
+     * EL TABLERO DE LA APP: dónde se pierde la gente entre "juega" y "le puedo
+     * hablar", y si el canal crece o se achica.
+     *
+     * POR QUE ESTAS Y NO OTRAS. El negocio se sostiene acumulando jugadores
+     * activos, y la herramienta para que no se enfríen es la app: instalarla,
+     * recibir la notificación, volver por el bono. Así que las métricas
+     * contestan las cuatro preguntas de esa cadena, en orden:
+     *
+     *   1. ¿A cuántos les puedo hablar?      -> el embudo
+     *   2. ¿Estoy ganando o perdiendo?       -> altas y bajas por semana
+     *   3. ¿Sirve de algo?                   -> retención con app vs sin app
+     *   4. ¿Lo que mando llega?              -> entrega y lectura
+     *
+     * La 3 es la que justifica todo el resto: si el que tiene la app no vuelve
+     * más que el que no la tiene, el canal es un gasto. Y la 2 es la que nadie
+     * mira y la que avisa temprano: una app que se desinstala no genera ningún
+     * evento, simplemente deja de sondear.
+     */
+    function crmnotif_metricas(PDO $pdo, int $dias = 7): array
+    {
+        $dias = max(1, min(365, $dias));
+        $out = ['dias' => $dias, 'embudo' => [], 'semanas' => [],
+                'retencion' => null, 'entrega' => null, 'fidelizacion' => null];
+
+        /* Con la app = con un celular android que puede recibir. Mismo criterio
+           que la campaña de fidelización: si acá contara distinto, el número
+           que se mira para decidir no sería el que va a pasar. */
+        $conApp = "EXISTS (SELECT 1 FROM dispositivos d
+                            WHERE d.usuario COLLATE utf8mb4_unicode_ci
+                                  = u.username COLLATE utf8mb4_unicode_ci
+                              AND d.plataforma = 'android')";
+        $permitida = "EXISTS (SELECT 1 FROM dispositivos d
+                               WHERE d.usuario COLLATE utf8mb4_unicode_ci
+                                     = u.username COLLATE utf8mb4_unicode_ci
+                                 AND d.plataforma = 'android' AND d.permitido = 1)";
+        $viva = "EXISTS (SELECT 1 FROM dispositivos d
+                          WHERE d.usuario COLLATE utf8mb4_unicode_ci
+                                = u.username COLLATE utf8mb4_unicode_ci
+                            AND d.plataforma = 'android' AND d.permitido = 1
+                            AND d.visto_en > DATE_SUB(NOW(), INTERVAL 7 DAY))";
+
+        /* ---- 1. EL EMBUDO ----------------------------------------------
+           Cada escalón que se pierde tiene un arreglo DISTINTO, y por eso van
+           separados en vez de un solo porcentaje:
+             activo -> instaló    lo arregla el bono por instalar y el cartel
+                                  en la primera carga
+             instaló -> permitió  lo arregla pedir el permiso en el momento
+                                  justo, no al abrir
+             permitió -> viva     la app está instalada pero no se abre: ahí
+                                  la push tarda o no llega
+           Un embudo con un solo número escondería cuál de los tres está mal. */
+        try {
+            $base = "FROM usuarios u
+                      WHERE u.ultima_actividad IS NOT NULL
+                        AND u.ultima_actividad >= DATE_SUB(NOW(), INTERVAL ? DAY)";
+            $q = function (string $extra) use ($pdo, $base, $dias): int {
+                $st = $pdo->prepare("SELECT COUNT(*) $base $extra");
+                $st->execute([$dias]);
+                return (int)$st->fetchColumn();
+            };
+            $act = $q('');
+            $ins = $q(" AND $conApp");
+            $per = $q(" AND $permitida");
+            $viv = $q(" AND $viva");
+            $pc = fn(int $n, int $de) => $de > 0 ? round($n * 100 / $de, 1) : 0.0;
+            $out['embudo'] = [
+                ['k' => 'activos',    'n' => $act, 'pct' => null,
+                 'que' => 'Jugaron, cargaron o escribieron en el período'],
+                ['k' => 'instalada',  'n' => $ins, 'pct' => $pc($ins, $act),
+                 'que' => 'De esos, los que bajaron la app'],
+                ['k' => 'permitida',  'n' => $per, 'pct' => $pc($per, $ins),
+                 'que' => 'De los que la tienen, los que dejaron pasar las notificaciones'],
+                ['k' => 'alcanzable', 'n' => $viv, 'pct' => $pc($viv, $per),
+                 'que' => 'De esos, los que abrieron la app en la última semana'],
+            ];
+        } catch (Throwable $e) { error_log('crmnotif_metricas/embudo: ' . $e->getMessage()); }
+
+        /* ---- 2. ALTAS Y BAJAS POR SEMANA -------------------------------
+           LA BAJA NO GENERA NINGUN EVENTO. Nadie avisa que desinstaló: el
+           celular simplemente deja de sondear, y el jugador sigue figurando
+           con la app puesta para siempre. Se cuenta como baja el aparato que
+           hace más de 14 días que no aparece -- dos semanas es más que el
+           sondeo de 15 minutos y más que cualquier fin de semana largo. */
+        try {
+            for ($s = 3; $s >= 0; $s--) {
+                $st = $pdo->prepare(
+                    "SELECT COUNT(*) FROM dispositivos
+                      WHERE plataforma = 'android'
+                        AND creado_en >= DATE_SUB(NOW(), INTERVAL ? DAY)
+                        AND creado_en <  DATE_SUB(NOW(), INTERVAL ? DAY)"
+                );
+                $st->execute([($s + 1) * 7, $s * 7]);
+                $altas = (int)$st->fetchColumn();
+
+                $st2 = $pdo->prepare(
+                    "SELECT COUNT(*) FROM dispositivos
+                      WHERE plataforma = 'android'
+                        AND visto_en >= DATE_SUB(NOW(), INTERVAL ? DAY)
+                        AND visto_en <  DATE_SUB(NOW(), INTERVAL ? DAY)
+                        AND visto_en <  DATE_SUB(NOW(), INTERVAL 14 DAY)"
+                );
+                $st2->execute([($s + 1) * 7, $s * 7]);
+                $bajas = (int)$st2->fetchColumn();
+
+                $out['semanas'][] = [
+                    'hace' => $s === 0 ? 'esta semana' : 'hace ' . $s . ($s === 1 ? ' semana' : ' semanas'),
+                    'altas' => $altas, 'bajas' => $bajas, 'neto' => $altas - $bajas,
+                ];
+            }
+        } catch (Throwable $e) { error_log('crmnotif_metricas/semanas: ' . $e->getMessage()); }
+
+        /* ---- 3. ¿SIRVE? RETENCION CON APP vs SIN APP --------------------
+           LA METRICA QUE JUSTIFICA TODO EL RESTO. Si el que tiene la app no
+           vuelve más que el que no la tiene, el canal es un gasto y conviene
+           saberlo antes de seguir invirtiendo en él.
+           Se mide igual para los dos grupos: de los que cargaron entre hace 30
+           y hace 8 días, cuántos volvieron a cargar en los últimos 7. La
+           ventana de corte evita contar como "volvió" la misma carga.
+           Se usa publicidad_sql_cargas(), que es la definición única de "una
+           carga" en todo el CRM -- si esta pantalla armara la suya, mostraría
+           un número distinto al de Finanzas el mismo día. */
+        try {
+            if (function_exists('publicidad_sql_cargas')) {
+                $cargas = publicidad_sql_cargas();
+                $sql = "SELECT $conApp AS tiene_app,
+                               COUNT(DISTINCT u.username) AS base,
+                               COUNT(DISTINCT CASE WHEN EXISTS (
+                                     SELECT 1 FROM ($cargas) c2
+                                      WHERE c2.usuario = u.username COLLATE utf8mb4_unicode_ci
+                                        AND c2.cuando > DATE_SUB(NOW(), INTERVAL 7 DAY))
+                                   THEN u.username END) AS volvieron
+                          FROM usuarios u
+                         WHERE EXISTS (SELECT 1 FROM ($cargas) c1
+                                        WHERE c1.usuario = u.username COLLATE utf8mb4_unicode_ci
+                                          AND c1.cuando <  DATE_SUB(NOW(), INTERVAL 8 DAY)
+                                          AND c1.cuando >= DATE_SUB(NOW(), INTERVAL 30 DAY))
+                         GROUP BY tiene_app";
+                $ret = ['con_app' => ['base' => 0, 'volvieron' => 0, 'pct' => 0.0],
+                        'sin_app' => ['base' => 0, 'volvieron' => 0, 'pct' => 0.0]];
+                foreach ($pdo->query($sql) as $r) {
+                    $k = ((int)$r['tiene_app'] === 1) ? 'con_app' : 'sin_app';
+                    $ret[$k]['base']      = (int)$r['base'];
+                    $ret[$k]['volvieron'] = (int)$r['volvieron'];
+                    $ret[$k]['pct'] = $ret[$k]['base'] > 0
+                        ? round($ret[$k]['volvieron'] * 100 / $ret[$k]['base'], 1) : 0.0;
+                }
+                $out['retencion'] = $ret;
+            }
+        } catch (Throwable $e) { error_log('crmnotif_metricas/retencion: ' . $e->getMessage()); }
+
+        /* ---- 4. ¿LO QUE MANDO LLEGA? -----------------------------------
+           Crear no es llegar: la fidelización creó 600 avisos y entregó 0. */
+        try {
+            $r = $pdo->query(
+                "SELECT COUNT(DISTINCT n.id) creadas,
+                        COUNT(DISTINCT e.notificacion_id) con_entrega,
+                        COUNT(e.device_id) entregas,
+                        COUNT(e.leida_en) leidas
+                   FROM notificaciones n
+                   LEFT JOIN notificaciones_entregas e ON e.notificacion_id = n.id
+                  WHERE n.creada_en > DATE_SUB(NOW(), INTERVAL 30 DAY)"
+            )->fetch(PDO::FETCH_ASSOC);
+            $out['entrega'] = [
+                'creadas'     => (int)($r['creadas'] ?? 0),
+                'con_entrega' => (int)($r['con_entrega'] ?? 0),
+                'entregas'    => (int)($r['entregas'] ?? 0),
+                'leidas'      => (int)($r['leidas'] ?? 0),
+            ];
+        } catch (Throwable $e) { error_log('crmnotif_metricas/entrega: ' . $e->getMessage()); }
+
+        /* ---- 5. LA CAMPAÑA: prometido vs cobrado -----------------------
+           Un bono prometido es una deuda; uno cobrado es un jugador que
+           volvió. La distancia entre los dos es lo que dice si la campaña
+           empuja o solo regala. */
+        try {
+            $r = $pdo->query(
+                "SELECT SUM(estado = 'pendiente') pendientes,
+                        SUM(estado = 'aplicado')  cobrados
+                   FROM bonos_pendientes WHERE prometido_por = 'fidelizacion'"
+            )->fetch(PDO::FETCH_ASSOC);
+            $pend = (int)($r['pendientes'] ?? 0);
+            $cob  = (int)($r['cobrados'] ?? 0);
+            $out['fidelizacion'] = [
+                'pendientes' => $pend, 'cobrados' => $cob,
+                'pct' => ($pend + $cob) > 0 ? round($cob * 100 / ($pend + $cob), 1) : 0.0,
+            ];
+        } catch (Throwable $e) { error_log('crmnotif_metricas/fid: ' . $e->getMessage()); }
+
+        return $out;
+    }
+
     function crmnotif_historial(PDO $pdo, array $opts = []): array
     {
         $usuario   = trim((string)($opts['usuario'] ?? ''));

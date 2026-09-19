@@ -1333,6 +1333,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
            El numero grande engaña: sobre el padron historico la app da 1%, y
            ese 1% incluye cuentas de hace meses que no vuelven. El que dice si
            el canal sirve es el de los ACTIVOS. Ver crmnotif_cobertura(). */
+        /* ---- el tablero de la app ----
+           Las cuatro preguntas de la cadena que sostiene el negocio: a cuantos
+           les puedo hablar, si gano o pierdo, si sirve, y si lo que mando
+           llega. Ver crmnotif_metricas(). */
+        if ($accion === 'notif_metricas') {
+            require_once __DIR__ . '/publicidad_lib.php';   // la definicion unica de "una carga"
+            salir(['ok' => true,
+                   'metricas'  => crmnotif_metricas($pdo, (int)($_GET['dias'] ?? 7)),
+                   'cobertura' => crmnotif_cobertura($pdo, (int)($_GET['dias'] ?? 7))]);
+        }
+
         if ($accion === 'notif_cobertura') {
             salir(['ok' => true,
                    'cobertura' => crmnotif_cobertura($pdo, (int)($_GET['dias'] ?? 7))]);
