@@ -1355,6 +1355,72 @@ function rl_acreditar(PDO $pdo, array &$recarga, string $idUnico, string $conf,
  *
  * Nunca lanza. Devuelve el bono acreditado (0 si no correspondia).
  */
+/**
+ * QUE BONO DE BIENVENIDA LE TOCA A ESTE JUGADOR, en porcentaje. 0 = ninguno.
+ *
+ * LA PREGUNTA SE HACE EN UN SOLO LUGAR, igual que `rl_es_primera_carga()` y
+ * por el mismo motivo. Hasta hoy esta decision vivia adentro del aplicador, y
+ * el chatbot no tenia forma de consultarla: le PROMETIA a todo el mundo el
+ * porcentaje que el operador hubiera escrito en las indicaciones extra.
+ *
+ * EL PEDIDO (Nahuel, 18/09/2026): *"si tenemos una landing que ofrece 50%,
+ * otra que ofrece 30% y otra que no ofrece ninguno, queremos ver los
+ * diferentes resultados... no quiero que una persona venga desde una landing
+ * que no tiene bono y el bot le diga: tenes un 50% de bono de bienvenida"*.
+ *
+ * Prometer y no pagar es peor que no ofrecer nada, asi que el que promete y el
+ * que paga tienen que leer LO MISMO. Eso es lo que hace esta funcion.
+ *
+ * De donde sale, por orden:
+ *   · alta con `origen = 'lp:<slug>'`  -> `landings.bono_pct` de ESA landing,
+ *     que puede ser 0 y entonces no hay bono.
+ *   · alta por el chat o por la landing de promo -> el bono general del casino
+ *     (`config_crm` 'bono_bienvenida_pct').
+ *   · cualquier otro origen (panel, manual) -> 0. Esos no prometen nada, y
+ *     darselo seria regalar fichas sin quererlo.
+ *
+ * Ante cualquier duda devuelve 0: que el bot no ofrezca un bono que existia es
+ * una promo perdida; que ofrezca uno que no se va a pagar es un jugador
+ * enojado con razon.
+ */
+function rl_bono_bienvenida_pct(PDO $pdo, string $usuario): int
+{
+    $usuario = trim($usuario);
+    if ($usuario === '') { return 0; }
+    try {
+        // Sin JOIN a proposito: `altas` comparte collation con `usuarios`,
+        // pero comparar contra un parametro PHP no depende de ninguna.
+        $sa = $pdo->prepare(
+            "SELECT origen FROM altas WHERE usuario = ? AND estado = 'ok'
+              ORDER BY id DESC LIMIT 1"
+        );
+        $sa->execute([$usuario]);
+        $origen = (string)$sa->fetchColumn();
+        if ($origen === '') { return 0; }
+
+        if (strncmp($origen, 'lp:', 3) === 0) {
+            if (!function_exists('landings_por_slug')) {
+                /* Deploy parcial (recargas_lib nuevo sin landings_lib): que no
+                   sea silencioso. Este log es la unica señal de que se le esta
+                   debiendo un bono prometido a alguien. */
+                error_log('rl_bono_bienvenida_pct: falta landings_lib.php y '
+                    . $usuario . ' entro por ' . $origen
+                    . ' -- bono NO acreditado, cargarlo a mano desde el CRM');
+                return 0;
+            }
+            $lp = landings_por_slug($pdo, substr($origen, 3), false);
+            return $lp ? max(0, (int)$lp['bono_pct']) : 0;
+        }
+        if ($origen === RL_BONO_BIENVENIDA_ORIGEN || $origen === 'chatbot') {
+            return max(0, (int)fichas_limite($pdo, 'bono_bienvenida_pct', RL_BONO_BIENVENIDA_PCT));
+        }
+        return 0;
+    } catch (Throwable $e) {
+        error_log('rl_bono_bienvenida_pct (' . $usuario . '): ' . $e->getMessage());
+        return 0;
+    }
+}
+
 function rl_bono_bienvenida_aplicar(PDO $pdo, string $usuario, int $coins): int
 {
     try {
@@ -1389,34 +1455,17 @@ function rl_bono_bienvenida_aplicar(PDO $pdo, string $usuario, int $coins): int
             return 0;
         }
 
-        $pctBono = 0;
-        if (strncmp($origenAlta, 'lp:', 3) === 0) {
-            if (!function_exists('landings_por_slug')) {
-                // Deploy parcial (recargas_lib nuevo sin landings_lib): que
-                // no sea silencioso -- este log es la unica señal de que se
-                // le esta debiendo un bono prometido a alguien.
-                error_log('rl_bono_bienvenida: falta landings_lib.php y '
-                    . $usuario . ' entro por ' . $origenAlta
-                    . ' -- bono NO acreditado, cargarlo a mano desde el CRM');
-            } else {
-                $lpFila = landings_por_slug($pdo, substr($origenAlta, 3), false);
-                if ($lpFila) {
-                    $pctBono = (int)$lpFila['bono_pct'];
-                }
-            }
-        } elseif ($origenAlta === RL_BONO_BIENVENIDA_ORIGEN || $origenAlta === 'chatbot') {
-            /* bono50 = landing de promo (siempre lo cobro). 'chatbot' = cuenta
-               creada POR EL CHAT: el bot le PROMETE el bono al crear la cuenta
-               ("con tu primera carga te doy el bono"), pero antes no lo cobraba
-               -- caia en el else y quedaba en 0. Ahora si, con el bono general
-               del casino (config_crm 'bono_bienvenida_pct', default 50%). Es la
-               primera carga (es_primera, garantizado por el caller) y el candado
-               de movimientos evita pagarlo dos veces. Para apagarlo, poner
-               bono_bienvenida_pct en 0 desde el CRM.
-               A proposito NO se incluye 'landing'/'panel'/manual: esos no
-               prometen bono, y darselo seria regalar fichas sin quererlo. */
-            $pctBono = fichas_limite($pdo, 'bono_bienvenida_pct', RL_BONO_BIENVENIDA_PCT);
-        }
+        /* EL QUE PAGA LEE LO MISMO QUE EL QUE PROMETE. Esta decision vivia
+           aca adentro y el chatbot no podia consultarla: le prometia a todo el
+           mundo el porcentaje que el operador hubiera escrito a mano. Ahora
+           las dos puntas llaman a rl_bono_bienvenida_pct(), asi que una
+           landing sin bono no se puede ofrecer por error -- y si mañana se
+           cambia el criterio, cambia para los dos a la vez.
+
+           El SELECT de arriba queda igual: lo necesita el aviso del alta
+           zombie, que es otra cosa (un alta que fallo y la cuenta se creo a
+           mano, con un bono que se le debe a alguien). */
+        $pctBono = rl_bono_bienvenida_pct($pdo, $usuario);
         if ($pctBono <= 0) {
             return 0;
         }

@@ -636,7 +636,8 @@ if ($usuarioCliente !== '') {
           . "- Saludalo por su nombre y pasa directo a lo que necesite.\n"
           . "- Usa ese usuario para las recargas y las consultas."
           . chatbot_bloque_estado_app($pdo, $usuarioCliente)
-          . chatbot_bloque_bonos($pdo, $usuarioCliente);
+          . chatbot_bloque_bonos($pdo, $usuarioCliente)
+          . chatbot_bloque_bienvenida($pdo, $usuarioCliente);
 } else {
     $sys .= "\n\nIDENTIDAD (esto manda sobre todo lo anterior):\n"
           . "El jugador NO inicio sesion. No sabes quien es.\n"
@@ -3074,6 +3075,67 @@ function limite_por_ip($max, $ventanaSeg)
  * Es el mismo dato que muestra la ficha del CRM (bono_pendiente_total), dicho
  * en la forma en que el bot tiene que repetirlo.
  */
+/**
+ * EL BONO DE BIENVENIDA DE ESTE JUGADOR, dicho para el prompt.
+ *
+ * EL PEDIDO (Nahuel, 18/09/2026): *"no quiero que una persona venga desde una
+ * landing que no tiene bono y el bot le diga: tenes un 50% de bono de
+ * bienvenida. El bot debe consultar antes eso."*
+ *
+ * Hasta hoy el bot no tenia como consultarlo: el porcentaje salia del texto
+ * libre que el operador escribe en las indicaciones, uno solo para todos. La
+ * acreditacion, en cambio, YA era por landing desde hace tiempo
+ * (`landings.bono_pct`). O sea que el que promete y el que paga leian cosas
+ * distintas, y con dos landings con bonos distintos eso se volvia una promesa
+ * incumplida garantizada.
+ *
+ * Ahora los dos llaman a `rl_bono_bienvenida_pct()`.
+ *
+ * SE DICE LAS DOS COSAS, no solo la buena: cuando NO le toca bono, el bloque
+ * lo dice explicitamente. Callarse no alcanza -- el operador puede tener
+ * escrito "50% en tu primera carga" en las indicaciones, y sin una linea que
+ * lo contradiga el bot lo repite igual.
+ *
+ * Y solo se menciona si es su PRIMERA carga: a quien ya cargo no le toca, y
+ * ofrecerselo seria la misma promesa incumplida al reves. Ante la duda
+ * (`rl_es_primera_carga` devuelve null) se trata como que no.
+ */
+function chatbot_bloque_bienvenida(PDO $pdo, string $usuario): string
+{
+    $usuario = trim($usuario);
+    if ($usuario === '') { return ''; }
+    if (!function_exists('rl_bono_bienvenida_pct')) { return ''; }
+    try {
+        $primera = function_exists('rl_es_primera_carga')
+                 ? rl_es_primera_carga($pdo, $usuario) : null;
+        if ($primera !== 1) {
+            /* Ya cargo alguna vez (o no se pudo saber). No se dice nada del
+               bono de bienvenida, y se aclara para que no lo saque del texto
+               del operador. */
+            return "
+- BONO DE BIENVENIDA: a este jugador NO le corresponde "
+                 . "(el de bienvenida es solo para la PRIMERA carga). No se lo "
+                 . "ofrezcas ni se lo menciones como algo que va a recibir.";
+        }
+        $pct = rl_bono_bienvenida_pct($pdo, $usuario);
+        if ($pct <= 0) {
+            return "
+- BONO DE BIENVENIDA: este jugador NO tiene. Entro por una "
+                 . "promocion que no da bono de bienvenida. NO le ofrezcas "
+                 . "ninguno, NO le digas un porcentaje, y si el pregunta por un "
+                 . "bono de bienvenida deci que esa promo no lo incluye. Esto "
+                 . "manda sobre cualquier promo escrita mas arriba.";
+        }
+        return "
+- BONO DE BIENVENIDA: le corresponde un " . $pct . "% sobre su "
+             . "PRIMERA carga, y se acredita solo cuando carga. Ese es el "
+             . "numero exacto: no digas otro.";
+    } catch (Throwable $e) {
+        error_log('chatbot_bloque_bienvenida: ' . $e->getMessage());
+        return '';
+    }
+}
+
 function chatbot_bloque_bonos(PDO $pdo, string $usuario): string
 {
     $usuario = trim($usuario);

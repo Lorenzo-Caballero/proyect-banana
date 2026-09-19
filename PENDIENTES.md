@@ -8,114 +8,87 @@ concreto. Acá va lo que el dueño pidió explícitamente.
 
 ---
 
-## 1. «Comprobantes» nunca muestra nada — ¿está de más?
+## 1. «Comprobantes» — DECIDIDO: se queda
 
-**El pedido (18/09/2026):** *«sigo sin entender qué hace el apartado de
-comprobantes en el CRM. Nunca me aparece nada ahí… revisá si ese apartado está
-de más, si la información que se muestra ahí ya se muestra en otro lado.»*
+**Nahuel, 18/09/2026: «quiero que la parte de comprobantes la mantengas».**
 
-**Lo que ya se midió (producción, 18/09/2026):**
+Queda como está. Lo que se averiguó y por qué la decisión es la correcta:
 
 ```
 pagos por estado:     usado 84        ← ninguno en `revision`
 recargas (30 días):   acreditada 51 · vencida 74 · pendiente 3 · cancelada 1
 ```
 
-**Está vacío porque no hay nada roto, no porque sobre.** Esa pantalla es una
-bandeja de EXCEPCIONES: muestra los pagos que el matcher no pudo atribuir a
-ningún jugador (`pagos.estado = 'revision'`) para que una persona los asigne a
-mano. Hoy el matcher está atribuyendo el 100%, así que la bandeja está vacía —
-que es el estado sano. En septiembre llegó a tener 25 acumulados, todos del
-camino A (el botón «Depósitos» del juego), y ese fue el episodio que la hizo
-necesaria.
+**Está vacío porque no hay nada roto, no porque sobre.** Es una bandeja de
+EXCEPCIONES: muestra los pagos que el matcher no pudo atribuir a ningún jugador
+(`pagos.estado = 'revision'`) para que una persona los asigne a mano. Hoy el
+matcher atribuye el 100%. En septiembre llegó a tener 25 acumulados.
 
-**Entonces el problema no es que sobre: es que no se explica.** Una sección
-siempre vacía y sin estado que diga por qué se lee como rota, y eso es
-exactamente lo que pasó.
+El día que el matcher no pueda atribuir un pago —y va a pasar: dos jugadores
+transfiriendo el mismo monto a la vez, que es el precio de haber sacado los
+centavos únicos— esa plata queda sin acreditar y esta es la única pantalla
+donde se ve.
 
-Tres salidas posibles, a decidir con Nahuel:
-
-1. **Dejarla y explicarla.** Estado vacío que diga *«no hay nada para resolver:
-   los 84 pagos del período se acreditaron solos»*, con el número. Un vacío que
-   informa deja de parecer un error.
-2. **Sacarla del rail y dejarla como aviso.** Que aparezca SOLO cuando hay algo
-   —igual que el punto rojo de Conversaciones y el de Retiros pendientes— y que
-   el resto del tiempo no ocupe lugar.
-3. **Borrarla.** No recomendado: el día que el matcher no pueda atribuir un pago
-   (y va a pasar: dos jugadores transfiriendo el mismo monto a la vez, que es
-   el precio de haber sacado los centavos únicos), la plata queda sin acreditar
-   y sin ninguna pantalla donde verla.
-
-La 2 es la que más se parece a lo que Nahuel pide en el resto del CRM.
-
-> Ojo al tocarla: `TODO_FASE_A.md` tiene una deuda abierta de este mismo módulo
-> (al asignar un comprobante a mano no queda rastro en el chat del jugador,
-> sólo un push).
+> Queda abierta una deuda menor del módulo en `TODO_FASE_A.md`: al asignar un
+> comprobante a mano no queda rastro en el chat del jugador, sólo un push.
 
 ---
 
-## 2. Bono de bienvenida distinto según la landing
+## 2. Bono de bienvenida por landing — HECHO (18/09/2026)
 
-**El pedido (18/09/2026):** *«que se pueda configurar diferentes bonos de
-bienvenida según la landing. Que el bot no siempre regale 50% en la primera
-carga… si viene desde landing que no ofrece bono de bienvenida, el bot debe
-entender eso y no ofrecerle bono a ese jugador.»*
+La acreditación **ya era por landing** (`landings.bono_pct`) y el CRM **ya
+tenía el campo**. Lo que faltaba era exactamente el riesgo que Nahuel
+anticipó: el bot no lo consultaba y le prometía a todos el porcentaje escrito
+a mano en las indicaciones.
 
-**Para qué:** poder correr una landing con 50%, otra con 30% y otra sin bono, y
-comparar costos y resultados. Hoy el bono es uno solo para todos y no se puede
-medir nada de eso.
+Ahora el que promete y el que paga leen lo mismo: `rl_bono_bienvenida_pct()`.
 
-**El riesgo que Nahuel ya anticipó, y tiene razón:** *«no quiero que esté el
-problema… en el que una persona venga desde una landing que no tiene bono y el
-bot le diga: tenés un 50% de bono de bienvenida. El bot debe consultar antes
-eso.»* O sea: no alcanza con que el bono correcto se acredite — el bot no tiene
-que **prometer** un bono que ese jugador no va a cobrar. Prometer y no pagar es
-peor que no ofrecer nada.
+- Landing con 50 / 30 / 0 → cada jugador cobra lo de SU promo.
+- Cuenta creada por el chat → el bono general del casino.
+- Creada por un operador en el panel → ninguno.
+- Si no le toca, el prompt lo dice **explícitamente** y aclara que eso manda
+  sobre cualquier promo escrita más arriba. Callarse no alcanzaba: el texto del
+  operador sigue ahí y el bot lo repetía igual.
 
-**Lo que hay que mirar antes de empezar:**
-
-- El bono vive en `config_crm` (`CFG_CRM_DEFAULTS`, `api/config_crm.php`) y es
-  **uno global**. Habría que sumarle una columna a `landings` y que el global
-  quede como el valor por defecto — el del que llega por el chat sin landing.
-- **De dónde sale la landing de un jugador:** `altas.origen` y `altas.url_landing`
-  guardan por dónde entró. Es el único lado donde consta, así que la cadena es
-  `usuario → altas → landing → % de bono`.
-- **Quién decide el bono hoy:** `rl_es_primera_carga()` (`api/recargas_lib.php`)
-  contesta si le toca, y el porcentaje sale de la config. Los dos caminos de
-  acreditación (transferencia y botón «Depósitos») pasan por ahí.
-- **Quién lo PROMETE:** el prompt del chatbot, en `chatbot_bloque_limites()`
-  (`api/chatbot_contexto.php`). Ese bloque se arma por conversación, así que
-  ahí es donde hay que meter el bono del jugador y no el global. Si la landing
-  no da bono, ese bloque no tiene que mencionar ninguno — y las reglas fijas
-  tienen que decir explícitamente que no invente uno.
-- **Cuidado con el jugador sin alta conocida:** si no se puede saber de qué
-  landing vino, va el bono global (el del chat). Ante la duda, el que ya está
-  configurado — nunca uno inventado.
-- Publicidad ya separa por landing (`landings`, `publicidad_lib.php`), así que
-  la comparación de costos sale casi sola una vez que el dato existe.
+Lo cubre `t_bono_landing.php`.
 
 ---
 
-## 3. Tiempo real — lo que queda
+## 3. Tiempo real y el WAF — HECHO (18/09/2026)
 
-Hecho el 18/09/2026: el reintento del WAF (un challenge ya no cuesta 5 ni 15
-minutos), el libro cada 5 minutos en vez de 15, el stock cada 5 en vez de 10, y
-el jugador recién creado entra al CRM al confirmarse el alta.
+Todo lo de esta sección se resolvió el mismo día. Queda acá como registro de
+qué se decidió y qué NO se tocó, para no volver a abrirlo sin motivo.
 
-**Lo que NO se tocó, y por qué:**
+**Lo que se hizo:** el reintento del challenge con espera creciente (lecturas y
+escrituras), el barrido que guarda lo leído y retoma donde quedó, el libro y el
+stock cada 5 minutos, el jugador recién creado entrando al CRM al confirmarse
+el alta, el espejo de 62 a 16 requests, un solo detector del 200 falso con las
+cuatro firmas, y el aviso por Telegram cuando una lectura queda vieja.
 
-- **El espejo completo sigue cada 5 minutos.** Son ~62 páginas y 53 segundos de
-  trabajo sobre un minuto de cron: bajarlo no entra. Los que están hablando ya
-  se refrescan cada minuto uno por uno (`refrescar_saldos_activos`), que es el
-  caso que importa.
-- **El bot contesta con el espejo, dentro del mismo turno.** Si alguien acaba de
-  ganar y pide retirar en su primer mensaje, el saldo que ve el bot puede tener
-  hasta 5 minutos. `fichas_pedir_retiro()` le contesta *«tu saldo es X»* sin
-  mirar qué tan vieja es esa lectura (`usuarios.saldo_visto_en` existe y no se
-  usa para esto). Decisión pendiente de Nahuel: cuando la lectura está vieja y
-  el jugador dice tener más, ¿el bot lo desmiente igual, o crea el pedido y lo
-  mira una persona? Es plata, así que no se cambia sin decirlo.
-- **Correr el worker más seguido que un minuto** necesitaría otro proceso con su
-  propia sesión de Playwright, y eso son dos logins con la misma cuenta de
+**La decisión sobre el saldo viejo, que la tomó Nahuel:** cuando la lectura
+tiene más de dos minutos el bot deja de desmentir al jugador — dice lo que le
+FIGURA, aclara que puede no estar al día, y lo pasa a un agente. No crea el
+pedido.
+
+**Lo que NO se tocó, y sigue valiendo:**
+
+- **El espejo completo sigue cada 5 minutos.** Ahora tarda 15 segundos en vez
+  de 47, así que bajarlo entraría — pero los que están hablando ya se refrescan
+  cada minuto uno por uno, que es el caso que importa, y cada barrido de más es
+  exposición de más al WAF sin beneficio.
+- **Correr el worker más seguido que un minuto** necesitaría otro proceso con
+  su propia sesión de Playwright, y eso son dos logins con la misma cuenta de
   agente peleándose — el problema documentado en `CLAUDE.md` que ya costó que
   el saldo «se actualizara de a ratos». No se hace sin resolver eso antes.
+- **`USUARIOS_POR_PAGINA` quedó en 200 y no en 500**, que midió mejor todavía
+  (7 requests, 10 s). Subirlo es una variable de entorno, una vez que se vea
+  que 200 se porta bien.
+
+---
+
+## 4. Para pedirle a la plataforma
+
+El único arreglo de fondo del WAF no está de nuestro lado: **que pongan la IP
+del VPS en su lista blanca, o que den una API oficial de agente.** Todo lo
+demás que hicimos es convivir con él. Vale la pena pedirlo — es una frase para
+ellos y nos sacaría el problema de encima para siempre.
