@@ -110,6 +110,23 @@ ok(count($m) === 1 && strpos($m[0], '25%') !== false, 'mensaje de Camila en el c
 $st = $pdo->prepare("SELECT COUNT(*) FROM notificaciones WHERE usuario = ? AND origen = 'fidelizacion'");
 $st->execute([$U]);
 ok((int)$st->fetchColumn() === 1, 'push encolada');
+
+/* EL BONO QUEDA ATADO AL AVISO QUE LO PROMETIO. Sin este vinculo no se puede
+   contestar la unica pregunta que prueba algo -- *"verificar que vengan
+   efectivamente de la notificacion... si efectivamente reclamaron el bono que
+   se les envio"* (Nahuel, 19/09/2026) -- y no se nota: la pantalla muestra un
+   0% prolijo que parece "no cobro nadie" cuando en realidad es "no lo estamos
+   midiendo". Medido el 19/09/2026 en produccion: los 620 bonos de la campaña
+   tenian notificacion_id en NULL. */
+$st = $pdo->prepare(
+    "SELECT COUNT(*) FROM bonos_pendientes b
+      WHERE b.usuario = ? AND b.prometido_por = 'fidelizacion'
+        AND b.notificacion_id IS NOT NULL
+        AND EXISTS (SELECT 1 FROM notificaciones n
+                     WHERE n.id = b.notificacion_id AND n.origen = 'fidelizacion')"
+);
+$st->execute([$U]);
+ok((int)$st->fetchColumn() === 1, 'y el bono queda atado a esa push, para poder medir si lo reclaman');
 ok($avisos() === 1, 'candado reservado');
 
 // ---- 2. correr de nuevo: nada nuevo ------------------------------------------

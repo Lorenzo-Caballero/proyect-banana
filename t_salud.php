@@ -125,7 +125,28 @@ chequear('se cuenta sobre los ENTREGADOS, no sobre los creados',
    horas todavia no se le puede reprochar no haber cargado, y contarlo como
    fracaso hunde el porcentaje sin decir nada. */
 chequear('no cuenta como fracaso al que lo recibio recien',
-         str_contains($srcN, "AND o.creada_en <  DATE_SUB(NOW(), INTERVAL 1 DAY)"));
+         str_contains($srcN, "AND e.entregada_en <  DATE_SUB(NOW(), INTERVAL 1 DAY)"));
+
+/* LO QUE NO SE VE NO ES UN AVISO. El "te contestamos" del chat va con
+   solo_app=1: el widget lo consume y no lo dibuja. Contarlo era lo que mas
+   inflaba el numero -- 84 de 87 "avisados" el 19/09/2026. */
+chequear('un aviso que nadie ve no cuenta como aviso',
+         str_contains($srcN, 'COALESCE(o.solo_app, 0) = 0'));
+
+/* Y los que llegan DESPUES de una operacion van aparte: "te acreditamos la
+   carga" no hizo cargar a nadie. */
+chequear('los transaccionales se separan de las promos',
+         str_contains($srcN, 'CRMNOTIF_ORIGEN_TRANSACCIONAL'));
+
+/* LA MEDIDA QUE SI SE PUEDE ATRIBUIR: uso el bono que el aviso le prometio.
+   Necesita que el bono guarde de que aviso salio, que es lo que faltaba. */
+chequear('se mide si reclamaron el bono del aviso',
+         str_contains($srcN, "'reclamo'") && str_contains($crmH, 'id="nvCardReclamo"'),
+         'que cargue despues pudo pasar igual; que use ESE bono, no');
+chequear('y la campaña ata el bono al aviso que lo prometio',
+         str_contains(file_get_contents(__DIR__ . '/api/fidelizacion_lib.php'),
+                      'SET notificacion_id = ?'),
+         'sin el vinculo la pantalla muestra un 0% que en realidad es "no lo medimos"');
 
 chequear('usa la definicion unica de una carga',
          str_contains($srcN, 'publicidad_sql_cargas()'));
@@ -141,7 +162,7 @@ chequear('y los tipos con muestra chica no se muestran',
          str_contains($crmH, 'o.avisados >= 10'),
          'una fila de 1 de 1 = 100% seria la conclusion mas falsa de la pantalla');
 chequear('con pocos avisados en total tampoco se da un porcentaje',
-         str_contains($crmH, 'ef.total.avisados < 20'));
+         str_contains($crmH, 'ef.promo.avisados < MUESTRA_MIN'));
 
 echo "\n=== La pantalla scrollea entera, no por dentro ===\n";
 

@@ -493,50 +493,135 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
         return $out;
     }
 
+    /* AVISOS QUE SIGUEN A UNA OPERACION, no que la provocan: "te acreditamos
+       la carga", "te contestamos", "tu retiro salio". Se cuentan aparte porque
+       mezclarlos con las promos da vuelta la causalidad.
+
+       MEDIDO EL 19/09/2026 CONTRA PRODUCCION, y es lo que inflaba el numero:
+       de 1.067 pares aviso/carga separados por menos de dos horas en el origen
+       `chatbot`, 500 tenian el aviso creado DESPUES de la carga. No es que el
+       aviso los hizo cargar: cargaron, y por eso les llego el aviso. */
+    defined('CRMNOTIF_ORIGEN_TRANSACCIONAL') || define('CRMNOTIF_ORIGEN_TRANSACCIONAL',
+        ['chatbot', 'carga', 'recargas', 'retiro', 'multicuenta']);
+
     /**
-     * ¿CUANTOS DE LOS QUE RECIBIERON UN AVISO CARGARON DESPUES?
+     * ¿SIRVEN LOS AVISOS? Tres medidas, de la mas dura a la mas blanda.
      *
-     * EL PEDIDO (Nahuel, 19/09/2026): *"quiero ver qué tanta efectividad están
-     * teniendo. Es decir, a qué porcentaje de los que le mandamos notificación
-     * realmente cargaron"*.
+     * EL PEDIDO ORIGINAL (Nahuel, 19/09/2026): *"quiero ver qué tanta
+     * efectividad están teniendo. Es decir, a qué porcentaje de los que le
+     * mandamos notificación realmente cargaron"*. Y despues, mirando el 42,5%
+     * que salio de eso: *"ese dato quiero que lo corrobores, porque quiero
+     * verificar que vengan efectivamente de la notificación que se les
+     * envió... quizás una manera de medirlo es si efectivamente reclamaron el
+     * bono que se les envió"*.
      *
-     * SE CUENTA SOBRE LOS QUE LA RECIBIERON, no sobre los que se les mandó. Un
-     * aviso encolado que nadie vio no le puede pedir nada a nadie -- y esa
-     * diferencia no es teórica: la fidelización mandó 600 y entregó 0.
+     * SE CORROBORO, Y EL 42,5% NO PROBABA NADA. Lo que se encontro el
+     * 19/09/2026 midiendo produccion:
      *
-     * "Cargó después" es una carga acreditada entre la entrega y los 7 días
-     * siguientes. Se usa publicidad_sql_cargas(), la definición única de una
-     * carga en todo el CRM.
+     *   · 84 de los 87 "avisados" eran el aviso `chatbot` ("te contestamos"),
+     *     que va con solo_app=1 -- o sea que el widget lo consume y NO LO
+     *     DIBUJA. Contaba como "recibio un aviso" algo que por diseño nadie ve.
+     *   · Y su causalidad corre al reves: de 1.067 pares aviso/carga a menos
+     *     de dos horas, 500 tenian el aviso creado DESPUES de la carga.
+     *   · La campaña de fidelizacion, que es la unica que existe para hacer
+     *     cargar a alguien, no aportaba una sola fila: mando 614 avisos y
+     *     entrego 0.
+     *   · Y el grupo de control no ayuda: los 25 jugadores con app que no
+     *     recibieron ningun aviso cargaron 0%, pero eso no prueba que el aviso
+     *     funcione -- es circular. Los avisos transaccionales se disparan al
+     *     cargar, asi que "no recibio ningun aviso en 30 dias" es practicamente
+     *     la definicion de "no hizo nada en 30 dias".
      *
-     * HONESTIDAD SOBRE LO QUE MIDE: esto es CORRELACION, no causa. Un jugador
-     * que ya iba a cargar igual cuenta como convertido. Sirve para comparar
-     * TIPOS de aviso entre sí --cuál acompaña mejor una carga-- no para
-     * atribuirle la plata al aviso. Por eso se devuelve abierto por origen: la
-     * comparación entre filas dice algo; el número suelto, poco.
+     * LAS TRES MEDIDAS QUE SI DICEN ALGO:
      *
-     * Se calcula en PHP y no con un EXISTS correlacionado: son un par de miles
-     * de entregas y un par de miles de cargas, y cruzarlas acá es más rápido y
-     * mucho más fácil de leer que una consulta anidada sobre un UNION.
+     * 1. `reclamo` -- RECLAMARON EL BONO DEL AVISO. La unica atribuible: le
+     *    prometimos un bono EN un aviso y lo uso en una carga. No se explica
+     *    por casualidad. Necesita que el bono guarde `notificacion_id`, que es
+     *    lo que faltaba (fid_avisar_uno lo escribe desde el 19/09/2026).
+     *
+     * 2. `toque` -- ABRIERON el aviso y cargaron, contra los que lo recibieron
+     *    y no lo abrieron. Es la comparacion la que informa, no el numero
+     *    suelto: el mismo universo, la misma ventana, y la unica diferencia es
+     *    si lo tocaron. Sigue sin ser causa (quien toca ya estaba enganchado),
+     *    pero es la señal mas fuerte que se puede leer sin un grupo de control.
+     *
+     * 3. `promo` -- de los que RECIBIERON una promo VISIBLE, cuantos cargaron
+     *    dentro de los 7 dias. Es el numero que se pidio al principio, ahora
+     *    sin las dos contaminaciones: medido desde la ENTREGA y no desde que
+     *    se creo el aviso, y sin los transaccionales.
+     *
+     * DESDE `entregada_en`, NO DESDE `creada_en`. La push se entrega cuando el
+     * celular sondea, y la demora medida en produccion no es chica: 54 minutos
+     * de promedio en el chat, 7 horas en los avisos de carga, 20 horas en los
+     * de ruleta. Contar desde que se creo el aviso mete como "cargo despues"
+     * cargas que pasaron antes de que el jugador viera nada.
+     *
+     * LO QUE SIGUE SIN PODERSE CONTESTAR es cuanta de esa plata no habria
+     * entrado igual. Para eso hace falta dejar a proposito sin aviso a una
+     * parte de los elegibles y comparar -- no se puede deducir de lo que ya
+     * paso.
      */
     function crmnotif_efectividad(PDO $pdo, int $dias = 30): array
     {
         $dias = max(1, min(365, $dias));
-        /* La ventana TERMINA hace un día: a alguien que recibió el aviso hace
-           dos horas todavía no se le puede reprochar no haber cargado, y
-           contarlo como fracaso hunde el porcentaje sin decir nada. */
-        $out = ['dias' => $dias, 'total' => ['avisados' => 0, 'cargaron' => 0, 'pct' => 0.0],
-                'por_origen' => []];
+        $vacio = ['avisados' => 0, 'cargaron' => 0, 'pct' => 0.0];
+        $out = [
+            'dias'    => $dias,
+            'reclamo' => ['prometidos' => 0, 'reclamados' => 0, 'pct' => 0.0, 'sin_atar' => 0],
+            'toque'   => ['tocaron' => 0, 'tocaron_cargaron' => 0, 'tocaron_pct' => 0.0,
+                          'ignoraron' => 0, 'ignoraron_cargaron' => 0, 'ignoraron_pct' => 0.0],
+            'promo'   => $vacio,
+            'transaccional' => $vacio,
+            'por_origen' => [],
+        ];
+        $pc = fn(int $n, int $de) => $de > 0 ? round($n * 100 / $de, 1) : 0.0;
+
         try {
+            /* ---- 1. LA MEDIDA DURA: reclamaron el bono que el aviso prometio.
+                  Se mira `creado_en` del bono y no la ventana de entrega: un
+                  bono prometido hace 20 dias y cobrado ayer cuenta como
+                  cobrado, que es lo que interesa. */
+            $st = $pdo->prepare(
+                "SELECT COUNT(*) prometidos,
+                        SUM(estado = 'aplicado') reclamados
+                   FROM bonos_pendientes
+                  WHERE notificacion_id IS NOT NULL
+                    AND creado_en >= DATE_SUB(NOW(), INTERVAL ? DAY)"
+            );
+            $st->execute([$dias]);
+            $r = $st->fetch(PDO::FETCH_ASSOC) ?: [];
+            $out['reclamo']['prometidos'] = (int)($r['prometidos'] ?? 0);
+            $out['reclamo']['reclamados'] = (int)($r['reclamados'] ?? 0);
+            $out['reclamo']['pct'] = $pc($out['reclamo']['reclamados'], $out['reclamo']['prometidos']);
+
+            /* Los bonos SIN aviso atado no entran al porcentaje, pero se
+               informan: si son muchos, el numero de arriba esta midiendo una
+               parte chica y hay que decirlo en vez de dar un 0% redondo. */
+            $st = $pdo->prepare(
+                "SELECT COUNT(*) FROM bonos_pendientes
+                  WHERE notificacion_id IS NULL
+                    AND creado_en >= DATE_SUB(NOW(), INTERVAL ? DAY)"
+            );
+            $st->execute([$dias]);
+            $out['reclamo']['sin_atar'] = (int)$st->fetchColumn();
+
             if (!function_exists('publicidad_sql_cargas')) { return $out; }
 
-            // 1) A quién le llegó, cuándo y de qué tipo era el aviso.
+            /* ---- 2. Las entregas: quien, cuando, de que tipo, y si la toco.
+                  SOLO LO QUE SE DIBUJA (solo_app = 0): un aviso que el widget
+                  consume sin mostrar no le puede pedir nada a nadie.
+                  La ventana termina hace un dia: a alguien que lo recibio hace
+                  dos horas todavia no se le puede reprochar no haber cargado. */
             $st = $pdo->prepare(
-                "SELECT d.usuario, o.origen, MIN(o.creada_en) AS cuando
+                "SELECT d.usuario, o.origen,
+                        MIN(e.entregada_en) AS cuando,
+                        MAX(e.leida_en IS NOT NULL) AS toco
                    FROM notificaciones o
                    JOIN notificaciones_entregas e ON e.notificacion_id = o.id
                    JOIN dispositivos d ON d.device_id = e.device_id
-                  WHERE o.creada_en >= DATE_SUB(NOW(), INTERVAL ? DAY)
-                    AND o.creada_en <  DATE_SUB(NOW(), INTERVAL 1 DAY)
+                  WHERE e.entregada_en >= DATE_SUB(NOW(), INTERVAL ? DAY)
+                    AND e.entregada_en <  DATE_SUB(NOW(), INTERVAL 1 DAY)
+                    AND COALESCE(o.solo_app, 0) = 0
                     AND d.usuario IS NOT NULL AND d.usuario <> ''
                   GROUP BY d.usuario, o.origen"
             );
@@ -544,7 +629,7 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
             $avisos = $st->fetchAll(PDO::FETCH_ASSOC);
             if (!$avisos) { return $out; }
 
-            // 2) Las cargas del período, una vez.
+            // ---- 3. Las cargas del periodo, una vez.
             $cargas = publicidad_sql_cargas();
             $sc = $pdo->prepare(
                 "SELECT usuario, cuando FROM ($cargas) c
@@ -556,38 +641,59 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
                 $porUsuario[mb_strtolower((string)$c['usuario'])][] = strtotime((string)$c['cuando']);
             }
 
-            // 3) El cruce.
-            $orig = [];
-            $vistosTotal = [];
-            $cargoTotal  = [];
+            // ---- 4. El cruce.
+            $orig  = [];
+            $grupo = ['promo' => ['a' => [], 'c' => []], 'transaccional' => ['a' => [], 'c' => []]];
+            $toque = ['1' => ['a' => [], 'c' => []], '0' => ['a' => [], 'c' => []]];
             foreach ($avisos as $a) {
                 $u  = mb_strtolower((string)$a['usuario']);
                 $o  = (string)$a['origen'] ?: 'otro';
                 $ts = strtotime((string)$a['cuando']);
-                if (!isset($orig[$o])) { $orig[$o] = ['avisados' => [], 'cargaron' => []]; }
-                $orig[$o]['avisados'][$u] = true;
-                $vistosTotal[$u] = true;
+                $cl = in_array($o, CRMNOTIF_ORIGEN_TRANSACCIONAL, true) ? 'transaccional' : 'promo';
+                $tk = !empty($a['toco']) ? '1' : '0';
+
+                $cargo = false;
                 foreach ($porUsuario[$u] ?? [] as $tc) {
-                    if ($tc > $ts && $tc < $ts + 7 * 86400) {
-                        $orig[$o]['cargaron'][$u] = true;
-                        $cargoTotal[$u] = true;
-                        break;
-                    }
+                    if ($tc > $ts && $tc < $ts + 7 * 86400) { $cargo = true; break; }
+                }
+                if (!isset($orig[$o])) { $orig[$o] = ['clase' => $cl, 'a' => [], 'c' => []]; }
+                $orig[$o]['a'][$u]   = true;
+                $grupo[$cl]['a'][$u] = true;
+                $toque[$tk]['a'][$u] = true;
+                if ($cargo) {
+                    $orig[$o]['c'][$u]   = true;
+                    $grupo[$cl]['c'][$u] = true;
+                    $toque[$tk]['c'][$u] = true;
                 }
             }
 
-            $pc = fn(int $n, int $de) => $de > 0 ? round($n * 100 / $de, 1) : 0.0;
-            $out['total'] = ['avisados' => count($vistosTotal), 'cargaron' => count($cargoTotal),
-                             'pct' => $pc(count($cargoTotal), count($vistosTotal))];
+            foreach (['promo', 'transaccional'] as $cl) {
+                $out[$cl] = ['avisados' => count($grupo[$cl]['a']),
+                             'cargaron' => count($grupo[$cl]['c']),
+                             'pct' => $pc(count($grupo[$cl]['c']), count($grupo[$cl]['a']))];
+            }
+            /* Un jugador que toco ALGUN aviso cuenta como "toco": si abrio uno
+               y otro no, lo que se quiere saber es si abrir mueve la aguja. */
+            foreach ($toque['1']['a'] as $u => $_) {
+                unset($toque['0']['a'][$u], $toque['0']['c'][$u]);
+            }
+            $out['toque'] = [
+                'tocaron' => count($toque['1']['a']),
+                'tocaron_cargaron' => count($toque['1']['c']),
+                'tocaron_pct' => $pc(count($toque['1']['c']), count($toque['1']['a'])),
+                'ignoraron' => count($toque['0']['a']),
+                'ignoraron_cargaron' => count($toque['0']['c']),
+                'ignoraron_pct' => $pc(count($toque['0']['c']), count($toque['0']['a'])),
+            ];
+
             foreach ($orig as $o => $v) {
                 $out['por_origen'][] = [
-                    'origen' => $o,
-                    'avisados' => count($v['avisados']),
-                    'cargaron' => count($v['cargaron']),
-                    'pct' => $pc(count($v['cargaron']), count($v['avisados'])),
+                    'origen' => $o, 'clase' => $v['clase'],
+                    'avisados' => count($v['a']), 'cargaron' => count($v['c']),
+                    'pct' => $pc(count($v['c']), count($v['a'])),
                 ];
             }
-            // De mayor a menor conversión: arriba lo que funciona.
+            // De mayor a menor conversion: arriba lo que funciona.
             usort($out['por_origen'], fn($a, $b) => $b['pct'] <=> $a['pct']);
         } catch (Throwable $e) {
             error_log('crmnotif_efectividad: ' . $e->getMessage());

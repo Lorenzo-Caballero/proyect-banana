@@ -2171,6 +2171,11 @@
   .nv-ef-barra{flex:1;height:7px;background:var(--panel3);border-radius:99px;overflow:hidden}
   .nv-ef-barra i{display:block;height:100%;background:var(--violet);border-radius:99px}
   .nv-ef-num{min-width:118px;text-align:right;color:var(--muted);font-size:11px}
+  /* Los transaccionales, apagados: están para que se vea que existen, no
+     para compararlos con una promo. */
+  .nv-ef-fila.es-trx{opacity:.55}
+  .nv-ef-fila.es-trx .nv-ef-barra i{background:var(--muted)}
+  .nv-ef-nom .trx{font-style:normal;cursor:help;color:var(--muted)}
 
 
   @media (max-width:720px){ .nv-cob-grid{grid-template-columns:1fr} }
@@ -3423,12 +3428,28 @@
           <div class="v">—</div>
           <div class="sub">—</div>
         </div>
-        <!-- LA EFECTIVIDAD: de los que RECIBIERON un aviso, cuántos cargaron
-             después. Se cuenta sobre los que lo recibieron y no sobre los que
-             se les mandó: un aviso encolado que nadie vio no le puede pedir
-             nada a nadie. -->
-        <div class="nv-cob-card destacada" id="nvCardEfect" title="De los jugadores a los que la app les ENTREGÓ un aviso, cuántos hicieron una carga en los 7 días siguientes. Es correlación, no causa: alguien que ya iba a cargar igual cuenta. Sirve para comparar tipos de aviso entre sí.">
-          <div class="k">Cargaron después del aviso</div>
+        <!-- ¿SIRVEN LOS AVISOS? Tres tarjetas, de la más dura a la más
+             blanda, y en ese orden a propósito.
+
+             Acá había UNA sola que decía "cargaron después del aviso: 42,5%".
+             Se corroboró el 19/09/2026 contra producción y no probaba nada:
+             84 de esos 87 avisados eran el "te contestamos" del chat, que va
+             con solo_app=1 y el widget NO DIBUJA; y de 1.067 pares aviso/carga
+             separados por menos de dos horas, 500 tenían el aviso creado
+             DESPUÉS de la carga. O sea que medía, sobre todo, gente que cargó
+             y por eso recibió un aviso. -->
+        <div class="nv-cob-card destacada" id="nvCardReclamo" title="La única medida que se puede atribuir al aviso: le prometimos un bono EN una notificación y lo usó en una carga. Que alguien cargue después de un aviso pudo pasar igual; que use el bono que ese aviso le prometió, no.">
+          <div class="k">Reclamaron el bono del aviso</div>
+          <div class="v">—</div>
+          <div class="sub">—</div>
+        </div>
+        <div class="nv-cob-card" id="nvCardToque" title="De los que ABRIERON un aviso, cuántos cargaron dentro de los 7 días, contra los que lo recibieron y no lo abrieron. Mismo universo y misma ventana: lo único distinto es si lo tocaron. No es causa — el que toca ya estaba enganchado — pero es la señal más fuerte que hay sin un grupo de control.">
+          <div class="k">Abrieron el aviso y cargaron</div>
+          <div class="v">—</div>
+          <div class="sub">—</div>
+        </div>
+        <div class="nv-cob-card" id="nvCardEfect" title="De los que recibieron una promo VISIBLE, cuántos cargaron en los 7 días siguientes. Se mide desde que la app la ENTREGÓ, no desde que se creó el aviso: la demora entre las dos cosas llega a 20 horas. Sigue siendo correlación; sirve para comparar tipos de promo entre sí.">
+          <div class="k">Cargaron tras una promo</div>
           <div class="v">—</div>
           <div class="sub">—</div>
         </div>
@@ -13763,22 +13784,61 @@ ${cuando}.
         `cobrados de ${nf.format(f.pendientes + f.cobrados)} prometidos (${f.pct}%)`;
     }
 
-    /* ---------- 6. ¿sirvió? de los que lo RECIBIERON, cuántos cargaron ------
-       EL PEDIDO (Nahuel, 19/09/2026): *"a qué porcentaje de los que le mandamos
-       notificación realmente cargaron"*.
+    /* ---------- 6. ¿sirvieron los avisos? ----------------------------------
+       EL PEDIDO (Nahuel, 19/09/2026), primero: *"a qué porcentaje de los que le
+       mandamos notificación realmente cargaron"*. Y después, viendo el 42,5%
+       que salió de eso: *"ese dato quiero que lo corrobores... quizás una
+       manera de medirlo es si efectivamente reclamaron el bono que se les
+       envió"*.
 
-       Se cuenta sobre los que lo RECIBIERON y no sobre los que se les mandó: un
-       aviso encolado que nadie vio no le puede pedir nada a nadie, y esa
-       diferencia no es teórica -- la fidelización mandó 600 y entregó 0. */
+       Se corroboró, y tenía razón en desconfiar. Los detalles están en
+       crmnotif_efectividad(); acá lo que importa es que ahora son TRES números
+       en vez de uno, ordenados de lo que prueba más a lo que prueba menos, y
+       cada uno dice de qué tamaño es su muestra. */
     const ef = m.efectividad;
-    const cef = $("#nvCardEfect");
-    if(cef && ef){
-      const bajo = ef.total.avisados < 20;
-      cef.querySelector(".v").textContent = bajo ? "—" : ef.total.pct + "%";
-      cef.querySelector(".sub").textContent = bajo
-        ? `Todavía poca muestra (${nf.format(ef.total.avisados)} avisados en ${ef.dias} días)`
-        : `${nf.format(ef.total.cargaron)} de ${nf.format(ef.total.avisados)} cargaron dentro de los 7 días`;
+    const MUESTRA_MIN = 20;   // debajo de esto se muestra el crudo, no el %
+
+    /* 6a. LA DURA: usó el bono que el aviso le prometió. */
+    const crec = $("#nvCardReclamo");
+    if(crec && ef && ef.reclamo){
+      const r = ef.reclamo;
+      if(!r.prometidos){
+        crec.querySelector(".v").textContent = "—";
+        crec.querySelector(".sub").textContent = r.sin_atar
+          ? `Todavía no hay bonos atados a un aviso (${nf.format(r.sin_atar)} sin atar)`
+          : "Todavía no se prometió ningún bono por notificación";
+      } else {
+        crec.querySelector(".v").textContent = r.pct + "%";
+        crec.querySelector(".sub").textContent =
+          `${nf.format(r.reclamados)} de ${nf.format(r.prometidos)} bonos prometidos por aviso`;
+      }
     }
+
+    /* 6b. LA COMPARACIÓN: abrir el aviso, ¿mueve la aguja? */
+    const ctoc = $("#nvCardToque");
+    if(ctoc && ef && ef.toque){
+      const q = ef.toque;
+      if(q.tocaron < 5){
+        ctoc.querySelector(".v").textContent = "—";
+        ctoc.querySelector(".sub").textContent =
+          `Solo ${nf.format(q.tocaron)} abrieron un aviso en ${ef.dias} días`;
+      } else {
+        ctoc.querySelector(".v").textContent = q.tocaron_pct + "%";
+        ctoc.querySelector(".sub").textContent =
+          `${nf.format(q.tocaron_cargaron)} de ${nf.format(q.tocaron)} · contra ${q.ignoraron_pct}% de los que no lo abrieron`;
+      }
+    }
+
+    /* 6c. LA BLANDA: recibió una promo visible y cargó después. */
+    const cef = $("#nvCardEfect");
+    if(cef && ef && ef.promo){
+      const bajo = ef.promo.avisados < MUESTRA_MIN;
+      cef.querySelector(".v").textContent = bajo ? "—" : ef.promo.pct + "%";
+      cef.querySelector(".sub").textContent = bajo
+        ? `Todavía poca muestra (${nf.format(ef.promo.avisados)} promos entregadas en ${ef.dias} días)`
+        : `${nf.format(ef.promo.cargaron)} de ${nf.format(ef.promo.avisados)} cargaron dentro de los 7 días`;
+    }
+
     const contEf = $("#nvEfect");
     if(contEf && ef){
       const NOM = {fidelizacion:"Fidelización", promo:"Promos", ruleta:"Ruleta",
@@ -13794,8 +13854,11 @@ ${cuando}.
            <span class="nv-ef-nom">Por tipo de aviso</span>
            <span class="nv-ef-barra" style="background:none"></span>
            <span class="nv-ef-num">cargaron / avisados</span></div>`
-        + filas.map(o=>`<div class="nv-ef-fila">
-            <span class="nv-ef-nom">${esc(NOM[o.origen]||o.origen)}</span>
+        /* Los transaccionales van marcados y en gris: "te acreditamos la carga"
+           no hizo cargar a nadie, llegó PORQUE cargó. Se muestran igual porque
+           sacarlos escondría que existen y son la mayoría del volumen. */
+        + filas.map(o=>`<div class="nv-ef-fila${o.clase==="transaccional"?" es-trx":""}">
+            <span class="nv-ef-nom">${esc(NOM[o.origen]||o.origen)}${o.clase==="transaccional"?' <i class="trx" title="Este aviso sale DESPUÉS de una operación (una carga, una respuesta del chat). No la provocó: llegó porque pasó. No lo leas como efectividad.">↻</i>':""}</span>
             <span class="nv-ef-barra"><i style="width:${Math.min(100,o.pct)}%"></i></span>
             <span class="nv-ef-num">${o.pct}% · ${nf.format(o.cargaron)} de ${nf.format(o.avisados)}</span>
           </div>`).join("");

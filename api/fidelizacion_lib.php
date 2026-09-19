@@ -349,6 +349,7 @@ if (!function_exists('fid_tramos')) {
            el APK también filtra sus textos de ruleta con el flag que baja en el
            sondeo. Este era el único camino que prometía sin mirar. */
         $conGiro = false;
+        $giroId   = null;   // para atarlo al aviso, igual que el bono de %
         $ruletaOn = !function_exists('cfg_crm_activo') || cfg_crm_activo($pdo, 'ruleta_activa');
         if (!empty($tramo['ruleta']) && $ruletaOn) {
             try {
@@ -357,6 +358,7 @@ if (!function_exists('fid_tramos')) {
                     && function_exists('crmnotif_bono_crear')) {
                     $g2 = crmnotif_bono_crear($pdo, $usuario, 'giro', 0, 'fidelizacion');
                     $conGiro = !empty($g2['ok']);
+                    if ($conGiro) { $giroId = (int)$g2['id']; }
                 } elseif (function_exists('crmnotif_cortesia_disponible')
                           && crmnotif_cortesia_disponible($pdo, $usuario)) {
                     $conGiro = true;   // ya lo tiene: el mensaje se lo recuerda igual
@@ -374,8 +376,34 @@ if (!function_exists('fid_tramos')) {
                 $cuerpo = 'Hace ' . $diasInactivo . ' días que no te vemos. Tu próxima carga '
                         . 'viene con un ' . $pct . '% extra de regalo, cargues lo que cargues.';
                 if ($conGiro) { $cuerpo .= ' Y tenés un giro gratis de la ruleta esperándote.'; }
-                notif_crear($pdo, $usuario, '🎁 Un ' . $pct . '% extra te espera',
-                            $cuerpo, 'promo', null, 'fidelizacion');
+                $notifId = notif_crear($pdo, $usuario, '🎁 Un ' . $pct . '% extra te espera',
+                                       $cuerpo, 'promo', null, 'fidelizacion');
+
+                /* EL BONO QUEDA ATADO AL AVISO QUE LO PROMETIO. Sin esto no hay
+                   forma de contestar la única pregunta que prueba algo:
+                   *"quiero verificar que vengan efectivamente de la
+                   notificación que se les envió... quizás una manera de medirlo
+                   es si efectivamente reclamaron el bono que se les envió"*
+                   (Nahuel, 19/09/2026).
+
+                   Que alguien cargue DESPUES de un aviso es correlación --
+                   pudo cargar igual. Que use el bono que ese aviso le prometió
+                   es del aviso y de nada más. Medido el 19/09/2026 contra
+                   producción: `notificacion_id` estaba en NULL en los 620 bonos
+                   de la campaña, así que la medida daba 0 no porque nadie
+                   cobrara sino porque nadie había guardado el vínculo.
+
+                   Va acá y no en crmnotif_bono_crear porque el aviso se arma
+                   DESPUES del bono (el texto necesita saber si hubo giro). */
+                if ($notifId > 0) {
+                    $ids = array_filter([$bonoId, $giroId]);
+                    if ($ids) {
+                        $pdo->prepare(
+                            "UPDATE bonos_pendientes SET notificacion_id = ?
+                              WHERE id IN (" . implode(',', array_fill(0, count($ids), '?')) . ")"
+                        )->execute(array_merge([$notifId], $ids));
+                    }
+                }
             }
         } catch (Throwable $e) {
             error_log('fid_avisar_uno (push): ' . $e->getMessage());
