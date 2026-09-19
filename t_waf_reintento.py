@@ -218,6 +218,24 @@ chequear('la llamada con reintento esta adentro del bucle', dentro_del_while,
 
 
 # ---------------------------------------------------------------------------
+print('\n=== 7b. El buen momento es para el que esta hablando ===')
+# Medido el 18/09/2026: el barrido completo se trabo en la pagina 0 y quemo 12
+# segundos de reintentos; justo despues, el refresco del unico jugador activo
+# se comio el challenge tambien. En la pasada anterior, sin barrido en el
+# medio, habia salido al primer intento.
+#
+# No hay dependencia entre los dos, asi que el orden es libre. Y si hay que
+# elegir a quien le toca el buen momento, le toca al que esta hablando: su
+# saldo es el que el bot va a usar para contestarle AHORA.
+_main = next(n for n in arbol.body
+             if isinstance(n, ast.FunctionDef) and n.name == 'main')
+cuerpo_main = ast.get_source_segment(fuente, _main) or ''
+i_act = cuerpo_main.find('refrescar_saldos_activos(ctx')
+i_esp = cuerpo_main.find('sincronizar_usuarios(ctx, args.ver)')
+chequear('los saldos de los activos van ANTES del barrido completo',
+         i_act != -1 and i_esp != -1 and i_act < i_esp,
+         'los otros 3.000 pueden esperar cinco minutos mas')
+
 print('\n=== 8. El barrido tiene presupuesto de tiempo ===')
 # MEDIDO EL 18/09/2026, primera hora con el reintento puesto: el WAF desafia
 # cada 5-7 paginas, y con eso el barrido de 62 paginas paso de 53 a 68

@@ -1541,14 +1541,28 @@ def main() -> int:
                 sincronizar_libro(ctx, args.ver)
                 # Justo DESPUES de traer el libro, que es cuando esta fresco.
                 conciliar(ctx, args.ver)
-                # El saldo de los jugadores. Va ULTIMO a proposito: es lo unico
-                # de la pasada que no decide nada -- si tarda o falla, las
-                # cargas y los retiros ya se resolvieron.
-                sincronizar_usuarios(ctx, args.ver)
-                # Y el saldo de los que estan hablando AHORA, que es el que el
+                # EL SALDO DE LOS QUE ESTAN HABLANDO AHORA, que es el que el
                 # bot va a usar para contestarles. Una llamada por cabeza, en
                 # cada pasada: baja el peor caso de 5 minutos a 1.
+                #
+                # VA ANTES DEL BARRIDO COMPLETO, y eso es a proposito desde el
+                # 18/09/2026. Medido ese dia: el barrido se trabo en la pagina
+                # 0 y quemo 12 segundos de reintentos (21:04:13 a 21:04:25);
+                # justo despues, el refresco de holadaniel925 --el unico
+                # jugador activo-- se comio el challenge tambien. En la pasada
+                # anterior, sin barrido en el medio, habia salido al primer
+                # intento.
+                #
+                # No hay dependencia entre los dos, asi que el orden es libre.
+                # Y si hay que elegir a quien le toca el buen momento, le toca
+                # al que esta hablando: su saldo es el que el bot va a usar
+                # para contestarle AHORA. Los otros 3.000 pueden esperar cinco
+                # minutos mas.
                 refrescar_saldos_activos(ctx, args.ver)
+                # Y el espejo de todos. Va ULTIMO: es lo unico de la pasada que
+                # no decide nada -- si tarda o falla, las cargas y los retiros
+                # ya se resolvieron.
+                sincronizar_usuarios(ctx, args.ver)
                 if n:
                     log.info("%d carga(s) aprobada(s)", n)
             except DesafioWAF as e:
