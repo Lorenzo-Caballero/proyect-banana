@@ -4853,7 +4853,16 @@
             <div>
               <label class="cb-flabel">No repetir el mismo aviso antes de (minutos)</label>
               <input class="cb-input" id="cfgTgRepetir" inputmode="numeric" placeholder="180">
-              <p class="cfg-hint">Los problemas se detectan cada minuto. Sin este freno, algo roto te mandaría <b>1.440 mensajes por día</b>. Si el problema cambia, te avisa igual aunque no haya pasado el tiempo.</p>
+              <p class="cfg-hint">Los problemas se detectan cada minuto. Sin este freno, algo roto te mandaría <b>1.440 mensajes por día</b>.</p>
+            </div>
+            <!-- EL PISO PARA LOS CAMBIOS. Acá arriba decía "si el problema
+                 cambia, te avisa igual aunque no haya pasado el tiempo", que
+                 era cierto y era el agujero: los números se mueven solos y cada
+                 movimiento contaba como aviso nuevo. -->
+            <div>
+              <label class="cb-flabel">…y si solo cambió un número, no antes de (minutos)</label>
+              <input class="cb-input" id="cfgTgCambio" inputmode="numeric" placeholder="45">
+              <p class="cfg-hint">Un problema que sigue ahí pero con otro número —de 1 alta pendiente a 2, y de vuelta a 1— no es un problema nuevo. Sin este piso, cada movimiento era <b>otro mensaje</b>: así salieron 237 avisos, 71 de ellos solo por la cuenta de altas moviéndose. Una escalada real te sigue llegando, pero no más seguido que esto.</p>
             </div>
             <div>
               <label class="cb-flabel">Avisar si no hay actividad por (horas)</label>
@@ -6620,6 +6629,7 @@
     tg_ev_pago:         { el: "#cfgTgPago",       tipo: "bool"  },
     tg_ev_app:          { el: "#cfgTgApp",        tipo: "bool"  },
     tg_repetir_min:     { el: "#cfgTgRepetir",    tipo: "texto" },
+    tg_repetir_cambio_min: { el: "#cfgTgCambio",  tipo: "texto" },
     tg_sin_actividad_hs:{ el: "#cfgTgSinAct",     tipo: "texto" },
     lim_retiro_hora_desde: { el: "#cfgLimRetiroDesde", tipo: "texto" },
     lim_retiro_hora_hasta: { el: "#cfgLimRetiroHasta", tipo: "texto" },

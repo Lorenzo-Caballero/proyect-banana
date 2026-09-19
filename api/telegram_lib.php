@@ -226,6 +226,16 @@ if (!function_exists('tg_avisar_una_vez')) {
      *    resolver" a "5" es informacion nueva, no una repeticion, y esperar
      *    tres horas para contarla seria perder justo la parte util.
      *
+     * PERO EL CAMBIO DE CONTENIDO TIENE UN PISO (`tg_repetir_cambio_min`, 45),
+     * y sin el la segunda regla se come a la primera. Los numeros que mira el
+     * vigilante de salud se mueven solos: medido el 19/09/2026, la cuenta de
+     * altas pendientes de ganamoscrm cambio 71 veces en un mes, y cada 1->2,
+     * 2->3, 3->2 salia como un aviso nuevo a los pocos minutos del anterior.
+     * El total fue 237 avisos de la misma clave. Una escalada real sigue
+     * avisando --solo que no mas seguido que el piso--; lo que se termina es la
+     * oscilacion. Lo urgente de verdad no depende de esto: va con su propia
+     * clave (`pago_revision:<id>`, `retiro_panel:<id>`) y no comparte cupo.
+     *
      * @param string $clave  identifica el PROBLEMA, no el momento
      *                       ('salud', 'sin_actividad', 'pago_revision:AB12')
      * @param int    $minutos  0 = usar el default configurado
@@ -247,6 +257,16 @@ if (!function_exists('tg_avisar_una_vez')) {
         }
         if ($minutos <= 0) { $minutos = 180; }
 
+        /* El piso para el caso "cambio el contenido". Nunca mayor que la espera
+           normal: si alguien configura 999 seria mas estricto con la novedad
+           que con la repeticion, que es justo al reves de lo que se quiere. */
+        $pisoCambio = 0;
+        if (function_exists('cfg_crm')) {
+            $pisoCambio = (int)(cfg_crm($pdo, 'tg_repetir_cambio_min') ?? 0);
+        }
+        if ($pisoCambio <= 0) { $pisoCambio = 45; }
+        $pisoCambio = min($pisoCambio, $minutos);
+
         $huella = md5($texto);
         try {
             /* La edad del aviso se calcula EN SQL, no restando contra time().
@@ -266,8 +286,9 @@ if (!function_exists('tg_avisar_una_vez')) {
             if ($prev) {
                 $mismoTexto = ((string)($prev['huella'] ?? '')) === $huella;
                 $hace = (int)($prev['hace'] ?? 0);
-                if ($mismoTexto && $hace < $minutos) {
-                    return false;   // ya lo dijimos, y no cambio nada
+                // Mismo texto: la espera larga. Texto distinto: el piso.
+                if ($hace < ($mismoTexto ? $minutos : $pisoCambio)) {
+                    return false;
                 }
             }
         } catch (Throwable $e) {

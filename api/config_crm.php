@@ -144,6 +144,24 @@ const CFG_CRM_DEFAULTS = [
     // 1.440 mensajes por dia por problema -- y el agente termina silenciando
     // el bot justo antes de que pase algo importante.
     'tg_repetir_min'  => '180',
+
+    /* PISO ENTRE AVISOS CUANDO SOLO CAMBIO UN NUMERO.
+       `tg_avisar_una_vez` reenvia si el contenido cambio, sin esperar los 180
+       minutos, y esa regla esta bien pensada: pasar de "1 comprobante sin
+       resolver" a "5" es informacion nueva. El problema es que los numeros que
+       mira el vigilante de salud se mueven todo el tiempo.
+
+       MEDIDO EL 19/09/2026: el aviso 'salud' salio 237 veces, y solo la cuenta
+       de altas pendientes de ganamoscrm cambio 71 veces en un mes -- cada 1->2,
+       2->3, 3->2 es un Telegram nuevo, minutos despues del anterior. El aviso
+       repetido termina en lo mismo de siempre: se silencia el bot y despues no
+       se ve lo que si importaba.
+
+       Con el piso, un numero que sube sigue avisando (no se pierde una
+       escalada), pero no mas seguido que esto. Un problema NUEVO que aparece
+       tambien espera el piso; para que algo pase de inmediato va con su propia
+       clave, como hacen `pago_revision:<id>` y `retiro_panel:<id>`. */
+    'tg_repetir_cambio_min' => '45',
     // Horas sin NINGUNA actividad tras las cuales se avisa. '0' = no avisar.
     // 6 y no menos: de madrugada no hay nadie jugando y eso es normal.
     'tg_sin_actividad_hs' => '6',

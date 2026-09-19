@@ -110,11 +110,54 @@ tg_avisar_una_vez('test_salud', '<b>x</b>', $pdo, 180);
 chequear('el MISMO aviso, recien mandado, NI SE INTENTA', $intentos() === $i1,
          'salio ' . ($intentos() - $i1) . ' vez/veces; eso es el spam que hay que evitar');
 
-// Contenido distinto = novedad, se manda aunque sea inmediato.
+/* CONTENIDO DISTINTO = NOVEDAD, PERO CON UN PISO.
+   Hasta el 19/09/2026 cualquier cambio de texto se mandaba en el acto, y esa
+   regla --bien intencionada: pasar de "1 comprobante" a "5" es informacion
+   nueva-- se comia al anti-spam entero, porque los numeros que mira el
+   vigilante de salud se mueven solos. Medido ese dia en produccion: el aviso
+   'salud' habia salido 237 veces, y solo la cuenta de altas pendientes de
+   ganamoscrm cambio 71 veces en un mes. Cada 1->2, 2->3, 3->2 era un Telegram
+   nuevo a los pocos minutos del anterior.
+
+   Ahora el cambio de contenido espera `tg_repetir_cambio_min` (45). Una
+   escalada real sigue avisando; lo que se termina es la oscilacion. */
+$pdo->prepare("UPDATE tg_avisos SET ultimo_en = NOW() WHERE clave = ?")->execute(['test_salud']);
 $i2 = $intentos();
 tg_avisar_una_vez('test_salud', '<b>ahora son 5</b>', $pdo, 180);
-chequear('si el CONTENIDO cambia, se manda igual', $intentos() === $i2 + 1,
-         'pasar de "1 comprobante" a "5" es informacion nueva, no una repeticion');
+chequear('un numero que cambia recien recien NO se manda de nuevo', $intentos() === $i2,
+         'salio ' . ($intentos() - $i2) . ' vez/veces; 1->2->1 cada pocos minutos es el spam que hay que evitar');
+
+/* Pasado el piso, la novedad SI pasa -- y mucho antes de las 3 horas de la
+   espera normal. Esto es lo que evita que el arreglo del spam se coma la parte
+   util: una escalada no tiene que esperar el ciclo completo. */
+$pdo->prepare("UPDATE tg_avisos SET ultimo_en = NOW() - INTERVAL 60 MINUTE WHERE clave = ?")
+    ->execute(['test_salud']);
+$i2b = $intentos();
+tg_avisar_una_vez('test_salud', '<b>ahora son 9</b>', $pdo, 180);
+chequear('pero pasado el piso la novedad SI se manda, sin esperar las 3 horas',
+         $intentos() === $i2b + 1,
+         'a los 60 min con el piso en 45 tiene que salir; una escalada real no se pierde');
+
+/* Y el mismo texto a los 60 minutos sigue frenado: el piso es SOLO para el
+   contenido nuevo, no una rebaja de la espera normal. */
+$pdo->prepare("UPDATE tg_avisos SET ultimo_en = NOW() - INTERVAL 60 MINUTE, huella = ? WHERE clave = ?")
+    ->execute([md5('<b>igual que antes</b>'), 'test_salud']);
+$i2c = $intentos();
+tg_avisar_una_vez('test_salud', '<b>igual que antes</b>', $pdo, 180);
+chequear('el MISMO texto a los 60 min sigue frenado (el piso no rebaja la espera normal)',
+         $intentos() === $i2c);
+
+/* El piso NUNCA puede ser mayor que la espera normal: seria mas estricto con
+   una novedad que con una repeticion, justo al reves de lo que se quiere. */
+cfg_crm_guardar($pdo, ['tg_repetir_cambio_min' => '999'], 'test');
+$pdo->prepare("UPDATE tg_avisos SET ultimo_en = NOW() - INTERVAL 200 MINUTE WHERE clave = ?")
+    ->execute(['test_salud']);
+$i2d = $intentos();
+tg_avisar_una_vez('test_salud', '<b>otro texto mas</b>', $pdo, 180);
+chequear('un piso mal configurado no puede frenar mas que la espera normal',
+         $intentos() === $i2d + 1,
+         'con el piso en 999 y la espera en 180, a los 200 min tiene que salir igual');
+cfg_crm_guardar($pdo, ['tg_repetir_cambio_min' => '45'], 'test');
 
 // Pasado el tiempo, se repite aunque el texto sea igual.
 $pdo->exec("UPDATE tg_avisos SET ultimo_en = DATE_SUB(NOW(), INTERVAL 400 MINUTE),
