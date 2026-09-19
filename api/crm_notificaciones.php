@@ -426,6 +426,15 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
                     $ret[$k]['pct'] = $ret[$k]['base'] > 0
                         ? round($ret[$k]['volvieron'] * 100 / $ret[$k]['base'], 1) : 0.0;
                 }
+                /* UNA BASE DE UNO NO ES UN PORCENTAJE. Con 1 jugador con app
+                   y 6 sin app, mostrar "0% vs 0%" no es un dato: es una
+                   conclusión inventada sobre la que alguien podría decidir
+                   apagar el canal. Se informa que todavía no alcanza y la
+                   pantalla lo dice con esas palabras en vez de pintar números.
+                   10 por grupo es poco y ya evita lo peor -- el ruido de una
+                   muestra de un dígito. */
+                $ret['suficiente'] = ($ret['con_app']['base'] >= 10
+                                      && $ret['sin_app']['base'] >= 10);
                 $out['retencion'] = $ret;
             }
         } catch (Throwable $e) { error_log('crmnotif_metricas/retencion: ' . $e->getMessage()); }

@@ -46,6 +46,61 @@ $limpiar = function () use ($pdo) {
     $pdo->exec("DELETE FROM movimientos WHERE usuario LIKE '" . U . "%'");
     $pdo->exec("DELETE FROM gasto_diario WHERE landing_slug LIKE 't_sal%' OR publicista_id = 99777");
 };
+
+// ===========================================================================
+echo "\n=== El tablero de la app: las cuatro preguntas del negocio ===\n";
+
+/* EL PEDIDO (Nahuel, 19/09/2026): *"nuestro modelo se sostiene gracias al
+   mantenimiento de los usuarios activos... quiero metricas que me ayuden a
+   entender la situacion de mi negocio"*.
+
+   La cadena es: el jugador llega, carga, y para que no se enfrie hay que poder
+   hablarle -- y para eso tiene que tener la app. Las metricas contestan las
+   cuatro preguntas de esa cadena. */
+$srcN = file_get_contents(__DIR__ . '/api/crm_notificaciones.php');
+$crmH = file_get_contents(__DIR__ . '/landing/crm.html');
+
+chequear('1. a cuantos les puedo hablar: el embudo',
+         str_contains($srcN, "'embudo' =>") && str_contains($crmH, 'id="nvEmbudo"'));
+chequear('2. gano o pierdo: altas y bajas por semana',
+         str_contains($srcN, "'semanas'") && str_contains($srcN, "'bajas' => \$bajas"));
+chequear('3. sirve de algo: retencion con app vs sin app',
+         str_contains($srcN, "'retencion'") && str_contains($srcN, "'con_app'"));
+chequear('4. lo que mando llega: entregadas y leidas',
+         str_contains($srcN, "'entrega'") && str_contains($srcN, 'leidas'));
+
+/* EL EMBUDO VA EN ESCALONES SEPARADOS a proposito: cada perdida tiene un
+   arreglo distinto --no instalan, no permiten, no abren-- y un solo porcentaje
+   escondería cual de los tres esta mal. */
+chequear('el embudo separa los tres escalones',
+         substr_count($srcN, "'k' => '") >= 4
+         && str_contains($srcN, "'k' => 'instalada'")
+         && str_contains($srcN, "'k' => 'permitida'")
+         && str_contains($srcN, "'k' => 'alcanzable'"));
+chequear('y la pantalla nombra el escalon que mas pierde',
+         str_contains($crmH, 'Donde más se pierde gente es en'),
+         'cuatro numeros sueltos no dicen donde trabajar');
+
+/* UNA BASE DE UNO NO ES UN PORCENTAJE. Medido el 19/09: 1 jugador con app y 6
+   sin app. Mostrar "0% vs 0%" seria una conclusion inventada sobre la que
+   alguien podria decidir apagar el canal. */
+chequear('con muestra chica NO se muestra un porcentaje de retencion',
+         str_contains($srcN, "\$ret['suficiente']")
+         && str_contains($crmH, 'Todavía no alcanza para comparar'),
+         'un 0% sobre base 1 es peor que no mostrar nada');
+
+/* LA BAJA NO GENERA NINGUN EVENTO: nadie avisa que desinstalo, el celular
+   simplemente deja de sondear. Sin esta cuenta, el canal parece crecer para
+   siempre. */
+chequear('una app que dejo de sondear cuenta como baja',
+         str_contains($srcN, 'INTERVAL 14 DAY'),
+         'sin esto el canal parece crecer para siempre');
+
+/* Y que la retencion use la definicion UNICA de "una carga": si esta pantalla
+   armara la suya, mostraria un numero distinto al de Finanzas el mismo dia. */
+chequear('la retencion usa la definicion unica de carga',
+         str_contains($srcN, 'publicidad_sql_cargas()'));
+
 $limpiar();
 
 $recarga = function (string $u, string $cuando, float $monto) use ($pdo) {

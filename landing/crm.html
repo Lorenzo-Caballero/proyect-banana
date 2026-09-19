@@ -2126,6 +2126,32 @@
   .nv-cob-dias input{width:58px;padding:4px 6px;font-size:12px;border-radius:8px;
     border:1px solid var(--line);background:var(--panel);color:var(--txt)}
   .nv-cob-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  /* El embudo: cuatro escalones con el % de paso entre uno y otro. */
+  .nv-embudo{display:flex;align-items:stretch;gap:0;flex-wrap:wrap;margin:4px 0 2px}
+  .nv-emb-paso{flex:1;min-width:130px;background:var(--panel);border:1px solid var(--line);
+    border-radius:12px;padding:10px 12px}
+  .nv-emb-paso .n{font-size:22px;font-weight:800;line-height:1.1}
+  .nv-emb-paso .k{font-size:11px;font-weight:700;margin-top:2px}
+  .nv-emb-paso .q{font-size:10.5px;color:var(--muted);margin-top:3px;line-height:1.35}
+  .nv-emb-flecha{display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:0 8px;min-width:58px}
+  .nv-emb-flecha .p{font-size:13px;font-weight:800}
+  .nv-emb-flecha .f{font-size:15px;color:var(--muted);line-height:1}
+  /* El paso que más gente pierde se marca: es donde conviene trabajar. */
+  .nv-emb-flecha.flojo .p{color:var(--orange2)}
+  .nv-emb-flecha.bien .p{color:var(--green2)}
+  @media (max-width:760px){
+    .nv-embudo{flex-direction:column}
+    .nv-emb-flecha{flex-direction:row;gap:8px;padding:4px 0;min-width:0}
+    .nv-emb-flecha .f{transform:rotate(90deg)}
+  }
+  .nv-cob-grid{grid-template-columns:repeat(4,1fr)}
+  @media (max-width:980px){ .nv-cob-grid{grid-template-columns:repeat(2,1fr)} }
+  /* Barritas de altas por semana: la tendencia se lee sin números. */
+  .nv-spark{display:flex;align-items:flex-end;gap:3px;height:22px;margin-top:6px}
+  .nv-spark i{flex:1;background:var(--violet);border-radius:2px 2px 0 0;min-height:2px;opacity:.75}
+  .nv-spark i:last-child{opacity:1}
+
   @media (max-width:720px){ .nv-cob-grid{grid-template-columns:1fr} }
   .nv-cob-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
     padding:10px 12px}
@@ -3310,34 +3336,48 @@
       <b>Difusiones y avisos</b>
     </div>
 
-    <!-- QUIEN PUEDE RECIBIR UNA OFERTA. El número grande engaña: sobre el
-         padrón histórico la app da 1%, y ese 1% incluye cuentas de hace meses
-         que no vuelven. El que dice si el canal sirve es el de los ACTIVOS,
-         que son los únicos a los que tiene sentido mandarles algo. -->
+    <!-- EL TABLERO DE LA APP. El negocio se sostiene acumulando jugadores
+         activos, y la herramienta para que no se enfríen es la app: instalarla,
+         recibir la notificación, volver por el bono. Las métricas contestan las
+         cuatro preguntas de esa cadena, en orden: a cuántos les puedo hablar,
+         si gano o pierdo, si sirve de algo, y si lo que mando llega. -->
     <div class="nv-cob" id="nvCobertura">
       <div class="nv-cob-cab">
-        <b>¿A cuántos les puede llegar?</b>
+        <b>La app, de un vistazo</b>
         <label class="nv-cob-dias">Activo = jugó en los últimos
           <input type="number" id="nvCobDias" min="1" max="365" value="7"> días</label>
       </div>
+
+      <!-- EL EMBUDO. Cada escalón que se pierde tiene un arreglo distinto, por
+           eso van separados: no instalan (bono por instalar), no permiten (el
+           permiso de Android), no abren (la app quedó dormida). Un solo
+           porcentaje escondería cuál de los tres está mal. -->
+      <div class="nv-embudo" id="nvEmbudo"></div>
+      <p class="nv-cob-pie" id="nvCobPie"></p>
+
       <div class="nv-cob-grid">
-        <div class="nv-cob-card destacada" id="nvCobActivos" title="Los que dieron señales en la ventana elegida: jugaron, cargaron, chatearon o entraron. Es el número que importa.">
-          <div class="k">Activos con la app</div>
+        <div class="nv-cob-card" id="nvCardSemanas" title="Una app desinstalada no genera ningún evento: el celular simplemente deja de sondear. Se cuenta como baja el que hace más de 14 días que no aparece.">
+          <div class="k">Instalaciones</div>
+          <div class="v">—</div>
+          <div class="sub">—</div>
+          <div class="nv-spark" id="nvSpark"></div>
+        </div>
+        <div class="nv-cob-card destacada" id="nvCardRet" title="De los que cargaron entre hace 30 y 8 días, cuántos volvieron a cargar en la última semana. Es la métrica que dice si la app sirve: si el que la tiene no vuelve más que el que no la tiene, el canal es un gasto.">
+          <div class="k">¿Vuelven más con la app?</div>
           <div class="v">—</div>
           <div class="sub">—</div>
         </div>
-        <div class="nv-cob-card" id="nvCobPadron" title="Todos los jugadores que existen, incluidas las cuentas viejas que ya no vuelven.">
-          <div class="k">Del padrón entero</div>
+        <div class="nv-cob-card" id="nvCardEntrega" title="Crear no es llegar: la push se entrega cuando el celular sondea. Leídas son las que el jugador efectivamente abrió.">
+          <div class="k">Lo que mandaste (30 d)</div>
           <div class="v">—</div>
           <div class="sub">—</div>
         </div>
-        <div class="nv-cob-card" id="nvCobCel" title="La push se entrega POR CELULAR cuando la app sondea. Un celular que hace días que no sondea no la va a ver: la app está cerrada o desinstalada.">
-          <div class="k">Celulares que sondearon</div>
+        <div class="nv-cob-card" id="nvCardFid" title="Un bono prometido es una deuda; uno cobrado es un jugador que volvió. La distancia entre los dos dice si la campaña empuja o solo regala.">
+          <div class="k">Campaña de fidelización</div>
           <div class="v">—</div>
           <div class="sub">—</div>
         </div>
       </div>
-      <p class="nv-cob-pie" id="nvCobPie"></p>
     </div>
 
     <div class="nv-tabs">
@@ -13538,65 +13578,130 @@ ${cuando}.
     } else { toast(d.error || "No se pudo enviar"); }
   });
 
-  /* ---------- ¿A cuántos les puede llegar? ----------
-     EL PEDIDO (Nahuel, 19/09/2026): *"quiero ver qué porcentaje de usuarios
-     totales y qué porcentaje de usuarios ACTIVOS tienen la aplicación
-     instalada"*, y tiene razón en que el número que importa es el segundo: el
-     padrón arrastra cuentas de otra época del negocio que ya no vuelven, y
-     medir contra eso hace parecer fracaso lo que puede estar funcionando.
+  /* ---------- EL TABLERO DE LA APP ----------
+     EL PEDIDO (Nahuel, 19/09/2026): *"ahora que entendés el funcionamiento del
+     negocio y que nuestro modelo se sostiene gracias al mantenimiento de los
+     usuarios activos... quiero métricas que me ayuden a entender la situación
+     de mi negocio"*.
 
-     El tercer número es el que nadie pide y es el que manda: los celulares que
-     SONDEARON hace poco. La push se entrega por dispositivo cuando la app
-     pregunta; una app desinstalada o que nunca se abre no recibe nada aunque
-     el jugador figure con `tiene_app`. */
+     La cadena del negocio es: el jugador llega, carga, y para que no se enfríe
+     hay que poder hablarle -- y para eso tiene que tener la app. Así que el
+     tablero contesta las cuatro preguntas de esa cadena, en orden:
+
+       1. ¿A cuántos les puedo hablar?   -> el embudo
+       2. ¿Gano o pierdo?                -> altas y bajas por semana
+       3. ¿Sirve de algo?                -> vuelven más con app que sin app
+       4. ¿Lo que mando llega?           -> entregadas y leídas
+
+     La 3 es la que justifica todo el resto. La 2 es la que nadie mira y la que
+     avisa temprano: una app desinstalada no genera ningún evento, simplemente
+     deja de sondear. */
   async function nvCargarCobertura(){
-    const dias = parseInt($("#nvCobDias")?.value, 10) || 30;
+    const dias = parseInt($("#nvCobDias")?.value, 10) || 7;
     let d;
-    try{ d = await jget({accion:"notif_cobertura", dias}); }catch(e){ return; }
-    if(!d.ok || !d.cobertura) return;
-    const c = d.cobertura;
-    const pinta = (id, pct, arriba, abajo) => {
-      const el = $("#"+id); if(!el) return;
-      el.querySelector(".v").textContent = pct;
-      el.querySelector(".sub").textContent = abajo;
-      if(arriba) el.querySelector(".k").textContent = arriba;
-    };
-    pinta("nvCobActivos", c.activos.pct + "%", null,
-          `${nf.format(c.activos.con_app)} de ${nf.format(c.activos.total)} que jugaron en ${c.dias} días`);
-    pinta("nvCobPadron", c.padron.pct + "%", null,
-          `${nf.format(c.padron.con_app)} de ${nf.format(c.padron.total)} en total`);
-    pinta("nvCobCel", nf.format(c.celulares.sondearon_24h), null,
-          `en 24 h · ${nf.format(c.celulares.sondearon_7d)} en 7 días · ${nf.format(c.celulares.android)} registrados`);
+    try{ d = await jget({accion:"notif_metricas", dias}); }catch(e){ return; }
+    if(!d.ok) return;
+    const m = d.metricas || {}, c = d.cobertura || {};
 
-    /* El pie traduce los números a lo único que se decide con ellos. */
-    const pie = $("#nvCobPie"); if(!pie) return;
-
-    /* EL AVISO DEL RELLENO, y es el más importante de esta pantalla.
-       `ultima_actividad` se llenó de una para todo el padrón cuando entró la
-       migración 46: 2.832 de 3.081 jugadores tienen la MISMA fecha. Cualquier
-       ventana que llegue hasta ahí cuenta como "activo" a casi todos, y el
-       porcentaje se desploma de 27% a 0,7% sin que haya cambiado nada real.
-       La conclusión natural sería "la app no prende", y es al revés. */
-    if(c.pico && c.dias >= c.pico.dias_atras){
-      const f = c.pico.fecha.slice(8,10)+"/"+c.pico.fecha.slice(5,7);
-      pie.innerHTML = `<b>Ojo con esta ventana.</b> ${nf.format(c.pico.n)} jugadores tienen `
-        + `la misma fecha de actividad (${f}): no jugaron ese día, es cuando se cargó el dato `
-        + `por primera vez. Al incluirlos, el porcentaje se hunde sin que haya cambiado nada. `
-        + `Bajá la ventana a menos de ${c.pico.dias_atras} días para ver el número real.`;
-      pie.classList.add("ojo");
-      return;
+    // ---------- 1. el embudo ----------
+    const emb = $("#nvEmbudo");
+    if(emb && (m.embudo||[]).length){
+      emb.innerHTML = m.embudo.map((e,i)=>{
+        const NOM = {activos:"Activos", instalada:"Bajaron la app",
+                     permitida:"Dejaron pasar avisos", alcanzable:"Se les puede avisar hoy"};
+        /* La flecha lleva el % de paso: es lo que dice DÓNDE se pierde la
+           gente. Sin eso, cuatro números sueltos no arman un embudo. */
+        const flecha = i === 0 ? "" : `<div class="nv-emb-flecha ${e.pct>=70?"bien":(e.pct<50?"flojo":"")}">
+            <div class="p">${e.pct}%</div><div class="f">›</div></div>`;
+        return `${flecha}<div class="nv-emb-paso">
+          <div class="n">${nf.format(e.n)}</div>
+          <div class="k">${NOM[e.k]||e.k}</div>
+          <div class="q">${esc(e.que||"")}</div>
+        </div>`;
+      }).join("");
     }
-    pie.classList.remove("ojo");
 
-    if(c.activos.total === 0){
-      pie.textContent = "Nadie jugó en esta ventana: probá agrandarla.";
-    } else if(c.celulares.sondearon_7d === 0){
-      pie.textContent = "Ningún celular sondeó en la última semana: una push hoy no la ve nadie.";
-    } else {
-      pie.innerHTML = `Una push le llega a los <b>${nf.format(c.celulares.sondearon_7d)}</b> celulares `
-        + `que abrieron la app en la semana. Al resto le queda esperando y la ve cuando abra. `
-        + `El número que conviene mirar es el de <b>activos</b>: el padrón arrastra cuentas de antes `
-        + `que ya no vuelven.`;
+    // ---------- el pie: la conclusión, no los números otra vez ----------
+    const pie = $("#nvCobPie");
+    if(pie){
+      pie.classList.remove("ojo");
+      /* El aviso del relleno primero: `ultima_actividad` se llenó de una para
+         todo el padrón con la migración 46, así que una ventana que llegue
+         hasta ahí cuenta como activo a casi todos y hunde el porcentaje sin
+         que haya cambiado nada. La conclusión natural sería "la app no
+         prende", y es al revés. */
+      if(c.pico && c.dias >= c.pico.dias_atras){
+        const f = c.pico.fecha.slice(8,10)+"/"+c.pico.fecha.slice(5,7);
+        pie.innerHTML = `<b>Ojo con esta ventana.</b> ${nf.format(c.pico.n)} jugadores tienen `
+          + `la misma fecha de actividad (${f}): no jugaron ese día, es cuando se cargó el dato `
+          + `por primera vez. Bajá la ventana a menos de ${c.pico.dias_atras} días para ver el número real.`;
+        pie.classList.add("ojo");
+      } else {
+        /* Se nombra el escalón que más gente pierde, que es donde conviene
+           trabajar. Los tres tienen arreglos distintos y no intercambiables. */
+        const pasos = (m.embudo||[]).slice(1);
+        const peor = pasos.length ? pasos.reduce((a,b)=> b.pct < a.pct ? b : a) : null;
+        const COMO = {
+          instalada: "el bono por instalar y el cartel en la primera carga",
+          permitida: "pedirle el permiso en el momento justo, no al abrir",
+          alcanzable: "darle un motivo para abrir la app (un aviso, un bono)",
+        };
+        pie.innerHTML = peor
+          ? `Donde más se pierde gente es en <b>${esc({instalada:"que bajen la app",permitida:"que dejen pasar los avisos",alcanzable:"que la abran"}[peor.k]||peor.k)}</b>: `
+            + `pasa el ${peor.pct}%. Ahí lo que mueve la aguja es ${COMO[peor.k]||"revisar ese paso"}.`
+          : "";
+      }
+    }
+
+    // ---------- 2. instalaciones por semana ----------
+    const cs = $("#nvCardSemanas");
+    if(cs && (m.semanas||[]).length){
+      const ult = m.semanas[m.semanas.length-1];
+      const tot = m.semanas.reduce((a,s)=>a+s.neto,0);
+      cs.querySelector(".v").textContent = (ult.neto>=0?"+":"") + nf.format(ult.neto);
+      cs.querySelector(".sub").textContent =
+        `${ult.altas} nuevas, ${ult.bajas} dejaron de abrirla · ${(tot>=0?"+":"")+tot} en 4 semanas`;
+      const max = Math.max(1, ...m.semanas.map(s=>s.altas));
+      $("#nvSpark").innerHTML = m.semanas.map(s=>
+        `<i style="height:${Math.round(s.altas/max*100)}%" title="${s.hace}: ${s.altas} nuevas, ${s.bajas} bajas"></i>`).join("");
+    }
+
+    // ---------- 3. ¿sirve? ----------
+    const cr = $("#nvCardRet");
+    if(cr && m.retencion){
+      const r = m.retencion;
+      if(!r.suficiente){
+        /* UNA BASE DE UNO NO ES UN PORCENTAJE. Mostrar "0% vs 0%" con 1 y 6
+           jugadores sería una conclusión inventada sobre la que alguien
+           podría decidir apagar el canal. */
+        cr.querySelector(".v").textContent = "—";
+        cr.querySelector(".sub").textContent =
+          `Todavía no alcanza para comparar (${r.con_app.base} con app, ${r.sin_app.base} sin app)`;
+      } else {
+        const dif = r.con_app.pct - r.sin_app.pct;
+        cr.querySelector(".v").textContent = (dif>0?"+":"") + dif.toFixed(1) + " pts";
+        cr.querySelector(".sub").textContent =
+          `${r.con_app.pct}% con app vs ${r.sin_app.pct}% sin app`;
+      }
+    }
+
+    // ---------- 4. ¿llega? ----------
+    const ce = $("#nvCardEntrega");
+    if(ce && m.entrega){
+      const e = m.entrega;
+      const pctE = e.creadas ? Math.round(e.con_entrega*100/e.creadas) : 0;
+      ce.querySelector(".v").textContent = pctE + "%";
+      ce.querySelector(".sub").textContent =
+        `${nf.format(e.con_entrega)} de ${nf.format(e.creadas)} llegaron · ${nf.format(e.leidas)} leídas`;
+    }
+
+    // ---------- 5. la campaña ----------
+    const cf = $("#nvCardFid");
+    if(cf && m.fidelizacion){
+      const f = m.fidelizacion;
+      cf.querySelector(".v").textContent = nf.format(f.cobrados);
+      cf.querySelector(".sub").textContent =
+        `cobrados de ${nf.format(f.pendientes + f.cobrados)} prometidos (${f.pct}%)`;
     }
   }
   $("#nvCobDias")?.addEventListener("change", nvCargarCobertura);
