@@ -1044,12 +1044,35 @@ def _libro_toca() -> bool:
         return True          # ante la duda, sincronizar: es una lectura
 
 
-def _libro_paginas(ctx, tipo: int, dias: int, max_paginas: int = 60) -> list:
+def _libro_paginas(ctx, tipo: int, dias: int, max_paginas: int = 400) -> list:
     """Todas las paginas del historial para un tipo (0 deposito, 1 retiro).
 
     PAGINAR NO ES OPCIONAL: el endpoint devuelve `count` filas por pagina, asi
     que sin esto una ventana con mas movimiento se corta en la primera y el
     libro quedaria con un agujero silencioso justo en los meses mas activos.
+
+    Y EL TOPE DE PAGINAS ERA OTRO AGUJERO SILENCIOSO, del mismo tamaño que el
+    que este docstring venia a evitar. Estaba en 60 paginas x 50 filas = 3.000,
+    y el backfill de 400 dias lo alcanzo: al 19/09/2026 el libro tenia
+    EXACTAMENTE 3.000 depositos, todos de noviembre de 2025, y CERO en los ocho
+    meses siguientes -- mientras los retiros de esos mismos meses estaban
+    completos (749 en diciembre, 476 en enero). Un negocio con retiros y sin
+    depositos no existe: lo que faltaba era el historial, cortado a la mitad.
+
+    Lo que lo hacia invisible es que el corte se veia igual que "no hay mas
+    datos". El `while` terminaba y la funcion devolvia lo que tenia, y
+    `sincronizar_libro` lo guardaba como si estuviera completo.
+
+    DOS CAMBIOS, y el segundo importa mas que el primero:
+      - el tope sube a 400 paginas (20.000 filas), que cubre con margen un
+        backfill de 400 dias del mes mas movido que tuvo el negocio;
+      - y si ALGUNA VEZ se alcanza, se avisa fuerte en vez de devolver en
+        silencio. Un tope que se toca deja de ser un limite de seguridad y pasa
+        a ser una mentira sobre los datos.
+
+    Sigue habiendo un tope a proposito: sin el, una respuesta rara del panel
+    (una pagina que siempre devuelve 50 filas iguales) dejaria el proceso
+    girando para siempre y el cron del minuto no volveria a correr.
     """
     hoy = datetime.now().date()
     filas, pagina = [], 0
@@ -1077,6 +1100,19 @@ def _libro_paginas(ctx, tipo: int, dias: int, max_paginas: int = 60) -> list:
         if len(items) < 50:
             break
         pagina += 1
+
+    # Se salio por el tope y no porque se acabaron los datos: el libro que se
+    # va a guardar esta INCOMPLETO. No se puede corregir solo desde aca --hace
+    # falta subir el tope o acortar la ventana-- pero callarlo es lo que dejo
+    # ocho meses de depositos afuera sin que nadie se enterara.
+    if pagina >= max_paginas:
+        clase = "depositos" if tipo == 0 else "retiros"
+        log.error("libro: TRUNCADO. Se alcanzo el tope de %d paginas (%d %s en "
+                  "%d dias) y quedaron operaciones sin traer. El historial "
+                  "anterior a la mas vieja de estas va a figurar en CERO, que "
+                  "no es un dato: es una ausencia.",
+                  max_paginas, len(filas), clase, dias)
+        PASADA["libro_truncado"] = clase
     return filas
 
 
