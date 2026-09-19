@@ -2076,6 +2076,31 @@
 
   /* ---- vista Notificaciones: página completa con tabs (Enviar / Historial /
      Bonos pendientes), reemplaza el modal #backN anterior ---- */
+  /* Cobertura de la app: la primera pregunta de esta pantalla es a cuánta
+     gente le puede llegar lo que se mande. */
+  /* Entregado de verdad vs encolado. En gris cuando llegó; en ámbar cuando no
+     le llegó a nadie, que es el caso que hay que ver de un vistazo. */
+  .nv-entrega{font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:999px;
+    background:var(--panel3);color:var(--muted);margin-left:6px;white-space:nowrap}
+  .nv-entrega.cero{background:rgba(245,166,35,.16);color:var(--orange2)}
+  .nv-cob{background:var(--panel2);border:1px solid var(--line);border-radius:14px;
+    padding:12px 14px;margin:0 0 14px}
+  .nv-cob-cab{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+  .nv-cob-cab b{font-size:13px}
+  .nv-cob-dias{font-size:11px;color:var(--muted);margin-left:auto;display:flex;
+    align-items:center;gap:6px}
+  .nv-cob-dias input{width:58px;padding:4px 6px;font-size:12px;border-radius:8px;
+    border:1px solid var(--line);background:var(--panel);color:var(--txt)}
+  .nv-cob-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  @media (max-width:720px){ .nv-cob-grid{grid-template-columns:1fr} }
+  .nv-cob-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:10px 12px}
+  .nv-cob-card.destacada{border-color:var(--violet);box-shadow:inset 0 0 0 1px rgba(124,92,255,.25)}
+  .nv-cob-card .k{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
+  .nv-cob-card .v{font-size:20px;font-weight:800;margin-top:3px}
+  .nv-cob-card.destacada .v{color:var(--violet2)}
+  .nv-cob-card .sub{font-size:11px;color:var(--muted);margin-top:2px}
+  .nv-cob-pie{font-size:11.5px;color:var(--muted);margin:10px 0 0;line-height:1.45}
   .nv-tabs{display:flex;gap:6px;padding:12px 16px 0;border-bottom:1px solid var(--line)}
   .nv-tab{background:transparent;border:none;color:var(--muted);padding:10px 14px;font-size:13px;
     font-weight:600;border-bottom:2px solid transparent;margin-bottom:-1px;cursor:pointer;transition:.15s}
@@ -3235,6 +3260,37 @@
     <div class="comp-head">
       <b>Difusiones y avisos</b>
     </div>
+
+    <!-- QUIEN PUEDE RECIBIR UNA OFERTA. El número grande engaña: sobre el
+         padrón histórico la app da 1%, y ese 1% incluye cuentas de hace meses
+         que no vuelven. El que dice si el canal sirve es el de los ACTIVOS,
+         que son los únicos a los que tiene sentido mandarles algo. -->
+    <div class="nv-cob" id="nvCobertura">
+      <div class="nv-cob-cab">
+        <b>¿A cuántos les puede llegar?</b>
+        <label class="nv-cob-dias">Activo = jugó en los últimos
+          <input type="number" id="nvCobDias" min="1" max="365" value="30"> días</label>
+      </div>
+      <div class="nv-cob-grid">
+        <div class="nv-cob-card destacada" id="nvCobActivos" title="Los que dieron señales en la ventana elegida: jugaron, cargaron, chatearon o entraron. Es el número que importa.">
+          <div class="k">Activos con la app</div>
+          <div class="v">—</div>
+          <div class="sub">—</div>
+        </div>
+        <div class="nv-cob-card" id="nvCobPadron" title="Todos los jugadores que existen, incluidas las cuentas viejas que ya no vuelven.">
+          <div class="k">Del padrón entero</div>
+          <div class="v">—</div>
+          <div class="sub">—</div>
+        </div>
+        <div class="nv-cob-card" id="nvCobCel" title="La push se entrega POR CELULAR cuando la app sondea. Un celular que hace días que no sondea no la va a ver: la app está cerrada o desinstalada.">
+          <div class="k">Celulares que sondearon</div>
+          <div class="v">—</div>
+          <div class="sub">—</div>
+        </div>
+      </div>
+      <p class="nv-cob-pie" id="nvCobPie"></p>
+    </div>
+
     <div class="nv-tabs">
       <!-- Difusion y aviso individual SEPARADOS a pedido de Nahuel: antes
            convivian en un solo formulario "Enviar" y el modo quedaba
@@ -6241,6 +6297,12 @@
     }
     if(nombre==="chatbot"){
       cargarChatbotConfig();
+    }
+    /* Notificaciones: lo primero que se lee al entrar es a cuánta gente le
+       puede llegar lo que se mande. Sin auto-refresh -- es un dato que se
+       mueve en días, no en segundos. */
+    if(nombre==="notificaciones"){
+      nvCargarCobertura();
     }
     if(nombre==="agentes"){
       cargarAgentes();
@@ -13333,6 +13395,51 @@ ${cuando}.
     } else { toast(d.error || "No se pudo enviar"); }
   });
 
+  /* ---------- ¿A cuántos les puede llegar? ----------
+     EL PEDIDO (Nahuel, 19/09/2026): *"quiero ver qué porcentaje de usuarios
+     totales y qué porcentaje de usuarios ACTIVOS tienen la aplicación
+     instalada"*, y tiene razón en que el número que importa es el segundo: el
+     padrón arrastra cuentas de otra época del negocio que ya no vuelven, y
+     medir contra eso hace parecer fracaso lo que puede estar funcionando.
+
+     El tercer número es el que nadie pide y es el que manda: los celulares que
+     SONDEARON hace poco. La push se entrega por dispositivo cuando la app
+     pregunta; una app desinstalada o que nunca se abre no recibe nada aunque
+     el jugador figure con `tiene_app`. */
+  async function nvCargarCobertura(){
+    const dias = parseInt($("#nvCobDias")?.value, 10) || 30;
+    let d;
+    try{ d = await jget({accion:"notif_cobertura", dias}); }catch(e){ return; }
+    if(!d.ok || !d.cobertura) return;
+    const c = d.cobertura;
+    const pinta = (id, pct, arriba, abajo) => {
+      const el = $("#"+id); if(!el) return;
+      el.querySelector(".v").textContent = pct;
+      el.querySelector(".sub").textContent = abajo;
+      if(arriba) el.querySelector(".k").textContent = arriba;
+    };
+    pinta("nvCobActivos", c.activos.pct + "%", null,
+          `${nf.format(c.activos.con_app)} de ${nf.format(c.activos.total)} que jugaron en ${c.dias} días`);
+    pinta("nvCobPadron", c.padron.pct + "%", null,
+          `${nf.format(c.padron.con_app)} de ${nf.format(c.padron.total)} en total`);
+    pinta("nvCobCel", nf.format(c.celulares.sondearon_24h), null,
+          `en 24 h · ${nf.format(c.celulares.sondearon_7d)} en 7 días · ${nf.format(c.celulares.android)} registrados`);
+
+    /* El pie traduce los números a lo único que se decide con ellos. */
+    const pie = $("#nvCobPie"); if(!pie) return;
+    if(c.activos.total === 0){
+      pie.textContent = "Nadie jugó en esta ventana: probá agrandarla.";
+    } else if(c.celulares.sondearon_7d === 0){
+      pie.textContent = "Ningún celular sondeó en la última semana: una push hoy no la ve nadie.";
+    } else {
+      pie.innerHTML = `Una push le llega a los <b>${nf.format(c.celulares.sondearon_7d)}</b> celulares `
+        + `que abrieron la app en la semana. Al resto le queda esperando y la ve cuando abra. `
+        + `El número que conviene mirar es el de <b>activos</b>: el padrón arrastra cuentas de antes `
+        + `que ya no vuelven.`;
+    }
+  }
+  $("#nvCobDias")?.addEventListener("change", nvCargarCobertura);
+
   // ---- Historial de notificaciones ya enviadas ----
   let nvHistorialPagina = 1;
   const NV_TIPO_LABEL = { bono:`${ico("regalo")} Bono`, fichas:`${ico("ficha")} Fichas`, recarga:`${ico("ok")} Recarga`, ruleta:`${ico("diana")} Ruleta`, promo:`${ico("rayo")} Promo`, aviso:`${ico("campana")} Aviso` };
@@ -13364,9 +13471,18 @@ ${cuando}.
            una constante nuestra, y escaparla imprimia el codigo del icono
            como texto (el "inentendible" de la captura de Nahuel). Lo que si
            se escapa siempre es lo que escribio una persona (titulo/cuerpo). */
+        /* CREAR NO ES LLEGAR. Arriba figura a cuántos se les encoló; esto
+           dice a cuántos celulares se les ENTREGÓ de verdad. La push se
+           entrega por dispositivo cuando la app sondea, así que un envío a
+           600 personas sin app entrega cero -- y hasta hoy eso se veía
+           igual que un envío exitoso. Pasó con la fidelización. */
+        const ent = it.entregadas|0, lei = it.leidas|0;
+        const entTxt = ent === 0
+          ? `<span class="nv-entrega cero" title="No le llegó a ningún celular. Puede ser que nadie del destino tenga la app, o que no hayan abierto la app todavía.">sin entregar</span>`
+          : `<span class="nv-entrega" title="Celulares a los que la app ya se la entregó. Los que leyeron: ${nf.format(lei)}.">${nf.format(ent)} entregada${ent===1?"":"s"}${lei ? " · "+nf.format(lei)+" leída"+(lei===1?"":"s") : ""}</span>`;
         return `<div class="nv-hist-item">
           <div class="nv-hist-info">
-            <div class="nv-hist-titulo">${esc(it.titulo)}</div>
+            <div class="nv-hist-titulo">${esc(it.titulo)} ${entTxt}</div>
             ${it.cuerpo ? `<div class="nv-hist-cuerpo">${esc(it.cuerpo)}</div>` : ""}
             <div class="nv-hist-meta"><span class="nv-hist-tipo">${NV_TIPO_LABEL[it.tipo] || esc(it.tipo)}</span> · ${destino} · <span title="${esc(f)}">${fecha}</span></div>
           </div>

@@ -1329,6 +1329,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
         // ---- historial de notificaciones YA enviadas (a diferencia de
         //      programadas_listar, que solo mira las futuras) ----
+        /* ---- cuanta de la gente que JUEGA puede recibir una oferta ----
+           El numero grande engaña: sobre el padron historico la app da 1%, y
+           ese 1% incluye cuentas de hace meses que no vuelven. El que dice si
+           el canal sirve es el de los ACTIVOS. Ver crmnotif_cobertura(). */
+        if ($accion === 'notif_cobertura') {
+            salir(['ok' => true,
+                   'cobertura' => crmnotif_cobertura($pdo, (int)($_GET['dias'] ?? 30))]);
+        }
+
         if ($accion === 'notif_historial') {
             $opts = [
                 'usuario' => (string)($_GET['usuario'] ?? ''),

@@ -171,6 +171,84 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
      * $opts: usuario?, desde?, hasta?, tipo?, pagina (1-based), por_pagina.
      * Devuelve ['items'=>[...], 'total'=>int].
      */
+    /**
+     * CUANTA DE LA GENTE QUE JUEGA PUEDE RECIBIR UNA OFERTA.
+     *
+     * EL PEDIDO (Nahuel, 19/09/2026): *"lo que me interesa a mi es que los
+     * usuarios ACTIVOS tengan la aplicacion instalada... el calculo va mas
+     * sobre los usuarios activos que sobre los usuarios de la otra epoca del
+     * negocio"*.
+     *
+     * Y el numero grande engaña: sobre los 3.081 del padron la app da 1%, y
+     * ese 1% incluye cuentas de hace meses que no vuelven. El numero que dice
+     * si el canal sirve es **sobre los que estan jugando ahora**, porque son
+     * los unicos a los que tiene sentido mandarles una oferta.
+     *
+     * Las tres filas, de menos a mas exigente:
+     *
+     *   padron    todos los jugadores que existen. El denominador historico.
+     *   activos   los que dieron señales en los ultimos N dias (jugaron,
+     *             cargaron, chatearon o entraron -- `ultima_actividad`, que
+     *             junta las cinco señales de la migracion 46).
+     *   celulares los aparatos que de verdad sondearon hace poco. Es lo unico
+     *             que garantiza que una push se vea: la entrega es POR
+     *             DISPOSITIVO, no por el flag `tiene_app` del jugador (medido
+     *             el 18/09: 29 con el flag, 21 con un android con permiso).
+     *
+     * `dias` es la ventana de "activo": 30 por default, movible desde el CRM
+     * porque "activo" significa cosas distintas mirando una semana o un mes.
+     */
+    function crmnotif_cobertura(PDO $pdo, int $dias = 30): array
+    {
+        $dias = max(1, min(365, $dias));
+        $out = [
+            'dias' => $dias,
+            'padron'    => ['total' => 0, 'con_app' => 0, 'pct' => 0.0],
+            'activos'   => ['total' => 0, 'con_app' => 0, 'pct' => 0.0],
+            'celulares' => ['android' => 0, 'sondearon_24h' => 0, 'sondearon_7d' => 0],
+        ];
+        try {
+            /* CON LA APP = con un celular que puede recibir, no con el flag.
+               Es el mismo criterio que usa la campaña de fidelizacion: si esta
+               pantalla contara distinto, el numero que se mira para decidir no
+               seria el que va a pasar. */
+            $conApp = "EXISTS (SELECT 1 FROM dispositivos d
+                                WHERE d.usuario COLLATE utf8mb4_unicode_ci
+                                      = u.username COLLATE utf8mb4_unicode_ci
+                                  AND d.plataforma = 'android' AND d.permitido = 1)";
+
+            $r = $pdo->query("SELECT COUNT(*) t, SUM($conApp) a FROM usuarios u")
+                     ->fetch(PDO::FETCH_ASSOC);
+            $out['padron']['total']   = (int)($r['t'] ?? 0);
+            $out['padron']['con_app'] = (int)($r['a'] ?? 0);
+
+            $st = $pdo->prepare(
+                "SELECT COUNT(*) t, SUM($conApp) a FROM usuarios u
+                  WHERE u.ultima_actividad IS NOT NULL
+                    AND u.ultima_actividad >= DATE_SUB(NOW(), INTERVAL ? DAY)"
+            );
+            $st->execute([$dias]);
+            $r = $st->fetch(PDO::FETCH_ASSOC);
+            $out['activos']['total']   = (int)($r['t'] ?? 0);
+            $out['activos']['con_app'] = (int)($r['a'] ?? 0);
+
+            foreach (['padron', 'activos'] as $k) {
+                $out[$k]['pct'] = $out[$k]['total'] > 0
+                    ? round($out[$k]['con_app'] * 100 / $out[$k]['total'], 1) : 0.0;
+            }
+
+            $cel = "FROM dispositivos WHERE plataforma = 'android' AND permitido = 1";
+            $out['celulares']['android'] = (int)$pdo->query("SELECT COUNT(*) $cel")->fetchColumn();
+            $out['celulares']['sondearon_24h'] = (int)$pdo->query(
+                "SELECT COUNT(*) $cel AND visto_en > DATE_SUB(NOW(), INTERVAL 1 DAY)")->fetchColumn();
+            $out['celulares']['sondearon_7d'] = (int)$pdo->query(
+                "SELECT COUNT(*) $cel AND visto_en > DATE_SUB(NOW(), INTERVAL 7 DAY)")->fetchColumn();
+        } catch (Throwable $e) {
+            error_log('crmnotif_cobertura: ' . $e->getMessage());
+        }
+        return $out;
+    }
+
     function crmnotif_historial(PDO $pdo, array $opts = []): array
     {
         $usuario   = trim((string)($opts['usuario'] ?? ''));
@@ -226,9 +304,50 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
         $st->execute($params);
         $items = $st->fetchAll(PDO::FETCH_ASSOC);
 
+        /* CUANTAS LLEGARON DE VERDAD. Hasta hoy el historial mostraba
+           `alcance_filas`: cuantos avisos se CREARON. Nahuel: *"si yo quiero
+           mandar una notificacion, quiero estar seguro de que esa notificacion
+           llego"*. Crear no es llegar -- la push se entrega por DISPOSITIVO
+           cuando el celular sondea, y si nadie sondea no llega a nadie (paso
+           con la fidelizacion: 600 creadas, 0 entregadas).
+
+           Va en una consulta aparte y no en el GROUP BY de arriba: un JOIN a
+           `notificaciones_entregas` multiplicaria las filas y romperia
+           `alcance_filas`, que cuenta otra cosa. */
+        $entregas = [];
+        $grupos = [];
+        foreach ($items as $it) {
+            $grupos[] = (int)($it['lote_id'] ?? 0) ?: (int)$it['id'];
+        }
+        if ($grupos) {
+            try {
+                $marcas = implode(',', array_fill(0, count($grupos), '?'));
+                $qe = $pdo->prepare(
+                    "SELECT COALESCE(n.lote_id, n.id) g,
+                            COUNT(DISTINCT e.device_id) entregadas,
+                            COUNT(DISTINCT CASE WHEN e.leida_en IS NOT NULL
+                                                THEN e.device_id END) leidas
+                       FROM notificaciones n
+                       JOIN notificaciones_entregas e ON e.notificacion_id = n.id
+                      WHERE COALESCE(n.lote_id, n.id) IN ($marcas)
+                      GROUP BY g"
+                );
+                $qe->execute($grupos);
+                foreach ($qe->fetchAll(PDO::FETCH_ASSOC) as $f) {
+                    $entregas[(int)$f['g']] = [
+                        'entregadas' => (int)$f['entregadas'],
+                        'leidas'     => (int)$f['leidas'],
+                    ];
+                }
+            } catch (Throwable $e) { /* sin la tabla: se informa 0 */ }
+        }
+
         foreach ($items as &$it) {
             $it['id']            = (int)$it['id'];
             $it['alcance_filas'] = (int)$it['alcance_filas'];
+            $g = (int)($it['lote_id'] ?? 0) ?: (int)$it['id'];
+            $it['entregadas'] = $entregas[$g]['entregadas'] ?? 0;
+            $it['leidas']     = $entregas[$g]['leidas'] ?? 0;
             $it['masivo']        = $it['lote_id'] !== null;
             $it['filtro'] = $it['filtro_usado'] ? json_decode($it['filtro_usado'], true) : null;
             unset($it['filtro_usado']);
