@@ -89,6 +89,19 @@ object Notificaciones {
         prefs(ctx).edit().putBoolean(K_PERMISO_PEDIDO, true).apply()
     }
 
+    /* Lo mismo para la exencion de bateria: se pide UNA vez y no se vuelve a
+       insistir. Si el jugador dijo que no, ya esta -- un dialogo del sistema
+       repitiendose cada vez que abre la app es la forma mas rapida de que
+       desinstale. */
+    private const val K_BATERIA_PEDIDA = "bateria_pedida"
+
+    fun bateriaYaPedida(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(K_BATERIA_PEDIDA, false)
+
+    fun marcarBateriaPedida(ctx: Context) {
+        prefs(ctx).edit().putBoolean(K_BATERIA_PEDIDA, true).apply()
+    }
+
     fun permisoYaPedido(ctx: Context): Boolean =
         prefs(ctx).getBoolean(K_PERMISO_PEDIDO, false)
 

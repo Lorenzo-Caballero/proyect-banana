@@ -11,6 +11,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
 import android.view.View
@@ -134,7 +135,9 @@ class MainActivity : AppCompatActivity() {
             Log.i(TAG, if (ok) "notificaciones permitidas" else "notificaciones rechazadas")
             // El widget vuelve a registrar el celular unos segundos despues, asi
             // que el server se entera solo de como quedo.
-            if (ok) return@registerForActivityResult
+            /* Concedio las notificaciones: recien ahora tiene sentido pedirle
+               que el sistema no nos apague el sondeo. */
+            if (ok) { pedirSinLimiteDeBateria(); return@registerForActivityResult }
 
             /* Android deja de mostrar el dialogo despues del segundo "no": a
                partir de ahi launch() no hace absolutamente nada y desde la app
@@ -173,6 +176,11 @@ class MainActivity : AppCompatActivity() {
            recarga y sin las respuestas del chat, que es justo lo que la app
            tiene para ofrecer. Si ya lo dio, no hace nada. */
         pedirPermisoNotificaciones()
+
+        /* Y el que YA las tenia concedidas de una instalacion anterior nunca
+           pasa por el callback de arriba: se le pide aca. Adentro chequea que no
+           se haya pedido ya, asi que llamarlo en cada arranque no molesta. */
+        pedirSinLimiteDeBateria()
 
         if (savedInstanceState == null) web.loadUrl(urlDeNotificacion(intent) ?: INICIO)
         acusarNotificacion(intent)
@@ -535,6 +543,57 @@ class MainActivity : AppCompatActivity() {
      * no vuelve a mostrar el dialogo) o cuando el jugador las apago a mano. La
      * dispara el cartelito del asistente, nunca sola.
      */
+    /**
+     * Pide quedar fuera de la optimizacion de bateria. Una sola vez.
+     *
+     * POR QUE HACE FALTA. El sondeo con la app cerrada lo corre WorkManager
+     * cada 15 minutos, y el sistema lo mata. Medido el 19/09/2026 sobre los 42
+     * celulares con permiso de notificaciones, mirando cuantos sondearon en las
+     * ultimas 24 horas:
+     *
+     *     Samsung    5 de 6     83%
+     *     Motorola   2 de 13    15%
+     *     Xiaomi     1 de 20     5%
+     *
+     * Esa forma --que dependa de la MARCA y no de nada nuestro-- es la firma
+     * del administrador de bateria del fabricante. El worker, la URL del
+     * endpoint y el manejo de primer plano se revisaron uno por uno ese mismo
+     * dia y estan bien.
+     *
+     * LO QUE ESTO ARREGLA Y LO QUE NO. En Android sin capa encima, Samsung y
+     * Motorola, la exencion suele alcanzar. En Xiaomi/MIUI NO alcanza: ademas
+     * hay que activar "Inicio automatico" a mano en los ajustes del sistema,
+     * que ninguna app puede hacer por su cuenta. Con 20 de 42 celulares Xiaomi,
+     * esto mejora una parte del problema, no todo.
+     *
+     * Se pide DESPUES de las notificaciones y solo si las concedio: pedir no
+     * gastar bateria para avisos que el jugador no quiere recibir no tiene
+     * sentido, y es un dialogo de mas en el peor momento.
+     */
+    fun pedirSinLimiteDeBateria() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        if (Notificaciones.bateriaYaPedida(this)) return
+        if (!Notificaciones.permitidas(this)) return
+
+        val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
+        if (pm.isIgnoringBatteryOptimizations(packageName)) return
+
+        // Se marca ANTES de abrir: si el jugador vuelve con "atras" sin decidir,
+        // igual no se le insiste. Preferimos perder una oportunidad a repetir
+        // un dialogo del sistema en cada arranque.
+        Notificaciones.marcarBateriaPedida(this)
+        try {
+            startActivity(
+                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                    .setData(Uri.parse("package:$packageName"))
+            )
+        } catch (e: ActivityNotFoundException) {
+            // Hay ROMs que no traen esa pantalla. No es un error que valga la
+            // pena mostrarle a nadie: simplemente no se puede pedir aca.
+            Log.w(TAG, "sin pantalla de optimizacion de bateria: ${e.message}")
+        }
+    }
+
     fun abrirAjustesNotificaciones() {
         val ajustes = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
             .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)

@@ -14,6 +14,20 @@
          widget lo pide sobre un gesto del jugador, no de arranque. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- PEDIR QUEDAR FUERA DE LA OPTIMIZACION DE BATERIA.
+         Sin esto el sistema mata el trabajo periodico de WorkManager y el
+         sondeo con la app cerrada no corre. Medido el 19/09/2026 sobre los 42
+         celulares con permiso: sondearon en 24 horas 5 de 6 Samsung, 2 de 13
+         Motorola y 1 de 20 Xiaomi. No es un bug del worker -- es el fabricante
+         apagandolo.
+
+         Google Play restringe este permiso a apps que lo justifiquen. No
+         aplica: este APK se baja de nuestra propia pagina y nunca estuvo en
+         Play Store. Si algun dia se publica ahi, hay que cambiarlo por
+         ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS (abre la lista general en
+         vez de pedir directo: peor experiencia, pero sin permiso especial). -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
