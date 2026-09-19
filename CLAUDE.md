@@ -886,6 +886,35 @@ jugadores.
   > donde lo cortó**. Cortar es honesto desde la migración 68: `saldo_visto_en`
   > es por fila, así que el que no se alcanzó a leer conserva su fecha vieja.
 
+- **Lo que falla en SILENCIO es lo peligroso, no lo que tira error.** El
+  18/09/2026 aparecieron **tres tareas apuntando a la nada**, y las tres se
+  encontraron mirando a mano: el cron de `sync_bancos.py` iba a un contenedor
+  apagado hacía dos días (y la billetera que el bot dicta llevaba 18 días sin
+  espejarse), el de `fidelizacion.php` **nunca se instaló** (la promo figura
+  prendida y corrió una sola vez, dejando 600 bonos prometidos con el motor
+  parado), y el espejo de saldos moría en el primer challenge del WAF.
+
+  > **Un proceso que no corre no se queja.** Simplemente no pasa nada, y eso se
+  > ve igual que «no había nada que hacer». `monitor-altas.sh` y
+  > `monitor-cargas.sh` daban **verde** en los tres casos, porque miran si el
+  > proceso vive y si la cola drena.
+  >
+  > El criterio que los hubiera atrapado a los tres, y el que se usa desde
+  > entonces: **no preguntar si algo está vivo, sino cuándo fue la última vez
+  > que FUNCIONÓ.** Cada tarea sella su latido en `config_crm` al terminar
+  > —pase lo que pase con el resultado, porque una pasada sin trabajo es una
+  > pasada igual— y `api/salud_colector.php` avisa cuando alguno se queda
+  > quieto. Se ve desde afuera en `/gp-api/salud_bot.php` → `colector`.
+  >
+  > Dos reglas de ese aviso: **una tarea apagada no se vigila** (`activa_si`;
+  > si no, molesta por cada promo que el dueño decidió no usar, y un canal que
+  > molesta por algo que está bien se deja de mirar), y **el aviso trae el
+  > arreglo concreto** (uno que dice «algo no corre» y nada más se aprende a
+  > ignorar en dos días).
+  >
+  > Al sumar una tarea que corre sola, sumarle el latido y la fila en
+  > `SC_TAREAS`. Lo vigila `t_waf_red.php`.
+
 - **Los avisos de Telegram salen de DOS lugares, y solo uno deja rastro.**
   `tg_evento()` (PHP) registra en `tg_avisos` cuando lleva clave de dedupe; los
   **watchdogs de `scripts/*.sh`** (`monitor-cargas.sh`, `monitor-altas.sh`,
