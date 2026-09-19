@@ -2187,6 +2187,18 @@
     border-radius:8px;padding:8px 13px;font-size:12.5px;cursor:pointer}
   .cs-mano:hover{color:var(--txt);border-color:var(--muted)}
   /* Peticiones de jugadores: las dos secciones bajo el mismo filtro. */
+  /* Retención: dos tablas que se leen de un vistazo. */
+  #viewRetencion{overflow-y:auto;overflow-x:hidden}
+  .reten-scroll{overflow-x:auto;max-width:100%}
+  .reten-tabla{border-collapse:collapse;font-size:12.5px;min-width:520px}
+  .reten-tabla th,.reten-tabla td{padding:5px 9px;text-align:left;white-space:nowrap}
+  .reten-tabla th{color:var(--muted);font-weight:600;font-size:11.5px;
+    border-bottom:1px solid var(--linea,#e4e4e7)}
+  .reten-tabla td.num,.reten-tabla th.num{text-align:right}
+  .reten-tabla tr:hover td{background:var(--panel3)}
+  .reten-nota{color:var(--muted);font-size:10.5px;font-weight:400}
+  .reten-na{color:var(--muted);opacity:.55;font-style:normal}
+  .reten-vacio{color:var(--muted);padding:14px 4px}
   .pt-sec{min-width:0}
   .pt-sec + .pt-sec{margin-top:18px;padding-top:16px;border-top:1px solid var(--linea,#e4e4e7)}
   .pt-sec-tit{margin:0 0 8px;font-size:13px;display:flex;align-items:center;gap:7px}
@@ -2467,6 +2479,7 @@
       <button class="rail-item" data-nav="transacciones" data-tip="Auditoría" data-corto="Auditoría"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></button>
       <button class="rail-item" data-nav="finanzas" data-tip="Finanzas" data-corto="Finanzas"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></button>
       <button class="rail-item" data-nav="comprobantes" data-tip="Comprobantes" data-corto="Compr."><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg><span class="rail-badge" id="badgeComprobantes"></span></button>
+      <button class="rail-item" data-nav="retencion" data-tip="Retención: ¿los jugadores se quedan?" data-corto="Retención"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M21 7h-5"/><path d="M21 7v5"/></svg></button>
       <button class="rail-item" data-nav="peticiones" data-tip="Peticiones de jugadores: depósitos y retiros" data-corto="Peticiones"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg><span class="rail-badge" id="badgePeticiones"></span></button>
       <!-- El badge de Retiros ya no tiene item propio, pero su contador se
            sigue calculando: vive acá escondido y ptBadge() lo suma al de
@@ -2868,6 +2881,63 @@
        las guardas que protegen la plata (nunca rechazar una carga con
        transferencia reclamada, nunca aprobar un retiro que ya figura en el
        libro). Esto es una pantalla nueva alrededor de lo que ya funcionaba. -->
+  <!-- ===== RETENCIÓN: ¿los jugadores que traemos se quedan? =====
+       EL PEDIDO (Nahuel, 19/09/2026): *"nuestro negocio se basa en la
+       acumulación de clientes... esos clientes que vamos ganando es muy
+       importante mantenerlos. Intertemporalmente también vamos perdiendo
+       clientes, así que tenemos que hacer que esa pérdida sea de una tasa lo
+       más baja posible"*.
+
+       DOS TABLAS Y NO UNA, porque son dos preguntas con acciones distintas:
+       mes a mes es la salud de AHORA (y `perdidos` es el número a bajar);
+       las cohortes son la CALIDAD de lo que trae la publicidad, y avisan
+       antes -- en esta base la cohorte de noviembre retenía el 68% al mes
+       siguiente y la de enero el 30%, con el volumen de entrada todavía
+       alto. -->
+  <div class="card-col view-panel" id="viewRetencion" style="display:none">
+    <div class="comp-head">
+      <b>Retención</b>
+      <span class="cap" id="retenCap"></span>
+    </div>
+    <p class="vista-ayuda">
+      Si la publicidad trae jugadores y se van al mes, el negocio corre para
+      quedarse quieto. Acá se ve cuántos se quedan y cuántos se pierden.
+      <b>Un jugador cuenta como activo en un mes si cargó al menos una vez.</b>
+    </p>
+
+    <div class="nv-cob-grid" id="retenCards">
+      <div class="nv-cob-card destacada" id="retenCardPerdidos"
+           title="De los que estaban activos el mes pasado, cuántos no volvieron a cargar. Es el número que la fidelización tiene que bajar.">
+        <div class="k">Se perdieron el mes pasado</div><div class="v">—</div><div class="sub">—</div>
+      </div>
+      <div class="nv-cob-card" id="retenCardActivos"
+           title="Jugadores distintos que cargaron al menos una vez este mes. El mes en curso todavía no terminó: va a subir.">
+        <div class="k">Activos este mes</div><div class="v">—</div><div class="sub">—</div>
+      </div>
+      <div class="nv-cob-card" id="retenCardNuevos"
+           title="Jugadores que hicieron su PRIMERA carga este mes. Es lo que trae la publicidad.">
+        <div class="k">Nuevos este mes</div><div class="v">—</div><div class="sub">—</div>
+      </div>
+      <div class="nv-cob-card" id="retenCardVuelven"
+           title="Estaban inactivos y volvieron a cargar. Es exactamente lo que la campaña de fidelización intenta provocar.">
+        <div class="k">Volvieron</div><div class="v">—</div><div class="sub">—</div>
+      </div>
+    </div>
+
+    <h4 class="pt-sec-tit" style="margin-top:18px">De los que llegaron cada mes, cuántos seguían después</h4>
+    <p class="cfg-hint" style="margin:0 0 8px">
+      Cada fila es la gente que hizo su primera carga ese mes. Se lee hacia la
+      derecha: <b>+1</b> es el mes siguiente, <b>+2</b> el otro. Si una fila cae
+      más rápido que la de arriba, la publicidad de ese mes trajo peor gente
+      — y eso se ve <b>antes</b> de que baje la cantidad de jugadores.
+    </p>
+    <div class="reten-scroll"><table class="reten-tabla" id="retenCohortes"></table></div>
+
+    <h4 class="pt-sec-tit" style="margin-top:22px">Mes a mes</h4>
+    <div class="reten-scroll"><table class="reten-tabla" id="retenMeses"></table></div>
+    <p class="cfg-hint" id="retenPie" style="margin-top:10px"></p>
+  </div>
+
   <div class="card-col view-panel" id="viewPeticiones" style="display:none">
     <div class="comp-head">
       <b>Peticiones de jugadores</b>
@@ -6426,10 +6496,11 @@
   // modulos nuevos ocultan esas 3 columnas y muestran su propio contenedor.
   // Se va sumando un nombre a VISTAS + su contenedor a VISTA_CONTENEDOR por
   // cada modulo que se conecte, sin tocar el resto de la funcion.
-  const VISTAS = ["chats", "comprobantes", "peticiones", "retiros", "cargas", "transacciones", "usuarios", "finanzas", "notificaciones", "publicidad", "landings", "chatbot", "agentes", "suscripcion", "app", "recaudar", "fidelizacion", "config"];
+  const VISTAS = ["chats", "comprobantes", "peticiones", "retiros", "retencion", "cargas", "transacciones", "usuarios", "finanzas", "notificaciones", "publicidad", "landings", "chatbot", "agentes", "suscripcion", "app", "recaudar", "fidelizacion", "config"];
   const VISTA_CONTENEDOR = {
     comprobantes: "#viewComprobantes",
     peticiones: "#viewPeticiones",
+    retencion: "#viewRetencion",
     /* `retiros` sigue siendo una ruta valida y apunta a la MISMA pantalla, con
        el filtro de Retiros ya puesto. Es para no romper lo que ya circula: el
        link #/retiros se pasa por WhatsApp y hay pantallas que mandan ahi
@@ -6500,6 +6571,7 @@
        listas --aunque el filtro muestre una-- porque el numero de cada seccion
        y el badge tienen que estar bien desde el primer momento: si solo se
        cargara la visible, "Retiros (3)" no aparecería hasta tocar el filtro. */
+    if(nombre==="retencion") cargarRetencion();
     if(nombre==="peticiones" || nombre==="retiros"){
       ptFiltroPoner(nombre === "retiros" ? "retiro" : "todos");
       cargarPeticiones();
@@ -6579,6 +6651,7 @@
     chats:"Conversaciones", usuarios:"Usuarios", cargas:"Cargas por transferencia",
     transacciones:"Auditoría", finanzas:"Finanzas", retiros:"Peticiones de jugadores",
     comprobantes:"Comprobantes", peticiones:"Peticiones de jugadores",
+    retencion:"Retención",
     notificaciones:"Difusiones",
     publicidad:"Publicidad",
     landings:"Landings",
@@ -9267,6 +9340,121 @@
     const total = ptNPet + ptNRet;
     if(total > 0){ b.textContent = total > 99 ? "99+" : String(total); b.classList.add("on"); }
     else { b.textContent = ""; b.classList.remove("on"); }
+  }
+
+  /* ---------- RETENCIÓN: ¿los jugadores que traemos se quedan? -------------
+     Dos tablas porque son dos preguntas distintas (ver el comentario del
+     markup). Todo lo calcula el server: acá solo se dibuja, y la única
+     decisión de esta capa es CUÁNDO callarse -- con muestras chicas un
+     porcentaje miente más de lo que informa. */
+  const API_RETEN = API_BASE + "/crm_retencion.php";
+
+  const MES_NOM = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+  function retenMes(m){
+    const p = String(m || "").split("-");
+    if(p.length !== 2) return String(m || "");
+    return MES_NOM[(+p[1]) - 1] + " " + p[0].slice(2);
+  }
+  /* El color de una celda de cohorte. Verde = se quedaron, rojo = se fueron.
+     Es lo que hace que la tabla se lea de un vistazo: la diagonal que se apaga
+     es la historia del negocio. */
+  function retenColor(pct){
+    if(pct >= 60) return "rgba(34,197,94,.30)";
+    if(pct >= 40) return "rgba(132,204,22,.28)";
+    if(pct >= 20) return "rgba(250,204,21,.28)";
+    if(pct > 0)   return "rgba(249,115,22,.26)";
+    return "transparent";
+  }
+
+  async function cargarRetencion(){
+    const tc = $("#retenCohortes"), tm = $("#retenMeses");
+    if(!tc || !tm) return;
+    if(!tc.innerHTML) tc.innerHTML = `<tr><td class="reten-vacio">Cargando…</td></tr>`;
+
+    let d;
+    try { d = await jget({accion:"resumen", meses:14}, API_RETEN); }
+    catch(e){ tc.innerHTML = `<tr><td class="reten-vacio">Error al cargar.</td></tr>`; return; }
+    if(!d.ok){ tc.innerHTML = `<tr><td class="reten-vacio">${esc(d.error||"Error")}</td></tr>`; return; }
+
+    const meses = d.mes_a_mes || [];
+    const enCurso = meses.find(m => m.en_curso) || {};
+    const ult = d.titular || {};
+
+    /* ---- las cuatro tarjetas ---- */
+    const card = (sel, v, sub)=>{
+      const c = $(sel); if(!c) return;
+      c.querySelector(".v").textContent = v;
+      c.querySelector(".sub").textContent = sub;
+    };
+    /* El titular es el último mes CERRADO: el mes en curso siempre se ve peor
+       de lo que va a terminar siendo, porque le faltan días. */
+    if(ult.mes){
+      const pocos = ult.poca_muestra;
+      card("#retenCardPerdidos",
+           pocos || ult.pct_perdidos === null ? nf.format(ult.perdidos || 0) : ult.pct_perdidos + "%",
+           pocos ? `${nf.format(ult.perdidos||0)} jugadores en ${retenMes(ult.mes)} · muestra chica para un %`
+                 : `${nf.format(ult.perdidos||0)} de ${nf.format((ult.perdidos||0)+(ult.retenidos||0))} que estaban · ${retenMes(ult.mes)}`);
+    } else {
+      card("#retenCardPerdidos", "—", "Todavía no hay un mes cerrado para comparar");
+    }
+    card("#retenCardActivos", nf.format(enCurso.activos || 0),
+         `${retenMes(enCurso.mes || "")} · el mes no terminó, va a subir`);
+    card("#retenCardNuevos", nf.format(enCurso.nuevos || 0), "primera carga este mes");
+    card("#retenCardVuelven", nf.format(enCurso.recuperados || 0),
+         "estaban inactivos y volvieron");
+
+    /* ---- la tabla de cohortes ---- */
+    const coh = d.cohortes || [];
+    const maxP = Math.min(10, d.max_periodos || 0);
+    if(!coh.length){
+      tc.innerHTML = `<tr><td class="reten-vacio">Todavía no hay meses con jugadores nuevos.</td></tr>`;
+    } else {
+      let h = `<tr><th>Llegaron en</th><th class="num">Nuevos</th>`;
+      for(let i = 0; i <= maxP; i++){ h += `<th class="num">+${i}</th>`; }
+      h += `</tr>`;
+      for(const c of coh){
+        h += `<tr><td>${esc(retenMes(c.cohorte))}${c.en_curso?' <span class="reten-nota">en curso</span>':''}</td>`
+           + `<td class="num"><b>${nf.format(c.nuevos)}</b></td>`;
+        for(let i = 0; i <= maxP; i++){
+          const p = c.serie[i];
+          if(!p){ h += `<td class="num reten-na"></td>`; continue; }
+          /* El último punto de una cohorte en curso todavía va a subir: se
+             muestra en gris para que no se lea como una caída. */
+          const parcial = c.en_curso && i === c.serie.length - 1;
+          h += `<td class="num" style="background:${parcial?"transparent":retenColor(p.pct)}"`
+             + (parcial?' title="Este mes todavía no terminó"':'')
+             + `>${parcial?'<i class="reten-na">':''}${p.pct}%${parcial?'</i>':''}</td>`;
+        }
+        h += `</tr>`;
+      }
+      tc.innerHTML = h;
+    }
+
+    /* ---- la tabla mes a mes ---- */
+    let hm = `<tr><th>Mes</th><th class="num">Activos</th><th class="num">Nuevos</th>`
+           + `<th class="num">Siguieron</th><th class="num">Volvieron</th>`
+           + `<th class="num">Se perdieron</th><th class="num">% perdido</th></tr>`;
+    for(const m of [...meses].reverse()){
+      hm += `<tr><td>${esc(retenMes(m.mes))}${m.en_curso?' <span class="reten-nota">en curso</span>':''}</td>`
+          + `<td class="num"><b>${nf.format(m.activos)}</b></td>`
+          + `<td class="num">${nf.format(m.nuevos)}</td>`
+          + `<td class="num">${nf.format(m.retenidos)}</td>`
+          + `<td class="num">${nf.format(m.recuperados)}</td>`
+          + `<td class="num">${nf.format(m.perdidos)}</td>`
+          /* Sin base con qué comparar, o con cuatro jugadores, el porcentaje
+             no dice nada: se deja el guión y el crudo queda en la columna de
+             al lado. */
+          + `<td class="num">${(m.pct_perdidos === null || m.poca_muestra) ? '<i class="reten-na">—</i>' : m.pct_perdidos + "%"}</td>`
+          + `</tr>`;
+    }
+    tm.innerHTML = hm;
+
+    const cob = d.cobertura || {};
+    $("#retenCap").textContent = enCurso.mes ? retenMes(enCurso.mes) : "";
+    $("#retenPie").innerHTML = cob.desde
+      ? `Se mide desde <b>${esc(retenMes(cob.desde))}</b>, que es hasta donde llegan los datos. `
+        + `Un mes anterior a eso figuraría en cero, y cero no es un dato: es una ausencia.`
+      : "";
   }
 
   // ---------- Cargas pedidas desde la plataforma (camino A) ----------
