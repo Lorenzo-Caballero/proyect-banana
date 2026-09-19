@@ -30,6 +30,33 @@ function salir($data, int $code = 200): void
     exit;
 }
 
+/**
+ * EL NOMBRE QUE HAY ADENTRO DEL NOMBRE DE USUARIO.
+ *
+ * Nuestros jugadores se llaman `hola` + Nombre + 3 dígitos por construcción
+ * (alta_usuario_disponible), así que `holahector301` lleva "hector" adentro --
+ * y el remitente del banco dice "HECTOR RAFAEL BAREIRO". Es la pista más obvia
+ * de todas y no la usaba nadie.
+ *
+ * ACÁ DECÍA QUE ESTO ERA RUIDO, y con razón en su momento: el CRM comparaba el
+ * titular del banco contra el nombre de usuario CRUDO, que suele ser un apodo
+ * ("elkakas") y no se parece a nada, así que avisaba "no coincide" casi
+ * siempre. La diferencia es sacar el `hola` y los dígitos primero: lo que queda
+ * es el nombre que la persona escribió al registrarse.
+ *
+ * Devuelve '' cuando no queda nada aprovechable (un usuario viejo, un apodo).
+ * Es una PISTA para ordenar y explicar, nunca una acreditación automática: el
+ * que decide es el operador, y por eso la pantalla sugiere en vez de aplicar.
+ */
+function comp_nombre_de_usuario(string $usuario): string
+{
+    $u = trim($usuario);
+    if ($u === '') { return ''; }
+    if (stripos($u, 'hola') === 0) { $u = substr($u, 4); }
+    $u = rtrim($u, '0123456789');
+    return mb_strlen($u) >= 3 ? $u : '';
+}
+
 // ============================== GET =========================================
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     $accion = (string)($_GET['accion'] ?? 'listar');
@@ -146,10 +173,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 $c['parecido'] = (function_exists('rl_similitud_nombres') && trim((string)$c['titular_declarado']) !== '')
                     ? rl_similitud_nombres((string)$pago['remitente'], (string)$c['titular_declarado'])
                     : 0.0;
+                /* La CUARTA señal: el nombre que hay adentro del nombre de
+                   usuario. `holahector301` lleva "hector", y el banco dice
+                   "HECTOR RAFAEL BAREIRO". Es la más obvia y no se usaba. */
+                $c['por_nombre'] = 0.0;
+                $nom = comp_nombre_de_usuario((string)$c['usuario']);
+                if ($nom !== '' && function_exists('rl_similitud_nombres')) {
+                    $c['por_nombre'] = rl_similitud_nombres((string)$pago['remitente'], $nom);
+                }
                 if ($c['huella']) {
                     $c['motivo'] = 'ya cargó antes desde esta cuenta';
                 } elseif ($c['parecido'] >= RL_UMBRAL_NOMBRE) {
                     $c['motivo'] = sprintf('el titular coincide (%.0f%%)', $c['parecido'] * 100);
+                } elseif ($c['por_nombre'] >= RL_UMBRAL_NOMBRE) {
+                    $c['motivo'] = 'el nombre del jugador coincide con el del remitente';
                 } elseif (abs($c['monto_pedido'] - $pago['monto']) < 0.005) {
                     $c['motivo'] = 'el monto es exacto';
                 } else {
@@ -164,6 +201,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             usort($candidatas, function ($a, $b) use ($pago) {
                 if ($a['huella'] !== $b['huella'])       { return $b['huella'] <=> $a['huella']; }
                 if ($a['parecido'] !== $b['parecido'])   { return $b['parecido'] <=> $a['parecido']; }
+                if ($a['por_nombre'] !== $b['por_nombre']) { return $b['por_nombre'] <=> $a['por_nombre']; }
                 return abs($a['monto_pedido'] - $pago['monto']) <=> abs($b['monto_pedido'] - $pago['monto']);
             });
 
@@ -175,7 +213,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                Pasa sobre todo con los pagos del camino A (boton "Depositos"),
                que no crean fila en `recargas` y por eso nunca tienen candidata
                que ofrecer. */
+            /* UNA SOLA SUGERENCIA, y el resto escondido detrás de "no es él".
+               EL PEDIDO (Nahuel, 19/09/2026): *"en lugar de mostrarme todos los
+               nombres de los usuarios abajo, debería simplemente sugerirme de
+               quién puede ser esa carga... y ahí decirme si cargarle a ese
+               usuario o no"*.
+
+               Veinte nombres no son veinte opciones: son una lista que hay que
+               descartar de a una, y el operador termina sin saber cuál mirar.
+               Una sugerencia con sus motivos escritos se acepta o se rechaza en
+               dos segundos.
+
+               La sugerencia existe SOLO si hay una señal de verdad. Sin señal
+               NO se sugiere a nadie: proponer al azar el de monto más parecido
+               invita a acreditarle plata a quien no la mandó, que es el único
+               error caro de esta pantalla. */
+            $sug = null;
+            $mejor = $candidatas[0] ?? null;
+            if ($mejor && ($mejor['huella'] || $mejor['parecido'] >= RL_UMBRAL_NOMBRE
+                           || $mejor['por_nombre'] >= RL_UMBRAL_NOMBRE)) {
+                $porques = [];
+                if ($mejor['huella']) { $porques[] = 'ya cargó antes desde esta misma cuenta bancaria'; }
+                if ($mejor['parecido'] >= RL_UMBRAL_NOMBRE) {
+                    $porques[] = 'declaró que transfiere a nombre de ' . $mejor['titular_declarado'];
+                }
+                if ($mejor['por_nombre'] >= RL_UMBRAL_NOMBRE) {
+                    $porques[] = 'su nombre coincide con el del remitente';
+                }
+                if (abs($mejor['monto_pedido'] - $pago['monto']) < 0.005) {
+                    $porques[] = 'pidió exactamente este monto';
+                } else {
+                    $porques[] = 'pidió $' . number_format((float)$mejor['monto_pedido'], 0, ',', '.')
+                               . ' (transfirió $' . number_format((float)$pago['monto'], 0, ',', '.') . ')';
+                }
+                $sug = ['modo' => 'recarga', 'recarga_id' => (int)$mejor['id'],
+                        'usuario' => (string)$mejor['usuario'],
+                        'coins' => (int)$mejor['coins'],
+                        'referencia' => (string)$mejor['referencia'],
+                        'estado' => (string)$mejor['estado'],
+                        'porques' => $porques];
+            } elseif ($conHuella) {
+                /* Sin candidata con señal, pero alguien ya pagó antes desde
+                   esta misma cuenta. Es la mejor pista que hay para los pagos
+                   del camino A, que nunca crean recarga. */
+                $sug = ['modo' => 'directo', 'usuario' => (string)$conHuella[0],
+                        'coins' => (int)round((float)$pago['monto']),
+                        'porques' => ['ya cargó antes desde esta misma cuenta bancaria']];
+            }
+
             salir(['ok' => true, 'pago' => $pago, 'candidatas' => $candidatas,
+                   'sugerencia' => $sug,
                    'sugeridos' => array_values($conHuella)]);
         }
 

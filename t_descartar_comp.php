@@ -106,10 +106,18 @@ chequear('la lista de candidatas tiene tope y scroll propio',
          && str_contains($crmH, 'max-height:min(46vh,340px);overflow-y:auto'),
          'sin tope, 20 candidatas empujan la salida fuera de la pantalla');
 
-chequear('y el encabezado nombra las DOS salidas, no solo asignar',
-         str_contains($crmH, '¿De quién es esta transferencia?')
-         && str_contains($crmH, 'acreditársela directo'),
-         'si ninguna candidata sirve, la pantalla parecia no tener salida');
+/* Y QUE SIEMPRE HAYA UNA SALIDA A LA VISTA. Antes el titulo decia solo
+   «Asignar a una carga pedida», asi que si ninguna candidata era la correcta la
+   pantalla parecia no tener salida -- y la que si tenia quedaba abajo de 20
+   candidatas, fuera del borde de la pantalla.
+   Con el rediseño el titulo ya no existe: o hay una sugerencia con sus dos
+   botones, o se dice que no la hay y se abre la busqueda sola. */
+chequear('sin sugerencia, la busqueda se abre sola',
+         str_contains($crmH, 'No tengo con qué sugerirte un jugador')
+         && str_contains($crmH, 'if(otro) otro.style.display = "block";'),
+         'si ninguna candidata sirve, la pantalla no puede quedar sin salida');
+chequear('y descartar sigue a mano para lo que no es de nadie',
+         str_contains($crmH, 'id="cdDescartar"'));
 
 /* Y que las tres acciones sigan existiendo del lado del server. */
 $srcComp = file_get_contents(__DIR__ . '/api/crm_comprobantes.php');
@@ -137,6 +145,71 @@ chequear('y aplica el bono que tuviera prometido',
          str_contains($cuerpo, 'crmnotif_bono_aplicar_en_recarga(')
          || str_contains($cuerpo, 'bono_aplicar'),
          'un comprobante resuelto a mano se salteaba el bono de fidelizacion');
+
+
+// ===========================================================================
+echo "\n=== UNA sugerencia, no una lista de veinte ===\n";
+
+/* EL PEDIDO (Nahuel, 19/09/2026): *"en lugar de mostrarme todos los nombres de
+   los usuarios abajo, debería simplemente sugerirme de quién puede ser esa
+   carga... y ahí decirme si cargarle a ese usuario o no. Rechazar o aprobar."*
+
+   Veinte nombres no son veinte opciones: son una lista que hay que descartar
+   de a una, y el operador termina sin saber cuál mirar. */
+$srcComp = file_get_contents(__DIR__ . '/api/crm_comprobantes.php');
+$crmH    = file_get_contents(__DIR__ . '/landing/crm.html');
+
+chequear('el server arma UNA sugerencia',
+         str_contains($srcComp, "'sugerencia' => \$sug"));
+chequear('con sus motivos escritos, no un puntaje',
+         str_contains($srcComp, "'porques' => \$porques"));
+chequear('la pantalla pregunta por esa sola',
+         str_contains($crmH, '¿Esta transferencia es de'));
+chequear('con aprobar y rechazar',
+         str_contains($crmH, 'id="csSi"') && str_contains($crmH, 'id="csNo"'));
+chequear('y la lista larga queda detras de "no es el"',
+         str_contains($crmH, 'id="compOtro" style="display:none"'));
+
+/* SIN SEÑAL NO SE SUGIERE A NADIE. El de monto mas parecido no es un
+   candidato: es el primero de una lista ordenada. Proponerlo invitaria a
+   acreditarle plata a quien no la mando, que es el unico error caro de esta
+   pantalla. */
+chequear('sin ninguna señal NO se sugiere a nadie',
+         str_contains($srcComp, "\$mejor['huella'] || \$mejor['parecido'] >= RL_UMBRAL_NOMBRE")
+         && str_contains($crmH, 'No tengo con qué sugerirte un jugador'),
+         'el de monto parecido no es un candidato, es el primero de una lista');
+
+echo "\n=== La señal que faltaba: el nombre adentro del usuario ===\n";
+
+/* Nuestros jugadores se llaman `hola` + Nombre + 3 digitos por construccion,
+   asi que `holahector301` lleva "hector" adentro -- y el remitente del banco
+   dice "HECTOR RAFAEL BAREIRO". Era la pista mas obvia y no la usaba nadie.
+
+   Antes se habia probado comparar el titular contra el nombre de usuario CRUDO
+   y era ruido, con razon: un apodo como "elkakas" no se parece a nada. La
+   diferencia es sacar el `hola` y los digitos primero. */
+$i = strpos($srcComp, 'function comp_nombre_de_usuario(');
+$j = strpos($srcComp, "\n}", $i);
+eval(substr($srcComp, $i, $j - $i + 2));
+
+foreach ([
+    ['holahector301',        'hector',        'el caso real que disparo esto'],
+    ['holaoscardaniotti400', 'oscardaniotti', 'nombre largo'],
+    ['kevin1622',            'kevin',         'sin el prefijo hola'],
+    ['elkakas',              'elkakas',       'un apodo queda como esta'],
+    ['hola12',               '',              'no queda nada aprovechable'],
+] as [$u, $esperado, $porque]) {
+    chequear("de '$u' saca '" . ($esperado ?: '(nada)') . "' ($porque)",
+             comp_nombre_de_usuario($u) === $esperado,
+             'dio: ' . var_export(comp_nombre_de_usuario($u), true));
+}
+
+require_once __DIR__ . '/api/recargas_lib.php';
+chequear('y hector matchea con HECTOR RAFAEL BAREIRO',
+         rl_similitud_nombres('HECTOR RAFAEL BAREIRO', comp_nombre_de_usuario('holahector301')) >= RL_UMBRAL_NOMBRE);
+chequear('pero papa NO matchea con el mismo remitente',
+         rl_similitud_nombres('HECTOR RAFAEL BAREIRO', comp_nombre_de_usuario('holapapa408')) < RL_UMBRAL_NOMBRE,
+         'si matcheara cualquiera, la sugerencia seria una ruleta');
 
 printf("%d OK, %d fallas\n", $ok, $fail);
 exit($fail === 0 ? 0 : 1);

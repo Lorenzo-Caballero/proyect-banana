@@ -1279,6 +1279,30 @@
      suyo y concluía, con razón, que no había forma de resolverlo.
      Nahuel lo reportó así: *"quiero resolverlo y no hay ningún botón para
      aprobarlo"*. El botón estaba; estaba fuera de la pantalla. */
+  /* LA SUGERENCIA: lo primero y casi lo único que se ve. */
+  .comp-sug{margin-top:14px}
+  .cs-card{background:var(--panel2);border:1px solid var(--violet);border-radius:14px;
+    padding:14px 16px;box-shadow:inset 0 0 0 1px rgba(124,92,255,.18)}
+  .cs-pregunta{font-size:15px;font-weight:800;margin:0 0 2px}
+  .cs-pregunta b{color:var(--violet2)}
+  .cs-ref{font-size:11.5px;color:var(--muted);margin-bottom:9px}
+  .cs-porques{list-style:none;margin:0 0 13px;padding:0;display:flex;
+    flex-direction:column;gap:4px}
+  .cs-porques li{font-size:12.5px;line-height:1.4;padding-left:16px;position:relative}
+  .cs-porques li::before{content:"✓";position:absolute;left:0;color:var(--green2);font-weight:800}
+  .cs-acciones{display:flex;gap:9px;flex-wrap:wrap}
+  .cs-si{background:var(--green);color:#fff;border:0;border-radius:10px;
+    padding:10px 18px;font-size:13.5px;font-weight:700;cursor:pointer}
+  .cs-si:hover{filter:brightness(1.07)}
+  .cs-si:disabled{opacity:.6;cursor:default}
+  .cs-no{background:none;border:1px solid var(--line);color:var(--txt);
+    border-radius:10px;padding:10px 16px;font-size:13.5px;cursor:pointer}
+  .cs-no:hover{background:var(--panel3)}
+  /* Sin señal no se sugiere a nadie: proponer al azar el de monto parecido
+     invita a acreditarle plata a quien no la mandó. */
+  .cs-vacio{background:var(--panel2);border:1px solid var(--line);border-radius:14px;
+    padding:13px 16px;font-size:12.5px;color:var(--muted);line-height:1.5}
+  .comp-otro{margin-top:16px;padding-top:14px;border-top:1px dashed var(--line)}
   .comp-como{margin:0 0 4px;font-size:13px;font-weight:700}
   .comp-ayuda{margin:0 0 4px;font-size:11.5px;color:var(--muted);line-height:1.5}
   .comp-cands{display:flex;flex-direction:column;gap:8px;margin-top:12px;
@@ -2665,23 +2689,26 @@
           <div>Elegí un comprobante de la izquierda</div>
         </div>
       </div>
+      <!-- UNA PREGUNTA A LA VEZ. Antes esto era una lista de hasta 20
+           jugadores candidatos con un botón cada uno, y Nahuel lo dijo
+           derecho: *"el hecho de que aparezcan tantos nombres lo hace un poco
+           confuso"*. Veinte nombres no son veinte opciones: son una lista que
+           hay que descartar de a una.
+           Ahora arriba va UNA sugerencia con sus motivos escritos, que se
+           acepta o se rechaza en dos segundos, y recién si no es esa se abre
+           la búsqueda. -->
       <div id="compDetail" style="display:none">
         <div class="comp-info" id="compInfo"></div>
-        <!-- LAS DOS SALIDAS, dichas antes de la lista. El título decía solo
-             «Asignar a una carga pedida», así que si ninguna candidata era la
-             correcta la pantalla parecía no tener salida -- y la que sí tenía
-             quedaba abajo de 20 candidatas, fuera de la vista. -->
-        <h4 class="comp-como">¿De quién es esta transferencia?</h4>
-        <p class="comp-ayuda">Si es de alguna de estas cargas pedidas, <b>asignásela</b>.
-           Si no es de ninguna, abajo podés <b>acreditársela directo</b> al jugador
-           (le carga las fichas y el bono que corresponda), o <b>descartarla</b>
-           si no es de ningún jugador.</p>
-        <label class="search">
-          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-          <input id="compQ" placeholder="Buscar por usuario, referencia o id…" autocomplete="off">
-        </label>
-        <div class="comp-cands" id="compCands"></div>
-        <div class="comp-directo" id="compDirecto"></div>
+        <div class="comp-sug" id="compSug"></div>
+        <div class="comp-otro" id="compOtro" style="display:none">
+          <h4 class="comp-como">Buscá al jugador</h4>
+          <label class="search">
+            <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+            <input id="compQ" placeholder="Nombre de usuario, referencia o id…" autocomplete="off">
+          </label>
+          <div class="comp-cands" id="compCands"></div>
+          <div class="comp-directo" id="compDirecto"></div>
+        </div>
       </div>
     </main>
   </div>
@@ -9288,6 +9315,89 @@
     });
 
     pintarAcreditarDirecto(d);
+    pintarSugerencia(d, !!q);
+  }
+
+  /* ---------- UNA sugerencia, no una lista ----------
+     EL PEDIDO (Nahuel, 19/09/2026): *"en lugar de mostrarme todos los nombres
+     de los usuarios abajo, debería simplemente sugerirme de quién puede ser esa
+     carga... y ahí decirme si cargarle a ese usuario o no"*.
+
+     Veinte nombres no son veinte opciones: son una lista que hay que descartar
+     de a una, y el operador termina sin saber cuál mirar. Una sugerencia con
+     sus motivos escritos se acepta o se rechaza en dos segundos.
+
+     SIN SEÑAL NO SE SUGIERE A NADIE. El de monto más parecido no es un
+     candidato: es el primero de una lista ordenada. Proponerlo invitaría a
+     acreditarle plata a quien no la mandó, que es el único error caro de esta
+     pantalla. */
+  function pintarSugerencia(d, buscando){
+    const cont = $("#compSug"); if(!cont) return;
+    const s = d.sugerencia;
+    const otro = $("#compOtro");
+
+    /* Si el operador está buscando, ya dijo que no era la sugerencia: se queda
+       en modo búsqueda y no se le vuelve a ofrecer la misma. */
+    if(buscando){ cont.innerHTML = ""; if(otro) otro.style.display = "block"; return; }
+
+    if(!s){
+      cont.innerHTML = `<div class="cs-vacio">
+        <b>No tengo con qué sugerirte un jugador.</b><br>
+        Ninguna carga pedida coincide por cuenta bancaria, por titular declarado
+        ni por nombre. Buscalo abajo, o descartá el comprobante si la
+        transferencia no es de ningún jugador.</div>`;
+      if(otro) otro.style.display = "block";
+      return;
+    }
+    if(otro) otro.style.display = "none";
+
+    const monto = money(d.pago.monto);
+    const ref = s.modo === "recarga"
+      ? `Pidió una carga ${esc(s.referencia)} · ${nf.format(s.coins)} fichas${s.estado==="vencida" ? " · venció, pero se puede usar" : ""}`
+      : `No tiene ninguna carga pedida abierta: se le acreditan ${nf.format(s.coins)} fichas por ${monto}`;
+
+    cont.innerHTML = `<div class="cs-card">
+      <p class="cs-pregunta">¿Esta transferencia es de <b>@${esc(s.usuario)}</b>?</p>
+      <div class="cs-ref">${ref}</div>
+      <ul class="cs-porques">${(s.porques||[]).map(x=>`<li>${esc(x)}</li>`).join("")}</ul>
+      <div class="cs-acciones">
+        <button class="cs-si" id="csSi" type="button">Sí, cargarle ${monto}</button>
+        <button class="cs-no" id="csNo" type="button">No es él</button>
+      </div>
+    </div>`;
+
+    $("#csSi").addEventListener("click", ()=> aprobarSugerencia(s, d));
+    $("#csNo").addEventListener("click", ()=>{
+      /* No se descarta nada: se abre la búsqueda. La sugerencia se va para que
+         no quede compitiendo con lo que el operador está por elegir. */
+      cont.innerHTML = `<div class="cs-vacio">Buscá al jugador correcto abajo,
+        o descartá el comprobante si no es de ninguno.</div>`;
+      if(otro){ otro.style.display = "block"; $("#compQ")?.focus(); }
+    });
+  }
+
+  /* Aprobar la sugerencia es exactamente la acción que ya existía: asignarle el
+     pago a su carga pedida, o acreditárselo directo si no tiene ninguna. Lo
+     único que cambia es que el operador no tiene que elegirla de una lista. */
+  async function aprobarSugerencia(s, d){
+    const btn = $("#csSi");
+    if(s.modo === "recarga"){
+      await asignarComprobante(s.recarga_id, btn, s.usuario);
+      return;
+    }
+    if(!confirm(`¿Acreditarle ${nf.format(s.coins)} fichas a @${s.usuario}?\n\n`+
+                `Se le cargan las fichas con el bono que le corresponda, y el `+
+                `comprobante queda resuelto.`)) return;
+    btn.disabled = true; btn.textContent = "Cargando…";
+    const r = await jpost({accion:"acreditar_directo", pago_id:d.pago.id_unico,
+                           usuario:s.usuario, coins:s.coins}, API_COMP);
+    if(r.ok){
+      toast(`Acreditado a @${s.usuario}`);
+      actualizarBadgeComp(); cargarComprobantes();
+    } else {
+      btn.disabled = false; btn.textContent = "Sí, cargarle " + money(d.pago.monto);
+      toast(r.error || "No se pudo acreditar");
+    }
   }
 
   /* Acreditar sin recarga.
@@ -9365,9 +9475,18 @@
     }
   }
 
-  async function asignarComprobante(recargaId, btn){
+  async function asignarComprobante(recargaId, btn, quien){
     if(!compPagoActual) return;
-    if(!confirm(`¿Asignar este comprobante (${money(compPagoActual.monto)}) a esta recarga?`)) return;
+    /* El texto nombra AL JUGADOR cuando se sabe. Desde la sugerencia el
+       operador ya leyó "¿es de @fulano?", así que un confirm genérico que
+       vuelve a decir "esta recarga" lo obliga a reconstruir de qué hablaba. */
+    const pregunta = quien
+      ? `¿Acreditarle este comprobante de ${money(compPagoActual.monto)} a @${quien}?`
+      : `¿Asignar este comprobante (${money(compPagoActual.monto)}) a esta recarga?`;
+    if(!confirm(pregunta)) return;
+    /* El texto original del botón, para poder volver atrás si falla: desde la
+       sugerencia dice "Sí, cargarle $16.000" y no "Asignar". */
+    const textoPrevio = btn.textContent;
     btn.disabled = true; btn.textContent = "…";
     const d = await jpost({accion:"asignar", pago_id:compPagoActual.id_unico, recarga_id:recargaId}, API_COMP);
     if(d.ok){
@@ -9375,7 +9494,7 @@
       actualizarBadgeComp();
       cargarComprobantes();
     } else {
-      btn.disabled = false; btn.textContent = "Asignar";
+      btn.disabled = false; btn.textContent = textoPrevio;
       toast(d.error || "No se pudo asignar");
     }
   }
