@@ -929,10 +929,23 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
                 $reemplazados = $up->rowCount();
             }
 
+            /* LA FECHA DE VENCIMIENTO SE CONGELA AL CREARLO, no se calcula
+               despues sobre `creado_en`. Si dependiera de la config del
+               momento en que se lee, bajar el plazo de 30 a 7 dias anularia
+               de golpe bonos ya prometidos por chat y por push -- y el
+               jugador no tiene por que pagar un cambio de reglas que no vio.
+               Asi, cambiar la config solo afecta a los que vienen. */
+            $dias = 0;
+            if (function_exists('cfg_crm')) {
+                $dias = max(0, (int)(cfg_crm($pdo, 'bono_vence_dias') ?? 0));
+            }
+            $venceEn = $dias > 0 ? date('Y-m-d H:i:s', strtotime("+$dias days")) : null;
+
             $pdo->prepare(
-                "INSERT INTO bonos_pendientes (usuario, tipo, valor, prometido_por, notificacion_id)
-                 VALUES (?,?,?,?,?)"
-            )->execute([mb_substr($usuario, 0, 50), $tipo, $tipo === 'giro' ? 0 : $valor, $prometidoPor, $notificacionId]);
+                "INSERT INTO bonos_pendientes (usuario, tipo, valor, prometido_por, notificacion_id, vence_en)
+                 VALUES (?,?,?,?,?,?)"
+            )->execute([mb_substr($usuario, 0, 50), $tipo, $tipo === 'giro' ? 0 : $valor,
+                        $prometidoPor, $notificacionId, $venceEn]);
             $bonoId = (int)$pdo->lastInsertId();
 
             if ($tipo === 'giro') {
@@ -947,6 +960,38 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
             if ($pdo->inTransaction()) { $pdo->rollBack(); }
             error_log('crmnotif_bono_crear: ' . $e->getMessage());
             return ['ok' => false, 'error' => 'No se pudo crear el bono'];
+        }
+    }
+
+    /**
+     * Marca 'vencido' lo que se paso de fecha. Devuelve cuantos.
+     *
+     * NO ES LO QUE PROTEGE LA PLATA -- eso lo hace el filtro de
+     * crmnotif_bono_aplicar_en_recarga(), que ignora los vencidos aunque esto
+     * nunca corra. Esto es para que en la ficha del jugador y en Auditoria se
+     * vean como vencidos y no como pendientes eternos.
+     *
+     * 'vencido' y no 'cancelado' a proposito: los dos sacan el bono de
+     * circulacion pero cuentan historias distintas. 'cancelado' es "se lo
+     * reemplazo otro o lo dio de baja un operador"; 'vencido' es "se le paso el
+     * tiempo". Si no se pudieran distinguir, no habria forma de contestar si la
+     * gente no cobra porque le cambiamos el bono o porque tarda demasiado en
+     * volver, que son dos problemas con soluciones opuestas.
+     */
+    function crmnotif_bonos_vencer(PDO $pdo): int
+    {
+        try {
+            $st = $pdo->prepare(
+                "UPDATE bonos_pendientes SET estado = 'vencido'
+                  WHERE estado = 'pendiente'
+                    AND vence_en IS NOT NULL AND vence_en <= NOW()"
+            );
+            $st->execute();
+            return $st->rowCount();
+        } catch (Throwable $e) {
+            // Sin la migracion 75 no existe la columna: no es un error, es una
+            // base que todavia no la corrio.
+            return 0;
         }
     }
 
@@ -1069,9 +1114,15 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
                solo, pero el orden importa igual: si por una carrera o por un
                arreglo a mano quedaran dos, el que vale es el ULTIMO que se le
                prometio -- que es el que el jugador acaba de leer en el aviso. */
+            /* UN BONO VENCIDO NO SE PAGA, aunque la barrida que los marca
+               todavia no haya corrido. Esta es la guarda que protege la plata;
+               marcarlos 'vencido' es para que se vean como tales en la ficha y
+               en Auditoria. `vence_en IS NULL` = los de antes de la migracion
+               75 y los creados con el vencimiento apagado: esos no vencen. */
             $st = $pdo->prepare(
                 "SELECT id, tipo, valor FROM bonos_pendientes
                   WHERE usuario = ? AND estado = 'pendiente' AND tipo IN ('fichas','pct')
+                    AND (vence_en IS NULL OR vence_en > NOW())
                   ORDER BY creado_en DESC, id DESC LIMIT 1"
             );
             $st->execute([$usuario]);

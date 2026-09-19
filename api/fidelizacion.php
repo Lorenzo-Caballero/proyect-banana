@@ -42,7 +42,20 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
 exigir_api_key();
 
 try {
-    echo json_encode(fid_correr($pdo), JSON_UNESCAPED_UNICODE);
+    /* De paso, la barrida de bonos vencidos. Va ACA y no en un cron propio
+       porque este ya corre cada hora y no hace falta otra tarea que vigilar --
+       una tarea mas es una tarea mas que se puede morir en silencio, que es
+       justo el problema que documenta CLAUDE.md.
+
+       Va ANTES y FUERA de fid_correr(): tiene que correr aunque la campaña
+       este apagada o fuera de horario. Y si este cron se cayera, no se paga
+       ningun bono vencido igual: la guarda esta en
+       crmnotif_bono_aplicar_en_recarga(), que los ignora aunque sigan
+       figurando 'pendiente'. Esto es para que se VEAN vencidos. */
+    $vencidos = function_exists('crmnotif_bonos_vencer')
+        ? crmnotif_bonos_vencer($pdo) : 0;
+
+    echo json_encode(fid_correr($pdo) + ['bonos_vencidos' => $vencidos], JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {
     error_log('fidelizacion: ' . $e->getMessage());
     http_response_code(500);

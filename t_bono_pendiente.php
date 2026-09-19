@@ -264,6 +264,93 @@ $pdo->prepare("INSERT INTO bonos_pendientes (usuario, tipo, valor, prometido_por
 $monto = crmnotif_bono_aplicar_en_recarga($pdo, $W, null, 1000);
 ok($monto === 250, 'con dos pendientes se aplica el MAS NUEVO (250 = 25% de 1000), dio ' . var_export($monto, true));
 
+/* =========================================================================
+   LOS BONOS PROMETIDOS VENCEN
+   =========================================================================
+   Habia 629 pendientes y ninguno vencia nunca. Hoy no duele --el mas viejo era
+   de tres dias antes-- pero es una deuda que solo crece: quien vuelve dentro de
+   seis meses cobra igual el porcentaje que la campaña le prometio una tarde.
+
+   La guarda que protege la plata es el filtro del APPLIER, no la barrida: un
+   bono vencido no se paga aunque siga figurando 'pendiente'. Eso es lo primero
+   que se prueba. */
+echo "\n=== LOS BONOS VENCEN ===\n";
+
+$limpiarW();
+$pdo->prepare("INSERT INTO usuarios (id, username, balance, coins, bonus)
+               VALUES (990601, ?, 0, 0, 0)")->execute([$W]);
+
+/* Un bono ya vencido, puesto a mano con fecha de ayer: la barrida todavia no
+   corrio, asi que sigue 'pendiente'. Es el caso peligroso. */
+$pdo->prepare("INSERT INTO bonos_pendientes (usuario, tipo, valor, prometido_por, vence_en)
+               VALUES (?, 'pct', 50, 'test', NOW() - INTERVAL 1 DAY)")->execute([$W]);
+$monto = crmnotif_bono_aplicar_en_recarga($pdo, $W, null, 1000);
+ok($monto === 0 || $monto === null,
+   'un bono VENCIDO no se paga, aunque la barrida no haya corrido todavia: dio '
+   . var_export($monto, true));
+
+/* Y sigue sin pagarse despues de la barrida, ahora ademas marcado. */
+$n = crmnotif_bonos_vencer($pdo);
+ok($n >= 1, 'la barrida lo marca, dio ' . $n);
+$st = $pdo->prepare("SELECT estado FROM bonos_pendientes WHERE usuario = ? ORDER BY id DESC LIMIT 1");
+$st->execute([$W]);
+ok((string)$st->fetchColumn() === 'vencido',
+   "queda 'vencido' y no 'cancelado': uno es que se le paso el tiempo y el otro "
+   . "que se lo reemplazamos, y son dos problemas distintos");
+
+/* UNO VIGENTE SI SE PAGA. Sin esto el test anterior pasaria igual con un
+   applier roto que no paga nada. */
+$limpiarW();
+$pdo->prepare("INSERT INTO usuarios (id, username, balance, coins, bonus)
+               VALUES (990601, ?, 0, 0, 0)")->execute([$W]);
+$pdo->prepare("INSERT INTO bonos_pendientes (usuario, tipo, valor, prometido_por, vence_en)
+               VALUES (?, 'pct', 50, 'test', NOW() + INTERVAL 5 DAY)")->execute([$W]);
+$monto = crmnotif_bono_aplicar_en_recarga($pdo, $W, null, 1000);
+ok($monto === 500, 'uno vigente si se paga (500 = 50% de 1000), dio ' . var_export($monto, true));
+
+/* LOS DE ANTES DE LA MIGRACION NO VENCEN. `vence_en IS NULL` son los 629 que ya
+   estaban: ponerles fecha de golpe seria anular bonos ya prometidos por chat y
+   por push, y el jugador no tiene por que pagar un cambio de reglas que no vio. */
+$limpiarW();
+$pdo->prepare("INSERT INTO usuarios (id, username, balance, coins, bonus)
+               VALUES (990601, ?, 0, 0, 0)")->execute([$W]);
+$pdo->prepare("INSERT INTO bonos_pendientes (usuario, tipo, valor, prometido_por, creado_en)
+               VALUES (?, 'pct', 20, 'test', NOW() - INTERVAL 300 DAY)")->execute([$W]);
+crmnotif_bonos_vencer($pdo);
+$st->execute([$W]);
+ok((string)$st->fetchColumn() === 'pendiente',
+   'uno viejo SIN fecha de vencimiento no se toca, por mas antiguo que sea');
+$monto = crmnotif_bono_aplicar_en_recarga($pdo, $W, null, 1000);
+ok($monto === 200, 'y se le sigue pagando, dio ' . var_export($monto, true));
+
+/* LA FECHA SE CONGELA AL CREARLO. Si se calculara al leer, bajar el plazo en la
+   config anularia de golpe bonos ya prometidos. */
+$limpiarW();
+$pdo->prepare("INSERT INTO usuarios (id, username, balance, coins, bonus)
+               VALUES (990601, ?, 0, 0, 0)")->execute([$W]);
+cfg_crm_guardar($pdo, ['bono_vence_dias' => '10'], 'test');
+crmnotif_bono_crear($pdo, $W, 'pct', 30, 'test');
+$st2 = $pdo->prepare("SELECT vence_en, TIMESTAMPDIFF(DAY, NOW(), vence_en) dias
+                        FROM bonos_pendientes WHERE usuario = ? ORDER BY id DESC LIMIT 1");
+$st2->execute([$W]);
+$f = $st2->fetch(PDO::FETCH_ASSOC);
+ok((int)$f['dias'] === 9 || (int)$f['dias'] === 10,
+   'al crearlo le queda la fecha de la config (10 dias), dio ' . var_export($f['dias'], true));
+
+cfg_crm_guardar($pdo, ['bono_vence_dias' => '1'], 'test');
+$st2->execute([$W]);
+$f2 = $st2->fetch(PDO::FETCH_ASSOC);
+ok((string)$f2['vence_en'] === (string)$f['vence_en'],
+   'y bajar el plazo en la config NO le mueve la fecha al que ya existia');
+
+/* Con el vencimiento apagado (0) se sigue comportando como antes. */
+cfg_crm_guardar($pdo, ['bono_vence_dias' => '0'], 'test');
+crmnotif_bono_crear($pdo, $W, 'pct', 40, 'test');
+$st2->execute([$W]);
+ok($st2->fetch(PDO::FETCH_ASSOC)['vence_en'] === null,
+   'con bono_vence_dias en 0 el bono no vence, como antes de la migracion 75');
+cfg_crm_guardar($pdo, ['bono_vence_dias' => '30'], 'test');
+
 $limpiarW();
 
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);

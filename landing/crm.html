@@ -4975,6 +4975,11 @@
               <p class="cfg-hint">El % que promete la landing <b>bono.html</b> sobre la <b>primera</b> carga. La landing muestra este mismo número y el bono entra al juego junto con la carga. Las landings creadas en <b>Landings</b> no usan esto: cada una tiene su propio %.</p>
             </div>
             <div>
+              <label class="cb-flabel">Un bono prometido vence a los (días)</label>
+              <input class="cb-input" id="cfgBonoVence" inputmode="numeric" placeholder="30">
+              <p class="cfg-hint">Los bonos que promete la campaña, la ruleta o vos desde la ficha esperan la próxima carga del jugador. Sin esto esperaban <b>para siempre</b>: alguien que vuelve en seis meses cobraba igual la promo de una tarde. <b>0 = no vencen.</b> Cambiarlo no le mueve la fecha a los que ya están prometidos.</p>
+            </div>
+            <div>
               <label class="cb-flabel">No se retira desde</label>
               <input class="cb-input" id="cfgLimRetiroDesde" placeholder="03:00">
               <p class="cfg-hint">Hora en que <b>cierran</b> los retiros.</p>
@@ -6675,6 +6680,7 @@
     tg_ev_alta:         { el: "#cfgTgAlta",       tipo: "bool"  },
     tg_ev_pago:         { el: "#cfgTgPago",       tipo: "bool"  },
     tg_ev_app:          { el: "#cfgTgApp",        tipo: "bool"  },
+    bono_vence_dias:    { el: "#cfgBonoVence",    tipo: "texto" },
     tg_repetir_min:     { el: "#cfgTgRepetir",    tipo: "texto" },
     tg_repetir_cambio_min: { el: "#cfgTgCambio",  tipo: "texto" },
     tg_sin_actividad_hs:{ el: "#cfgTgSinAct",     tipo: "texto" },

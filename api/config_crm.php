@@ -365,6 +365,21 @@ const CFG_CRM_DEFAULTS = [
     // calcula en el momento de la aprobacion y despues no se puede cargar.
     'lim_bono_carga_pct' => '0',
 
+    /* A LOS CUANTOS DIAS VENCE UN BONO PROMETIDO. 0 = no vencen (como era
+       hasta el 19/09/2026).
+
+       Habia 629 bonos pendientes y ninguno vencia nunca. Hoy no duele --el mas
+       viejo era de tres dias antes-- pero es una deuda que solo crece: quien
+       vuelve dentro de seis meses cobra igual el porcentaje que la campaña le
+       prometio una tarde, cuando ni la promo ni el numero tienen ya que ver
+       con el negocio.
+
+       30 dias y no menos por una razon concreta: la campaña de fidelizacion
+       persigue hasta `fid_dias_max` (30) dias de inactividad. Un vencimiento
+       mas corto le apagaria el bono a alguien que la propia campaña todavia
+       esta tratando de traer de vuelta. */
+    'bono_vence_dias' => '30',
+
     // ----- Plan de referidos (migracion 53, referidos_lib.php) -----
     // Apagado y en 0 por defecto: prender el plan es una promesa de plata y
     // tiene que ser una decision explicita del dueño, no un default.
