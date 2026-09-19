@@ -666,6 +666,10 @@
   .rc-badge.error{background:#5a2327;color:#ffb0b3}
   .rc-det{color:var(--muted,#8b8fa3);margin-top:6px;white-space:pre-wrap}
   /* Vista Fidelizacion */
+  /* A quién y hasta cuándo: las dos decisiones de negocio de la campaña, juntas
+     y arriba del editor de escalones. */
+  .fid-publico{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:10px 0 14px}
+  @media (max-width:700px){ .fid-publico{grid-template-columns:1fr} }
   .fid-tl-wrap{overflow-x:auto;padding:8px 2px 16px}
   .fid-tl{display:flex;align-items:flex-start;min-width:max-content}
   .fid-paso{display:flex;flex-direction:column;align-items:center;min-width:104px;position:relative;cursor:pointer;user-select:none}
@@ -4142,6 +4146,28 @@
                Cada parada es clickeable y alimenta la vista previa de abajo. -->
           <div class="fid-tl-wrap"><div class="fid-tl" id="fidTimeline"></div></div>
 
+          <!-- A QUIEN. Es la decisión más cara de esta pantalla y no estaba:
+               la única pasada que corrió (16/09) prometió 600 bonos del 50% y
+               entregó CERO notificaciones, porque ninguno de los 600 tenía la
+               app. Un bono que el jugador no sabe que tiene no incentiva nada:
+               es una deuda y nada más. -->
+          <div class="fid-publico">
+            <label class="cfg-campo">
+              <span class="cfg-lbl">A quién se le manda</span>
+              <select id="fidPublico">
+                <option value="app">Solo a los que tienen la app (les llega la notificación)</option>
+                <option value="contacto">A los de la app y a los que tienen chat abierto</option>
+                <option value="todos">A todos los inactivos</option>
+              </select>
+              <span class="cfg-hint" id="fidPublicoHint"></span>
+            </label>
+            <label class="cfg-campo">
+              <span class="cfg-lbl">Dejar de insistir después de</span>
+              <input type="number" id="fidDiasMax" min="0" max="365" step="1">
+              <span class="cfg-hint">Días sin jugar. Pasado eso ya no se le gasta un bono: no es un jugador enfriado, es uno que se fue. 0 = sin tope.</span>
+            </label>
+          </div>
+
           <div class="fid-editor">
             <div class="fid-cab">
               <span></span><span>Días sin jugar</span><span>Bono</span><span>Regalo extra</span><span></span>
@@ -5464,6 +5490,22 @@
      corre por cron en el server (fidelizacion.php); aca solo se configura y
      se mira el rendimiento. */
   let fidTramos = [];    // [{dias,pct,ruleta}] — el estado del editor
+  let fidPublicoNums = null; // {app, contacto, todos} — cuánta gente alcanza cada opción
+
+  /* CUÁNTA GENTE ALCANZA LA OPCIÓN ELEGIDA, al lado del selector. Sin este
+     número la decisión se toma a ciegas: "solo los de la app" suena a poco o a
+     mucho según lo que uno se imagine, y son ~29 de 3.081. Saberlo es lo que
+     permite elegir con criterio en vez de por intuición. */
+  function fidPublicoHint(){
+    const el = $("#fidPublicoHint"); if(!el) return;
+    const v = $("#fidPublico").value;
+    if(!fidPublicoNums){ el.textContent = ""; return; }
+    const n = fidPublicoNums[v];
+    if(n === undefined || n === null){ el.textContent = ""; return; }
+    el.textContent = n === 0
+      ? "Ahora mismo no alcanza a nadie."
+      : `Ahora mismo alcanza a ${n} jugador${n===1?"":"es"} de ${fidPublicoNums.todos}.`;
+  }
   let fidAlcance = {};   // {dias: jugadores hoy en esa banda}
   let fidSel = 0;        // escalón seleccionado (alimenta la vista previa)
 
@@ -5594,6 +5636,13 @@
     try{ d = await jget({accion:"fid_estado"}); }catch(e){ return; }
     if(!d || !d.ok) return;
     $("#fidActiva").checked = !!d.activa;
+    /* `?? "app"` y no `|| "app"`: un server viejo que todavía no manda estos
+       campos tiene que caer al default, pero un "todos" elegido a propósito no
+       se puede pisar. */
+    fidPublicoNums = d.publico_nums ?? null;
+    $("#fidPublico").value  = d.publico ?? "app";
+    $("#fidDiasMax").value  = (d.dias_max ?? 30);
+    fidPublicoHint();
     fidTramos  = (d.tramos||[]).map(t=>({dias:+t.dias, pct:+t.pct, ruleta:t.ruleta?1:0}));
     fidAlcance = d.alcance || {};
     fidSel = Math.max(0, fidTramos.length-1);   // arranca mostrando el escalón más alto
@@ -5620,6 +5669,10 @@
     : '<p class="cfg-hint">Todavía no se mandó ningún aviso.</p>';
   }
 
+  /* El número se recalcula al cambiar la opción: es el dato que hace que la
+     decisión no sea a ciegas, y sirve justo en el momento de elegir. */
+  $("#fidPublico")?.addEventListener("change", fidPublicoHint);
+
   $("#fidAgregar")?.addEventListener("click", ()=>{
     const ultimo = fidTramos[fidTramos.length-1];
     fidTramos.push({ dias:(ultimo? ultimo.dias+1 : 2), pct:(ultimo? Math.min(200,ultimo.pct+5) : 20), ruleta:0 });
@@ -5629,7 +5682,10 @@
     if(!fidValidar()) return;
     const btn = $("#fidGuardar");
     btn.disabled = true; const txt = btn.textContent; btn.textContent = "Guardando…";
-    const d = await jpost({accion:"fid_guardar", activa: $("#fidActiva").checked, tramos: fidTramos});
+    const d = await jpost({accion:"fid_guardar", activa: $("#fidActiva").checked,
+                           publico: $("#fidPublico").value,
+                           dias_max: parseInt($("#fidDiasMax").value, 10) || 0,
+                           tramos: fidTramos});
     btn.disabled = false; btn.textContent = txt;
     if(d.ok){
       toast(d.activa ? "Campaña guardada y ACTIVA ✓" : "Campaña guardada (apagada)");

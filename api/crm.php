@@ -1178,10 +1178,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 }
             } catch (Throwable $e) { /* sin dato, la vista muestra guiones */ }
 
+            /* A CUANTA GENTE LE LLEGA CADA OPCION DE PUBLICO. Sin este numero
+               la decision se toma a ciegas: "solo los de la app" suena a poco
+               o a mucho segun lo que uno se imagine, y son ~29 de 3.081.
+               Medido el 18/09/2026: la unica pasada que corrio prometio 600
+               bonos del 50% y entrego CERO push, porque ninguno de los 600
+               tenia la app. */
+            $publicoNums = null;
+            try {
+                $base = "FROM usuarios u WHERE u.ultima_actividad IS NOT NULL AND u.is_banned = 0";
+                $publicoNums = [
+                    /* El MISMO criterio que fid_sql_publico(): si el numero
+                       del CRM cuenta distinto que el motor, el admin decide
+                       mirando una cifra que no es la que va a pasar. */
+                    'app' => (int)$pdo->query("SELECT COUNT(*) $base
+                                 AND u.tiene_app = 1 AND u.notificaciones = 1
+                                 AND EXISTS (SELECT 1 FROM dispositivos d
+                                              WHERE d.usuario COLLATE utf8mb4_unicode_ci
+                                                    = u.username COLLATE utf8mb4_unicode_ci
+                                                AND d.plataforma = 'android' AND d.permitido = 1)")->fetchColumn(),
+                    'contacto' => (int)$pdo->query("SELECT COUNT(*) $base
+                                 AND (u.tiene_app = 1 OR EXISTS (SELECT 1 FROM conversaciones c
+                                      WHERE c.clave = u.username COLLATE utf8mb4_unicode_ci))")->fetchColumn(),
+                    'todos' => (int)$pdo->query("SELECT COUNT(*) $base")->fetchColumn(),
+                ];
+            } catch (Throwable $e) { /* sin dato, la vista no muestra la ayuda */ }
+
             salir(['ok' => true,
                    'activa' => cfg_crm_activo($pdo, 'fid_activa'),
                    'tramos' => $tramos,
                    'alcance' => $alcance,
+                   'publico' => (string)(cfg_crm($pdo, 'fid_publico') ?: 'app'),
+                   'dias_max' => (int)(cfg_crm($pdo, 'fid_dias_max') ?? 30),
+                   'publico_nums' => $publicoNums,
                    'ultima_pasada' => (string)(cfg_crm($pdo, 'fid_visto_en') ?? ''),
                    'stats'  => $stats]);
         }
@@ -1794,9 +1823,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 salir(['ok' => false,
                        'error' => 'Escalones inválidos: entre 1 y 10, días 1-365 sin repetir, % de 1 a 200'], 400);
             }
+            /* LISTA BLANCA Y NO TEXTO LIBRE: este valor decide a cuanta gente
+               se le promete plata. Cualquier cosa rara cae en 'app', que es el
+               publico mas chico -- el lado seguro. */
+            $publico = (string)($body['publico'] ?? 'app');
+            if (!in_array($publico, ['app', 'contacto', 'todos'], true)) { $publico = 'app'; }
+            $diasMax = max(0, min(365, (int)($body['dias_max'] ?? 30)));
+
             cfg_crm_guardar($pdo, [
-                'fid_activa' => $activa,
-                'fid_tramos' => json_encode($tramos),
+                'fid_activa'   => $activa,
+                'fid_publico'  => $publico,
+                'fid_dias_max' => (string)$diasMax,
+                'fid_tramos'   => json_encode($tramos),
             ], $operador);
             crm_bitacora($pdo, $operador, 'fid_guardar',
                 ($activa === '1' ? 'activa' : 'apagada') . ' · ' . count($tramos) . ' escalones: '

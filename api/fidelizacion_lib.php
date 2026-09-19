@@ -2,6 +2,17 @@
 /**
  * fidelizacion_lib.php — El motor de la campaña de fidelización.
  *
+ * A QUIEN LE HABLA (y por qué importa más que todo lo demás). La campaña es un
+ * EMPUJÓN, y un empujón que no llega no es un empujón. Medido el 18/09/2026
+ * sobre la única pasada que corrió: 600 bonos del 50% prometidos, 600 push
+ * creadas, **0 entregadas** —ninguno de los 600 tenía la app—, 600 mensajes de
+ * chat sin leer, y **0 jugadores volvieron**. 300.000 fichas comprometidas con
+ * gente que no tenía forma de enterarse.
+ *
+ * Desde entonces el público se elige con `fid_publico` y el default es `app`:
+ * solo quien tiene la app CON las notificaciones prendidas. Ver
+ * fid_sql_publico().
+ *
  * Jugadores que dejaron de jugar reciben, al CRUZAR cada escalón de
  * inactividad (2 días -> 20%, 3 -> 25%... configurable en el CRM), un empujón
  * automático para volver:
@@ -77,6 +88,57 @@ if (!function_exists('fid_tramos')) {
     }
 
     /**
+     * EL FILTRO DE PUBLICO, en SQL, segun `fid_publico`.
+     *
+     * POR QUE EXISTE (medido el 18/09/2026 sobre la unica pasada que corrio):
+     *
+     *     600 bonos del 50% prometidos
+     *     600 notificaciones push creadas  ->  0 ENTREGADAS
+     *     600 mensajes de chat escritos    ->  0 leidos
+     *       0 jugadores volvieron
+     *
+     * Ninguno de los 600 tenia la app. Un bono que el jugador no sabe que
+     * tiene no incentiva nada: es una deuda de 300.000 fichas y nada mas.
+     *
+     * La campaña es un EMPUJON, y un empujon que no llega no es un empujon.
+     * Por eso el default apunta a quien puede recibirlo de verdad.
+     *
+     * `notificaciones = 1` no es un detalle: el SondeoWorker del APK chequea el
+     * permiso ANTES de pedir la lista, asi que sin permiso la push no se ve
+     * (y encima se consumiria el aviso). Tener la app con las notificaciones
+     * apagadas es, para esto, igual que no tenerla.
+     */
+    function fid_sql_publico(PDO $pdo): string
+    {
+        $pub = function_exists('cfg_crm') ? trim((string)(cfg_crm($pdo, 'fid_publico') ?? '')) : '';
+        if ($pub === 'todos') {
+            return '';                         // como corria antes
+        }
+        if ($pub === 'contacto') {
+            /* Los de la app MAS los que tienen el chat abierto: a estos el
+               mensaje les queda esperando -- lo ven si entran, no antes. */
+            return " AND (u.tiene_app = 1
+                          OR EXISTS (SELECT 1 FROM conversaciones c
+                                      WHERE c.clave = u.username COLLATE utf8mb4_unicode_ci))";
+        }
+        /* 'app' y cualquier valor raro: el lado seguro es el mas chico.
+
+           SE EXIGE UN CELULAR DE VERDAD, no solo la marca `tiene_app`. Medido
+           el 18/09/2026: 29 jugadores tienen el flag pero solo 21 tienen un
+           dispositivo android con el permiso puesto. Los otros 8 desinstalaron
+           o revocaron, y la push se les encolaria sin que la vea nadie -- que
+           es exactamente el problema que esto viene a arreglar, en chico.
+
+           `permitido = 1` es la verdad del terreno: la entrega es POR
+           DISPOSITIVO (notificaciones_entregas), no por el flag del jugador. */
+        return " AND u.tiene_app = 1 AND u.notificaciones = 1
+                 AND EXISTS (SELECT 1 FROM dispositivos d
+                              WHERE d.usuario COLLATE utf8mb4_unicode_ci
+                                    = u.username COLLATE utf8mb4_unicode_ci
+                                AND d.plataforma = 'android' AND d.permitido = 1)";
+    }
+
+    /**
      * UNA pasada de la campaña. La dispara el cron (fidelizacion.php) cada
      * hora; correrla dos veces seguidas no duplica nada (candado por racha).
      *
@@ -105,17 +167,35 @@ if (!function_exists('fid_tramos')) {
         }
         $minDias = $tramos[0]['dias'];
 
-        /* Elegibles: con actividad conocida y al menos el primer escalón de
-           inactividad. Baneados afuera. Los de MAS dias primero: si el tope
-           corta, mejor avisarle antes al que hace mas que no vuelve. */
+        /* HASTA CUANDO INSISTIR. Alguien que hace tres meses que no aparece no
+           es un jugador enfriado: es uno que se fue. Y sin tope, todo el
+           backlog viejo entra directo al escalon MAS CARO -- que es lo que
+           paso en la unica pasada que corrio: 600 personas, todas al 50%,
+           porque el motor le da a cada uno el escalon mas alto que ya cumplio.
+           0 = sin tope (el comportamiento viejo). */
+        /* Se lee con cfg_crm y no con fichas_limite(): este archivo no carga
+           fichas_lib, y con `function_exists` en false el tope caia al default
+           en silencio -- o sea que ponerlo en 0 no hacia nada. Lo agarro el
+           test, que es para lo que esta. */
+        $diasMaxRaw = function_exists('cfg_crm') ? cfg_crm($pdo, 'fid_dias_max') : null;
+        $diasMax = ($diasMaxRaw === null || trim((string)$diasMaxRaw) === '')
+                 ? 30                      // sin configurar: el default sano
+                 : max(0, (int)$diasMaxRaw);   // 0 = sin tope, a proposito
+
+        /* Elegibles: con actividad conocida, dentro de la ventana, y del
+           publico configurado. Baneados afuera. Los de MAS dias primero: si el
+           tope corta, mejor avisarle antes al que hace mas que no vuelve. */
         $st = $pdo->prepare(
-            "SELECT username, ultima_actividad,
-                    TIMESTAMPDIFF(DAY, ultima_actividad, NOW()) AS dias_inactivo
-               FROM usuarios
-              WHERE ultima_actividad IS NOT NULL
-                AND is_banned = 0
-                AND ultima_actividad <= DATE_SUB(NOW(), INTERVAL ? DAY)
-              ORDER BY ultima_actividad ASC
+            "SELECT u.username, u.ultima_actividad,
+                    TIMESTAMPDIFF(DAY, u.ultima_actividad, NOW()) AS dias_inactivo
+               FROM usuarios u
+              WHERE u.ultima_actividad IS NOT NULL
+                AND u.is_banned = 0
+                AND u.ultima_actividad <= DATE_SUB(NOW(), INTERVAL ? DAY)"
+            . ($diasMax > 0 ? " AND u.ultima_actividad >= DATE_SUB(NOW(), INTERVAL "
+                              . $diasMax . " DAY)" : "")
+            . fid_sql_publico($pdo) . "
+              ORDER BY u.ultima_actividad ASC
               LIMIT 2000"
         );
         $st->execute([$minDias]);

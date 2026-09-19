@@ -205,6 +205,40 @@ const CFG_CRM_DEFAULTS = [
     // esta corriendo?" -- mismo patron que bot_cargas_visto_en.
     'fid_visto_en' => '',
 
+    /* A QUIEN LE HABLA LA CAMPAÑA. Medido el 18/09/2026 sobre la unica pasada
+       que corrio (16/09): se prometieron 600 bonos del 50%, se crearon 600
+       notificaciones push... y se entregaron CERO. Ninguno de los 600 tenia la
+       app. Los 600 mensajes de chat quedaron sin leer, y ninguno volvio.
+
+       O sea: 300.000 fichas comprometidas con gente que no tenia forma de
+       enterarse. Un bono que nadie sabe que tiene no incentiva nada -- es solo
+       una deuda.
+
+       Nahuel (18/09/2026): *"quiero que esa fidelizacion se le mande a la
+       gente que tiene la aplicacion instalada... que ya podemos hacer que les
+       lleguen notificaciones"*. Exacto, y por eso el default es 'app':
+
+         app       tiene la app Y las notificaciones prendidas. Es el unico
+                   publico al que le llega un empujon DE VERDAD, al celular,
+                   sin que tenga que entrar a ningun lado. Hoy son ~29.
+         contacto  los de arriba + los que tienen el chat abierto. A estos el
+                   mensaje les queda esperando: lo ven si entran, no antes.
+         todos     como corria antes. Se deja por si algun dia se quiere
+                   barrer, pero sabiendo lo que cuesta.
+
+       Que 'app' sean 29 de 3.081 no es un problema de esta campaña: es el
+       tamaño real del canal. La palanca para agrandarlo es que mas gente baje
+       la app, no prometerle bonos a quien no los va a ver. */
+    'fid_publico' => 'app',
+
+    /* HASTA CUANDO VALE LA PENA INSISTIR. Alguien que hace tres meses que no
+       aparece no es un jugador que se enfrio: es uno que se fue, y gastarle un
+       bono del escalon mas alto no lo trae de vuelta.
+       Ademas evita el efecto que tuvo la primera pasada: el motor le da el
+       escalon MAS ALTO que ya cumplio, asi que sin tope todo el backlog viejo
+       entra directo al bono mas caro. 0 = sin tope. */
+    'fid_dias_max' => '30',
+
     // ----- Limites de carga y retiro, por cliente -----
     // Cada agencia tiene los suyos ("no cargo menos de 500", "no pago mas de
     // 100.000 por dia"). Antes eran constantes en fichas_lib.php, iguales

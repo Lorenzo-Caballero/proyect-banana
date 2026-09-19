@@ -52,13 +52,26 @@ $limpiar = function () use ($pdo, $U): void {
     }
     $pdo->prepare("DELETE m FROM mensajes m JOIN conversaciones c ON c.id = m.conversacion_id WHERE c.clave = ?")->execute([$U]);
     $pdo->prepare("DELETE FROM conversaciones WHERE clave = ?")->execute([$U]);
+    try { $pdo->prepare("DELETE FROM dispositivos WHERE usuario = ?")->execute([$U]); } catch (Throwable $e) {}
 };
 $limpiar();
-$pdo->prepare("INSERT INTO usuarios (id, username, balance, coins, bonus, tiene_app, ultima_actividad)
-               VALUES (990501, ?, 0, 0, 0, 0, DATE_SUB(NOW(), INTERVAL 3 DAY))")->execute([$U]);
+/* CON LA APP Y LAS NOTIFICACIONES PRENDIDAS, porque desde el 18/09/2026 ese
+   es el publico de la campaña por default. El jugador de prueba tenia
+   tiene_app=0 y con eso los 15 chequeos de abajo dejaron de pasar -- que es
+   justo la prueba de que el filtro nuevo funciona. Ver la seccion "a quien le
+   habla" mas abajo, que cubre el caso contrario. */
+$pdo->prepare("INSERT INTO usuarios (id, username, balance, coins, bonus, tiene_app, notificaciones, ultima_actividad)
+               VALUES (990501, ?, 0, 0, 0, 1, 1, DATE_SUB(NOW(), INTERVAL 3 DAY))")->execute([$U]);
 $pdo->prepare("INSERT INTO conversaciones (clave, usuario, session_id) VALUES (?,?,?)")->execute([$U, $U, 't-sess-fid']);
+/* UN CELULAR DE VERDAD, no solo la marca. La entrega es POR DISPOSITIVO
+   (notificaciones_entregas), asi que `tiene_app=1` sin un android con permiso
+   es una push que se encola y no ve nadie. */
+$pdo->prepare("INSERT INTO dispositivos (device_id, usuario, plataforma, permitido)
+               VALUES ('t-dev-fid-1', ?, 'android', 1)")->execute([$U]);
 cfg_crm_guardar($pdo, [
-    'fid_activa' => '1',
+    'fid_activa'   => '1',
+    'fid_publico'  => 'app',
+    'fid_dias_max' => '30',
     'fid_tramos' => '[{"dias":2,"pct":20},{"dias":3,"pct":25},{"dias":4,"pct":30},{"dias":7,"pct":40},{"dias":8,"pct":50,"ruleta":1}]',
 ], 'test');
 
@@ -158,6 +171,118 @@ ok(fid_parsear_tramos('[{"dias":400,"pct":20}]') === null, '400 días: rechazado
 ok(fid_parsear_tramos('basura') === null, 'JSON roto: rechazado');
 $t = fid_parsear_tramos('[{"dias":7,"pct":40},{"dias":2,"pct":20}]');
 ok(is_array($t) && $t[0]['dias'] === 2, 'ordena por días ascendente');
+
+
+// ===========================================================================
+echo "\n== A QUIEN LE HABLA LA CAMPAÑA ==\n";
+
+/* EL AGUJERO DE 300.000 FICHAS, medido el 18/09/2026 sobre la unica pasada que
+   corrio (16/09):
+
+       600 bonos del 50% prometidos
+       600 notificaciones push creadas  ->  0 ENTREGADAS
+       600 mensajes de chat escritos    ->  0 leidos
+         0 jugadores volvieron
+
+   Ninguno de los 600 tenia la app. Un bono que el jugador no sabe que tiene no
+   incentiva nada: es una deuda y nada mas. La campaña es un EMPUJON, y un
+   empujon que no llega no es un empujon.
+
+   Nahuel: *"quiero que esa fidelizacion se le mande a la gente que tiene la
+   aplicacion instalada... que ya podemos hacer que les lleguen
+   notificaciones"*. */
+$V = 't_fid_2';                       // el mismo caso, SIN la app
+$limpiar2 = function () use ($pdo, $V): void {
+    foreach (['usuarios' => 'username', 'bonos_pendientes' => 'usuario',
+              'fidelizacion_avisos' => 'usuario', 'notificaciones' => 'usuario'] as $tb => $col) {
+        try { $pdo->prepare("DELETE FROM $tb WHERE $col = ?")->execute([$V]); } catch (Throwable $e) {}
+    }
+    try { $pdo->prepare("DELETE FROM dispositivos WHERE usuario = ?")->execute([$V]); } catch (Throwable $e) {}
+    $pdo->prepare("DELETE m FROM mensajes m JOIN conversaciones c ON c.id = m.conversacion_id WHERE c.clave = ?")->execute([$V]);
+    $pdo->prepare("DELETE FROM conversaciones WHERE clave = ?")->execute([$V]);
+};
+$limpiar2();
+$pdo->prepare("INSERT INTO usuarios (id, username, balance, coins, bonus, tiene_app, notificaciones, ultima_actividad)
+               VALUES (990502, ?, 0, 0, 0, 0, 0, DATE_SUB(NOW(), INTERVAL 3 DAY))")->execute([$V]);
+$pdo->prepare("INSERT INTO conversaciones (clave, usuario, session_id) VALUES (?,?,?)")->execute([$V, $V, 't-sess-fid2']);
+
+$bonoDe = function (string $u) use ($pdo): ?array {
+    $st = $pdo->prepare("SELECT valor FROM bonos_pendientes WHERE usuario = ? AND prometido_por = 'fidelizacion'");
+    $st->execute([$u]);
+    return $st->fetch() ?: null;
+};
+
+cfg_crm_guardar($pdo, ['fid_publico' => 'app'], 'test');
+fid_correr($pdo, 50);
+ok($bonoDe($V) === null, 'sin la app: NO se le promete nada');
+
+/* Y con las notificaciones APAGADAS tampoco, aunque tenga la app: el
+   SondeoWorker del APK chequea el permiso ANTES de pedir la lista, asi que la
+   push no se ve (y encima se consumiria el aviso). Para esto, tener la app con
+   las notificaciones apagadas es igual que no tenerla. */
+$pdo->prepare("UPDATE usuarios SET tiene_app = 1, notificaciones = 0 WHERE username = ?")->execute([$V]);
+fid_correr($pdo, 50);
+ok($bonoDe($V) === null, 'con la app pero sin permiso de notificaciones: tampoco');
+
+$pdo->prepare("UPDATE usuarios SET notificaciones = 1 WHERE username = ?")->execute([$V]);
+fid_correr($pdo, 50);
+ok($bonoDe($V) === null, 'con la marca pero SIN un celular registrado: tampoco');
+
+/* LA MARCA NO ES EL CELULAR. Medido el 18/09/2026: 29 jugadores tienen
+   tiene_app=1 y solo 21 tienen un android con el permiso puesto. Los otros 8
+   desinstalaron o revocaron, y la push se les encolaria sin que la vea nadie.
+   La entrega es POR DISPOSITIVO, no por el flag. */
+$pdo->prepare("INSERT INTO dispositivos (device_id, usuario, plataforma, permitido)
+               VALUES ('t-dev-fid-2', ?, 'android', 1)")->execute([$V]);
+fid_correr($pdo, 50);
+ok($bonoDe($V) !== null, 'con la app, el permiso y un celular que sondea: ahora si');
+
+/* 'contacto' abre la puerta al que tiene chat: el mensaje le queda esperando.
+   Es el punto medio, y existe para poder elegirlo a sabiendas. */
+$limpiar2();
+$pdo->prepare("INSERT INTO usuarios (id, username, balance, coins, bonus, tiene_app, notificaciones, ultima_actividad)
+               VALUES (990502, ?, 0, 0, 0, 0, 0, DATE_SUB(NOW(), INTERVAL 3 DAY))")->execute([$V]);
+$pdo->prepare("INSERT INTO conversaciones (clave, usuario, session_id) VALUES (?,?,?)")->execute([$V, $V, 't-sess-fid2']);
+cfg_crm_guardar($pdo, ['fid_publico' => 'contacto'], 'test');
+fid_correr($pdo, 50);
+ok($bonoDe($V) !== null, 'publico "contacto": al que tiene chat si le habla');
+
+/* Y un valor raro en la config cae al lado seguro, que es el mas chico. Una
+   config rota no puede abrir la campaña a los 3.000. */
+$limpiar2();
+$pdo->prepare("INSERT INTO usuarios (id, username, balance, coins, bonus, tiene_app, notificaciones, ultima_actividad)
+               VALUES (990502, ?, 0, 0, 0, 0, 0, DATE_SUB(NOW(), INTERVAL 3 DAY))")->execute([$V]);
+$pdo->prepare("INSERT INTO conversaciones (clave, usuario, session_id) VALUES (?,?,?)")->execute([$V, $V, 't-sess-fid2']);
+cfg_crm_guardar($pdo, ['fid_publico' => 'cualquier-cosa'], 'test');
+fid_correr($pdo, 50);
+ok($bonoDe($V) === null, 'una config rara NO abre la campaña a todos');
+
+echo "\n== HASTA CUANDO INSISTIR ==\n";
+
+/* La primera pasada le dio a 600 personas el escalon MAS CARO de una: el motor
+   le da a cada uno el mas alto que ya cumplio, asi que sin tope todo el
+   backlog viejo entra directo al 50%. Alguien que hace meses que no aparece no
+   es un jugador enfriado: es uno que se fue. */
+$limpiar2();
+$pdo->prepare("INSERT INTO usuarios (id, username, balance, coins, bonus, tiene_app, notificaciones, ultima_actividad)
+               VALUES (990502, ?, 0, 0, 0, 1, 1, DATE_SUB(NOW(), INTERVAL 120 DAY))")->execute([$V]);
+$pdo->prepare("INSERT INTO dispositivos (device_id, usuario, plataforma, permitido)
+               VALUES ('t-dev-fid-2', ?, 'android', 1)")->execute([$V]);
+cfg_crm_guardar($pdo, ['fid_publico' => 'app', 'fid_dias_max' => '30'], 'test');
+fid_correr($pdo, 50);
+ok($bonoDe($V) === null, '120 dias sin aparecer: ya no se le gasta un bono');
+
+$limpiar2();
+$pdo->prepare("INSERT INTO usuarios (id, username, balance, coins, bonus, tiene_app, notificaciones, ultima_actividad)
+               VALUES (990502, ?, 0, 0, 0, 1, 1, DATE_SUB(NOW(), INTERVAL 120 DAY))")->execute([$V]);
+$pdo->prepare("INSERT INTO dispositivos (device_id, usuario, plataforma, permitido)
+               VALUES ('t-dev-fid-2', ?, 'android', 1)")->execute([$V]);
+cfg_crm_guardar($pdo, ['fid_dias_max' => '0'], 'test');
+fid_correr($pdo, 50);
+ok($bonoDe($V) !== null, 'con el tope en 0 (sin tope) vuelve a entrar');
+
+cfg_crm_guardar($pdo, ['fid_publico' => 'app', 'fid_dias_max' => '30'], 'test');
+$limpiar2();
 
 // ---- limpiar ------------------------------------------------------------------
 cfg_crm_guardar($pdo, ['fid_activa' => '0'], 'test');
