@@ -25,6 +25,18 @@
  * hacer que la carga parezca fallida.
  *
  * LA CLAVE NO ESTÁ EN EL REPO NI EN api/. Vive en /etc/goldpaw/firebase.json,
+ * y los permisos son DOS -- olvidarse del segundo cuesta una hora de buscar
+ * mal:
+ *
+ *     chown root:www-data /etc/goldpaw          &&  chmod 750 /etc/goldpaw
+ *     chown www-data:www-data .../firebase.json &&  chmod 400 .../firebase.json
+ *
+ * El del archivo solo NO ALCANZA: sin permiso de ENTRAR a la carpeta, www-data
+ * no llega hasta el aunque el archivo sea suyo, y file_exists() contesta false
+ * igual que si no existiera. Paso el 20/09/2026, con la carpeta en 700 (solo
+ * root) y el archivo perfecto adentro: el diagnostico decia "no existe" y el
+ * archivo estaba ahi.
+ *
  * chmod 400, dueño www-data. Los .json dentro de api/ se sirven por HTTP —
  * probado: devuelve 200— así que ahí sería descargable por cualquiera, y
  * además se commitearía. Con esa clave se le puede mandar una notificación a

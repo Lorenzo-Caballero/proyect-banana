@@ -71,7 +71,8 @@ if ($cred === null) {
     linea('/etc/goldpaw existe', is_dir('/etc/goldpaw') ? 'si' : 'NO');
     if (is_dir('/etc/goldpaw')) {
         $hay = @scandir('/etc/goldpaw');
-        linea('contenido', $hay ? implode(', ', array_diff($hay, ['.', '..'])) : '(no se puede listar)');
+        linea('contenido', $hay ? implode(', ', array_diff($hay, ['.', '..'])) : '(no se puede listar)',
+            $hay ? '' : 'PHP NO PUEDE ENTRAR A LA CARPETA: ese es el problema');
     }
 
     echo "\nFIREBASE NO ESTA CONFIGURADO EN ESTE SERVER.\n";
@@ -83,7 +84,10 @@ if ($cred === null) {
     echo "  - si hay open_basedir sin /etc/goldpaw -> agregarselo, o mover la clave\n";
     echo "    a una carpeta que ya este permitida (NUNCA adentro de api/: los .json\n";
     echo "    de ahi se sirven por HTTP)\n";
-    echo "  - si /etc/goldpaw existe y esta vacio -> el archivo no llego\n";
+    echo "  - si la carpeta existe pero NO SE PUEDE LISTAR -> www-data no tiene\n";
+    echo "    permiso de entrar. Es lo que paso el 20/09/2026, con la carpeta en 700:\n";
+    echo "      chown root:www-data /etc/goldpaw && chmod 750 /etc/goldpaw\n";
+    echo "  - si existe, se lista y esta vacia -> el archivo no llego\n";
     exit;
 }
 linea('proyecto', (string)$cred['project_id']);
