@@ -17,13 +17,44 @@ declare(strict_types=1);
 require_once __DIR__ . '/recargas_lib.php';
 
 if (!defined('PC_GRACIA_ANTES_MIN')) {
-    /* Margen para el jugador que transfiere ANTES de pedir la carga.
-       La regla que esto protege: una transferencia solo respalda una solicitud
-       si entro DESPUES de que la solicitud aparecio. Sin ese limite, una
-       solicitud nueva se lleva una transferencia vieja que era de otra
-       operacion -- y como ahora los montos son redondos (sin centavos unicos),
-       "otra operacion por $1000" es algo comun, no una rareza. */
+    /* Margen para el jugador que transfiere ANTES de pedir la carga, CUANDO NO
+       SABEMOS QUIEN PAGO. Protege contra que una solicitud nueva se lleve una
+       transferencia vieja que era de otra operacion -- y con montos redondos
+       (sin centavos unicos) "otra operacion por $1000" es comun, no raro.
+
+       Sigue en 10 minutos y sigue siendo corto A PROPOSITO: es el unico freno
+       que le queda a la capa 3, que acredita sin identificar al pagador. */
     define('PC_GRACIA_ANTES_MIN', 10);
+}
+
+if (!defined('PC_VENTANA_IDENTIFICADO_MIN')) {
+    /* CUANDO SI SABEMOS QUIEN PAGO, la ventana no tiene por que ser corta.
+       24 horas.
+
+       EL PROBLEMA QUE ESTO ARREGLA (medido el 20/09/2026 sobre las 24
+       solicitudes que hubo): en ONCE, la transferencia habia entrado ANTES del
+       pedido -- y el nombre del remitente coincidia EXACTO con el titular que
+       la plataforma declara (similitud 1.00). Estaban a -83, -79, -267, -618 y
+       hasta -3.086 minutos. Con la ventana de 10 ni siquiera entraban como
+       candidatas, asi que el matcher contestaba "todavia no entro ninguna
+       transferencia por ese monto" teniendo la plata en la mano.
+
+       El orden real es ese: el jugador TRANSFIERE PRIMERO y despues entra al
+       juego a pedir la carga. La ventana de 10 minutos daba por sentado el
+       orden inverso.
+
+       POR QUE ES SEGURO AMPLIARLA. La ventana era un sustituto de "esta plata
+       es de esta solicitud". Cuando la huella o el nombre identifican al
+       pagador, esa prueba ya la tenemos y el reloj no tiene que cargarla. Y el
+       candidato sale de una consulta que solo mira pagos QUE NADIE USO
+       (`estado` pendiente/revision, sin recarga y sin otra solicitud
+       reclamandolos): una transferencia sin usar de hace dos horas, a nombre
+       de quien la solicitud dice, no puede ser de otra operacion -- si lo
+       fuera, ya estaria tomada.
+
+       La capa 3 NO usa esta ventana: sin saber quien pago, el reloj vuelve a
+       ser la unica prueba que queda. */
+    define('PC_VENTANA_IDENTIFICADO_MIN', 1440);
 }
 
 if (!defined('PC_TIPO_DEPOSITO')) {
@@ -44,10 +75,12 @@ if (!function_exists('pc_elegir_pago')) {
      * @param string $username el jugador que pidio la carga
      * @param string $titular  el titular que declaro al pedirla (item.name)
      * @param int    $abiertas cuantas solicitudes esperan por ese mismo monto
+     * @param string $pedidaEn cuando aparecio la solicitud (para la capa 3)
      * @return array [pago|null, confianza('alta'|'media'|''), motivo]
      */
     function pc_elegir_pago(PDO $pdo, array $cands, string $username,
-                            string $titular, int $abiertas): array
+                            string $titular, int $abiertas,
+                            string $pedidaEn = ''): array
     {
         if (!$cands) {
             return [null, '', 'todavia no entro ninguna transferencia por ese monto'];
@@ -127,6 +160,21 @@ if (!function_exists('pc_elegir_pago')) {
            rl_elegir_recarga). Aca se exige ademas que nadie mas la dispute,
            porque al sacar los centavos unicos dos jugadores transfiriendo
            $1000 a la vez dejo de ser raro. */
+        /* LA CAPA 3 SE QUEDA CON LA VENTANA CORTA, y esto es lo que hace que
+           ampliarla para las otras dos no afloje nada. Acá no sabemos quién
+           pagó: el único argumento es "entró justo después de que la pidió".
+           Un pago sin usar de hace seis horas no sostiene ese argumento por
+           más que sea el único de ese monto. */
+        if ($pedidaEn !== '') {
+            $corte = strtotime($pedidaEn) - PC_GRACIA_ANTES_MIN * 60;
+            $cands = array_values(array_filter($cands, static fn($c) =>
+                strtotime((string)($c['capturado_en'] ?? '')) >= $corte));
+            if (!$cands) {
+                return [null, '', 'no hay ninguna transferencia sin usar que el titular '
+                    . 'verifique, y las que hay entraron demasiado antes del pedido'];
+            }
+        }
+
         if (count($cands) === 1 && $abiertas <= 1) {
             return [$cands[0], 'media', sprintf(
                 'unica transferencia y unica solicitud por ese monto (el titular no verifica: declaro "%s", transfirio "%s")',

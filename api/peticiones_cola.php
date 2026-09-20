@@ -176,7 +176,7 @@ try {
                 AND q.request_id IS NULL
                 AND p.monto IS NOT NULL
                 AND ROUND(p.monto * 100) = ?
-                AND p.capturado_en >= DATE_SUB(?, INTERVAL " . PC_GRACIA_ANTES_MIN . " MINUTE)
+                AND p.capturado_en >= DATE_SUB(?, INTERVAL " . PC_VENTANA_IDENTIFICADO_MIN . " MINUTE)
               ORDER BY p.capturado_en ASC"
         );
         $reclamar = $pdo->prepare(
@@ -277,8 +277,13 @@ try {
             $cands = $qc->fetchAll(PDO::FETCH_ASSOC);
 
             $abiertas = $abiertasPorMonto[$centavos] ?? 1;
+            /* Se traen candidatos de una ventana ANCHA y pc_elegir_pago()
+               decide con cual puede: la huella y el nombre identifican al
+               pagador y no necesitan el reloj; la capa 3 vuelve a acotarse a
+               PC_GRACIA_ANTES_MIN ahi adentro. Por eso va `primera_vez`. */
             [$pago, $conf, $motivo] = pc_elegir_pago(
-                $pdo, $cands, (string)$q['username'], (string)($q['titular'] ?? ''), $abiertas
+                $pdo, $cands, (string)$q['username'], (string)($q['titular'] ?? ''),
+                $abiertas, (string)$q['primera_vez']
             );
 
             if ($pago !== null) {

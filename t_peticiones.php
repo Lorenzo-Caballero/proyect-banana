@@ -344,6 +344,84 @@ chequear('y la pantalla lo muestra',
          str_contains(file_get_contents(__DIR__ . '/landing/crm.html'),
                       'p.hecho_en_panel'));
 
+/* =========================================================================
+   EL JUGADOR TRANSFIERE PRIMERO Y PIDE LA CARGA DESPUES
+   =========================================================================
+   Reporte de Nahuel (20/09/2026): *"me estan empezando a acumular solicitudes
+   de depositos y tengo que ir revisando una por una si el bot ya le cargo o
+   no"*.
+
+   MEDIDO SOBRE LAS 24 SOLICITUDES QUE HABIA: en ONCE la transferencia habia
+   entrado ANTES del pedido, con el remitente coincidiendo EXACTO con el titular
+   que declara la plataforma (similitud 1.00), a -83, -79, -267, -618 y hasta
+   -3.086 minutos. Con la ventana de 10 no entraban ni como candidatas: el
+   matcher contestaba "todavia no entro ninguna transferencia por ese monto"
+   teniendo la plata en la mano.
+
+   El orden real es ese. La ventana de 10 minutos daba por sentado el inverso.
+
+   Lo que se prueba: que con el pagador IDENTIFICADO la ventana ancha alcanza, y
+   que sin identificarlo NO -- que es lo que evita que ampliarla afloje la
+   proteccion contra llevarse una transferencia vieja de otra operacion. */
+echo "\n=== El pago que entro ANTES del pedido ===\n";
+
+$hace = fn(int $min) => date('Y-m-d H:i:s', strtotime("-$min minutes"));
+$pedido = $hace(0);   // la solicitud, recien
+
+/* Un pago de hace 80 minutos, sin usar, del titular que la solicitud declara. */
+$viejo = [['id_unico' => 'TEST-VIEJO', 'monto' => 1000.0,
+           'remitente' => 'JORGE OSCAR FERNANDEZ', 'cuit' => '20111111119',
+           'cbu_origen' => '', 'capturado_en' => $hace(80)]];
+
+[$pago, $conf, $motivo] = pc_elegir_pago($pdo, $viejo, 'holaginzalo683',
+                                         'Jorge oscar Fernández', 1, $pedido);
+chequear('con el titular coincidiendo, un pago de 80 min ANTES si respalda',
+         $pago !== null && ($pago['id_unico'] ?? '') === 'TEST-VIEJO',
+         'este es el caso real que quedaba colgado: ' . $motivo);
+chequear('y queda con confianza alta', $conf === 'alta', $conf . ' | ' . $motivo);
+
+/* MISMO pago, MISMA antiguedad, pero el nombre NO verifica. Sin saber quien
+   pago, el reloj vuelve a ser la unica prueba -- y no alcanza. */
+[$pago2, $conf2, $motivo2] = pc_elegir_pago($pdo, $viejo, 'holaotro999',
+                                            'Marcela Gomez', 1, $pedido);
+chequear('sin coincidencia de nombre, el mismo pago viejo NO respalda',
+         $pago2 === null,
+         'ampliar la ventana no puede aflojar la capa que acredita sin identificar: ' . $motivo2);
+chequear('y el motivo explica que entro demasiado antes',
+         str_contains($motivo2, 'demasiado antes'), $motivo2);
+
+/* Y un pago RECIENTE sin nombre que verifique sigue entrando por la capa 3,
+   como antes: eso no se toco. */
+$reciente = [['id_unico' => 'TEST-RECIENTE', 'monto' => 1000.0,
+              'remitente' => 'RAZON SOCIAL SA', 'cuit' => '30222222229',
+              'cbu_origen' => '', 'capturado_en' => $hace(2)]];
+[$pago3, $conf3, $motivo3] = pc_elegir_pago($pdo, $reciente, 'holaotro999',
+                                            'Marcela Gomez', 1, $pedido);
+chequear('un pago reciente sin nombre sigue entrando por la capa 3',
+         $pago3 !== null && $conf3 === 'media', $motivo3);
+
+/* Con DOS solicitudes abiertas por el mismo monto, la capa 3 sigue sin
+   arriesgar: eso tampoco se toco. */
+[$pago4] = pc_elegir_pago($pdo, $reciente, 'holaotro999', 'Marcela Gomez', 2, $pedido);
+chequear('con dos solicitudes abiertas por ese monto, no se arriesga',
+         $pago4 === null);
+
+/* Sin `pedidaEn` (quien llama no lo manda) se comporta como antes: no se
+   filtra por reloj. Es el camino de compatibilidad. */
+[$pago5] = pc_elegir_pago($pdo, $viejo, 'holaotro999', 'Marcela Gomez', 1);
+chequear('sin la fecha del pedido no se filtra (compatibilidad)', $pago5 !== null);
+
+/* LA VENTANA ANCHA SOLO VE PAGOS SIN USAR. Es lo que hace que ampliarla sea
+   seguro, y vive en la consulta de candidatos de peticiones_cola.php. */
+$srcCola = file_get_contents(__DIR__ . '/api/peticiones_cola.php');
+chequear('los candidatos salen solo de pagos que nadie uso',
+         str_contains($srcCola, "p.estado IN ('pendiente','revision')")
+         && str_contains($srcCola, 'p.recarga_id IS NULL')
+         && str_contains($srcCola, 'q.request_id IS NULL'),
+         'sin esas tres condiciones, una ventana de 24 h se llevaria plata ya acreditada');
+chequear('y la ventana ancha es la que se usa para traerlos',
+         str_contains($srcCola, 'PC_VENTANA_IDENTIFICADO_MIN'));
+
 limpiar($pdo);
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);
 exit($fail > 0 ? 1 : 0);
