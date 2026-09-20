@@ -20,6 +20,9 @@ declare(strict_types=1);
 require __DIR__ . '/config.php';
 require __DIR__ . '/db.php';
 require __DIR__ . '/crm_auth.php';
+/* La deteccion de duplicados vive aca: la comparte con el worker, que es quien
+   las rechaza sola. Una sola definicion para el aviso y para la accion. */
+require_once __DIR__ . '/peticiones_lib.php';
 
 header('Content-Type: application/json; charset=utf-8');
 /* Se guarda quien es: hasta ahora este archivo era de SOLO LECTURA y el
@@ -137,6 +140,58 @@ try {
                 }
             } catch (Throwable $e) {
                 error_log('crm_peticiones: sin libro para cruzar: ' . $e->getMessage());
+            }
+            return $items;
+        };
+
+        /* ¿ESTA SOLICITUD YA SE LE ACREDITO POR EL CHAT?
+           EL REPORTE (Nahuel, 20/09/2026): *"me estan empezando a acumular
+           solicitudes de depositos y tengo que ir revisando una por una si el
+           bot ya le cargo o no"*.
+
+           MEDIDO SOBRE LAS 24 QUE HUBO, y el resultado cambio el diagnostico:
+           de las 13 que tenian un pago del mismo monto con el titular
+           coincidiendo, NUEVE eran duplicados -- el jugador pidio la carga por
+           el chat, se le acredito ahi, y ADEMAS apreto el boton de Depositos
+           adentro del juego. La solicitud del juego se queda esperando para
+           siempre porque no hay ninguna transferencia sin usar que la respalde:
+           esa plata ya se la dimos.
+
+           POR QUE EL CRUCE ES POR JUGADOR Y NO POR NOMBRE. Probar por nombre
+           del remitente daba CUATRO falsos positivos de 13: apellidos comunes
+           (tres "Fernández" distintos) donde la plata era de OTRO jugador.
+           Cruzar por `recargas.usuario` no tiene ese problema -- es la misma
+           persona o no lo es.
+
+           NO SE CIERRA SOLA, Y NO ES UNA CERTEZA. Rechazar es una decision
+           humana y asi esta documentado. Ademas el cruce PUEDE equivocarse, y
+           se comprobo: holajorge443 cargo 2.000 DOS VECES el mismo dia, con dos
+           transferencias distintas, y la segunda solicitud quedaba marcada como
+           duplicada de la primera recarga. Un jugador tiene todo el derecho de
+           cargar el mismo monto dos veces.
+
+           Por eso se hacen dos cosas: cada recarga explica COMO MUCHO UNA
+           solicitud (sin esto, dos pedidos de holagustavo861 por 3.000 apuntaban
+           los dos a la misma recarga), y el texto de la pantalla muestra la
+           evidencia en vez de dictar el veredicto. */
+        $yaAcreditada = function (array $items) use ($pdo): array {
+            $abiertas = [];
+            foreach ($items as $k => $it) {
+                if (in_array((string)($it['estado'] ?? ''), ['esperando','revision','error'], true)) {
+                    $abiertas[$k] = $it;
+                }
+            }
+            if (!$abiertas) { return $items; }
+            /* LA MISMA FUNCION QUE USA EL WORKER PARA RECHAZARLAS
+               (pc_ya_acreditada, en peticiones_lib). Que la pantalla avise por
+               un criterio y el rechazo automatico corra por otro es como se
+               separan dos verdades sobre la misma solicitud. */
+            $usadas = [];
+            foreach ($abiertas as $k => $it) {
+                if (trim((string)($it['pago_id_unico'] ?? '')) !== '') { continue; }
+                $r = pc_ya_acreditada($pdo, (string)$it['username'],
+                                      (float)$it['monto'], (string)$it['primera_vez'], $usadas);
+                if ($r !== null) { $items[$k]['ya_acreditada'] = $r; }
             }
             return $items;
         };

@@ -422,6 +422,78 @@ chequear('los candidatos salen solo de pagos que nadie uso',
 chequear('y la ventana ancha es la que se usa para traerlos',
          str_contains($srcCola, 'PC_VENTANA_IDENTIFICADO_MIN'));
 
+/* =========================================================================
+   LA SOLICITUD DUPLICADA SE RECHAZA SOLA
+   =========================================================================
+   Decision de Nahuel (20/09/2026): *"si ya la carga se hizo manualmente a ese
+   usuario o la carga la hizo el chat, que se cancele automaticamente de
+   peticiones. Sino hay riesgo que se haga dos veces"*.
+
+   Se aparta de la regla de que rechazar es siempre decision humana, y a
+   proposito: esa regla existe para el caso "todavia no llego la plata", donde
+   rechazar es adivinar. Aca se PRUEBA que ya se acredito, a ese jugador, por
+   ese monto. Lo que se prueba abajo es que no se pase de ahi. */
+echo "
+=== La solicitud que ya se cobro por el chat ===
+";
+
+$pdo->exec("DELETE FROM recargas WHERE usuario LIKE 'test_dup%'");
+
+$recargaDup = function (string $u, float $monto, string $cuando) use ($pdo): void {
+    $pdo->prepare(
+        "INSERT INTO recargas (usuario, coins, monto_pedido, monto_base, estado,
+                               referencia, creada_en, acreditada_en)
+         VALUES (?, ?, ?, ?, 'acreditada', ?, ?, ?)"
+    )->execute([$u, (int)$monto, $monto, $monto,
+                'TD' . substr(md5($u . $monto . $cuando), 0, 6), $cuando, $cuando]);
+};
+
+$ahoraD = date('Y-m-d H:i:s');
+$recargaDup('test_dup1', 5000, date('Y-m-d H:i:s', strtotime('-2 hours')));
+
+$usadas = [];
+chequear('detecta que ya se le acredito el mismo monto por el chat',
+         pc_ya_acreditada($pdo, 'test_dup1', 5000, $ahoraD, $usadas) !== null);
+
+chequear('la misma recarga no explica una segunda solicitud',
+         pc_ya_acreditada($pdo, 'test_dup1', 5000, $ahoraD, $usadas) === null,
+         'holajorge443 cargo 2.000 dos veces el mismo dia: la segunda es valida');
+
+$usadas = [];
+chequear('otro monto no cuenta como duplicado',
+         pc_ya_acreditada($pdo, 'test_dup1', 7000, $ahoraD, $usadas) === null);
+
+$usadas = [];
+chequear('otro jugador con el mismo monto tampoco',
+         pc_ya_acreditada($pdo, 'test_dup2', 5000, $ahoraD, $usadas) === null,
+         'es el falso positivo que daba cruzar por nombre del remitente');
+
+$pdo->exec("DELETE FROM recargas WHERE usuario = 'test_dup1'");
+$recargaDup('test_dup1', 5000, date('Y-m-d H:i:s', strtotime('-3 days')));
+$usadas = [];
+chequear('una recarga de hace tres dias no explica la solicitud de hoy',
+         pc_ya_acreditada($pdo, 'test_dup1', 5000, $ahoraD, $usadas) === null);
+
+/* LAS CUATRO CONDICIONES DEL RECHAZO AUTOMATICO: cada una saca un modo de
+   equivocarse, y sacar cualquiera lo vuelve peligroso. */
+$srcCola = file_get_contents(__DIR__ . '/api/peticiones_cola.php');
+chequear('no rechaza si la solicitud ya reclamo una transferencia',
+         str_contains($srcCola, "empty(\$q['pago_id_unico']) && !\$cands"),
+         'si el jugador pago, lo que corresponde es aprobar');
+chequear('ni antes de que haya esperado el minimo',
+         str_contains($srcCola, 'PC_ESPERA_MIN'),
+         'una de dos minutos puede tener su transferencia en camino');
+chequear('deja PEDIDO el rechazo, no aprieta el boton desde ahi',
+         str_contains($srcCola, "rechazo_por = 'sistema'")
+         && str_contains($srcCola, 'rechazo_pedido_en = NOW()'),
+         'un solo lugar ejecuta: el mismo camino que el rechazo manual');
+chequear('y la pantalla avisa con la MISMA funcion que usa el worker',
+         str_contains(file_get_contents(__DIR__ . '/api/crm_peticiones.php'), 'pc_ya_acreditada('),
+         'dos criterios distintos serian dos verdades sobre la misma solicitud');
+
+$pdo->exec("DELETE FROM recargas WHERE usuario LIKE 'test_dup%'");
+
+
 limpiar($pdo);
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);
 exit($fail > 0 ? 1 : 0);

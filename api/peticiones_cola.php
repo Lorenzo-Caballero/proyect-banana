@@ -193,18 +193,23 @@ try {
         try {
             $pend = $pdo->query(
                 "SELECT request_id, username, titular, monto, primera_vez, pago_id_unico,
+                        TIMESTAMPDIFF(MINUTE, primera_vez, NOW()) AS minutos_esperando,
                         rechazo_pedido_en
                    FROM peticiones_carga WHERE estado = 'esperando' ORDER BY primera_vez ASC"
             )->fetchAll(PDO::FETCH_ASSOC);
         } catch (PDOException $e) {
             $pend = $pdo->query(
                 "SELECT request_id, username, titular, monto, primera_vez, pago_id_unico,
+                        TIMESTAMPDIFF(MINUTE, primera_vez, NOW()) AS minutos_esperando,
                         NULL AS rechazo_pedido_en
                    FROM peticiones_carga WHERE estado = 'esperando' ORDER BY primera_vez ASC"
             )->fetchAll(PDO::FETCH_ASSOC);
         }
 
         $datos = [];
+        /* Una recarga explica COMO MUCHO una solicitud: el array viaja por
+           todo el recorrido para que la segunda no vuelva a tomar la misma. */
+        $yaUsadas = [];
         foreach ($pend as $q) {
             $rid    = (int)$q['request_id'];
             $centavos = (string)round((float)$q['monto'] * 100);
@@ -310,6 +315,68 @@ try {
                - todavia no llego la plata -> sigue 'esperando'. Si el mail del
                  banco se demora, la proxima vuelta la agarra. El CRM muestra
                  hace cuanto espera cada una; no se rechaza nada solo. */
+            /* ANTES DE DEJARLA ESPERANDO: ¿no sera que ya se le cargo por el
+               chat? Decision de Nahuel (20/09/2026): *"si ya la carga se hizo
+               manualmente a ese usuario o la carga la hizo el chat, que se
+               cancele automaticamente de peticiones. Sino hay riesgo que se
+               haga dos veces"*.
+
+               Esto se aparta de la regla de que rechazar es SIEMPRE decision
+               humana, y a proposito: esa regla existe para el caso "todavia no
+               llego la plata", donde rechazar es adivinar. Aca no se adivina --
+               se prueba que la plata YA se acredito, a ESTE jugador, por ESTE
+               monto.
+
+               CUATRO CONDICIONES, y cada una saca un modo de equivocarse:
+                 1. sin transferencia reclamada. Si tiene uno, el jugador pago y
+                    lo que corresponde es aprobar, no rechazar. Es la misma
+                    guarda que ya tenia el rechazo manual.
+                 2. sin NINGUN candidato sin usar. Si hay una transferencia que
+                    podria pagarla, todavia puede entrar sola: rechazar seria
+                    apurarse.
+                 3. que haya esperado al menos PC_ESPERA_MIN. Una solicitud de
+                    dos minutos puede tener su propia transferencia en camino.
+                 4. y una recarga explica como mucho UNA solicitud (lo cuida
+                    pc_ya_acreditada con $yaUsadas). Un jugador puede cargar el
+                    mismo monto dos veces y las dos ser validas: holajorge443 lo
+                    hizo el 12/09.
+
+               NO rechaza contra el panel desde aca: deja pedido el rechazo
+               (`rechazo_pedido_en`) y lo ejecuta el worker por el MISMO camino
+               que el rechazo manual, con las mismas guardas. Un solo lugar que
+               aprieta el boton. */
+            $yaDuplicada = null;
+            if (empty($q['pago_id_unico']) && !$cands
+                && (int)($q['minutos_esperando'] ?? 0) >= PC_ESPERA_MIN) {
+                $yaDuplicada = pc_ya_acreditada(
+                    $pdo, (string)$q['username'], (float)$q['monto'],
+                    (string)$q['primera_vez'], $yaUsadas
+                );
+            }
+            if ($yaDuplicada !== null) {
+                $motivoDup = 'ya se le acredito por el chat (recarga '
+                    . $yaDuplicada['referencia'] . ' del '
+                    . substr($yaDuplicada['cuando'], 0, 16) . '): se rechaza para no cargar dos veces';
+                try {
+                    $pdo->prepare(
+                        "UPDATE peticiones_carga
+                            SET rechazo_pedido_en = NOW(), rechazo_por = 'sistema',
+                                motivo = ?, actualizada_en = NOW()
+                          WHERE request_id = ? AND estado IN ('esperando','revision')
+                            AND pago_id_unico IS NULL AND rechazo_pedido_en IS NULL"
+                    )->execute([mb_substr($motivoDup, 0, 250), $rid]);
+                    $datos[] = ['request_id' => $rid, 'decision' => 'rechazar_pedido',
+                                'motivo' => $motivoDup];
+                    continue;
+                } catch (Throwable $e) {
+                    /* Sin la migracion 63 no existe `rechazo_pedido_en`: se
+                       sigue por el camino de siempre y queda esperando. Nunca
+                       al reves -- una migracion que falta no puede hacer que
+                       una solicitud desaparezca. */
+                    error_log('peticiones_cola: sin rechazo_pedido_en (migracion 63)');
+                }
+            }
+
             $esAmbiguo = pc_es_ambiguo($motivo);
             $anotar->execute([mb_substr($motivo, 0, 250),
                               $esAmbiguo ? 'revision' : 'esperando', $rid]);

@@ -196,6 +196,71 @@ if (!function_exists('pc_elegir_pago')) {
     }
 }
 
+if (!defined('PC_ESPERA_MIN')) {
+    /* Cuanto tiene que llevar esperando una solicitud antes de que el sistema
+       la rechace sola por duplicada. Es el mismo numero que `CRMP_ESPERA_MIN`
+       del CRM (los 15 minutos tras los cuales una solicitud cuenta como
+       demorada), y esta aparte porque el worker no puede incluir ese archivo:
+       crm_peticiones.php autentica apenas se lo incluye. */
+    define('PC_ESPERA_MIN', 15);
+}
+
+if (!function_exists('pc_ya_acreditada')) {
+    /**
+     * ¿A este jugador ya se le acredito ESTE monto por el chat?
+     *
+     * EL PROBLEMA (medido el 20/09/2026 sobre las 24 solicitudes que hubo):
+     * NUEVE eran duplicados. El jugador pidio la carga por el chat, se le
+     * acredito ahi, y ADEMAS apreto el boton de Depositos adentro del juego. Esa
+     * solicitud queda esperando para siempre -- y con razon, porque no hay
+     * ninguna transferencia sin usar que la respalde: esa plata ya se la dimos.
+     * Nahuel las tenia que revisar una por una en el panel.
+     *
+     * SE CRUZA POR JUGADOR, NO POR NOMBRE DEL REMITENTE. Probar por nombre daba
+     * CUATRO falsos positivos de 13 -- tres "Fernandez" distintos donde la plata
+     * era de OTRO jugador. `recargas.usuario` no tiene esa ambiguedad.
+     *
+     * `$usadas` ENTRA POR REFERENCIA Y NO ES UN DETALLE: cada recarga explica
+     * COMO MUCHO UNA solicitud. Sin eso, dos pedidos de holagustavo861 por
+     * $3.000 apuntaban los dos a la misma recarga, y uno de los dos era
+     * legitimo. Quien llama recorre las solicitudes y va pasando el mismo array.
+     *
+     * @param array $usadas ids de recarga ya asignados (se modifica)
+     * @return array|null   ['recarga_id','referencia','cuando'] o null
+     */
+    function pc_ya_acreditada(PDO $pdo, string $usuario, float $monto,
+                              string $pedidaEn, array &$usadas): ?array
+    {
+        if ($usuario === '' || $monto <= 0 || $pedidaEn === '') { return null; }
+        try {
+            /* Se traen VARIAS y se elige en PHP: con LIMIT 1 en SQL la misma
+               recarga volveria una y otra vez y no se podria descartar. */
+            $st = $pdo->prepare(
+                "SELECT id, referencia, acreditada_en,
+                        ABS(TIMESTAMPDIFF(MINUTE, acreditada_en, ?)) AS cerca
+                   FROM recargas
+                  WHERE usuario = ? COLLATE utf8mb4_unicode_ci
+                    AND estado = 'acreditada'
+                    AND ROUND(monto_pedido * 100) = ?
+                    AND acreditada_en BETWEEN ? - INTERVAL 24 HOUR AND ? + INTERVAL 6 HOUR
+                  ORDER BY cerca LIMIT 5"
+            );
+            $st->execute([$pedidaEn, $usuario, (int)round($monto * 100), $pedidaEn, $pedidaEn]);
+            foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                $id = (int)$r['id'];
+                if (isset($usadas[$id])) { continue; }
+                $usadas[$id] = true;
+                return ['recarga_id' => $id,
+                        'referencia' => (string)$r['referencia'],
+                        'cuando'     => (string)$r['acreditada_en']];
+            }
+        } catch (Throwable $e) {
+            error_log('pc_ya_acreditada: ' . $e->getMessage());
+        }
+        return null;
+    }
+}
+
 if (!function_exists('pc_es_ambiguo')) {
     /**
      * Distingue "necesita una persona" de "todavia no llego la plata".
