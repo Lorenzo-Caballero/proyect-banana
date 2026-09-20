@@ -260,7 +260,42 @@ chequear('un aparato desconocido no es un error', fcm_guardar_token($pdo, 'dev-n
 // =========================================================================
 echo "\n=== Las invariantes del diseño (sobre el fuente) ===\n";
 // =========================================================================
+// =========================================================================
+echo "\n=== El presupuesto: una campana masiva no puede colgar el CRM ===\n";
+// =========================================================================
+/* crm.php arma las difusiones filtradas con un foreach sobre los
+   destinatarios, llamando a notif_crear() una vez por jugador. Como
+   notif_crear() toca el timbre, una campana a 300 jugadores dispara 300
+   consultas y hasta 300 llamadas a Google ADENTRO del request del agente.
+   Sin tope, el CRM se cuelga -- y justo cuando el negocio crece, que es
+   cuando peor viene. */
+fcm_presupuesto_reiniciar();
+chequear('con el presupuesto entero, se puede tocar el timbre',
+    fcm_sin_presupuesto() === false);
+
+fcm_gastar(FCM_PRESUPUESTO_SEG + 1);
+chequear('agotado el presupuesto, se deja de tocar',
+    fcm_sin_presupuesto() === true,
+    'al que queda sin empujon le llega por el sondeo, como antes de la 1.7');
+
+$lanzoP = false;
+try { $nP = fcm_despertar($pdo, 'holajuan123'); }
+catch (Throwable $e) { $lanzoP = true; $nP = -1; }
+chequear('y fcm_despertar corta sin lanzar', $lanzoP === false && $nP === 0);
+
+fcm_presupuesto_reiniciar();
+chequear('reiniciar lo devuelve al estado inicial', fcm_sin_presupuesto() === false);
+
 $src = (string)file_get_contents(__DIR__ . '/api/fcm_lib.php');
+/* El corte tiene que poder pasar DENTRO del bucle de aparatos: un solo jugador
+   con varios telefonos y Google lento gastaria todo el presupuesto. */
+chequear('tambien corta en medio del bucle de aparatos',
+    str_contains($src, 'if (fcm_sin_presupuesto($t0)) { break; }'),
+    'sin esto, un jugador con 5 aparatos podria consumirlo entero');
+chequear('el aviso al log sale una sola vez por request',
+    substr_count($src, '__fcm_aviso') >= 2 && str_contains($src, 'error_log(sprintf('),
+    '300 lineas identicas hacen que el log deje de servir cuando hay algo que mirar');
+
 
 /* LA MAS IMPORTANTE DE TODO EL ARCHIVO. Un mensaje con bloque `notification`
    lo dibuja Android solo, con el texto que venga adentro, y MensajesFCM ni se

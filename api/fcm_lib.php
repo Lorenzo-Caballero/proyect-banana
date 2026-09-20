@@ -52,6 +52,25 @@ defined('FCM_TIMEOUT')      || define('FCM_TIMEOUT', 5);
 // sondeo haga el resto. Un aviso para UN jugador toca 1-3 aparatos; este tope
 // es la red por si alguien tiene veinte sesiones abiertas.
 defined('FCM_MAX_DIRECTOS') || define('FCM_MAX_DIRECTOS', 25);
+
+// CUANTO TIEMPO, EN TOTAL, PUEDE GASTAR UN REQUEST TOCANDO TIMBRES.
+//
+// EL PROBLEMA QUE ACOTA: crm.php arma las difusiones filtradas (inactivos, sin
+// chat) con un foreach sobre los destinatarios, llamando a notif_crear() una
+// vez por jugador. Como notif_crear() ahora toca el timbre, una campaña a
+// trescientos jugadores dispara trescientas consultas y hasta trescientas
+// llamadas a Google ADENTRO del request del agente. Con los 42 celulares de
+// hoy son unos 8 segundos; con 500 el CRM se cuelga y el operador ve la
+// pantalla congelada sin saber por que.
+//
+// Se corta por TIEMPO y no por cantidad porque lo que hay que proteger es que
+// el agente no espere, y eso no depende de cuantos jugadores sean sino de
+// cuanto tarde Google. Mismo criterio que USUARIOS_MAX_SEG en el colector.
+//
+// Cortar es barato: al que no se alcanzo a despertar le llega por el sondeo,
+// que es como llegaba todo hasta la version 1.7. Se pierde inmediatez en la
+// cola de una campaña masiva, no un aviso.
+defined('FCM_PRESUPUESTO_SEG') || define('FCM_PRESUPUESTO_SEG', 8);
 // ==========================================================================
 
 if (!function_exists('fcm_credenciales')) {
@@ -318,11 +337,15 @@ if (!function_exists('fcm_credenciales')) {
     function fcm_despertar(PDO $pdo, ?string $usuario): int
     {
         if (!fcm_disponible()) { return 0; }
+        if (fcm_sin_presupuesto()) { return 0; }
 
+        $t0 = microtime(true);
         try {
             // ---- Para todos: un solo mensaje al tópico del cliente.
             if ($usuario === null || trim($usuario) === '') {
-                return fcm_enviar(['topic' => fcm_topico()]) === 'ok' ? 1 : 0;
+                $r = fcm_enviar(['topic' => fcm_topico()]) === 'ok' ? 1 : 0;
+                fcm_gastar(microtime(true) - $t0);
+                return $r;
             }
 
             // ---- Para uno: sus aparatos, los que dieron permiso.
@@ -337,11 +360,14 @@ if (!function_exists('fcm_credenciales')) {
             );
             $st->execute([trim($usuario)]);
             $filas = $st->fetchAll(PDO::FETCH_ASSOC);
-            if (!$filas) { return 0; }
+            if (!$filas) { fcm_gastar(microtime(true) - $t0); return 0; }
 
             $enviados = 0;
             $muertos  = [];
             foreach ($filas as $f) {
+                /* Tambien adentro del bucle: un solo jugador con varios
+                   aparatos y Google lento gastaria el presupuesto entero. */
+                if (fcm_sin_presupuesto($t0)) { break; }
                 $r = fcm_enviar(['token' => (string)$f['fcm_token']]);
                 if ($r === 'ok') { $enviados++; }
                 elseif ($r === 'invalido') { $muertos[] = (string)$f['device_id']; }
@@ -361,11 +387,51 @@ if (!function_exists('fcm_credenciales')) {
                       WHERE device_id IN ($marcas)"
                 )->execute($muertos);
             }
+            fcm_gastar(microtime(true) - $t0);
             return $enviados;
         } catch (Throwable $e) {
             error_log('fcm_despertar: ' . $e->getMessage());
+            fcm_gastar(microtime(true) - $t0);
             return 0;
         }
+    }
+
+    /**
+     * ¿Ya se gasto el presupuesto de este request?
+     *
+     * @param float|null $desde si se pasa, cuenta ADEMAS lo que va corriendo
+     *        de la llamada actual (para poder cortar en medio de un bucle).
+     */
+    function fcm_sin_presupuesto(?float $desde = null): bool
+    {
+        $gastado = (float)($GLOBALS['__fcm_seg'] ?? 0.0);
+        if ($desde !== null) { $gastado += microtime(true) - $desde; }
+        if ($gastado < FCM_PRESUPUESTO_SEG) { return false; }
+
+        /* Se avisa UNA sola vez por request. Sin esto, una campaña a 300
+           jugadores escribiria 300 lineas identicas y el log dejaria de
+           servir justo cuando hay algo que mirar. */
+        if (empty($GLOBALS['__fcm_aviso'])) {
+            $GLOBALS['__fcm_aviso'] = true;
+            error_log(sprintf(
+                'fcm: presupuesto agotado (%.1f s); el resto de este envio llega por el sondeo',
+                $gastado
+            ));
+        }
+        return true;
+    }
+
+    /** Anota lo que costo una llamada. */
+    function fcm_gastar(float $seg): void
+    {
+        $GLOBALS['__fcm_seg'] = (float)($GLOBALS['__fcm_seg'] ?? 0.0) + max(0.0, $seg);
+    }
+
+    /** Devuelve el presupuesto al estado inicial. Lo usan los tests. */
+    function fcm_presupuesto_reiniciar(): void
+    {
+        $GLOBALS['__fcm_seg']   = 0.0;
+        $GLOBALS['__fcm_aviso'] = false;
     }
 
     /**
