@@ -9598,6 +9598,12 @@
           ${p.titular ? " · a nombre de " + esc(p.titular) : ""}
         </div>
         ${motivo ? `<div class="cr-sub" style="opacity:.8">${esc(motivo)}</div>` : ""}
+        ${p.ya_acreditada ? `<div class="rr-yaesta">ℹ️ <b>Ojo: a este jugador ya se le acreditó el mismo monto por el chat.</b>
+             Recarga ${esc(p.ya_acreditada.referencia)}, el
+             ${esc(String(p.ya_acreditada.cuando).slice(5,16))}.
+             Lo más probable es que haya pedido la carga por los dos lados y esta
+             sobre. <b>Fijate antes de aprobar</b> — también puede haber cargado dos
+             veces el mismo monto, que es válido.</div>` : ""}
         ${p.hecho_en_panel ? `<div class="rr-yaesta">⚠️ <b>Ojo: esto ya figura hecho en el panel.</b>
              Entraron ${money(p.hecho_en_panel.monto)} el
              ${esc(String(p.hecho_en_panel.cuando).slice(5,16))}

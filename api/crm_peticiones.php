@@ -141,6 +141,86 @@ try {
             return $items;
         };
 
+        /* ¿ESTA SOLICITUD YA SE LE ACREDITO POR EL CHAT?
+           EL REPORTE (Nahuel, 20/09/2026): *"me estan empezando a acumular
+           solicitudes de depositos y tengo que ir revisando una por una si el
+           bot ya le cargo o no"*.
+
+           MEDIDO SOBRE LAS 24 QUE HUBO, y el resultado cambio el diagnostico:
+           de las 13 que tenian un pago del mismo monto con el titular
+           coincidiendo, NUEVE eran duplicados -- el jugador pidio la carga por
+           el chat, se le acredito ahi, y ADEMAS apreto el boton de Depositos
+           adentro del juego. La solicitud del juego se queda esperando para
+           siempre porque no hay ninguna transferencia sin usar que la respalde:
+           esa plata ya se la dimos.
+
+           POR QUE EL CRUCE ES POR JUGADOR Y NO POR NOMBRE. Probar por nombre
+           del remitente daba CUATRO falsos positivos de 13: apellidos comunes
+           (tres "Fernández" distintos) donde la plata era de OTRO jugador.
+           Cruzar por `recargas.usuario` no tiene ese problema -- es la misma
+           persona o no lo es.
+
+           NO SE CIERRA SOLA, Y NO ES UNA CERTEZA. Rechazar es una decision
+           humana y asi esta documentado. Ademas el cruce PUEDE equivocarse, y
+           se comprobo: holajorge443 cargo 2.000 DOS VECES el mismo dia, con dos
+           transferencias distintas, y la segunda solicitud quedaba marcada como
+           duplicada de la primera recarga. Un jugador tiene todo el derecho de
+           cargar el mismo monto dos veces.
+
+           Por eso se hacen dos cosas: cada recarga explica COMO MUCHO UNA
+           solicitud (sin esto, dos pedidos de holagustavo861 por 3.000 apuntaban
+           los dos a la misma recarga), y el texto de la pantalla muestra la
+           evidencia en vez de dictar el veredicto. */
+        $yaAcreditada = function (array $items) use ($pdo): array {
+            $abiertas = [];
+            foreach ($items as $k => $it) {
+                if (in_array((string)($it['estado'] ?? ''), ['esperando','revision','error'], true)) {
+                    $abiertas[$k] = $it;
+                }
+            }
+            if (!$abiertas) { return $items; }
+            /* Se traen VARIAS y se elige en PHP, para poder descartar las que
+               ya explicaron otra solicitud. Con LIMIT 1 en SQL no habria forma:
+               la misma recarga volveria una y otra vez. */
+            $st = $pdo->prepare(
+                "SELECT id, referencia, monto_pedido, acreditada_en,
+                        ABS(TIMESTAMPDIFF(MINUTE, acreditada_en, ?)) AS cerca
+                   FROM recargas
+                  WHERE usuario = ? COLLATE utf8mb4_unicode_ci
+                    AND estado = 'acreditada'
+                    AND ROUND(monto_pedido * 100) = ?
+                    AND acreditada_en BETWEEN ? - INTERVAL 24 HOUR AND ? + INTERVAL 6 HOUR
+                  ORDER BY cerca LIMIT 5"
+            );
+            /* Una solicitud tambien puede estar respaldada por su propia
+               transferencia (`pago_id_unico`): esa NO es un duplicado, es una
+               que ya tiene con que pagarse. */
+            $usadas = [];
+            foreach ($abiertas as $k => $it) {
+                try {
+                    if (trim((string)($it['pago_id_unico'] ?? '')) !== '') { continue; }
+                    $cuando = (string)$it['primera_vez'];
+                    $st->execute([$cuando, (string)$it['username'],
+                                  (int)round(((float)$it['monto']) * 100),
+                                  $cuando, $cuando]);
+                    foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                        $id = (int)$r['id'];
+                        if (isset($usadas[$id])) { continue; }   // ya explico otra
+                        $usadas[$id] = true;
+                        $items[$k]['ya_acreditada'] = [
+                            'recarga_id' => $id,
+                            'referencia' => (string)$r['referencia'],
+                            'cuando'     => (string)$r['acreditada_en'],
+                        ];
+                        break;
+                    }
+                } catch (Throwable $e) {
+                    error_log('crm_peticiones/ya_acreditada: ' . $e->getMessage());
+                }
+            }
+            return $items;
+        };
+
         $st = null;
         try {
             $st = $pdo->query("SELECT $cols, rechazo_pedido_en FROM peticiones_carga $orden");
@@ -162,6 +242,7 @@ try {
             return $r;
         }, $st->fetchAll(PDO::FETCH_ASSOC));
         $items = $enElLibro($items);
+        $items = $yaAcreditada($items);
         salir(['ok' => true, 'items' => $items, 'espera_min' => CRMP_ESPERA_MIN]);
     }
 
