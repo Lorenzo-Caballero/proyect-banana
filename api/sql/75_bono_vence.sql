@@ -37,15 +37,21 @@
 -- en Auditoría; si no corriera, igual no se paga ninguno.
 -- ---------------------------------------------------------------------------
 
+-- SE RE-CORRE ENTERA CADA VEZ QUE SE AGREGA UNA MIGRACION NUEVA, asi que
+-- TODO lo de abajo lleva IF NOT EXISTS. provisionar.php no lleva la cuenta de
+-- cual aplico: guarda una HUELLA del contenido de api/sql/ y, cuando cambia,
+-- vuelve a pasar los archivos uno por uno. Un ALTER que falle por columna
+-- duplicada deja la huella SIN guardar, y entonces cada cliente re-corre las
+-- 77 migraciones cada minuto, para siempre, sin que se rompa nada visible.
 ALTER TABLE bonos_pendientes
   MODIFY estado ENUM('pendiente','aplicado','cancelado','vencido')
          NOT NULL DEFAULT 'pendiente';
 
 ALTER TABLE bonos_pendientes
-  ADD COLUMN vence_en DATETIME NULL DEFAULT NULL AFTER creado_en;
+  ADD COLUMN IF NOT EXISTS vence_en DATETIME NULL DEFAULT NULL AFTER creado_en;
 
 -- El applier filtra por (vence_en IS NULL OR vence_en > NOW()) sobre los
 -- pendientes de un usuario. Con el índice de usuario+estado que ya existe
 -- alcanza para las filas de una persona; este índice es para la barrida, que
 -- busca por fecha entre TODOS los pendientes.
-CREATE INDEX ix_vence ON bonos_pendientes (estado, vence_en);
+CREATE INDEX IF NOT EXISTS ix_vence ON bonos_pendientes (estado, vence_en);

@@ -46,5 +46,11 @@
 -- pantalla es la clase de cambio que genera un reclamo con razón.
 -- ---------------------------------------------------------------------------
 
+-- SE RE-CORRE ENTERA CADA VEZ QUE SE AGREGA UNA MIGRACION NUEVA, asi que
+-- TODO lo de abajo lleva IF NOT EXISTS. provisionar.php no lleva la cuenta de
+-- cual aplico: guarda una HUELLA del contenido de api/sql/ y, cuando cambia,
+-- vuelve a pasar los archivos uno por uno. Un ALTER que falle por columna
+-- duplicada deja la huella SIN guardar, y entonces cada cliente re-corre las
+-- 77 migraciones cada minuto, para siempre, sin que se rompa nada visible.
 ALTER TABLE usuarios
-  ADD COLUMN bono_en_juego DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER bonus;
+  ADD COLUMN IF NOT EXISTS bono_en_juego DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER bonus;
