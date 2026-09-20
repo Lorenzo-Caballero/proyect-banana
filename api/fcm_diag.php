@@ -53,10 +53,37 @@ linea('la puede leer PHP', is_readable(FCM_CREDENCIALES) ? 'si' : 'NO',
 
 $cred = fcm_credenciales();
 if ($cred === null) {
+    /* POR QUE ESTE BLOQUE ES TAN LARGO. El 20/09/2026 el archivo ESTABA en el
+       disco --`ls -l` mostraba `-r-------- 1 www-data www-data 2379`-- y PHP
+       decia que no existia. `file_exists()` devuelve false, sin ningun error,
+       tanto cuando el archivo falta como cuando PHP tiene prohibido MIRAR ahi
+       (open_basedir) o corre en otro espacio de montaje (chroot, contenedor).
+       Los tres se ven identicos desde adentro, y el primero manda a buscar el
+       problema donde no esta. */
+    echo "\n--- por que no la puede leer ---\n";
+    $base = ini_get('open_basedir');
+    linea('open_basedir', $base !== '' && $base !== false ? (string)$base : '(sin restriccion)',
+        ($base !== '' && $base !== false) ? 'SI /etc/goldpaw no esta en esta lista, ESE es el problema' : '');
+    linea('usuario de PHP', function_exists('posix_geteuid')
+        ? (string)(posix_getpwuid(posix_geteuid())['name'] ?? posix_geteuid())
+        : (string)(get_current_user() ?: '?'));
+    linea('/etc existe', is_dir('/etc') ? 'si' : 'NO', is_dir('/etc') ? '' : 'PHP corre aislado (chroot o contenedor)');
+    linea('/etc/goldpaw existe', is_dir('/etc/goldpaw') ? 'si' : 'NO');
+    if (is_dir('/etc/goldpaw')) {
+        $hay = @scandir('/etc/goldpaw');
+        linea('contenido', $hay ? implode(', ', array_diff($hay, ['.', '..'])) : '(no se puede listar)');
+    }
+
     echo "\nFIREBASE NO ESTA CONFIGURADO EN ESTE SERVER.\n";
     echo "No es un error fatal: todo sigue funcionando por el sondeo de 15 minutos,\n";
     echo "que es exactamente como se portaba el sistema antes de la version 1.7.\n";
     echo "Pero ningun aviso va a llegar al instante hasta que esto se resuelva.\n";
+    echo "\nSegun lo de arriba:\n";
+    echo "  - si /etc NO existe -> php-fpm corre aislado; hay que montarle la ruta\n";
+    echo "  - si hay open_basedir sin /etc/goldpaw -> agregarselo, o mover la clave\n";
+    echo "    a una carpeta que ya este permitida (NUNCA adentro de api/: los .json\n";
+    echo "    de ahi se sirven por HTTP)\n";
+    echo "  - si /etc/goldpaw existe y esta vacio -> el archivo no llego\n";
     exit;
 }
 linea('proyecto', (string)$cred['project_id']);
