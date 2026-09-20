@@ -1,6 +1,12 @@
 *.iml
 .gradle/
 build/
+
+# La salida de "Generate Signed APK": el mismo binario de 4 MB que ya se
+# publica en landing/ganamos.apk, que es el que baja la gente. Versionarlo
+# dos veces engorda el repo en cada build y deja dos archivos que pueden
+# discrepar.
+app/release/
 local.properties
 .idea/
 .cxx/
