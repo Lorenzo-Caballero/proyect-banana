@@ -18,7 +18,7 @@
          Sin esto el sistema mata el trabajo periodico de WorkManager y el
          sondeo con la app cerrada no corre. Medido el 19/09/2026 sobre los 42
          celulares con permiso: sondearon en 24 horas 5 de 6 Samsung, 2 de 13
-         Motorola y 1 de 20 Xiaomi. No es un bug del worker -- es el fabricante
+         Motorola y 1 de 20 Xiaomi. No es un bug del worker: es el fabricante
          apagandolo.
 
          Google Play restringe este permiso a apps que lo justifiquen. No
@@ -50,6 +50,38 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- EL EMPUJON DE FIREBASE.
+             Recibe un push vacio ("fijate") y va a buscar los avisos por el
+             mismo camino de siempre. No dibuja nada por su cuenta: ver el
+             comentario de MensajesFCM.kt.
+
+             exported="false" porque el unico que lo invoca es Google Play
+             Services, que corre en el mismo telefono y no lo necesita
+             exportado. El intent-filter es obligatorio: sin el, Firebase no
+             encuentra el servicio y los push se pierden en silencio. -->
+        <service
+            android:name=".MensajesFCM"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <!-- El icono y el color de la notificacion cuando la arma Firebase solo.
+             Hoy NO deberia pasar nunca (el server manda push de datos, sin
+             bloque `notification`), pero si algun dia se manda uno con titulo y
+             cuerpo, sin esto Android dibuja un cuadrado gris generico en vez
+             del logo. Cuesta dos lineas y evita una version fea. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_notificacion" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/oro" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="goldpaw_premios" />
 
         <!-- Necesario para pasarle al selector de camara un archivo propio -->
         <provider
