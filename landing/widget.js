@@ -2178,7 +2178,14 @@
     // operador suele pegarla sin https://.
     var url = String(promo.url || "").trim();
     if (url && !/^https?:\/\//i.test(url)) url = "https://" + url;
-    if (!url) url = "/ganamos.apk";
+    /* El ?v= NO es decoracion: es lo unico que hace que el jugador se baje
+       la version nueva. Cloudflare cachea el .apk 4 horas y sirve el viejo
+       con cf-cache-status HIT -- medido el 20/09/2026, con la 1.7 ya en el
+       origen y la 1.5 saliendo por el borde. Cambiar el numero al publicar
+       una version nueva le da una URL nueva, y la cache deja de importar.
+       t_apk_version.py falla si este numero no coincide con el versionName
+       del build.gradle.kts. */
+    if (!url) url = "/ganamos.apk?v=1.7";
 
     var css =
       "#gpa-ov{position:fixed;inset:0;z-index:2147483004;display:none;align-items:center;justify-content:center;"+
