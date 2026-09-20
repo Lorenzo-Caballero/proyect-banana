@@ -6,20 +6,34 @@
  * crm.php (el agente manda a mano) y recargas_lib.php (aviso automatico al
  * acreditar una transferencia).
  *
- * No hay Firebase. El modelo es "cola + sondeo":
+ * El modelo sigue siendo "cola + sondeo". Firebase (migracion 77) NO lo
+ * reemplazo: le agrego un timbre. El push que sale por Google va VACIO -- dice
+ * "fijate", no que paso -- y el celular viene a buscar el aviso por el mismo
+ * camino de siempre. Todo lo de abajo vale igual con Firebase prendido o
+ * apagado:
  *
  *   crm.php / recargas_lib  --notif_crear()-->  tabla notificaciones
- *   APK (WorkManager, 15')  --notif_pendientes()-->  notificacion en la barra
- *   widget (25 s, app abierta) --notif_pendientes()-->  tarjeta en pantalla
+ *                                  |
+ *                                  +--fcm_despertar()--> "fijate" (segundos)
+ *
+ *   APK (MensajesFCM, al toque)  --notif_pendientes()-->  barra de Android
+ *   APK (WorkManager, 15')       --notif_pendientes()-->  barra de Android
+ *   widget (25 s, app abierta)   --notif_pendientes()-->  tarjeta en pantalla
  *
  * La entrega UNICA la garantiza notificaciones_entregas: se inserta primero y
- * solo se devuelve lo que se logro insertar. Por eso el worker del APK y el
- * widget pueden sondear a la vez sin que el jugador vea el aviso dos veces.
+ * solo se devuelve lo que se logro insertar. Por eso los tres pueden sondear a
+ * la vez sin que el jugador vea el aviso dos veces -- y por eso el empujon de
+ * Firebase no pudo agregar un modo nuevo de duplicar: no trae ningun aviso.
  *
  * Requiere un $pdo ya conectado (lo pasa quien la incluye).
  */
 
 declare(strict_types=1);
+
+/* El timbre. Se incluye siempre pero no hace NADA hasta que alguien lo usa: no
+   abre la clave, no toca la red y no consulta la base hasta fcm_despertar().
+   Sin /etc/goldpaw/firebase.json todo esto es un no-op silencioso. */
+require_once __DIR__ . '/fcm_lib.php';
 
 // =====================  EDITA ESTO  =======================================
 // Van con define() y no con const a proposito: const no se puede declarar
@@ -81,7 +95,9 @@ if (!function_exists('notif_crear')) {
                    (usuario, titulo, cuerpo, tipo, url, origen, expira_en, solo_app, programada_en)
                  VALUES (?,?,?,?,?,?,?,?,?)"
             )->execute($params);
-            return (int)$pdo->lastInsertId();
+            $id = (int)$pdo->lastInsertId();
+            notif_empujar($pdo, $usuario, $id, $prog);
+            return $id;
         } catch (Throwable $e) {
             // Sin columna programada_en (migración 29 no corrida): si NO se
             // pidió programar, la difusión normal no tiene por qué fallar por
@@ -96,7 +112,9 @@ if (!function_exists('notif_crear')) {
                            (usuario, titulo, cuerpo, tipo, url, origen, expira_en, solo_app)
                          VALUES (?,?,?,?,?,?,?,?)"
                     )->execute($params);
-                    return (int)$pdo->lastInsertId();
+                    $id = (int)$pdo->lastInsertId();
+                    notif_empujar($pdo, $usuario, $id, $prog);
+                    return $id;
                 } catch (Throwable $e2) {
                     error_log('notif_crear (fallback): ' . $e2->getMessage());
                     return 0;
@@ -105,6 +123,30 @@ if (!function_exists('notif_crear')) {
             error_log('notif_crear: ' . $e->getMessage());
             return 0;
         }
+    }
+
+    /**
+     * Toca el timbre para un aviso recien encolado.
+     *
+     * SEPARADA Y NO INLINE porque notif_crear() tiene DOS caminos de exito (el
+     * normal y el de compatibilidad sin `programada_en`), y un timbre que suena
+     * en uno solo seria el peor de los casos: andaria en desarrollo y fallaria
+     * justo en la base que le falta una migracion.
+     *
+     * NO SUENA PARA LAS PROGRAMADAS. Una notificacion con fecha futura todavia
+     * no existe para el jugador: notif_pendientes() no la entrega hasta que
+     * llegue la hora. Despertarlo ahora seria despertarlo para nada, y peor,
+     * quemarle el aviso: el telefono pediria la lista, no habria nada, y cuando
+     * de verdad toque no habria empujon. La programada llega por el sondeo, o
+     * por el push del proximo aviso que si sea inmediato.
+     *
+     * NUNCA LANZA: fcm_despertar() se traga todo. Esta funcion existe para que
+     * eso sea evidente leyendo notif_crear(), que no puede fallar por el aviso.
+     */
+    function notif_empujar(PDO $pdo, string $usuario, int $id, ?string $prog): void
+    {
+        if ($id <= 0 || $prog !== null) { return; }
+        fcm_despertar($pdo, $usuario !== '' ? $usuario : null);
     }
 
     /**

@@ -30,20 +30,28 @@ data class Aviso(
 )
 
 /**
- * GOLDPAW — notificaciones sin Firebase.
+ * GOLDPAW — la cola de avisos.
  *
  * El server deja los avisos en una cola (tabla `notificaciones`) y el celular
- * los va a buscar. No hay push de verdad y es a proposito: no depende de una
- * cuenta de Google, no hay google-services.json que mantener y todo el sistema
- * vive en el mismo servidor que el resto de la API. El precio es la demora:
- * con la app cerrada, el aviso puede tardar hasta ~15 minutos (lo que Android
- * permite como minimo para trabajo periodico, y Doze puede estirarlo mas).
+ * los va a buscar. ESO NO CAMBIO CON FIREBASE, y es el punto: Firebase manda un
+ * "fijate" sin contenido, y el celular viene igual a `pendientes()`. La
+ * cola sigue siendo la unica fuente de verdad del texto de un aviso.
  *
- * Quien sondea:
- *   - SondeoWorker, cada 15 min, aunque la app este cerrada -> barra de Android
- *   - el widget, cada 25 s con la app a la vista            -> tarjeta en pantalla
+ * Quien pide la lista:
+ *   - MensajesFCM, apenas Google despierta la app  -> barra de Android
+ *   - SondeoWorker, cada 15 min, como respaldo     -> barra de Android
+ *   - el widget, cada 25 s con la app a la vista   -> tarjeta en pantalla
  *
- * Los dos usan el mismo device_id y el server entrega cada aviso una sola vez.
+ * Los tres usan el mismo device_id y el server entrega cada aviso una sola vez
+ * (PK `notificacion_id, device_id`), asi que pueden pisarse sin duplicar nada.
+ *
+ * POR QUE HASTA LA 1.6 NO HABIA FIREBASE: era deliberado (nada de cuenta de
+ * Google en el medio, todo en el mismo servidor que el resto de la API). Lo que
+ * dio vuelta la decision fue medirlo: con la app cerrada el sondeo dependia de
+ * la MARCA del telefono —en 24 horas, 5 de 6 Samsung pero 1 de 20 Xiaomi—
+ * porque el administrador de bateria del fabricante mata el trabajo periodico
+ * de las apps de terceros. FCM no corre en nuestro proceso sino dentro de
+ * Google Play Services, que no matan porque romperia el telefono entero.
  */
 object Notificaciones {
 
@@ -57,6 +65,11 @@ object Notificaciones {
     private const val K_DEVICE = "device_id"
     private const val K_USUARIO = "usuario"
     private const val K_PERMISO_PEDIDO = "permiso_pedido"
+    private const val K_FCM_TOKEN = "fcm_token"
+    private const val K_FCM_ENVIADO = "fcm_enviado"
+    /* internal y no private: MensajesFCM guarda la suscripcion en el mismo
+       archivo, y la clave tiene que ser UNA. */
+    internal const val K_FCM_TOPICO = "fcm_topico"
     private const val TAG = "goldpaw-notif"
 
     /* El WAF de Hostinger corta los pedidos que no parecen de un navegador. El
@@ -110,6 +123,82 @@ object Notificaciones {
             .putString(K_DEVICE, deviceId)
             .putString(K_USUARIO, usuario.ifBlank { null })
             .apply()
+        /* Recien ACA se sabe a que device_id pertenece el token de Firebase, y
+           por eso la sincronizacion cuelga de aca y no solo del arranque: el
+           token suele estar mucho ANTES que el device_id (lo da Google apenas
+           abre la app; el device_id lo trae el widget cuando carga). Sin este
+           enganche, el primer token de una instalacion nueva no se mandaba
+           nunca y ese telefono se quedaba con el sondeo de 15 minutos para
+           siempre — o sea, sin el arreglo, y sin ninguna senal de que le
+           falta. */
+        sincronizarToken(ctx)
+    }
+
+    // -------------------------------------------------------------- token FCM
+
+    /** Lo llama MensajesFCM: en onNewToken y en el chequeo de cada arranque. */
+    fun guardarToken(ctx: Context, token: String) {
+        if (token.isBlank()) return
+        prefs(ctx).edit().putString(K_FCM_TOKEN, token).apply()
+        sincronizarToken(ctx)
+    }
+
+    /**
+     * Le avisa al server que a este device_id se lo despierta con este token.
+     *
+     * ES IDEMPOTENTE Y BARATA A PROPOSITO: se la llama desde tres lados (token
+     * nuevo, arranque, y cuando aparece el device_id) porque no se sabe cual de
+     * los tres va a llegar primero. Si el par (device, token) es el que ya se
+     * mando, no sale ni un byte a la red.
+     *
+     * UN TOKEN DE FCM NO ES ETERNO: Google lo rota al reinstalar la app, al
+     * restaurar un backup en otro telefono o al limpiar los datos. Un token
+     * viejo NO da error al usarlo — simplemente el aviso no llega a ningun
+     * lado. Por eso se reintenta en cada arranque y no solo en onNewToken: un
+     * token muerto no se queja, y el sintoma seria "a este jugador no le
+     * llegan mas las notificaciones" sin nada roto a la vista.
+     */
+    fun sincronizarToken(ctx: Context) {
+        val p = prefs(ctx)
+        val token = p.getString(K_FCM_TOKEN, null) ?: return
+        val device = deviceId(ctx) ?: return
+        val huella = device + "|" + token
+        if (p.getString(K_FCM_ENVIADO, null) == huella) return
+
+        /* Se la llama desde el hilo principal (MainActivity) y desde uno de
+           fondo (onNewToken). Un hilo suelto sirve para los dos y no hay nada
+           que coordinar: si falla, el proximo arranque reintenta. */
+        Thread {
+            val body = JSONObject()
+                .put("accion", "token")
+                .put("device_id", device)
+                .put("token", token)
+                .toString()
+            val r = pedir(API, body)
+            var topico = ""
+            val ok = try {
+                val j = if (r != null) JSONObject(r) else null
+                topico = j?.optString("topico") ?: ""
+                j != null && j.optBoolean("ok")
+            } catch (e: Exception) {
+                false
+            }
+            if (ok) {
+                p.edit().putString(K_FCM_ENVIADO, huella).apply()
+                /* EL TOPICO LO DICE EL SERVER, NO EL APK. Es el canal por el
+                   que llegan los avisos masivos, y es POR CLIENTE: el server ya
+                   resolvio de que casino se trata por el dominio, y el telefono
+                   no tiene por que deducirlo. Si el APK lo armara solo, un error
+                   ahi le mandaria la promo de un casino a los jugadores de
+                   otro. */
+                if (topico.isNotBlank()) MensajesFCM.suscribir(ctx, topico)
+            } else {
+                /* NO se marca como enviado: que reintente. Un server viejo, sin
+                   la columna, contesta que no y el telefono se queda sondeando
+                   cada 15 min, que es exactamente como se portaba la 1.6. */
+                Log.w(TAG, "el server no acepto el token FCM")
+            }
+        }.start()
     }
 
     /** Solo para el caso raro de tener que sondear antes de que hable el widget. */

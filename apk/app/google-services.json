@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "198834280864",
+    "project_id": "goldpaw-b9f67",
+    "storage_bucket": "goldpaw-b9f67.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:198834280864:android:bd18d09d48e903eaaa2cc5",
+        "android_client_info": {
+          "package_name": "com.goldpaw.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBWFm4Ewu77dy-I9mWfjNCv0rKjZXcdJyA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -3,6 +3,16 @@ import java.util.Properties
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+
+    /* OJO: este plugin EXIGE que exista app/google-services.json. Si falta, el
+       build muere con "File google-services.json is missing" y no con algo que
+       se parezca a Firebase. El archivo lo baja el dueño de la cuenta desde la
+       consola (Configuracion del proyecto > Tus apps) y NO es secreto: viaja
+       adentro del APK, cualquiera que lo descargue lo puede leer. Solo
+       identifica al proyecto. La clave que SI es secreta es la de cuenta de
+       servicio, que vive en el VPS (/etc/goldpaw/firebase.json) y nunca toca
+       este repo. */
+    id("com.google.gms.google-services")
 }
 
 // Firma de release. Si no existe keystore.properties, el release se firma con
@@ -37,13 +47,19 @@ android {
         //        en 24 horas sondearon 8 -- y dependia de la MARCA (Samsung 5
         //        de 6, Xiaomi 1 de 20), que es la firma del administrador de
         //        bateria del fabricante matando el trabajo periodico.
+        //   1.7  Firebase. La exencion de bateria de la 1.6 ayuda pero no
+        //        alcanza: el jugador puede decir que no, y varias marcas la
+        //        ignoran igual. FCM no corre en nuestro proceso sino dentro de
+        //        Google Play Services, que el administrador de bateria del
+        //        fabricante no mata porque romperia el telefono entero. El
+        //        sondeo cada 15 min QUEDA, como respaldo.
         //
         // EL versionCode HAY QUE SUBIRLO SIEMPRE, y es facil de olvidar porque
         // el build sale igual: Android NO instala encima de una version
         // instalada si el numero no es mayor. El jugador toca "instalar", no
         // pasa nada, y no hay ningun error que lo explique.
-        versionCode = 7
-        versionName = "1.6"
+        versionCode = 8
+        versionName = "1.7"
     }
 
     signingConfigs {
@@ -89,8 +105,27 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.activity:activity-ktx:1.9.0")
 
-    // Sondeo de notificaciones con la app cerrada. Es lo que reemplaza a
-    // Firebase: WorkManager sobrevive al reinicio del telefono y respeta las
-    // reglas de bateria, a cambio de un minimo de 15 minutos entre corridas.
+    // Sondeo de notificaciones con la app cerrada. Desde la 1.7 ya no es el
+    // camino principal (lo es Firebase) sino el RESPALDO, y por eso se queda:
+    // cubre al telefono sin Google Play Services, al que se quedo sin token, y
+    // a cualquier caida del lado de Google. Minimo 15 minutos entre corridas.
     implementation("androidx.work:work-runtime-ktx:2.9.1")
+
+    /* Firebase Cloud Messaging: el empujon que despierta a la app en segundos.
+       Via BOM para no tener que versionar cada libreria de Firebase a mano.
+
+       NO SUBIR A LA 34.x SIN SUBIR TODO LO DEMAS, aunque la consola de Firebase
+       la recomiende (el 20/09/2026 ofrecia la 34.19.0). Esa linea se compila
+       contra compileSdk 35, y AGP 8.5.2 corta con:
+
+           Dependency X requires libraries and applications that depend on it
+           to compile against version 35 or later of the Android APIs
+
+       o sea que arrastra compileSdk 34 -> 35 y AGP 8.5.2 -> 8.6+. Se puede
+       hacer, pero no se gana nada: lo que usamos de FCM
+       (FirebaseMessagingService, onNewToken, getToken) no cambio en anos. Si
+       algun dia hay que subirla, que sea por un motivo, y los dos cambios van
+       juntos o el build no arranca. */
+    implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
+    implementation("com.google.firebase:firebase-messaging-ktx")
 }

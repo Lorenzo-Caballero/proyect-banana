@@ -169,6 +169,8 @@ class MainActivity : AppCompatActivity() {
 
         Notificaciones.crearCanal(this)
         SondeoWorker.programar(this)
+        // En cada arranque, no solo cuando cambia: ver asegurarToken().
+        MensajesFCM.asegurarToken(this)
         Bienvenida.programar(this)
 
         /* El permiso se pide de entrada. Antes se esperaba a un gesto del

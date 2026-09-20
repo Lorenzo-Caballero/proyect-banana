@@ -16,6 +16,7 @@
  *        lo marca como entregado. Lo consumen el worker del APK (cada ~15 min,
  *        aunque la app este cerrada) y el widget (cada 25 s con la app abierta).
  *
+ * POST { accion:"token", device_id, token }     -> { ok, topico }
  * POST { accion:"leida", device_id, id }        -> { ok }
  *
  * POST { accion:"enviar", usuario|todos, titulo, cuerpo, tipo?, url? }
@@ -194,6 +195,37 @@ if ($accion === 'registrar') {
 }
 
 // ---- la tocó ----
+/* EL CELULAR DICE A DONDE HAY QUE GOLPEARLE.
+   Lo manda el APK (Notificaciones.sincronizarToken): en cada arranque y cada
+   vez que Google le rota el token. Es idempotente a proposito -- se lo llama
+   mucho mas de lo necesario porque un token muerto NO da error al usarlo, y el
+   sintoma de no reintentar seria "a este jugador dejaron de llegarle las
+   notificaciones" sin nada roto a la vista.
+
+   NO ES UN SECRETO NI UNA CREDENCIAL: es una direccion que da Google, solo
+   sirve para mandarle un push a ESE aparato desde NUESTRO proyecto de Firebase,
+   y por eso este endpoint no pide autenticacion -- igual que 'registrar', que
+   ya funcionaba asi. Lo peor que podria hacer alguien mandando un token ajeno
+   es que los avisos de un jugador suenen en su propio telefono.
+
+   La respuesta incluye el TOPICO del cliente, y eso si es tenant-sensible: es
+   el canal por el que llegan los avisos masivos, y sale de la base que resolvio
+   db.php por el dominio. El APK se suscribe a lo que le diga el server y no
+   decide nada por su cuenta. */
+if ($accion === 'token') {
+    $deviceId = trim((string)($body['device_id'] ?? ''));
+    $token    = trim((string)($body['token'] ?? ''));
+    if ($deviceId === '' || $token === '') {
+        salir(['ok' => false, 'error' => 'Falta device_id o token'], 400);
+    }
+    require_once __DIR__ . '/fcm_lib.php';
+    $guardado = fcm_guardar_token($pdo, $deviceId, $token);
+    salir([
+        'ok'     => $guardado,
+        'topico' => $guardado ? fcm_topico() : null,
+    ], $guardado ? 200 : 500);
+}
+
 if ($accion === 'leida') {
     $deviceId = (string)($body['device_id'] ?? '');
     $id = (int)($body['id'] ?? 0);
