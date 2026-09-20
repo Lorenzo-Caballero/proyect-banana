@@ -1,0 +1,50 @@
+-- ---------------------------------------------------------------------------
+-- Migración 76: el bono deja de poder retirarse.
+--
+-- EL PEDIDO (Nahuel, 19/09/2026): *"muchos usuarios hacen la jugada de querer
+-- cargar 16 mil pesos, que se le acredite un bono de 8 mil, de ese modo tienen
+-- 24, y luego de haber jugado una o dos tiradas ya quieren retirar"*.
+--
+-- ESTABA PASANDO, Y RÁPIDO. Medido ese día en producción:
+--
+--     holalujanomero706   bono 1.000  ->  retiró 4.000 a los  9 minutos
+--     nicolasadi          bono 1.000  ->  retiró 1.000 a los  3 minutos
+--     holajuan969         bono 1.000  ->  retiró 4.280 a los 22 minutos
+--
+-- POR QUÉ LA REGLA QUE YA EXISTÍA NO ALCANZABA. El bot dice "los bonos no se
+-- retiran" y `fichas_pedir_retiro()` sólo mira `usuarios.balance`, nunca
+-- `usuarios.bonus`. Las dos cosas son ciertas y ninguna sirve: cuando el bono
+-- se ACREDITA, `rl_cargar_al_juego_auto()` lo deposita EN EL JUEGO junto con
+-- las fichas, y a partir de ahí es saldo común. Indistinguible, y retirable.
+-- O sea que la regla era verdadera sobre el contador y falsa sobre la plata.
+--
+-- LO QUE HACE ESTA COLUMNA. `bono_en_juego` es la parte del saldo que entró
+-- como regalo y todavía no se jugó. El retiro se limita a
+-- `balance - bono_en_juego`: el jugador puede sacar SU plata y lo que ganó por
+-- encima del bono, nunca el bono en sí.
+--
+--     carga 16.000 + bono 8.000  ->  saldo 24.000, bono_en_juego 8.000
+--     pide retirar                ->  puede sacar 16.000
+--     jugó y quedó en 30.000      ->  puede sacar 22.000
+--     jugó y quedó en  5.000      ->  puede sacar 5.000 (el bono ya se perdió)
+--
+-- ESE ÚLTIMO CASO ES EL QUE HACE QUE SEA JUSTO, y sale solo: `bono_en_juego`
+-- se recorta a `LEAST(bono_en_juego, balance)` cada vez que se lo consulta. Si
+-- el jugador perdió, el bono se perdió con él y no queda una deuda fantasma
+-- bloqueándole plata propia. Se hace al leer y no con un proceso aparte: así
+-- no hay una tarea más que se pueda morir en silencio, y el número está bien
+-- justo cuando importa, que es al pedir el retiro.
+--
+-- NO ES UN ROLLOVER, y conviene decirlo para que nadie lo confunda: un
+-- requisito de apuesta ("jugá 5 veces el bono") necesita saber cuánto apostó,
+-- y ESE DATO NO LO TENEMOS -- vive en la plataforma, no en nuestras tablas.
+-- Esto es lo más parecido que se puede sostener con lo que sí vemos: depósitos,
+-- retiros y saldo.
+--
+-- ARRANCA EN CERO PARA TODOS, a propósito. Los bonos ya entregados quedan como
+-- están: poner una traba retroactiva sobre plata que el jugador ya ve en su
+-- pantalla es la clase de cambio que genera un reclamo con razón.
+-- ---------------------------------------------------------------------------
+
+ALTER TABLE usuarios
+  ADD COLUMN bono_en_juego DECIMAL(12,2) NOT NULL DEFAULT 0 AFTER bonus;

@@ -312,6 +312,31 @@ function fichas_pedir_carga(PDO $pdo, string $usuario, int $monto, string $orige
             )->execute([$usuario, -$bono, $origen]);
         }
 
+        /* EL BONO QUE ENTRA AL JUEGO QUEDA MARCADO COMO NO RETIRABLE
+           (migracion 76). Hasta el 19/09/2026 el bono se depositaba junto con
+           las fichas y a partir de ahi era saldo comun: indistinguible y
+           retirable. El bot decia "los bonos no se retiran" y era cierto sobre
+           el contador `usuarios.bonus` y falso sobre la plata.
+
+           Medido ese dia: holalujanomero706 cobro 1.000 de bono y retiro 4.000
+           A LOS NUEVE MINUTOS; nicolasadi, a los tres.
+
+           `bono_en_juego` se SUMA porque puede haber varios sin jugar. Se
+           recorta solo contra el saldo al consultarlo (ver fichas_retirable):
+           si el jugador perdio, el bono se perdio con el. */
+        if ($bono > 0) {
+            try {
+                $pdo->prepare(
+                    "UPDATE usuarios SET bono_en_juego = COALESCE(bono_en_juego,0) + ?
+                      WHERE username = ?"
+                )->execute([$bono, $usuario]);
+            } catch (Throwable $e) {
+                // Sin la migracion 76 el deposito sale igual, solo que sin el
+                // candado. Nunca al reves: primero la plata del jugador.
+                error_log('fichas_pedir_carga: sin usuarios.bono_en_juego (migracion 76)');
+            }
+        }
+
         // coins_debitados es lo que se devuelve si el panel falla. En modo
         // 'libre' va 0: no se cobro nada, asi que no hay nada que devolver, y
         // un fallo NO le tiene que regalar fichas propias al jugador.
@@ -450,6 +475,13 @@ function fichas_consultar(PDO $pdo, string $usuario): array
         return ['ok' => false, 'codigo' => 'sin_usuario', 'error' => 'Ese usuario no existe.'];
     }
 
+    /* EL SALDO QUE SE INFORMA ES EL RETIRABLE. Si el jugador tiene 24.000 de
+       los cuales 8.000 son bono sin jugar, decirle "tenes 24.000" y despues
+       rechazarle el retiro de 24.000 es la peor secuencia posible: le
+       confirmamos un numero y se lo desmentimos al apretar. Se informan las
+       dos cosas por separado y el bot tiene la regla de como decirlo. */
+    $lim = fichas_retirable($pdo, $usuario);
+
     // UNA SOLA MONEDA: `saldo` (usuarios.balance), que es lo que el jugador ve
     // en la plataforma y lo unico con lo que puede jugar. "Fichas" y "saldo"
     // son la misma cosa dicha de dos formas.
@@ -481,6 +513,11 @@ function fichas_consultar(PDO $pdo, string $usuario): array
 
     return ['ok' => true, 'usuario' => $usuario,
             'saldo' => (float)$r['balance'],
+            /* Lo que puede SACAR, que no es lo mismo que lo que tiene: el bono
+               que entro al juego no se retira (migracion 76). Si son iguales,
+               no hay nada que aclarar y el bot no lo menciona. */
+            'retirable'     => $lim['retirable'],
+            'bono_en_juego' => $lim['bono_en_juego'],
             'bonos' => (int)$r['bonos'],
             'bloqueado' => $bloqueado,
             'aviso' => $bloqueado
@@ -675,6 +712,60 @@ function fichas_avisar_retiro(PDO $pdo, string $usuario, int $idRetiro): bool
     }
 }
 
+/**
+ * Cuánto del saldo puede retirar de verdad. [saldo, bono_en_juego, retirable].
+ *
+ * EL BONO QUE ENTRÓ AL JUEGO NO SE RETIRA (migración 76). Al acreditarse, el
+ * bono se deposita junto con las fichas y a partir de ahí es saldo común:
+ * indistinguible y, hasta el 19/09/2026, retirable. La regla "los bonos no se
+ * retiran" era cierta sobre el contador `usuarios.bonus` y falsa sobre la
+ * plata, que es lo que importa.
+ *
+ * SE RECORTA CONTRA EL SALDO ANTES DE RESTAR, y eso es lo que lo hace justo:
+ * si el jugador jugó y perdió, el bono se perdió con él y no puede quedar una
+ * deuda fantasma bloqueándole plata propia. Se hace acá, al consultar, y no en
+ * un proceso aparte: una tarea más es una tarea más que se puede morir en
+ * silencio, y el número tiene que estar bien justo en este momento.
+ *
+ * NO ES UN ROLLOVER. Un requisito de apuesta necesita saber cuánto apostó el
+ * jugador, y ese dato vive en la plataforma, no en nuestras tablas. Esto es lo
+ * más parecido que se sostiene con lo que sí vemos.
+ */
+function fichas_retirable(PDO $pdo, string $usuario): array
+{
+    $saldo = 0.0; $bono = 0.0;
+    try {
+        /* El recorte va como UPDATE y no sólo en la cuenta: así el número que
+           ve el CRM, el que ve el bot y el que se aplica acá son el mismo. */
+        $pdo->prepare(
+            "UPDATE usuarios
+                SET bono_en_juego = LEAST(COALESCE(bono_en_juego,0), GREATEST(COALESCE(balance,0),0))
+              WHERE username = ?"
+        )->execute([$usuario]);
+        $st = $pdo->prepare(
+            "SELECT COALESCE(balance,0) AS saldo, COALESCE(bono_en_juego,0) AS bono
+               FROM usuarios WHERE username = ?"
+        );
+        $st->execute([$usuario]);
+        if ($f = $st->fetch(PDO::FETCH_ASSOC)) {
+            $saldo = (float)$f['saldo'];
+            $bono  = (float)$f['bono'];
+        }
+    } catch (Throwable $e) {
+        /* Sin la migración 76 no existe la columna: se devuelve el saldo
+           entero como retirable, que es exactamente como se comportaba antes.
+           Nunca se bloquea plata por una migración que falta. */
+        try {
+            $st = $pdo->prepare("SELECT COALESCE(balance,0) AS saldo FROM usuarios WHERE username = ?");
+            $st->execute([$usuario]);
+            $saldo = (float)($st->fetchColumn() ?: 0);
+        } catch (Throwable $e2) { /* sin usuario: todo en cero */ }
+        $bono = 0.0;
+    }
+    return ['saldo' => $saldo, 'bono_en_juego' => $bono,
+            'retirable' => max(0.0, $saldo - $bono)];
+}
+
 function fichas_pedir_retiro(PDO $pdo, string $usuario, int $monto, string $origen = 'chatbot',
                              bool $todo = false, string $destino = ''): array
 {
@@ -711,6 +802,11 @@ function fichas_pedir_retiro(PDO $pdo, string $usuario, int $monto, string $orig
                            ' a ' . $ventana['hasta'] . '. Podés pedirlo apenas vuelva a abrir.'];
     }
 
+    /* CUANTO DE ESE SALDO ES RETIRABLE DE VERDAD. El bono que entro al juego
+       no lo es (migracion 76), asi que se descuenta antes de cualquier otra
+       cuenta. Devuelve [saldo, bono_en_juego, retirable]. */
+    $limites = fichas_retirable($pdo, $usuario);
+
     // El saldo se lee PRIMERO: hace falta para validar y, si pidió "todo", para
     // saber cuánto es. `balance` es el espejo que actualiza sync_usuarios.py cada
     // 5 minutos, así que puede estar viejo. Sirve para frenar un pedido absurdo,
@@ -727,7 +823,12 @@ function fichas_pedir_retiro(PDO $pdo, string $usuario, int $monto, string $orig
     if (!$fila) {
         return ['ok' => false, 'codigo' => 'sin_usuario', 'error' => 'Ese usuario no existe.'];
     }
-    $saldo = (float)$fila['balance'];
+    /* EL SALDO CON EL QUE SE OPERA ES EL RETIRABLE, no el que figura. Todo lo
+       que sigue --el minimo, el "retirar todo", el chequeo de suficiente-- usa
+       este numero, que es el unico que el jugador puede efectivamente sacar. */
+    $saldoTotal   = (float)$fila['balance'];
+    $bonoEnJuego  = $limites['bono_en_juego'];
+    $saldo        = max(0.0, $saldoTotal - $bonoEnJuego);
 
     $saldoEdad = null;   // segundos desde que leimos ese numero; null = no sabemos
     try {
@@ -802,6 +903,20 @@ function fichas_pedir_retiro(PDO $pdo, string $usuario, int $monto, string $orig
     }
     if ($saldo + 0.01 < $monto) {
         if ($saldoViejo) { return $incierto((float)$monto); }
+        /* CON UN BONO SIN JUGAR HAY QUE EXPLICAR EL NUMERO, no soltarlo. El
+           jugador ve 24.000 en la pantalla del juego y le decimos "tu saldo es
+           de 16.000": tiene toda la razon en pensar que le estamos mintiendo.
+           Se le dicen las tres cifras y de donde sale la diferencia. */
+        if ($bonoEnJuego > 0.009) {
+            return ['ok' => false, 'codigo' => 'sin_saldo',
+                    'saldo' => $saldo, 'saldo_total' => $saldoTotal,
+                    'bono_en_juego' => $bonoEnJuego,
+                    'error' => 'De tus ' . number_format($saldoTotal, 0, ',', '.')
+                        . ' fichas, ' . number_format($bonoEnJuego, 0, ',', '.')
+                        . ' son de bono y los bonos se juegan, no se retiran. '
+                        . 'Podés sacar hasta ' . number_format($saldo, 0, ',', '.')
+                        . ' y querés retirar ' . number_format($monto, 0, ',', '.') . '.'];
+        }
         return ['ok' => false, 'codigo' => 'sin_saldo', 'saldo' => $saldo,
                 'error' => 'Tu saldo es de ' . number_format($saldo, 0, ',', '.') .
                            ' y querés retirar ' . number_format($monto, 0, ',', '.') . '.'];
