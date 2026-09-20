@@ -2202,6 +2202,10 @@
   .pt-sec{min-width:0}
   .pt-sec + .pt-sec{margin-top:18px;padding-top:16px;border-top:1px solid var(--linea,#e4e4e7)}
   .pt-sec-tit{margin:0 0 8px;font-size:13px;display:flex;align-items:center;gap:7px}
+  /* El `display:flex` de arriba le gana al [hidden]{display:none} del
+     navegador, así que sin esta línea el toggleAttribute("hidden") del filtro
+     no esconde nada: al filtrar por una sola sección seguían los dos títulos. */
+  .pt-sec-tit[hidden]{display:none}
   .pt-sec-n{color:var(--muted);font-weight:600;font-size:12px}
   /* La vista entera scrollea: con dos listas una abajo de la otra, el scroll
      interno de cada una dejaria media pantalla muerta (el mismo problema que
@@ -6550,8 +6554,18 @@
     $(".col-list").style.display = chats ? "" : "none";
     $(".col-chat").style.display = chats ? "" : "none";
     pintarUserPane(chats);
-    Object.entries(VISTA_CONTENEDOR).forEach(([nom, sel])=>{
-      $(sel).style.display = nombre===nom ? "flex" : "none";
+    /* SE RESUELVE EL CONTENEDOR PRIMERO Y SE COMPARA POR SELECTOR, no por
+       nombre de ruta. Parece lo mismo y no lo es: desde que `retiros` y
+       `peticiones` apuntan a la MISMA pantalla, recorrer por clave la mostraba
+       y la volvía a ocultar en la misma pasada --con nombre="peticiones", la
+       vuelta de `peticiones` ponía flex y la de `retiros` ponía none sobre el
+       mismo nodo--. La pantalla de Peticiones quedaba en blanco desde el rail
+       y desde #/peticiones; #/retiros "funcionaba" solo porque su clave va
+       última y ganaba la última escritura. El Set saca los duplicados: cada
+       contenedor se toca UNA vez. */
+    const selActivo = VISTA_CONTENEDOR[nombre];
+    new Set(Object.values(VISTA_CONTENEDOR)).forEach(sel=>{
+      $(sel).style.display = (sel===selActivo) ? "flex" : "none";
     });
     sincronizarSeps();   // la lista solo existe en "chats"
 
