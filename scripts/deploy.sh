@@ -72,6 +72,34 @@ publicar "$REPO/api"     "$WEB/api"     "config.local.php" "uploads/"
 publicar "$REPO/landing" "$WEB/replica"
 publicar "$REPO/panel"   "$WEB/panel"   "panel_config.php"
 
+# ---------------------------------------------------------------------------
+# Carpeta PERSISTENTE para las sesiones del CRM.
+#
+# POR QUE ESTO ES PARTE DEL DEPLOY: php-fpm corre con PrivateTmp=true en
+# Debian/Ubuntu, asi que /tmp Y /var/tmp son privados del servicio y se borran
+# enteros en cada reinicio o reload de php-fpm --o sea, en cada deploy--. Las
+# sesiones vivian ahi: por eso al operador "se le caia la sesion a cada rato"
+# aunque crm_auth.php dijera 12 horas. Fuera de esos dos, PHP (como www-data)
+# no puede crear un directorio en /var/lib por su cuenta: lo tiene que crear
+# root UNA vez, y esa vez es aca.
+#
+# crm_auth.php prueba esta carpeta primero y cae a /var/tmp y /tmp si no esta,
+# asi que el sitio anda igual sin esto -- solo que con sesiones fragiles.
+# ---------------------------------------------------------------------------
+SES_DIR="/var/lib/goldpaw/crm_sesiones"
+echo "==> carpeta de sesiones del CRM ($SES_DIR)"
+if mkdir -p "$SES_DIR" 2>/dev/null; then
+  # El usuario de php-fpm, leido de su pool (no siempre es www-data).
+  PHP_USER="$(awk -F'=' '/^[[:space:]]*user[[:space:]]*=/ {gsub(/ /,"",$2); print $2; exit}' \
+              /etc/php/*/fpm/pool.d/www.conf 2>/dev/null || true)"
+  PHP_USER="${PHP_USER:-www-data}"
+  chown -R "$PHP_USER":"$PHP_USER" "/var/lib/goldpaw" 2>/dev/null || true
+  chmod 700 "$SES_DIR" 2>/dev/null || true
+  echo "   ok  ($PHP_USER)"
+else
+  echo "   !! no se pudo crear (¿sin root?). Las sesiones caen a /var/tmp y duran menos." >&2
+fi
+
 # Version del widget = hash del commit, para que el navegador baje el nuevo sin
 # que nadie tenga que hacer Ctrl+Shift+R.
 echo "set \$gp_widget_ver \"$HASH\";" > "$VER_FILE"

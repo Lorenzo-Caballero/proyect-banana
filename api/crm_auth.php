@@ -30,49 +30,133 @@ if (!function_exists('operador_login')) {
      * cookie de sesión no se va a setear — hay que probar Fase 0.5 contra el
      * dominio real o un túnel HTTPS, nunca contra HTTP sin cifrar.
      */
+    /**
+     * Cuántas horas dura la sesión del operador. 24 por pedido del dueño
+     * (18/09/2026, "la sesión del CRM dura muy poco, quiero que dure al menos
+     * 24 hs"). Configurable sin deploy: 'CRM_SESION_HORAS' en
+     * api/config.local.php. Se acota a [1, 720] para que un valor mal tipeado
+     * no deje sesiones eternas ni de un minuto.
+     */
+    function crm_sesion_horas(): int
+    {
+        $v = function_exists('cfg') ? cfg('CRM_SESION_HORAS', '') : '';
+        $h = ($v === '' || $v === null) ? 24 : (int)$v;
+        return max(1, min(720, $h));
+    }
+
     function _crm_sesion_iniciar(): void
     {
         if (session_status() === PHP_SESSION_ACTIVE) {
             return;
         }
 
-        /* LA SESIÓN DURA 12 HORAS, y las dos patas son obligatorias
-           (15/09/2026, "me pide la clave a cada rato"):
+        /* LA SESIÓN DURA 24 HORAS Y ES DESLIZANTE. Cuatro patas, y las cuatro
+           hacen falta — el 15/09/2026 se arreglaron dos y el operador SIGUIÓ
+           teniendo que loguearse ("dura muy poco", 18/09/2026):
 
            1. CARPETA DE SESIONES PROPIA. En Ubuntu las sesiones de PHP viven
               en /var/lib/php/sessions y un cron del SISTEMA (sessionclean)
               las borra según el gc_maxlifetime del php.ini — 24 MINUTOS por
               default. Un ini_set() acá no lo frena: el cron ni mira lo que
-              esta app configura en runtime. Con carpeta propia, ese cron no
-              nos toca y la vida la decide este archivo.
-              (Como el cron ya no limpia por nosotros, se prende el gc
-              propio de PHP: ~1 de cada 200 requests barre las vencidas.)
+              esta app configura en runtime.
 
-           2. COOKIE CON VIDA. Estaba en 0 ("hasta cerrar el navegador"),
-              que en la práctica también moría antes por el punto 1. Una
-              jornada de trabajo del operador son 8+ horas: 12 da margen. */
-        $vida = 12 * 3600;
-        $dir  = sys_get_temp_dir() . '/goldpaw_crm_sesiones';
-        if (!is_dir($dir)) { @mkdir($dir, 0700, true); }
-        if (is_dir($dir) && is_writable($dir)) {
+           2. QUE ESA CARPETA SEA PERSISTENTE, que es lo que faltaba. Estaba
+              en sys_get_temp_dir(), o sea /tmp, y php-fpm en Debian/Ubuntu
+              corre con PrivateTmp=true: ese /tmp es privado del servicio y
+              SE BORRA ENTERO cada vez que php-fpm se reinicia o recarga —
+              cosa que pasa en cada deploy y en cada logrotate. O sea que la
+              sesión no duraba 12 horas: duraba hasta el próximo reinicio de
+              PHP. Ese era el "me pide la clave a cada rato" que quedaba.
+              Ahora se prueban carpetas persistentes primero y /tmp queda solo
+              como último recurso (mejor sesiones frágiles que ninguna).
+
+           3. COOKIE QUE SE RENUEVA CON EL USO. `lifetime` se manda una sola
+              vez, cuando la sesión nace: la cookie moría a las 12 horas EXACTAS
+              del login aunque el operador estuviera trabajando. Ahora se
+              reenvía en cada request (ventana deslizante), así una jornada
+              larga no corta a la mitad.
+
+           4. QUE EL ARCHIVO NO SE ENFRÍE. Con session.lazy_write (default en
+              PHP 7+) una sesión que no cambia no se reescribe, su mtime queda
+              viejo y el gc la borra por "vencida" aunque se esté usando. Por
+              eso se estampa una marca cada 10 minutos: mantiene vivo el
+              archivo de una sesión activa.
+
+           Ojo al desplegar: cambiar la carpeta invalida las sesiones que
+           estaban en la anterior. Se pide la clave UNA vez más y listo. */
+        $vida = crm_sesion_horas() * 3600;
+
+        /* Candidatas, de más a menos persistente. La primera escribible gana.
+           NINGUNA puede estar bajo el docroot: un archivo de sesión servido
+           por nginx es la sesión de un operador descargable por cualquiera. */
+        $dir = '';
+        foreach ([
+            '/var/lib/goldpaw/crm_sesiones',
+            '/var/tmp/goldpaw_crm_sesiones',     // /var/tmp sobrevive al reinicio del servicio
+            sys_get_temp_dir() . '/goldpaw_crm_sesiones',
+        ] as $cand) {
+            if (!is_dir($cand)) { @mkdir($cand, 0700, true); }
+            if (is_dir($cand) && is_writable($cand)) { $dir = $cand; break; }
+        }
+        if ($dir !== '') {
+            /* UNA SUBCARPETA POR CLIENTE. El server es multi-tenant y hasta
+               ahora todos compartían la misma carpeta: un id de sesión válido
+               en un cliente resolvía a un archivo con `operador` seteado
+               también desde el dominio de OTRO cliente. La cookie no viaja
+               sola entre dominios, pero copiarla a mano alcanzaba. Separadas,
+               el archivo directamente no existe del otro lado. */
+            $tenant = preg_replace('/[^A-Za-z0-9_.-]/', '',
+                                   (string)($GLOBALS['TENANT_DB'] ?? 'default')) ?: 'default';
+            $porTenant = $dir . '/' . $tenant;
+            if (!is_dir($porTenant)) { @mkdir($porTenant, 0700, true); }
+            if (is_dir($porTenant) && is_writable($porTenant)) { $dir = $porTenant; }
+
             session_save_path($dir);
+            // El cron del sistema ya no limpia por nosotros: gc propio, ~1 de
+            // cada 200 requests.
             @ini_set('session.gc_probability', '1');
             @ini_set('session.gc_divisor', '200');
         }
-        @ini_set('session.gc_maxlifetime', (string)$vida);
+        /* El gc va con MÁS margen que la cookie a propósito: si borrara justo
+           a las 24 h, una sesión en el límite moriría del lado del server con
+           la cookie todavía viva — el operador vuelve al login sin entender
+           por qué. */
+        @ini_set('session.gc_maxlifetime', (string)($vida + 12 * 3600));
 
-        session_set_cookie_params([
+        $cookie = [
             'lifetime' => $vida,
             'path'     => '/',
             'domain'   => '',
             'secure'   => true,
             'httponly' => true,
             'samesite' => 'Strict',
-        ]);
+        ];
+        session_set_cookie_params($cookie);
         // Nombre propio (no el PHPSESSID de default) para no compartir
         // cookie con otra cosa que corra en el mismo dominio/hosting.
         session_name('goldpaw_crm');
         session_start();
+
+        /* VENTANA DESLIZANTE (pata 3). Se reenvía la cookie con la vida
+           entera desde AHORA, así el reloj arranca de nuevo en cada request.
+           Solo si ya hay sesión de operador: a un visitante sin login no hay
+           nada que renovarle. Y antes de cualquier salida — todos los
+           endpoints del CRM llaman a esto arriba de todo. */
+        if (!empty($_SESSION['operador']) && !headers_sent()) {
+            @setcookie(session_name(), session_id(), [
+                'expires'  => time() + $vida,
+                'path'     => $cookie['path'],
+                'domain'   => $cookie['domain'],
+                'secure'   => $cookie['secure'],
+                'httponly' => $cookie['httponly'],
+                'samesite' => $cookie['samesite'],
+            ]);
+            // Pata 4: que el archivo no se enfríe. Cada 10 minutos alcanza
+            // para mantenerlo fresco sin escribir en cada request.
+            if ((int)($_SESSION['tocada'] ?? 0) < time() - 600) {
+                $_SESSION['tocada'] = time();
+            }
+        }
     }
 
     /**
