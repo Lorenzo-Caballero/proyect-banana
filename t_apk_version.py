@@ -107,6 +107,27 @@ if version:
 
     chequear('hay al menos un link versionado', total > 0)
 
+    # ------------------------------------------------------------------
+    # Y EL NUMERO QUE EL JUGADOR LEE EN LA PANTALLA.
+    # El 20/09/2026 la landing decia "Version 1.2" mientras servia la 1.7, y
+    # Nahuel creyo que el boton le estaba dando una version vieja. El link
+    # estaba bien; lo que mentia era el cartel. Un numero escrito a mano en un
+    # lugar que nadie se acuerda de tocar hace perder mas tiempo que un bug,
+    # porque manda a buscar el problema donde no esta.
+    # ------------------------------------------------------------------
+    html = leer('landing/descargar.html')
+    if html is not None:
+        m = re.search(r'id="ver"[^>]*>([^<]+)<', html)
+        chequear('la landing muestra la version en un <span id="ver">',
+                 m is not None,
+                 'sin ese marcador el numero queda suelto en el texto y nadie '
+                 'lo actualiza')
+        if m:
+            visible = m.group(1).strip()
+            chequear('el numero que se ve dice %s' % version,
+                     visible == version,
+                     'la pagina dice %s y se compilo la %s' % (visible, version))
+
 print('')
 print('-' * 39)
 print('%d OK, %d fallas' % (ok, len(fallas)))
