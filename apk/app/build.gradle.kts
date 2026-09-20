@@ -32,8 +32,18 @@ android {
         //        CRM y notificaciones ahora salen de /gp-api del dominio propio
         //   1.5  icono nuevo (el perrito) + el User-Agent ya no queda pegado en
         //        "GOLDPAW/1.0": ahora coincide con versionName
-        versionCode = 6
-        versionName = "1.5"
+        //   1.6  pide quedar fuera de la optimizacion de bateria. El sondeo con
+        //        la app cerrada casi no corria: de 42 celulares con permiso,
+        //        en 24 horas sondearon 8 -- y dependia de la MARCA (Samsung 5
+        //        de 6, Xiaomi 1 de 20), que es la firma del administrador de
+        //        bateria del fabricante matando el trabajo periodico.
+        //
+        // EL versionCode HAY QUE SUBIRLO SIEMPRE, y es facil de olvidar porque
+        // el build sale igual: Android NO instala encima de una version
+        // instalada si el numero no es mayor. El jugador toca "instalar", no
+        // pasa nada, y no hay ningun error que lo explique.
+        versionCode = 7
+        versionName = "1.6"
     }
 
     signingConfigs {
