@@ -5095,9 +5095,11 @@
               <p class="cfg-hint">No toca a nadie que haya jugado en los últimos N días. Se mide con la actividad real, no con la posición en la lista.</p>
             </div>
             <div>
-              <label class="cb-flabel">Saltear páginas</label>
-              <input class="cb-input" id="rcSaltar" inputmode="numeric" value="4">
-              <p class="cfg-hint">Tras ordenar por saldo de mayor a menor, saltea las primeras páginas: los de más saldo suelen ser los que acaban de cargar.</p>
+              <label class="cb-flabel">Saltear los de más saldo</label>
+              <input class="cb-input" id="rcSaltar" inputmode="numeric" value="200">
+              <p class="cfg-hint">Cantidad de <b>jugadores</b> a dejar afuera, empezando por el que más saldo
+              tiene: los de arriba suelen ser los que acaban de cargar.
+              <span id="rcSaltarEq"></span></p>
             </div>
             <div>
               <label class="cb-flabel">Máximo de retiros</label>
@@ -6876,8 +6878,29 @@
      vista solo pide y muestra el estado -- no toca plata directamente. */
   function rcParams(){
     const n = (id, def) => { const v = parseInt(($("#"+id).value||"").trim(),10); return isNaN(v)?def:v; };
-    return { dias:n("rcDias",30), saltar:n("rcSaltar",4), tope:n("rcTope",10), min_saldo:n("rcMin",100) };
+    /* `saltar_jug` es lo que el operador escribe (jugadores). `saltar` va
+       igual, en páginas de 50, porque el bot se despliega aparte: uno viejo
+       que no conozca el campo nuevo tiene que hacer lo más parecido posible
+       en vez de saltar 0 -- y tocar justo a los que más saldo tienen, que es
+       lo contrario de lo que se pidió. */
+    const jug = n("rcSaltar", 200);
+    return { dias:n("rcDias",30), saltar_jug:jug, saltar:Math.round(jug/50),
+             tope:n("rcTope",10), min_saldo:n("rcMin",100) };
   }
+  /* LA EQUIVALENCIA EN PAGINAS DEL PANEL, escrita al lado. El operador mira
+     el panel --que muestra de a 10 por página por default-- y necesita poder
+     traducir: "200 jugadores" son sus primeras 20 páginas. Sin esto, los dos
+     números no se pueden comparar y es exactamente la confusión que hubo. */
+  function rcSaltarEq(){
+    const el = $("#rcSaltarEq"); if(!el) return;
+    const j = parseInt(($("#rcSaltar").value||"").trim(), 10);
+    if(isNaN(j) || j <= 0){ el.textContent = " No saltea a nadie: empieza por el de más saldo."; return; }
+    el.innerHTML = " Son las primeras <b>" + Math.ceil(j/10) + "</b> páginas del panel si lo tenés " +
+                   "en 10 por página, o <b>" + Math.ceil(j/50) + "</b> si lo tenés en 50.";
+  }
+  $("#rcSaltar")?.addEventListener("input", rcSaltarEq);
+  rcSaltarEq();
+
   async function recaudarPedir(deVerdad){
     const p = rcParams();
     if(deVerdad){
@@ -7283,7 +7306,7 @@
           <span><b>#${r.id}</b> · ${modo} · ${esc(r.pedido_por||"?")} · ${horaExacta(r.creada_en)}</span>
           <span class="rc-badge ${r.estado}">${r.estado}</span>
         </div>
-        <div class="cfg-hint" style="margin-top:2px">inactivos ${r.dias}+ días · saltar ${r.saltar} pág · máx ${r.tope} · mín $${nf.format(r.min_saldo)}</div>
+        <div class="cfg-hint" style="margin-top:2px">inactivos ${r.dias}+ días · saltea ${nf.format(r.saltar_jug != null ? r.saltar_jug : (r.saltar||0)*50)} de más saldo · máx ${r.tope} · mín ${rcPlata(r.min_saldo)}</div>
         ${det}
       </div>`;
     }).join("");

@@ -1109,7 +1109,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         if ($accion === 'recaudar_estado') {
             try {
                 $filas = $pdo->query(
-                    "SELECT id, estado, dry_run, dias, saltar, tope, min_saldo,
+                    "SELECT id, estado, dry_run, dias, saltar,
+                            COALESCE(saltar_jug, saltar * 50) AS saltar_jug,
+                            tope, min_saldo,
                             pedido_por, resultado, mensaje, creada_en, actualizada_en
                        FROM recaudaciones ORDER BY id DESC LIMIT 15"
                 )->fetchAll(PDO::FETCH_ASSOC);
@@ -2027,7 +2029,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exigir_admin();
             $dry  = !isset($body['si']) || !$body['si'];   // sin 'si' explicito = prueba
             $dias = max(1, (int)($body['dias'] ?? 30));
-            $salt = max(0, (int)($body['saltar'] ?? 4));
+            /* SALTAR SE PIDE EN JUGADORES, no en «páginas» (21/09/2026).
+               «Página» significaba una cosa en el panel --donde el operador
+               elige 10, 25 o 50 por página-- y otra en el bot, que usa el
+               tamaño de la API (50 fijo). Mirando la página 4 del panel se ven
+               saldos de $75; el bot con el mismo «4» saltaba 200 y tocaba los
+               de $17. Los dos números eran correctos y hablaban de cosas
+               distintas.
+
+               `saltar` (páginas) se sigue guardando y mandando: el bot se
+               despliega aparte y uno viejo tiene que hacer lo más parecido
+               posible en vez de saltar 0 --y tocar justo a los que más saldo
+               tienen, que es lo contrario de lo que se pidió--. */
+            $saltJug = isset($body['saltar_jug'])
+                ? max(0, min(100000, (int)$body['saltar_jug']))
+                : max(0, (int)($body['saltar'] ?? 4)) * 50;
+            $salt = (int)round($saltJug / 50);
             $tope = max(1, min(100, (int)($body['tope'] ?? 10)));
             $minS = max(0, (int)($body['min_saldo'] ?? 100));
 
@@ -2041,13 +2058,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         . (int)$enVuelo . '). Esperá a que termine.'], 409);
             }
 
-            $pdo->prepare(
-                "INSERT INTO recaudaciones (estado, dry_run, dias, saltar, tope, min_saldo, pedido_por)
-                 VALUES ('pendiente', ?, ?, ?, ?, ?, ?)"
-            )->execute([$dry ? 1 : 0, $dias, $salt, $tope, $minS, $operador]);
+            try {
+                $pdo->prepare(
+                    "INSERT INTO recaudaciones (estado, dry_run, dias, saltar, saltar_jug, tope, min_saldo, pedido_por)
+                     VALUES ('pendiente', ?, ?, ?, ?, ?, ?, ?)"
+                )->execute([$dry ? 1 : 0, $dias, $salt, $saltJug, $tope, $minS, $operador]);
+            } catch (Throwable $e) {
+                // Sin la migración 72 no existe `saltar_jug`: se encola igual
+                // con el equivalente en páginas, como siempre.
+                $pdo->prepare(
+                    "INSERT INTO recaudaciones (estado, dry_run, dias, saltar, tope, min_saldo, pedido_por)
+                     VALUES ('pendiente', ?, ?, ?, ?, ?, ?)"
+                )->execute([$dry ? 1 : 0, $dias, $salt, $tope, $minS, $operador]);
+            }
             $id = (int)$pdo->lastInsertId();
             crm_bitacora($pdo, $operador, 'recaudar_pedir',
-                "#$id " . ($dry ? 'PRUEBA' : 'REAL') . " dias=$dias saltar=$salt tope=$tope min=$minS");
+                "#$id " . ($dry ? 'PRUEBA' : 'REAL') . " dias=$dias saltar=$saltJug jugadores tope=$tope min=$minS");
             salir(['ok' => true, 'id' => $id, 'dry_run' => $dry]);
         }
 

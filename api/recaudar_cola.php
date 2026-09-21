@@ -74,10 +74,22 @@ try {
             "UPDATE recaudaciones SET estado='procesando', tomada_en=NOW(),
                     actualizada_en=NOW() WHERE id=?"
         )->execute([$id]);
-        $fila = $pdo->query(
-            "SELECT id, dry_run, dias, saltar, tope, min_saldo, pedido_por
-               FROM recaudaciones WHERE id=" . (int)$id
-        )->fetch(PDO::FETCH_ASSOC);
+        /* `saltar_jug` es la unidad de verdad (jugadores). `saltar` queda por
+           compatibilidad con un bot viejo, que se despliega aparte. */
+        try {
+            $fila = $pdo->query(
+                "SELECT id, dry_run, dias, saltar,
+                        COALESCE(saltar_jug, saltar * 50) AS saltar_jug,
+                        tope, min_saldo, pedido_por
+                   FROM recaudaciones WHERE id=" . (int)$id
+            )->fetch(PDO::FETCH_ASSOC);
+        } catch (Throwable $e) {
+            $fila = $pdo->query(
+                "SELECT id, dry_run, dias, saltar, (saltar * 50) AS saltar_jug,
+                        tope, min_saldo, pedido_por
+                   FROM recaudaciones WHERE id=" . (int)$id
+            )->fetch(PDO::FETCH_ASSOC);
+        }
         $pdo->commit();
 
         echo json_encode(['ok' => true, 'datos' => [
@@ -85,6 +97,7 @@ try {
             'dry_run'   => (int)$fila['dry_run'] === 1,
             'dias'      => (int)$fila['dias'],
             'saltar'    => (int)$fila['saltar'],
+            'saltar_jug'=> (int)$fila['saltar_jug'],
             'tope'      => (int)$fila['tope'],
             'min_saldo' => (int)$fila['min_saldo'],
             'pedido_por'=> (string)($fila['pedido_por'] ?? ''),
