@@ -188,6 +188,21 @@ if [ -f docker-compose.yml ] || [ -f compose.yml ]; then
   # una alta caía en el nuevo (1s) y la siguiente en el viejo con la sesión
   # rota (5 min de backoff). Sin dos bots nunca sobre la misma cola.
   docker compose up -d --build --force-recreate --remove-orphans
+
+  # ---------------------------------------------------------------------
+  # EL RECAUDADOR NO ENTRA EN ESE `up`, y por eso se quedaba con la imagen
+  # VIEJA despues de cada deploy: vive detras de `profiles: ["recaudar"]`,
+  # y compose ignora los servicios con profile salvo que se lo active. El
+  # sintoma es el peor de todos -- el deploy dice OK, el creador anuncia el
+  # hash nuevo, y el recaudador sigue corriendo codigo de hace una semana
+  # sin que nada lo diga.
+  #
+  # Se recrea SOLO si ya estaba corriendo: levantarlo porque si seria
+  # prender un bot que retira plata de cuentas, que nadie pidio.
+  if docker ps --format '{{.Names}}' | grep -qx 'ganamos-bot-recaudador'; then
+    echo "   recreando el recaudador (profile 'recaudar') con la imagen nueva"
+    docker compose --profile recaudar up -d --force-recreate recaudador       || echo "   !! no pude recrear el recaudador: sigue con la imagen vieja" >&2
+  fi
 else
   echo "   (no hay docker-compose acá: recrealo como lo tengas montado)"
 fi
