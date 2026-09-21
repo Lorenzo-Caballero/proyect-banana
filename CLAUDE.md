@@ -715,9 +715,14 @@ app al encontrarlo después en la cola; con la misma etiqueta el segundo
 **reemplaza** al primero. Si los dos lados se separan, el jugador ve cada aviso
 dos veces y nada falla. `t_fcm.php` los compara.
 
-**Los avisos de chat (`solo_app`) siguen yendo mudos**, sin texto: existen para
-NO sonar cuando el jugador ya los está leyendo en pantalla, y si Android los
-dibujara solo esa regla dejaría de aplicarse justo donde importa.
+**Los avisos de chat (`solo_app`) TAMBIEN llevan texto**, y esto estuvo al
+revés unas horas el 21/09/2026. Se los había excluido creyendo que un push con
+texto sonaría encima del jugador que ya lo está leyendo en pantalla. **Es
+falso:** Android no dibuja un mensaje con `notification` cuando la app está en
+primer plano — llama a `onMessageReceived` y deja que decida la app. O sea que
+la regla de `solo_app` la preserva Android solo, y el efecto del error era el
+peor posible para el negocio: el único aviso que NO llegaba con la app cerrada
+era el mensaje de una persona esperando respuesta.
 
 **La clave de cuenta de servicio vive en `/etc/goldpaw/firebase.json`** y los
 permisos son DOS: la carpeta `chown root:www-data` + `chmod 750`, y el archivo
@@ -762,6 +767,11 @@ Cuando responde el chatbot o un agente se encola un aviso con `solo_app = 1`:
   desperdicio, es el punto: al consumirlo queda acusado, y así no le repica en
   la barra un rato después por un mensaje que ya leyó en pantalla.
 - El **worker sí lo muestra**, porque solo corre con la app cerrada.
+- El **push de Firebase también lo lleva, con el texto adentro** (desde el
+  21/09/2026). No rompe lo de arriba: Android no dibuja un mensaje con
+  `notification` si la app está en primer plano, así que con el jugador
+  mirando la pantalla sigue decidiendo el widget. Lo que cambia es que con la
+  app cerrada el mensaje llega al instante en vez de esperar al worker.
 
 Dos cosas sostienen eso: el worker se **saltea entero si la app está en primer
 plano** (`Enganche.enPrimerPlano`), y el widget consume el aviso apenas termina

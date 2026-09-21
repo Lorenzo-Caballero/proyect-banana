@@ -345,13 +345,19 @@ chequear('y la aplica al mostrar el aviso',
     str_contains($kt, 'notify(TAG_AVISO + a.id, a.id, n)'),
     'sin etiqueta al mostrar, la app suma un aviso en vez de reemplazar el de Android');
 
-/* LOS DE CHAT SIGUEN MUDOS. Son las respuestas del chat, y existen para NO
-   sonar cuando el jugador ya las esta leyendo. Si Android las dibujara solo,
-   esa regla dejaria de aplicarse justo donde importa. */
+/* LOS DE CHAT TAMBIEN LLEVAN TEXTO, y esto estuvo al reves unas horas.
+   Se los habia excluido creyendo que un push con texto sonaria encima del
+   jugador que ya lo esta leyendo. Es falso: Android no dibuja un mensaje con
+   `notification` cuando la app esta en primer plano, llama a la app. O sea que
+   la regla de solo_app la preserva Android solo.
+
+   El efecto del error era el peor posible: el unico aviso que NO llegaba con
+   la app cerrada era el mensaje de una persona esperando respuesta. */
 $srcLibA = (string)file_get_contents(__DIR__ . '/api/notificaciones_lib.php');
-chequear('un aviso solo_app no manda texto',
-    str_contains($srcLibA, '$aviso = $soloApp ? [] : '),
-    'si Android dibuja las respuestas del chat, suenan encima de lo que el jugador esta leyendo');
+chequear('los avisos de chat TAMBIEN llevan texto',
+    str_contains($srcLibA, "\$aviso = ['id' => \$id, 'titulo' => \$titulo, 'cuerpo' => \$cuerpo];")
+    && !str_contains($srcLibA, '$soloApp ? [] :'),
+    'sin texto no llegan con la app cerrada, que es justo cuando hacen falta');
 
 // =========================================================================
 echo "\n=== Las invariantes del diseño (sobre el fuente) ===\n";

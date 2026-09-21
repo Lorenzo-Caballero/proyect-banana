@@ -149,16 +149,40 @@ if (!function_exists('notif_crear')) {
     {
         if ($id <= 0 || $prog !== null) { return; }
 
-        /* EL TEXTO VIAJA, SALVO EN LOS DE CHAT. Un push con texto lo dibuja
-           Android sin arrancar la app, y por eso llega aunque el jugador la
-           haya deslizado de recientes -- que era el unico caso que quedaba sin
-           resolver.
+        /* EL TEXTO VIAJA SIEMPRE, LOS DE CHAT INCLUIDOS.
+           Un push con texto lo dibuja Android sin arrancar la app, y por eso
+           llega aunque el jugador la haya deslizado de recientes.
 
-           Los `solo_app` NO: son las respuestas del chat, y existen para NO
-           sonar cuando el jugador ya las esta leyendo en pantalla. Si Android
-           los dibujara solo, esa regla dejaria de aplicarse justo donde
-           importa. Esos siguen yendo mudos y decide la app. */
-        $aviso = $soloApp ? [] : ['id' => $id, 'titulo' => $titulo, 'cuerpo' => $cuerpo];
+           LOS `solo_app` ESTUVIERON EXCLUIDOS UNAS HORAS, POR UN ERROR MIO DE
+           RAZONAMIENTO. Son las respuestas del chat, y existen para NO sonar
+           cuando el jugador ya las esta leyendo en pantalla; supuse que un
+           push con texto las haria sonar igual y las deje mudas. Es falso:
+           Android NO dibuja un mensaje con `notification` cuando la app esta
+           en primer plano -- llama a onMessageReceived y deja que decida la
+           app. O sea que la regla de solo_app la preserva Android solo:
+
+               jugador mirando la pantalla -> onMessageReceived, tarjeta del
+                                              widget, nada en la barra
+               app en segundo plano o cerrada -> la barra, que es lo que se
+                                              queria
+
+           El efecto de mi error era el peor posible para el negocio: el unico
+           aviso que NO llegaba con la app cerrada era justamente el mensaje de
+           una persona esperando respuesta. Pedido de Nahuel el 21/09/2026:
+           *"si la persona tiene la aplicacion cerrada y nosotros le mandamos
+           un mensaje por el chat, ese mensaje si quiero que llegue"*.
+
+           `$soloApp` sigue significando algo, y por eso no se borro: el widget
+           lo consume sin dibujarlo y el worker si lo muestra. Lo unico que
+           cambia es que ahora tambien viaja por el push.
+
+           QUE VIAJA POR GOOGLE, concretamente: "GOLDPAW te respondio" o "Un
+           agente te respondio", mas el texto de la respuesta recortado a 140
+           caracteres (notif_chat). Las credenciales ya salieron antes --
+           chatbot.php aplica chatbot_sin_credenciales() en la linea 962 y el
+           aviso se crea en la 1078-- asi que un usuario o una clave no pueden
+           llegar hasta aca. */
+        $aviso = ['id' => $id, 'titulo' => $titulo, 'cuerpo' => $cuerpo];
         fcm_despertar($pdo, $usuario !== '' ? $usuario : null, $aviso);
     }
 
