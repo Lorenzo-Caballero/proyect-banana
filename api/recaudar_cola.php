@@ -12,6 +12,18 @@
  * GET  ?accion=pendientes   -> RECLAMA la mas vieja (pasa a 'procesando') y
  *                              devuelve sus parametros, o {datos:null} si no hay.
  * POST ?accion=marcar   body {id, estado:'hecha'|'error', resultado?, mensaje?}
+ * POST ?accion=avance   body {id, resultado}   -> progreso PARCIAL, sin cerrar
+ *
+ * `avance` existe para que el CRM muestre la corrida MIENTRAS PASA (pedido del
+ * dueño, 21/09/2026: "que se vea reflejado en el momento, retiro por retiro").
+ * Antes el bot escribía una sola vez, al terminar: una recaudación de 25
+ * jugadores eran varios minutos de "En curso…" y después todo junto. Con plata
+ * de por medio, no ver qué está pasando es lo peor de las dos opciones.
+ *
+ * Escribe el MISMO campo `resultado` que usa el cierre, así el front no
+ * necesita otro contrato: lee `resultado.fase` y sabe si mira un avance o el
+ * final. Y deja el estado en 'procesando' -- `marcar` sigue siendo el único
+ * que cierra una corrida.
  *
  * Reglas (como en acciones_cola):
  *  - Se RECLAMA antes de entregar: si dos bots leen la misma fila, uno recauda
@@ -77,6 +89,31 @@ try {
             'min_saldo' => (int)$fila['min_saldo'],
             'pedido_por'=> (string)($fila['pedido_por'] ?? ''),
         ]], JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    // --------------------------- avance ---------------------------
+    /* Progreso parcial de una corrida EN CURSO. No cambia el estado: si lo
+       cambiara, `pendientes` entregaría otra recaudación creyendo que esta
+       terminó, y dos corridas en paralelo se pisan el orden del listado (y
+       retiran plata). */
+    if ($accion === 'avance' && $metodo === 'POST') {
+        $body = json_decode(file_get_contents('php://input'), true) ?: [];
+        $id   = (int)($body['id'] ?? 0);
+        if (!$id || !isset($body['resultado'])) {
+            http_response_code(400);
+            echo json_encode(['ok' => false, 'error' => 'falta id o resultado']);
+            exit;
+        }
+        $resultado = mb_substr(json_encode($body['resultado'], JSON_UNESCAPED_UNICODE), 0, 60000);
+        /* El WHERE exige 'procesando': un avance que llega tarde --el bot lo
+           mandó justo cuando la corrida ya cerró-- no puede reabrir ni pisar
+           el resultado final con una foto a medias. */
+        $pdo->prepare(
+            "UPDATE recaudaciones SET resultado=?, actualizada_en=NOW()
+              WHERE id=? AND estado='procesando'"
+        )->execute([$resultado, $id]);
+        echo json_encode(['ok' => true]);
         exit;
     }
 

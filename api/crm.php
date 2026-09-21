@@ -1120,7 +1120,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 $f['dry_run']   = (int)$f['dry_run'] === 1;
                 $f['resultado'] = $f['resultado'] ? json_decode($f['resultado'], true) : null;
             }
-            salir(['ok' => true, 'recaudaciones' => $filas]);
+            unset($f);
+
+            /* EL ACUMULADO, sobre TODAS las corridas y no sobre las 15 que se
+               listan: "cuánto se recaudó" es la pregunta de la pantalla y
+               contestarla con la ventana que entra en el scroll daría un
+               número que se achica solo con el tiempo.
+               Solo las REALES (dry_run = 0): una prueba no movió un peso, y
+               sumarla sería inventar plata. */
+            $tot = ['retiros' => 0, 'monto' => 0.0, 'corridas' => 0, 'ultima' => null];
+            try {
+                $q = $pdo->query(
+                    "SELECT resultado, actualizada_en FROM recaudaciones
+                      WHERE dry_run = 0 AND estado = 'hecha'"
+                );
+                foreach ($q as $r) {
+                    $res = $r['resultado'] ? json_decode((string)$r['resultado'], true) : null;
+                    if (!is_array($res)) { continue; }
+                    $tot['corridas']++;
+                    $tot['retiros'] += (int)($res['retirados'] ?? 0);
+                    $tot['monto']   += (float)($res['total'] ?? 0);
+                    if ($tot['ultima'] === null || (string)$r['actualizada_en'] > $tot['ultima']) {
+                        $tot['ultima'] = (string)$r['actualizada_en'];
+                    }
+                }
+                $tot['monto'] = round($tot['monto'], 2);
+            } catch (Throwable $e) {
+                // Sin la tabla, la pantalla abre igual y muestra guiones.
+            }
+
+            salir(['ok' => true, 'recaudaciones' => $filas, 'totales' => $tot]);
         }
 
         // ---- campaña de fidelizacion (vista Fidelizacion del CRM) ----

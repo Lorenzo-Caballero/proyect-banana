@@ -664,7 +664,68 @@
   .rc-badge.procesando{background:#2d3a55;color:#9ec5ff}
   .rc-badge.hecha{background:#1f5133;color:#8ff0b5}
   .rc-badge.error{background:#5a2327;color:#ffb0b3}
-  .rc-det{color:var(--muted,#8b8fa3);margin-top:6px;white-space:pre-wrap}
+  /* El detalle era un bloque de texto con saltos de linea: 20 nombres y sus
+     saldos apilados en pre-wrap, sin alineacion, y el resto cortado en seco.
+     Pasa a lista de dos columnas -- el nombre a la izquierda y la plata a la
+     derecha, alineada -- que es como se lee una lista de importes. */
+  .rc-det{color:var(--muted);margin-top:8px}
+  .rc-det-cab{font-size:12px;color:var(--txt);margin-bottom:6px}
+  .rc-jug{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:2px 16px}
+  .rc-j{display:flex;justify-content:space-between;gap:10px;align-items:baseline;
+    padding:3px 0;border-bottom:1px solid var(--line);font-size:12.5px}
+  .rc-j b{color:var(--txt);font-weight:600}
+  .rc-j .m{color:var(--txt);font-variant-numeric:tabular-nums;white-space:nowrap}
+  /* El que fallo se marca con palabra, no solo con color ni con un simbolo
+     suelto: "✕" al final de una linea gris no dice que paso. */
+  .rc-j.mal .m{color:var(--red)}
+  .rc-j.mal b{color:var(--red)}
+  .rc-vermas{background:none;border:0;color:var(--violet);font:600 12px inherit;
+    cursor:pointer;padding:7px 0 0;text-decoration:underline}
+  .rc-vermas:hover{color:var(--violet2)}
+  /* --- progreso en vivo --- */
+  .rc-prog{margin-top:9px}
+  .rc-prog-top{display:flex;justify-content:space-between;gap:10px;align-items:baseline;
+    font-size:12.5px;margin-bottom:6px}
+  .rc-prog-paso{color:var(--txt);font-weight:600;display:flex;align-items:center;gap:7px}
+  /* El punto que late: con retiros de varios segundos, una barra quieta no
+     distingue "trabajando" de "colgado". */
+  .rc-vivo{width:7px;height:7px;border-radius:50%;background:var(--green);
+    animation:rcLate 1.1s ease-in-out infinite;flex:0 0 auto}
+  @keyframes rcLate{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.8)}}
+  @media (prefers-reduced-motion:reduce){.rc-vivo{animation:none}}
+  .rc-barra{height:6px;border-radius:4px;background:var(--panel3);overflow:hidden}
+  .rc-barra i{display:block;height:100%;border-radius:4px;background:var(--green);
+    transition:width .4s ease}
+  /* Indeterminada: mientras BUSCA no se sabe cuantos van a ser, y una barra
+     que inventa un porcentaje miente sobre lo que falta. */
+  .rc-barra.buscando i{width:35%;animation:rcCorre 1.4s ease-in-out infinite}
+  @keyframes rcCorre{from{transform:translateX(-110%)}to{transform:translateX(320%)}}
+
+  /* --- log --- */
+  .rc-log-tog{background:none;border:0;color:var(--muted);font:600 11.5px inherit;
+    cursor:pointer;padding:8px 0 0;display:inline-flex;align-items:center;gap:6px}
+  .rc-log-tog:hover{color:var(--txt)}
+  .rc-log-tog .pt{width:6px;height:6px;border-radius:50%;background:var(--muted2)}
+  .rc-log-tog.hay-error{color:var(--red)}
+  .rc-log-tog.hay-error .pt{background:var(--red)}
+  .rc-log{margin-top:7px;background:#0b0b0e;border:1px solid var(--line);border-radius:9px;
+    padding:9px 11px;max-height:230px;overflow:auto;
+    font:11.5px/1.65 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    color:var(--muted);white-space:pre-wrap;word-break:break-word}
+  /* Los errores saltan a la vista dentro del log: es a lo que se entra a mirar. */
+  .rc-log .e{color:var(--red)}
+  .rc-log .ok{color:var(--green)}
+
+  .rc-resumen{display:flex;gap:14px;flex-wrap:wrap;align-items:center;
+    padding:8px 0 2px;font-size:12.5px}
+  .rc-resumen b{color:var(--txt)}
+  @media (max-width:640px){
+    .rc-row .rc-top{flex-direction:column;align-items:flex-start;gap:4px}
+    .rc-jug{grid-template-columns:1fr}
+    .rc-acciones{flex-direction:column}
+    .rc-acciones button{width:100%}
+  }
+
   /* Vista Fidelizacion */
   /* A quién y hasta cuándo: las dos decisiones de negocio de la campaña, juntas
      y arriba del editor de escalones. */
@@ -4943,6 +5004,10 @@
         </div>
       </div>
 
+      <!-- Lo recaudado hasta hoy, arriba de los controles: antes había que
+           sumar de memoria las corridas de la lista para saberlo. -->
+      <div class="us-cards" id="rcCards"></div>
+
       <div class="cb-card">
         <div class="cb-card-body">
           <div class="rc-grid">
@@ -6697,31 +6762,121 @@
     else toast(d.error || "No se pudo encolar");
     recaudarCargar();
   }
+  /* Cuántos jugadores se muestran por corrida antes de "ver los N restantes".
+     Una recaudación puede tocar decenas y volcarlas todas deja la lista de
+     corridas ilegible: lo que se busca acá es el resumen de cada una, y el
+     detalle completo se pide cuando hace falta. */
+  const RC_POR_TANDA = 20;
+  const rcAbiertas = new Set();   // qué corridas están expandidas
+  /* Qué logs están abiertos. Un id NEGATIVO marca "lo cerré a mano": hace
+     falta porque el log con errores se abre solo, y sin esa marca el próximo
+     sondeo lo volvería a abrir encima del operador que acaba de cerrarlo. */
+  const rcLogs = new Set();
+  let rcHayCorrida = false;   // ¿hay algo corriendo? (lo usa el sondeo)
+
+  /* EL PROCESO, MIENTRAS PASA (pedido del dueño, 21/09/2026: "que se vea
+     reflejado en el momento, retiro por retiro"). El bot reporta cada paso a
+     recaudar_cola.php?accion=avance y eso llega en el mismo `resultado` que
+     trae el cierre: `fase` dice si esto es un avance o el final. */
+  function rcProgreso(r, res){
+    if(r.estado !== "procesando") return "";
+    const fase = res.fase || "";
+    const hechos = res.hechos|0, de = res.de|0;
+    const pct = de ? Math.round(hechos*100/de) : 0;
+    // Mientras BUSCA no se sabe cuántos van a ser: barra indeterminada. Una
+    // barra que inventa un porcentaje miente sobre lo que falta.
+    const indet = fase==="buscando" || !de;
+    return `<div class="rc-prog">
+      <div class="rc-prog-top">
+        <span class="rc-prog-paso"><span class="rc-vivo"></span>${esc(res.paso||"Trabajando…")}</span>
+        <span class="cfg-hint">${de ? hechos + " de " + de : ""}</span>
+      </div>
+      <div class="rc-barra${indet?" buscando":""}"><i style="${indet?"":"width:"+pct+"%"}"></i></div>
+    </div>`;
+  }
+
+  /* EL LOG EN PANTALLA ("si hay algún log de error, mostralo así depuramos").
+     Va colapsado salvo que haya errores: cuando algo falla es lo primero que
+     se quiere abrir, y cuando no, es ruido. Se mantiene abierto entre
+     sondeos con rcLogs, igual que rcAbiertas. */
+  function rcLog(r, res){
+    const lineas = (res && res.log) || [];
+    if(!lineas.length) return "";
+    const hayError = lineas.some(l=>/ERROR|EXCEPCI|FALLO/i.test(l));
+    const abierto = rcLogs.has(r.id) || (hayError && !rcLogs.has(-r.id));
+    const cuerpo = abierto
+      ? '<div class="rc-log" data-rclogbox="' + r.id + '">' + lineas.map(l=>{
+          const cls = /ERROR|EXCEPCI|FALLO/i.test(l) ? "e" : (/: OK/.test(l) ? "ok" : "");
+          return cls ? '<span class="' + cls + '">' + esc(l) + '</span>' : esc(l);
+        }).join("\n") + '</div>'
+      : "";
+    return '<button class="rc-log-tog' + (hayError?" hay-error":"") + '" data-rclog="' + r.id + '" type="button">' +
+           '<span class="pt"></span>' + (abierto ? "Ocultar" : "Ver") + ' el detalle técnico' +
+           (hayError ? " · hay errores" : "") + ' (' + lineas.length + ')</button>' + cuerpo;
+  }
+
   async function recaudarCargar(){
     let d;
     try{ d = await jget({accion:"recaudar_estado"}); }catch(e){ return; }
     const cont = $("#rcLista"); if(!cont) return;
+
+    /* Las tarjetas salen del acumulado del server (todas las corridas), no de
+       las 15 que se listan. */
+    const t = (d && d.totales) || {retiros:0, monto:0, corridas:0, ultima:null};
+    const cards = $("#rcCards");
+    if(cards){
+      cards.innerHTML = [
+        { k:"Recaudado",  v:"$" + nf.format(Math.round(t.monto||0)), cls:"green",
+          t:"Suma de todas las recaudaciones reales (las pruebas no cuentan)" },
+        { k:"Retiros",    v:nf.format(t.retiros||0), t:"Jugadores a los que se les retiró saldo" },
+        { k:"Corridas",   v:nf.format(t.corridas||0), t:"Recaudaciones reales completadas" },
+        { k:"Última vez", v:t.ultima ? fidHace(t.ultima) : "—", t:t.ultima || "Todavía ninguna" },
+      ].map(x=>'<div class="us-stat ' + (x.cls||"") + '" title="' + esc(x.t||"") + '">' +
+               '<div class="k">' + esc(x.k) + '</div><div class="v">' + x.v + '</div></div>').join("");
+    }
+
     const rs = (d && d.recaudaciones) || [];
+    // Lo mira el sondeo de la vista para acelerar mientras algo corre.
+    rcHayCorrida = rs.some(r=> r.estado==="procesando" || r.estado==="pendiente");
     if(!rs.length){ cont.innerHTML = '<p class="cfg-hint">Todavía no hay recaudaciones.</p>'; return; }
+
     cont.innerHTML = rs.map(r=>{
       const res = r.resultado || {};
       const modo = r.dry_run ? "PRUEBA" : "REAL";
       let det = "";
       if(r.estado==="error"){
         det = `<div class="rc-det">✕ ${esc(r.mensaje||"error")}</div>`;
+      } else if(r.estado==="procesando" && res && res.fase && !(res.detalle||[]).length
+                && !(res.objetivo||[]).length){
+        // Buscando: todavía no hay a quién mostrar, pero sí qué está haciendo.
+        det = `<div class="rc-det">${rcProgreso(r, res)}</div>`;
       } else if(res && (res.objetivo || res.detalle)){
         const lista = r.dry_run ? (res.objetivo||[]) : (res.detalle||[]);
-        const tot = r.dry_run ? (res.total_objetivo||0) : (res.total||0);
+        const tot   = r.dry_run ? (res.total_objetivo||0) : (res.total||0);
         const cab = r.dry_run
-          ? `Tocaría a ${lista.length} jugador(es), $${nf.format(tot)} en total:`
-          : `Retirados ${res.retirados||0} por $${nf.format(tot)}${res.fallados?` · ${res.fallados} fallaron`:""}:`;
-        const items = lista.slice(0,20).map(x=>{
-          const marca = (!r.dry_run && x.ok===false) ? " ✕" : "";
-          return `${esc(x.usuario)} — $${nf.format(x.saldo||0)}${marca}`;
-        }).join("\n");
-        det = `<div class="rc-det">${cab}\n${items||"(nadie)"}</div>`;
+          ? `Tocaría a <b>${lista.length}</b> jugador(es) · <b>$${nf.format(tot)}</b>`
+          : `Retirados <b>${res.retirados||0}</b> · <b>$${nf.format(tot)}</b>` +
+            (res.fallados ? ` · <span style="color:var(--red)">${res.fallados} fallaron</span>` : "");
+        const abierta = rcAbiertas.has(r.id);
+        const ver = abierta ? lista : lista.slice(0, RC_POR_TANDA);
+        const items = ver.map(x=>{
+          const mal = (!r.dry_run && x.ok===false);
+          return `<span class="rc-j${mal?" mal":""}"><b>${esc(x.usuario)}</b>` +
+                 `<span class="m">$${nf.format(x.saldo||0)}${mal?" · no salió":""}</span></span>`;
+        }).join("");
+        const restan = lista.length - ver.length;
+        det = `<div class="rc-det">${rcProgreso(r, res)}<div class="rc-det-cab">${cab}</div>` +
+              (items ? `<div class="rc-jug">${items}</div>` : '<span class="cfg-hint">(nadie)</span>') +
+              (restan > 0
+                ? `<button class="rc-vermas" data-rcver="${r.id}" type="button">Ver los ${restan} restantes</button>`
+                : (abierta && lista.length > RC_POR_TANDA
+                    ? `<button class="rc-vermas" data-rcver="${r.id}" type="button">Ver menos</button>` : "")) +
+              rcLog(r, res) + `</div>`;
       } else if(r.estado==="procesando" || r.estado==="pendiente"){
-        det = `<div class="rc-det">En curso…</div>`;
+        /* Sin avance todavía: el bot la reclamó pero aún no reportó nada (o es
+           una versión vieja del bot, que solo escribía al terminar). */
+        det = `<div class="rc-det"><div class="rc-prog-paso"><span class="rc-vivo"></span>` +
+              (r.estado==="pendiente" ? "Esperando al bot…" : "Arrancando…") + `</div></div>`;
       }
       return `<div class="rc-row">
         <div class="rc-top">
@@ -6733,6 +6888,28 @@
       </div>`;
     }).join("");
   }
+
+  /* Delegado en el contenedor: la lista se repinta entera cada 8 segundos
+     (pollRecaudarVista), así que un listener por botón moriría en el próximo
+     tic. Por eso también `rcAbiertas` vive afuera: si no, el sondeo cerraría
+     lo que el operador acaba de abrir. */
+  $("#rcLista")?.addEventListener("click", ev=>{
+    const b = ev.target.closest("[data-rcver]");
+    if(!b) return;
+    const id = parseInt(b.getAttribute("data-rcver"), 10);
+    if(rcAbiertas.has(id)) rcAbiertas.delete(id); else rcAbiertas.add(id);
+    recaudarCargar();
+  });
+
+  $("#rcLista")?.addEventListener("click", ev=>{
+    const b = ev.target.closest("[data-rclog]");
+    if(!b) return;
+    const id = parseInt(b.getAttribute("data-rclog"), 10);
+    const caja = document.querySelector('[data-rclogbox="' + id + '"]');
+    if(caja || rcLogs.has(id)){ rcLogs.delete(id); rcLogs.add(-id); }   // cerrar (y recordarlo)
+    else { rcLogs.add(id); rcLogs.delete(-id); }
+    recaudarCargar();
+  });
   $("#rcProbar")?.addEventListener("click", ()=>recaudarPedir(false));
   $("#rcRecaudar")?.addEventListener("click", ()=>recaudarPedir(true));
 
@@ -7225,9 +7402,22 @@
     }
     if(nombre==="recaudar"){
       recaudarCargar();
-      // Cola operativa: mientras una corrida esta en curso, refrescar para ver
-      // como avanza (el bot marca hecha/error al terminar). Se para al salir.
-      pollRecaudarVista = setInterval(recaudarCargar, 8000);
+      /* DOS CADENCIAS. Con una corrida en curso el bot reporta cada retiro
+         (2-4 segundos cada uno) y sondear cada 8 mostraría el proceso a
+         saltos, que es justo lo que este reporte vino a evitar. Sin nada
+         corriendo, 8 segundos es de sobra: la lista no cambia sola.
+         El intervalo se recrea SOLO cuando cambia el ritmo, no en cada tic:
+         reprogramar un setInterval por cada vuelta desfasa el reloj. */
+      let rcRitmo = 0;
+      const rcLatir = ()=>{
+        const quiere = rcHayCorrida ? 2000 : 8000;
+        if(quiere !== rcRitmo){
+          rcRitmo = quiere;
+          if(pollRecaudarVista) clearInterval(pollRecaudarVista);
+          pollRecaudarVista = setInterval(()=>{ recaudarCargar().then(rcLatir); }, quiere);
+        }
+      };
+      rcLatir();
     }
   }
 
