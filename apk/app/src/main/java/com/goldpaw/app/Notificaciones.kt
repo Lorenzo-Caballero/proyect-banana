@@ -163,7 +163,18 @@ object Notificaciones {
         val token = p.getString(K_FCM_TOKEN, null) ?: return
         val device = deviceId(ctx) ?: return
         val huella = device + "|" + token
-        if (p.getString(K_FCM_ENVIADO, null) == huella) return
+        /* NO ALCANZA CON QUE EL TOKEN YA SE HAYA MANDADO: tambien tiene que
+           estar hecha la suscripcion al topico, porque se hace con la
+           RESPUESTA de esta misma llamada. Cortando solo por el token, una
+           suscripcion que fallo --un corte de red de un segundo mientras
+           Google contestaba-- quedaba sin reintentar para siempre, y ese
+           telefono no recibia nunca mas un aviso masivo. Nada lo avisaba: los
+           avisos personales le seguian llegando bien.
+
+           Reintentarlo cuesta una llamada HTTP en el arranque siguiente, y
+           solo mientras falte. */
+        val yaSuscripto = !p.getString(K_FCM_TOPICO, null).isNullOrBlank()
+        if (p.getString(K_FCM_ENVIADO, null) == huella && yaSuscripto) return
 
         /* Se la llama desde el hilo principal (MainActivity) y desde uno de
            fondo (onNewToken). Un hilo suelto sirve para los dos y no hay nada
