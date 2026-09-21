@@ -3675,6 +3675,17 @@
             <div id="nBloquePush">
               <label>Plantilla</label>
               <div class="chips" id="nChips"></div>
+              <!-- ESTA PANTALLA AVISA, NO ACREDITA, y hay que decirlo donde se
+                   toca el boton. Nahuel lo reporto el 20/09/2026: eligio
+                   "Bono" y busco el campo para poner las fichas, porque la
+                   plantilla parecia el formulario de un regalo. No lo es: son
+                   cuatro textos prearmados. Las fichas y los bonos se dan
+                   desde la ficha del jugador, y ahi el aviso sale solo. -->
+              <p class="ag-modal-hint" style="margin-top:-2px">
+                Esto <b>manda un mensaje</b>, no acredita nada. Para regalar
+                fichas o un bono entrá a la ficha del jugador: al cargárselos,
+                el aviso le sale solo.
+              </p>
               <label for="nTitulo">Título</label>
               <input id="nTitulo" type="text" maxlength="120" placeholder="¡Te regalamos 500 fichas!">
               <label for="nCuerpo" id="nCuerpoLabel">Mensaje</label>
@@ -13708,8 +13719,16 @@
      del APK hasta 15 min después si está cerrada). Por eso el botón dice
      "encolada" y muestra a cuántos celulares activos le va a llegar. */
   const PLANTILLAS = [
-    { n:"Bono",   ico:"regalo", tipo:"bono",   t:"¡Te regalamos un bono!",       c:"Ya lo tenés acreditado en tu cuenta. Entrá y usalo." },
-    { n:"Fichas", ico:"ficha",  tipo:"fichas", t:"¡Fichas de regalo!",           c:"Te cargamos fichas para que sigas jugando." },
+    /* LOS TEXTOS NO PUEDEN DAR POR HECHO QUE LA PLATA YA ESTA. Estos dos
+       decian "Ya lo tenés acreditado en tu cuenta" y "Te cargamos fichas",
+       y esta pantalla no acredita nada: son cuatro textos prearmados para
+       una difusion. Un jugador podia recibir que tenia un bono, entrar, y no
+       encontrar nada -- el peor mensaje posible para alguien que confia en
+       que le vamos a pagar.
+       Al cargar de verdad desde la ficha del jugador, el aviso lo manda
+       crm.php solo, con el monto real adentro. Ese si puede afirmarlo. */
+    { n:"Bono",   ico:"regalo", tipo:"bono",   t:"¡Tenemos un bono para vos!",   c:"Entrá al chat y te lo activamos." },
+    { n:"Fichas", ico:"ficha",  tipo:"fichas", t:"¡Fichas de regalo!",           c:"Entrá al chat y te contamos cómo sumarlas." },
     { n:"Ruleta", ico:"diana",  tipo:"ruleta", t:"Te queda un giro gratis",      c:"Entrá a la app y girá la ruleta antes de que termine el día." },
     { n:"Promo",  ico:"rayo",   tipo:"promo",  t:"Promo por tiempo limitado",    c:"Recargá hoy y llevate un extra. Escribinos por el chat." }
   ];
