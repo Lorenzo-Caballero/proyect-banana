@@ -674,6 +674,11 @@
     border:1px solid var(--line);font-size:12.5px;color:var(--muted);line-height:1.6}
   .rc-eq b{color:var(--txt)}
   .rc-aviso{color:var(--orange2)}
+  .rc-colgada{margin:10px 0 2px;padding:11px 13px;border-radius:10px;
+    background:rgba(245,166,35,.09);border:1px solid var(--orange);
+    font-size:12.5px;line-height:1.6;display:flex;flex-wrap:wrap;gap:9px;align-items:center}
+  .rc-colgada b{color:var(--txt)}
+  .rc-colgada .cfg-hint{flex-basis:100%;margin:0}
   .rc-acciones{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
   .rc-lista{display:flex;flex-direction:column;gap:8px}
   .rc-row{border:1px solid var(--line);border-radius:11px;padding:10px 12px;font-size:13px}
@@ -5137,6 +5142,12 @@
                 <p class="cfg-hint">El «Mostrar en la página» de tu panel. Si ahí dice 10, poné 10.</p>
               </div>
               <div>
+                <label class="cb-flabel">Cuántas páginas seguidas</label>
+                <input class="cb-input" id="rcPaginas" inputmode="numeric" value="1">
+                <p class="cfg-hint">Al terminar una sigue con la de abajo, sin parar. El tope por
+                corrida son 100 jugadores: es el freno de daño.</p>
+              </div>
+              <div>
                 <label class="cb-flabel">Saldo mínimo</label>
                 <input class="cb-input" id="rcMin" inputmode="numeric" value="1">
                 <p class="cfg-hint">No tocar saldos menores a esto.</p>
@@ -6956,9 +6967,19 @@
          operador está mirando. Esa era exactamente la discrepancia. */
       const pag = Math.max(1, rcNum("rcPagina", 1));
       const por = Math.max(1, rcNum("rcPorPag", 10));
+      const cuantas = Math.max(1, rcNum("rcPaginas", 1));
       const salt = (pag - 1) * por;
+      /* VARIAS PÁGINAS SEGUIDAS es simplemente un tope más grande: el bot trae
+         el listado UNA vez, lo ordena y lo recorre de corrido desde donde se
+         le dijo. No hace falta que "pase de página" -- pasar de página es
+         seguir leyendo la misma lista.
+         Y ojo que ES IMPORTANTE que sea así: si volviera a pedir el listado
+         entre página y página, los que acaba de vaciar ya no estarían (quedan
+         en $0 y se van al fondo del orden por saldo), la página 5 pasaría a
+         ser la 4, y saltearía diez jugadores en cada vuelta. */
+      const tope = Math.min(100, cuantas * por);
       return { dias:1, saltar_jug:salt, saltar:Math.round(salt/50),
-               tope:por, min_saldo:rcNum("rcMin",1), sin_chequeo:true };
+               tope:tope, min_saldo:rcNum("rcMin",1), sin_chequeo:true };
     }
     const jug = rcNum("rcSaltar", 200);
     return { dias:rcNum("rcDias",30), saltar_jug:jug, saltar:Math.round(jug/50),
@@ -6977,10 +6998,21 @@
 
     if(modo === "pagina"){
       const pag = Math.max(1, rcNum("rcPagina",1)), por = Math.max(1, rcNum("rcPorPag",10));
-      const desde = (pag-1)*por + 1, hasta = pag*por;
+      const cuantas = Math.max(1, rcNum("rcPaginas",1));
+      const tope = Math.min(100, cuantas * por);
+      const desde = (pag-1)*por + 1, hasta = desde + tope - 1;
+      const ultima = pag + Math.ceil(tope/por) - 1;
       $("#rcPagEq").innerHTML =
         "Va a tocar a los jugadores <b>" + desde + " a " + hasta + "</b> de la lista ordenada por " +
-        "saldo de mayor a menor — la <b>página " + pag + "</b> de tu panel con " + por + " por página." +
+        "saldo de mayor a menor — " +
+        (cuantas > 1
+          ? "las <b>páginas " + pag + " a " + ultima + "</b> de tu panel, una tras otra"
+          : "la <b>página " + pag + "</b> de tu panel") +
+        " con " + por + " por página." +
+        (cuantas * por > 100
+          ? '<br><span class="rc-aviso">El tope por corrida son 100 jugadores</span>, así que de las ' +
+            cuantas + " páginas que pediste entran " + Math.floor(100/por) + ". Lanzá otra para seguir."
+          : "") +
         '<br><span class="rc-aviso">Sin filtro de inactividad:</span> se toma el orden del panel tal cual, ' +
         "así que puede alcanzar a alguien que jugó recién. Probá primero sin retirar.";
     } else {
@@ -6994,7 +7026,7 @@
   }
   document.querySelectorAll('input[name="rcModo"]').forEach(r=>
     r.addEventListener("change", rcPintarEq));
-  ["rcPagina","rcPorPag","rcSaltar","rcTope","rcDias","rcMin"].forEach(id=>
+  ["rcPagina","rcPorPag","rcPaginas","rcSaltar","rcTope","rcDias","rcMin"].forEach(id=>
     $("#"+id)?.addEventListener("input", rcPintarEq));
   rcPintarEq();
 
@@ -7071,6 +7103,28 @@
      Mostrar solo los hechos --como estaba-- deja al operador sin saber cuánto
      falta ni a quién le toca; y en una pantalla que saca plata de cuentas,
      "cuánto falta" es la pregunta. */
+  /* UNA CORRIDA QUE NO SE MUEVE HACE RATO. Si el contenedor del bot se
+     reinicia en el medio --un deploy, un docker restart-- la fila queda en
+     'procesando' para siempre: nadie la cierra y la cola no entrega otra
+     mientras haya una en curso. El CRM se quedaba mostrando "Recaudando
+     ahora" indefinidamente, sondeando cada 2 segundos, sin forma de salir.
+
+     El corte son 4 minutos sin novedades: un retiro tarda 2-4 segundos y el
+     barrido inicial del panel menos de un minuto, así que cuatro sin que se
+     mueva nada es que del otro lado no hay nadie. */
+  function rcColgada(r){
+    const t = new Date(String(r.actualizada_en || r.creada_en || "").replace(" ","T")).getTime();
+    if(!t || (Date.now() - t) < 4*60000) return "";
+    const min = Math.round((Date.now()-t)/60000);
+    return `<div class="rc-colgada">
+      <b>Esto no se mueve hace ${min} min.</b> Lo normal es que el bot se haya reiniciado
+      en el medio (un deploy, por ejemplo) y la corrida quedara abierta: mientras siga así,
+      <b>no se puede lanzar otra</b>.
+      <button class="fid-pag-b" data-rccerrar="${r.id}" type="button">Cerrarla y destrabar</button>
+      <span class="cfg-hint">No reintenta nada: lo que el bot alcanzó a retirar está arriba.</span>
+    </div>`;
+  }
+
   function rcPanelVivo(r){
     const res = r.resultado || {};
     const cola   = res.objetivo || [];
@@ -7119,6 +7173,7 @@
       </div>
       <div class="rc-vivo-body">
         <div class="rc-vivo-paso">${esc(res.paso || "Arrancando…")}</div>
+        ${rcColgada(r)}
         <div class="rc-barra${buscando?" buscando":""}"><i style="${buscando?"":"width:"+pct+"%"}"></i></div>
         ${filas ? `<div class="rc-cola">${filas}</div>` : ""}
         ${rcLog(r, res)}
@@ -7425,6 +7480,17 @@
     const id = parseInt(b.getAttribute("data-rcver"), 10);
     if(rcAbiertas.has(id)) rcAbiertas.delete(id); else rcAbiertas.add(id);
     recaudarCargar();
+  });
+
+  $("#rcVivo")?.addEventListener("click", async ev=>{
+    const b = ev.target.closest("[data-rccerrar]");
+    if(!b) return;
+    if(!confirm("¿Cerrar la corrida y destrabar la cola? No se reintenta nada: "
+              + "lo que el bot llegó a retirar ya está hecho. Sirve para poder lanzar una nueva.")) return;
+    b.disabled = true; b.textContent = "Cerrando…";
+    const d = await jpost({accion:"recaudar_cerrar", id:parseInt(b.getAttribute("data-rccerrar"),10)});
+    if(d.ok){ toast("Corrida cerrada — ya podés lanzar otra"); recaudarCargar(); }
+    else { toast(d.error || "No se pudo"); b.disabled = false; b.textContent = "Cerrarla y destrabar"; }
   });
 
   $("#rcLista")?.addEventListener("click", ev=>{

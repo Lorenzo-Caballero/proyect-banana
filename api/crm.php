@@ -2025,6 +2025,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             salir(['ok' => true, 'tramos' => $tramos, 'activa' => $activa === '1']);
         }
 
+        /* DESTRABAR UNA CORRIDA COLGADA.
+           Si el contenedor del bot se reinicia a mitad de una recaudación
+           --un deploy, un docker restart-- la fila queda en 'procesando' para
+           siempre: nadie la cierra, y la cola NO entrega otra mientras haya
+           una en curso (a propósito: dos recaudaciones en paralelo se pisan el
+           orden del listado y retiran de más). El CRM quedaba mostrando
+           "Recaudando ahora" indefinidamente y sin forma de salir de ahí que
+           no fuera un UPDATE a mano en la base. Pasó el 21/09/2026.
+
+           ESTO NO REINTENTA NADA, y es la parte importante: solo CIERRA la
+           fila para liberar la cola. El bot pudo haber retirado a la mitad de
+           la lista antes de morirse, así que volver a correrla es sacar plata
+           dos veces. Lo que se hizo queda en el resultado parcial que el bot
+           alcanzó a reportar; lo que falta, se decide mirando eso. */
+        if ($accion === 'recaudar_cerrar') {
+            exigir_admin();
+            $rid = (int)($body['id'] ?? 0);
+            if ($rid <= 0) { salir(['ok' => false, 'error' => 'Falta el id'], 400); }
+            $st = $pdo->prepare(
+                "UPDATE recaudaciones
+                    SET estado = 'error',
+                        mensaje = ?,
+                        actualizada_en = NOW()
+                  WHERE id = ? AND estado IN ('pendiente', 'procesando')"
+            );
+            $st->execute(['cerrada a mano: el bot se reinició en el medio', $rid]);
+            if (!$st->rowCount()) {
+                salir(['ok' => false, 'error' => 'Esa corrida ya no está abierta'], 409);
+            }
+            crm_bitacora($pdo, $operador, 'recaudar_cerrar', "#$rid destrabada a mano");
+            salir(['ok' => true]);
+        }
+
         if ($accion === 'recaudar_pedir') {
             exigir_admin();
             $dry  = !isset($body['si']) || !$body['si'];   // sin 'si' explicito = prueba
