@@ -1111,7 +1111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                 $filas = $pdo->query(
                     "SELECT id, estado, dry_run, dias, saltar,
                             COALESCE(saltar_jug, saltar * 50) AS saltar_jug,
-                            tope, min_saldo,
+                            tope, min_saldo, COALESCE(sin_chequeo, 0) AS sin_chequeo,
                             pedido_por, resultado, mensaje, creada_en, actualizada_en
                        FROM recaudaciones ORDER BY id DESC LIMIT 15"
                 )->fetchAll(PDO::FETCH_ASSOC);
@@ -2047,6 +2047,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $salt = (int)round($saltJug / 50);
             $tope = max(1, min(100, (int)($body['tope'] ?? 10)));
             $minS = max(0, (int)($body['min_saldo'] ?? 100));
+            /* SIN EL FILTRO DE INACTIVIDAD: la página N del panel pasa a ser
+               la página N del bot. Es lo que pidió el dueño (21/09/2026) y
+               resuelve la discrepancia que reportó -- el filtro descartaba a
+               los de arriba (que son los que acaban de cargar) y el bot seguía
+               bajando hasta juntar el cupo, terminando en saldos mucho más
+               chicos que los que él miraba en pantalla.
+               Se guarda por corrida: apagar una salvaguarda no puede ser un
+               ajuste global que alguien deja puesto sin querer. */
+            $sinChq = !empty($body['sin_chequeo']);
 
             // Una sola en vuelo: si ya hay pendiente/procesando, no apilar otra
             // (el bot las hace de a una; dos pedidos encimados confunden).
@@ -2060,9 +2069,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             try {
                 $pdo->prepare(
-                    "INSERT INTO recaudaciones (estado, dry_run, dias, saltar, saltar_jug, tope, min_saldo, pedido_por)
-                     VALUES ('pendiente', ?, ?, ?, ?, ?, ?, ?)"
-                )->execute([$dry ? 1 : 0, $dias, $salt, $saltJug, $tope, $minS, $operador]);
+                    "INSERT INTO recaudaciones (estado, dry_run, dias, saltar, saltar_jug, tope, min_saldo, sin_chequeo, pedido_por)
+                     VALUES ('pendiente', ?, ?, ?, ?, ?, ?, ?, ?)"
+                )->execute([$dry ? 1 : 0, $dias, $salt, $saltJug, $tope, $minS, $sinChq ? 1 : 0, $operador]);
             } catch (Throwable $e) {
                 // Sin la migración 72 no existe `saltar_jug`: se encola igual
                 // con el equivalente en páginas, como siempre.
@@ -2073,7 +2082,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             $id = (int)$pdo->lastInsertId();
             crm_bitacora($pdo, $operador, 'recaudar_pedir',
-                "#$id " . ($dry ? 'PRUEBA' : 'REAL') . " dias=$dias saltar=$saltJug jugadores tope=$tope min=$minS");
+                "#$id " . ($dry ? 'PRUEBA' : 'REAL') . " dias=$dias saltar=$saltJug jugadores tope=$tope min=$minS"
+                . ($sinChq ? ' SIN-FILTRO-INACTIVIDAD' : ''));
             salir(['ok' => true, 'id' => $id, 'dry_run' => $dry]);
         }
 

@@ -655,6 +655,25 @@
   .btn-peligro:hover{filter:brightness(1.08)}
   /* Vista Recaudar */
   .rc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}
+  /* Los dos modos de elegir a quién tocar. Como tarjetas y no como un select:
+     son criterios distintos --uno mira la lista del panel, el otro la
+     actividad real-- y conviene que se vea que se está eligiendo entre dos
+     cosas, no configurando un detalle. */
+  .rc-modos{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;margin-bottom:16px}
+  .rc-modo{display:flex;gap:10px;align-items:flex-start;padding:11px 13px;cursor:pointer;
+    border:1px solid var(--line);border-radius:12px;background:var(--panel2);
+    transition:border-color .12s,background .12s}
+  .rc-modo:hover{border-color:var(--line2)}
+  .rc-modo.on{border-color:var(--violet);background:var(--violetSoft)}
+  .rc-modo input{margin-top:2px;flex:0 0 auto;accent-color:var(--violet)}
+  .rc-modo b{font-size:13px;display:block}
+  .rc-modo small{color:var(--muted);font-size:11.5px;display:block;margin-top:3px;line-height:1.45}
+  /* A quién va a tocar, en números, ANTES de apretar. Es la línea que evita
+     la sorpresa de mirar una página y que el bot toque otra. */
+  .rc-eq{margin:12px 0 0;padding:9px 12px;border-radius:10px;background:var(--panel2);
+    border:1px solid var(--line);font-size:12.5px;color:var(--muted);line-height:1.6}
+  .rc-eq b{color:var(--txt)}
+  .rc-aviso{color:var(--orange2)}
   .rc-acciones{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
   .rc-lista{display:flex;flex-direction:column;gap:8px}
   .rc-row{border:1px solid var(--line);border-radius:11px;padding:10px 12px;font-size:13px}
@@ -5088,36 +5107,73 @@
 
       <div class="cb-card">
         <div class="cb-card-body">
-          <div class="rc-grid">
-            <div>
-              <label class="cb-flabel">Inactivos hace (días)</label>
-              <input class="cb-input" id="rcDias" inputmode="numeric" value="30">
-              <p class="cfg-hint">No toca a nadie que haya jugado en los últimos N días. Se mide con la actividad real, no con la posición en la lista.</p>
+          <!-- DOS FORMAS DE ELEGIR A QUIÉN, y la de arriba es la que pidió el
+               dueño (21/09/2026): "si ordeno de mayor a menor y voy a la
+               página 4, quiero que mires esos montos". Es la misma lista que
+               el panel, sin traducir nada. -->
+          <div class="rc-modos">
+            <label class="rc-modo on">
+              <input type="radio" name="rcModo" value="pagina" checked>
+              <span><b>Por página del panel</b><small>La misma lista que ves en ganamos, ordenada por saldo</small></span>
+            </label>
+            <label class="rc-modo">
+              <input type="radio" name="rcModo" value="inactivos">
+              <span><b>Por inactividad</b><small>Solo a los que hace tiempo no juegan, saltando los de más saldo</small></span>
+            </label>
+          </div>
+
+          <!-- modo PÁGINA -->
+          <div id="rcModoPagina">
+            <div class="rc-grid">
+              <div>
+                <label class="cb-flabel">Página del panel</label>
+                <input class="cb-input" id="rcPagina" inputmode="numeric" value="4">
+                <p class="cfg-hint">La misma página que estás mirando en ganamos, con el saldo ordenado
+                de mayor a menor.</p>
+              </div>
+              <div>
+                <label class="cb-flabel">Jugadores por página</label>
+                <input class="cb-input" id="rcPorPag" inputmode="numeric" value="10">
+                <p class="cfg-hint">El «Mostrar en la página» de tu panel. Si ahí dice 10, poné 10.</p>
+              </div>
+              <div>
+                <label class="cb-flabel">Saldo mínimo</label>
+                <input class="cb-input" id="rcMin" inputmode="numeric" value="1">
+                <p class="cfg-hint">No tocar saldos menores a esto.</p>
+              </div>
             </div>
-            <div>
-              <label class="cb-flabel">Saltear los de más saldo</label>
-              <input class="cb-input" id="rcSaltar" inputmode="numeric" value="200">
-              <p class="cfg-hint">Cantidad de <b>jugadores</b> a dejar afuera, empezando por el que más saldo
-              tiene: los de arriba suelen ser los que acaban de cargar.
-              <span id="rcSaltarEq"></span></p>
+            <!-- A QUIÉN VA A TOCAR, en números, antes de apretar nada. -->
+            <p class="rc-eq" id="rcPagEq"></p>
+          </div>
+
+          <!-- modo INACTIVIDAD (el de antes) -->
+          <div id="rcModoInactivos" style="display:none">
+            <div class="rc-grid">
+              <div>
+                <label class="cb-flabel">Inactivos hace (días)</label>
+                <input class="cb-input" id="rcDias" inputmode="numeric" value="30">
+                <p class="cfg-hint">No toca a nadie que haya jugado en los últimos N días. Se mide con la actividad real, no con la posición en la lista.</p>
+              </div>
+              <div>
+                <label class="cb-flabel">Saltear los de más saldo</label>
+                <input class="cb-input" id="rcSaltar" inputmode="numeric" value="200">
+                <p class="cfg-hint">Cantidad de <b>jugadores</b> a dejar afuera, empezando por el que más saldo
+                tiene. <span id="rcSaltarEq"></span></p>
+              </div>
+              <div>
+                <label class="cb-flabel">Máximo de retiros</label>
+                <input class="cb-input" id="rcTope" inputmode="numeric" value="10">
+                <p class="cfg-hint">Tope por corrida. Un freno de daño.</p>
+              </div>
             </div>
-            <div>
-              <label class="cb-flabel">Máximo de retiros</label>
-              <input class="cb-input" id="rcTope" inputmode="numeric" value="10">
-              <p class="cfg-hint">Tope por corrida. Un freno de daño.</p>
-            </div>
-            <div>
-              <label class="cb-flabel">Saldo mínimo</label>
-              <input class="cb-input" id="rcMin" inputmode="numeric" value="100">
-              <p class="cfg-hint">No tocar saldos menores a esto.</p>
-            </div>
+            <p class="rc-eq" id="rcInaEq"></p>
           </div>
           <div class="rc-acciones">
             <button class="btn-sec" id="rcProbar" type="button">Probar (no retira)</button>
             <button class="btn-peligro" id="rcRecaudar" type="button">Recaudar de verdad</button>
           </div>
           <p class="cfg-hint" style="margin-top:6px">
-            <b>Probar</b> deja una corrida en seco: el bot lista a quién tocaría y cuánto, sin retirar. Miralo abajo antes de recaudar de verdad.
+            <b>Probar</b> deja una corrida en seco: el bot lista a quién tocaría y cuánto, sin retirar. Miralo antes de recaudar de verdad.
           </p>
         </div>
       </div>
@@ -6876,37 +6932,80 @@
   /* ===================== RECAUDAR (saldo inactivos) =====================
      El CRM encola el pedido; el bot del VPS lo ejecuta contra el panel. Esta
      vista solo pide y muestra el estado -- no toca plata directamente. */
+  const rcNum = (id, def) => {
+    const el = $("#"+id); if(!el) return def;
+    const v = parseInt((el.value||"").trim(), 10);
+    return isNaN(v) ? def : v;
+  };
+  function rcModo(){
+    const r = document.querySelector('input[name="rcModo"]:checked');
+    return r ? r.value : "pagina";
+  }
+
   function rcParams(){
-    const n = (id, def) => { const v = parseInt(($("#"+id).value||"").trim(),10); return isNaN(v)?def:v; };
-    /* `saltar_jug` es lo que el operador escribe (jugadores). `saltar` va
-       igual, en páginas de 50, porque el bot se despliega aparte: uno viejo
-       que no conozca el campo nuevo tiene que hacer lo más parecido posible
-       en vez de saltar 0 -- y tocar justo a los que más saldo tienen, que es
-       lo contrario de lo que se pidió. */
-    const jug = n("rcSaltar", 200);
-    return { dias:n("rcDias",30), saltar_jug:jug, saltar:Math.round(jug/50),
-             tope:n("rcTope",10), min_saldo:n("rcMin",100) };
+    /* `saltar_jug` es lo que el operador eligió, en JUGADORES. `saltar` va
+       igual en páginas de 50 porque el bot se despliega aparte: uno viejo que
+       no conozca el campo nuevo tiene que hacer lo más parecido posible en vez
+       de saltar 0 -- y tocar justo a los que más saldo tienen, que es lo
+       contrario de lo que se pidió. */
+    if(rcModo() === "pagina"){
+      /* POR PÁGINA DEL PANEL. "Voy a la página 4" = saltear las 3 anteriores
+         y tomar esa. SIN el filtro de inactividad: con él, los de arriba --que
+         son los que acaban de cargar-- se caen y el bot sigue bajando hasta
+         juntar el cupo, terminando en saldos mucho más chicos que los que el
+         operador está mirando. Esa era exactamente la discrepancia. */
+      const pag = Math.max(1, rcNum("rcPagina", 1));
+      const por = Math.max(1, rcNum("rcPorPag", 10));
+      const salt = (pag - 1) * por;
+      return { dias:1, saltar_jug:salt, saltar:Math.round(salt/50),
+               tope:por, min_saldo:rcNum("rcMin",1), sin_chequeo:true };
+    }
+    const jug = rcNum("rcSaltar", 200);
+    return { dias:rcNum("rcDias",30), saltar_jug:jug, saltar:Math.round(jug/50),
+             tope:rcNum("rcTope",10), min_saldo:rcNum("rcMin",1), sin_chequeo:false };
   }
-  /* LA EQUIVALENCIA EN PAGINAS DEL PANEL, escrita al lado. El operador mira
-     el panel --que muestra de a 10 por página por default-- y necesita poder
-     traducir: "200 jugadores" son sus primeras 20 páginas. Sin esto, los dos
-     números no se pueden comparar y es exactamente la confusión que hubo. */
-  function rcSaltarEq(){
-    const el = $("#rcSaltarEq"); if(!el) return;
-    const j = parseInt(($("#rcSaltar").value||"").trim(), 10);
-    if(isNaN(j) || j <= 0){ el.textContent = " No saltea a nadie: empieza por el de más saldo."; return; }
-    el.innerHTML = " Son las primeras <b>" + Math.ceil(j/10) + "</b> páginas del panel si lo tenés " +
-                   "en 10 por página, o <b>" + Math.ceil(j/50) + "</b> si lo tenés en 50.";
+
+  /* LO QUE VA A PASAR, EN NÚMEROS, ANTES DE APRETAR. Es la línea que evita la
+     sorpresa de mirar una página del panel y que el bot toque otra -- que es
+     justo lo que pasó. */
+  function rcPintarEq(){
+    const modo = rcModo();
+    $("#rcModoPagina").style.display   = modo==="pagina"    ? "" : "none";
+    $("#rcModoInactivos").style.display= modo==="inactivos" ? "" : "none";
+    document.querySelectorAll(".rc-modo").forEach(l=>
+      l.classList.toggle("on", l.querySelector("input").checked));
+
+    if(modo === "pagina"){
+      const pag = Math.max(1, rcNum("rcPagina",1)), por = Math.max(1, rcNum("rcPorPag",10));
+      const desde = (pag-1)*por + 1, hasta = pag*por;
+      $("#rcPagEq").innerHTML =
+        "Va a tocar a los jugadores <b>" + desde + " a " + hasta + "</b> de la lista ordenada por " +
+        "saldo de mayor a menor — la <b>página " + pag + "</b> de tu panel con " + por + " por página." +
+        '<br><span class="rc-aviso">Sin filtro de inactividad:</span> se toma el orden del panel tal cual, ' +
+        "así que puede alcanzar a alguien que jugó recién. Probá primero sin retirar.";
+    } else {
+      const jug = rcNum("rcSaltar",200), tope = rcNum("rcTope",10), dias = rcNum("rcDias",30);
+      $("#rcInaEq").innerHTML =
+        "Saltea los <b>" + nf.format(jug) + "</b> de más saldo y de ahí para abajo toma hasta <b>" +
+        tope + "</b> que no jueguen hace <b>" + dias + "+ días</b>." +
+        "<br>Ojo: como descarta a los que jugaron hace poco, los que toque pueden tener " +
+        "bastante menos saldo que los que ves en esa altura del panel.";
+    }
   }
-  $("#rcSaltar")?.addEventListener("input", rcSaltarEq);
-  rcSaltarEq();
+  document.querySelectorAll('input[name="rcModo"]').forEach(r=>
+    r.addEventListener("change", rcPintarEq));
+  ["rcPagina","rcPorPag","rcSaltar","rcTope","rcDias","rcMin"].forEach(id=>
+    $("#"+id)?.addEventListener("input", rcPintarEq));
+  rcPintarEq();
 
   async function recaudarPedir(deVerdad){
     const p = rcParams();
     if(deVerdad){
       const ok = await confirmarPeligro({
         titulo:"¿Recaudar de verdad?",
-        sub:`Va a retirar el saldo de hasta ${p.tope} jugador(es) inactivos hace ${p.dias}+ días.`,
+        sub: p.sin_chequeo
+          ? `Va a retirar el saldo de hasta ${p.tope} jugador(es): los de la página ${rcNum("rcPagina",1)} del panel, SIN mirar si juegan o no.`
+          : `Va a retirar el saldo de hasta ${p.tope} jugador(es) inactivos hace ${p.dias}+ días.`,
         nota:"Esto <b>saca plata de cuentas de jugadores</b> en el panel. Es irreversible. Probá primero sin retirar si tenés dudas.",
         boton:"Sí, recaudar"
       });
@@ -7306,7 +7405,9 @@
           <span><b>#${r.id}</b> · ${modo} · ${esc(r.pedido_por||"?")} · ${horaExacta(r.creada_en)}</span>
           <span class="rc-badge ${r.estado}">${r.estado}</span>
         </div>
-        <div class="cfg-hint" style="margin-top:2px">inactivos ${r.dias}+ días · saltea ${nf.format(r.saltar_jug != null ? r.saltar_jug : (r.saltar||0)*50)} de más saldo · máx ${r.tope} · mín ${rcPlata(r.min_saldo)}</div>
+        <div class="cfg-hint" style="margin-top:2px">${r.sin_chequeo
+            ? `por orden del panel (saltea ${nf.format(r.saltar_jug != null ? r.saltar_jug : (r.saltar||0)*50)}, sin filtro de inactividad)`
+            : `inactivos ${r.dias}+ días · saltea ${nf.format(r.saltar_jug != null ? r.saltar_jug : (r.saltar||0)*50)} de más saldo`} · máx ${r.tope} · mín ${rcPlata(r.min_saldo)}</div>
         ${det}
       </div>`;
     }).join("");

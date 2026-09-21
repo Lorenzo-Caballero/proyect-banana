@@ -80,13 +80,14 @@ try {
             $fila = $pdo->query(
                 "SELECT id, dry_run, dias, saltar,
                         COALESCE(saltar_jug, saltar * 50) AS saltar_jug,
-                        tope, min_saldo, pedido_por
+                        tope, min_saldo, COALESCE(sin_chequeo, 0) AS sin_chequeo,
+                        pedido_por
                    FROM recaudaciones WHERE id=" . (int)$id
             )->fetch(PDO::FETCH_ASSOC);
         } catch (Throwable $e) {
             $fila = $pdo->query(
                 "SELECT id, dry_run, dias, saltar, (saltar * 50) AS saltar_jug,
-                        tope, min_saldo, pedido_por
+                        tope, min_saldo, 0 AS sin_chequeo, pedido_por
                    FROM recaudaciones WHERE id=" . (int)$id
             )->fetch(PDO::FETCH_ASSOC);
         }
@@ -98,6 +99,7 @@ try {
             'dias'      => (int)$fila['dias'],
             'saltar'    => (int)$fila['saltar'],
             'saltar_jug'=> (int)$fila['saltar_jug'],
+            'sin_chequeo'=> (int)($fila['sin_chequeo'] ?? 0) === 1,
             'tope'      => (int)$fila['tope'],
             'min_saldo' => (int)$fila['min_saldo'],
             'pedido_por'=> (string)($fila['pedido_por'] ?? ''),
