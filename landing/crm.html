@@ -682,6 +682,64 @@
   .rc-vermas{background:none;border:0;color:var(--violet);font:600 12px inherit;
     cursor:pointer;padding:7px 0 0;text-decoration:underline}
   .rc-vermas:hover{color:var(--violet2)}
+  /* ================== EL PANEL "RECAUDANDO AHORA" ==================
+     Va ARRIBA y aparte de la lista de corridas: mientras esto pasa, es lo
+     unico que el operador esta mirando -- y lo que mira es plata saliendo de
+     cuentas de jugadores, de a una. Como una fila mas de un historial se
+     perdia entre las anteriores.
+
+     LA COLA SE MUESTRA ENTERA desde el arranque (el bot manda `objetivo`, o
+     sea a quienes va a tocar, antes del primer retiro) y cada uno se va
+     marcando. Mostrar solo los ya hechos --como estaba-- deja al operador sin
+     saber cuanto falta ni a quien le toca despues. */
+  .rc-vivo-panel{border:1px solid var(--green);border-radius:14px;background:var(--panel2);
+    padding:0;margin-bottom:14px;overflow:hidden;
+    box-shadow:0 0 0 3px rgba(47,208,122,.07)}
+  .rc-vivo-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+    padding:13px 16px;border-bottom:1px solid var(--line);background:rgba(47,208,122,.05)}
+  .rc-vivo-tit{font-weight:800;font-size:14px;display:flex;align-items:center;gap:8px}
+  .rc-vivo-modo{font:700 10.5px inherit;padding:2px 9px;border-radius:999px;
+    background:var(--panel3);color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+  .rc-vivo-cont{margin-left:auto;display:flex;gap:18px;align-items:baseline;flex-wrap:wrap}
+  .rc-vivo-cifra{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums}
+  .rc-vivo-cifra small{font-size:11.5px;font-weight:600;color:var(--muted);margin-left:4px}
+  .rc-vivo-body{padding:13px 16px 15px}
+  .rc-vivo-paso{font-size:12.5px;color:var(--muted);margin:2px 0 9px}
+
+  /* La cola, una fila por jugador. `grid` y no flex: los importes tienen que
+     quedar en la misma columna para poder leerlos de un vistazo. */
+  .rc-cola{display:flex;flex-direction:column;gap:1px;max-height:330px;overflow:auto;
+    margin-top:4px;border-radius:9px}
+  .rc-f{display:grid;grid-template-columns:18px 1fr auto;gap:10px;align-items:center;
+    padding:7px 10px;font-size:12.5px;border-radius:7px}
+  .rc-f .n{font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--txt)}
+  .rc-f .u{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rc-f .ic{width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:12px}
+  /* En espera: recesivo a proposito -- esta ahi para decir "cuantos faltan",
+     no para competir con el que se esta procesando. */
+  .rc-f.espera{color:var(--muted2)}
+  .rc-f.espera .n{color:var(--muted2)}
+  .rc-f.ok{color:var(--txt)}
+  .rc-f.ok .ic{color:var(--green)}
+  .rc-f.mal{background:var(--redSoft)}
+  .rc-f.mal .ic,.rc-f.mal .n,.rc-f.mal .u{color:var(--red)}
+  .rc-f-err{grid-column:2/-1;font-size:11px;color:var(--red);opacity:.85;margin-top:1px}
+  /* EL QUE SE ESTA RETIRANDO AHORA. Es la fila que el operador busca con la
+     vista, asi que se marca con fondo, borde y el spinner -- no solo color. */
+  .rc-f.ahora{background:rgba(47,208,122,.1);box-shadow:inset 0 0 0 1px rgba(47,208,122,.35)}
+  .rc-f.ahora .u{font-weight:700;color:var(--txt)}
+  .rc-f.ahora .n{color:var(--green2)}
+  .rc-spin{width:13px;height:13px;border-radius:50%;border:2px solid rgba(47,208,122,.25);
+    border-top-color:var(--green);animation:rcGira .7s linear infinite}
+  @keyframes rcGira{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){
+    .rc-spin{animation:none;border-top-color:rgba(47,208,122,.25)}
+  }
+  /* Entrada suave al pasar de "espera" a "ahora": marca el cambio sin que el
+     ojo tenga que volver a buscar la fila. */
+  @keyframes rcEntra{from{opacity:.45}to{opacity:1}}
+  .rc-f.ahora,.rc-f.ok,.rc-f.mal{animation:rcEntra .3s ease both}
+
   /* --- progreso en vivo --- */
   .rc-prog{margin-top:9px}
   .rc-prog-top{display:flex;justify-content:space-between;gap:10px;align-items:baseline;
@@ -5004,6 +5062,26 @@
         </div>
       </div>
 
+      <!-- Mismo patrón que Fidelización: operar y medir son momentos
+           distintos. El panel EN VIVO queda fuera de las pestañas a propósito
+           -- si estás mirando los gráficos y arranca una recaudación, tenés
+           que verla igual. -->
+      <div class="fid-tabs">
+        <button class="fid-tab on" data-rctab="operar" type="button">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v14M6 10l6 6 6-6"/><path d="M4 21h16"/></svg>
+          Recaudar
+        </button>
+        <button class="fid-tab" data-rctab="ana" type="button">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="6"/><rect x="13" y="7" width="3" height="10"/></svg>
+          Analítica <span class="n" id="rcTabN">—</span>
+        </button>
+      </div>
+
+      <!-- Aparece SOLO mientras una corrida está en curso. Va antes de todo
+           lo demás: mientras pasa, es lo único que se está mirando. -->
+      <div id="rcVivo"></div>
+
+      <div id="rcOperar">
       <!-- Lo recaudado hasta hoy, arriba de los controles: antes había que
            sumar de memoria las corridas de la lista para saberlo. -->
       <div class="us-cards" id="rcCards"></div>
@@ -5046,6 +5124,64 @@
         <div class="cb-card-head"><b>Últimas recaudaciones</b></div>
         <div class="cb-card-body">
           <div id="rcLista" class="rc-lista"><p class="cfg-hint">—</p></div>
+        </div>
+      </div>
+      </div><!-- /#rcOperar -->
+
+      <!-- ===================== ANALÍTICA ===================== -->
+      <div id="rcAna" class="fid-dat" style="display:none">
+        <div class="fid-controles">
+          <label>Período
+            <select id="rcAnaDias">
+              <option value="30">30 días</option>
+              <option value="90" selected>90 días</option>
+              <option value="365">1 año</option>
+            </select>
+          </label>
+          <span class="cfg-hint" style="flex:1;min-width:220px;align-self:center;line-height:1.5">
+            Solo corridas <b>reales</b>: las pruebas no mueven un peso y se cuentan aparte.
+          </span>
+        </div>
+
+        <div class="fid-hero" id="rcAnaHero"></div>
+        <div class="us-cards" id="rcAnaCards"></div>
+
+        <div class="cb-card" style="margin-top:14px">
+          <div class="cb-card-body fid-graf">
+            <div class="fid-graf-tit">Lo recaudado, día por día</div>
+            <div class="fid-graf-sub" id="rcAnaSerieSub">Cuánto entró en cada jornada de recaudación.</div>
+            <div class="fid-cols" id="rcAnaSerie"></div>
+            <div class="fid-col-eje" id="rcAnaSerieEje"></div>
+          </div>
+        </div>
+
+        <div class="cb-card" style="margin-top:12px">
+          <div class="cb-card-body fid-graf">
+            <div class="fid-graf-tit">Por qué fallan los retiros</div>
+            <div class="fid-graf-sub">Los que el panel no aceptó, agrupados por causa. Es lo que se puede arreglar.</div>
+            <div class="fid-bars" id="rcAnaMotivos"></div>
+          </div>
+        </div>
+
+        <div class="cb-card" style="margin-top:12px">
+          <div class="cb-card-head"><b>Corrida por corrida</b>
+            <span class="cfg-hint" id="rcAnaCap"></span></div>
+          <div class="cb-card-body">
+            <div style="overflow-x:auto">
+              <table class="fid-q">
+                <thead><tr><th>#</th><th>Cuándo</th><th>Retirados</th><th>Fallaron</th>
+                  <th>Éxito</th><th>Recaudado</th><th>Filtros</th></tr></thead>
+                <tbody id="rcAnaTabla"></tbody>
+              </table>
+            </div>
+            <div class="fid-pag" id="rcAnaPag" style="display:none">
+              <span class="fid-pag-info" id="rcAnaPagInfo"></span>
+              <div class="fid-pag-btns">
+                <button class="fid-pag-b" id="rcAnaPrev" type="button">‹ Anteriores</button>
+                <button class="fid-pag-b" id="rcAnaNext" type="button">Siguientes ›</button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -6767,15 +6903,26 @@
      corridas ilegible: lo que se busca acá es el resumen de cada una, y el
      detalle completo se pide cuando hace falta. */
   const RC_POR_TANDA = 20;
+
+  /* LOS CENTAVOS SE MUESTRAN CUANDO IMPORTAN. La corrida #11 retiró saldos de
+     $17,55 y redondear a "$18" no es un detalle estético: sobre cien
+     jugadores el redondeo mueve el total, y ese total se compara contra el
+     panel. Arriba de $1.000 los centavos son ruido y se van. */
+  function rcPlata(n){
+    n = +n || 0;
+    const dec = (Math.abs(n) < 1000 && Math.round(n) !== +n.toFixed(2)) ? 2 : 0;
+    return "$" + n.toLocaleString("es-AR", {minimumFractionDigits:dec, maximumFractionDigits:dec});
+  }
   const rcAbiertas = new Set();   // qué corridas están expandidas
   /* Qué logs están abiertos. Un id NEGATIVO marca "lo cerré a mano": hace
      falta porque el log con errores se abre solo, y sin esa marca el próximo
      sondeo lo volvería a abrir encima del operador que acaba de cerrarlo. */
   const rcLogs = new Set();
   let rcHayCorrida = false;   // ¿hay algo corriendo? (lo usa el sondeo)
+  let rcTrabajaba = false;    // ¿lo había en el sondeo anterior?
 
-  /* EL PROCESO, MIENTRAS PASA (pedido del dueño, 21/09/2026: "que se vea
-     reflejado en el momento, retiro por retiro"). El bot reporta cada paso a
+  /* EL PROCESO, MIENTRAS PASA (pedido del dueño, 21/09/2026: "que en vivo
+     muestre retiro por retiro"). El bot reporta cada paso a
      recaudar_cola.php?accion=avance y eso llega en el mismo `resultado` que
      trae el cierre: `fase` dice si esto es un avance o el final. */
   function rcProgreso(r, res){
@@ -6792,6 +6939,67 @@
         <span class="cfg-hint">${de ? hechos + " de " + de : ""}</span>
       </div>
       <div class="rc-barra${indet?" buscando":""}"><i style="${indet?"":"width:"+pct+"%"}"></i></div>
+    </div>`;
+  }
+
+  /* EL PANEL «RECAUDANDO AHORA»: la cola ENTERA, marcándose de a una.
+     El bot manda `objetivo` (a quiénes va a tocar) antes del primer retiro y
+     `detalle` con los ya resueltos, en el mismo orden. Cruzarlos da, para
+     cada jugador, uno de cuatro estados: hecho, falló, EN CURSO, o esperando.
+     Mostrar solo los hechos --como estaba-- deja al operador sin saber cuánto
+     falta ni a quién le toca; y en una pantalla que saca plata de cuentas,
+     "cuánto falta" es la pregunta. */
+  function rcPanelVivo(r){
+    const res = r.resultado || {};
+    const cola   = res.objetivo || [];
+    const hechos = res.detalle  || [];
+    const de = cola.length || (res.de|0);
+    const listo = hechos.length;
+    const pct = de ? Math.round(listo*100/de) : 0;
+    const buscando = (res.fase === "buscando") || (!cola.length && !listo);
+    const recaudado = +res.total || 0;
+    const fallados = res.fallados|0;
+
+    const filas = cola.length ? cola.map((j, i)=>{
+      const h = hechos[i];
+      let cls, ic, extra = "";
+      if(h){
+        const bien = h.ok !== false;
+        cls = bien ? "ok" : "mal";
+        ic  = bien ? "✓" : "✕";
+        // El motivo del fallo, en la fila: es lo que se necesita para saber si
+        // fue el WAF, la sesión o el saldo — sin abrir el log.
+        if(!bien && h.detalle) extra = `<span class="rc-f-err">${esc(h.detalle)}</span>`;
+      } else if(i === listo){
+        cls = "ahora"; ic = '<span class="rc-spin"></span>';
+      } else {
+        cls = "espera"; ic = "·";
+      }
+      return `<div class="rc-f ${cls}">
+        <span class="ic">${ic}</span>
+        <span class="u">${esc(j.usuario)}</span>
+        <span class="n">${rcPlata(j.saldo)}</span>
+        ${extra}
+      </div>`;
+    }).join("") : "";
+
+    return `<div class="rc-vivo-panel">
+      <div class="rc-vivo-head">
+        <span class="rc-vivo-tit"><span class="rc-vivo"></span>
+          ${buscando ? "Buscando jugadores…" : (r.dry_run ? "Probando" : "Recaudando ahora")}</span>
+        <span class="rc-vivo-modo">${r.dry_run ? "prueba" : "real"}</span>
+        <span class="rc-vivo-cont">
+          ${de ? `<span class="rc-vivo-cifra">${listo}<small>de ${de}</small></span>` : ""}
+          ${recaudado ? `<span class="rc-vivo-cifra" style="color:var(--green2)">${rcPlata(recaudado)}<small>recaudados</small></span>` : ""}
+          ${fallados ? `<span class="rc-vivo-cifra" style="color:var(--red)">${fallados}<small>fallaron</small></span>` : ""}
+        </span>
+      </div>
+      <div class="rc-vivo-body">
+        <div class="rc-vivo-paso">${esc(res.paso || "Arrancando…")}</div>
+        <div class="rc-barra${buscando?" buscando":""}"><i style="${buscando?"":"width:"+pct+"%"}"></i></div>
+        ${filas ? `<div class="rc-cola">${filas}</div>` : ""}
+        ${rcLog(r, res)}
+      </div>
     </div>`;
   }
 
@@ -6814,6 +7022,166 @@
            '<span class="pt"></span>' + (abierto ? "Ocultar" : "Ver") + ' el detalle técnico' +
            (hayError ? " · hay errores" : "") + ' (' + lineas.length + ')</button>' + cuerpo;
   }
+
+  /* ====================== ANALITICA DE RECAUDACION ======================
+     Pedido del dueño (21/09/2026): "añadí una pestaña para mostrar gráficos
+     de cuánto fue lo recaudado y un analytics".
+
+     EL NUMERO QUE FALTABA ES LA TASA DE EXITO. La corrida #11 retiró 70 y
+     fallaron 30: ese 30% no estaba en ningún lado -- había que contar los
+     "no salió" a ojo en una lista de cien. Y los motivos agrupados dicen qué
+     se puede arreglar; treinta fallos sin causa, no.
+     ====================================================================== */
+  let rcAna = null, rcAnaPag = 1;
+  const RC_ANA_POR_PAG = 20;
+
+  function rcTab(cual){
+    document.querySelectorAll("[data-rctab]").forEach(b=>
+      b.classList.toggle("on", b.getAttribute("data-rctab")===cual));
+    $("#rcOperar").style.display = cual==="operar" ? "" : "none";
+    $("#rcAna").style.display    = cual==="ana"    ? "" : "none";
+    if(cual==="ana" && !rcAna) rcAnaCargar();
+  }
+  document.querySelectorAll("[data-rctab]").forEach(b=>
+    b.addEventListener("click", ()=>rcTab(b.getAttribute("data-rctab"))));
+
+  async function rcAnaCargar(){
+    const dias = parseInt($("#rcAnaDias").value, 10) || 90;
+    $("#rcAnaHero").innerHTML = '<span class="cfg-hint">Calculando…</span>';
+    let d;
+    try{ d = await jget({accion:"recaudar_analitica", dias:dias}); }
+    catch(e){ $("#rcAnaHero").innerHTML = '<span class="cfg-hint">No se pudo calcular.</span>'; return; }
+    rcAna = d; rcAnaPag = 1;
+    rcAnaPintar();
+  }
+
+  function rcAnaPintar(){
+    const d = rcAna || {}, r = d.resumen || {};
+    const hay = (r.corridas|0) > 0;
+    $("#rcTabN").textContent = hay ? "$" + nf.format(Math.round(r.monto||0)) : "—";
+
+    if(!hay){
+      $("#rcAnaHero").className = "fid-hero vacia";
+      $("#rcAnaHero").innerHTML =
+        '<div><div class="fid-hero-lbl">Recaudado</div><div class="fid-hero-num">—</div></div>' +
+        '<div class="fid-hero-sub">Todavía no hubo ninguna recaudación real en este período' +
+        ((r.pruebas|0) ? ' (sí ' + r.pruebas + ' prueba' + ((r.pruebas|0)>1?'s':'') + ', que no mueven plata)' : '') +
+        '.</div>';
+    } else {
+      /* La tasa de éxito acompaña al monto en el hero y no en una tarjeta
+         suelta: "recaudé $X" y "de cada 10 intentos entraron 7" son la misma
+         noticia, y separarlas deja leer la buena sin la mala. */
+      const malo = (r.exito||0) < 80;
+      $("#rcAnaHero").className = "fid-hero";
+      $("#rcAnaHero").innerHTML =
+        '<div><div class="fid-hero-lbl">Recaudado</div>' +
+        '<div class="fid-hero-num">$' + nf.format(Math.round(r.monto||0)) + '</div></div>' +
+        '<div class="fid-hero-sub">En <b>' + nf.format(r.corridas) + '</b> corrida' + (r.corridas>1?'s':'') +
+        ', <b>' + nf.format(r.retiros) + '</b> retiro' + (r.retiros===1?'':'s') + ' que entraron' +
+        ((r.fallados|0) ? ' y <span style="color:var(--red)"><b>' + nf.format(r.fallados) + '</b> que no</span>' : '') +
+        '. Sale <b' + (malo ? ' style="color:var(--d-warn)"' : '') + '>' +
+        String(r.exito).replace(".",",") + '%</b> de lo intentado.' +
+        (malo ? ' Mirá abajo por qué fallan.' : '') +
+        '</div>';
+    }
+
+    $("#rcAnaCards").innerHTML = [
+      { k:"Retiros que entraron", v:nf.format(r.retiros||0), cls:"green" },
+      { k:"Fallaron",   v:nf.format(r.fallados||0), cls:(r.fallados|0)?"red":"" },
+      { k:"Promedio por retiro", v:"$" + nf.format(Math.round(r.ticket||0)) },
+      { k:"Mejor corrida", v:r.mayor ? "$" + nf.format(Math.round(r.mayor.monto)) : "—",
+        t:r.mayor ? ("Fue la #" + r.mayor.id) : "" },
+      { k:"Pruebas",    v:nf.format(r.pruebas||0), t:"Corridas en seco: no movieron plata" },
+    ].map(x=>'<div class="us-stat ' + (x.cls||"") + '" title="' + esc(x.t||"") + '">' +
+             '<div class="k">' + esc(x.k) + '</div><div class="v">' + x.v + '</div></div>').join("");
+
+    rcAnaSerie(d.serie||[]);
+    rcAnaMotivos(d.motivos||[], r);
+    rcAnaTabla();
+  }
+
+  /* Columnas por día. La altura es la PLATA (que es la pregunta del gráfico);
+     los retiros y los fallos van en el tooltip, no como segunda serie: dos
+     magnitudes distintas en el mismo eje no se pueden comparar. */
+  function rcAnaSerie(serie){
+    const cont = $("#rcAnaSerie"), eje = $("#rcAnaSerieEje");
+    if(!serie.length){
+      cont.innerHTML = '<p class="fid-vacio" style="width:100%">Sin recaudaciones reales en el período.</p>';
+      eje.innerHTML = ""; return;
+    }
+    const max = Math.max(...serie.map(x=>+x.monto||0), 1);
+    cont.innerHTML = serie.map(x=>{
+      const h = Math.round((+x.monto||0)*100/max);
+      const t = x.dia + ": $" + nf.format(Math.round(x.monto)) + " · " + x.retiros + " retiro(s)" +
+                (x.fallados ? " · " + x.fallados + " fallaron" : "");
+      return '<div class="fid-col" title="' + esc(t) + '">' +
+             '<span class="fid-col-n">$' + nf.format(Math.round(x.monto)) + '</span>' +
+             '<div class="fid-col-bar" style="height:' + Math.max(h,2) + '%;background:var(--d-ok)"></div></div>';
+    }).join("");
+    // Solo día y mes: la fecha entera no entra en una columna de 30px.
+    eje.innerHTML = serie.map(x=>'<span>' + x.dia.slice(8,10) + "/" + x.dia.slice(5,7) + '</span>').join("");
+    const tot = serie.reduce((a,b)=>a+(+b.monto||0),0);
+    $("#rcAnaSerieSub").innerHTML = "Cuánto entró en cada jornada de recaudación. " +
+      "<b>" + serie.length + "</b> día" + (serie.length>1?"s":"") + " con actividad, " +
+      "<b>$" + nf.format(Math.round(tot)) + "</b> en total.";
+  }
+
+  function rcAnaMotivos(motivos, r){
+    const cont = $("#rcAnaMotivos");
+    if(!motivos.length){
+      cont.innerHTML = '<p class="fid-vacio">' +
+        ((r.retiros|0) ? "Ningún retiro falló en este período. 👌" : "Todavía no hay retiros que analizar.") +
+        '</p>';
+      return;
+    }
+    const max = Math.max(...motivos.map(m=>m.n|0), 1);
+    const tot = motivos.reduce((a,b)=>a+(b.n|0),0);
+    cont.innerHTML = motivos.map(m=>{
+      const pct = Math.round((m.n|0)*100/max);
+      return '<div class="fid-bar" title="' + esc(m.motivo + ": " + m.n) + '">' +
+        '<div class="fid-bar-lbl" style="text-align:left;white-space:normal">' + esc(m.motivo) + '</div>' +
+        '<div class="fid-bar-track"><div class="fid-bar-fill" style="width:' + pct + '%;background:var(--red)"></div></div>' +
+        '<div class="fid-bar-val">' + nf.format(m.n) + '<small> · ' + Math.round((m.n|0)*100/tot) + '%</small></div>' +
+      '</div>';
+    }).join("");
+  }
+
+  function rcAnaTabla(){
+    const cs = (rcAna && rcAna.corridas) || [];
+    const paginas = Math.max(1, Math.ceil(cs.length / RC_ANA_POR_PAG));
+    if(rcAnaPag > paginas) rcAnaPag = paginas;
+    if(rcAnaPag < 1) rcAnaPag = 1;
+    const desde = (rcAnaPag-1)*RC_ANA_POR_PAG;
+    const pagina = cs.slice(desde, desde + RC_ANA_POR_PAG);
+    $("#rcAnaCap").textContent = cs.length ? cs.length + (cs.length===1?" corrida":" corridas") : "";
+    if(!cs.length){
+      $("#rcAnaTabla").innerHTML = '<tr><td colspan="7"><p class="fid-vacio">Sin corridas reales.</p></td></tr>';
+      $("#rcAnaPag").style.display = "none"; return;
+    }
+    $("#rcAnaTabla").innerHTML = pagina.map(c=>{
+      const malo = c.exito < 80;
+      return '<tr>' +
+        '<td data-label="#" class="u">#' + c.id + '</td>' +
+        '<td data-label="Cuándo">' + fidHace(c.cuando) + '</td>' +
+        '<td data-label="Retirados">' + nf.format(c.retiros) + '</td>' +
+        '<td data-label="Fallaron"' + (c.fallados ? ' style="color:var(--red)"' : '') + '>' +
+          (c.fallados ? nf.format(c.fallados) : "—") + '</td>' +
+        '<td data-label="Éxito"' + (malo ? ' style="color:var(--d-warn)"' : '') + '>' +
+          String(c.exito).replace(".",",") + '%</td>' +
+        '<td data-label="Recaudado">$' + nf.format(Math.round(c.monto)) + '</td>' +
+        '<td data-label="Filtros"><span class="cfg-hint">' + c.dias + '+ días · mín $' + nf.format(c.min_saldo) + '</span></td>' +
+      '</tr>';
+    }).join("");
+    $("#rcAnaPag").style.display = paginas > 1 ? "" : "none";
+    if(paginas > 1){
+      $("#rcAnaPagInfo").textContent = (desde+1) + "–" + (desde+pagina.length) + " de " + cs.length;
+      $("#rcAnaPrev").disabled = rcAnaPag <= 1;
+      $("#rcAnaNext").disabled = rcAnaPag >= paginas;
+    }
+  }
+  $("#rcAnaPrev")?.addEventListener("click", ()=>{ rcAnaPag--; rcAnaTabla(); });
+  $("#rcAnaNext")?.addEventListener("click", ()=>{ rcAnaPag++; rcAnaTabla(); });
+  $("#rcAnaDias")?.addEventListener("change", rcAnaCargar);
 
   async function recaudarCargar(){
     let d;
@@ -6838,6 +7206,40 @@
     const rs = (d && d.recaudaciones) || [];
     // Lo mira el sondeo de la vista para acelerar mientras algo corre.
     rcHayCorrida = rs.some(r=> r.estado==="procesando" || r.estado==="pendiente");
+
+    /* El panel EN VIVO, arriba de todo. Se pinta aparte de la lista: mientras
+       una corrida pasa es lo único que se está mirando. */
+    const vivo = $("#rcVivo");
+    const enCurso = rs.find(r=> r.estado==="procesando");
+    const esperando = rs.find(r=> r.estado==="pendiente");
+    if(vivo){
+      if(enCurso)        vivo.innerHTML = rcPanelVivo(enCurso);
+      else if(esperando) vivo.innerHTML =
+        `<div class="rc-vivo-panel"><div class="rc-vivo-head">
+           <span class="rc-vivo-tit"><span class="rc-vivo"></span>Esperando al bot…</span>
+           <span class="rc-vivo-modo">${esperando.dry_run ? "prueba" : "real"}</span></div>
+         <div class="rc-vivo-body"><div class="rc-vivo-paso">
+           El pedido #${esperando.id} está encolado. El bot lo toma en los próximos segundos.
+         </div><div class="rc-barra buscando"><i></i></div></div></div>`;
+      else vivo.innerHTML = "";
+    }
+
+    /* Con algo corriendo, los botones se apagan: la cola no entrega dos
+       recaudaciones a la vez, así que un segundo click no hace nada salvo
+       confundir al que lo aprieta. */
+    /* Si veníamos de una corrida y ya no hay ninguna, la analítica que estaba
+       cacheada se quedó vieja: se tira para que se recalcule al abrir la
+       pestaña. */
+    if(rcTrabajaba && !enCurso && !esperando){ rcAna = null; }
+    rcTrabajaba = !!(enCurso || esperando);
+
+    const trabajando = !!(enCurso || esperando);
+    ["#rcProbar", "#rcRecaudar"].forEach(sel=>{
+      const b = $(sel); if(!b) return;
+      b.disabled = trabajando;
+      b.title = trabajando ? "Hay una recaudación en curso" : "";
+      b.style.opacity = trabajando ? ".45" : "";
+    });
     if(!rs.length){ cont.innerHTML = '<p class="cfg-hint">Todavía no hay recaudaciones.</p>'; return; }
 
     cont.innerHTML = rs.map(r=>{
@@ -6846,23 +7248,26 @@
       let det = "";
       if(r.estado==="error"){
         det = `<div class="rc-det">✕ ${esc(r.mensaje||"error")}</div>`;
-      } else if(r.estado==="procesando" && res && res.fase && !(res.detalle||[]).length
-                && !(res.objetivo||[]).length){
-        // Buscando: todavía no hay a quién mostrar, pero sí qué está haciendo.
-        det = `<div class="rc-det">${rcProgreso(r, res)}</div>`;
+      } else if(r.estado==="procesando" || r.estado==="pendiente"){
+        /* En el historial va una línea y nada más: el detalle completo está
+           en el panel de arriba, y repetirlo acá sería la misma corrida dos
+           veces en la misma pantalla. */
+        det = `<div class="rc-det"><span class="cfg-hint">` +
+              (r.estado==="pendiente" ? "Encolada, esperando al bot." : "En curso — mirala arriba.") +
+              `</span></div>`;
       } else if(res && (res.objetivo || res.detalle)){
         const lista = r.dry_run ? (res.objetivo||[]) : (res.detalle||[]);
         const tot   = r.dry_run ? (res.total_objetivo||0) : (res.total||0);
         const cab = r.dry_run
-          ? `Tocaría a <b>${lista.length}</b> jugador(es) · <b>$${nf.format(tot)}</b>`
-          : `Retirados <b>${res.retirados||0}</b> · <b>$${nf.format(tot)}</b>` +
+          ? `Tocaría a <b>${lista.length}</b> jugador(es) · <b>${rcPlata(tot)}</b>`
+          : `Retirados <b>${res.retirados||0}</b> · <b>${rcPlata(tot)}</b>` +
             (res.fallados ? ` · <span style="color:var(--red)">${res.fallados} fallaron</span>` : "");
         const abierta = rcAbiertas.has(r.id);
         const ver = abierta ? lista : lista.slice(0, RC_POR_TANDA);
         const items = ver.map(x=>{
           const mal = (!r.dry_run && x.ok===false);
           return `<span class="rc-j${mal?" mal":""}"><b>${esc(x.usuario)}</b>` +
-                 `<span class="m">$${nf.format(x.saldo||0)}${mal?" · no salió":""}</span></span>`;
+                 `<span class="m">${rcPlata(x.saldo)}${mal?" · no salió":""}</span></span>`;
         }).join("");
         const restan = lista.length - ver.length;
         det = `<div class="rc-det">${rcProgreso(r, res)}<div class="rc-det-cab">${cab}</div>` +
@@ -6872,11 +7277,6 @@
                 : (abierta && lista.length > RC_POR_TANDA
                     ? `<button class="rc-vermas" data-rcver="${r.id}" type="button">Ver menos</button>` : "")) +
               rcLog(r, res) + `</div>`;
-      } else if(r.estado==="procesando" || r.estado==="pendiente"){
-        /* Sin avance todavía: el bot la reclamó pero aún no reportó nada (o es
-           una versión vieja del bot, que solo escribía al terminar). */
-        det = `<div class="rc-det"><div class="rc-prog-paso"><span class="rc-vivo"></span>` +
-              (r.estado==="pendiente" ? "Esperando al bot…" : "Arrancando…") + `</div></div>`;
       }
       return `<div class="rc-row">
         <div class="rc-top">

@@ -158,6 +158,55 @@ chequear('mientras busca la barra es indeterminada (no inventa un %)',
 chequear('y el sondeo acelera mientras algo corre',
          str_contains($crm, 'rcHayCorrida ? 2000 : 8000'));
 
+// ===========================================================================
+echo "
+=== 7. El panel muestra la COLA ENTERA, no solo lo hecho ===
+";
+/* Mostrar solo los ya retirados deja al operador sin saber cuánto falta ni a
+   quién le toca -- y en una pantalla que saca plata de cuentas, "cuánto
+   falta" es la pregunta. El bot manda `objetivo` antes del primer retiro. */
+chequear('el bot manda la lista completa antes de empezar',
+         (bool)preg_match('/reporte\["objetivo"\][\s\S]{0,900}?_avisar\(reporte,/',
+                          file_get_contents(__DIR__ . '/bot/bot_recaudar.py')),
+         'sin `objetivo` en el avance, la pantalla no puede mostrar la cola');
+chequear('la pantalla cruza objetivo con detalle', str_contains($crm, 'res.objetivo || []'));
+chequear('y marca al que se está retirando AHORA',
+         str_contains($crm, 'i === listo') && str_contains($crm, 'rc-spin'));
+chequear('los que esperan se ven, pero recesivos',
+         str_contains($crm, 'cls = "espera"'));
+chequear('el motivo del fallo va en la fila, sin abrir el log',
+         str_contains($crm, 'rc-f-err'));
+chequear('con una corrida en curso los botones se apagan',
+         str_contains($crm, 'b.disabled = trabajando'));
+
+// ===========================================================================
+echo "
+=== 8. Los centavos no se redondean cuando importan ===
+";
+/* La corrida #11 retiró saldos de $17,55: redondear a $18 sobre cien
+   jugadores mueve el total, y ese total se compara contra el panel. */
+chequear('hay una función de plata propia', str_contains($crm, 'function rcPlata('));
+chequear('con decimales abajo de $1.000', str_contains($crm, 'Math.abs(n) < 1000'));
+chequear('y el panel en vivo la usa', str_contains($crm, 'rcPlata(j.saldo)'));
+
+// ===========================================================================
+echo "
+=== 9. La analítica de lo recaudado ===
+";
+$crmphp = file_get_contents(__DIR__ . '/api/crm.php');
+chequear('existe el endpoint', str_contains($crmphp, "\$accion === 'recaudar_analitica'"));
+chequear('las PRUEBAS no suman plata (no movieron un peso)',
+         str_contains($crmphp, "if ((int)\$r['dry_run'] === 1) { \$out['resumen']['pruebas']++; continue; }"));
+/* EL NUMERO QUE FALTABA: la corrida #11 retiró 70 y fallaron 30, y ese 30%
+   no estaba en ningún lado -- había que contar los "no salió" a ojo. */
+chequear('calcula la tasa de éxito', str_contains($crmphp, "\$out['resumen']['exito']"));
+chequear('y agrupa los fallos POR CAUSA (30 fallos sin motivo no se arreglan)',
+         str_contains($crmphp, "El WAF del panel desafió"));
+chequear('la pestaña de analítica existe', str_contains($crm, 'data-rctab="ana"'));
+chequear('con el gráfico de lo recaudado por día', str_contains($crm, 'function rcAnaSerie('));
+chequear('y el de por qué fallan', str_contains($crm, 'function rcAnaMotivos('));
+chequear('la tasa baja se marca en la pantalla', str_contains($crm, '(r.exito||0) < 80'));
+
 $pdo->exec("DELETE FROM recaudaciones WHERE pedido_por = 'tstvivo'");
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);
 exit($fail > 0 ? 1 : 0);

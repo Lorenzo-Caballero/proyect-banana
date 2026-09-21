@@ -1152,6 +1152,123 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             salir(['ok' => true, 'recaudaciones' => $filas, 'totales' => $tot]);
         }
 
+        /* ANALITICA DE RECAUDACION (21/09/2026): cuanto se recaudo, en que
+           corridas, y --lo que de verdad importa-- CUANTAS SALIERON. La
+           corrida #11 retiro 70 y fallaron 30: ese 30% no se veia en ningun
+           numero, habia que contar los "no salio" a ojo en la lista.
+
+           Todo sale del JSON `resultado` que ya guarda cada corrida, asi que
+           no hace falta tabla nueva: se recorren las corridas reales y se
+           agregan en PHP. Son decenas de filas, no millones.
+
+           Las PRUEBAS quedan afuera de la plata (no movieron un peso) pero se
+           cuentan aparte: saber cuantas veces se probo antes de ejecutar dice
+           algo sobre como se usa la pantalla. */
+        if ($accion === 'recaudar_analitica') {
+            $dias = max(1, min(365, (int)($_GET['dias'] ?? 90)));
+            $out = ['ok' => true, 'dias' => $dias,
+                    'resumen' => ['monto' => 0.0, 'retiros' => 0, 'fallados' => 0,
+                                  'corridas' => 0, 'pruebas' => 0, 'exito' => 0.0,
+                                  'ticket' => 0.0, 'mayor' => null],
+                    'serie' => [], 'corridas' => [], 'motivos' => []];
+            try {
+                $q = $pdo->prepare(
+                    "SELECT id, dry_run, estado, resultado, dias AS dias_inact,
+                            min_saldo, pedido_por, creada_en
+                       FROM recaudaciones
+                      WHERE creada_en >= DATE_SUB(NOW(), INTERVAL $dias DAY)
+                      ORDER BY id ASC"
+                );
+                $q->execute();
+                $porDia  = [];
+                $motivos = [];
+                foreach ($q as $r) {
+                    $res = $r['resultado'] ? json_decode((string)$r['resultado'], true) : null;
+                    if ((int)$r['dry_run'] === 1) { $out['resumen']['pruebas']++; continue; }
+                    if (!is_array($res)) { continue; }
+
+                    $ret  = (int)($res['retirados'] ?? 0);
+                    $fall = (int)($res['fallados'] ?? 0);
+                    $mon  = (float)($res['total'] ?? 0);
+                    $out['resumen']['corridas']++;
+                    $out['resumen']['retiros']  += $ret;
+                    $out['resumen']['fallados'] += $fall;
+                    $out['resumen']['monto']    += $mon;
+
+                    $dia = substr((string)$r['creada_en'], 0, 10);
+                    if (!isset($porDia[$dia])) { $porDia[$dia] = ['monto' => 0.0, 'retiros' => 0, 'fallados' => 0]; }
+                    $porDia[$dia]['monto']    += $mon;
+                    $porDia[$dia]['retiros']  += $ret;
+                    $porDia[$dia]['fallados'] += $fall;
+
+                    /* POR QUE FALLAN. Es el dato accionable: 30 "no salio" sin
+                       motivo no se pueden arreglar; agrupados por causa, si.
+                       El texto del bot se normaliza a un puñado de familias --
+                       si no, cada mensaje con un id adentro seria su propia
+                       "causa" y la lista tendria 30 entradas de 1. */
+                    foreach (($res['detalle'] ?? []) as $d) {
+                        if (($d['ok'] ?? true) !== false) { continue; }
+                        $txt = mb_strtolower(trim((string)($d['detalle'] ?? '')));
+                        if ($txt === '') { $txt = 'sin motivo'; }
+                        if (str_contains($txt, 'challenge') || str_contains($txt, 'waf')) {
+                            $k = 'El WAF del panel desafió la petición';
+                        } elseif (str_contains($txt, 'insufficient') || str_contains($txt, 'saldo')) {
+                            $k = 'Saldo insuficiente en la cuenta';
+                        } elseif (str_contains($txt, 'timeout') || str_contains($txt, 'timed out')) {
+                            $k = 'El panel no respondió a tiempo';
+                        } elseif (str_contains($txt, '401') || str_contains($txt, 'sesion') || str_contains($txt, 'sesión')) {
+                            $k = 'Sesión del panel caída';
+                        } elseif (preg_match('/status[^0-9]*([0-9]+)/', $txt, $m)) {
+                            $k = 'La plataforma rechazó (status ' . $m[1] . ')';
+                        } else {
+                            $k = mb_substr((string)($d['detalle'] ?? ''), 0, 70);
+                        }
+                        $motivos[$k] = ($motivos[$k] ?? 0) + 1;
+                    }
+
+                    $out['corridas'][] = [
+                        'id'        => (int)$r['id'],
+                        'cuando'    => (string)$r['creada_en'],
+                        'retiros'   => $ret,
+                        'fallados'  => $fall,
+                        'monto'     => round($mon, 2),
+                        'dias'      => (int)$r['dias_inact'],
+                        'min_saldo' => (int)$r['min_saldo'],
+                        'por'       => (string)($r['pedido_por'] ?? ''),
+                        'exito'     => ($ret + $fall) ? round($ret * 100 / ($ret + $fall), 1) : 0,
+                    ];
+                    if ($out['resumen']['mayor'] === null
+                        || $mon > $out['resumen']['mayor']['monto']) {
+                        $out['resumen']['mayor'] = ['id' => (int)$r['id'], 'monto' => round($mon, 2)];
+                    }
+                }
+
+                $intentos = $out['resumen']['retiros'] + $out['resumen']['fallados'];
+                $out['resumen']['exito']  = $intentos
+                    ? round($out['resumen']['retiros'] * 100 / $intentos, 1) : 0;
+                $out['resumen']['ticket'] = $out['resumen']['retiros']
+                    ? round($out['resumen']['monto'] / $out['resumen']['retiros'], 2) : 0;
+                $out['resumen']['monto']  = round($out['resumen']['monto'], 2);
+
+                ksort($porDia);
+                foreach ($porDia as $d => $v) {
+                    $out['serie'][] = ['dia' => $d, 'monto' => round($v['monto'], 2),
+                                       'retiros' => $v['retiros'], 'fallados' => $v['fallados']];
+                }
+                arsort($motivos);
+                foreach ($motivos as $k => $n) {
+                    $out['motivos'][] = ['motivo' => $k, 'n' => $n];
+                }
+                $out['motivos'] = array_slice($out['motivos'], 0, 8);
+                // Más nuevas primero para la tabla.
+                $out['corridas'] = array_reverse($out['corridas']);
+            } catch (Throwable $e) {
+                error_log('recaudar_analitica: ' . $e->getMessage());
+                $out['ok'] = false;
+            }
+            salir($out);
+        }
+
         // ---- campaña de fidelizacion (vista Fidelizacion del CRM) ----
         // Config + numeros de rendimiento. Sin la migracion 65 degrada a
         // stats vacias para que la vista abra igual.
