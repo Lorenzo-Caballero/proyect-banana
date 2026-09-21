@@ -681,6 +681,105 @@
   .fid-dias{font-size:11px;color:var(--muted)}
   .fid-extra{font-size:11px;margin-top:2px;color:var(--orange)}
   .fid-alcance{font-size:10.5px;margin-top:3px;color:var(--muted2)}
+  /* ====================== FIDELIZACION: seguimiento ======================
+     Los colores de DATOS no son los tokens del CRM y eso es a proposito: los
+     semanticos (--green #2fd07a) son para texto y chips sobre el panel, y como
+     marca de dato sobre el fondo oscuro quedan fuera de la banda de luminosidad
+     que mantiene legible un grafico (OKLCH L 0.48-0.67 en modo oscuro). Estos
+     son el MISMO tono, un paso mas oscuro, y pasan los seis chequeos de la
+     guia de visualizacion contra la superficie #16161a: banda, croma,
+     separacion para daltonismo (deltaE 16.7 deutan) y contraste >= 3:1.
+     Si algun dia se cambian, hay que volver a correr el validador. */
+  .fid-dat{--d-ok:#27af66;--d-info:#599ad5;--d-warn:#c6861c;--d-track:#232329}
+
+  /* Pestañas: la pantalla hacia dos trabajos distintos (configurar la campaña
+     y medirla) en un scroll unico de metro y medio. */
+  .fid-tabs{display:flex;gap:4px;padding:0 16px;border-bottom:1px solid var(--line);margin-bottom:14px}
+  .fid-tab{background:none;border:0;border-bottom:2px solid transparent;color:var(--muted);
+    font:700 13px inherit;padding:10px 14px;cursor:pointer;display:flex;align-items:center;gap:7px}
+  .fid-tab:hover{color:var(--txt)}
+  .fid-tab.on{color:var(--txt);border-bottom-color:var(--violet)}
+  .fid-tab .n{background:var(--panel3);color:var(--muted);border-radius:999px;
+    font-size:10.5px;font-weight:700;padding:1px 7px}
+  .fid-tab.on .n{background:var(--violetSoft);color:var(--txt)}
+
+  /* El numero que contesta la pregunta de la pantalla. Va solo y grande: si
+     compite con otros cinco, deja de ser la respuesta. */
+  .fid-hero{display:flex;flex-wrap:wrap;align-items:center;gap:20px;
+    background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin:0 16px 12px}
+  .fid-hero-num{font-size:44px;font-weight:800;line-height:1;letter-spacing:-.02em;color:var(--d-ok)}
+  .fid-hero-lbl{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+  .fid-hero-sub{color:var(--muted);font-size:12.5px;line-height:1.5;flex:1;min-width:220px}
+  .fid-hero-sub b{color:var(--txt)}
+  .fid-hero.vacia .fid-hero-num{color:var(--muted2)}
+
+  .fid-controles{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;padding:0 16px 12px}
+  .fid-controles label{display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--muted)}
+  .fid-controles select{background:var(--panel2);border:1px solid var(--line);color:var(--txt);
+    border-radius:9px;padding:7px 10px;font:inherit;font-size:12.5px}
+
+  /* --- graficos --- */
+  .fid-graf{padding:14px 16px}
+  .fid-graf-tit{font-size:13px;font-weight:700;margin-bottom:2px}
+  .fid-graf-sub{font-size:11.5px;color:var(--muted);margin-bottom:12px;line-height:1.5}
+
+  /* Barras horizontales: la etiqueta es texto ("7 días sin jugar"), y en
+     vertical se solapa o se rota. En horizontal se lee. */
+  .fid-bars{display:flex;flex-direction:column;gap:9px}
+  .fid-bar{display:grid;grid-template-columns:104px 1fr 86px;gap:10px;align-items:center}
+  .fid-bar-lbl{font-size:12px;color:var(--txt);text-align:right;white-space:nowrap}
+  .fid-bar-lbl small{display:block;color:var(--muted2);font-size:10px}
+  /* El track ES el total de avisados: la barra llena se lee como parte del
+     todo sin necesidad de una segunda serie de color. */
+  .fid-bar-track{background:var(--d-track);border-radius:5px;height:22px;position:relative;overflow:hidden}
+  .fid-bar-fill{height:100%;border-radius:0 5px 5px 0;background:var(--d-ok);
+    transition:width .5s cubic-bezier(.2,.8,.2,1);min-width:2px}
+  .fid-bar.cero .fid-bar-fill{background:var(--d-track)}
+  .fid-bar-val{font-size:12.5px;font-weight:700;white-space:nowrap}
+  .fid-bar-val small{color:var(--muted);font-weight:400;font-size:11px}
+  .fid-bar:hover .fid-bar-track{outline:1px solid var(--line2)}
+  /* El escalon que mas convierte, marcado: es la accion que sale de mirar
+     esto ("dejá el de 3 días, sacá el de 8"). */
+  .fid-bar.top .fid-bar-val{color:var(--d-ok)}
+
+  /* Columnas: a los cuantos dias vuelven. */
+  .fid-cols{display:flex;align-items:flex-end;gap:6px;height:130px;padding-top:18px}
+  .fid-col{flex:1;min-width:22px;display:flex;flex-direction:column;justify-content:flex-end;
+    align-items:center;height:100%;position:relative}
+  .fid-col-bar{width:100%;background:var(--d-info);border-radius:4px 4px 0 0;min-height:2px;
+    transition:height .5s cubic-bezier(.2,.8,.2,1)}
+  .fid-col.vacio .fid-col-bar{background:var(--d-track);min-height:4px}
+  .fid-col-n{position:absolute;top:-16px;font-size:11px;font-weight:700;color:var(--txt)}
+  .fid-col.vacio .fid-col-n{color:var(--muted2);font-weight:400}
+  .fid-col:hover .fid-col-bar{filter:brightness(1.15)}
+  .fid-col-eje{display:flex;gap:6px;margin-top:6px}
+  .fid-col-eje span{flex:1;min-width:22px;text-align:center;font-size:10px;color:var(--muted)}
+
+  /* --- tabla de quienes --- */
+  .fid-q-filtros{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+  .fid-chip{background:var(--panel2);border:1px solid var(--line);color:var(--muted);
+    border-radius:999px;padding:5px 12px;font:600 11.5px inherit;cursor:pointer}
+  .fid-chip:hover{color:var(--txt)}
+  .fid-chip.on{background:var(--violetSoft);border-color:var(--line2);color:var(--txt)}
+  .fid-q{width:100%;border-collapse:collapse;font-size:12.5px}
+  .fid-q th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;
+    color:var(--muted);font-weight:700;padding:7px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+  .fid-q td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+  .fid-q tr:last-child td{border-bottom:0}
+  .fid-q tr:hover td{background:var(--panel2)}
+  .fid-q .u{font-weight:700}
+  /* El punto de color repite lo que dice la palabra al lado: quien no
+     distingue el verde lee "Volvió" igual. */
+  .fid-pt{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:middle}
+  .fid-si{color:var(--d-ok)} .fid-si .fid-pt{background:var(--d-ok)}
+  .fid-no{color:var(--muted)} .fid-no .fid-pt{background:var(--muted2)}
+  .fid-esp{color:var(--d-warn)} .fid-esp .fid-pt{background:var(--d-warn)}
+
+  .fid-vacio{text-align:center;color:var(--muted);font-size:12.5px;padding:26px 16px;line-height:1.6}
+  @media (max-width:720px){
+    .fid-bar{grid-template-columns:82px 1fr 70px;gap:7px}
+    .fid-hero-num{font-size:34px}
+  }
   .fid-editor{border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-top:4px}
   .fid-cab,.fid-fila{display:grid;grid-template-columns:30px 150px 120px 1fr 44px;gap:8px;align-items:center;padding:9px 12px}
   .fid-cab{background:var(--panel2);font:700 10.5px inherit;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
@@ -4489,10 +4588,25 @@
       <div class="cb-head">
         <div>
           <h2>Campaña de fidelización</h2>
-          <p class="cb-sub">Al jugador que deja de jugar se le promete solo un % extra sobre su próxima carga — push en el celular + mensaje del chat — y el bono se acredita automáticamente cuando transfiere. Cuanto más tiempo sin jugar, más grande el bono.</p>
+          <p class="cb-sub">Al jugador que deja de jugar se le promete un % extra sobre su próxima carga — push en el celular + mensaje del chat — y el bono se acredita solo cuando transfiere. Cuanto más tiempo sin jugar, más grande el bono.</p>
         </div>
       </div>
 
+      <!-- DOS TRABAJOS, DOS PESTAÑAS. Configurar la campaña y medirla son
+           momentos distintos: antes estaban apilados en un scroll de metro y
+           medio y los números quedaban al final, después del editor. -->
+      <div class="fid-tabs">
+        <button class="fid-tab on" data-fidtab="config" type="button">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          Configuración
+        </button>
+        <button class="fid-tab" data-fidtab="segui" type="button">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+          Seguimiento <span class="n" id="fidTabN">—</span>
+        </button>
+      </div>
+
+      <div id="fidCfg">
       <div class="cfg-card">
         <div class="cfg-card-head">
           <span class="cb-ico"><svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></span>
@@ -4573,14 +4687,79 @@
         </div>
       </div>
 
-      <div class="us-cards" id="fidCards"></div>
+      </div><!-- /#fidCfg -->
 
-      <div class="cb-card">
-        <div class="cb-card-head"><b>Últimos avisos enviados</b></div>
-        <div class="cb-card-body">
-          <div id="fidUltimos" class="rc-lista"><p class="cfg-hint">—</p></div>
+      <!-- ===================== SEGUIMIENTO ===================== -->
+      <div id="fidSegui" class="fid-dat" style="display:none">
+
+        <div class="fid-controles">
+          <label>Rachas de los últimos
+            <select id="fidAnaDias">
+              <option value="7">7 días</option>
+              <option value="30" selected>30 días</option>
+              <option value="90">90 días</option>
+              <option value="365">1 año</option>
+            </select>
+          </label>
+          <label>Se le da crédito al aviso por
+            <select id="fidAnaVent">
+              <option value="3">3 días</option>
+              <option value="7">7 días</option>
+              <option value="14" selected>14 días</option>
+              <option value="30">30 días</option>
+            </select>
+          </label>
+          <span class="cfg-hint" style="flex:1;min-width:220px;align-self:center;line-height:1.5">
+            Si el jugador carga dentro de ese plazo desde el primer aviso, la vuelta
+            se cuenta como respuesta a la campaña.
+          </span>
         </div>
-      </div>
+
+        <div class="fid-hero" id="fidHero"></div>
+
+        <div class="us-cards" id="fidCards"></div>
+
+        <div class="cb-card" style="margin-top:14px">
+          <div class="cb-card-body fid-graf">
+            <div class="fid-graf-tit">Qué escalón los hace volver</div>
+            <div class="fid-graf-sub">De cada escalón, qué parte de los avisados terminó cargando.
+              Se cuenta en el escalón <b>más alto</b> que alcanzó a recibir.</div>
+            <div class="fid-bars" id="fidGrafEsc"></div>
+          </div>
+        </div>
+
+        <div class="cb-card" style="margin-top:12px">
+          <div class="cb-card-body fid-graf">
+            <div class="fid-graf-tit">A los cuántos días vuelven</div>
+            <div class="fid-graf-sub" id="fidGrafDiasSub">Cuánto tarda en cargar el que responde, contado desde el primer aviso.</div>
+            <div class="fid-cols" id="fidGrafDias"></div>
+            <div class="fid-col-eje" id="fidGrafDiasEje"></div>
+          </div>
+        </div>
+
+        <div class="cb-card" style="margin-top:12px">
+          <div class="cb-card-head"><b>Quién respondió</b>
+            <span class="cfg-hint" id="fidQCap"></span></div>
+          <div class="cb-card-body">
+            <div class="fid-q-filtros">
+              <button class="fid-chip on" data-fidq="todos" type="button">Todos</button>
+              <button class="fid-chip" data-fidq="si" type="button">Volvieron</button>
+              <button class="fid-chip" data-fidq="esp" type="button">Todavía esperando</button>
+              <button class="fid-chip" data-fidq="no" type="button">No volvieron</button>
+            </div>
+            <div style="overflow-x:auto">
+              <table class="fid-q">
+                <thead><tr>
+                  <th>Jugador</th><th>Escalón</th><th>Bono</th>
+                  <th>Avisado</th><th>Volvió</th><th>Tardó</th><th>Cargó</th>
+                </tr></thead>
+                <tbody id="fidQBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /#fidSegui -->
     </div>
   </div>
 
@@ -6027,25 +6206,230 @@
     fidPintarTramos(); fidPintarTimeline(); fidPrever();
     fidPintarMotor(d.ultima_pasada || "");
 
-    const s = d.stats || {};
-    const alcTotal = Object.values(fidAlcance).reduce((a,b)=>a+(+b||0), 0);
-    $("#fidCards").innerHTML = [
-      { k:"Califican hoy",     v:nf.format(alcTotal),            cls:"" },
-      { k:"Avisos (30 días)",  v:nf.format(s.avisos_30d||0),     cls:"" },
-      { k:"Bonos cobrados",    v:nf.format(s.bonos_cobrados||0), cls:"gold" },
-      { k:"Giros regalados",   v:nf.format(s.giros_dados||0),    cls:"gold" },
-    ].map(x=>`<div class="us-stat ${x.cls}"><div class="k">${esc(x.k)}</div><div class="v">${x.v}</div></div>`).join("");
-
-    const u = s.ultimos || [];
-    $("#fidUltimos").innerHTML = u.length ? u.map(a=>`
-      <div class="rc-row">
-        <div class="rc-top">
-          <span><b>${esc(a.usuario)}</b> · ${a.dias} días sin jugar → <b>+${a.pct}%</b>${a.ruleta==1?" + 🎰":""}</span>
-          <span class="cfg-hint">${esc(String(a.enviado_en||"")).slice(0,16)}</span>
-        </div>
-      </div>`).join("")
-    : '<p class="cfg-hint">Todavía no se mandó ningún aviso.</p>';
+    /* Los numeros de la campaña viven en la pestaña Seguimiento; aca solo
+       queda lo que hace falta para CONFIGURARLA. `fidEstado` se guarda para
+       que el seguimiento pueda mezclar el alcance de hoy con su analitica. */
+    fidEstado = d;
   }
+
+  /* ======================================================================
+     SEGUIMIENTO DE LA CAMPAÑA (18/09/2026)
+     "Un analytic que vaya siguiendo que usuario respondio, la tasa de
+     conversion y un promedio de a que dia vuelven a activarse."
+
+     TRES PIEZAS, y cada una contesta UNA pregunta:
+       el hero    -> ¿sirve? (tasa de conversion, y nada compitiendo al lado)
+       las barras -> ¿que escalon sirve? (el accionable: cual dejar, cual sacar)
+       la columna -> ¿cuando vuelven? (si el empujon pega al toque o tarda)
+
+     Los graficos son HTML+CSS, no SVG ni una libreria: son barras y columnas,
+     el CRM no tiene build, y asi heredan los tokens del tema sin un runtime
+     mas que mantener.
+     ====================================================================== */
+  let fidEstado = null;
+  let fidAna = null;
+  let fidQFiltro = "todos";
+
+  function fidTab(cual){
+    document.querySelectorAll("[data-fidtab]").forEach(b=>
+      b.classList.toggle("on", b.getAttribute("data-fidtab")===cual));
+    $("#fidCfg").style.display   = cual==="config" ? "" : "none";
+    $("#fidSegui").style.display = cual==="segui"  ? "" : "none";
+    // La analitica cruza los avisos contra TODAS las cargas: se pide cuando
+    // se la mira, no cada vez que alguien abre la pantalla a tocar un escalon.
+    if(cual==="segui" && !fidAna) fidAnaCargar();
+  }
+  document.querySelectorAll("[data-fidtab]").forEach(b=>
+    b.addEventListener("click", ()=>fidTab(b.getAttribute("data-fidtab"))));
+
+  /** "hace 3 días" / "hace 2 h", como lo diría una persona. */
+  function fidHace(iso){
+    if(!iso) return "—";
+    const t = new Date(String(iso).replace(" ","T")).getTime();
+    if(!t) return esc(String(iso).slice(0,16));
+    const min = Math.round((Date.now()-t)/60000);
+    if(min < 60)   return "hace " + Math.max(1,min) + " min";
+    if(min < 2880) return "hace " + Math.round(min/60) + " h";
+    return "hace " + Math.round(min/1440) + " días";
+  }
+  /** Los días con coma, pero "1 día" y no "1.0 días" — y en HORAS abajo de un
+      día, que es como lo diría una persona ("volvió a las 3 horas"). */
+  function fidDias(n){
+    if(n===null || n===undefined) return "—";
+    if(n < 1){
+      const h = Math.max(1, Math.round(n*24));
+      return h + (h===1 ? " hora" : " horas");
+    }
+    const v = Math.round(n*10)/10;
+    return (Number.isInteger(v) ? v : v.toFixed(1).replace(".",",")) + (v===1 ? " día" : " días");
+  }
+
+  async function fidAnaCargar(){
+    const dias = parseInt($("#fidAnaDias").value,10) || 30;
+    const vent = parseInt($("#fidAnaVent").value,10) || 14;
+    $("#fidHero").innerHTML = '<span class="cfg-hint">Calculando…</span>';
+    let d;
+    try{ d = await jget({accion:"fid_analitica", dias:dias, ventana:vent}); }
+    catch(e){ $("#fidHero").innerHTML = '<span class="cfg-hint">No se pudo calcular.</span>'; return; }
+    fidAna = d;
+    fidPintarAna();
+  }
+
+  function fidPintarAna(){
+    const d = fidAna || {};
+    const r = d.resumen || {rachas:0, volvieron:0, tasa:0, en_curso:0, monto:0,
+                            dias_prom:null, dias_med:null, ticket:0};
+    const hayDatos = (r.rachas|0) > 0;
+    $("#fidTabN").textContent = hayDatos ? r.tasa + "%" : "—";
+
+    /* EL HERO. Sin datos NO se muestra un 0% --que se lee como "la campaña
+       fracasó"-- sino que todavía no hay nada que medir, que es otra cosa. */
+    if(!hayDatos){
+      $("#fidHero").className = "fid-hero vacia";
+      $("#fidHero").innerHTML =
+        '<div><div class="fid-hero-lbl">Tasa de respuesta</div><div class="fid-hero-num">—</div></div>' +
+        '<div class="fid-hero-sub">Todavía no se mandó ningún aviso en este período. ' +
+        'Cuando la campaña corra, acá vas a ver qué parte de los avisados volvió a cargar.</div>';
+    } else {
+      const cerradas = (r.rachas|0) - (r.en_curso|0);
+      $("#fidHero").className = "fid-hero";
+      $("#fidHero").innerHTML =
+        '<div><div class="fid-hero-lbl">Tasa de respuesta</div>' +
+        '<div class="fid-hero-num">' + String(r.tasa).replace(".",",") + '%</div></div>' +
+        '<div class="fid-hero-sub"><b>' + nf.format(r.volvieron) + '</b> de <b>' + nf.format(r.rachas) +
+        '</b> jugadores avisados volvieron a cargar' +
+        (r.dias_med!==null ? ', normalmente <b>' + fidDias(r.dias_med) + '</b> después del aviso' : '') + '.' +
+        ((r.en_curso|0) > 0
+          ? ' <span style="color:var(--d-warn)">' + nf.format(r.en_curso) + ' todavía están dentro del plazo</span> ' +
+            '— la tasa real sobre los ' + nf.format(cerradas) + ' cerrados es ' +
+            '<b>' + (cerradas ? Math.round(r.volvieron*1000/cerradas)/10 : 0).toString().replace(".",",") + '%</b>.'
+          : '') +
+        '</div>';
+    }
+
+    /* Las tarjetas: el contexto que NO va en el hero. "Califican hoy" sale del
+       estado de la campaña (cuánta gente está enfriada ahora), no de la
+       analítica: es lo que va a pasar, no lo que pasó. */
+    const alc = fidEstado ? Object.values(fidEstado.alcance||{}).reduce((a,b)=>a+(+b||0),0) : 0;
+    const st  = (fidEstado && fidEstado.stats) || {};
+    $("#fidCards").innerHTML = [
+      { k:"Califican hoy",      v:nf.format(alc),                       t:"Jugadores que ahora mismo están en alguna banda de inactividad" },
+      { k:"Vuelven en",         v:fidDias(r.dias_med),                  t:"Mediana: el jugador típico. El promedio es " + fidDias(r.dias_prom) },
+      { k:"Recuperado",         v:"$" + nf.format(Math.round(r.monto)), cls:"green", t:"Lo que cargaron los que volvieron, dentro del plazo" },
+      { k:"Carga promedio",     v:"$" + nf.format(Math.round(r.ticket)),t:"Por jugador que volvió" },
+      { k:"Bonos cobrados",     v:nf.format(st.bonos_cobrados||0),      cls:"gold", t:"Bonos de la campaña que una carga terminó aplicando" },
+    ].map(x=>'<div class="us-stat ' + (x.cls||"") + '" title="' + esc(x.t||"") + '">' +
+             '<div class="k">' + esc(x.k) + '</div><div class="v">' + x.v + '</div></div>').join("");
+
+    fidPintarEscalones(d.por_escalon||[]);
+    fidPintarDias(d.dist_dias||[], r);
+    fidPintarQuienes();
+  }
+
+  /* BARRAS HORIZONTALES. El track es el total de avisados y el relleno los que
+     volvieron: se lee la parte y el todo sin una segunda serie de color. El
+     número va al lado (etiqueta directa), así el color nunca es el único
+     portador del dato. */
+  function fidPintarEscalones(esc_){
+    const cont = $("#fidGrafEsc");
+    if(!esc_.length){
+      cont.innerHTML = '<p class="fid-vacio">Sin avisos en este período.</p>';
+      return;
+    }
+    // El mejor escalón se marca, pero solo si de verdad convirtió: con todos
+    // en 0% no hay un "mejor" que señalar.
+    const mejor = esc_.reduce((a,b)=> (b.tasa>a.tasa ? b : a), esc_[0]);
+    cont.innerHTML = esc_.map(e=>{
+      const pct = (e.avisadas|0) ? (e.volvieron|0)*100/(e.avisadas|0) : 0;
+      const top = mejor && mejor.tasa>0 && e.dias===mejor.dias;
+      return '<div class="fid-bar' + (e.volvieron ? "" : " cero") + (top ? " top" : "") + '"' +
+        ' title="' + esc(e.dias + ' días sin jugar: volvieron ' + e.volvieron + ' de ' + e.avisadas +
+                        ' · $' + nf.format(Math.round(e.monto||0))) + '">' +
+        '<div class="fid-bar-lbl">' + e.dias + ' días<small>' + nf.format(e.avisadas) + ' avisados</small></div>' +
+        '<div class="fid-bar-track">' +
+          '<div class="fid-bar-fill" style="width:' + pct.toFixed(1) + '%"></div>' +
+        '</div>' +
+        '<div class="fid-bar-val">' + String(e.tasa).replace(".",",") + '%' +
+          '<small> · ' + e.volvieron + '/' + e.avisadas + '</small></div>' +
+      '</div>';
+    }).join("") +
+    (mejor && mejor.tasa>0
+      ? '<p class="cfg-hint" style="margin-top:10px">El escalón de <b>' + mejor.dias +
+        ' días</b> es el que más trae (' + String(mejor.tasa).replace(".",",") + '%). ' +
+        'Los que quedan en 0% están regalando bono sin traer a nadie: conviene revisarlos.</p>'
+      : '');
+  }
+
+  /* COLUMNAS: a los cuántos días vuelven. La barra del día 0 ("mismo día") es
+     la que contesta si el empujón pega al toque. */
+  function fidPintarDias(dist, r){
+    const cont = $("#fidGrafDias"), eje = $("#fidGrafDiasEje");
+    if(!dist.length){
+      cont.innerHTML = '<p class="fid-vacio" style="width:100%">Todavía no volvió nadie en este período.</p>';
+      eje.innerHTML = ""; $("#fidGrafDiasSub").textContent =
+        "Cuánto tarda en cargar el que responde, contado desde el primer aviso.";
+      return;
+    }
+    const max = Math.max(...dist.map(x=>x.n|0), 1);
+    cont.innerHTML = dist.map(x=>{
+      const h = Math.round((x.n|0)*100/max);
+      const t = (x.dia===0 ? "El mismo día" : "Al día " + x.dia) + ": " +
+                (x.n|0) + (x.n===1 ? " jugador" : " jugadores");
+      return '<div class="fid-col' + (x.n ? "" : " vacio") + '" title="' + esc(t) + '">' +
+             '<span class="fid-col-n">' + (x.n|0) + '</span>' +
+             '<div class="fid-col-bar" style="height:' + Math.max(h,2) + '%"></div></div>';
+    }).join("");
+    eje.innerHTML = dist.map(x=>'<span>' + (x.dia===0 ? "mismo" : x.dia) + '</span>').join("");
+    const primeras = dist.slice(0,2).reduce((a,b)=>a+(b.n|0),0);
+    const tot = dist.reduce((a,b)=>a+(b.n|0),0);
+    $("#fidGrafDiasSub").innerHTML =
+      "Cuánto tarda en cargar el que responde, desde el primer aviso. " +
+      (tot ? "<b>" + Math.round(primeras*100/tot) + "%</b> vuelve dentro de las primeras 48 horas." : "");
+  }
+
+  function fidPintarQuienes(){
+    const q = (fidAna && fidAna.quienes) || [];
+    const vent = (fidAna && fidAna.ventana) || 14;
+    const ahora = Date.now();
+    // Tres estados, no dos: el que todavía está dentro del plazo no es un "no
+    // volvió" — es un pendiente, y mezclarlos ensucia la lectura.
+    const estado = a=>{
+      if(a.volvio_en) return "si";
+      const t = new Date(String(a.aviso_en).replace(" ","T")).getTime();
+      return (t && (ahora-t) < vent*86400000) ? "esp" : "no";
+    };
+    const filas = q.filter(a=> fidQFiltro==="todos" || estado(a)===fidQFiltro);
+    $("#fidQCap").textContent = filas.length
+      ? filas.length + (filas.length===1 ? " jugador" : " jugadores") +
+        (q.length>filas.length ? " de " + q.length : "")
+      : "";
+    if(!filas.length){
+      $("#fidQBody").innerHTML =
+        '<tr><td colspan="7"><p class="fid-vacio">Nadie en este grupo.</p></td></tr>';
+      return;
+    }
+    $("#fidQBody").innerHTML = filas.map(a=>{
+      const e = estado(a);
+      const etq = e==="si" ? "Volvió" : (e==="esp" ? "Esperando" : "No volvió");
+      return '<tr>' +
+        '<td class="u">' + esc(a.usuario) + '</td>' +
+        '<td>' + a.escalon + ' días' + (a.avisos>1 ? ' <span class="cfg-hint">(' + a.avisos + ' avisos)</span>' : '') + '</td>' +
+        '<td>+' + a.pct + '%' + (a.giro ? ' 🎰' : '') + '</td>' +
+        '<td>' + fidHace(a.aviso_en) + '</td>' +
+        '<td class="fid-' + e + '"><span class="fid-pt"></span>' + etq + '</td>' +
+        '<td>' + (a.horas!==null && a.horas!==undefined ? fidDias(a.horas/24) : "—") + '</td>' +
+        '<td>' + (a.monto ? "$" + nf.format(Math.round(a.monto)) : "—") + '</td>' +
+      '</tr>';
+    }).join("");
+  }
+
+  document.querySelectorAll("[data-fidq]").forEach(b=>b.addEventListener("click", ()=>{
+    fidQFiltro = b.getAttribute("data-fidq");
+    document.querySelectorAll("[data-fidq]").forEach(x=>x.classList.toggle("on", x===b));
+    fidPintarQuienes();
+  }));
+  $("#fidAnaDias")?.addEventListener("change", fidAnaCargar);
+  $("#fidAnaVent")?.addEventListener("change", fidAnaCargar);
 
   /* El número se recalcula al cambiar la opción: es el dato que hace que la
      decisión no sea a ciegas, y sirve justo en el momento de elegir. */

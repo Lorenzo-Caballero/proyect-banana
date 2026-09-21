@@ -425,3 +425,235 @@ if (!function_exists('fid_tramos')) {
         return true;
     }
 }
+
+if (!function_exists('fid_analitica')) {
+
+    /**
+     * SEGUIMIENTO DE LA CAMPAÑA: quién volvió, cuántos, y a los cuántos días.
+     *
+     * Pedido del dueño (18/09/2026): *"un analytic o algún gráfico que vaya
+     * siguiendo qué usuario respondió a esa campaña, la tasa de conversión y
+     * un promedio de a qué día vuelven a activarse"*.
+     *
+     * ========================================================================
+     * LA UNIDAD ES LA RACHA, NO EL AVISO. Es la decisión que hace que el
+     * número signifique algo: un mismo jugador recibe VARIOS avisos en la
+     * misma racha de inactividad (2d, 3d, 4d, 7d...). Contando por aviso, el
+     * que vuelve después del cuarto suma UNA vuelta contra CUATRO envíos y la
+     * conversión sale cuatro veces más baja de lo que es. Peor: empeoraría
+     * sola al agregar escalones, que es justo al revés de lo que el operador
+     * está evaluando cuando los agrega.
+     *
+     * Una racha es (usuario, actividad_ref) — el UNIQUE de la migración 65.
+     *
+     * ========================================================================
+     * "VOLVIÓ" ES QUE CARGÓ PLATA, no que abrió la app. Y la carga se mide con
+     * publicidad_sql_cargas(), la definición única del CRM (ver CLAUDE.md): si
+     * esta pantalla contara distinto que Finanzas, dos pantallas mostrarían
+     * plata distinta el mismo día. Incluye las dos vías —transferencia y el
+     * botón «Depósitos» del juego— porque la campaña no elige por dónde vuelve.
+     *
+     * ========================================================================
+     * LA VENTANA DE ATRIBUCIÓN ES UNA ELECCIÓN, Y SE MUESTRA. Solo cuenta como
+     * respuesta la carga que entra DENTRO de $ventana días del primer aviso de
+     * esa racha. Sin ventana, el que vuelve tres meses después contaría como
+     * converso y la campaña se atribuiría todo lo que pasa en el casino. 14
+     * días es el default y el CRM deja cambiarlo para ver qué tan sensible es
+     * el número — que es la forma honesta de mostrar una atribución.
+     *
+     * NO PRUEBA CAUSALIDAD y no puede: no hay grupo de control. Mide "de los
+     * que avisamos, cuántos volvieron y cuándo".
+     *
+     * $dias    = ventana de ANÁLISIS: rachas cuyo primer aviso cae en N días.
+     * $ventana = ventana de ATRIBUCIÓN: cuánto crédito se le da al aviso.
+     *
+     * Nunca lanza: una pantalla de métricas no puede tumbar el CRM.
+     */
+    function fid_analitica(PDO $pdo, int $dias = 30, int $ventana = 14): array
+    {
+        $dias    = max(1, min(365, $dias));
+        $ventana = max(1, min(90, $ventana));
+
+        $vacio = ['ok' => false, 'dias' => $dias, 'ventana' => $ventana,
+                  'resumen' => null, 'por_escalon' => [], 'dist_dias' => [],
+                  'serie' => [], 'quienes' => []];
+
+        if (!function_exists('publicidad_sql_cargas')) {
+            $lib = __DIR__ . '/publicidad_lib.php';
+            if (is_file($lib)) { require_once $lib; }
+        }
+        if (!function_exists('publicidad_sql_cargas')) { return $vacio; }
+        $CARGAS = publicidad_sql_cargas();
+
+        try {
+            /* Una fila por RACHA. `escalon_ultimo` es el escalón más alto que
+               llegó a recibir: es el que se lleva el crédito (atribución al
+               último toque, lo único defendible cuando hubo varios avisos).
+               El PRIMER aviso ancla la ventana: el reloj arranca cuando se lo
+               empezó a buscar, no en el último empujón. */
+            $sqlRachas =
+                "SELECT a.usuario, a.actividad_ref,
+                        MIN(a.enviado_en)                  AS primer_aviso,
+                        MAX(a.dias)                        AS escalon_ultimo,
+                        MAX(a.pct)                         AS pct_max,
+                        MAX(a.ruleta)                      AS con_giro,
+                        COUNT(*)                           AS avisos
+                   FROM fidelizacion_avisos a
+                  WHERE a.enviado_en >= DATE_SUB(NOW(), INTERVAL $dias DAY)
+                  GROUP BY a.usuario, a.actividad_ref";
+
+            /* A cada racha se le cuelga su primera carga posterior dentro de
+               la ventana. Subconsulta correlacionada y no un JOIN con GROUP
+               BY: la tabla de avisos es chica y así la ventana se aplica por
+               fila, sin arrastrar toda la tabla de cargas. */
+            $sql =
+                "SELECT r.*,
+                        (SELECT MIN(c.cuando) FROM ($CARGAS) c
+                          WHERE c.usuario = r.usuario COLLATE utf8mb4_unicode_ci
+                            AND c.cuando > r.primer_aviso
+                            AND c.cuando <= DATE_ADD(r.primer_aviso, INTERVAL $ventana DAY)
+                        ) AS volvio_en,
+                        (SELECT COALESCE(SUM(c.monto),0) FROM ($CARGAS) c
+                          WHERE c.usuario = r.usuario COLLATE utf8mb4_unicode_ci
+                            AND c.cuando > r.primer_aviso
+                            AND c.cuando <= DATE_ADD(r.primer_aviso, INTERVAL $ventana DAY)
+                        ) AS monto
+                   FROM ($sqlRachas) r
+                  ORDER BY r.primer_aviso DESC";
+
+            $rachas = $pdo->query($sql)->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        } catch (Throwable $e) {
+            // Sin la migración 65: la pantalla muestra "todavía no hay datos",
+            // no un error.
+            error_log('fid_analitica: ' . $e->getMessage());
+            return $vacio;
+        }
+
+        $totRachas = count($rachas);
+        $volvieron = 0;
+        $monto     = 0.0;
+        $horas     = [];      // horas hasta volver: promedio y mediana
+        $porEsc    = [];      // escalon => [avisadas, volvieron, monto]
+        $dist      = [];      // dia (0 = mismo dia) => cuantos volvieron ese dia
+        $serie     = [];      // dia => [avisadas, volvieron]
+        $quienes   = [];
+
+        foreach ($rachas as $r) {
+            $esc = (int)$r['escalon_ultimo'];
+            $dia = substr((string)$r['primer_aviso'], 0, 10);
+            if (!isset($porEsc[$esc])) { $porEsc[$esc] = ['avisadas' => 0, 'volvieron' => 0, 'monto' => 0.0]; }
+            if (!isset($serie[$dia]))  { $serie[$dia]  = ['avisadas' => 0, 'volvieron' => 0]; }
+            $porEsc[$esc]['avisadas']++;
+            $serie[$dia]['avisadas']++;
+
+            $vol = $r['volvio_en'] ?? null;
+            $h = null;
+            if ($vol !== null && $vol !== '') {
+                $volvieron++;
+                $porEsc[$esc]['volvieron']++;
+                $serie[$dia]['volvieron']++;
+                $m = (float)$r['monto'];
+                $monto += $m;
+                $porEsc[$esc]['monto'] += $m;
+                $h = (strtotime((string)$vol) - strtotime((string)$r['primer_aviso'])) / 3600;
+                if ($h >= 0) {
+                    $horas[] = $h;
+                    /* A QUE DIA VOLVIO, para el histograma. El dia 0 es "antes
+                       de las 24 h" y se rotula «mismo dia»: es la barra que
+                       contesta de un vistazo si el empujon funciona en el acto
+                       o tarda. floor y no round, porque a las 20 h todavia no
+                       paso un dia. */
+                    $dd = (int)floor($h / 24);
+                    $dist[$dd] = ($dist[$dd] ?? 0) + 1;
+                }
+            }
+
+            /* QUIÉN respondió — y quién no. Las dos, porque "a quién no le
+               funcionó" es la mitad útil: el que recibió el 50% y no volvió no
+               es un jugador enfriado, es uno que se fue. */
+            $quienes[] = [
+                'usuario'   => (string)$r['usuario'],
+                'escalon'   => $esc,
+                'pct'       => (int)$r['pct_max'],
+                'giro'      => (int)$r['con_giro'] === 1,
+                'avisos'    => (int)$r['avisos'],
+                'aviso_en'  => (string)$r['primer_aviso'],
+                'volvio_en' => ($vol !== null && $vol !== '') ? (string)$vol : null,
+                'horas'     => $h !== null ? round($h, 1) : null,
+                'monto'     => ($vol !== null && $vol !== '') ? (float)$r['monto'] : 0.0,
+            ];
+        }
+
+        /* MEDIANA ADEMÁS DEL PROMEDIO, y no es rebuscado: con pocos casos, uno
+           que vuelve al día 13 mueve el promedio de 1,5 a 4 y el operador lee
+           "vuelven a la semana" cuando la mayoría vuelve al otro día. La
+           mediana describe al jugador típico. */
+        sort($horas);
+        $n = count($horas);
+        $prom = $n ? array_sum($horas) / $n : null;
+        $med  = $n ? ($n % 2 ? $horas[intdiv($n, 2)]
+                             : ($horas[$n / 2 - 1] + $horas[$n / 2]) / 2) : null;
+        $enDias = static function (?float $h): ?float {
+            return $h === null ? null : round($h / 24, 1);
+        };
+
+        ksort($porEsc);
+        $escSalida = [];
+        foreach ($porEsc as $d => $v) {
+            $escSalida[] = [
+                'dias'      => $d,
+                'avisadas'  => $v['avisadas'],
+                'volvieron' => $v['volvieron'],
+                'tasa'      => $v['avisadas'] ? round($v['volvieron'] * 100 / $v['avisadas'], 1) : 0,
+                'monto'     => round($v['monto'], 2),
+            ];
+        }
+        /* RELLENAR LOS DIAS VACIOS hasta el ultimo con gente. Un dia sin
+           vueltas es un cero, no un hueco: sin esto el histograma saltea el
+           dia 2 y el dia 3 queda pegado al 1, mostrando una forma que no es. */
+        ksort($dist);
+        $distSalida = [];
+        if ($dist) {
+            $maxDia = max(array_keys($dist));
+            for ($d = 0; $d <= $maxDia; $d++) {
+                $distSalida[] = ['dia' => $d, 'n' => (int)($dist[$d] ?? 0)];
+            }
+        }
+
+        ksort($serie);
+        $serieSalida = [];
+        foreach ($serie as $d => $v) {
+            $serieSalida[] = ['dia' => $d, 'avisadas' => $v['avisadas'], 'volvieron' => $v['volvieron']];
+        }
+
+        /* Cuántas rachas siguen DENTRO de su ventana de atribución. Sin esto,
+           la tasa de los últimos días parece desplomarse —a esa gente todavía
+           no le dimos tiempo de volver—, y verlo es la diferencia entre "la
+           campaña dejó de funcionar" y "esperá tres días". */
+        $enCurso = 0;
+        $corte = time() - $ventana * 86400;
+        foreach ($rachas as $r) {
+            if (empty($r['volvio_en']) && strtotime((string)$r['primer_aviso']) > $corte) { $enCurso++; }
+        }
+
+        return [
+            'ok'      => true,
+            'dias'    => $dias,
+            'ventana' => $ventana,
+            'resumen' => [
+                'rachas'    => $totRachas,
+                'volvieron' => $volvieron,
+                'tasa'      => $totRachas ? round($volvieron * 100 / $totRachas, 1) : 0,
+                'en_curso'  => $enCurso,
+                'monto'     => round($monto, 2),
+                'dias_prom' => $enDias($prom),
+                'dias_med'  => $enDias($med),
+                'ticket'    => $volvieron ? round($monto / $volvieron, 2) : 0,
+            ],
+            'por_escalon' => $escSalida,
+            'dist_dias'   => $distSalida,
+            'serie'       => $serieSalida,
+            'quienes'     => array_slice($quienes, 0, 200),
+        ];
+    }
+}

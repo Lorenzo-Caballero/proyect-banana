@@ -1126,6 +1126,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         // ---- campaña de fidelizacion (vista Fidelizacion del CRM) ----
         // Config + numeros de rendimiento. Sin la migracion 65 degrada a
         // stats vacias para que la vista abra igual.
+        /* SEGUIMIENTO DE LA CAMPANA (18/09/2026): quien respondio, que tasa de
+           conversion y a los cuantos dias vuelven. Aparte de fid_estado porque
+           es una consulta pesada (cruza los avisos contra TODAS las cargas) y
+           no tiene por que correr cada vez que se abre la pantalla a tocar un
+           escalon: la pide la pestana de Seguimiento cuando se la mira. */
+        if ($accion === 'fid_analitica') {
+            require_once __DIR__ . '/fidelizacion_lib.php';
+            salir(['ok' => true] + fid_analitica(
+                $pdo,
+                (int)($_GET['dias'] ?? 30),
+                (int)($_GET['ventana'] ?? 14)
+            ));
+        }
+
         if ($accion === 'fid_estado') {
             require_once __DIR__ . '/fidelizacion_lib.php';
             $tramos = fid_tramos($pdo);
