@@ -668,8 +668,82 @@
   /* Vista Fidelizacion */
   /* A quién y hasta cuándo: las dos decisiones de negocio de la campaña, juntas
      y arriba del editor de escalones. */
+  /* Campo numérico corto: el ancho de un control es una pista de cuánto se
+     espera que escribas, y «30» en una caja de 360px desconcierta. */
+  #fidDiasMax{max-width:120px}
   .fid-publico{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:10px 0 14px}
   @media (max-width:700px){ .fid-publico{grid-template-columns:1fr} }
+  /* ================== CONTROLES DE FORMULARIO (base) ==================
+     Un <select> o un <input> sin estilar los pinta el SISTEMA OPERATIVO:
+     fondo blanco, tipografia ajena y la flecha de Windows, sobre un CRM
+     oscuro. Se veia en Fidelizacion ("A quien se le manda", "Dejar de
+     insistir despues de") y en cualquier pantalla nueva que sumara un campo.
+     Estaba resuelto en CUATRO lugares distintos (.us-filtros select,
+     .nv-presets select, .fid-controles select, .nv-bono-form input) y en
+     ninguno de forma general.
+
+     Va con especificidad de ELEMENTO (0,0,1) a proposito: cualquier regla de
+     clase que ya exista le gana sin tocarla, asi esto no repinta nada que ya
+     estuviera resuelto -- solo cubre lo que no tenia nada.
+
+     Los controles con diseño propio quedan afuera por :not(): checkbox y
+     radio (los dibuja .cb-switch y los filtros), range, color y file. */
+  select,
+  textarea,
+  input:not([type]):not(.cb-switch input),
+  input[type="text"], input[type="number"], input[type="password"],
+  input[type="search"], input[type="email"], input[type="tel"], input[type="date"]{
+    background:var(--panel2);
+    border:1px solid var(--line);
+    color:var(--txt);
+    border-radius:10px;
+    padding:8px 11px;
+    font:inherit;
+    font-size:13px;
+    line-height:1.3;
+    outline:none;
+    transition:border-color .12s, background .12s;
+    max-width:100%;
+  }
+  select:hover, textarea:hover,
+  input[type="text"]:hover, input[type="number"]:hover, input[type="password"]:hover,
+  input[type="search"]:hover, input[type="email"]:hover, input[type="tel"]:hover,
+  input[type="date"]:hover{border-color:var(--line2)}
+  /* El foco se ve SIEMPRE y con contraste: en un CRM se tabula entre campos, y
+     un foco invisible deja al operador sin saber donde esta escribiendo. */
+  select:focus, textarea:focus,
+  input[type="text"]:focus, input[type="number"]:focus, input[type="password"]:focus,
+  input[type="search"]:focus, input[type="email"]:focus, input[type="tel"]:focus,
+  input[type="date"]:focus{border-color:var(--violet);background:var(--panel3)}
+  ::placeholder{color:var(--muted2)}
+  select:disabled, input:disabled, textarea:disabled{opacity:.5;cursor:not-allowed}
+
+  /* La flecha: SVG embebido, asi no hay un pedido de red por cada select ni un
+     glifo de fuente que cambie de forma segun el sistema. */
+  select{
+    appearance:none; -webkit-appearance:none; -moz-appearance:none;
+    padding-right:30px;
+    background-image:url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238a8a94' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;
+    background-position:right 9px center;
+    background-size:15px;
+    cursor:pointer;
+  }
+  /* Las opciones las dibuja el sistema: sin esto, el desplegable abierto sigue
+     siendo blanco aunque el control se vea oscuro. */
+  select option{background:var(--panel2);color:var(--txt)}
+  /* El calendario y las flechitas de los number, en claro: el icono nativo es
+     negro y sobre el panel oscuro desaparece. */
+  input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(.7)}
+  input[type="number"]{appearance:textfield;-moz-appearance:textfield}
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+
+  /* Campo con etiqueta arriba (Fidelizacion y las pantallas de config). */
+  .cfg-campo{display:flex;flex-direction:column;gap:5px;min-width:0}
+  .cfg-campo .cfg-lbl{font-size:11.5px;font-weight:700;color:var(--txt)}
+  .cfg-campo .cfg-hint{margin-top:1px}
+
   .fid-tl-wrap{overflow-x:auto;padding:8px 2px 16px}
   .fid-tl{display:flex;align-items:flex-start;min-width:max-content}
   .fid-paso{display:flex;flex-direction:column;align-items:center;min-width:104px;position:relative;cursor:pointer;user-select:none}
@@ -757,10 +831,14 @@
 
   /* --- tabla de quienes --- */
   .fid-q-filtros{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
-  .fid-chip{background:var(--panel2);border:1px solid var(--line);color:var(--muted);
-    border-radius:999px;padding:5px 12px;font:600 11.5px inherit;cursor:pointer}
-  .fid-chip:hover{color:var(--txt)}
-  .fid-chip.on{background:var(--violetSoft);border-color:var(--line2);color:var(--txt)}
+  /* Filtros de la tabla. Se llaman `fchip` y no `chip` a proposito: `.fid-chip`
+     ya era el boton de giro de ruleta del editor de escalones (ambar), y al
+     reusar el nombre los filtros heredaban ese color. */
+  .fid-fchip{background:var(--panel2);border:1px solid var(--line);color:var(--muted);
+    border-radius:999px;padding:6px 13px;font:600 11.5px inherit;cursor:pointer;
+    transition:color .12s,border-color .12s,background .12s}
+  .fid-fchip:hover{color:var(--txt);border-color:var(--line2)}
+  .fid-fchip.on{background:var(--violetSoft);border-color:var(--line2);color:var(--txt)}
   .fid-q{width:100%;border-collapse:collapse;font-size:12.5px}
   .fid-q th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;
     color:var(--muted);font-weight:700;padding:7px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
@@ -775,10 +853,63 @@
   .fid-no{color:var(--muted)} .fid-no .fid-pt{background:var(--muted2)}
   .fid-esp{color:var(--d-warn)} .fid-esp .fid-pt{background:var(--d-warn)}
 
+  /* --- paginacion --- */
+  .fid-pag{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+    padding:11px 2px 2px;border-top:1px solid var(--line);margin-top:2px}
+  .fid-pag-info{font-size:11.5px;color:var(--muted)}
+  .fid-pag-btns{display:flex;gap:6px;margin-left:auto}
+  .fid-pag-b{background:var(--panel2);border:1px solid var(--line);color:var(--txt);
+    border-radius:9px;padding:6px 12px;font:600 12px inherit;cursor:pointer;
+    display:inline-flex;align-items:center;gap:6px}
+  .fid-pag-b:hover:not(:disabled){border-color:var(--line2);background:var(--panel3)}
+  .fid-pag-b:disabled{opacity:.35;cursor:default}
+
+  /* EN EL CELULAR LA TABLA SE VUELVE FICHAS. Siete columnas no entran en 360px:
+     con scroll horizontal el operador lee el nombre y tiene que arrastrar para
+     ver si volvio, que es el dato que fue a buscar. Cada fila pasa a bloque y
+     cada celda lleva su etiqueta adelante (el data-label que pinta el JS). */
+  @media (max-width:640px){
+    .fid-q, .fid-q tbody, .fid-q tr, .fid-q td{display:block;width:100%}
+    .fid-q thead{display:none}
+    .fid-q tr{border:1px solid var(--line);border-radius:11px;
+      background:var(--panel2);padding:10px 12px;margin-bottom:9px}
+    .fid-q tr:hover td{background:none}
+    .fid-q td{border:0;padding:3px 0;display:flex;align-items:center;gap:6px;font-size:12.5px}
+    /* `margin-right:auto` y no space-between en el td: la celda de estado
+       tiene TRES hijos (etiqueta, punto y texto) y con space-between el punto
+       quedaba flotando en el medio, lejos de la palabra que acompaña. */
+    .fid-q td::before{content:attr(data-label);color:var(--muted);font-size:11px;
+      text-transform:uppercase;letter-spacing:.4px;flex:0 0 auto;margin-right:auto}
+    /* El nombre del jugador es el titulo de la ficha, no un campo mas. */
+    .fid-q td.u{font-size:14px;padding-bottom:7px;margin-bottom:5px;
+      border-bottom:1px solid var(--line);justify-content:flex-start}
+    .fid-q td.u::before{display:none}
+    .fid-pag-btns{margin-left:0;width:100%}
+    .fid-pag-b{flex:1;justify-content:center}
+  }
+  /* La tira de columnas con ventanas largas (30 dias) no rompe el ancho. */
+  .fid-cols, .fid-col-eje{overflow-x:auto}
+
   .fid-vacio{text-align:center;color:var(--muted);font-size:12.5px;padding:26px 16px;line-height:1.6}
   @media (max-width:720px){
-    .fid-bar{grid-template-columns:82px 1fr 70px;gap:7px}
-    .fid-hero-num{font-size:34px}
+    .fid-bar{grid-template-columns:78px 1fr 64px;gap:7px}
+    .fid-bar-lbl{font-size:11.5px}
+    .fid-bar-val{font-size:12px}
+    .fid-bar-val small{display:block;margin-top:1px}
+    /* EL HERO SE APILA. En una fila pedía ~420px de ancho mínimo (el número
+       grande + el `min-width:220px` del texto + el gap), o sea más que un
+       celular: el texto se cortaba contra el borde. */
+    .fid-hero{flex-direction:column;align-items:flex-start;gap:10px;padding:16px;margin:0 12px 12px}
+    .fid-hero-num{font-size:38px}
+    .fid-hero-sub{min-width:0;font-size:12px}
+    .fid-controles{gap:10px}
+    .fid-controles label{flex:1 1 140px}
+    .fid-controles select{width:100%}
+    .fid-controles .cfg-hint{flex-basis:100%;min-width:0}
+    .fid-tabs{padding:0 12px}
+    .fid-tab{padding:10px 11px;font-size:12.5px}
+    .us-cards{padding:12px 12px 0}
+    .fid-graf{padding:12px}
   }
   .fid-editor{border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-top:4px}
   .fid-cab,.fid-fila{display:grid;grid-template-columns:30px 150px 120px 1fr 44px;gap:8px;align-items:center;padding:9px 12px}
@@ -4742,10 +4873,10 @@
             <span class="cfg-hint" id="fidQCap"></span></div>
           <div class="cb-card-body">
             <div class="fid-q-filtros">
-              <button class="fid-chip on" data-fidq="todos" type="button">Todos</button>
-              <button class="fid-chip" data-fidq="si" type="button">Volvieron</button>
-              <button class="fid-chip" data-fidq="esp" type="button">Todavía esperando</button>
-              <button class="fid-chip" data-fidq="no" type="button">No volvieron</button>
+              <button class="fid-fchip on" data-fidq="todos" type="button">Todos</button>
+              <button class="fid-fchip" data-fidq="si" type="button">Volvieron</button>
+              <button class="fid-fchip" data-fidq="esp" type="button">Todavía esperando</button>
+              <button class="fid-fchip" data-fidq="no" type="button">No volvieron</button>
             </div>
             <div style="overflow-x:auto">
               <table class="fid-q">
@@ -4755,6 +4886,13 @@
                 </tr></thead>
                 <tbody id="fidQBody"></tbody>
               </table>
+            </div>
+            <div class="fid-pag" id="fidQPag" style="display:none">
+              <span class="fid-pag-info" id="fidQPagInfo"></span>
+              <div class="fid-pag-btns">
+                <button class="fid-pag-b" id="fidQPrev" type="button">‹ Anteriores</button>
+                <button class="fid-pag-b" id="fidQNext" type="button">Siguientes ›</button>
+              </div>
             </div>
           </div>
         </div>
@@ -6229,6 +6367,7 @@
   let fidEstado = null;
   let fidAna = null;
   let fidQFiltro = "todos";
+  let fidQPag = 1;
 
   function fidTab(cual){
     document.querySelectorAll("[data-fidtab]").forEach(b=>
@@ -6272,6 +6411,7 @@
     try{ d = await jget({accion:"fid_analitica", dias:dias, ventana:vent}); }
     catch(e){ $("#fidHero").innerHTML = '<span class="cfg-hint">No se pudo calcular.</span>'; return; }
     fidAna = d;
+    fidQPag = 1;   // datos nuevos, lista nueva
     fidPintarAna();
   }
 
@@ -6387,6 +6527,11 @@
       (tot ? "<b>" + Math.round(primeras*100/tot) + "%</b> vuelve dentro de las primeras 48 horas." : "");
   }
 
+  /* 20 POR PAGINA. La analitica devuelve hasta 200 rachas y volcarlas todas
+     dejaba un scroll de varias pantallas debajo de los graficos -- con lo que
+     los graficos, que son el resumen, quedaban lejos de lo que resumen. */
+  const FID_Q_POR_PAG = 20;
+
   function fidPintarQuienes(){
     const q = (fidAna && fidAna.quienes) || [];
     const vent = (fidAna && fidAna.ventana) || 14;
@@ -6399,32 +6544,69 @@
       return (t && (ahora-t) < vent*86400000) ? "esp" : "no";
     };
     const filas = q.filter(a=> fidQFiltro==="todos" || estado(a)===fidQFiltro);
+
+    /* La pagina se acota a lo que hay: al filtrar de 200 a 3, quedarse en la
+       pagina 5 muestra una tabla vacia sobre datos que existen. */
+    const paginas = Math.max(1, Math.ceil(filas.length / FID_Q_POR_PAG));
+    if(fidQPag > paginas) fidQPag = paginas;
+    if(fidQPag < 1) fidQPag = 1;
+    const desde = (fidQPag-1) * FID_Q_POR_PAG;
+    const pagina = filas.slice(desde, desde + FID_Q_POR_PAG);
+
     $("#fidQCap").textContent = filas.length
       ? filas.length + (filas.length===1 ? " jugador" : " jugadores") +
         (q.length>filas.length ? " de " + q.length : "")
       : "";
+
     if(!filas.length){
       $("#fidQBody").innerHTML =
         '<tr><td colspan="7"><p class="fid-vacio">Nadie en este grupo.</p></td></tr>';
+      $("#fidQPag").style.display = "none";
       return;
     }
-    $("#fidQBody").innerHTML = filas.map(a=>{
+
+    /* data-label: en el celular la tabla se vuelve fichas y cada celda usa esa
+       etiqueta como nombre del campo (ver el media query). */
+    $("#fidQBody").innerHTML = pagina.map(a=>{
       const e = estado(a);
       const etq = e==="si" ? "Volvió" : (e==="esp" ? "Esperando" : "No volvió");
       return '<tr>' +
-        '<td class="u">' + esc(a.usuario) + '</td>' +
-        '<td>' + a.escalon + ' días' + (a.avisos>1 ? ' <span class="cfg-hint">(' + a.avisos + ' avisos)</span>' : '') + '</td>' +
-        '<td>+' + a.pct + '%' + (a.giro ? ' 🎰' : '') + '</td>' +
-        '<td>' + fidHace(a.aviso_en) + '</td>' +
-        '<td class="fid-' + e + '"><span class="fid-pt"></span>' + etq + '</td>' +
-        '<td>' + (a.horas!==null && a.horas!==undefined ? fidDias(a.horas/24) : "—") + '</td>' +
-        '<td>' + (a.monto ? "$" + nf.format(Math.round(a.monto)) : "—") + '</td>' +
+        '<td class="u" data-label="Jugador">' + esc(a.usuario) + '</td>' +
+        '<td data-label="Escalón">' + a.escalon + ' días' + (a.avisos>1 ? ' <span class="cfg-hint">(' + a.avisos + ' avisos)</span>' : '') + '</td>' +
+        '<td data-label="Bono">+' + a.pct + '%' + (a.giro ? ' 🎰' : '') + '</td>' +
+        '<td data-label="Avisado">' + fidHace(a.aviso_en) + '</td>' +
+        '<td data-label="Volvió" class="fid-' + e + '"><span class="fid-pt"></span>' + etq + '</td>' +
+        '<td data-label="Tardó">' + (a.horas!==null && a.horas!==undefined ? fidDias(a.horas/24) : "—") + '</td>' +
+        '<td data-label="Cargó">' + (a.monto ? "$" + nf.format(Math.round(a.monto)) : "—") + '</td>' +
       '</tr>';
     }).join("");
+
+    // Con una sola página no se muestra la barra: un paginador que no pagina
+    // es ruido.
+    const pag = $("#fidQPag");
+    pag.style.display = paginas > 1 ? "" : "none";
+    if(paginas > 1){
+      $("#fidQPagInfo").textContent =
+        (desde+1) + "–" + (desde + pagina.length) + " de " + filas.length +
+        "  ·  página " + fidQPag + " de " + paginas;
+      $("#fidQPrev").disabled = fidQPag <= 1;
+      $("#fidQNext").disabled = fidQPag >= paginas;
+    }
   }
+
+  function fidQIr(delta){
+    fidQPag += delta;
+    fidPintarQuienes();
+    // Al cambiar de página se vuelve al encabezado de la tabla: si no, quedás
+    // mirando el pie de una lista que ya cambió entera.
+    document.getElementById("fidQCap")?.scrollIntoView({block:"center", behavior:"smooth"});
+  }
+  $("#fidQPrev")?.addEventListener("click", ()=>fidQIr(-1));
+  $("#fidQNext")?.addEventListener("click", ()=>fidQIr(1));
 
   document.querySelectorAll("[data-fidq]").forEach(b=>b.addEventListener("click", ()=>{
     fidQFiltro = b.getAttribute("data-fidq");
+    fidQPag = 1;   // otro grupo, otra lista: la pagina 3 del anterior no aplica
     document.querySelectorAll("[data-fidq]").forEach(x=>x.classList.toggle("on", x===b));
     fidPintarQuienes();
   }));
