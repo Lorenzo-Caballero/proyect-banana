@@ -21,7 +21,17 @@
  *      encolada, cero excepciones, y el sondeo de 15 minutos haciendo el resto.
  *      Es el caso importante: si esto falla, un timbre roto rompe una carga.
  *
- *   2. EL PUSH VA VACÍO. Es la decisión de diseño de la que cuelga todo lo
+ *   2. EL PUSH LLEVA EL TEXTO, salvo los de chat. Hasta el 21/09/2026 iba
+ *      vacio --un "fijate"-- y el telefono venia a buscar el contenido. Se dio
+ *      vuelta porque un push vacio necesita que Android ARRANQUE la app, y un
+ *      telefono con la app deslizada de recientes no la arranca: medido en un
+ *      Moto G52, el push vacio no llegaba nunca y uno con texto llegaba en
+ *      20-30 segundos. Lo que hace que eso no traiga duplicados es la ETIQUETA
+ *      compartida entre el server y el APK, y eso si es facil de romper sin
+ *      querer: hay un test que compara los dos lados.
+ *
+ *   3. ESTO YA NO ES VERDAD (queda para que no se reescriba sin saberlo): el
+ *      push iba VACÍO. Es la decisión de diseño de la que cuelga todo lo
  *      demás —la entrega única, `solo_app`, que el texto no viaje por Google— y
  *      es la que es fácil de deshacer sin querer: agregarle `notification` al
  *      mensaje "para que se vea mejor" parece una mejora y rompe las cuatro
@@ -40,24 +50,35 @@ $port = getenv('T_PORT') ?: '3306';
 $usr  = getenv('T_USER') ?: 'root';
 $pw   = getenv('T_PASS') ?: '';
 
-$raiz = new PDO("mysql:host=$host;port=$port;charset=utf8mb4", $usr, $pw,
-    [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
+/* LA BASE ES OPCIONAL, Y NO ES UNA CONCESION: lo que este archivo prueba de
+   mas valor --la FORMA del mensaje que se le manda a Google-- no necesita
+   ninguna base. Atarlo todo a MySQL hacia que apagar XAMPP dejara sin correr
+   tambien esas pruebas, que son las que protegen la decision de diseño. Sin
+   base se saltean solo las secciones que escriben aparatos. */
+$pdo = null;
+try {
+    $raiz = new PDO("mysql:host=$host;port=$port;charset=utf8mb4", $usr, $pw,
+        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
 
-$base = 't_fcm_' . substr((string)getmypid(), -5) . '_' . random_int(100, 999);
-$raiz->exec("CREATE DATABASE `$base` DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    $base = 't_fcm_' . substr((string)getmypid(), -5) . '_' . random_int(100, 999);
+    $raiz->exec("CREATE DATABASE `$base` DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
-// Se borra pase lo que pase, incluso si el test explota a la mitad.
-register_shutdown_function(function () use ($raiz, $base) {
-    try { $raiz->exec("DROP DATABASE IF EXISTS `$base`"); } catch (Throwable $e) {}
-});
+    // Se borra pase lo que pase, incluso si el test explota a la mitad.
+    register_shutdown_function(function () use ($raiz, $base) {
+        try { $raiz->exec("DROP DATABASE IF EXISTS `$base`"); } catch (Throwable $e) {}
+    });
 
-$pdo = new PDO("mysql:host=$host;port=$port;dbname=$base;charset=utf8mb4", $usr, $pw,
-    [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
+    $pdo = new PDO("mysql:host=$host;port=$port;dbname=$base;charset=utf8mb4", $usr, $pw,
+        [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
+} catch (Throwable $e) {
+    fwrite(STDERR, "\n  (sin MySQL en $host:$port -- se saltean las pruebas que"
+        . " necesitan aparatos;\n   las de la forma del mensaje corren igual)\n");
+}
 
 /* La tabla como queda DESPUES de la migración 77. Se escribe acá y no se lee
    el .sql para que el test falle si alguien cambia la forma de la columna sin
    avisar. */
-$pdo->exec("CREATE TABLE dispositivos (
+if ($pdo) { $pdo->exec("CREATE TABLE dispositivos (
   id          BIGINT AUTO_INCREMENT PRIMARY KEY,
   device_id   VARCHAR(64)  NOT NULL,
   usuario     VARCHAR(50)  NULL,
@@ -73,7 +94,7 @@ $pdo->exec("CREATE TABLE dispositivos (
   UNIQUE KEY uq_device (device_id),
   KEY ix_usuario (usuario),
   KEY ix_fcm (fcm_token(64))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"); }
 
 /* Se apunta a un archivo que NO existe: el estado "sin Firebase configurado",
    que es el que tiene que degradar bien. Más abajo se lo cambia por uno de
@@ -98,6 +119,7 @@ fcm_olvidar();
 chequear('sin el archivo, no hay credenciales', fcm_credenciales() === null);
 chequear('y fcm_disponible() dice que no', fcm_disponible() === false);
 
+if ($pdo) {
 $pdo->prepare("INSERT INTO dispositivos (device_id, usuario, plataforma, fcm_token, permitido)
                VALUES ('dev-1','holajuan123','android','tok-abc',1)")->execute();
 
@@ -126,6 +148,7 @@ require_once __DIR__ . '/api/notificaciones_lib.php';
 $id = notif_crear($pdo, 'holajuan123', 'Te acreditamos', '+1.000 fichas', 'fichas');
 chequear('una notificacion se encola igual sin Firebase', $id > 0,
     'ESTE es el que no puede fallar: el timbre no puede romper la carga');
+} else { require_once __DIR__ . '/api/notificaciones_lib.php'; }
 
 // =========================================================================
 echo "\n=== El topico: un canal por cliente, no uno para todos ===\n";
@@ -245,6 +268,7 @@ if ($par !== false) {
 // =========================================================================
 echo "\n=== Guardar el token que manda el celular ===\n";
 // =========================================================================
+if ($pdo) {
 chequear('guarda el token del aparato', fcm_guardar_token($pdo, 'dev-1', 'tok-nuevo'));
 $f = $pdo->query("SELECT fcm_token, fcm_en FROM dispositivos WHERE device_id='dev-1'")->fetch();
 chequear('queda escrito', ($f['fcm_token'] ?? '') === 'tok-nuevo', json_encode($f));
@@ -256,6 +280,78 @@ chequear('un token vacio tampoco', fcm_guardar_token($pdo, 'dev-1', '') === fals
 /* Un aparato que todavia no registro el widget: rowCount 0. Tiene que
    contestar que SI igual, o el APK reintenta en loop en cada arranque. */
 chequear('un aparato desconocido no es un error', fcm_guardar_token($pdo, 'dev-nunca-visto', 'tok-x'));
+}
+
+// =========================================================================
+echo "\n=== La forma del push: que el aviso llegue con la app matada ===\n";
+// =========================================================================
+/* EL CAMBIO Y POR QUE. Hasta el 21/09/2026 el push iba VACIO: un "fijate", y
+   el telefono venia a buscar el contenido. Eso preservaba cuatro cosas buenas
+   --entrega unica, solo_app, el texto sin pasar por Google, y degradar sin
+   romperse-- pero necesita que Android ARRANQUE la app, y un telefono con la
+   app deslizada de recientes no la arranca.
+
+   Medido en un Moto G52 con la bateria sin restricciones:
+       push vacio (el nuestro)      -> no llega nunca
+       push con texto (la consola)  -> llega en 20-30 segundos
+
+   O sea que el aparato era alcanzable y lo que no llegaba era nuestro formato. */
+
+// -- el push mudo, que es lo que siguen recibiendo los avisos de chat --
+$m = fcm_armar_mensaje(['token' => 'T1']);
+chequear('sin aviso, el push va mudo', !isset($m['notification']),
+    'los solo_app tienen que seguir sin texto: decide la app');
+chequear('y lleva solo la senal', ($m['data'] ?? []) === ['gp' => '1'], json_encode($m['data'] ?? null));
+chequear('siempre con prioridad alta', ($m['android']['priority'] ?? '') === 'HIGH');
+
+// -- el push con texto, que es el que llega con la app matada --
+$m = fcm_armar_mensaje(['token' => 'T1'],
+    ['id' => 77, 'titulo' => 'Te acreditamos', 'cuerpo' => '+1.000 fichas']);
+chequear('con aviso, el texto viaja adentro',
+    ($m['notification']['title'] ?? '') === 'Te acreditamos'
+    && ($m['notification']['body'] ?? '') === '+1.000 fichas',
+    json_encode($m['notification'] ?? null));
+chequear('y el id va en data, para que la app sepa cual es',
+    ($m['data']['id'] ?? '') === '77');
+
+/* LA ETIQUETA ES LO QUE EVITA EL DUPLICADO. El mismo aviso lo puede dibujar
+   Android al recibirlo Y la app al encontrarlo despues en la cola. Con la misma
+   etiqueta el segundo reemplaza al primero; sin ella se ve dos veces, que
+   molesta mas que verlo tarde. */
+chequear('lleva la etiqueta que evita el duplicado',
+    ($m['android']['notification']['tag'] ?? '') === 'gp-77',
+    json_encode($m['android']['notification'] ?? null));
+chequear('y pide que se muestre como aviso importante',
+    ($m['android']['notification']['notification_priority'] ?? '') === 'PRIORITY_HIGH');
+
+// -- un aviso incompleto no puede producir una notificacion vacia --
+$m = fcm_armar_mensaje(['token' => 'T1'], ['id' => 5, 'titulo' => '', 'cuerpo' => 'x']);
+chequear('sin titulo, vuelve al push mudo', !isset($m['notification']),
+    'una notificacion con el titulo vacio se ve rota en la barra');
+
+// -- el topico tambien lleva texto: las promos masivas son el caso de uso --
+$m = fcm_armar_mensaje(['topic' => 'gp_x'], ['id' => 9, 'titulo' => 'Promo', 'cuerpo' => 'Hoy']);
+chequear('los avisos masivos tambien llevan texto',
+    isset($m['notification']) && ($m['topic'] ?? '') === 'gp_x');
+
+/* LOS DOS LADOS DE LA ETIQUETA. Uno esta en PHP y el otro en Kotlin, y si se
+   separan el jugador ve cada aviso dos veces sin que nada falle. */
+$kt = (string)file_get_contents(__DIR__ . '/apk/app/src/main/java/com/goldpaw/app/Notificaciones.kt');
+preg_match('/TAG_AVISO\s*=\s*"([^"]*)"/', $kt, $mm);
+chequear('el APK usa la MISMA etiqueta que el server',
+    ($mm[1] ?? '') === FCM_TAG_AVISO,
+    'PHP dice "' . FCM_TAG_AVISO . '" y el APK "' . ($mm[1] ?? '?') . '"');
+chequear('y la aplica al mostrar el aviso',
+    str_contains($kt, 'notify(TAG_AVISO + a.id, a.id, n)'),
+    'sin etiqueta al mostrar, la app suma un aviso en vez de reemplazar el de Android');
+
+/* LOS DE CHAT SIGUEN MUDOS. Son las respuestas del chat, y existen para NO
+   sonar cuando el jugador ya las esta leyendo. Si Android las dibujara solo,
+   esa regla dejaria de aplicarse justo donde importa. */
+$srcLibA = (string)file_get_contents(__DIR__ . '/api/notificaciones_lib.php');
+chequear('un aviso solo_app no manda texto',
+    str_contains($srcLibA, '$aviso = $soloApp ? [] : '),
+    'si Android dibuja las respuestas del chat, suenan encima de lo que el jugador esta leyendo');
 
 // =========================================================================
 echo "\n=== Las invariantes del diseño (sobre el fuente) ===\n";
@@ -278,10 +374,12 @@ chequear('agotado el presupuesto, se deja de tocar',
     fcm_sin_presupuesto() === true,
     'al que queda sin empujon le llega por el sondeo, como antes de la 1.7');
 
-$lanzoP = false;
-try { $nP = fcm_despertar($pdo, 'holajuan123'); }
-catch (Throwable $e) { $lanzoP = true; $nP = -1; }
-chequear('y fcm_despertar corta sin lanzar', $lanzoP === false && $nP === 0);
+if ($pdo) {
+    $lanzoP = false;
+    try { $nP = fcm_despertar($pdo, 'holajuan123'); }
+    catch (Throwable $e) { $lanzoP = true; $nP = -1; }
+    chequear('y fcm_despertar corta sin lanzar', $lanzoP === false && $nP === 0);
+}
 
 fcm_presupuesto_reiniciar();
 chequear('reiniciar lo devuelve al estado inicial', fcm_sin_presupuesto() === false);
@@ -297,17 +395,12 @@ chequear('el aviso al log sale una sola vez por request',
     '300 lineas identicas hacen que el log deje de servir cuando hay algo que mirar');
 
 
-/* LA MAS IMPORTANTE DE TODO EL ARCHIVO. Un mensaje con bloque `notification`
-   lo dibuja Android solo, con el texto que venga adentro, y MensajesFCM ni se
-   entera. Eso romperia de una sola vez: la entrega unica (el mismo aviso
-   dibujado por el push Y por el sondeo), `solo_app`, el chequeo de permiso, y
-   haria viajar por Google cuanta plata se le acredito a quien. */
-chequear('el push NO lleva bloque notification',
-    !preg_match("/'notification'\s*=>/", $src),
-    'agregarlo rompe la entrega unica, solo_app, y hace viajar el texto por Google');
-chequear('manda data pura', str_contains($src, "'data'    => ['gp' => '1']"));
+chequear('manda data', str_contains($src, "'data'    => ['gp' => '1']"));
 chequear('y con prioridad alta', str_contains($src, "'priority' => 'HIGH'"),
     'sin esto el mensaje espera a la proxima ventana de Doze: el problema original');
+chequear('el texto en el push se puede apagar sin desplegar',
+    str_contains($src, 'if (FCM_TEXTO_EN_PUSH &&'),
+    'un cambio de este tamano tiene que tener marcha atras de una linea');
 
 /* Un token muerto se borra; una caida de Google NO. Confundirlos significa que
    diez minutos de Google caido le borran el token a todo el parque. */
@@ -320,8 +413,11 @@ $srcLib = (string)file_get_contents(__DIR__ . '/api/notificaciones_lib.php');
 /* notif_crear tiene DOS caminos de exito (el normal y el de compatibilidad sin
    `programada_en`). Un timbre en uno solo andaria en desarrollo y fallaria en
    la base que le falta una migracion. */
+/* Se cuenta la LLAMADA, no la firma completa: la firma cambia cada vez que
+   el timbre necesita un dato mas, y un test que se rompa por eso se termina
+   ajustando sin mirar -- que es como se pierde la guarda. */
 chequear('notif_crear toca el timbre en SUS DOS caminos de exito',
-    substr_count($srcLib, 'notif_empujar($pdo, $usuario, $id, $prog)') === 2,
+    substr_count($srcLib, 'notif_empujar($pdo, $usuario, $id, $prog') === 2,
     'si queda en uno solo, anda en desarrollo y falla donde falta la migracion 29');
 chequear('y no suena para las programadas',
     str_contains($srcLib, 'if ($id <= 0 || $prog !== null) { return; }'),

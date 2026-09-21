@@ -96,7 +96,7 @@ if (!function_exists('notif_crear')) {
                  VALUES (?,?,?,?,?,?,?,?,?)"
             )->execute($params);
             $id = (int)$pdo->lastInsertId();
-            notif_empujar($pdo, $usuario, $id, $prog);
+            notif_empujar($pdo, $usuario, $id, $prog, $titulo, $cuerpo, $soloApp);
             return $id;
         } catch (Throwable $e) {
             // Sin columna programada_en (migración 29 no corrida): si NO se
@@ -113,7 +113,7 @@ if (!function_exists('notif_crear')) {
                          VALUES (?,?,?,?,?,?,?,?)"
                     )->execute($params);
                     $id = (int)$pdo->lastInsertId();
-                    notif_empujar($pdo, $usuario, $id, $prog);
+                    notif_empujar($pdo, $usuario, $id, $prog, $titulo, $cuerpo, $soloApp);
                     return $id;
                 } catch (Throwable $e2) {
                     error_log('notif_crear (fallback): ' . $e2->getMessage());
@@ -143,10 +143,23 @@ if (!function_exists('notif_crear')) {
      * NUNCA LANZA: fcm_despertar() se traga todo. Esta funcion existe para que
      * eso sea evidente leyendo notif_crear(), que no puede fallar por el aviso.
      */
-    function notif_empujar(PDO $pdo, string $usuario, int $id, ?string $prog): void
+    function notif_empujar(PDO $pdo, string $usuario, int $id, ?string $prog,
+                           string $titulo = '', string $cuerpo = '',
+                           bool $soloApp = false): void
     {
         if ($id <= 0 || $prog !== null) { return; }
-        fcm_despertar($pdo, $usuario !== '' ? $usuario : null);
+
+        /* EL TEXTO VIAJA, SALVO EN LOS DE CHAT. Un push con texto lo dibuja
+           Android sin arrancar la app, y por eso llega aunque el jugador la
+           haya deslizado de recientes -- que era el unico caso que quedaba sin
+           resolver.
+
+           Los `solo_app` NO: son las respuestas del chat, y existen para NO
+           sonar cuando el jugador ya las esta leyendo en pantalla. Si Android
+           los dibujara solo, esa regla dejaria de aplicarse justo donde
+           importa. Esos siguen yendo mudos y decide la app. */
+        $aviso = $soloApp ? [] : ['id' => $id, 'titulo' => $titulo, 'cuerpo' => $cuerpo];
+        fcm_despertar($pdo, $usuario !== '' ? $usuario : null, $aviso);
     }
 
     /**

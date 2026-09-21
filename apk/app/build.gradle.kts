@@ -53,13 +53,20 @@ android {
         //        Google Play Services, que el administrador de bateria del
         //        fabricante no mata porque romperia el telefono entero. El
         //        sondeo cada 15 min QUEDA, como respaldo.
+        //   1.8  el push lleva el TEXTO adentro, no solo la senal. La 1.7
+        //        mandaba un "fijate" vacio, y eso necesita que Android arranque
+        //        la app: un telefono con la app deslizada de recientes no la
+        //        arranca. Medido en un Moto G52 con la bateria sin
+        //        restricciones -- push vacio: nunca llega; push con texto:
+        //        20-30 s. Cada aviso lleva la etiqueta gp-<id>, compartida con
+        //        el server, para que Android y la app no lo muestren dos veces.
         //
         // EL versionCode HAY QUE SUBIRLO SIEMPRE, y es facil de olvidar porque
         // el build sale igual: Android NO instala encima de una version
         // instalada si el numero no es mayor. El jugador toca "instalar", no
         // pasa nada, y no hay ningun error que lo explique.
-        versionCode = 8
-        versionName = "1.7"
+        versionCode = 9
+        versionName = "1.8"
     }
 
     signingConfigs {

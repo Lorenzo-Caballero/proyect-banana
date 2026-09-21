@@ -57,6 +57,10 @@ object Notificaciones {
 
     const val CANAL = "goldpaw_premios"
 
+    /* Prefijo de la etiqueta de cada aviso. Lo comparte con el server: si
+       uno de los dos cambia y el otro no, vuelven los duplicados. */
+    const val TAG_AVISO = "gp-"
+
     // Cola de notificaciones en la réplica del cliente (VPS), NO Hostinger: es
     // donde el CRM y las recargas dejan los avisos, resueltos por dominio. Sale
     // de Config para armar el APK de otro cliente con un solo cambio.
@@ -294,7 +298,14 @@ object Notificaciones {
             .build()
 
         try {
-            NotificationManagerCompat.from(ctx).notify(a.id, n)
+            /* CON ETIQUETA, Y TIENE QUE SER LA MISMA QUE MANDA EL SERVER
+               (fcm_lib.php: tag => gp-<id>). Desde que el push lleva el texto
+               adentro, un mismo aviso lo puede dibujar Android al recibirlo Y
+               esta funcion al encontrarlo despues en la cola. Con la etiqueta
+               compartida, el segundo REEMPLAZA al primero; sin ella el jugador
+               ve el mismo aviso dos veces, que molesta mas que verlo tarde.
+               t_fcm.php falla si los dos lados dejan de coincidir. */
+            NotificationManagerCompat.from(ctx).notify(TAG_AVISO + a.id, a.id, n)
         } catch (e: SecurityException) {
             // Revocaron el permiso entre el chequeo y el notify.
             Log.w(TAG, "sin permiso para notificar: ${e.message}")

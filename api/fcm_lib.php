@@ -83,6 +83,23 @@ defined('FCM_MAX_DIRECTOS') || define('FCM_MAX_DIRECTOS', 25);
 // que es como llegaba todo hasta la version 1.7. Se pierde inmediatez en la
 // cola de una campaña masiva, no un aviso.
 defined('FCM_PRESUPUESTO_SEG') || define('FCM_PRESUPUESTO_SEG', 8);
+
+// ¿El texto del aviso viaja DENTRO del push?
+//
+// En 1 llega con la app matada, que es lo que se necesitaba, a cambio de que el
+// titulo y el cuerpo pasen por Google. En 0 vuelve al push mudo: el telefono
+// viene a buscar el contenido, no viaja nada, y los que deslizan la app de
+// recientes no reciben.
+//
+// Existe para poder volver atras SIN desplegar ni recompilar nada: se pone en 0
+// en config.local.php y el sistema se porta como antes. Un cambio de este
+// tamano tiene que tener marcha atras de una linea.
+defined('FCM_TEXTO_EN_PUSH') || define('FCM_TEXTO_EN_PUSH', 1);
+
+// La etiqueta de cada aviso. EL MISMO VALOR VIVE EN Notificaciones.kt
+// (TAG_AVISO): si uno cambia y el otro no, el jugador ve cada aviso dos veces.
+// t_fcm.php compara los dos lados.
+defined('FCM_TAG_AVISO') || define('FCM_TAG_AVISO', 'gp-');
 // ==========================================================================
 
 if (!function_exists('fcm_credenciales')) {
@@ -253,27 +270,90 @@ if (!function_exists('fcm_credenciales')) {
      *
      * @return string 'ok' | 'invalido' (ese token ya no existe) | 'error'
      */
-    function fcm_enviar(array $destino): string
+    /**
+     * Arma el cuerpo del mensaje que se le manda a Google.
+     *
+     * SEPARADA DE fcm_enviar() PARA PODER PROBARLA: el envío toca la red, así
+     * que un test sobre él o depende de Google o no prueba nada. Acá la forma
+     * del mensaje --que es donde están las decisiones-- se verifica sin salir
+     * de la máquina.
+     *
+     * ===================================================================
+     * POR QUE EL TEXTO VA ADENTRO, SI AL PRINCIPIO NO IBA.
+     * ===================================================================
+     * El diseño original mandaba el push VACIO --un "fijate"-- y el celular
+     * venía a buscar el contenido. Tenía cuatro ventajas reales: la entrega
+     * única quedaba donde estaba, `solo_app` se aplicaba en un solo lugar, el
+     * texto no viajaba por Google, y si Firebase se caía no se rompía nada.
+     *
+     * SE MIDIO Y NO ALCANZABA. Un push vacío necesita que Android ARRANQUE la
+     * app para entregarlo, y un teléfono con la app deslizada de recientes no
+     * la arranca. Probado el 21/09/2026 en un Moto G52 con la batería sin
+     * restricciones:
+     *
+     *     push vacío (el nuestro)      -> no llega nunca
+     *     push con texto (la consola)  -> llega en 20-30 segundos
+     *
+     * O sea que el aparato ERA alcanzable y lo que no llegaba era nuestro
+     * formato. Con el texto adentro lo dibuja Play Services sin tocar la app.
+     *
+     * Decisión de Nahuel, 21/09/2026: *"quiero que hagas lo que sea necesario
+     * para que las notificaciones lleguen en tiempo real"*.
+     *
+     * EL PRECIO, QUE ES REAL: el título y el cuerpo pasan por los servidores de
+     * Google. Dicen cuánta plata se le acreditó a quién. Se acepta a
+     * conciencia, no por descuido, y se puede revertir con FCM_TEXTO_EN_PUSH.
+     *
+     * LO QUE LO HACE POSIBLE ES EL `tag`. Un mismo aviso lo puede dibujar
+     * Android al recibirlo Y la app al encontrarlo después en la cola. Con la
+     * misma etiqueta (gp-<id>) el segundo REEMPLAZA al primero; sin ella el
+     * jugador lo ve dos veces, que molesta más que verlo tarde. El otro lado de
+     * esa etiqueta está en Notificaciones.kt (TAG_AVISO).
+     *
+     * @param array $destino ['token'=>...] o ['topic'=>...]
+     * @param array $aviso   ['id','titulo','cuerpo'], o vacío para un push mudo
+     */
+    function fcm_armar_mensaje(array $destino, array $aviso = []): array
+    {
+        /* priority HIGH es lo que despierta al teléfono en Doze. Sin esto el
+           mensaje puede quedar esperando a la próxima ventana de
+           mantenimiento, que es el problema que vinimos a resolver. */
+        $mensaje = $destino + [
+            'data'    => ['gp' => '1'],
+            'android' => ['priority' => 'HIGH'],
+        ];
+
+        $id     = (int)($aviso['id'] ?? 0);
+        $titulo = trim((string)($aviso['titulo'] ?? ''));
+        $cuerpo = trim((string)($aviso['cuerpo'] ?? ''));
+
+        if (FCM_TEXTO_EN_PUSH && $id > 0 && $titulo !== '' && $cuerpo !== '') {
+            $mensaje['data']['id']   = (string)$id;
+            $mensaje['notification'] = ['title' => $titulo, 'body' => $cuerpo];
+            $mensaje['android']['notification'] = [
+                'tag'                   => FCM_TAG_AVISO . $id,
+                'notification_priority' => 'PRIORITY_HIGH',
+                'default_sound'         => true,
+            ];
+        }
+        return $mensaje;
+    }
+
+    /**
+     * Manda UN mensaje.
+     *
+     * @param array $destino ['token'=>...] o ['topic'=>...]
+     * @param array $aviso   ['id','titulo','cuerpo'] para que el texto viaje
+     *                       DENTRO del push. Vacío = push mudo (ver abajo).
+     */
+    function fcm_enviar(array $destino, array $aviso = []): string
     {
         $cred = fcm_credenciales();
         if ($cred === null) { return 'error'; }
         $acceso = fcm_access_token();
         if ($acceso === null) { return 'error'; }
 
-        /* `data` y NO `notification`, a propósito y es importante: un mensaje
-           con bloque `notification` lo dibuja el sistema solo, con el texto que
-           venga adentro, y NUESTRO servicio ni se entera cuando la app está
-           cerrada. Con `data` puro siempre pasa por MensajesFCM, que es quien
-           decide qué mostrar después de pedir la lista.
-
-           priority HIGH es lo que despierta al teléfono en Doze. Sin esto el
-           mensaje puede quedar esperando a la próxima ventana de
-           mantenimiento, que es exactamente el problema que vinimos a
-           resolver. */
-        $mensaje = $destino + [
-            'data'    => ['gp' => '1'],
-            'android' => ['priority' => 'HIGH'],
-        ];
+        $mensaje = fcm_armar_mensaje($destino, $aviso);
 
         $url = 'https://fcm.googleapis.com/v1/projects/'
             . rawurlencode((string)$cred['project_id']) . '/messages:send';
@@ -346,7 +426,7 @@ if (!function_exists('fcm_credenciales')) {
      * @return int cuántos empujones salieron. 0 no es un fallo: puede que nadie
      *             tenga la app, o que Firebase no esté configurado.
      */
-    function fcm_despertar(PDO $pdo, ?string $usuario): int
+    function fcm_despertar(PDO $pdo, ?string $usuario, array $aviso = []): int
     {
         if (!fcm_disponible()) { return 0; }
         if (fcm_sin_presupuesto()) { return 0; }
@@ -355,7 +435,7 @@ if (!function_exists('fcm_credenciales')) {
         try {
             // ---- Para todos: un solo mensaje al tópico del cliente.
             if ($usuario === null || trim($usuario) === '') {
-                $r = fcm_enviar(['topic' => fcm_topico()]) === 'ok' ? 1 : 0;
+                $r = fcm_enviar(['topic' => fcm_topico()], $aviso) === 'ok' ? 1 : 0;
                 fcm_gastar(microtime(true) - $t0);
                 return $r;
             }
@@ -380,7 +460,7 @@ if (!function_exists('fcm_credenciales')) {
                 /* Tambien adentro del bucle: un solo jugador con varios
                    aparatos y Google lento gastaria el presupuesto entero. */
                 if (fcm_sin_presupuesto($t0)) { break; }
-                $r = fcm_enviar(['token' => (string)$f['fcm_token']]);
+                $r = fcm_enviar(['token' => (string)$f['fcm_token']], $aviso);
                 if ($r === 'ok') { $enviados++; }
                 elseif ($r === 'invalido') { $muertos[] = (string)$f['device_id']; }
                 /* 'error' no se toca: puede ser un corte de red de treinta

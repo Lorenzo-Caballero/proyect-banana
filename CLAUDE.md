@@ -662,23 +662,74 @@ retirar lo avisa; y la pantalla de Retiros marca al jugador que tiene más de un
 
 ## Notificaciones push
 
-**No hay Firebase, y es a propósito.** Nada de `google-services.json`, ninguna
-cuenta de Google en el medio, todo vive en el mismo servidor propio (el VPS)
-que el resto de la API. El modelo es **cola + sondeo**:
+**Desde el 21/09/2026 SÍ hay Firebase**, y conviene leer por qué, porque
+durante mucho tiempo esta línea decía exactamente lo contrario. El modelo de
+fondo no cambió: sigue siendo **cola + sondeo**, y Firebase es un timbre encima.
 
 ```
 crm.php / recargas_lib  --notif_crear()-->  tabla `notificaciones`
+        │                      │
+        │                      └--fcm_despertar()--> push por Google (segundos)
         │
-        ├── APK: SondeoWorker (WorkManager, cada 15 min, app CERRADA)
-        │        -> notificación en la barra de Android
-        └── widget.js: cada 25 s con la app abierta y a la vista
-                 -> tarjeta arriba de la pantalla (mejor que una del sistema
-                    para alguien que ya está mirando)
+        ├── APK: MensajesFCM (el push despierta la app)   -> barra de Android
+        ├── APK: SondeoWorker (cada 15 min, RESPALDO)     -> barra de Android
+        └── widget.js: cada 25 s con la app a la vista    -> tarjeta en pantalla
 ```
 
-El precio de no usar Firebase es la **demora**: con la app cerrada el aviso
-puede tardar hasta ~15 min (mínimo que Android permite para trabajo periódico,
-y Doze puede estirarlo). Con la app abierta se nota en segundos.
+**Por qué se dio vuelta la decisión.** No había Firebase a propósito: ninguna
+cuenta de Google en el medio, todo en el mismo servidor que el resto de la API,
+nada que mantener. Lo que lo movió fue medirlo. El sondeo de 15 minutos es un
+PEDIDO, no una garantía: lo concede el administrador de batería del fabricante.
+Sobre los 42 celulares con la app, en 24 horas:
+
+| Marca | esperados | reales |
+|---|---|---|
+| Samsung | 6 | 5 |
+| Motorola | 13 | **2** |
+| Xiaomi | 20 | **1** |
+
+FCM no corre en nuestro proceso sino dentro de Google Play Services, que es del
+sistema y no lo matan porque rompería el teléfono entero.
+
+**Y el push lleva el TEXTO adentro, que fue un segundo cambio el mismo día.**
+La primera versión mandaba un push VACÍO —un "fijate"— y el celular venía a
+buscar el contenido. Eso preservaba cuatro cosas buenas: la entrega única
+quedaba donde estaba, `solo_app` se aplicaba en un solo lugar, el texto no
+viajaba por Google, y si Firebase se caía no se rompía nada.
+
+> **No alcanzó, y la medición es la que decide.** Un push vacío necesita que
+> Android **arranque** la app para entregarlo, y un teléfono con la app
+> deslizada de recientes no la arranca. En un Moto G52, con la batería sin
+> restricciones: el push vacío **no llegaba nunca**; uno con texto llegaba en
+> **20-30 segundos**. O sea que el aparato era alcanzable y lo que no llegaba
+> era nuestro formato.
+>
+> El precio se paga a conciencia: **el título y el cuerpo pasan por Google**, y
+> dicen cuánta plata se le acreditó a quién. Se puede revertir sin desplegar ni
+> recompilar, poniendo `FCM_TEXTO_EN_PUSH` en 0.
+
+**La etiqueta `gp-<id>` es lo que hace que esto no traiga duplicados**, y vive
+en DOS lugares: `FCM_TAG_AVISO` (`api/fcm_lib.php`) y `TAG_AVISO`
+(`Notificaciones.kt`). Un mismo aviso lo puede dibujar Android al recibirlo Y la
+app al encontrarlo después en la cola; con la misma etiqueta el segundo
+**reemplaza** al primero. Si los dos lados se separan, el jugador ve cada aviso
+dos veces y nada falla. `t_fcm.php` los compara.
+
+**Los avisos de chat (`solo_app`) siguen yendo mudos**, sin texto: existen para
+NO sonar cuando el jugador ya los está leyendo en pantalla, y si Android los
+dibujara solo esa regla dejaría de aplicarse justo donde importa.
+
+**La clave de cuenta de servicio vive en `/etc/goldpaw/firebase.json`** y los
+permisos son DOS: la carpeta `chown root:www-data` + `chmod 750`, y el archivo
+`www-data` + `chmod 400`. Sin permiso de ENTRAR a la carpeta, `file_exists()`
+contesta false igual que si el archivo no existiera — costó una hora de buscar
+mal. `google-services.json` sí va en el repo: no es secreto, viaja adentro del
+APK. Diagnóstico de la cadena entera: `api/fcm_diag.php`.
+
+**El sondeo de 15 minutos QUEDA**, como respaldo: cubre al teléfono sin Google
+Play Services y cualquier caída del lado de Google. Con la app abierta el
+widget sigue mostrando la tarjeta en ~25 s, que para alguien que ya está
+mirando la pantalla es mejor que una notificación del sistema.
 
 - **`usuario` NULL en `notificaciones` = para todos.** Es UNA fila aunque vaya a
   mil jugadores; el fan-out lo resuelve `notificaciones_entregas` al sondear.
