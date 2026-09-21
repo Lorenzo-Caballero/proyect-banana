@@ -7110,6 +7110,7 @@
         <span class="rc-vivo-tit"><span class="rc-vivo"></span>
           ${buscando ? "Buscando jugadores…" : (r.dry_run ? "Probando" : "Recaudando ahora")}</span>
         <span class="rc-vivo-modo">${r.dry_run ? "prueba" : "real"}</span>
+        ${res.bot ? `<span class="rc-vivo-modo" title="Versión del bot que está corriendo esto">bot ${esc(res.bot)}</span>` : ""}
         <span class="rc-vivo-cont">
           ${de ? `<span class="rc-vivo-cifra">${listo}<small>de ${de}</small></span>` : ""}
           ${recaudado ? `<span class="rc-vivo-cifra" style="color:var(--green2)">${rcPlata(recaudado)}<small>recaudados</small></span>` : ""}
@@ -7405,7 +7406,8 @@
           <span><b>#${r.id}</b> · ${modo} · ${esc(r.pedido_por||"?")} · ${horaExacta(r.creada_en)}</span>
           <span class="rc-badge ${r.estado}">${r.estado}</span>
         </div>
-        <div class="cfg-hint" style="margin-top:2px">${r.sin_chequeo
+        <div class="cfg-hint" style="margin-top:2px">${(r.resultado && r.resultado.bot)
+            ? `<span title="Versión del bot que corrió esto">bot ${esc(r.resultado.bot)}</span> · ` : ""}${r.sin_chequeo
             ? `por orden del panel (saltea ${nf.format(r.saltar_jug != null ? r.saltar_jug : (r.saltar||0)*50)}, sin filtro de inactividad)`
             : `inactivos ${r.dias}+ días · saltea ${nf.format(r.saltar_jug != null ? r.saltar_jug : (r.saltar||0)*50)} de más saldo`} · máx ${r.tope} · mín ${rcPlata(r.min_saldo)}</div>
         ${det}
