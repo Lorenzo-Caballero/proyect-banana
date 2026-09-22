@@ -310,6 +310,73 @@ def dkim_ok(msg) -> bool:
     return False
 
 
+# Las direcciones de reenvio de los clientes, cacheadas: {slug: api_url}. Se
+# piden al panel junto con las casillas y se refrescan solas cada tanto -- un
+# cliente que se da de alta al mediodia no tiene que esperar un reinicio.
+_reenvio = {"mapa": {}, "visto": 0.0}
+REENVIO_TTL = 300
+
+
+def destinos_reenvio() -> dict:
+    """{slug: api_url} de los clientes que eligieron el reenvio."""
+    ahora = time.time()
+    if _reenvio["mapa"] and (ahora - _reenvio["visto"]) < REENVIO_TTL:
+        return _reenvio["mapa"]
+    url = url_casillas()
+    key = os.getenv("API_KEY") or ""
+    if not url or not key:
+        return _reenvio["mapa"]
+    try:
+        import urllib.request
+        req = urllib.request.Request(url + "?accion=reenvios",
+                                     headers={"X-API-Key": key, "User-Agent": "goldpaw-colector"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            d = json.loads(r.read().decode("utf-8"))
+        if d.get("ok"):
+            _reenvio["mapa"] = {x["slug"]: x for x in d.get("reenvios", [])}
+            _reenvio["visto"] = ahora
+    except Exception as e:
+        # Se conserva el mapa viejo: mejor acreditar con datos de hace cinco
+        # minutos que no acreditar porque el panel tardo en contestar.
+        print(f"  (no pude refrescar los reenvios: {e})")
+    return _reenvio["mapa"]
+
+
+def slug_del_reenvio(msg) -> str:
+    """De que cliente es este mail, mirando a que direccion llego.
+
+    EL CAMINO SIN CONTRASEÑAS: el cliente reenvia los avisos de su banco a
+    `pagos+<slug>@nuestracasilla`, y la subdireccion (el `+slug`) queda en el
+    header `Delivered-To`. Asi UNA casilla nuestra atiende a todos los
+    clientes, sin crear cuentas ni pedirle credenciales a nadie.
+
+    Se miran VARIOS headers porque no todos los proveedores ponen el mismo:
+    Gmail usa Delivered-To, Postfix X-Original-To, y algunos reenvios solo
+    dejan rastro en To/Cc. El primero que resuelva a un cliente conocido gana.
+
+    Devuelve '' si no es un reenvio de cliente -- ahi el mail es nuestro y
+    sigue el camino de siempre. NUNCA adivina: un mail sin subdireccion
+    legible no puede caer en un cliente al azar, porque eso seria acreditarle
+    la plata de otro.
+    """
+    destinos = destinos_reenvio()
+    if not destinos:
+        return ""
+    vistos = []
+    for h in ("Delivered-To", "X-Original-To", "X-Forwarded-To", "To", "Cc"):
+        for valor in msg.get_all(h) or []:
+            for _, dir_ in email.utils.getaddresses([valor]):
+                vistos.append((dir_ or "").lower())
+    for dir_ in vistos:
+        if "+" not in dir_ or "@" not in dir_:
+            continue
+        usuario = dir_.split("@", 1)[0]
+        slug = usuario.split("+", 1)[1]
+        if slug in destinos:
+            return slug
+    return ""
+
+
 def procesar_mail(raw: bytes, cuenta: dict) -> dict:
     msg = email.message_from_bytes(raw)
     try:
@@ -345,10 +412,35 @@ def procesar_mail(raw: bytes, cuenta: dict) -> dict:
         "message_id": (msg.get("Message-ID") or "").strip(),
         "dkim_pass": dkim_ok(msg),
         "texto_plano": texto[:4000],
+        # De que CLIENTE es (vacio = nuestro). Lo usa guardar() para mandarlo
+        # a su base y no a la nuestra.
+        "reenvio_slug": slug_del_reenvio(msg),
     }
 
 
 def es_valido(c: dict, cuenta: dict):
+    """Si este mail se puede tomar como un aviso de transferencia.
+
+    UN MAIL REENVIADO POR UN CLIENTE SE VALIDA DISTINTO, y conviene entender
+    por que antes de "arreglarlo":
+
+      * remitentes_ok de NUESTRA casilla son NUESTROS bancos. El aviso
+        reenviado viene del banco DEL CLIENTE, que casi siempre es otro:
+        aplicarle nuestra lista lo descartaria siempre.
+      * el DKIM del banco se rompe al reenviar (el sobre cambia de manos), asi
+        que exigirlo descartaria todos los reenvios legitimos.
+
+    Lo que lo sostiene en su lugar es la DIRECCION: el mail tuvo que llegar a
+    `pagos+<slug>-<firma>@...`, y esa firma es un HMAC con la llave del
+    servidor -- no se puede armar sabiendo el slug. Y el riesgo residual es del
+    cliente, no nuestro: las fichas se acreditan a SUS jugadores contra SU
+    cuenta bancaria.
+    """
+    if c.get("reenvio_slug"):
+        if c["monto"] is None:
+            return False, "sin monto"
+        return True, "ok (reenvio de cliente)"
+
     permitidos = [r.lower() for r in cuenta.get("remitentes_ok", [])]
     if permitidos and c["mail_de"] not in permitidos:
         return False, f"remitente no autorizado: {c['mail_de']}"
@@ -398,7 +490,20 @@ def guardar(con, c: dict, cuenta: dict = None):
         payload["dkim_pass"] = 1 if c.get("dkim_pass") else 0
         payload["capturado_en"] = datetime.now(timezone.utc).isoformat()
         payload["crudo"] = c
-        return A.guardar_pago(payload, url=(cuenta or {}).get("api_url", ""))
+
+        # A QUE BASE VA. Tres casos, y el orden importa:
+        #   1. mail REENVIADO por un cliente -> a la base de ESE cliente.
+        #   2. casilla IMAP de un cliente     -> a la suya (api_url).
+        #   3. nuestra casilla                -> a la global del .env.
+        # Equivocarse aca es acreditarle la plata de uno a los jugadores de
+        # otro, sin que nada falle a la vista.
+        destino = (cuenta or {}).get("api_url", "")
+        slug = c.get("reenvio_slug") or ""
+        if slug:
+            info = destinos_reenvio().get(slug) or {}
+            if info.get("api_url"):
+                destino = info["api_url"]
+        return A.guardar_pago(payload, url=destino)
     except Exception as e:
         log(c.get("cuenta", "?"), f"! error guardando en API: {e}")
         return None

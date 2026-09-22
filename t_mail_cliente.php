@@ -83,9 +83,15 @@ chequear('sin dominio devuelve vacío (y el endpoint la saltea)',
    sin que nada falle a la vista. */
 $col = file_get_contents(__DIR__ . '/colector/colector_mail.py');
 $api = file_get_contents(__DIR__ . '/colector/api_client.py');
-chequear('el colector pasa la url de la casilla al guardar',
-         str_contains($col, 'A.guardar_pago(payload, url=(cuenta or {}).get("api_url", ""))'),
+chequear('el colector pasa un destino explícito al guardar',
+         str_contains($col, 'A.guardar_pago(payload, url=destino)'),
          'si vuelve a A.guardar_pago(payload), los pagos de los clientes caen en NUESTRA base');
+/* TRES destinos y el orden importa: reenvío del cliente > casilla IMAP del
+   cliente > la nuestra. */
+chequear('el destino arranca en la casilla de la cuenta',
+         str_contains($col, 'destino = (cuenta or {}).get("api_url", "")'));
+chequear('y un reenvío lo pisa con la base de SU dueño',
+         str_contains($col, 'destino = info["api_url"]'));
 chequear('y api_client la respeta sobre la global',
          str_contains($api, 'urllib.request.Request((url or API_URL)'));
 chequear('las dos llamadas a guardar() pasan la cuenta',
@@ -155,6 +161,61 @@ chequear('las del panel se suman a las locales',
          str_contains($col, 'todas = list(cfg["cuentas"]) + casillas_del_panel()'));
 chequear('y un fallo al pedirlas devuelve lista vacía, no rompe',
          str_contains($col, 'return []'));
+
+
+// ===========================================================================
+echo "
+=== 8. El camino SIN contraseñas: reenvío ===
+";
+/* Pedido del dueño (22/09/2026): "sin pedirle tantas contraseñas al cliente,
+   así es más intuitivo y amigable todo". El cliente reenvía los avisos de su
+   banco a una dirección nuestra con su slug adentro; nosotros leemos NUESTRA
+   casilla de siempre y sabemos de quién es cada mail por la dirección. */
+require_once __DIR__ . '/api/mail_reenvio.php';
+
+$firma = mail_reenvio_firma('casinotest');
+chequear('la dirección se FIRMA con la llave del servidor',
+         $firma !== '' && strlen($firma) === 8,
+         'sin firma, cualquiera que sepa el slug manda un aviso falso');
+chequear('la firma cambia con el cliente',
+         mail_reenvio_firma('casinotest') !== mail_reenvio_firma('otrocliente'));
+chequear('y es estable (misma entrada, misma dirección)',
+         mail_reenvio_firma('casinotest') === $firma);
+
+$rev = file_get_contents(__DIR__ . '/api/mail_reenvio.php');
+$cas2 = file_get_contents(__DIR__ . '/api/mail_casillas.php');
+chequear('la firma se VERIFICA al leer, no solo el formato',
+         str_contains($rev, 'hash_equals($esperada, $m[2])'),
+         'sin verificarla, la firma es decorativa');
+chequear('la dirección NO se guarda en la base (se deriva del slug)',
+         !str_contains($cas2, 'mail_dir') && !str_contains($cas2, 'mail_alias'));
+
+chequear('el colector resuelve el cliente por la dirección de llegada',
+         str_contains($col, 'def slug_del_reenvio('));
+chequear('mira varios headers (cada proveedor pone el suyo)',
+         str_contains($col, '"Delivered-To", "X-Original-To"'));
+chequear('el mail reenviado va a la base de SU dueño',
+         str_contains($col, 'info = destinos_reenvio().get(slug) or {}'));
+
+/* La validación cambia para un reenvío, y es deliberado: nuestros
+   remitentes_ok son NUESTROS bancos, y el DKIM del banco se rompe al
+   reenviar. Lo que sostiene el caso es la dirección firmada. */
+chequear('un reenvío no se valida contra NUESTROS remitentes ni DKIM',
+         str_contains($col, 'if c.get("reenvio_slug"):')
+         && str_contains($col, 'return True, "ok (reenvio de cliente)"'));
+
+$cobro2 = file_get_contents(__DIR__ . '/api/crm_cobro.php');
+chequear('el modo reenvío NO exige servidor ni usuario',
+         str_contains($cobro2, "modo === 'imap' && (\$host === '' || \$usr === '')"));
+$crm2 = file_get_contents(__DIR__ . '/landing/crm.html');
+chequear('la pantalla ofrece el reenvío PRIMERO y por default',
+         str_contains($crm2, 'value="reenvio" checked'));
+chequear('con la dirección y un botón de copiar',
+         str_contains($crm2, 'id="mailDirCopiar"'));
+chequear('y avisa cuando llega el primer mail (no hay nada que "probar")',
+         str_contains($crm2, 'Esperando el primer aviso'));
+
+@unlink($llaveTmp);
 
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);
 exit($fail > 0 ? 1 : 0);

@@ -35,6 +35,7 @@ declare(strict_types=1);
 require __DIR__ . '/config.php';
 require __DIR__ . '/db.php';
 require_once __DIR__ . '/cripto.php';
+require_once __DIR__ . '/mail_reenvio.php';
 
 header('Content-Type: application/json; charset=utf-8');
 exigir_api_key();
@@ -88,6 +89,7 @@ if ($accion === 'listar') {
                     mail_carpeta, mail_remitentes
                FROM clientes
               WHERE mail_activo = 1
+                AND COALESCE(mail_modo, 'imap') = 'imap'
                 AND mail_host IS NOT NULL AND mail_host <> ''
                 AND mail_usuario IS NOT NULL AND mail_usuario <> ''
               ORDER BY slug"
@@ -132,6 +134,44 @@ if ($accion === 'listar') {
         ];
     }
     echo json_encode(['ok' => true, 'casillas' => $out], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+// --------------------------------------------------------------- reenvios
+/* LOS CLIENTES QUE ELIGIERON EL CAMINO SIN CONTRASEÑAS. El colector lee
+   NUESTRA casilla y necesita saber, para cada mail que entra, de quién es y a
+   qué base mandarlo. La dirección se deriva del slug (mail_reenvio.php): no se
+   guarda, así que no puede quedar desincronizada.
+
+   Acá NO viaja ninguna credencial: es un mapa de slug -> a dónde acreditar. */
+if ($accion === 'reenvios') {
+    try {
+        $filas = $ctl->query(
+            "SELECT slug, nombre, dominio, path_tenant
+               FROM clientes
+              WHERE mail_activo = 1 AND COALESCE(mail_modo, 'reenvio') = 'reenvio'
+              ORDER BY slug"
+        )->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $e) {
+        error_log('mail_casillas reenvios: ' . $e->getMessage());
+        echo json_encode(['ok' => true, 'reenvios' => [], 'sin_migracion' => true]);
+        exit;
+    }
+    $out = [];
+    foreach ($filas as $c) {
+        $url = mc_api_url($c);
+        if ($url === '') {
+            error_log('mail_casillas: ' . $c['slug'] . ' sin dominio: no sé dónde acreditarle');
+            continue;
+        }
+        $out[] = [
+            'slug'    => (string)$c['slug'],
+            'cliente' => (string)$c['nombre'],
+            'dir'     => mail_reenvio_dir((string)$c['slug']),
+            'api_url' => $url,
+        ];
+    }
+    echo json_encode(['ok' => true, 'reenvios' => $out], JSON_UNESCAPED_UNICODE);
     exit;
 }
 

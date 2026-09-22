@@ -48,6 +48,8 @@ require __DIR__ . '/crm_lib.php';
 require_once __DIR__ . '/cripto.php';
 // El probador de la casilla (solo lectura). Ver mail_imap.php.
 require_once __DIR__ . '/mail_imap.php';
+// La dirección de reenvío del cliente (el camino que no pide contraseñas).
+require_once __DIR__ . '/mail_reenvio.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -90,10 +92,10 @@ try {
    aparte y con try: un cliente cuya base todavía no la corrió tiene que poder
    seguir usando el resto de la pantalla. */
 $colsMail = 'mail_host, mail_puerto, mail_usuario, mail_clave, mail_carpeta, '
-          . 'mail_remitentes, mail_activo, mail_visto_en, mail_error';
+          . 'mail_remitentes, mail_activo, mail_visto_en, mail_error, mail_modo';
 try {
     $st = $ctl->prepare(
-        'SELECT id, metodo_cobro, coins_por_peso, cobro_alias, cobro_cbu, cobro_titular, cobro_modo, cobro_fija_id,
+        'SELECT id, slug, metodo_cobro, coins_por_peso, cobro_alias, cobro_cbu, cobro_titular, cobro_modo, cobro_fija_id,
                 hg_propio_activo, hg_propio_token, hg_propio_account_id, hg_propio_modo,
                 ' . $colsMail . '
            FROM clientes WHERE db_nombre = ? LIMIT 1'
@@ -168,6 +170,12 @@ if ($metodo === 'GET' && ($_GET['accion'] ?? '') === 'estado') {
             'visto_en'   => $cliente['mail_visto_en'] ?? null,
             'error'      => (string)($cliente['mail_error'] ?? ''),
             'cripto_ok'  => cripto_disponible(),
+            /* EL CAMINO SIN CONTRASEÑAS. `dir` es la dirección a la que el
+               cliente tiene que reenviar; se deriva de su slug, no se guarda
+               (ver mail_reenvio.php). */
+            'modo'       => (string)($cliente['mail_modo'] ?? 'reenvio'),
+            'reenvio_ok' => mail_reenvio_disponible(),
+            'dir'        => mail_reenvio_dir((string)($GLOBALS['TENANT_SLUG'] ?? $cliente['slug'] ?? '')),
         ] : null,
     ]);
 }
@@ -267,13 +275,24 @@ if ($metodo === 'POST') {
             /* PRENDERLA SIN LOS DATOS COMPLETOS es la forma de que el cliente
                crea que está cobrando y no. Se exige todo antes de dejar
                activar; apagada se puede guardar a medias para seguir después. */
-            if ($act && ($host === '' || $usr === '')) {
+            if ($act && $modo === 'imap' && ($host === '' || $usr === '')) {
                 salir(['ok' => false, 'error' => 'Para activarla faltan el servidor y el usuario'], 400);
             }
+            if ($act && $modo === 'reenvio' && !mail_reenvio_disponible()) {
+                salir(['ok' => false, 'error' =>
+                    'El reenvío no está configurado en este servidor (falta MAIL_REENVIO_BASE).'], 500);
+            }
+
+            /* MODO. 'reenvio' no necesita ni servidor ni usuario: el cliente
+               no nos da nada, solo reenvía. Por eso la exigencia de datos de
+               abajo es solo para 'imap'. */
+            $modo = ($body['modo'] ?? 'reenvio') === 'imap' ? 'imap' : 'reenvio';
 
             $sets = ['mail_host = ?', 'mail_puerto = ?', 'mail_usuario = ?',
-                     'mail_carpeta = ?', 'mail_remitentes = ?', 'mail_activo = ?'];
-            $args = [$host ?: null, $puerto, $usr ?: null, $carp, $rem ?: null, $act ? 1 : 0];
+                     'mail_carpeta = ?', 'mail_remitentes = ?', 'mail_activo = ?',
+                     'mail_modo = ?'];
+            $args = [$host ?: null, $puerto, $usr ?: null, $carp, $rem ?: null,
+                     $act ? 1 : 0, $modo];
 
             if ($clave !== '') {
                 if (!cripto_disponible()) {
