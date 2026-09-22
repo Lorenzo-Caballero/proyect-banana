@@ -1,10 +1,11 @@
 <?php
 /**
- * Diagnostico de Firebase. Abrilo en el NAVEGADOR (pasa el WAF/Cloudflare):
- *   https://ganamoscrm.online/gp-api/fcm_diag.php?clave=ver-fcm
+ * Diagnostico de Firebase. Abrilo en el NAVEGADOR, CON LA SESION DEL CRM YA
+ * INICIADA (entra primero a crm.html y despues a esta URL):
+ *   https://ganamoscrm.online/gp-api/fcm_diag.php
  *
  * Y para mandarle un empujon de verdad a un jugador:
- *   https://ganamoscrm.online/gp-api/fcm_diag.php?clave=ver-fcm&usuario=holajuan123
+ *   https://ganamoscrm.online/gp-api/fcm_diag.php?usuario=holajuan123
  *
  * POR QUE HACE FALTA. Cuando un push no llega, del lado nuestro no se ve nada:
  * la notificacion queda encolada igual, el CRM dice "enviada", el jugador la
@@ -19,15 +20,30 @@
  * exactamente lo que hace que el diagnostico diga una cosa y el sistema haga
  * otra -- la trampa que ya nos mordio con las claves de IA.
  *
- * BORRALO del server cuando termines de diagnosticar.
+ * ANTES PEDIA UNA CLAVE EN LA URL (`?clave=ver-fcm`) Y DECIA QUE HABIA QUE
+ * BORRARLO. Las dos cosas estaban mal pensadas:
+ *
+ *   - la clave estaba escrita en el repo, o sea que no era un secreto. Con
+ *     ella cualquiera veia el id del proyecto, el mail de la cuenta de
+ *     servicio, cuantos aparatos hay y los ultimos tokens registrados, y podia
+ *     disparar empujones.
+ *   - y borrarlo del server no lo borra: el proximo `git pull` lo repone,
+ *     porque el archivo vive en el repo. Se borro a mano el 21/09/2026 y
+ *     habria vuelto solo en el deploy siguiente, sin que nadie se enterara.
+ *
+ * Con la sesion del CRM no hace falta ninguna de las dos cosas: queda cerrado
+ * igual que crm.php y disponible para la proxima vez -- que va a haber, porque
+ * cada cliente nuevo que configure Firebase lo va a necesitar.
  */
 
 declare(strict_types=1);
 require __DIR__ . '/config.php';
 require __DIR__ . '/db.php';
 require __DIR__ . '/fcm_lib.php';
+require __DIR__ . '/crm_auth.php';
 
-if (!isset($_GET['clave']) || $_GET['clave'] !== 'ver-fcm') { http_response_code(404); exit; }
+/* false: no chequea el saldo del operador. Esto no mueve plata, solo mira. */
+$operador = exigir_operador(false);
 
 header('Content-Type: text/plain; charset=utf-8');
 @ini_set('display_errors', '1');
