@@ -208,12 +208,14 @@ $cobro2 = file_get_contents(__DIR__ . '/api/crm_cobro.php');
 chequear('el modo reenvío NO exige servidor ni usuario',
          str_contains($cobro2, "modo === 'imap' && (\$host === '' || \$usr === '')"));
 $crm2 = file_get_contents(__DIR__ . '/landing/crm.html');
-chequear('la pantalla ofrece el reenvío PRIMERO y por default',
-         str_contains($crm2, 'value="reenvio" checked'));
-chequear('con la dirección y un botón de copiar',
-         str_contains($crm2, 'id="mailDirCopiar"'));
-chequear('y avisa cuando llega el primer mail (no hay nada que "probar")',
-         str_contains($crm2, 'Esperando el primer aviso'));
+/* EL REENVÍO SALIÓ DE LA PANTALLA (22/09/2026, decisión del dueño). El
+   backend queda entero --la migración, la firma, el colector-- por si se
+   retoma, pero la única forma de configurar una casilla hoy es IMAP. */
+chequear('la pantalla ya NO ofrece el reenvío', !str_contains($crm2, 'name="mailModo"'));
+chequear('y el guardado manda modo imap SIEMPRE',
+         str_contains($crm2, 'modo: "imap",'),
+         'sin esto una casilla quedaría en un modo que ninguna pantalla configura, '
+         . 'y el colector no la leería nunca');
 
 @unlink($llaveTmp);
 

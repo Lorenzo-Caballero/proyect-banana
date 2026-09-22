@@ -2501,24 +2501,6 @@
   .mail-avanzado summary{cursor:pointer;font-size:12px;font-weight:600;color:var(--muted)}
   .mail-avanzado summary:hover{color:var(--txt)}
 
-  .mail-modos{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:9px;margin-bottom:15px}
-  .mail-modo{display:flex;gap:9px;align-items:flex-start;padding:10px 12px;cursor:pointer;
-    border:1px solid var(--line);border-radius:11px;background:var(--panel);
-    transition:border-color .12s,background .12s}
-  .mail-modo:hover{border-color:var(--line2)}
-  .mail-modo.on{border-color:var(--green);background:var(--greenSoft)}
-  .mail-modo input{margin-top:2px;flex:0 0 auto;accent-color:var(--green)}
-  .mail-modo b{font-size:12.5px;display:block}
-  .mail-modo small{color:var(--muted);font-size:11.5px;display:block;margin-top:2px;line-height:1.45}
-  /* La dirección es LO que el cliente vino a buscar acá: grande, monoespaciada
-     y con el botón de copiar al lado. Si tiene que seleccionarla a mano de un
-     párrafo, la mitad la copia con un espacio de más. */
-  .mail-dir-row{display:flex;gap:8px;align-items:center;margin-bottom:4px}
-  .mail-dir-row .cb-input{font:600 13px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-    color:var(--green2);background:var(--panel)}
-  .mail-espera{margin-top:12px;padding:10px 12px;border-radius:10px;font-size:12.5px;line-height:1.6;
-    background:var(--panel);border:1px dashed var(--line2);color:var(--muted)}
-  .mail-espera.listo{border-style:solid;border-color:var(--green);background:var(--greenSoft);color:var(--txt)}
   @media (max-width:640px){ .mail-acciones button{flex:1} }
 
   .cobro-cta-fila{display:flex;align-items:center;gap:10px;padding:9px 12px;
@@ -6112,52 +6094,7 @@
                 <span class="mail-estado" id="mailEstado"></span>
               </div>
 
-              <!-- DOS CAMINOS, y el de arriba es el que no pide contraseñas.
-                   Va primero y viene elegido por default a propósito: pedirle
-                   a alguien la clave de su correo es la fricción más alta de
-                   toda la configuración, y para esto no hace falta. -->
-              <div class="mail-modos">
-                <label class="mail-modo on">
-                  <input type="radio" name="mailModo" value="reenvio" checked>
-                  <span><b>Reenviá tus avisos</b>
-                  <small>Sin contraseñas. Le decís a tu correo que nos copie los avisos del banco.</small></span>
-                </label>
-                <label class="mail-modo">
-                  <input type="radio" name="mailModo" value="imap">
-                  <span><b>Conectar mi casilla</b>
-                  <small>Nos das una contraseña de aplicación y la leemos nosotros.</small></span>
-                </label>
-              </div>
-
-              <!-- ---------------- REENVÍO ---------------- -->
-              <div id="mailReenvio">
-                <label class="cb-flabel">Reenviá los avisos de tu banco a esta dirección</label>
-                <div class="mail-dir-row">
-                  <input class="cb-input" id="mailDir" readonly onfocus="this.select()">
-                  <button class="cb-btn-ghost" id="mailDirCopiar" type="button">Copiar</button>
-                </div>
-                <p class="cfg-hint">Es tuya y solo tuya. No nos das ninguna contraseña:
-                nosotros solo recibimos los mails que vos nos reenviás.</p>
-
-                <details class="mail-ayuda" open>
-                  <summary>Cómo configurar el reenvío en Gmail (2 minutos)</summary>
-                  <ol>
-                    <li>En Gmail: <b>Configuración → Reenvío y correo POP/IMAP</b>.</li>
-                    <li><b>Agregar una dirección de reenvío</b> y pegá la de arriba.</li>
-                    <li>Google te manda un código a nosotros. <b>Avisanos</b> y te lo pasamos
-                        (llega en el momento).</li>
-                    <li>Volvé a <b>Filtros → Crear un filtro</b>, poné en «De» la dirección
-                        de tu banco, y tildá <b>Reenviar a</b> con esa dirección.</li>
-                  </ol>
-                  <p>Así solo se reenvían los avisos de tu banco, no tu correo.
-                  Podés borrar el reenvío cuando quieras desde esa misma pantalla.</p>
-                </details>
-
-                <div class="mail-espera" id="mailEspera"></div>
-              </div>
-
-              <!-- ---------------- IMAP ---------------- -->
-              <div id="mailImap" style="display:none">
+              <div id="mailImap">
                 <!-- TRES PASOS, uno abajo del otro y numerados. Antes eran
                      seis campos sueltos --servidor, puerto, dirección, clave,
                      carpeta, remitentes-- y dos de ellos (servidor y puerto)
@@ -8780,42 +8717,6 @@
         'del panel y genera la llave de cifrado.</span></p>';
       return;
     }
-    /* EL MODO. 'reenvio' es el default y el recomendado: no pide contraseñas.
-       Los campos de IMAP se esconden enteros, no se deshabilitan -- media
-       pantalla gris de campos que no aplican hace pensar que falta algo. */
-    const modo = m.modo || "reenvio";
-    document.querySelectorAll('input[name="mailModo"]').forEach(r=>{
-      r.checked = (r.value === modo);
-    });
-    mailModoPintar();
-
-    $("#mailDir").value = m.dir || "";
-    if(!m.reenvio_ok || !m.dir){
-      $("#mailDir").value = "";
-      $("#mailDir").placeholder = "No disponible en este servidor";
-    }
-
-    /* ESPERANDO EL PRIMER MAIL. Es la confirmación que reemplaza al "probar
-       conexión" del otro camino: acá no hay nada que probar hasta que el
-       cliente configure el reenvío y llegue el primer aviso. Verlo llegar es
-       lo que le dice que quedó bien. */
-    const esp = $("#mailEspera");
-    if(esp){
-      if(m.visto_en){
-        esp.className = "mail-espera listo";
-        esp.innerHTML = "✓ <b>Ya está funcionando.</b> Recibimos tu último aviso " +
-          fidHace(m.visto_en) + ". Las transferencias se acreditan solas.";
-      } else if(m.activo){
-        esp.className = "mail-espera";
-        esp.innerHTML = "Esperando el primer aviso… Apenas nos llegue uno de tu banco, " +
-          "esto cambia solo y ya queda andando. Podés cerrar esta pantalla.";
-      } else {
-        esp.className = "mail-espera";
-        esp.innerHTML = "Cuando termines de configurar el reenvío, prendé " +
-          "<b>«Leer esta casilla»</b> y guardá.";
-      }
-    }
-
     $("#mailHost").value       = m.host || "";
     if(m.host){ $("#mailHost").dataset.tocado = "1"; }
     $("#mailPuerto").value     = m.puerto || 993;
@@ -8960,27 +8861,6 @@
     this.dataset.tocado = "1";
   }));
 
-  function mailModoPintar(){
-    const r = document.querySelector('input[name="mailModo"]:checked');
-    const modo = r ? r.value : "reenvio";
-    document.querySelectorAll(".mail-modo").forEach(l=>
-      l.classList.toggle("on", l.querySelector("input").checked));
-    $("#mailReenvio").style.display = modo === "reenvio" ? "" : "none";
-    $("#mailImap").style.display    = modo === "imap"    ? "" : "none";
-    // «Probar conexión» solo tiene sentido con IMAP: en el reenvío no hay
-    // nada que probar hasta que llegue un mail de verdad.
-    const p = $("#mailProbar");
-    if(p) p.style.display = modo === "imap" ? "" : "none";
-  }
-  document.querySelectorAll('input[name="mailModo"]').forEach(r=>
-    r.addEventListener("change", mailModoPintar));
-  $("#mailDirCopiar")?.addEventListener("click", ()=>{
-    const v = $("#mailDir").value;
-    if(!v) return;
-    navigator.clipboard?.writeText(v);
-    toast("Dirección copiada");
-  });
-
   function mailRes(cls, html){
     const r = $("#mailResultado"); if(!r) return;
     r.style.display = ""; r.className = "mail-res " + cls; r.innerHTML = html;
@@ -8989,10 +8869,14 @@
   async function mailGuardar(silencioso){
     const b = $("#mailGuardar"); const txt = b.textContent;
     b.disabled = true; b.textContent = "Guardando…";
-    const modoSel = document.querySelector('input[name="mailModo"]:checked');
     const d = await jpost({
       accion:"mail_guardar",
-      modo: modoSel ? modoSel.value : "reenvio",
+      /* SIEMPRE 'imap': el reenvío se sacó de la pantalla (22/09/2026) y el
+         default de la columna sigue siendo 'reenvio'. Sin esto explícito, una
+         casilla guardada acá quedaría en un modo que ninguna pantalla
+         configura, y el colector --que filtra por modo-- no la leería nunca.
+         El código del reenvío sigue en el backend por si se retoma. */
+      modo: "imap",
       host: $("#mailHost").value.trim(),
       puerto: parseInt($("#mailPuerto").value, 10) || 993,
       usuario: $("#mailUsuario").value.trim(),
