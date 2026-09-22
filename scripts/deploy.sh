@@ -20,6 +20,9 @@ WEB="/var/www"
 
 cd "$REPO"
 
+# El commit ANTES del pull, para saber despues si este mismo script cambio.
+ANTES="$(git rev-parse HEAD 2>/dev/null || echo '')"
+
 echo "==> git pull"
 # Si hay cambios locales, el pull aborta y (antes) el script seguia adelante
 # publicando codigo viejo. Se corta ACA con un mensaje que se entienda.
@@ -31,6 +34,29 @@ if ! git pull --ff-only; then
   echo "   Si no te importan:" >&2
   echo "     cd $REPO && git checkout -- <archivo> && bash scripts/deploy.sh" >&2
   exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# SI ESTE MISMO SCRIPT CAMBIO EN EL PULL, SE RE-EJECUTA.
+#
+# EL PROBLEMA (22/09/2026): bash lee el script MIENTRAS lo ejecuta, asi que un
+# deploy que se trae una version nueva de deploy.sh sigue corriendo con la
+# vieja --la que ya tenia cargada-- y los pasos nuevos no corren. Paso con las
+# migraciones del panel: el CRM quedo actualizado y anunciando "la lectura de
+# casilla no esta habilitada", porque el bloque que las aplica venia en el
+# mismo commit y no se ejecuto.
+#
+# Peor: el sintoma es "lo desplegue y no anduvo", y el segundo intento SI
+# funciona -- de los mas dificiles de diagnosticar.
+#
+# GP_REEJEC evita el bucle: la segunda pasada no vuelve a re-ejecutarse aunque
+# el archivo siga distinto por cualquier motivo.
+# ---------------------------------------------------------------------------
+if [ -z "${GP_REEJEC:-}" ] && [ "$(git rev-parse HEAD 2>/dev/null)" != "$ANTES" ]; then
+  if ! git diff --quiet "$ANTES" HEAD -- scripts/deploy.sh 2>/dev/null; then
+    echo "==> deploy.sh cambio en el pull: re-ejecutando la version nueva"
+    GP_REEJEC=1 exec bash "$REPO/scripts/deploy.sh" "$@"
+  fi
 fi
 
 HASH="$(git rev-parse --short HEAD)"
