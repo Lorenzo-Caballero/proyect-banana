@@ -2470,6 +2470,15 @@
   .mail-res.aviso{background:rgba(245,166,35,.1);border:1px solid var(--orange);color:var(--txt)}
   .mail-res.mal{background:var(--redSoft);border:1px solid var(--red);color:var(--txt)}
   /* --- los tres pasos del camino IMAP --- */
+  /* MIENTRAS SEA UNA SOLA BILLETERA. Se avisa donde se toma la decisión, no
+     en la letra chica: enterarse de que tenía que ser Cencopay cuando ya no
+     le acreditan a nadie es el peor momento posible. */
+  .cobro-solo{color:var(--orange2);font-weight:700}
+  .cobro-solo-aviso{margin:8px 0 12px;padding:10px 13px;border-radius:10px;
+    background:rgba(245,166,35,.09);border:1px solid var(--orange);
+    font-size:12.5px;line-height:1.6;color:var(--muted)}
+  .cobro-solo-aviso b{color:var(--txt);display:block;margin-bottom:2px}
+
   .mail-paso{display:flex;gap:12px;align-items:flex-start;padding:13px 0;
     border-bottom:1px solid var(--line)}
   .mail-paso:last-of-type{border-bottom:0}
@@ -6035,7 +6044,8 @@
             <label class="cobro-metodo-opt">
               <input type="radio" name="cobroMetodo" value="transferencia" id="cobroMetodoTransferencia">
               <b>Transferencia</b>
-              <span>Con tu cuenta o billetera propia. El sistema lee tu casilla de mail y acredita solo.</span>
+              <span>Con tu billetera propia. El sistema lee tu casilla de mail y acredita solo.
+              <br><b class="cobro-solo">Por ahora solo con Cencopay.</b></span>
             </label>
             <label class="cobro-metodo-opt">
               <input type="radio" name="cobroMetodo" value="hgcash" id="cobroMetodoHgcash">
@@ -6049,6 +6059,18 @@
                Con mas de una, el cliente elige como se reparten. -->
           <div class="cobro-metodo-body" id="cobroBodyTransferencia">
             <label class="cb-flabel">Billetera en uso</label>
+            <!-- MIENTRAS SEA UNA SOLA BILLETERA, se dice donde se carga y no
+                 en la letra chica: el cliente puede tener CBU de cualquier
+                 banco a mano, y descubrir recién cuando no le acreditan que
+                 tenía que ser Cencopay es el peor momento para enterarse.
+                 Cuando se sumen otras, sacar este bloque y el `cobro-solo` de
+                 arriba. -->
+            <div class="cobro-solo-aviso">
+              <b>Por el momento solo trabajamos con Cencopay.</b>
+              La cuenta que cargues acá tiene que ser de Cencopay: es la única
+              billetera cuyos avisos el sistema sabe leer hoy. Si usás otra, las
+              transferencias de tus jugadores no se van a acreditar solas.
+            </div>
             <p class="cfg-hint">
               Marcá la que querés usar. A esa le van a transferir todos los
               jugadores, y no cambia hasta que la cambies vos.
@@ -6132,10 +6154,11 @@
                   <span class="mail-paso-n">3</span>
                   <div class="mail-paso-cuerpo">
                     <b>¿Quién te manda los avisos?</b>
-                    <p>La dirección del banco o la billetera. Con esto leemos <b>solo esos
-                    mails</b> y nada más de tu casilla.</p>
+                    <p>La dirección desde la que te llega el aviso de <b>Cencopay</b>.
+                    Abrí uno de esos mails y copiá el remitente tal cual. Con esto leemos
+                    <b>solo esos mails</b> y nada más de tu casilla.</p>
                     <input class="cb-input" id="mailRemitentes"
-                           placeholder="notificaciones@tubanco.com" autocomplete="off">
+                           placeholder="el remitente de los avisos de Cencopay" autocomplete="off">
                   </div>
                 </div>
 
