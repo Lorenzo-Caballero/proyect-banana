@@ -8635,10 +8635,16 @@
   function mailPintar(m){
     const box = $(".mail-box"); if(!box) return;
     if(!m){
-      // Sin la migración 09 del control: se dice, en vez de mostrar una
-      // pantalla que no va a guardar nada.
-      box.innerHTML = '<p class="cfg-hint">La lectura de casilla todavía no está ' +
-        'habilitada en este servidor. Escribinos y la activamos.</p>';
+      /* Sin la migración 09 del control. Esto NO debería verse nunca: el
+         deploy corre las migraciones del panel solo (scripts/migrar-control.php)
+         y genera la llave de cifrado si falta. Si aparece, es que el servidor
+         quedó a mitad de camino -- y el mensaje trae el arreglo, porque un
+         "escribinos y la activamos" deja al cliente esperando por algo que se
+         resuelve con un comando. */
+      box.innerHTML = '<p class="cfg-hint">La lectura de casilla no está habilitada en ' +
+        'este servidor todavía.<br><span style="color:var(--muted2)">Para el soporte: ' +
+        'correr <b>bash /opt/goldpaw/scripts/deploy.sh</b>, que aplica las migraciones ' +
+        'del panel y genera la llave de cifrado.</span></p>';
       return;
     }
     $("#mailHost").value       = m.host || "";

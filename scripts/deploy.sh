@@ -73,6 +73,45 @@ publicar "$REPO/landing" "$WEB/replica"
 publicar "$REPO/panel"   "$WEB/panel"   "panel_config.php"
 
 # ---------------------------------------------------------------------------
+# LLAVE DE CIFRADO Y MIGRACIONES DEL CONTROL: lo que hace que un feature
+# desplegado este de verdad HABILITADO.
+#
+# El caso (22/09/2026): la pantalla «Como cobro» mostraba "la lectura de
+# casilla todavia no esta habilitada en este servidor, escribinos" sobre un
+# feature que ya estaba desplegado. El codigo llegaba; la columna del control
+# no, porque las migraciones de panel/sql/ no las corria NADIE -- habia que
+# acordarse de tirar el .sql a mano. Y la llave de cifrado tampoco existia
+# hasta que alguien la generaba.
+#
+# Las dos cosas son idempotentes: la llave se crea SOLO si falta (regenerarla
+# dejaria ilegibles las contraseñas ya guardadas) y las migraciones usan IF NOT
+# EXISTS.
+# ---------------------------------------------------------------------------
+CRIPTO_KEY="/etc/goldpaw/cripto.key"
+echo "==> llave de cifrado ($CRIPTO_KEY)"
+if [ -s "$CRIPTO_KEY" ]; then
+  echo "   ok  (ya existe — NO se toca: regenerarla dejaria ilegibles las claves guardadas)"
+else
+  if mkdir -p /etc/goldpaw 2>/dev/null && openssl rand -base64 32 > "$CRIPTO_KEY" 2>/dev/null; then
+    PHP_USER="$(awk -F'=' '/^[[:space:]]*user[[:space:]]*=/ {gsub(/ /,"",$2); print $2; exit}' /etc/php/*/fpm/pool.d/www.conf 2>/dev/null || true)"
+    PHP_USER="${PHP_USER:-www-data}"
+    # La leen DOS: el CRM (que guarda) y el colector (que descifra).
+    chown root:"$PHP_USER" /etc/goldpaw "$CRIPTO_KEY" 2>/dev/null || true
+    chmod 750 /etc/goldpaw 2>/dev/null || true
+    chmod 640 "$CRIPTO_KEY" 2>/dev/null || true
+    echo "   generada. HACELE BACKUP aparte de la base: si se pierde, cada cliente"
+    echo "   tiene que volver a cargar la contraseña de su casilla."
+  else
+    echo "   !! no se pudo generar (¿sin root?). Las casillas de mail no se van a poder guardar." >&2
+  fi
+fi
+
+echo "==> migraciones del control (panel/sql -> goldpaw_control)"
+if ! php "$REPO/scripts/migrar-control.php"; then
+  echo "   !! fallaron: features nuevos del panel pueden quedar a medias." >&2
+fi
+
+# ---------------------------------------------------------------------------
 # Carpeta PERSISTENTE para las sesiones del CRM.
 #
 # POR QUE ESTO ES PARTE DEL DEPLOY: php-fpm corre con PrivateTmp=true en
