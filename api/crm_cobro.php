@@ -50,6 +50,8 @@ require_once __DIR__ . '/cripto.php';
 require_once __DIR__ . '/mail_imap.php';
 // La dirección de reenvío del cliente (el camino que no pide contraseñas).
 require_once __DIR__ . '/mail_reenvio.php';
+// De la dirección al servidor IMAP: el cliente no tiene por qué saberlo.
+require_once __DIR__ . '/mail_proveedores.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -287,6 +289,13 @@ if ($metodo === 'POST') {
                no nos da nada, solo reenvía. Por eso la exigencia de datos de
                abajo es solo para 'imap'. */
             $modo = ($body['modo'] ?? 'reenvio') === 'imap' ? 'imap' : 'reenvio';
+
+            /* SI NO VINO EL SERVIDOR, se deduce de la dirección. El front ya
+               lo completa mientras el cliente escribe, pero esto lo cubre
+               igual: si solo estuviera en el JS, un navegador viejo o un POST
+               directo dejarían una casilla sin servidor -- una casilla que no
+               lee y nadie sabe por qué. */
+            if ($host === '' && $usr !== '') { $host = mail_host_probable($usr); }
 
             $sets = ['mail_host = ?', 'mail_puerto = ?', 'mail_usuario = ?',
                      'mail_carpeta = ?', 'mail_remitentes = ?', 'mail_activo = ?',

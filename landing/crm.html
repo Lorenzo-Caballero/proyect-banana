@@ -2469,6 +2469,38 @@
   .mail-res.ok{background:var(--greenSoft);border:1px solid var(--green);color:var(--txt)}
   .mail-res.aviso{background:rgba(245,166,35,.1);border:1px solid var(--orange);color:var(--txt)}
   .mail-res.mal{background:var(--redSoft);border:1px solid var(--red);color:var(--txt)}
+  /* --- los tres pasos del camino IMAP --- */
+  .mail-paso{display:flex;gap:12px;align-items:flex-start;padding:13px 0;
+    border-bottom:1px solid var(--line)}
+  .mail-paso:last-of-type{border-bottom:0}
+  /* El número se tacha con un check cuando el paso está resuelto: es la
+     única señal de avance en una pantalla donde no hay "siguiente". */
+  .mail-paso-n{flex:0 0 auto;width:23px;height:23px;border-radius:50%;
+    background:var(--panel3);color:var(--muted);display:flex;align-items:center;
+    justify-content:center;font:700 11.5px inherit;margin-top:1px;
+    transition:background .15s,color .15s}
+  .mail-paso.listo .mail-paso-n{background:var(--green);color:var(--onAccent)}
+  .mail-paso-cuerpo{flex:1;min-width:0}
+  .mail-paso-cuerpo b{font-size:13px;display:block}
+  .mail-paso-cuerpo p{color:var(--muted);font-size:12px;line-height:1.55;margin:3px 0 9px}
+  .mail-paso-cuerpo .cb-input{width:100%}
+  /* Lo que el sistema dedujo solo: confirma que entendió la dirección y, de
+     paso, explica por qué ya no hay que llenar «servidor» ni «puerto». */
+  .mail-detect{margin-top:7px;font-size:12px;color:var(--muted);min-height:17px}
+  .mail-detect b{color:var(--green2)}
+  /* El link a crear la contraseña es un BOTÓN y no un enlace en un párrafo:
+     es la acción del paso 2, y es donde se pierde la mitad de la gente si
+     tiene que buscarla dentro de un texto. */
+  .mail-btn-link{display:inline-flex;align-items:center;gap:8px;margin-bottom:10px;
+    background:var(--violet);color:var(--onAccent);border-radius:10px;
+    padding:9px 14px;font:700 12.5px inherit;text-decoration:none}
+  .mail-btn-link:hover{background:var(--violet2)}
+  .mail-btn-link::after{content:"↗";font-weight:400;opacity:.8}
+  .mail-avanzado{margin-top:14px;border:1px solid var(--line);border-radius:10px;
+    background:var(--panel);padding:10px 12px}
+  .mail-avanzado summary{cursor:pointer;font-size:12px;font-weight:600;color:var(--muted)}
+  .mail-avanzado summary:hover{color:var(--txt)}
+
   .mail-modos{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:9px;margin-bottom:15px}
   .mail-modo{display:flex;gap:9px;align-items:flex-start;padding:10px 12px;cursor:pointer;
     border:1px solid var(--line);border-radius:11px;background:var(--panel);
@@ -6126,47 +6158,71 @@
 
               <!-- ---------------- IMAP ---------------- -->
               <div id="mailImap" style="display:none">
-              <div class="mail-grid">
-                <div>
-                  <label class="cb-flabel">Servidor IMAP</label>
-                  <input class="cb-input" id="mailHost" placeholder="imap.gmail.com" autocomplete="off">
-                </div>
-                <div style="max-width:110px">
-                  <label class="cb-flabel">Puerto</label>
-                  <input class="cb-input" id="mailPuerto" inputmode="numeric" placeholder="993">
-                </div>
-                <div>
-                  <label class="cb-flabel">Dirección de la casilla</label>
-                  <input class="cb-input" id="mailUsuario" placeholder="vos@gmail.com" autocomplete="off">
-                </div>
-                <div>
-                  <label class="cb-flabel">Contraseña de aplicación</label>
-                  <input class="cb-input" id="mailClave" type="password" placeholder="••••••••••••" autocomplete="new-password">
-                  <p class="cfg-hint" id="mailClaveHint"></p>
-                </div>
-              </div>
+                <!-- TRES PASOS, uno abajo del otro y numerados. Antes eran
+                     seis campos sueltos --servidor, puerto, dirección, clave,
+                     carpeta, remitentes-- y dos de ellos (servidor y puerto)
+                     son datos que quien configura esto no tiene idea de dónde
+                     sacar. Ahora se deducen de la dirección y quedan
+                     escondidos; lo que queda a la vista es lo único que el
+                     cliente sí sabe o puede conseguir. -->
 
-              <label class="cb-flabel" style="margin-top:14px">Leer solo los mails de</label>
-              <input class="cb-input" id="mailRemitentes" placeholder="notificaciones@tubanco.com" autocomplete="off">
-              <p class="cfg-hint">La dirección desde la que te llegan los avisos de transferencia.
-              <b>Con esto no leemos tu casilla</b>: leemos solo esos mails. Podés poner varias separadas por coma.</p>
+                <div class="mail-paso" id="mailP1">
+                  <span class="mail-paso-n">1</span>
+                  <div class="mail-paso-cuerpo">
+                    <b>¿Cuál es tu casilla?</b>
+                    <p>Donde tu banco te manda los avisos de transferencia.</p>
+                    <input class="cb-input" id="mailUsuario" placeholder="vos@gmail.com"
+                           autocomplete="off" inputmode="email">
+                    <div class="mail-detect" id="mailDetect"></div>
+                  </div>
+                </div>
 
-              <label class="cb-flabel" style="margin-top:14px">Carpeta <span class="cfg-opt">(opcional)</span></label>
-              <input class="cb-input" id="mailCarpeta" placeholder="INBOX" autocomplete="off" style="max-width:260px">
+                <div class="mail-paso" id="mailP2">
+                  <span class="mail-paso-n">2</span>
+                  <div class="mail-paso-cuerpo">
+                    <b id="mailP2Tit">Creá una contraseña de aplicación</b>
+                    <p id="mailP2Txt">Es una clave aparte, solo para esto. No es la de tu cuenta
+                    y la podés borrar cuando quieras.</p>
+                    <a class="mail-btn-link" id="mailAppLink" target="_blank" rel="noopener"
+                       style="display:none"></a>
+                    <input class="cb-input" id="mailClave" type="password"
+                           placeholder="Pegá acá la contraseña" autocomplete="new-password">
+                    <p class="cfg-hint" id="mailClaveHint"></p>
+                  </div>
+                </div>
 
-              <!-- AYUDA DE GMAIL para el camino IMAP: la contraseña de la
-                   cuenta NO funciona, hace falta una de aplicación. -->
-              <details class="mail-ayuda">
-                <summary>¿Cómo saco la contraseña de aplicación de Gmail?</summary>
-                <ol>
-                  <li>Entrá a tu cuenta de Google → <b>Seguridad</b>.</li>
-                  <li>Activá la <b>verificación en dos pasos</b> (sin eso, Google no deja crear la contraseña).</li>
-                  <li>Buscá <b>Contraseñas de aplicaciones</b> y creá una nueva (poné «GOLDPAW» de nombre).</li>
-                  <li>Copiá las <b>16 letras</b> que te muestra y pegalas acá arriba, sin espacios.</li>
-                </ol>
-                <p>No es la contraseña de tu cuenta: es una clave aparte, solo para esto,
-                y la podés <b>revocar cuando quieras</b> desde esa misma pantalla.</p>
-              </details>
+                <div class="mail-paso" id="mailP3">
+                  <span class="mail-paso-n">3</span>
+                  <div class="mail-paso-cuerpo">
+                    <b>¿Quién te manda los avisos?</b>
+                    <p>La dirección del banco o la billetera. Con esto leemos <b>solo esos
+                    mails</b> y nada más de tu casilla.</p>
+                    <input class="cb-input" id="mailRemitentes"
+                           placeholder="notificaciones@tubanco.com" autocomplete="off">
+                  </div>
+                </div>
+
+                <!-- Lo técnico, para el caso raro (un dominio propio, una
+                     carpeta distinta). Cerrado: el que lo necesita lo busca. -->
+                <details class="mail-avanzado">
+                  <summary>Configuración avanzada</summary>
+                  <div class="mail-grid" style="margin-top:10px">
+                    <div>
+                      <label class="cb-flabel">Servidor IMAP</label>
+                      <input class="cb-input" id="mailHost" placeholder="imap.gmail.com" autocomplete="off">
+                    </div>
+                    <div style="max-width:110px">
+                      <label class="cb-flabel">Puerto</label>
+                      <input class="cb-input" id="mailPuerto" inputmode="numeric" placeholder="993">
+                    </div>
+                    <div>
+                      <label class="cb-flabel">Carpeta</label>
+                      <input class="cb-input" id="mailCarpeta" placeholder="INBOX" autocomplete="off">
+                    </div>
+                  </div>
+                  <p class="cfg-hint" style="margin-top:8px">Se completan solos con tu dirección.
+                  Tocalos solo si tu correo es de un servidor propio.</p>
+                </details>
               </div><!-- /#mailImap -->
 
               <div class="mail-acciones">
@@ -7418,16 +7474,28 @@
     const lineas = (res && res.log) || [];
     if(!lineas.length) return "";
     const hayError = lineas.some(l=>/ERROR|EXCEPCI|FALLO/i.test(l));
-    const abierto = rcLogs.has(r.id) || (hayError && !rcLogs.has(-r.id));
+
+    /* EL LOG SOLO APARECE SI ALGO FALLÓ (pedido del dueño, 22/09/2026:
+       "eliminá los logs, eso era solo para probarlo, ahora ya funciona
+       bien"). Una corrida que salió entera no necesita explicarse: la lista
+       de jugadores con sus montos ya dice todo lo que hay que saber.
+
+       No se borra del todo a propósito: el día que vuelva a fallar algo --el
+       WAF, la sesión, un monto rechazado-- el motivo tiene que estar donde se
+       mira la corrida y no en el log de un contenedor al que hay que entrar
+       por SSH. Fue justamente lo que encontró el bug del redondeo. */
+    if(!hayError) return "";
+
+    const abierto = rcLogs.has(r.id) || !rcLogs.has(-r.id);
     const cuerpo = abierto
       ? '<div class="rc-log" data-rclogbox="' + r.id + '">' + lineas.map(l=>{
           const cls = /ERROR|EXCEPCI|FALLO/i.test(l) ? "e" : (/: OK/.test(l) ? "ok" : "");
           return cls ? '<span class="' + cls + '">' + esc(l) + '</span>' : esc(l);
         }).join("\n") + '</div>'
       : "";
-    return '<button class="rc-log-tog' + (hayError?" hay-error":"") + '" data-rclog="' + r.id + '" type="button">' +
-           '<span class="pt"></span>' + (abierto ? "Ocultar" : "Ver") + ' el detalle técnico' +
-           (hayError ? " · hay errores" : "") + ' (' + lineas.length + ')</button>' + cuerpo;
+    return '<button class="rc-log-tog hay-error" data-rclog="' + r.id + '" type="button">' +
+           '<span class="pt"></span>' + (abierto ? "Ocultar" : "Ver") +
+           ' por qué fallaron</button>' + cuerpo;
   }
 
   /* ====================== ANALITICA DE RECAUDACION ======================
@@ -8749,6 +8817,7 @@
     }
 
     $("#mailHost").value       = m.host || "";
+    if(m.host){ $("#mailHost").dataset.tocado = "1"; }
     $("#mailPuerto").value     = m.puerto || 993;
     $("#mailUsuario").value    = m.usuario || "";
     $("#mailCarpeta").value    = m.carpeta || "INBOX";
@@ -8757,10 +8826,15 @@
     /* La clave NUNCA vuelve del server, ni cifrada. Vacío = "no la cambies",
        igual que el token de HG Cash y el de Meta. */
     $("#mailClave").value = "";
-    $("#mailClave").placeholder = m.tiene_clave ? "•••••••••• (ya guardada)" : "16 letras, sin espacios";
-    $("#mailClaveHint").innerHTML = m.tiene_clave
-      ? "Ya hay una guardada. Dejalo vacío para no cambiarla."
-      : "Con Gmail NO va la contraseña de tu cuenta: mirá la ayuda de abajo.";
+    /* El placeholder y el hint los completa mailDetectar() según el
+       proveedor; acá solo se cubre el caso "ya hay una guardada", que es lo
+       que evita que el cliente crea que tiene que volver a cargarla. */
+    $("#mailClave").placeholder = m.tiene_clave
+      ? "•••••••••• (ya guardada)" : "Pegá acá la contraseña";
+    $("#mailClaveHint").textContent = m.tiene_clave
+      ? "Ya hay una guardada. Dejalo vacío para no cambiarla." : "";
+
+    mailDetectar();
 
     if(!m.cripto_ok){
       $("#mailClaveHint").innerHTML =
@@ -8786,6 +8860,105 @@
       mailRes("mal", "<b>Último error:</b> " + esc(m.error));
     }
   }
+
+  /* LOS PROVEEDORES, del lado del navegador. La misma tabla vive en
+     api/mail_proveedores.php: el front la usa para completar mientras el
+     cliente escribe, y el back para poder guardar aunque el host llegue
+     vacío. Si solo estuviera acá, un fetch directo dejaría una casilla sin
+     servidor -- una casilla que no lee y nadie sabe por qué. */
+  const MAIL_PROVEEDORES = [
+    { id:"gmail", nombre:"Gmail", host:"imap.gmail.com", puerto:993,
+      dominios:["gmail.com","googlemail.com"],
+      appUrl:"https://myaccount.google.com/apppasswords",
+      appNombre:"contraseña de aplicación",
+      ayuda:"Te pide la verificación en dos pasos activada. Si no la tenés, Google te la ofrece ahí mismo." },
+    { id:"outlook", nombre:"Outlook / Hotmail", host:"outlook.office365.com", puerto:993,
+      dominios:["outlook.com","hotmail.com","hotmail.com.ar","live.com","live.com.ar","msn.com","outlook.com.ar","outlook.es"],
+      appUrl:"https://account.live.com/proofs/AppPassword",
+      appNombre:"contraseña de aplicación",
+      ayuda:"Necesita la verificación en dos pasos activada." },
+    { id:"yahoo", nombre:"Yahoo", host:"imap.mail.yahoo.com", puerto:993,
+      dominios:["yahoo.com","yahoo.com.ar","yahoo.es","ymail.com","rocketmail.com"],
+      appUrl:"https://login.yahoo.com/myaccount/security/app-password",
+      appNombre:"contraseña de aplicación",
+      ayuda:"Yahoo exige contraseña de aplicación para IMAP: la de tu cuenta no entra." },
+    { id:"icloud", nombre:"iCloud", host:"imap.mail.me.com", puerto:993,
+      dominios:["icloud.com","me.com","mac.com"],
+      appUrl:"https://account.apple.com/account/manage",
+      appNombre:"contraseña específica para apps",
+      ayuda:"En «Iniciar sesión y seguridad» → «Contraseñas específicas para apps»." },
+    { id:"zoho", nombre:"Zoho Mail", host:"imap.zoho.com", puerto:993,
+      dominios:["zoho.com","zohomail.com"],
+      appUrl:"https://accounts.zoho.com/home#security/apppasswords",
+      appNombre:"contraseña de aplicación", ayuda:"" },
+    { id:"proton", nombre:"Proton Mail", host:"127.0.0.1", puerto:1143,
+      dominios:["proton.me","protonmail.com","pm.me"],
+      appUrl:"https://proton.me/mail/bridge", appNombre:"Proton Mail Bridge",
+      ayuda:"Proton no permite IMAP directo: necesita su Bridge instalado. Para esto conviene el reenvío." },
+  ];
+
+  function mailProveedor(email){
+    const dom = String(email||"").toLowerCase().split("@")[1] || "";
+    if(!dom) return null;
+    return MAIL_PROVEEDORES.find(p=>p.dominios.includes(dom)) || null;
+  }
+
+  /* COMPLETA SOLO lo que el cliente no tiene por qué saber. «Servidor IMAP» y
+     «puerto» son dos datos que quien configura esto no sabe de dónde sacar, y
+     termina copiando mal algo de un tutorial. Salen de la dirección. */
+  function mailDetectar(){
+    const email = ($("#mailUsuario").value || "").trim();
+    const det = $("#mailDetect");
+    const link = $("#mailAppLink");
+    const p = mailProveedor(email);
+    const dom = email.toLowerCase().split("@")[1] || "";
+
+    if(p){
+      // No se pisa lo que el cliente haya escrito a mano en avanzado.
+      if(!$("#mailHost").dataset.tocado){ $("#mailHost").value = p.host; }
+      if(!$("#mailPuerto").dataset.tocado){ $("#mailPuerto").value = p.puerto; }
+      det.innerHTML = '<b>✓ ' + esc(p.nombre) + '</b> — servidor y puerto configurados solos.';
+      $("#mailP2Tit").textContent = "Creá una " + p.appNombre;
+      $("#mailP2Txt").innerHTML = "Es una clave aparte, solo para esto. <b>No es la de tu cuenta</b> " +
+        "y la podés borrar cuando quieras." + (p.ayuda ? " " + esc(p.ayuda) : "");
+      link.style.display = "";
+      link.href = p.appUrl;
+      link.textContent = "Crear la " + p.appNombre + " en " + p.nombre;
+    } else if(dom.includes(".")){
+      /* Dominio propio: `imap.<dominio>` es la convención en la abrumadora
+         mayoría de los hostings. Puede fallar, y por eso se dice que se
+         adivinó y queda editable -- un valor probable que el cliente corrige
+         es mejor que un campo vacío que no sabe llenar. */
+      if(!$("#mailHost").dataset.tocado){ $("#mailHost").value = "imap." + dom; }
+      if(!$("#mailPuerto").dataset.tocado){ $("#mailPuerto").value = 993; }
+      det.innerHTML = "Probamos con <b>imap." + esc(dom) + "</b>. Si tu correo usa otro servidor, " +
+        "cambialo en «Configuración avanzada».";
+      $("#mailP2Tit").textContent = "Contraseña de la casilla";
+      $("#mailP2Txt").innerHTML = "Si tu proveedor pide una contraseña específica para IMAP, usá esa.";
+      link.style.display = "none";
+    } else {
+      det.textContent = "";
+      link.style.display = "none";
+    }
+    mailPasos();
+  }
+
+  /* El check de cada paso. No hay botón «siguiente»: lo que marca el avance es
+     que el dato esté. */
+  function mailPasos(){
+    const hay = id => (($("#"+id)||{}).value || "").trim() !== "";
+    const tieneClave = hay("mailClave") || ($("#mailClave")||{}).placeholder?.includes("ya guardada");
+    $("#mailP1")?.classList.toggle("listo", hay("mailUsuario") && hay("mailHost"));
+    $("#mailP2")?.classList.toggle("listo", !!tieneClave);
+    $("#mailP3")?.classList.toggle("listo", hay("mailRemitentes"));
+  }
+
+  $("#mailUsuario")?.addEventListener("input", mailDetectar);
+  ["mailClave","mailRemitentes"].forEach(id=>$("#"+id)?.addEventListener("input", mailPasos));
+  // Si el cliente toca los avanzados, dejan de autocompletarse.
+  ["mailHost","mailPuerto"].forEach(id=>$("#"+id)?.addEventListener("input", function(){
+    this.dataset.tocado = "1";
+  }));
 
   function mailModoPintar(){
     const r = document.querySelector('input[name="mailModo"]:checked');

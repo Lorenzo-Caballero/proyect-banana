@@ -217,5 +217,65 @@ chequear('y avisa cuando llega el primer mail (no hay nada que "probar")',
 
 @unlink($llaveTmp);
 
+
+// ===========================================================================
+echo "
+=== 9. Configurar la casilla sin saber qué es un servidor IMAP ===
+";
+/* Pedido del dueño (22/09/2026): "completá solo y automáticamente el servidor
+   de imap y el puerto, abstraé al usuario lo máximo posible, y dejá los links
+   directos para crear su app password". Pedirle «servidor IMAP» y «puerto» a
+   quien no es técnico es pedirle dos datos que no sabe de dónde sacar, y
+   termina copiando mal algo de un tutorial. */
+require_once __DIR__ . '/api/mail_proveedores.php';
+
+$g = mail_proveedor('nahuel.cobros@gmail.com');
+chequear('Gmail se detecta por el dominio', ($g['id'] ?? '') === 'gmail');
+chequear('con su servidor y puerto', ($g['host'] ?? '') === 'imap.gmail.com' && (int)($g['puerto'] ?? 0) === 993);
+chequear('y el link DIRECTO a crear la contraseña (no a la ayuda general)',
+         str_contains((string)($g['app_url'] ?? ''), 'myaccount.google.com/apppasswords'),
+         'el «entrá a Seguridad y buscá…» es donde se pierde la mitad de la gente');
+chequear('Outlook también', (mail_proveedor('x@hotmail.com')['id'] ?? '') === 'outlook');
+chequear('Yahoo también', (mail_proveedor('x@yahoo.com.ar')['id'] ?? '') === 'yahoo');
+chequear('un dominio desconocido no inventa proveedor',
+         mail_proveedor('x@miempresa.com.ar') === null);
+
+/* Para un dominio propio se prueba imap.<dominio>: puede fallar y por eso
+   queda editable, pero un valor probable que el cliente corrige es mejor que
+   un campo vacío que no sabe llenar. */
+chequear('dominio propio: se adivina imap.<dominio>',
+         mail_host_probable('pagos@miempresa.com.ar') === 'imap.miempresa.com.ar');
+chequear('y para Gmail sale el host real, no el adivinado',
+         mail_host_probable('x@gmail.com') === 'imap.gmail.com');
+chequear('sin arroba no devuelve nada', mail_host_probable('noesunmail') === '');
+
+$cobro3 = file_get_contents(__DIR__ . '/api/crm_cobro.php');
+chequear('el server deduce el host si el navegador no lo mandó',
+         str_contains($cobro3, "if (\$host === '' && \$usr !== '') { \$host = mail_host_probable(\$usr); }"),
+         'si solo estuviera en el JS, un POST directo dejaría una casilla sin servidor');
+
+$crm3 = file_get_contents(__DIR__ . '/landing/crm.html');
+chequear('la pantalla guía en pasos numerados', str_contains($crm3, 'class="mail-paso"'));
+chequear('el servidor y el puerto quedan en «avanzado»',
+         str_contains($crm3, 'class="mail-avanzado"'));
+chequear('el link a la contraseña es un botón, no texto',
+         str_contains($crm3, 'class="mail-btn-link"'));
+chequear('y no se pisa lo que el cliente escribió a mano',
+         str_contains($crm3, 'dataset.tocado'));
+
+// ===========================================================================
+echo "
+=== 10. Recaudar: el detalle técnico solo si algo falló ===
+";
+/* "Eliminá los logs, eso era solo para probarlo, ahora ya funciona bien". Una
+   corrida que salió entera no necesita explicarse. Pero no se borra del todo:
+   el día que vuelva a fallar algo, el motivo tiene que estar donde se mira la
+   corrida -- fue justamente lo que encontró el bug del redondeo. */
+chequear('una corrida sin errores no muestra log',
+         str_contains($crm3, 'if(!hayError) return "";'));
+chequear('y con errores sí, con el texto que corresponde',
+         str_contains($crm3, "' por qué fallaron</button>'"));
+
+
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);
 exit($fail > 0 ? 1 : 0);
