@@ -353,5 +353,88 @@ cfg_crm_guardar($pdo, ['bono_vence_dias' => '30'], 'test');
 
 $limpiarW();
 
+// =========================================================================
+echo "\n=== El bono que acompaña a un aviso ===\n";
+// =========================================================================
+/* EL PEDIDO (Nahuel, 22/09/2026): *"si les ponemos '20% en tu proxima carga!'
+   ... desde la parte de notificaciones no podemos darle ese bono para que
+   cuando vea la notificacion y cargue, ya lo tenga listo"*.
+
+   Antes esa pantalla solo escribia un texto. El bono habia que cargarlo
+   aparte, jugador por jugador, y olvidarse convertia la promo en una mentira:
+   el jugador cargaba esperando su 20% y no le llegaba nada. */
+
+$B1 = 't_bonoaviso_' . substr((string)getmypid(), -4) . 'a';
+$B2 = 't_bonoaviso_' . substr((string)getmypid(), -4) . 'b';
+foreach ([$B1, $B2] as $u) {
+    $pdo->prepare("INSERT IGNORE INTO usuarios (id, username) VALUES (?, ?)")
+        ->execute([random_int(900000000, 999999999), $u]);
+}
+$limpiarB = function () use ($pdo, $B1, $B2) {
+    $pdo->prepare("DELETE FROM bonos_pendientes WHERE usuario IN (?,?)")->execute([$B1, $B2]);
+    $pdo->prepare("DELETE FROM usuarios WHERE username IN (?,?)")->execute([$B1, $B2]);
+};
+$limpiarB();
+foreach ([$B1, $B2] as $u) {
+    $pdo->prepare("INSERT IGNORE INTO usuarios (id, username) VALUES (?, ?)")
+        ->execute([random_int(900000000, 999999999), $u]);
+}
+
+$r = crmnotif_bono_masivo($pdo, [$B1, $B2], 'pct', 20, null, 'test');
+chequear('le deja el bono a todos los de la lista',
+    !empty($r['ok']) && (int)$r['creados'] === 2, json_encode($r));
+
+$n = (int)$pdo->query("SELECT COUNT(*) FROM bonos_pendientes
+                        WHERE usuario IN ('$B1','$B2') AND tipo='pct' AND valor=20
+                          AND estado='pendiente'")->fetchColumn();
+chequear('y quedan pendientes, listos para la proxima carga', $n === 2, (string)$n);
+
+/* SE APOYA EN crmnotif_bono_crear, que da de baja el anterior. Sin eso, una
+   promo por dia le acumularia bonos a la gente hasta pasar el 100%. */
+crmnotif_bono_masivo($pdo, [$B1], 'pct', 30, null, 'test');
+$viejos = (int)$pdo->query("SELECT COUNT(*) FROM bonos_pendientes
+                             WHERE usuario='$B1' AND estado='pendiente'")->fetchColumn();
+chequear('un bono nuevo REEMPLAZA al anterior, no se suma', $viejos === 1, (string)$viejos);
+
+/* Un jugador que ya no existe no puede frenar una difusion a mil. */
+$r = crmnotif_bono_masivo($pdo, [$B2, 'no_existe_este_jugador_xyz'], 'fichas', 500, null, 'test');
+chequear('un usuario inexistente no frena al resto',
+    !empty($r['ok']) && (int)$r['creados'] === 1 && (int)$r['fallados'] === 1, json_encode($r));
+
+chequear('una lista vacia no es un error',
+    !empty(crmnotif_bono_masivo($pdo, [], 'pct', 10, null, 'test')['ok']));
+
+/* EL TOPE ES UN FRENO, NO UNA LIMITACION TECNICA: cada fila es plata
+   comprometida, y un cero de mas no tiene vuelta atras una vez que cargaron. */
+$muchos = array_map(fn($i) => 'u' . $i, range(1, CRMNOTIF_BONO_MASIVO_MAX + 1));
+chequear('por encima del tope se niega en vez de regalar plata',
+    empty(crmnotif_bono_masivo($pdo, $muchos, 'pct', 20, null, 'test')['ok']));
+
+/* EL ORDEN IMPORTA Y NO SE VE PROBANDO EL RESULTADO: el bono se crea ANTES
+   del aviso. Prometerle un 20% a alguien sin habérselo dejado listo es peor
+   que dejárselo sin avisar -- el jugador carga esperando el extra, no le
+   llega, y lo que pierde no es una promo sino la confianza. */
+$srcCrm = (string)file_get_contents(__DIR__ . '/api/crm.php');
+$posBono = strpos($srcCrm, 'crmnotif_bono_masivo($pdo, $destinoBono');
+$posNoti = strpos($srcCrm, "\$pushId = notif_crear(");
+chequear('el bono se crea ANTES que el aviso',
+    $posBono !== false && $posNoti !== false && $posBono < $posNoti,
+    'al reves, un fallo del bono deja el aviso prometiendo algo que no existe');
+chequear('y si el bono no sale, el aviso NO se manda',
+    str_contains($srcCrm, 'No se le pudo dejar el bono a nadie, así que no se mandó el aviso.'));
+
+/* A LOS QUE TIENEN LA APP, no a los 3.000 de la base: un aviso masivo viaja
+   por los dispositivos, y regalarle plata a quien nunca va a ver la promo
+   ademas le pisa el bono que si podia usar. */
+chequear('una difusion deja el bono solo a quien va a ver el aviso',
+    str_contains($srcCrm, 'crmnotif_usuarios_con_app($pdo) : [$usuario]'));
+
+/* Programar + bono no se combinan: el bono quedaria activo desde hoy para un
+   aviso que sale mañana, y de paso le pisa el que tenia. */
+chequear('un aviso programado no puede llevar bono',
+    str_contains($srcCrm, 'Un aviso programado no puede llevar bono'));
+
+$limpiarB();
+
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);
 exit($fail > 0 ? 1 : 0);

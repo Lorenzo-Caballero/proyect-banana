@@ -2453,6 +2453,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
+            /* ---- EL BONO QUE ACOMPAÑA AL AVISO ----
+               Pedido de Nahuel (22/09/2026): poder mandar "20% en tu próxima
+               carga" y que el bono quede LISTO, sin cargarlo aparte jugador
+               por jugador.
+
+               VA ANTES DE CREAR EL AVISO, Y ES A PROPÓSITO. Prometerle un 20%
+               a alguien sin habérselo dejado listo es peor que dejárselo sin
+               avisarle: el jugador carga esperando el extra, no le llega, y lo
+               que pierde no es una promo sino la confianza. Si esto falla, el
+               aviso no sale.
+
+               NO SE PUEDE PROGRAMAR JUNTO CON EL BONO. Un aviso programado
+               para mañana con el bono creado hoy le da 24 horas de bono a
+               alguien que todavía no sabe que lo tiene -- y peor, le pisa el
+               que tenía. */
+            $bonoTipo  = trim((string)($body['bono_tipo'] ?? ''));
+            $bonoValor = (int)($body['bono_valor'] ?? 0);
+            $bonoRes   = null;
+
+            if ($bonoTipo !== '') {
+                if (!in_array($bonoTipo, ['pct', 'fichas'], true)) {
+                    salir(['ok' => false, 'error' => 'Tipo de bono inválido'], 400);
+                }
+                if ($bonoValor <= 0) {
+                    salir(['ok' => false, 'error' => 'Poné cuánto vale el bono'], 400);
+                }
+                if ($bonoTipo === 'pct' && $bonoValor > 200) {
+                    salir(['ok' => false, 'error' => 'Un ' . $bonoValor . '% de bono no parece intencional'], 400);
+                }
+                if ($progEn) {
+                    salir(['ok' => false,
+                           'error' => 'Un aviso programado no puede llevar bono: quedaría activo desde ahora, '
+                                    . 'antes de que el jugador sepa que lo tiene. Mandá el bono cuando salga el aviso.'], 400);
+                }
+
+                $destinoBono = $todos ? crmnotif_usuarios_con_app($pdo) : [$usuario];
+                $bonoRes = crmnotif_bono_masivo($pdo, $destinoBono, $bonoTipo, $bonoValor, null, (string)$operador);
+                if (empty($bonoRes['ok'])) {
+                    salir(['ok' => false, 'error' => (string)($bonoRes['error'] ?? 'No se pudo crear el bono')], 400);
+                }
+                if ((int)$bonoRes['creados'] === 0) {
+                    salir(['ok' => false,
+                           'error' => 'No se le pudo dejar el bono a nadie, así que no se mandó el aviso.'], 400);
+                }
+                crm_bitacora($pdo, $operador, 'bono_difusion',
+                    $bonoValor . ($bonoTipo === 'pct' ? '%' : ' fichas') . ' a '
+                    . $bonoRes['creados'] . ' jugador(es)');
+            }
+
             // ($progEn ya viene parseado arriba, antes de las ramas por filtro.)
             $pushId = null;
             if ($incluyePush) {
@@ -2467,6 +2516,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         ? 'No se pudo programar el push (¿falta correr la migración 29_notif_programada.sql?)'
                         : 'No se pudo encolar el push';
                     salir(['ok' => false, 'error' => $err], 500);
+                }
+            }
+
+            /* Se atan al aviso DESPUES, porque el aviso todavia no existia
+               cuando se crearon. Es solo para el rastro: si falla, el bono ya
+               esta y el jugador lo va a cobrar igual. */
+            if ($pushId && $bonoRes && !empty($bonoRes['ids'])) {
+                try {
+                    $marcas = implode(',', array_fill(0, count($bonoRes['ids']), '?'));
+                    $pdo->prepare("UPDATE bonos_pendientes SET notificacion_id = ? WHERE id IN ($marcas)")
+                        ->execute(array_merge([$pushId], $bonoRes['ids']));
+                } catch (Throwable $e) {
+                    error_log('notificar/atar bono: ' . $e->getMessage());
                 }
             }
 
@@ -2507,7 +2569,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                (null si quedó programado, todavía no se sabe). */
             salir(['ok' => true, 'id' => $pushId, 'programada_en' => $progEn, 'canal' => $canal,
                    'alcance' => $incluyePush ? notif_alcance($pdo, $usuario) : null,
-                   'chat_alcance' => $chatAlcance]);
+                   'chat_alcance' => $chatAlcance,
+                   'bono_creados' => $bonoRes ? (int)$bonoRes['creados'] : null]);
         }
 
         // ---- presets de filtro (guardar/editar reusan el mismo UPSERT) ----

@@ -16,6 +16,14 @@ declare(strict_types=1);
 
 defined('CRMNOTIF_BONO_TIPOS') || define('CRMNOTIF_BONO_TIPOS', ['fichas', 'pct', 'giro']);
 
+/* Tope de jugadores a los que una sola difusion les puede dejar un bono listo.
+   No es una limitacion tecnica: es un freno. Cada fila de esas es plata
+   comprometida, y un cero de mas en el campo del valor --o mandar a "todos"
+   creyendo que iba a uno-- no tiene vuelta atras una vez que la gente cargo.
+   Si de verdad hace falta mas, se sube a mano y queda el rastro de quien lo
+   subio. */
+defined('CRMNOTIF_BONO_MASIVO_MAX') || define('CRMNOTIF_BONO_MASIVO_MAX', 2000);
+
 if (!function_exists('crmnotif_alcance_inactivos')) {
 
     /**
@@ -857,6 +865,79 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
      * la próxima recarga acreditada de ese usuario (ver
      * crmnotif_bono_aplicar_en_recarga(), enganchada en rl_acreditar()).
      */
+    /**
+     * A quien le va a llegar una difusion: los duenos de los aparatos activos.
+     *
+     * NO ES "TODOS LOS JUGADORES", y la diferencia es plata. Un aviso masivo
+     * viaja por los DISPOSITIVOS: al que no tiene la app no le llega nada. Si
+     * el bono se le creara a los 3.000 de la base, se estaria regalando plata a
+     * miles de personas que nunca van a ver la promo que lo justifica -- y
+     * encima se les pisaria un bono anterior que si podian usar.
+     *
+     * Misma definicion que notif_alcance(), que es el numero que el operador ve
+     * en pantalla antes de apretar. Si las dos se separan, el confirm dice un
+     * numero y se le da el bono a otro.
+     */
+    function crmnotif_usuarios_con_app(PDO $pdo): array
+    {
+        try {
+            $st = $pdo->query(
+                "SELECT DISTINCT usuario FROM dispositivos
+                  WHERE permitido = 1 AND usuario IS NOT NULL AND usuario <> ''
+                    AND visto_en > DATE_SUB(NOW(), INTERVAL "
+                    . NOTIF_DISPOSITIVO_ACTIVO_DIAS . " DAY)"
+            );
+            return array_map('strval', $st->fetchAll(PDO::FETCH_COLUMN));
+        } catch (Throwable $e) {
+            error_log('crmnotif_usuarios_con_app: ' . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Le deja el bono LISTO a varios jugadores de una.
+     *
+     * EL PEDIDO (Nahuel, 22/09/2026): *"si les ponemos '20% en tu proxima
+     * carga!' ... desde la parte de notificaciones no podemos darle ese bono
+     * para que cuando vea la notificacion y cargue, ya lo tenga listo"*.
+     *
+     * Hasta ahora esa pantalla solo escribia un texto. El bono habia que
+     * cargarlo aparte, jugador por jugador, y si el operador se olvidaba la
+     * promo quedaba siendo una mentira -- el jugador cargaba esperando su 20% y
+     * no le llegaba nada.
+     *
+     * SE APOYA EN crmnotif_bono_crear(), no en un INSERT propio, y eso importa:
+     * esa funcion es la que da de baja el bono anterior antes de crear el
+     * nuevo. Sin eso, mandar una promo cada dia le acumularia bonos a la gente
+     * hasta pasar el 100%.
+     *
+     * NUNCA LANZA: devuelve cuantos salieron y cuantos no. Un jugador que ya no
+     * existe (se borro la cuenta) no puede frenar una difusion a mil.
+     */
+    function crmnotif_bono_masivo(PDO $pdo, array $usuarios, string $tipo, int $valor,
+                                  ?int $notificacionId, string $por): array
+    {
+        $usuarios = array_values(array_unique(array_filter(array_map('trim', $usuarios))));
+        if (!$usuarios) { return ['ok' => true, 'creados' => 0, 'fallados' => 0]; }
+        if (count($usuarios) > CRMNOTIF_BONO_MASIVO_MAX) {
+            return ['ok' => false, 'error' => 'Son ' . count($usuarios)
+                . ' jugadores, mas del tope de ' . CRMNOTIF_BONO_MASIVO_MAX
+                . '. Es plata: si de verdad va a todos, subi el tope a mano.'];
+        }
+
+        $creados = 0; $fallados = 0; $ids = [];
+        foreach ($usuarios as $u) {
+            $r = crmnotif_bono_crear($pdo, $u, $tipo, $valor, $por, $notificacionId);
+            if (!empty($r['ok'])) {
+                $creados++;
+                if (!empty($r['id'])) { $ids[] = (int)$r['id']; }
+            } else {
+                $fallados++;
+            }
+        }
+        return ['ok' => true, 'creados' => $creados, 'fallados' => $fallados, 'ids' => $ids];
+    }
+
     function crmnotif_bono_crear(PDO $pdo, string $usuario, string $tipo, int $valor,
                                  ?string $prometidoPor = null, ?int $notificacionId = null): array
     {

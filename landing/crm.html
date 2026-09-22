@@ -4041,6 +4041,12 @@
           </label>
         </div>
 
+        <style>
+          .n-bono-fila{display:flex;gap:8px;align-items:center}
+          .n-bono-fila select{flex:1 1 auto;min-width:0}
+          .n-bono-fila input{width:92px;flex:0 0 auto}
+          .n-bono-unidad{color:var(--tenue,#8b93b5);font-size:13px;min-width:54px}
+        </style>
         <div class="nv-enviar-grid">
           <!-- columna izquierda: redactar -->
           <div class="n-col">
@@ -4063,6 +4069,25 @@
               <input id="nTitulo" type="text" maxlength="120" placeholder="¡Te regalamos 500 fichas!">
               <label for="nCuerpo" id="nCuerpoLabel">Mensaje</label>
               <textarea id="nCuerpo" maxlength="400" placeholder="Entrá a la app y jugalas antes de que se venzan." rows="5"></textarea>
+
+              <!-- EL BONO QUE ACOMPAÑA AL AVISO.
+                   Antes esta pantalla solo escribía un texto: si mandabas "20%
+                   en tu próxima carga", el bono había que cargarlo aparte,
+                   jugador por jugador. Olvidarse convertía la promo en una
+                   mentira -- el jugador cargaba esperando el extra y no le
+                   llegaba. Ahora sale junto con el aviso, y si el bono falla el
+                   aviso NO se manda. -->
+              <label for="nBonoTipo">Dejarle un bono listo <span class="cfg-opt">(opcional)</span></label>
+              <div class="n-bono-fila">
+                <select id="nBonoTipo">
+                  <option value="">Sin bono</option>
+                  <option value="pct">% sobre su próxima carga</option>
+                  <option value="fichas">Fichas fijas</option>
+                </select>
+                <input id="nBonoValor" type="number" min="1" step="1" placeholder="20" disabled>
+                <span id="nBonoUnidad" class="n-bono-unidad"></span>
+              </div>
+              <p class="ag-modal-hint" id="nBonoHint" style="display:none"></p>
             </div>
             <div id="nBloqueChat" style="display:none">
               <label for="nMensajeChat">Mensaje de chat</label>
@@ -15144,6 +15169,27 @@
     }
   }));
 
+  /* El campo del valor arranca apagado: un numero suelto sin tipo no
+     significa nada, y peor, invita a mandar "20" creyendo que es un 20%
+     cuando el select dice fichas. */
+  function nPintarBono(){
+    const tipo = $("#nBonoTipo").value;
+    const val  = $("#nBonoValor");
+    val.disabled = !tipo;
+    if(!tipo){ val.value = ""; }
+    $("#nBonoUnidad").textContent = tipo === "pct" ? "%" : (tipo === "fichas" ? "fichas" : "");
+    val.placeholder = tipo === "pct" ? "20" : "500";
+
+    const hint = $("#nBonoHint");
+    if(!tipo){ hint.style.display = "none"; return; }
+    hint.style.display = "";
+    hint.innerHTML = tipo === "pct"
+      ? "Se le acredita solo, sobre la <b>próxima carga</b> que haga. Reemplaza cualquier bono pendiente que tuviera."
+      : "Se le acreditan con su <b>próxima carga</b>. Reemplaza cualquier bono pendiente que tuviera.";
+  }
+  $("#nBonoTipo").addEventListener("change", nPintarBono);
+  nPintarBono();
+
   function nSetCanal(canal){
     document.querySelectorAll('input[name="nCanal"]').forEach(r=>{ r.checked = r.value===canal; });
     document.querySelectorAll(".n-canal-toggle .ag-rol-opt").forEach(el=>{
@@ -15418,6 +15464,26 @@
       if(!programada){ toast("Elegí la fecha y hora"); return; }
     }
 
+    /* EL BONO SE CONFIRMA APARTE Y PRIMERO, porque es lo unico de esta
+       pantalla que compromete plata. El resto manda texto. */
+    const bonoTipo  = $("#nBonoTipo").value;
+    const bonoValor = Math.max(0, parseInt($("#nBonoValor").value, 10) || 0);
+    if(bonoTipo && !bonoValor){ toast("Poné cuánto vale el bono"); return; }
+    if(bonoTipo && programar){
+      toast("Un aviso programado no puede llevar bono: quedaría activo desde ahora");
+      return;
+    }
+    if(bonoTipo){
+      const cuantos = todos ? ($("#nvNTodos").textContent || "?") : "1";
+      const queEs = bonoTipo === "pct" ? bonoValor + "% sobre su próxima carga"
+                                       : bonoValor + " fichas";
+      if(!confirm(
+        "ESTO COMPROMETE PLATA.\n\n" +
+        "Se le va a dejar un bono de " + queEs + " a " + cuantos + " jugador(es).\n\n" +
+        "Le reemplaza cualquier bono pendiente que tuviera, y se acredita solo cuando cargue.\n\n" +
+        "¿Seguro?")) return;
+    }
+
     const cuando = programar ? "PROGRAMAR para " + $("#nFecha").value.replace("T"," ") + " (hora Argentina)" : "ENVIAR ahora";
     let confirmMsg = null;
     if(todos) confirmMsg = `DIFUSIÓN a TODOS los jugadores (~${$("#nvNTodos").textContent} celulares activos)${incluyeChat?" y sus chats":""}.\n\n${cuando}.\n\n¿Seguro?`;
@@ -15442,10 +15508,17 @@ ${cuando}.
     // abierta, el rastro queda en ese hilo).
     const d = await jpost({ accion:"notificar", todos, usuario: esJugador ? usuarioDest : undefined,
                             filtro, canal, titulo, cuerpo, mensaje_chat: mensajeChat || undefined, tipo:nTipo,
+                            bono_tipo: bonoTipo || undefined,
+                            bono_valor: bonoTipo ? bonoValor : undefined,
                             programada_en: programada || undefined,
                             conversacion_id: (esJugador && st.usuario===usuarioDest) ? st.convId : undefined });
     btn.disabled=false; nvPintarResumen();
     if(d.ok){
+      /* El bono va PRIMERO en el aviso de resultado: es lo unico que
+         compromete plata, y el operador tiene que verlo confirmado. */
+      if(d.bono_creados){
+        toast(`Bono dejado listo para ${d.bono_creados} jugador${d.bono_creados===1?"":"es"}`);
+      }
       if(d.programada_en){
         toast(`Programada — sale el ${$("#nFecha").value.replace("T"," ")} (hora Argentina)`);
       } else if(modoAud==="inactivos"){
