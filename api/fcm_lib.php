@@ -271,6 +271,26 @@ if (!function_exists('fcm_credenciales')) {
      * @return string 'ok' | 'invalido' (ese token ya no existe) | 'error'
      */
     /**
+     * ¿Este aviso va a viajar CON su texto adentro?
+     *
+     * EXISTE PARA QUE LA RESPUESTA SEA UNA SOLA. La contestan dos lugares que
+     * tienen que coincidir siempre: el que arma el mensaje y el que decide si
+     * dar el aviso por entregado. Si se separan, el modo de fallar es el peor
+     * posible -- un push mudo marcado como entregado es un aviso que nadie
+     * dibujó y que el sondeo ya no va a volver a traer. O sea, un bono o una
+     * recarga que el jugador no se entera.
+     *
+     * Con FCM_TEXTO_EN_PUSH en 0, o sin título y cuerpo, la respuesta es no.
+     */
+    function fcm_lleva_texto(array $aviso): bool
+    {
+        return (bool)FCM_TEXTO_EN_PUSH
+            && (int)($aviso['id'] ?? 0) > 0
+            && trim((string)($aviso['titulo'] ?? '')) !== ''
+            && trim((string)($aviso['cuerpo'] ?? '')) !== '';
+    }
+
+    /**
      * Arma el cuerpo del mensaje que se le manda a Google.
      *
      * SEPARADA DE fcm_enviar() PARA PODER PROBARLA: el envío toca la red, así
@@ -323,13 +343,13 @@ if (!function_exists('fcm_credenciales')) {
             'android' => ['priority' => 'HIGH'],
         ];
 
-        $id     = (int)($aviso['id'] ?? 0);
-        $titulo = trim((string)($aviso['titulo'] ?? ''));
-        $cuerpo = trim((string)($aviso['cuerpo'] ?? ''));
-
-        if (FCM_TEXTO_EN_PUSH && $id > 0 && $titulo !== '' && $cuerpo !== '') {
+        if (fcm_lleva_texto($aviso)) {
+            $id     = (int)$aviso['id'];
             $mensaje['data']['id']   = (string)$id;
-            $mensaje['notification'] = ['title' => $titulo, 'body' => $cuerpo];
+            $mensaje['notification'] = [
+                'title' => trim((string)$aviso['titulo']),
+                'body'  => trim((string)$aviso['cuerpo']),
+            ];
             $mensaje['android']['notification'] = [
                 'tag'                   => FCM_TAG_AVISO . $id,
                 'notification_priority' => 'PRIORITY_HIGH',
@@ -456,12 +476,13 @@ if (!function_exists('fcm_credenciales')) {
 
             $enviados = 0;
             $muertos  = [];
+            $llegados = [];   // a quienes Android ya les dibujo el aviso
             foreach ($filas as $f) {
                 /* Tambien adentro del bucle: un solo jugador con varios
                    aparatos y Google lento gastaria el presupuesto entero. */
                 if (fcm_sin_presupuesto($t0)) { break; }
                 $r = fcm_enviar(['token' => (string)$f['fcm_token']], $aviso);
-                if ($r === 'ok') { $enviados++; }
+                if ($r === 'ok') { $enviados++; $llegados[] = (string)$f['device_id']; }
                 elseif ($r === 'invalido') { $muertos[] = (string)$f['device_id']; }
                 /* 'error' no se toca: puede ser un corte de red de treinta
                    segundos, y borrar el token por eso sería cambiar una demora
@@ -478,6 +499,12 @@ if (!function_exists('fcm_credenciales')) {
                     "UPDATE dispositivos SET fcm_token = NULL, fcm_en = NULL
                       WHERE device_id IN ($marcas)"
                 )->execute($muertos);
+            }
+            /* SOLO SI EL PUSH LLEVO TEXTO. Uno mudo no dibuja nada: ahi el
+               telefono todavia tiene que venir a buscarlo, y marcarlo ahora lo
+               quemaria. La misma funcion que lo decide al armar el mensaje. */
+            if (fcm_lleva_texto($aviso)) {
+                fcm_marcar_entregado($pdo, (int)$aviso['id'], $llegados);
             }
             fcm_gastar(microtime(true) - $t0);
             return $enviados;
@@ -524,6 +551,60 @@ if (!function_exists('fcm_credenciales')) {
     {
         $GLOBALS['__fcm_seg']   = 0.0;
         $GLOBALS['__fcm_aviso'] = false;
+    }
+
+    /**
+     * Da por entregado un aviso que ya viajó con su texto adentro.
+     *
+     * EL PROBLEMA QUE ARREGLA (22/09/2026, un dia despues de meter el texto en
+     * el push). Cuando el aviso lo dibuja Android, la app NO lo va a buscar --
+     * onMessageReceived ni se llama con la app en segundo plano-- asi que no
+     * queda ninguna fila en `notificaciones_entregas`. Para el server ese aviso
+     * sigue pendiente. Consecuencias, las tres molestas:
+     *
+     *   - al abrir la app, el widget se lo trae y se lo muestra OTRA VEZ, en
+     *     una tarjeta, horas despues
+     *   - y lo vuelve a poner en la barra, o sea que un aviso que el jugador ya
+     *     descarto REAPARECE
+     *   - y la medicion de demora (creada_en contra entregada_en) mide el
+     *     sondeo, no el push: justo lo que queriamos medir queda invisible
+     *
+     * POR QUE ES HONESTO MARCARLO. La regla del proyecto es que un aviso se
+     * marca entregado SOLO cuando alguien pudo mostrarlo, porque marcarlo antes
+     * lo quema. Acá el aviso VIAJO CON SU TEXTO y Google lo acepto: el que lo
+     * muestra es Android, no nuestra app. No estamos prometiendo que lo vio,
+     * estamos registrando que se lo dimos -- que es exactamente lo mismo que
+     * registra el sondeo.
+     *
+     * SOLO CUANDO HUBO TEXTO. Un push mudo no dibuja nada: ahi el telefono
+     * tiene que venir a buscarlo y la marca la sigue poniendo el sondeo.
+     *
+     * SOLO POR TOKEN, NUNCA POR TOPICO. En una difusion no sabemos a que
+     * aparatos llego, asi que esas se siguen marcando al sondear. Marcar "a
+     * todos" seria quemarle el aviso a cualquiera que no lo haya recibido.
+     */
+    function fcm_marcar_entregado(PDO $pdo, int $notifId, array $devices): void
+    {
+        if ($notifId <= 0 || !$devices) { return; }
+        try {
+            /* INSERT IGNORE y no INSERT: el sondeo pudo haberla insertado
+               primero (la app abierta en otra pantalla, el worker corriendo).
+               La PK (notificacion_id, device_id) hace que la segunda no
+               duplique nada, y ese es justamente el mecanismo que sostiene que
+               varios sondeen a la vez. Acá se suma uno más. */
+            $marcas = implode(',', array_fill(0, count($devices), '(?,?)'));
+            $params = [];
+            foreach ($devices as $d) { $params[] = $notifId; $params[] = $d; }
+            $pdo->prepare(
+                "INSERT IGNORE INTO notificaciones_entregas (notificacion_id, device_id)
+                 VALUES $marcas"
+            )->execute($params);
+        } catch (Throwable $e) {
+            /* Que falle la marca no puede costar el aviso: sin ella el peor
+               caso es que el jugador lo vea dos veces, que es lo que pasaba
+               antes de esta funcion. */
+            error_log('fcm_marcar_entregado: ' . $e->getMessage());
+        }
     }
 
     /**

@@ -334,6 +334,15 @@ $m = fcm_armar_mensaje(['topic' => 'gp_x'], ['id' => 9, 'titulo' => 'Promo', 'cu
 chequear('los avisos masivos tambien llevan texto',
     isset($m['notification']) && ($m['topic'] ?? '') === 'gp_x');
 
+// -- la marca de entrega: solo cuando Android de verdad lo dibujo --
+chequear('con texto, el aviso cuenta como entregado',
+    fcm_lleva_texto(['id' => 3, 'titulo' => 'A', 'cuerpo' => 'B']) === true);
+chequear('sin id no cuenta', fcm_lleva_texto(['titulo' => 'A', 'cuerpo' => 'B']) === false);
+chequear('sin cuerpo tampoco',
+    fcm_lleva_texto(['id' => 3, 'titulo' => 'A', 'cuerpo' => '  ']) === false,
+    'un push mudo no dibuja nada: marcarlo entregado le quema el aviso al jugador');
+chequear('un aviso vacio tampoco', fcm_lleva_texto([]) === false);
+
 /* LOS DOS LADOS DE LA ETIQUETA. Uno esta en PHP y el otro en Kotlin, y si se
    separan el jugador ve cada aviso dos veces sin que nada falle. */
 $kt = (string)file_get_contents(__DIR__ . '/apk/app/src/main/java/com/goldpaw/app/Notificaciones.kt');
@@ -419,8 +428,17 @@ chequear('manda data', str_contains($src, "'data'    => ['gp' => '1']"));
 chequear('y con prioridad alta', str_contains($src, "'priority' => 'HIGH'"),
     'sin esto el mensaje espera a la proxima ventana de Doze: el problema original');
 chequear('el texto en el push se puede apagar sin desplegar',
-    str_contains($src, 'if (FCM_TEXTO_EN_PUSH &&'),
+    str_contains($src, '(bool)FCM_TEXTO_EN_PUSH'),
     'un cambio de este tamano tiene que tener marcha atras de una linea');
+
+/* UNA SOLA FUNCION decide si el push lleva texto, y la usan los dos lugares
+   que tienen que coincidir: el que arma el mensaje y el que da el aviso por
+   entregado. Si se separan, el modo de fallar es el peor posible -- un push
+   mudo marcado como entregado es un bono o una recarga que el jugador no se
+   entera, porque el sondeo ya no lo va a volver a traer. */
+chequear('la decision de llevar texto esta en UN solo lugar',
+    substr_count($src, 'fcm_lleva_texto(') === 3,
+    'la define una vez y la consultan armar_mensaje y la marca de entrega');
 
 /* Un token muerto se borra; una caida de Google NO. Confundirlos significa que
    diez minutos de Google caido le borran el token a todo el parque. */
