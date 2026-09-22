@@ -2440,6 +2440,37 @@
   .cobro-webhook-row{display:flex;gap:8px}
   .cobro-webhook-row .cb-input{font-size:12px}
 
+  /* ---------------- La casilla de mail (dentro de «Transferencia») --------- */
+  .mail-box{margin-top:18px;padding:14px 15px;border:1px solid var(--line);
+    border-radius:13px;background:var(--panel2)}
+  .mail-head{display:flex;gap:11px;align-items:flex-start;margin-bottom:14px}
+  .mail-head-txt{flex:1;min-width:0}
+  .mail-head-txt b{display:block;font-size:13.5px}
+  .mail-head-txt span{display:block;color:var(--muted);font-size:12px;line-height:1.55;margin-top:3px}
+  /* El estado va ARRIBA y siempre visible: el modo de fallar de esto es
+     silencioso --si la clave se revoca, los jugadores dejan de cobrar y nada
+     se rompe a la vista--, así que lo primero que se tiene que ver al abrir
+     es si está leyendo o no. */
+  .mail-estado{flex:0 0 auto;font:700 11px inherit;padding:3px 10px;border-radius:999px;
+    background:var(--panel3);color:var(--muted);white-space:nowrap}
+  .mail-estado.ok{background:var(--greenSoft);color:var(--green2)}
+  .mail-estado.mal{background:var(--redSoft);color:var(--red)}
+  .mail-estado.off{background:var(--panel3);color:var(--muted2)}
+  .mail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
+  .mail-ayuda{margin-top:14px;border:1px solid var(--line);border-radius:10px;
+    background:var(--panel);padding:10px 12px}
+  .mail-ayuda summary{cursor:pointer;font-size:12.5px;font-weight:600;color:var(--txt)}
+  .mail-ayuda ol{margin:9px 0 0;padding-left:20px;color:var(--muted);font-size:12.5px;line-height:1.75}
+  .mail-ayuda p{margin:8px 0 0;color:var(--muted);font-size:12px;line-height:1.6}
+  .mail-acciones{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:16px}
+  .mail-switch{display:flex;gap:7px;align-items:center;font-size:12.5px;cursor:pointer;margin-right:auto}
+  .mail-switch input{accent-color:var(--green)}
+  .mail-res{margin-top:12px;padding:10px 12px;border-radius:10px;font-size:12.5px;line-height:1.6}
+  .mail-res.ok{background:var(--greenSoft);border:1px solid var(--green);color:var(--txt)}
+  .mail-res.aviso{background:rgba(245,166,35,.1);border:1px solid var(--orange);color:var(--txt)}
+  .mail-res.mal{background:var(--redSoft);border:1px solid var(--red);color:var(--txt)}
+  @media (max-width:640px){ .mail-acciones button{flex:1} }
+
   .cobro-cta-fila{display:flex;align-items:center;gap:10px;padding:9px 12px;
     background:var(--panel2);border:1px solid var(--line);border-radius:10px;margin-bottom:6px}
   .cobro-cta-fila .cobro-cta-datos{flex:1;min-width:0;font-size:12.5px}
@@ -6012,6 +6043,77 @@
               </div>
             </div>
             <button class="cb-btn-ghost" id="cobroCtaAgregar" type="button" style="margin-top:10px">+ Agregar cuenta</button>
+
+            <!-- ====================== LA CASILLA DE MAIL ======================
+                 Va acá adentro, dentro de «Transferencia», y no en otra
+                 pantalla: el texto de arriba promete que "el sistema lee tu
+                 casilla de mail y acredita solo", y hasta hoy eso era falso
+                 para cualquier cliente -- la config IMAP estaba en un archivo
+                 del servidor, la nuestra. Dejar la promesa en un lado y la
+                 forma de cumplirla en otro es cómo se llega a eso. -->
+            <div class="mail-box">
+              <div class="mail-head">
+                <span class="cb-ico"><svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m2 7 10 6 10-6"/></svg></span>
+                <div class="mail-head-txt">
+                  <b>Tu casilla de mail</b>
+                  <span>Donde tu banco te avisa las transferencias. El sistema la lee
+                  <b>solo para leer</b> —nunca marca, mueve ni borra nada— y acredita al jugador solo.</span>
+                </div>
+                <span class="mail-estado" id="mailEstado"></span>
+              </div>
+
+              <div class="mail-grid">
+                <div>
+                  <label class="cb-flabel">Servidor IMAP</label>
+                  <input class="cb-input" id="mailHost" placeholder="imap.gmail.com" autocomplete="off">
+                </div>
+                <div style="max-width:110px">
+                  <label class="cb-flabel">Puerto</label>
+                  <input class="cb-input" id="mailPuerto" inputmode="numeric" placeholder="993">
+                </div>
+                <div>
+                  <label class="cb-flabel">Dirección de la casilla</label>
+                  <input class="cb-input" id="mailUsuario" placeholder="vos@gmail.com" autocomplete="off">
+                </div>
+                <div>
+                  <label class="cb-flabel">Contraseña de aplicación</label>
+                  <input class="cb-input" id="mailClave" type="password" placeholder="••••••••••••" autocomplete="new-password">
+                  <p class="cfg-hint" id="mailClaveHint"></p>
+                </div>
+              </div>
+
+              <label class="cb-flabel" style="margin-top:14px">Leer solo los mails de</label>
+              <input class="cb-input" id="mailRemitentes" placeholder="notificaciones@tubanco.com" autocomplete="off">
+              <p class="cfg-hint">La dirección desde la que te llegan los avisos de transferencia.
+              <b>Con esto no leemos tu casilla</b>: leemos solo esos mails. Podés poner varias separadas por coma.</p>
+
+              <label class="cb-flabel" style="margin-top:14px">Carpeta <span class="cfg-opt">(opcional)</span></label>
+              <input class="cb-input" id="mailCarpeta" placeholder="INBOX" autocomplete="off" style="max-width:260px">
+
+              <!-- AYUDA DE GMAIL, que es el 90% de los casos y el que más se
+                   traba: la contraseña de la cuenta NO funciona para IMAP. -->
+              <details class="mail-ayuda">
+                <summary>¿Cómo saco la contraseña de aplicación de Gmail?</summary>
+                <ol>
+                  <li>Entrá a tu cuenta de Google → <b>Seguridad</b>.</li>
+                  <li>Activá la <b>verificación en dos pasos</b> (sin eso, Google no deja crear la contraseña).</li>
+                  <li>Buscá <b>Contraseñas de aplicaciones</b> y creá una nueva (poné «GOLDPAW» de nombre).</li>
+                  <li>Copiá las <b>16 letras</b> que te muestra y pegalas acá arriba, sin espacios.</li>
+                </ol>
+                <p>No es la contraseña de tu cuenta: es una clave aparte, solo para esto,
+                y la podés <b>revocar cuando quieras</b> desde esa misma pantalla.</p>
+              </details>
+
+              <div class="mail-acciones">
+                <label class="mail-switch">
+                  <input type="checkbox" id="mailActivo">
+                  <span>Leer esta casilla</span>
+                </label>
+                <button class="cb-btn-ghost" id="mailProbar" type="button">Probar conexión</button>
+                <button class="cb-btn" id="mailGuardar" type="button">Guardar casilla</button>
+              </div>
+              <div id="mailResultado" class="mail-res" style="display:none"></div>
+            </div>
           </div>
 
           <!-- HG Cash: credenciales propias. -->
@@ -8524,6 +8626,119 @@
     }).join("");
   }
 
+  /* ===================== LA CASILLA DE MAIL =====================
+     La pantalla que faltaba para que «Transferencia» sea cierto para un
+     cliente que no seamos nosotros. Los cimientos (la tabla en el control y
+     el cifrado AES-256-GCM compartido con el colector) ya estaban; esto es
+     la parte que el cliente toca.
+     ============================================================== */
+  function mailPintar(m){
+    const box = $(".mail-box"); if(!box) return;
+    if(!m){
+      // Sin la migración 09 del control: se dice, en vez de mostrar una
+      // pantalla que no va a guardar nada.
+      box.innerHTML = '<p class="cfg-hint">La lectura de casilla todavía no está ' +
+        'habilitada en este servidor. Escribinos y la activamos.</p>';
+      return;
+    }
+    $("#mailHost").value       = m.host || "";
+    $("#mailPuerto").value     = m.puerto || 993;
+    $("#mailUsuario").value    = m.usuario || "";
+    $("#mailCarpeta").value    = m.carpeta || "INBOX";
+    $("#mailRemitentes").value = m.remitentes || "";
+    $("#mailActivo").checked   = !!m.activo;
+    /* La clave NUNCA vuelve del server, ni cifrada. Vacío = "no la cambies",
+       igual que el token de HG Cash y el de Meta. */
+    $("#mailClave").value = "";
+    $("#mailClave").placeholder = m.tiene_clave ? "•••••••••• (ya guardada)" : "16 letras, sin espacios";
+    $("#mailClaveHint").innerHTML = m.tiene_clave
+      ? "Ya hay una guardada. Dejalo vacío para no cambiarla."
+      : "Con Gmail NO va la contraseña de tu cuenta: mirá la ayuda de abajo.";
+
+    if(!m.cripto_ok){
+      $("#mailClaveHint").innerHTML =
+        '<span style="color:var(--red)">El servidor no tiene la llave de cifrado configurada, ' +
+        'así que no se puede guardar la contraseña. Avisale al soporte.</span>';
+    }
+
+    /* EL ESTADO, que es lo primero que se tiene que ver. El modo de fallar de
+       esto es silencioso: si la contraseña se revoca o el banco cambia de
+       remitente, los jugadores dejan de cobrar y nada se rompe a la vista. */
+    const e = $("#mailEstado");
+    if(!m.activo){
+      e.className = "mail-estado off"; e.textContent = "apagada";
+    } else if(m.error){
+      e.className = "mail-estado mal"; e.textContent = "con error";
+    } else if(m.visto_en){
+      const hace = fidHace(m.visto_en);
+      e.className = "mail-estado ok"; e.textContent = "leyendo · " + hace;
+    } else {
+      e.className = "mail-estado"; e.textContent = "sin leer todavía";
+    }
+    if(m.error){
+      mailRes("mal", "<b>Último error:</b> " + esc(m.error));
+    }
+  }
+
+  function mailRes(cls, html){
+    const r = $("#mailResultado"); if(!r) return;
+    r.style.display = ""; r.className = "mail-res " + cls; r.innerHTML = html;
+  }
+
+  async function mailGuardar(silencioso){
+    const b = $("#mailGuardar"); const txt = b.textContent;
+    b.disabled = true; b.textContent = "Guardando…";
+    const d = await jpost({
+      accion:"mail_guardar",
+      host: $("#mailHost").value.trim(),
+      puerto: parseInt($("#mailPuerto").value, 10) || 993,
+      usuario: $("#mailUsuario").value.trim(),
+      clave: $("#mailClave").value,          // vacío = no la cambies
+      carpeta: $("#mailCarpeta").value.trim() || "INBOX",
+      remitentes: $("#mailRemitentes").value.trim(),
+      activo: $("#mailActivo").checked,
+    }, API_COBRO);
+    b.disabled = false; b.textContent = txt;
+    if(!d.ok){ mailRes("mal", esc(d.error || "No se pudo guardar")); return false; }
+    $("#mailClave").value = "";   // ya viajó: no queda en pantalla
+    if(!silencioso){ toast("Casilla guardada"); cobroCargar(); }
+    return true;
+  }
+
+  $("#mailGuardar")?.addEventListener("click", ()=>mailGuardar(false));
+
+  /* PROBAR = GUARDAR Y PROBAR. Probar lo que está en pantalla y guardar otra
+     cosa sería poder ver un "funciona" sobre datos que después no se usan; y
+     pedirle al cliente que guarde y recién ahí pruebe es un paso que se
+     saltea. El server prueba SIEMPRE contra lo guardado. */
+  $("#mailProbar")?.addEventListener("click", async ()=>{
+    const b = $("#mailProbar"); const txt = b.textContent;
+    if(!(await mailGuardar(true))) return;
+    b.disabled = true; b.textContent = "Probando…";
+    mailRes("", '<span class="cfg-hint">Conectando con tu casilla…</span>');
+    let d;
+    try{ d = await jpost({accion:"mail_probar"}, API_COBRO); }
+    catch(e){ d = {ok:false, error:"No se pudo conectar con el servidor"}; }
+    b.disabled = false; b.textContent = txt;
+
+    if(!d.ok){
+      mailRes("mal", "<b>No pude entrar a la casilla.</b><br>" + esc(d.error || "") +
+        (d.ayuda ? '<br><span class="cfg-hint">' + esc(d.ayuda) + "</span>" : ""));
+    } else if(d.aviso){
+      // Conecta pero el filtro no encuentra nada: es el error que NO da error.
+      mailRes("aviso", "<b>La casilla abre bien, pero el filtro no encontró mails.</b><br>" +
+        esc(d.aviso));
+    } else {
+      mailRes("ok", "<b>Funciona.</b> Encontré <b>" + (d.encontrados|0) + "</b> mail" +
+        ((d.encontrados|0) === 1 ? "" : "s") + " del remitente que pusiste" +
+        (d.ultimo ? ", el último del <b>" + esc(String(d.ultimo).slice(0,22)) + "</b>" : "") +
+        ". " + ($("#mailActivo").checked
+          ? "Ya está leyendo: las transferencias se van a acreditar solas."
+          : '<span style="color:var(--orange2)">Falta prendé «Leer esta casilla» y guardar.</span>'));
+    }
+    cobroCargar();
+  });
+
   async function cobroCargar(){
     const aviso = $("#cobroAviso");
     aviso.style.display = "none";
@@ -8554,6 +8769,8 @@
     const prVacia = !(pr.cbu || pr.alias);
     cobroCuentas = [...(prVacia ? [] : [pr]), ...(d.cuentas_extra || [])];
     cobroPintarCuentas();
+
+    mailPintar(d.mail);
 
     const hg = d.hg_propio || {};
     $("#cobroHgAccount").value = hg.account_id || "";

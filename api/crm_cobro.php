@@ -25,6 +25,16 @@
  * POST { accion:"cuenta_agregar", alias?, cbu, titular? }            -> { ok, id }
  * POST { accion:"cuenta_editar", id, alias?, cbu, titular?, activa } -> { ok }
  * POST { accion:"cuenta_borrar", id }                                -> { ok }
+ * POST { accion:"mail_guardar", host, puerto, usuario, clave?, carpeta,
+ *        remitentes, activo }                                        -> { ok }
+ * POST { accion:"mail_probar" }   -> { ok, encontrados, ultimo, error? }
+ *
+ * LA CASILLA DE MAIL vive acá y no en Configuración porque es PARTE del
+ * método de cobro: el texto que el cliente lee al elegir «Transferencia» dice
+ * "el sistema lee tu casilla de mail y acredita solo", y hasta el 22/09/2026
+ * eso era falso para cualquiera que no fuéramos nosotros -- la config IMAP
+ * estaba en un archivo del servidor, la nuestra. Ponerla en otra pantalla
+ * dejaría la promesa en un lado y la forma de cumplirla en otro.
  */
 
 declare(strict_types=1);
@@ -32,6 +42,12 @@ require __DIR__ . '/config.php';
 require __DIR__ . '/db.php';
 require __DIR__ . '/crm_auth.php';
 require __DIR__ . '/crm_lib.php';
+// El cifrado de la clave de la casilla (AES-256-GCM, mismo formato que lee
+// colector/cripto.py). Sin llave configurada se NIEGA a cifrar: guardar la
+// contraseña de la casilla de otra persona en claro no es una opción.
+require_once __DIR__ . '/cripto.php';
+// El probador de la casilla (solo lectura). Ver mail_imap.php.
+require_once __DIR__ . '/mail_imap.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
@@ -70,13 +86,33 @@ try {
     salir(['ok' => false, 'error' => 'No se pudo conectar a la base de control'], 500);
 }
 
-$st = $ctl->prepare(
-    'SELECT id, metodo_cobro, coins_por_peso, cobro_alias, cobro_cbu, cobro_titular, cobro_modo, cobro_fija_id,
-            hg_propio_activo, hg_propio_token, hg_propio_account_id, hg_propio_modo
-       FROM clientes WHERE db_nombre = ? LIMIT 1'
-);
-$st->execute([(string)($GLOBALS['TENANT_DB'] ?? '')]);
-$cliente = $st->fetch();
+/* Las columnas de la casilla son de la migración 09 del control. Se piden
+   aparte y con try: un cliente cuya base todavía no la corrió tiene que poder
+   seguir usando el resto de la pantalla. */
+$colsMail = 'mail_host, mail_puerto, mail_usuario, mail_clave, mail_carpeta, '
+          . 'mail_remitentes, mail_activo, mail_visto_en, mail_error';
+try {
+    $st = $ctl->prepare(
+        'SELECT id, metodo_cobro, coins_por_peso, cobro_alias, cobro_cbu, cobro_titular, cobro_modo, cobro_fija_id,
+                hg_propio_activo, hg_propio_token, hg_propio_account_id, hg_propio_modo,
+                ' . $colsMail . '
+           FROM clientes WHERE db_nombre = ? LIMIT 1'
+    );
+    $st->execute([(string)($GLOBALS['TENANT_DB'] ?? '')]);
+    $cliente = $st->fetch();
+    $hayMail = true;
+} catch (Throwable $e) {
+    $hayMail = false;
+    $st = $ctl->prepare(
+        'SELECT id, metodo_cobro, coins_por_peso, cobro_alias, cobro_cbu, cobro_titular, cobro_modo, cobro_fija_id,
+                hg_propio_activo, hg_propio_token, hg_propio_account_id, hg_propio_modo
+           FROM clientes WHERE db_nombre = ? LIMIT 1'
+    );
+}
+if (!$hayMail) {
+    $st->execute([(string)($GLOBALS['TENANT_DB'] ?? '')]);
+    $cliente = $st->fetch();
+}
 if (!$cliente) { salir(['ok' => false, 'error' => 'cliente no resuelto'], 500); }
 $clienteId = (int)$cliente['id'];
 
@@ -113,6 +149,26 @@ if ($metodo === 'GET' && ($_GET['accion'] ?? '') === 'estado') {
             'modo'       => (string)($cliente['hg_propio_modo'] ?? 'prod'),
             'webhook_url' => cobro_webhook_url(),
         ],
+        /* NUNCA la clave, ni cifrada: solo si HAY una. Mismo criterio que el
+           token de HG Cash y el de Meta -- un campo vacío en el POST significa
+           "no la cambies", nunca "borrala". */
+        'mail' => $hayMail ? [
+            'host'       => (string)($cliente['mail_host'] ?? ''),
+            'puerto'     => (int)($cliente['mail_puerto'] ?? 993),
+            'usuario'    => (string)($cliente['mail_usuario'] ?? ''),
+            'tiene_clave'=> trim((string)($cliente['mail_clave'] ?? '')) !== '',
+            'carpeta'    => (string)($cliente['mail_carpeta'] ?? 'INBOX'),
+            'remitentes' => (string)($cliente['mail_remitentes'] ?? ''),
+            'activo'     => (int)($cliente['mail_activo'] ?? 0) === 1,
+            /* LO QUE EVITA EL FALLO SILENCIOSO: cuándo funcionó por última vez
+               y cuál fue el último error. Si el cliente revoca la contraseña
+               de aplicación, sus jugadores dejan de cobrar y NADA se rompe a
+               la vista -- el CRM abre, el chat contesta, y las recargas quedan
+               pendientes para siempre. Esto es lo que lo hace visible. */
+            'visto_en'   => $cliente['mail_visto_en'] ?? null,
+            'error'      => (string)($cliente['mail_error'] ?? ''),
+            'cripto_ok'  => cripto_disponible(),
+        ] : null,
     ]);
 }
 
@@ -192,6 +248,105 @@ if ($metodo === 'POST') {
             $ctl->prepare('UPDATE clientes SET ' . implode(', ', $campos) . ' WHERE id = ?')->execute($valores);
             crm_bitacora($pdo, $operador, 'cobro_hg_propio', 'activo=' . ($activo ? '1' : '0'));
             salir(['ok' => true]);
+        }
+
+        /* GUARDAR LA CASILLA. La clave se cifra con AES-256-GCM (cripto.php,
+           el mismo formato que lee colector/cripto.py). Si no hay llave
+           configurada se RECHAZA en vez de guardar en claro: es la contraseña
+           de la casilla de otra persona. */
+        if ($accion === 'mail_guardar') {
+            $host  = mb_substr(trim((string)($body['host'] ?? '')), 0, 120);
+            $usr   = mb_substr(trim((string)($body['usuario'] ?? '')), 0, 190);
+            $puerto= (int)($body['puerto'] ?? 993);
+            if ($puerto < 1 || $puerto > 65535) { $puerto = 993; }
+            $carp  = mb_substr(trim((string)($body['carpeta'] ?? 'INBOX')), 0, 120) ?: 'INBOX';
+            $rem   = mb_substr(trim((string)($body['remitentes'] ?? '')), 0, 400);
+            $act   = !empty($body['activo']);
+            $clave = (string)($body['clave'] ?? '');
+
+            /* PRENDERLA SIN LOS DATOS COMPLETOS es la forma de que el cliente
+               crea que está cobrando y no. Se exige todo antes de dejar
+               activar; apagada se puede guardar a medias para seguir después. */
+            if ($act && ($host === '' || $usr === '')) {
+                salir(['ok' => false, 'error' => 'Para activarla faltan el servidor y el usuario'], 400);
+            }
+
+            $sets = ['mail_host = ?', 'mail_puerto = ?', 'mail_usuario = ?',
+                     'mail_carpeta = ?', 'mail_remitentes = ?', 'mail_activo = ?'];
+            $args = [$host ?: null, $puerto, $usr ?: null, $carp, $rem ?: null, $act ? 1 : 0];
+
+            if ($clave !== '') {
+                if (!cripto_disponible()) {
+                    salir(['ok' => false, 'error' =>
+                        'No hay llave de cifrado en el servidor: no se puede guardar la contraseña. '
+                        . 'Avisale al soporte (falta GOLDPAW_CRIPTO_LLAVE).'], 500);
+                }
+                $cif = cripto_cifrar($clave);
+                if ($cif === null) {
+                    salir(['ok' => false, 'error' => 'No se pudo cifrar la contraseña'], 500);
+                }
+                $sets[] = 'mail_clave = ?';
+                $args[] = $cif;
+            }
+            /* Al activarla se limpia el error viejo: si no, la pantalla sigue
+               mostrando el motivo de una configuración que ya se corrigió. */
+            if ($act) { $sets[] = 'mail_error = NULL'; }
+
+            $args[] = $clienteId;
+            try {
+                $ctl->prepare('UPDATE clientes SET ' . implode(', ', $sets) . ' WHERE id = ?')
+                    ->execute($args);
+            } catch (Throwable $e) {
+                error_log('mail_guardar: ' . $e->getMessage());
+                salir(['ok' => false, 'error' => 'No se pudo guardar (¿falta la migración 09 del control?)'], 500);
+            }
+            crm_bitacora($pdo, $operador, 'mail_guardar',
+                ($act ? 'casilla ACTIVA' : 'casilla apagada') . ' ' . $usr);
+            salir(['ok' => true]);
+        }
+
+        /* PROBAR LA CONEXIÓN, que es el 80% del valor de esta pantalla.
+           Pedirle a alguien servidor, puerto, usuario y una contraseña de
+           aplicación sin decirle en el momento si funciona garantiza que la
+           mitad queden mal configuradas -- y el modo de fallar de esto es
+           silencioso: nadie se entera hasta que un jugador reclama que no le
+           acreditaron.
+
+           Se prueba con lo YA GUARDADO (incluida la clave cifrada), no con lo
+           que está en pantalla: así lo que se prueba es exactamente lo que va
+           a usar el colector. Por eso el front guarda antes de probar. */
+        if ($accion === 'mail_probar') {
+            try {
+                $st = $ctl->prepare('SELECT ' . $colsMail . ' FROM clientes WHERE id = ? LIMIT 1');
+                $st->execute([$clienteId]);
+                $m = $st->fetch();
+            } catch (Throwable $e) {
+                salir(['ok' => false, 'error' => 'Falta la migración 09 del control'], 500);
+            }
+            if (!$m || trim((string)($m['mail_host'] ?? '')) === ''
+                    || trim((string)($m['mail_usuario'] ?? '')) === '') {
+                salir(['ok' => false, 'error' => 'Faltan el servidor o el usuario'], 400);
+            }
+            $clave = cripto_descifrar($m['mail_clave'] ?? null);
+            if ($clave === null || $clave === '') {
+                salir(['ok' => false, 'error' => 'Todavía no cargaste la contraseña de aplicación'], 400);
+            }
+            $r = mail_probar_imap(
+                (string)$m['mail_host'], (int)$m['mail_puerto'], (string)$m['mail_usuario'],
+                $clave, (string)($m['mail_carpeta'] ?: 'INBOX'), (string)($m['mail_remitentes'] ?? '')
+            );
+            /* El resultado se guarda: una prueba que anduvo ES una lectura que
+               anduvo, y deja el estado de la pantalla al día sin esperar al
+               colector. */
+            try {
+                $ctl->prepare('UPDATE clientes SET mail_visto_en = ?, mail_error = ? WHERE id = ?')
+                    ->execute([
+                        !empty($r['ok']) ? date('Y-m-d H:i:s') : ($m['mail_visto_en'] ?? null),
+                        !empty($r['ok']) ? null : mb_substr((string)($r['error'] ?? 'error'), 0, 300),
+                        $clienteId,
+                    ]);
+            } catch (Throwable $e) { /* el resultado de la prueba se devuelve igual */ }
+            salir($r);
         }
 
         if ($accion === 'cuenta_agregar') {
