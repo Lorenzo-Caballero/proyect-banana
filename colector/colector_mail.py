@@ -77,6 +77,103 @@ def cargar_config():
     return cfg
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# LAS CASILLAS DE LOS CLIENTES
+#
+# Hasta el 22/09/2026 este proceso leia UNA casilla: la de config.json, la
+# nuestra. Y la pantalla «Como cobro» del CRM le prometia a cada cliente que
+# "el sistema lee tu casilla de mail y acredita solo" -- falso para todos los
+# demas: recibian las transferencias en SU cuenta, nadie leia SU casilla, y
+# esas recargas no se acreditaban nunca. Del lado nuestro no se veia nada roto.
+#
+# Ahora las casillas de los clientes se piden al panel (api/mail_casillas.php)
+# y se SUMAN a la de config.json. Dos cosas importantes de este diseño:
+#
+#   * config.json sigue mandando para lo nuestro. Si el panel no responde, el
+#     colector arranca igual con la casilla local: un problema de red no puede
+#     dejar de acreditarle a nadie.
+#   * cada casilla trae su propia `api_url`. Es LO QUE NO PUEDE FALLAR: el
+#     pago se postea al cliente dueño de esa casilla. Con la API_URL global
+#     del .env, el mail del banco de un cliente acreditaria en NUESTRA base.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def url_casillas() -> str:
+    """De .../pagos.php (API_URL) -> .../mail_casillas.php."""
+    base = (os.getenv("API_URL") or "").split("?")[0].rstrip("/")
+    if not base:
+        return ""
+    return base.rsplit("/", 1)[0] + "/mail_casillas.php"
+
+
+def casillas_del_panel() -> list:
+    """Las casillas que los clientes cargaron en su CRM. [] ante cualquier problema."""
+    url = url_casillas()
+    key = os.getenv("API_KEY") or ""
+    if not url or not key:
+        return []
+    try:
+        import urllib.request
+        req = urllib.request.Request(url + "?accion=listar",
+                                     headers={"X-API-Key": key, "User-Agent": "goldpaw-colector"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            d = json.loads(r.read().decode("utf-8"))
+    except Exception as e:
+        print(f"  (no pude pedir las casillas de clientes: {e})")
+        return []
+    if not d.get("ok"):
+        return []
+
+    fuera = []
+    for c in d.get("casillas", []):
+        # Se traducen al MISMO formato que config.json, asi el resto del
+        # programa no se entera de que hay dos origenes.
+        fuera.append({
+            "nombre": "cli:" + str(c.get("slug", "?")),
+            "activa": True,
+            "host": c.get("host", ""),
+            "port": int(c.get("puerto") or 993),
+            "usuario": c.get("usuario", ""),
+            "clave": c.get("clave", ""),
+            "carpeta": c.get("carpeta") or "INBOX",
+            "remitentes_ok": c.get("remitentes") or [],
+            # Sin remitentes no se exige asunto: el filtro ya es la casilla
+            # entera y pedir las dos cosas dejaria fuera avisos legitimos.
+            "asunto_contiene": "",
+            "exigir_dkim": False,
+            "desde_dias": 7,
+            # LO QUE HACE QUE EL PAGO VAYA AL CLIENTE CORRECTO.
+            "api_url": c.get("api_url", ""),
+            "slug": c.get("slug", ""),
+        })
+    return fuera
+
+
+def reportar_casilla(cuenta, ok, error=""):
+    """Le dice al panel si esta casilla pudo leerse. Solo para las de clientes.
+
+    ES LO QUE HACE VISIBLE EL FALLO SILENCIOSO: si el cliente revoca la
+    contraseña de aplicacion o el banco cambia de remitente, sus jugadores
+    dejan de cobrar y nada se rompe a la vista. Con esto, su CRM lo dice.
+
+    Best-effort: que el reporte falle no puede cortar la lectura.
+    """
+    slug = cuenta.get("slug") or ""
+    url = url_casillas()
+    key = os.getenv("API_KEY") or ""
+    if not slug or not url or not key:
+        return
+    try:
+        import urllib.request
+        body = json.dumps({"slug": slug, "ok": bool(ok), "error": str(error)[:300]}).encode()
+        req = urllib.request.Request(
+            url + "?accion=estado", data=body, method="POST",
+            headers={"X-API-Key": key, "Content-Type": "application/json",
+                     "User-Agent": "goldpaw-colector"})
+        urllib.request.urlopen(req, timeout=10).read()
+    except Exception:
+        pass
+
+
 def crear_config():
     if os.path.exists(CONFIG):
         print(f"Ya existe {CONFIG}. No lo toco.")
@@ -281,8 +378,12 @@ def db_init():
 _uid_mem = {}
 
 
-def guardar(con, c: dict):
+def guardar(con, c: dict, cuenta: dict = None):
     """Guarda la transferencia via API.
+
+    `cuenta` trae la casilla de la que salio el mail. Si es de un CLIENTE, su
+    `api_url` manda: el pago se acredita en SU base, no en la nuestra. Sin
+    cuenta (o sin api_url) va a la API_URL global, que es nuestra casilla.
 
     Devuelve True si era nueva, False si el server dice que ya estaba
     guardada, None si la llamada en si fallo (401, timeout, DNS, etc). La
@@ -297,7 +398,7 @@ def guardar(con, c: dict):
         payload["dkim_pass"] = 1 if c.get("dkim_pass") else 0
         payload["capturado_en"] = datetime.now(timezone.utc).isoformat()
         payload["crudo"] = c
-        return A.guardar_pago(payload)
+        return A.guardar_pago(payload, url=(cuenta or {}).get("api_url", ""))
     except Exception as e:
         log(c.get("cuenta", "?"), f"! error guardando en API: {e}")
         return None
@@ -380,12 +481,16 @@ CUERPO = b"BODY[]"
 
 
 def cuentas_activas(cfg, filtro=None):
-    act = [c for c in cfg["cuentas"] if c.get("activa", True)]
+    # Las del config.json (la nuestra) MAS las que los clientes cargaron en su
+    # CRM. En ese orden a proposito: si el panel no responde, lo nuestro sigue
+    # leyendo igual.
+    todas = list(cfg["cuentas"]) + casillas_del_panel()
+    act = [c for c in todas if c.get("activa", True)]
     if filtro:
         act = [c for c in act if c["nombre"] == filtro]
         if not act:
             print(f"No existe una cuenta '{filtro}'. Hay: " +
-                  ", ".join(c["nombre"] for c in cfg["cuentas"]))
+                  ", ".join(c["nombre"] for c in todas))
             sys.exit(1)
     if not act:
         print("No hay cuentas activas.")
@@ -504,7 +609,7 @@ def modo_importar(cfg, filtro=None):
                 if not ok:
                     descartados += 1
                     continue
-                if guardar(con, c):
+                if guardar(con, c, cuenta):
                     nuevos += 1
                 else:
                     repetidos += 1
@@ -539,7 +644,7 @@ def escuchar_una(cfg, cuenta, con, parar):
                             ultimo = max(ultimo, uid)
                             escribir_uid(con, nombre, ultimo, uidv)
                             continue
-                        res = guardar(con, c)
+                        res = guardar(con, c, cuenta)
                         if res is True:
                             log(nombre, f"PAGO  ${c['monto']}  {c['remitente']}  "
                                         f"trx {c['nro_transaccion']}")
@@ -561,11 +666,22 @@ def escuchar_una(cfg, cuenta, con, parar):
                         ultimo = max(ultimo, uid)
                         escribir_uid(con, nombre, ultimo, uidv)
 
+                # LEYO BIEN: se sella el latido. Es "la ultima vez que
+                # FUNCIONO", no "la ultima vez que se intento" -- un proceso
+                # que reintenta cada minuto y falla siempre tendria un latido
+                # fresco y una casilla muerta.
+                reportar_casilla(cuenta, True)
+
                 cli.idle()
                 cli.idle_check(timeout=280)     # < 29 min que exige el RFC
                 cli.idle_done()
         except Exception as e:
             log(nombre, f"error: {e} — reconecto en 15s")
+            # QUE EL CLIENTE SE ENTERE ANTES QUE SUS JUGADORES. Si revoco la
+            # contraseña de aplicacion o el banco cambio de remitente, esto es
+            # lo unico que lo hace visible: su CRM muestra el motivo en vez de
+            # dejar las recargas pendientes para siempre sin explicacion.
+            reportar_casilla(cuenta, False, str(e))
             if parar.wait(15):
                 return
         finally:

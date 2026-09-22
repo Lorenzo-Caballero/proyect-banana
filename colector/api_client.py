@@ -53,12 +53,20 @@ def _falta_config() -> str:
             "de config.json, esas son de otra cosa.")
 
 
-def _post(payload: dict, timeout=20) -> dict:
+def _post(payload: dict, timeout=20, url: str = "") -> dict:
+    """`url` manda sobre API_URL.
+
+    MULTI-CLIENTE (22/09/2026): cada casilla de mail trae la URL del cliente
+    dueño de esa casilla. Con la API_URL global, el aviso del banco de un
+    cliente acreditaba la recarga en NUESTRA base: plata de otro sumada a
+    nuestros jugadores, y el que transfirio de verdad esperando para siempre.
+    Sin `url` se usa la global, que es lo de siempre para nuestra casilla.
+    """
     problema = _falta_config()
     if problema:
         raise RuntimeError(problema)
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    req = urllib.request.Request(API_URL, data=body, method="POST")
+    req = urllib.request.Request((url or API_URL), data=body, method="POST")
     req.add_header("Content-Type", "application/json")
     # pagos.php acepta X-API-Key o X-Api-Token: mandamos el segundo
     req.add_header("X-Api-Token", API_TOKEN)
@@ -81,14 +89,14 @@ def _post(payload: dict, timeout=20) -> dict:
 
 # ---------- ESCRITURA ----------
 
-def guardar_pago(pago: dict) -> bool:
+def guardar_pago(pago: dict, url: str = "") -> bool:
     """Guarda/acredita una transferencia. Devuelve True si era nueva.
 
     colector_mail.py arma el payload con: monto, remitente, cuit, cbu_origen,
     nro_transaccion, id_unico, fecha_operacion, dkim_pass, mail_de, etc.
     pagos.php usa id_unico (o nro_transaccion) para no procesar dos veces.
     """
-    r = _post(pago)
+    r = _post(pago, url=url)
     if r.get("resultado") == "acreditada":
         print(f"    -> ACREDITADO: {r.get('coins')} coins a {r.get('usuario')} "
               f"(recarga {r.get('referencia')})")
