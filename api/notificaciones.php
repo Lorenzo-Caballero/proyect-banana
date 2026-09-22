@@ -71,6 +71,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         if (function_exists('cfg_crm_activo')) {
             $resp['ruleta'] = cfg_crm_activo($pdo, 'ruleta_activa');
         }
+        /* Los recordatorios para volver a jugar los arma el CELULAR, no el
+           server, asi que este es el unico canal para gobernarlos: viajan en el
+           sondeo y el APK los guarda. Un APK viejo ignora estas claves y sigue
+           con sus constantes compiladas, que es el comportamiento de siempre. */
+        if (function_exists('cfg_crm')) {
+            $resp['enganche'] = [
+                'activo'          => cfg_crm_activo($pdo, 'enganche_activo'),
+                'max_dia'         => (int)cfg_crm($pdo, 'enganche_max_dia'),
+                'horas_sin_abrir' => (int)cfg_crm($pdo, 'enganche_horas_sin_abrir'),
+            ];
+        }
     } catch (Throwable $e) { /* sin flag */ }
     salir($resp);
 }

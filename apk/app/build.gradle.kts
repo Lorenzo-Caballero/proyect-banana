@@ -60,13 +60,19 @@ android {
         //        restricciones -- push vacio: nunca llega; push con texto:
         //        20-30 s. Cada aviso lleva la etiqueta gp-<id>, compartida con
         //        el server, para que Android y la app no lo muestren dos veces.
+        //   1.9  los recordatorios para volver a jugar se configuran desde el
+        //        CRM (venian cableados en 4 por dia desde 3 h sin abrir) y van
+        //        en SU PROPIO canal de Android. Compartiendo canal con los
+        //        avisos de plata, al jugador que le molestaban solo le quedaba
+        //        silenciar la app entera -- y ahi perdia tambien el bono, la
+        //        recarga y la respuesta del chat.
         //
         // EL versionCode HAY QUE SUBIRLO SIEMPRE, y es facil de olvidar porque
         // el build sale igual: Android NO instala encima de una version
         // instalada si el numero no es mayor. El jugador toca "instalar", no
         // pasa nada, y no hay ningun error que lo explique.
-        versionCode = 9
-        versionName = "1.8"
+        versionCode = 10
+        versionName = "1.9"
     }
 
     signingConfigs {

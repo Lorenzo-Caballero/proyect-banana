@@ -2185,7 +2185,7 @@
        una version nueva le da una URL nueva, y la cache deja de importar.
        t_apk_version.py falla si este numero no coincide con el versionName
        del build.gradle.kts. */
-    if (!url) url = "/ganamos.apk?v=1.8";
+    if (!url) url = "/ganamos.apk?v=1.9";
 
     var css =
       "#gpa-ov{position:fixed;inset:0;z-index:2147483004;display:none;align-items:center;justify-content:center;"+

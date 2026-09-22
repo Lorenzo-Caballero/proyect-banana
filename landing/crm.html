@@ -5274,6 +5274,43 @@
       </div>
 
       <!-- Ruleta ------------------------------------------------------- -->
+      <!-- RECORDATORIOS PARA VOLVER A JUGAR.
+           Los arma el propio celular, no el server: hasta el 22/09/2026 no
+           habia forma de tocarlos sin recompilar el APK. Ahora viajan en la
+           respuesta del sondeo. Un telefono con una version anterior a la 1.9
+           ignora esto y sigue con lo que tenga compilado. -->
+      <div class="cfg-card">
+        <div class="cfg-card-head">
+          <span class="cb-ico"><svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></span>
+          <div class="cfg-card-txt">
+            <b>Recordatorios para volver a jugar</b>
+            <span>Avisos que manda la app al jugador que hace rato no entra. No los escribís vos: los arma el teléfono.</span>
+          </div>
+          <label class="cb-switch">
+            <input type="checkbox" id="cfgEnganche">
+            <span class="cb-slider"></span>
+          </label>
+        </div>
+        <div class="cfg-card-body" id="cfgEngancheWrap">
+          <div class="cfg-grid2">
+            <div>
+              <label for="cfgEngancheMax">Máximo por día</label>
+              <input class="cb-input" id="cfgEngancheMax" type="number" min="1" max="6" step="1">
+            </div>
+            <div>
+              <label for="cfgEngancheHoras">Horas sin abrir antes del primero</label>
+              <input class="cb-input" id="cfgEngancheHoras" type="number" min="1" max="168" step="1">
+            </div>
+          </div>
+          <p class="ag-modal-hint">
+            Tardan hasta 15 minutos en aplicarse: el teléfono los recibe en su
+            próximo sondeo. El jugador además puede apagar <b>solo estos</b>
+            desde los ajustes de Android, sin perder los avisos de bonos,
+            recargas ni las respuestas del chat.
+          </p>
+        </div>
+      </div>
+
       <div class="cfg-card">
         <div class="cfg-card-head">
           <span class="cb-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"/></svg></span>
@@ -8088,6 +8125,9 @@
      Se leen y guardan por crm.php ?accion=config / config_guardar. */
   const CFG_CAMPOS = {
     ruleta_activa:   { el: "#cfgRuleta",    tipo: "bool" },
+    enganche_activo:          { el: "#cfgEnganche",       tipo: "bool" },
+    enganche_max_dia:         { el: "#cfgEngancheMax",    tipo: "texto" },
+    enganche_horas_sin_abrir: { el: "#cfgEngancheHoras",  tipo: "texto" },
 
     raspa_activo:    { el: "#cfgRaspa",     tipo: "bool"  },
     raspa_mensaje:   { el: "#cfgRaspaMsg",  tipo: "texto" },
@@ -8203,6 +8243,8 @@
   function cfgPintarRuleta(){
     const tarjeta = $("#cfgRuleta").closest(".cfg-card");
     if(tarjeta) tarjeta.classList.toggle("on", $("#cfgRuleta").checked);
+    const tEng = $("#cfgEnganche") && $("#cfgEnganche").closest(".cfg-card");
+    if(tEng) tEng.classList.toggle("on", $("#cfgEnganche").checked);
     cfgPintarJuegos();
     cfgPintarActivas();
   }

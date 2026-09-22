@@ -57,6 +57,15 @@ object Notificaciones {
 
     const val CANAL = "goldpaw_premios"
 
+    /* LOS RECORDATORIOS VAN EN SU PROPIO CANAL, y no es un detalle estetico.
+       Compartiendo canal con los avisos reales, el jugador al que le molestan
+       los "volve a jugar" solo tiene una salida: silenciar la app entera. Y ahi
+       pierde tambien el bono que le acreditamos, la recarga y la respuesta del
+       chat -- o sea, el recordatorio termina costando los avisos que importan.
+       Con dos canales puede apagar SOLO los recordatorios desde los ajustes de
+       Android, y todo lo demas le sigue llegando. */
+    const val CANAL_ENGANCHE = "goldpaw_recordatorios"
+
     /* Prefijo de la etiqueta de cada aviso. Lo comparte con el server: si
        uno de los dos cambia y el otro no, vuelven los duplicados. */
     const val TAG_AVISO = "gp-"
@@ -239,6 +248,21 @@ object Notificaciones {
             enableVibration(true)
         }
         ctx.getSystemService(NotificationManager::class.java)?.createNotificationChannel(canal)
+
+        /* IMPORTANCE_DEFAULT y no HIGH: un recordatorio no tiene por que
+           aparecer flotando encima de lo que el jugador esta haciendo. Los
+           avisos de plata si. */
+        val recordatorios = NotificationChannel(
+            CANAL_ENGANCHE,
+            "Recordatorios para volver",
+            NotificationManager.IMPORTANCE_DEFAULT
+        ).apply {
+            description = "Avisos para invitarte a jugar. Podés apagarlos sin " +
+                "perder los de bonos, recargas y respuestas del chat."
+            enableVibration(false)
+        }
+        ctx.getSystemService(NotificationManager::class.java)
+            ?.createNotificationChannel(recordatorios)
     }
 
     fun permitidas(ctx: Context): Boolean =
@@ -268,7 +292,7 @@ object Notificaciones {
 
     // ------------------------------------------------------------------ mostrar
 
-    fun mostrar(ctx: Context, a: Aviso) {
+    fun mostrar(ctx: Context, a: Aviso, canal: String = CANAL) {
         // Sin permiso, notify() no hace nada y el aviso ya quedo marcado como
         // entregado en el server: se perderia. Por eso el worker chequea ANTES
         // de pedir la lista, y esto es solo la ultima red.
@@ -284,7 +308,7 @@ object Notificaciones {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val n = NotificationCompat.Builder(ctx, CANAL)
+        val n = NotificationCompat.Builder(ctx, canal)
             .setSmallIcon(R.drawable.ic_notificacion)     // silueta monocroma (barra de estado)
             .setLargeIcon(iconoApp(ctx))                  // ícono de la app (perro), en el cuerpo
             .setColor(ContextCompat.getColor(ctx, R.color.oro))
@@ -327,6 +351,18 @@ object Notificaciones {
                lo guardado. */
             if (raiz.has("ruleta")) {
                 prefs(ctx).edit().putBoolean("ruleta_activa", raiz.optBoolean("ruleta", true)).apply()
+            }
+            /* Los recordatorios para volver a jugar los arma ESTE telefono, no
+               el server, asi que el sondeo es el unico canal para gobernarlos.
+               Si el server no los manda (version vieja) no se toca lo guardado
+               y Enganche sigue con sus constantes: el comportamiento de
+               siempre. */
+            raiz.optJSONObject("enganche")?.let { e ->
+                prefs(ctx).edit()
+                    .putBoolean("eng_activo", e.optBoolean("activo", true))
+                    .putInt("eng_max_dia", e.optInt("max_dia", 0))
+                    .putInt("eng_horas_sin_abrir", e.optInt("horas_sin_abrir", 0))
+                    .apply()
             }
             val arr = raiz.optJSONArray("notificaciones") ?: return emptyList()
             (0 until arr.length()).map { i ->

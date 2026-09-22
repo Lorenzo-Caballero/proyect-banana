@@ -93,11 +93,20 @@ object Enganche {
         val p = Notificaciones.prefs(ctx)
         val ahora = System.currentTimeMillis()
 
+        /* MANDA LA CONFIG DEL CRM, y las constantes de arriba quedan de
+           respaldo. Hasta el 22/09/2026 esto no se podia tocar sin recompilar
+           el APK, porque los recordatorios los arma el telefono y no pasan por
+           el server. Los valores llegan en el sondeo (Notificaciones.pendientes)
+           y un 0 significa "el server no dijo nada": ahi vale la constante. */
+        if (!p.getBoolean("eng_activo", true)) return false
+        val maxDia = p.getInt("eng_max_dia", 0).takeIf { it > 0 } ?: MAX_POR_DIA
+        val horasSinAbrir = p.getInt("eng_horas_sin_abrir", 0).takeIf { it > 0 } ?: HORAS_SIN_ABRIR
+
         if (!enHorario()) return false
 
         // Recien lo usaste: no tiene sentido invitarte a entrar.
         val ultimaApertura = p.getLong(K_ULTIMA_APERTURA, 0)
-        if (ultimaApertura > 0 && ahora - ultimaApertura < HORAS_SIN_ABRIR * UNA_HORA) return false
+        if (ultimaApertura > 0 && ahora - ultimaApertura < horasSinAbrir * UNA_HORA) return false
 
         // Nunca abrio la app: no hay a que invitarlo a volver.
         if (ultimaApertura == 0L) return false
@@ -108,7 +117,7 @@ object Enganche {
         val hoy = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
         val mismoDia = p.getString(K_DIA, "") == hoy
         val cuantos = if (mismoDia) p.getInt(K_HOY, 0) else 0
-        if (cuantos >= MAX_POR_DIA) return false
+        if (cuantos >= maxDia) return false
 
         /* Con la ruleta apagada, los textos que la prometen quedan afuera de la
            rotación. El default es prendida: un APK que nunca recibió el flag
@@ -120,9 +129,13 @@ object Enganche {
         val i = p.getInt(K_INDICE, 0) % elegibles.size
         val m = elegibles[i]
 
+        /* En el canal de recordatorios, no en el de los avisos de plata: asi
+           el jugador puede apagar SOLO esto desde los ajustes de Android sin
+           perder los bonos, las recargas ni las respuestas del chat. */
         Notificaciones.mostrar(
             ctx,
-            Aviso(ID_NOTIFICACION, m.titulo, m.cuerpo, "promo", null)
+            Aviso(ID_NOTIFICACION, m.titulo, m.cuerpo, "promo", null),
+            Notificaciones.CANAL_ENGANCHE
         )
 
         p.edit()

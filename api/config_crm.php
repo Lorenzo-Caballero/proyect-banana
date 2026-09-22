@@ -40,6 +40,22 @@ const CFG_CRM_DEFAULTS = [
     // rechaza los giros. Las dos cosas hacen falta -- esconder el botón no
     // alcanza, el endpoint es público.
     'ruleta_activa'   => '1',
+
+    /* LOS RECORDATORIOS PARA VOLVER A JUGAR ("enganches").
+       Los arma el propio celular, no el server, asi que hasta el 22/09/2026 no
+       habia forma de tocarlos sin recompilar el APK. Ahora viajan en la
+       respuesta del sondeo y el telefono los respeta.
+
+       Venian en 4 por dia desde 3 horas sin abrir la app, y para alguien que no
+       esta jugando todo el dia eso son cuatro avisos diarios. El riesgo no es
+       molestar: es que el jugador silencie la app y con eso pierda tambien los
+       avisos que importan --bonos, recargas, respuestas del chat--, que es la
+       forma cara de equivocarse aca.
+
+       enganche_activo en '0' los apaga del todo. */
+    'enganche_activo'          => '1',
+    'enganche_max_dia'         => '1',
+    'enganche_horas_sin_abrir' => '24',
     // Qué se le dice al jugador cuando está apagada. Vacío = mensaje genérico.
     'ruleta_mensaje'  => '',
 

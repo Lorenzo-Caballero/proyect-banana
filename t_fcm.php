@@ -345,6 +345,20 @@ chequear('y la aplica al mostrar el aviso',
     str_contains($kt, 'notify(TAG_AVISO + a.id, a.id, n)'),
     'sin etiqueta al mostrar, la app suma un aviso en vez de reemplazar el de Android');
 
+/* LOS RECORDATORIOS NO PUEDEN COMPARTIR CANAL CON LOS AVISOS DE PLATA.
+   Android deja silenciar un canal, no una notificacion. Si los "volve a jugar"
+   salen por el mismo canal que los bonos, las recargas y las respuestas del
+   chat, el jugador al que le molestan solo tiene una salida: apagar la app
+   entera -- y ahi el recordatorio termina costando los avisos que importan,
+   que es exactamente lo contrario de para que existe. */
+$kt2 = (string)file_get_contents(__DIR__ . '/apk/app/src/main/java/com/goldpaw/app/Enganche.kt');
+chequear('los recordatorios usan su propio canal',
+    str_contains($kt2, 'Notificaciones.CANAL_ENGANCHE'),
+    'compartiendo canal, silenciarlos cuesta los avisos de bonos y recargas');
+chequear('y el CRM los puede apagar',
+    str_contains($kt2, 'if (!p.getBoolean("eng_activo", true)) return false'),
+    'sin esto vuelven a estar cableados y hace falta recompilar para tocarlos');
+
 /* LOS DE CHAT TAMBIEN LLEVAN TEXTO, y esto estuvo al reves unas horas.
    Se los habia excluido creyendo que un push con texto sonaria encima del
    jugador que ya lo esta leyendo. Es falso: Android no dibuja un mensaje con
