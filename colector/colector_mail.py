@@ -797,27 +797,104 @@ def escuchar_una(cfg, cuenta, con, parar):
                 pass
 
 
+# Cada cuanto se vuelve a preguntar que casillas hay que escuchar.
+REFRESCO_CASILLAS_SEG = int(os.getenv("MAIL_REFRESCO_SEG", "120"))
+
+
 def modo_escuchar(cfg, filtro=None):
+    """Escucha todas las casillas, y se entera de las que aparecen despues.
+
+    POR QUE NO ALCANZA CON ARMAR LOS HILOS UNA VEZ. Las casillas de los
+    clientes ya no estan en un archivo: las carga cada cliente desde su CRM,
+    cuando quiere. Con la lista leida una sola vez al arrancar, un cliente
+    conectaba su casilla, el CRM le decia "probado, funciona"... y nadie la
+    escuchaba hasta que alguien reiniciara el servicio a mano. Nada lo avisaba:
+    ni el, ni nosotros. Sus jugadores transferian y esperaban para siempre.
+
+    Y el deploy no reinicia este servicio, asi que ni siquiera se arreglaba
+    solo con el siguiente despliegue.
+
+    Ahora se vuelve a preguntar cada REFRESCO_CASILLAS_SEG:
+      · una casilla nueva  -> arranca su hilo
+      · una que se apago   -> se le pide a SU hilo que corte (cada uno tiene su
+                              propio evento, no uno compartido)
+      · una que se murio   -> se levanta de nuevo
+
+    El hilo de cada casilla ya reintenta solo cada 15 s ante un error de red o
+    una contrasena revocada; esto es para los cambios de CONFIGURACION, que son
+    los que antes necesitaban una mano.
+    """
     con = db_init()
+    # La primera vez SI se sale si no hay ninguna: arrancar sin nada que
+    # escuchar es un error de configuracion y conviene que se vea. Despues no,
+    # porque un [] puede ser el panel que no contesto por diez segundos.
     activas = cuentas_activas(cfg, filtro)
-    parar = threading.Event()
     print(f"\nEscuchando {len(activas)} casilla(s): "
           f"{', '.join(c['nombre'] for c in activas)}")
     print("Modo solo lectura: no marca leidos, no borra, no mueve.")
-    print("Ctrl+C para cortar.\n")
-    hilos = [threading.Thread(target=escuchar_una, args=(cfg, c, con, parar),
-                              name=c["nombre"], daemon=True) for c in activas]
-    for h in hilos:
+    print(f"Reviso si hay casillas nuevas cada {REFRESCO_CASILLAS_SEG}s. Ctrl+C para cortar.\n")
+
+    corte_general = threading.Event()
+    hilos = {}     # nombre -> (Thread, Event propio)
+
+    def arrancar(c):
+        mio = threading.Event()
+        h = threading.Thread(target=escuchar_una, args=(cfg, c, con, mio),
+                             name=c["nombre"], daemon=True)
         h.start()
+        hilos[c["nombre"]] = (h, mio)
+
+    for c in activas:
+        arrancar(c)
+
     try:
-        while any(h.is_alive() for h in hilos):
-            time.sleep(1)
+        while not corte_general.is_set():
+            if corte_general.wait(REFRESCO_CASILLAS_SEG):
+                break
+            try:
+                ahora = cuentas_activas_silencioso(cfg, filtro)
+            except Exception as e:
+                print(f"  (no pude refrescar la lista de casillas: {e})")
+                continue
+            # Un [] no se toma como "apagalas todas": es el caso normal cuando
+            # el panel no contesta, y matar las casillas que funcionan por eso
+            # seria cambiar un problema chico por uno grande.
+            if not ahora:
+                continue
+
+            quieren = {c["nombre"]: c for c in ahora}
+            for nombre, c in quieren.items():
+                vivo = hilos.get(nombre)
+                if vivo is None or not vivo[0].is_alive():
+                    log(nombre, "casilla nueva: la empiezo a escuchar")
+                    arrancar(c)
+            for nombre in list(hilos):
+                if nombre not in quieren:
+                    log(nombre, "ya no esta activa: corto su hilo")
+                    hilos[nombre][1].set()
+                    del hilos[nombre]
     except KeyboardInterrupt:
         print("\nCortando...")
-        parar.set()
-        for h in hilos:
+        for h, mio in hilos.values():
+            mio.set()
+        for h, _ in hilos.values():
             h.join(timeout=5)
         print("Listo.")
+
+
+def cuentas_activas_silencioso(cfg, filtro=None):
+    """Como cuentas_activas() pero NUNCA corta el proceso.
+
+    cuentas_activas() hace sys.exit(1) cuando no encuentra ninguna, que esta
+    bien al arrancar --es un error de configuracion-- y esta muy mal adentro
+    del bucle de refresco: una respuesta vacia del panel por diez segundos
+    apagaria el colector entero, con todas las casillas que si andaban.
+    """
+    todas = list(cfg["cuentas"]) + casillas_del_panel()
+    act = [c for c in todas if c.get("activa", True)]
+    if filtro:
+        act = [c for c in act if c["nombre"] == filtro]
+    return act
 
 
 # ─────────────────────────────────────────────────────────────────────────────

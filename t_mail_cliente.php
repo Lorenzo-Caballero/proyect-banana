@@ -279,5 +279,70 @@ chequear('y con errores sí, con el texto que corresponde',
          str_contains($crm3, "' por qué fallaron</button>'"));
 
 
+// =========================================================================
+echo "\n=== El colector se entera de un cliente nuevo sin reiniciarse ===\n";
+// =========================================================================
+/* EL HUECO (encontrado el 23/09/2026 revisando esta misma funcionalidad). Las
+   casillas de los clientes ya no estan en un archivo: las carga cada cliente
+   desde su CRM, cuando quiere. Pero modo_escuchar() armaba la lista de hilos
+   UNA sola vez al arrancar y despues solo esperaba.
+
+   O sea: el cliente conectaba su casilla, el CRM le decia "probado, funciona",
+   y nadie la escuchaba hasta que alguien reiniciara goldpaw-colector.service a
+   mano. Nada lo avisaba --ni a el ni a nosotros-- y sus jugadores transferian
+   y esperaban para siempre. El deploy tampoco reinicia ese servicio, asi que
+   ni siquiera se acomodaba con el despliegue siguiente. */
+$col = (string)file_get_contents(__DIR__ . '/colector/colector_mail.py');
+
+chequear('modo_escuchar vuelve a preguntar que casillas hay',
+    str_contains($col, 'REFRESCO_CASILLAS_SEG'),
+    'sin esto, una casilla conectada despues del arranque no la escucha nadie');
+
+chequear('y levanta la que aparecio',
+    str_contains($col, 'casilla nueva: la empiezo a escuchar'));
+
+/* CADA CASILLA TIENE SU PROPIO EVENTO DE CORTE. Con uno compartido, apagar la
+   de un cliente apagaba las de todos. */
+chequear('cada casilla se corta sola, no todas juntas',
+    str_contains($col, 'hilos[nombre][1].set()')
+    && str_contains($col, 'mio = threading.Event()'),
+    'con un evento compartido, apagar una casilla apaga las de todos los clientes');
+
+/* UNA LISTA VACIA NO PUEDE APAGAR LAS QUE FUNCIONAN: es el caso normal cuando
+   el panel no contesta por diez segundos. */
+chequear('si el panel no contesta, no se apaga nada',
+    str_contains($col, 'if not ahora:') && str_contains($col, 'continue'),
+    'un [] pasajero no puede costar las casillas que si andaban');
+
+/* Y el refresco NO puede usar cuentas_activas(), que hace sys.exit(1) cuando
+   no encuentra ninguna: eso esta bien al arrancar y mata el proceso adentro
+   del bucle. */
+chequear('el refresco usa la variante que no corta el proceso',
+    str_contains($col, 'cuentas_activas_silencioso'));
+/* Se recorta hasta el PROXIMO bloque de nivel cero, no a N caracteres: la
+   primera version miraba 900 y se metia en el bloque "__main__" de abajo,
+   que si tiene un sys.exit legitimo. Un test que falla por donde termino de
+   contar no dice nada sobre el codigo. */
+$desde = (int)strpos($col, 'def cuentas_activas_silencioso');
+$resto = substr($col, $desde);
+/* Hasta donde empieza lo que sigue: el próximo `def` de nivel cero o el
+   bloque `__main__`. Lo que venga primero. */
+$fin = strlen($resto);
+foreach (["\ndef ", "\nif __name__"] as $corte) {
+    $p = strpos($resto, $corte, 40);
+    if ($p !== false && $p < $fin) { $fin = $p; }
+}
+/* Se busca una LLAMADA, no la palabra: la función menciona `sys.exit(1)` en su
+   propio comentario, explicando de qué se diferencia de cuentas_activas(). La
+   primera versión de este test buscaba el texto y fallaba por eso — el código
+   estaba bien y el test estaba mal, que es la forma de perderle la confianza. */
+$llamaExit = false;
+foreach (explode("\n", substr($resto, 0, $fin)) as $linea) {
+    if (str_starts_with(ltrim($linea), 'sys.exit')) { $llamaExit = true; break; }
+}
+chequear('y esa variante no llama a sys.exit',
+    !$llamaExit,
+    'un panel que no contesta no puede apagar el colector entero');
+
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);
 exit($fail > 0 ? 1 : 0);

@@ -169,6 +169,25 @@ fi
 # que nadie tenga que hacer Ctrl+Shift+R.
 echo "set \$gp_widget_ver \"$HASH\";" > "$VER_FILE"
 
+# ---------------------------------------------------------------------------
+# EL COLECTOR DE MAILS. Es un servicio de systemd (no un contenedor, no un
+# cron), asi que corre el codigo que tenia cuando arranco: sin reiniciarlo, un
+# deploy publica la web y el colector sigue con la version vieja durante dias.
+#
+# Y ahora importa mas que antes: desde que las casillas las cargan los clientes
+# desde su CRM, este proceso es el que las escucha. Reiniciarlo corta las
+# conexiones IMAP un segundo y se reconectan solas -- cuesta menos que quedarse
+# con codigo viejo sin enterarse.
+#
+# `try-restart`: lo reinicia SOLO si ya estaba corriendo. Si el servicio no
+# existe en esta maquina, o esta apagado a proposito, no lo levanta ni falla.
+# ---------------------------------------------------------------------------
+if systemctl list-unit-files 2>/dev/null | grep -q '^goldpaw-colector.service'; then
+  echo "==> reiniciando goldpaw-colector (lee las casillas de los clientes)"
+  systemctl try-restart goldpaw-colector.service 2>/dev/null || \
+    echo "   !! no se pudo reiniciar. Hacelo a mano: systemctl restart goldpaw-colector" >&2
+fi
+
 echo "==> nginx -t"
 if nginx -t; then
   echo "==> systemctl reload nginx"
