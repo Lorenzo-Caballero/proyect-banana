@@ -708,11 +708,44 @@ try {
     // cosas igual de sensibles (mueve plata). Nunca exponer esto sin auth.
     if ($accion === 'panel_credenciales') {
         require_once __DIR__ . '/config_crm.php';
-        echo json_encode([
-            'ok'   => true,
-            'user' => trim((string)cfg_crm($pdo, 'panel_user')),
-            'pass' => (string)cfg_crm($pdo, 'panel_pass'),
-        ], JSON_UNESCAPED_UNICODE);
+        $pu = trim((string)cfg_crm($pdo, 'panel_user'));
+        $pp = (string)cfg_crm($pdo, 'panel_pass');
+
+        /* UNA SOLA FUENTE (22/09/2026). Hasta hoy el CRM pedía estas
+           credenciales en DOS pantallas: acá (config_crm) y en «Integración
+           con ganamos» (goldpaw_control.clientes), que es la que de verdad
+           hace falta -- provisionar.php levanta el contenedor del bot con
+           esa. El cliente cargaba una, dejaba la otra vacía, y según cuál
+           fuera quedaba con bot y sin re-login, o sin bot.
+
+           Se sacó la de Configuración y queda la de Integración. Esto lee de
+           ahí cuando config_crm está vacío, así el bot conserva su mecanismo
+           --pedir las credenciales en cada re-login, sin tocar el .env-- con
+           un solo lugar donde cargarlas. */
+        if ($pu === '' || $pp === '') {
+            try {
+                $ctl = new PDO(
+                    'mysql:host=' . cfg('DB_HOST', 'localhost')
+                        . ';dbname=' . cfg('CONTROL_DB_NAME', 'goldpaw_control') . ';charset=utf8mb4',
+                    cfg('DB_USER'), cfg('DB_PASS'),
+                    [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]
+                );
+                $q = $ctl->prepare(
+                    'SELECT agente_usuario, agente_password FROM clientes WHERE db_nombre = ? LIMIT 1'
+                );
+                $q->execute([(string)($GLOBALS['TENANT_DB'] ?? '')]);
+                if ($f = $q->fetch()) {
+                    if ($pu === '') { $pu = trim((string)($f['agente_usuario'] ?? '')); }
+                    if ($pp === '') { $pp = (string)($f['agente_password'] ?? ''); }
+                }
+            } catch (Throwable $e) {
+                // Sin control: el bot se queda con las de su .env, que es el
+                // comportamiento de siempre.
+                error_log('panel_credenciales (control): ' . $e->getMessage());
+            }
+        }
+
+        echo json_encode(['ok' => true, 'user' => $pu, 'pass' => $pp], JSON_UNESCAPED_UNICODE);
         exit;
     }
 
