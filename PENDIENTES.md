@@ -7,70 +7,22 @@ acá y se deja la fecha en el commit.
 No confundir con `TODO_FASE_A.md`, que son deudas acotadas de un módulo. Acá va
 lo que el dueño pidió explícitamente, más lo que encontramos y no resolvimos.
 
-Orden acordado el 22/09/2026.
+Orden acordado el 22/09/2026. Actualizado el 24/09.
 
 ---
 
-## 1. Un cliente no puede conectar su mail (y el CRM se lo promete)
+## Hechos esta semana (se sacan de la cola)
 
-**Es el primero porque le rompe la plata a un cliente, en silencio, y porque ya
-está prometido en pantalla.**
-
-La pantalla «Cómo cobro» le ofrece al cliente el método **Transferencia** y le
-dice, textual:
-
-> *"Con tu cuenta o billetera propia. El sistema lee tu casilla de mail y
-> acredita solo."*
-
-Eso hoy es falso para cualquiera que no seamos nosotros. Lo verificado el
-22/09/2026:
-
-| Dónde vive | Qué es |
-|---|---|
-| `colector/config.json` | un ARCHIVO en el servidor, con NUESTRA casilla |
-| `webhook_url` / `webhook_token` | uno solo, no por cliente |
-| CRM | **ningún campo** para que el cliente cargue la suya |
-| `provisionar.php` | no le crea nada de esto a un cliente nuevo |
-
-**Qué pasa si un cliente lo usa hoy:** carga su billetera, los jugadores le
-transfieren a su cuenta, nadie lee su casilla, y esas recargas **no se acreditan
-nunca**. Del lado nuestro no se ve nada roto — es el modo de fallar que más caro
-sale en este proyecto.
-
-**Lo que hay que decidir antes de programar:** si el cliente carga una clave de
-aplicación de Gmail en el CRM, esa clave da acceso de lectura a su casilla
-entera y queda en nuestra base. Hay que ver si se guarda cifrada, si se acota a
-una etiqueta, o si conviene otro camino (reenvío automático a una casilla
-nuestra por cliente, que evita guardar credenciales ajenas).
-
-**Mientras tanto:** si entra un cliente, va por **HG Cash** (que sí es suyo y no
-toca el mail) o cobra a nuestra billetera. La pantalla no debería ofrecer
-Transferencia sin esto resuelto.
+- **Un cliente ya puede conectar su casilla de mail** (23/09/2026). Lo
+  construyo Fauno; de este lado quedaron el cifrado y el arreglo para que
+  el colector se entere de una casilla nueva sin reiniciarse.
+- **El chat deja de figurar anonimo tras el login** (24/09/2026). No era
+  lento: el renombre vivia solo en el camino del mensaje. Ahora pasa en el
+  sondeo, en menos de 7 segundos.
 
 ---
 
-## 2. El chat queda anónimo después del login
-
-**Nahuel, 20/09/2026: «no detecta rápido el login. Cuando inicio sesión y entro,
-desde el CRM veo un chat anónimo. Luego ahí se actualiza y funciona bien».**
-Marcado por él como lo que más le importa después de lo de arriba.
-
-La conversación arranca con `clave = anon:<session_id>` y se reasigna cuando el
-widget identifica al jugador. En el medio, el operador ve en la bandeja un chat
-anónimo de alguien que YA inició sesión — y si contesta ahí, contesta a una
-conversación que después cambia de dueño.
-
-No está roto (se resuelve solo), y por eso es fácil de postergar. Pero ensucia
-la bandeja y el CRM muestra algo que ya es falso cuando lo muestra.
-
-**Por dónde empezar:** `api/crm_lib.php` (una conversación por nombre de
-usuario, migración 08) y el punto de `landing/widget.js` donde identifica al
-jugador. La pregunta a contestar primero es **por qué el widget tarda en saber
-quién es**, no cómo esconder el chat anónimo.
-
----
-
-## 3. Dos bases con 3.000 jugadores no reciben migraciones
+## 1. Dos bases con 3.000 jugadores no reciben migraciones
 
 `gp_casinotest` (3.027 jugadores) y `gp_online` (3.028) existen pero **no
 figuran en `clientes`**, así que `provisionar.php` —que recorre
@@ -94,7 +46,7 @@ slug que dice `cleinte3`.
 
 ---
 
-## 4. Documento breve para el agente nuevo
+## 2. Documento breve para el agente nuevo
 
 **Nahuel, 22/09/2026: «solo dame un documento más breve sobre las cosas
 esenciales que debe saber el agente (ejemplo, cómo hacer funcionar el bot de
@@ -103,12 +55,12 @@ cosas así relevantes y que no pueda deducir)».**
 
 Reemplaza al manual largo de configuración, que él descartó explícitamente.
 
-**Depende del punto 1:** no se puede documentar cómo conectar el mail hasta que
-se pueda.
+**Ya no depende de nada:** conectar el mail quedó resuelto el 23/09/2026, así
+que ahora se puede documentar.
 
 ---
 
-## 5. Volver a medir la demora de las notificaciones
+## 3. Volver a medir la demora de las notificaciones
 
 La foto de ANTES está tomada (21/09/2026, últimos 7 días):
 
@@ -129,7 +81,7 @@ mariadb u722310012_fauno888 -e "SELECT CASE WHEN TIMESTAMPDIFF(SECOND,n.creada_e
 
 ---
 
-## 6. La estética de Notificaciones y su congruencia con Juegos
+## 4. La estética de Notificaciones y su congruencia con Juegos
 
 Pedido el 22/09/2026 y no hecho. Revisar el apartado entero, no sólo parchar.
 
@@ -143,7 +95,7 @@ Pedido el 22/09/2026 y no hecho. Revisar el apartado entero, no sólo parchar.
 - **Premios de ruleta configurables por cliente** (hoy están fijos en el código).
 - **Cron de fidelización cada 15 min** en vez de por hora.
 - **Tarjeta de demoras de notificaciones** en el CRM, para no depender de correr
-  la consulta del punto 5 a mano.
+  la consulta del punto 3 a mano.
 
 ---
 
