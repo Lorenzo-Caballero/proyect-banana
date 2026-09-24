@@ -39,6 +39,9 @@
 declare(strict_types=1);
 require __DIR__ . '/config.php';
 require __DIR__ . '/db.php';
+/* Para crm_adoptar_anon(). Es solo funciones y no depende de nada mas que
+   del $pdo que ya esta arriba. */
+require_once __DIR__ . '/crm_lib.php';
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
@@ -50,6 +53,31 @@ $visto = (string)($_GET['visto'] ?? '') === '1';
 if ($sessionId === '') {
     echo json_encode(['ok' => true, 'mensajes' => [], 'ultimo_id' => $desde]);
     exit;
+}
+
+/* EL CHAT DEJA DE FIGURAR ANONIMO APENAS INICIA SESION.
+   Nahuel (20/09/2026): *"cuando inicio sesion y entro, desde el CRM veo un
+   chat anonimo. Luego ahi se actualiza y funciona bien"*.
+
+   No era lento: la adopcion vivia SOLO en el camino del mensaje, o sea que
+   pasaba cuando el jugador VOLVIA A ESCRIBIR. Entre una cosa y la otra
+   --minutos, o nunca-- el operador veia un chat anonimo de alguien ya
+   identificado, y si contestaba ahi contestaba en una conversacion que
+   despues cambiaba de dueño.
+
+   ESTE ES EL LUGAR y no hizo falta inventar nada: el widget sondea aca cada
+   6 segundos y ya venia mandando el usuario desde que lo detecta (~1,2 s
+   despues del login). El dato estaba llegando; faltaba usarlo.
+
+   crm_adoptar_anon() NO crea conversaciones -- desde un sondeo eso le abriria
+   un chat vacio a cada jugador logueado que nunca escribio. Solo le pone el
+   nombre al anonimo que ya existe, y solo si no hay ambiguedad. */
+/* function_exists y no a secas: este endpoint es el que le ENTREGA los
+   mensajes al jugador. Si manana alguien mueve la funcion de archivo, el
+   peor caso tiene que ser que el chat vuelva a figurar anonimo un rato,
+   no que se corte la entrega de mensajes para todos. */
+if ($usuario !== '' && function_exists('crm_adoptar_anon')) {
+    crm_adoptar_anon($pdo, $sessionId, $usuario);
 }
 
 try {

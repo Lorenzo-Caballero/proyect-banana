@@ -77,6 +77,80 @@ if (!function_exists('crm_conversacion_id')) {
         return (int)$pdo->lastInsertId();
     }
 
+    /**
+     * Le pone el nombre al chat anonimo de esta sesion, SIN crear nada.
+     *
+     * EL PROBLEMA (Nahuel, 20/09/2026): *"no detecta rapido el login. Cuando
+     * inicio sesion y entro, desde el CRM veo un chat anonimo. Luego ahi se
+     * actualiza y funciona bien"*.
+     *
+     * No era lento: era que la adopcion vivia SOLO en el camino del mensaje.
+     * `crm_conversacion_id()` adopta perfecto, pero a quien se la llama es a
+     * chatbot.php, o sea cuando el jugador ESCRIBE. Entre que inicia sesion y
+     * que vuelve a escribir --minutos, o nunca-- el operador ve en la bandeja
+     * un chat anonimo de alguien que ya esta identificado. Y si contesta ahi,
+     * contesta en una conversacion que despues cambia de dueño.
+     *
+     * El widget sabe quien es a los ~1,2 s y ya manda el usuario en cada
+     * consulta a mis_mensajes.php (cada 6 s). El dato estaba llegando; lo que
+     * faltaba era usarlo.
+     *
+     * POR QUE NO SE LLAMA DIRECTO A crm_conversacion_id(). Esa CREA la
+     * conversacion si no existe, y desde un sondeo eso significa abrirle un
+     * chat vacio a cada jugador logueado que nunca escribio -- la bandeja
+     * llena de conversaciones sin una sola palabra. Aca solo se renombra algo
+     * que ya existe.
+     *
+     * Y SOLO CUANDO NO HAY AMBIGUEDAD: si el jugador ya tenia una conversacion
+     * con su nombre, no se toca nada. Fusionar dos hilos es una decision con
+     * consecuencias (mezcla historiales de dos momentos distintos) y no es
+     * algo que deba pasar solo, en un sondeo, sin que nadie lo pida. En ese
+     * caso queda como esta hoy: el mensaje siguiente lo resuelve por el camino
+     * de siempre.
+     *
+     * @return bool si renombro algo (para poder contarlo en los tests)
+     */
+    function crm_adoptar_anon(PDO $pdo, string $sessionId, string $usuario): bool
+    {
+        $sessionId = substr(trim($sessionId), 0, 64);
+        $usuario   = mb_substr(trim($usuario), 0, 50);
+        if ($sessionId === '' || $usuario === '') { return false; }
+        /* Un nombre que EMPIEZA con anon: seria un jugador llamado "anon:x"
+           renombrando el chat de otro. No puede pasar --los nombres los genera
+           el sistema-- pero cuesta una linea. */
+        if (str_starts_with($usuario, 'anon:')) { return false; }
+
+        try {
+            $anon = 'anon:' . $sessionId;
+
+            // ¿Hay un chat anonimo de esta sesion? Si no, no hay nada que hacer.
+            $st = $pdo->prepare("SELECT id FROM conversaciones WHERE clave = ? LIMIT 1");
+            $st->execute([$anon]);
+            $idAnon = $st->fetchColumn();
+            if ($idAnon === false) { return false; }
+
+            // ¿Ese usuario ya tiene el suyo? Entonces no se toca (ver arriba).
+            $st = $pdo->prepare("SELECT id FROM conversaciones WHERE clave = ? LIMIT 1");
+            $st->execute([$usuario]);
+            if ($st->fetchColumn() !== false) { return false; }
+
+            /* El WHERE repite `clave = ?`: entre la consulta de arriba y esto
+               pudo entrar un mensaje del jugador y adoptarla por el camino
+               viejo. Sin eso, los dos renombres compiten y el segundo pisa. */
+            $st = $pdo->prepare(
+                "UPDATE conversaciones SET clave = ?, usuario = ?
+                  WHERE id = ? AND clave = ?"
+            );
+            $st->execute([$usuario, $usuario, (int)$idAnon, $anon]);
+            return $st->rowCount() > 0;
+        } catch (Throwable $e) {
+            /* Que falle esto no puede costar la entrega de los mensajes: quien
+               llama es un sondeo que ademas trae las respuestas del agente. */
+            error_log('crm_adoptar_anon: ' . $e->getMessage());
+            return false;
+        }
+    }
+
     /** Encola una accion de SALDO real (la ejecuta el worker Python en ganamos)
      *  y la deja en el historial. NO toca usuarios.balance (ese lo maneja ganamos
      *  y lo pisa el sync). tipo: 'cargar' | 'retirar'.
