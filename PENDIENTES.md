@@ -16,6 +16,12 @@ Orden acordado el 22/09/2026. Actualizado el 24/09.
 - **Un cliente ya puede conectar su casilla de mail** (23/09/2026). Lo
   construyo Fauno; de este lado quedaron el cifrado y el arreglo para que
   el colector se entere de una casilla nueva sin reiniciarse.
+- **El documento para el agente: DESCARTADO** (24/09/2026). Nahuel grabó un
+  video explicando el CRM él mismo, así que no hace falta. No reabrir.
+- **El acceso de un cliente resolvia a NUESTRA base** (24/09/2026). El cliente
+  `ganamos` tenia db_nombre apuntando a u722310012_fauno888; su operador no
+  podia entrar, y ese bug era lo unico que impedia que viera nuestros datos.
+  Corregido a mano y con guarda en provisionar.php.
 - **El chat deja de figurar anonimo tras el login** (24/09/2026). No era
   lento: el renombre vivia solo en el camino del mensaje. Ahora pasa en el
   sondeo, en menos de 7 segundos.
@@ -46,21 +52,7 @@ slug que dice `cleinte3`.
 
 ---
 
-## 2. Documento breve para el agente nuevo
-
-**Nahuel, 22/09/2026: «solo dame un documento más breve sobre las cosas
-esenciales que debe saber el agente (ejemplo, cómo hacer funcionar el bot de
-Telegram, cómo conectar su mail para que se lean los comprobantes desde ahí,
-cosas así relevantes y que no pueda deducir)».**
-
-Reemplaza al manual largo de configuración, que él descartó explícitamente.
-
-**Ya no depende de nada:** conectar el mail quedó resuelto el 23/09/2026, así
-que ahora se puede documentar.
-
----
-
-## 3. Volver a medir la demora de las notificaciones
+## 2. Volver a medir la demora de las notificaciones
 
 La foto de ANTES está tomada (21/09/2026, últimos 7 días):
 
@@ -81,7 +73,7 @@ mariadb u722310012_fauno888 -e "SELECT CASE WHEN TIMESTAMPDIFF(SECOND,n.creada_e
 
 ---
 
-## 4. La estética de Notificaciones y su congruencia con Juegos
+## 3. La estética de Notificaciones y su congruencia con Juegos
 
 Pedido el 22/09/2026 y no hecho. Revisar el apartado entero, no sólo parchar.
 
@@ -95,7 +87,7 @@ Pedido el 22/09/2026 y no hecho. Revisar el apartado entero, no sólo parchar.
 - **Premios de ruleta configurables por cliente** (hoy están fijos en el código).
 - **Cron de fidelización cada 15 min** en vez de por hora.
 - **Tarjeta de demoras de notificaciones** en el CRM, para no depender de correr
-  la consulta del punto 3 a mano.
+  la consulta del punto 2 a mano.
 
 ---
 
