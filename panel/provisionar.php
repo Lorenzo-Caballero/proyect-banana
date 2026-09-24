@@ -575,6 +575,62 @@ if ($huellaHoy !== '') {
 }
 
 // ---------------------------------------------------------------------------
+// DOS CLIENTES CON LA MISMA BASE. Lo peor que puede pasarle a un multi-cliente.
+//
+// PASO DE VERDAD (24/09/2026): el cliente `ganamos` tenia db_nombre =
+// u722310012_fauno888, que es la base de `ganamoscrm` -- la nuestra. Su CRM
+// resolvia a NUESTROS datos: nuestros jugadores, nuestra plata, nuestras
+// conversaciones.
+//
+// Lo unico que lo estaba conteniendo era un accidente: su operador `alejandro`
+// nunca se creo en esa base, asi que no podia entrar. El sintoma con el que
+// llego el reporte --"un agente no puede ingresar con su usuario"-- era el
+// bug que impedia una fuga de datos.
+//
+// NO PUDO SALIR DEL CODIGO. panel.php calcula db_nombre = 'gp_' . slug al dar
+// de alta (para `ganamos` da `gp_ganamos`, que existe y tiene sus datos), y el
+// editar excluye ese campo a proposito. Se cambio a mano en la base. Y
+// justamente por eso hace falta el chequeo: contra un UPDATE a mano no protege
+// ninguna validacion de formulario.
+// ---------------------------------------------------------------------------
+try {
+    $dup = $pdo->query(
+        "SELECT db_nombre, COUNT(*) AS n, GROUP_CONCAT(slug ORDER BY slug) AS slugs
+           FROM clientes
+          WHERE db_nombre IS NOT NULL AND db_nombre <> '' AND estado = 'activo'
+          GROUP BY db_nombre HAVING n > 1"
+    )->fetchAll();
+    if ($dup) {
+        $lineas = [];
+        foreach ($dup as $d) {
+            $lineas[] = $d['slugs'] . ' comparten la base ' . $d['db_nombre'];
+        }
+        $txt = "DOS CLIENTES ACTIVOS APUNTAN A LA MISMA BASE:
+· "
+             . implode("
+· ", $lineas)
+             . "
+
+Cada uno ve los jugadores, la plata y los chats del otro. "
+             . "El db_nombre correcto de un cliente es 'gp_' + su slug; revisalo "
+             . "en goldpaw_control.clientes ANTES de que alguno pueda entrar.";
+        echo date('c') . " CLIENTES COMPARTIENDO BASE: " . implode(' | ', $lineas) . "
+";
+        if (is_file(__DIR__ . '/../api/telegram_lib.php')) {
+            require_once __DIR__ . '/../api/telegram_lib.php';
+            if (function_exists('tg_evento')) {
+                tg_evento(null, 'bases_compartidas', '🚨 Dos clientes comparten base',
+                          ['Detalle' => "
+" . $txt], 'bases_compartidas');
+            }
+        }
+    }
+} catch (Throwable $e) {
+    echo date('c') . " no pude revisar bases compartidas: " . $e->getMessage() . "
+";
+}
+
+// ---------------------------------------------------------------------------
 // BASES HUERFANAS: existen, pero el sistema de migraciones no las ve.
 //
 // EL PROBLEMA, MEDIDO EL 24/09/2026. La pasada de arriba recorre `clientes`
