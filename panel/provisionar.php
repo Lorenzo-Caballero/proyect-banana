@@ -575,6 +575,132 @@ if ($huellaHoy !== '') {
 }
 
 // ---------------------------------------------------------------------------
+// BASES HUERFANAS: existen, pero el sistema de migraciones no las ve.
+//
+// EL PROBLEMA, MEDIDO EL 24/09/2026. La pasada de arriba recorre `clientes`
+// WHERE aprovisionado = 1 AND estado = 'activo'. Una base que no figure ahi
+// --porque se creo a mano, porque le dieron de baja el registro, porque el
+// slug se escribio mal-- no recibe NINGUNA migracion, y nada lo dice.
+//
+// Se veia asi cuando se busco a proposito:
+//
+//     u722310012_fauno888   46 tablas   escrita hoy      <- viva
+//     gp_ganamos            46 tablas   escrita ayer     <- viva
+//     gp_online             44 tablas   15/09            <- huerfana
+//     gp_casinotest         44 tablas   15/09            <- huerfana
+//
+// DOS TABLAS DE DIFERENCIA. Ese es el atraso acumulado, y es exactamente el
+// modo de fallar que mas cuesta en este proyecto: no se rompe nada visible, el
+// CRM abre, el chat contesta, y el dia que algo consulte una columna que no
+// existe el error no se va a parecer en nada a la causa.
+//
+// Hoy no habia ninguna huerfana EN USO, y por eso conviene el aviso ahora: el
+// dia que la haya, va a ser un cliente que paga. Y ya hay evidencia de que la
+// tabla `clientes` se escribe a mano y con erratas -- ahi figura un slug que
+// dice `cleinte3`.
+//
+// NO SE MIGRAN SOLAS A PROPOSITO. Una base que nadie declaro puede ser una
+// copia de seguridad, un experimento, o la mitad de una mudanza. Correrle
+// migraciones encima es tomar una decision sobre datos de alguien sin que nadie
+// la haya pedido. Se avisa, y decide una persona.
+// ---------------------------------------------------------------------------
+try {
+    $declaradas = [];
+    foreach ($pdo->query("SELECT db_nombre FROM clientes WHERE db_nombre IS NOT NULL")
+                 ->fetchAll(PDO::FETCH_COLUMN) as $d) {
+        $declaradas[strtolower((string) $d)] = true;
+    }
+    // Las de sistema y el propio plano de control no son de nadie.
+    $propias = ['information_schema' => 1, 'performance_schema' => 1,
+                'mysql' => 1, 'sys' => 1, 'goldpaw_control' => 1];
+
+    /* QUE ES "UNA BASE NUESTRA". No el nombre: la FORMA.
+       El primer intento filtraba por prefijo (gp_, goldpaw_) y dejaba un
+       agujero grande -- nuestra propia base de produccion se llama
+       `u722310012_fauno888`, de la epoca de Hostinger, asi que una huerfana
+       con ese estilo de nombre se escapaba justo.
+       Tener a la vez `usuarios` y `conversaciones` es una firma inconfundible
+       de nuestro esquema, y no la cumple ninguna base ajena que viva en el
+       mismo MySQL (wordpress usa wp_users; n8n y chatwoot ni siquiera estan
+       en MySQL). Asi el aviso no nombra cosas que no son nuestras, que es lo
+       que hace que un canal se deje de mirar. */
+    $nuestras = [];
+    $st = $pdo->query(
+        "SELECT table_schema, COUNT(*) AS n
+           FROM information_schema.tables
+          WHERE table_name IN ('usuarios','conversaciones')
+          GROUP BY table_schema HAVING n = 2"
+    );
+    foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $s) { $nuestras[] = (string) $s; }
+
+    $huerfanas = [];
+    foreach ($nuestras as $base) {
+        $b = strtolower($base);
+        if (isset($propias[$b]) || isset($declaradas[$b])) { continue; }
+
+        $cuando = '?';
+        $tablas = '?';
+        try {
+            $q2 = $pdo->prepare(
+                "SELECT COUNT(*) AS tablas, MAX(update_time) AS cuando
+                   FROM information_schema.tables WHERE table_schema = ?"
+            );
+            $q2->execute([$base]);
+            $r2 = $q2->fetch(PDO::FETCH_ASSOC) ?: [];
+            $tablas = (string) ($r2['tablas'] ?? '?');
+            $cuando = (string) ($r2['cuando'] ?: 'nunca');
+        } catch (Throwable $e) { /* sin permiso: se informa igual */ }
+        /* Se informa la CANTIDAD DE TABLAS porque es la que hace visible el
+           atraso: el 24/09/2026 las vivas tenian 46 y las huerfanas 44. */
+        $huerfanas[] = "$base ($tablas tablas, ultima escritura: $cuando)";
+    }
+
+    if ($huerfanas) {
+        $texto = "Existen pero NO figuran en `clientes`, asi que no reciben "
+               . "migraciones y nadie las mantiene:
+· " . implode("
+· ", $huerfanas)
+               . "
+
+Si alguna esta EN USO hay que darla de alta; si son restos, "
+               . "conviene respaldarlas y borrarlas. Mientras esten asi, se van "
+               . "quedando atras del esquema en silencio.";
+        echo date('c') . " bases huerfanas: " . implode(', ', $huerfanas) . "
+";
+        if (is_file(__DIR__ . '/../api/telegram_lib.php')) {
+            require_once __DIR__ . '/../api/telegram_lib.php';
+            if (function_exists('tg_evento')) {
+                /* Clave propia y no 'salud': este no es un problema de un
+                   cliente puntual sino del plano de control, y mezclarlo con
+                   los otros haria que el dedupe de uno tape al otro.
+
+                   PDO en null A PROPOSITO: esto no es de ningun cliente, es
+                   nuestro, asi que va al Telegram del SERVER
+                   (TELEGRAM_BOT_TOKEN de config.local.php) y no al de un
+                   casino ajeno, que no tiene nada que hacer con nuestras
+                   bases. */
+                $salio = tg_evento(null, 'bases_huerfanas', '🗃️ Bases sin dueño',
+                                   ['Detalle' => "
+" . $texto], 'bases_huerfanas');
+                /* SI EL AVISO NO SALE, QUE SE SEPA. Un aviso sobre cosas que
+                   fallan en silencio, fallando en silencio, seria el colmo:
+                   quedaria la sensacion de que esto esta vigilado cuando no lo
+                   esta. Pasa con TELEGRAM_BOT_TOKEN sin configurar. */
+                if (!$salio) {
+                    echo date('c') . " OJO: no se pudo avisar por Telegram "
+                       . "(revisa TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID en config.local.php)
+";
+                }
+            }
+        }
+    }
+} catch (Throwable $e) {
+    // Sin permiso para SHOW DATABASES: se sigue. Es un chequeo, no una tarea.
+    echo date('c') . " no pude revisar bases huerfanas: " . $e->getMessage() . "
+";
+}
+
+// ---------------------------------------------------------------------------
 // Pasada 2: asegurar el bot de cada cliente activo con credenciales de agente.
 // Corre siempre (idempotente): si agregás las credenciales después, el bot
 // arranca en la próxima corrida sin re-provisionar nada.
