@@ -132,6 +132,18 @@ const SC_TAREAS = [
     'ruleta_aviso' => [
         'clave'     => 'ruleta_aviso_visto_en',
         'min'       => 1560,              // una vez por dia: 26 h de margen
+        /* FALTABA, y molestaba justo por hacer lo correcto. Con la ruleta
+           apagada desde el CRM, ruleta_recordatorio.php sale en su primera
+           linea util (`if (!cfg_crm_activo($pdo, 'ruleta_activa')) exit;`) y
+           nunca llega a sellar su latido. El vigilante veia una fecha vieja
+           para siempre y avisaba en cada pasada: "el aviso diario de la ruleta
+           dejo de correr". Y es cierto que dejo de correr -- porque el dueño lo
+           apago.
+           Lo reporto Nahuel el 24/09/2026, y es exactamente lo que este archivo
+           documenta veinte lineas mas arriba: una tarea apagada no se vigila,
+           porque un canal que molesta por algo que esta bien se deja de mirar
+           -- y el dia que avise por algo de verdad, tambien. */
+        'activa_si' => 'ruleta_activa',
         'que'       => 'el aviso diario de la ruleta',
         'duele'     => 'Los jugadores dejan de recibir el recordatorio del giro gratis.',
         'arreglo'   => 'revisar el cron de ruleta_recordatorio.php',

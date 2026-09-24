@@ -313,5 +313,34 @@ chequear("y 'tareas_vigilando_desde' esta en la lista blanca",
 chequear('una LECTURA sin fecha no dispara ese aviso',
          str_contains($srcSalud, "if (\$lim['lectura'] || \$vigDesde === null"));
 
+/* ---------------------------------------------------------------------------
+   UNA TAREA QUE SE PUEDE APAGAR TIENE QUE LLEVAR `activa_si`.
+
+   Lo reporto Nahuel el 24/09/2026: le llegaba todo el tiempo "el aviso diario
+   de la ruleta dejo de correr", y habia apagado la ruleta a proposito.
+
+   Y era cierto que dejo de correr. ruleta_recordatorio.php sale en su primera
+   linea util --si cfg_crm_activo('ruleta_activa') es false, exit-- asi que
+   nunca llega a sellar su latido. El vigilante veia una fecha vieja para
+   siempre. Al mirarlo, el latido tenia 5.842 minutos: cuatro dias avisando por
+   algo que estaba bien.
+
+   Es justo lo que este archivo viene a proteger: un canal que molesta por algo
+   que esta bien se deja de mirar, y el dia que avise por algo de verdad lo van
+   a ignorar igual.
+--------------------------------------------------------------------------- */
+chequear('el aviso de la ruleta no se vigila con la ruleta apagada',
+         str_contains($srcSalud, "'activa_si' => 'ruleta_activa'"),
+         'sin esto avisa para siempre por una promo que el dueño apago');
+
+/* `difusiones` NO lleva `activa_si` y esta bien: no es una promo que se
+   apague, su cron corre siempre y sella aunque no tenga nada que mandar. Se
+   deja dicho para que nadie se lo agregue "por consistencia" y apague el
+   unico aviso que cubre las difusiones programadas. */
+$blqDif = substr($srcSalud, (int)strpos($srcSalud, "'difusiones' =>"), 420);
+chequear('las difusiones siguen vigiladas siempre',
+         !str_contains($blqDif, 'activa_si'),
+         'su cron corre siempre y sella aunque no haya nada que mandar');
+
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);
 exit($fail > 0 ? 1 : 0);
