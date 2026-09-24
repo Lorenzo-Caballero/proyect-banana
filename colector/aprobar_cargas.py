@@ -970,13 +970,21 @@ def revisar_stock(ctx, solo_ver: bool) -> None:
     """
     if solo_ver or not _stock_toca():
         return
+    # Mismo criterio que el libro (24/09/2026): ninguna salida por fallo se va
+    # sin decir por que. Un estado que conserva el valor de la ultima vez que
+    # anduvo convierte "hace hora y media que no leo" en "estaba bien".
     key = os.environ.get("API_KEY", "")
     if not key:
+        PASADA["stock"] = "sin_key"
+        log.warning("stock: no hay API_KEY en el entorno")
         return
     try:
         d = leer_json(ctx, PANEL_API + "/agent_admin/user/", "stock", timeout=20_000) or {}
         saldo = ((d.get("result") or {}).get("source_user") or {}).get("balance")
         if saldo is None:
+            # La respuesta llego pero no trae el saldo: pasa cuando en vez del
+            # JSON vuelve la pagina de login, o sea sesion caida.
+            PASADA["stock"] = "sin_saldo"
             log.warning("stock: la respuesta no trae result.source_user.balance")
             return
     except Exception as e:
@@ -1145,8 +1153,28 @@ def sincronizar_libro(ctx, solo_ver: bool, dias: int = LIBRO_DIAS,
     """
     if solo_ver or (not forzar and not _libro_toca()):
         return
+    # ------------------------------------------------------------------
+    # CADA SALIDA POR FALLO DEJA DICHO POR QUE, y esto no es prolijidad.
+    #
+    # Hasta el 24/09/2026 solo el camino del WAF y el del exito escribian
+    # PASADA["libro"]. Las otras cuatro salidas se iban sin tocar nada, asi que
+    # el estado quedaba con el valor de la ULTIMA vez que habia andado. En
+    # salud_bot.php se leia:
+    #
+    #     libro   hace 93 min   estado: ok
+    #
+    # y eso es una frase que se contradice sola: "estuvo bien hace hora y
+    # media". Era verdad hace hora y media, y desde entonces venia fallando
+    # cada cinco minutos sin decir una palabra. Para saber cual de los cuatro
+    # motivos era habia que ir al log del VPS.
+    #
+    # Es exactamente el fallo silencioso que este sistema vino a detectar,
+    # adentro del sistema. El estado tiene que poder contradecir a la fecha.
+    # ------------------------------------------------------------------
     key = os.environ.get("API_KEY", "")
     if not key:
+        PASADA["libro"] = "sin_key"
+        log.warning("libro: no hay API_KEY en el entorno")
         return
 
     try:
@@ -1156,11 +1184,17 @@ def sincronizar_libro(ctx, solo_ver: bool, dias: int = LIBRO_DIAS,
         log.warning("libro: %s. Lo sincronizo en la proxima vuelta.", e)
         return
     except Exception as e:
+        PASADA["libro"] = "error_lectura"
         log.warning("libro: no pude leer el historial: %s", e)
         return
 
     if not ops:
-        log.info("libro: el panel no devolvio operaciones en %d dias", dias)
+        # CERO OPERACIONES EN 30 DIAS NO ES UN DATO, ES UNA AUSENCIA. Un casino
+        # con movimiento no tiene un mes vacio: o el panel contesto raro, o la
+        # sesion se cayo y devolvio una pagina de login. Antes esto se
+        # registraba como info y se iba sin dejar rastro en el estado.
+        PASADA["libro"] = "vacio"
+        log.warning("libro: el panel no devolvio NINGUNA operacion en %d dias", dias)
         return
 
     # Se manda la ventana ENTERA, no solo lo nuevo: del otro lado `payment_id`
@@ -1171,6 +1205,7 @@ def sincronizar_libro(ctx, solo_ver: bool, dias: int = LIBRO_DIAS,
                              data={"operaciones": ops}, timeout=60_000)
         d = r.json() or {}
         if not d.get("ok"):
+            PASADA["libro"] = "rechazado"
             log.warning("libro: el server rechazo la sincronizacion: %s",
                         str(d.get("error"))[:120])
             return
@@ -1179,6 +1214,7 @@ def sincronizar_libro(ctx, solo_ver: bool, dias: int = LIBRO_DIAS,
                  d.get("recibidas"), d.get("guardadas"), d.get("ignoradas"),
                  d.get("libro_desde"))
     except Exception as e:
+        PASADA["libro"] = "error_reporte"
         log.warning("libro: no pude reportar las operaciones: %s", e)
 
 
@@ -1507,6 +1543,8 @@ def sincronizar_usuarios(ctx, solo_ver: bool, forzar: bool = False) -> None:
         return
     key = os.environ.get("API_KEY", "")
     if not key:
+        PASADA["espejo"] = "sin_key"
+        log.warning("espejo de saldos: no hay API_KEY en el entorno")
         return
 
     try:
@@ -1516,11 +1554,16 @@ def sincronizar_usuarios(ctx, solo_ver: bool, forzar: bool = False) -> None:
         log.warning("espejo de saldos: %s. Lo reintento en la proxima vuelta.", e)
         return
     except Exception as e:
+        PASADA["espejo"] = "error_lectura"
         log.warning("espejo de saldos: no pude leer el listado: %s", e)
         return
 
     if not usuarios:
-        log.warning("espejo de saldos: el panel no devolvio jugadores")
+        # CERO JUGADORES NO ES UN DATO. Hay 3.000 en el panel: si vuelve vacio
+        # es la sesion caida devolviendo una pagina de login, no un casino sin
+        # gente.
+        PASADA["espejo"] = "vacio"
+        log.warning("espejo de saldos: el panel no devolvio NINGUN jugador")
         return
 
     guardados = 0
@@ -1531,11 +1574,13 @@ def sincronizar_usuarios(ctx, solo_ver: bool, forzar: bool = False) -> None:
                                  timeout=60_000)
             d = r.json() or {}
             if not d.get("ok"):
+                PASADA["espejo"] = "rechazado"
                 log.warning("espejo de saldos: el server rechazo el lote: %s",
                             str(d.get("error"))[:120])
                 return
             guardados += int(d.get("guardados") or 0)
     except Exception as e:
+        PASADA["espejo"] = "error_guardado"
         log.warning("espejo de saldos: no pude guardar (%s guardados antes): %s",
                     guardados, e)
         return
