@@ -283,6 +283,52 @@ try {
             exit;
         }
 
+        /* ===================================================================
+           «User ID <agente> is not in user ID <jugador> structure»
+
+           EL PANEL ESTÁ DICIENDO QUE ESE JUGADOR NO CUELGA DE NUESTRO AGENTE,
+           y es el único error que prueba eso. No es un fallo del depósito: es
+           que la cuenta se creó bajo OTRA cuenta de agente -- un bot de otro
+           cliente comiendo de esta cola (ver destino_inseguro() en
+           provisionar.php). El jugador existe en ganamos, no aparece en el
+           panel de quien lo busca, y ninguna carga suya va a salir nunca.
+
+           PASÓ EL 29/09/2026 y el mensaje estaba: enterrado entre los demás
+           errores, en `cargas_ultima_falla`, donde nadie lo mira hasta que un
+           jugador reclama. Tardó días en encontrarse, y lo que se vio primero
+           fue «la landing crea usuarios que no existen» -- que es lo mismo
+           mirado desde el otro lado y manda a buscar a la base, que está bien.
+
+           Se avisa aparte de los errores comunes: reintentar no lo arregla, y
+           lo que hay que hacer (revisar a qué tenant apunta el bot de cada
+           cliente) no se parece en nada a lo que se hace con una carga que
+           falló. La clave lleva el usuario: uno por jugador afectado, no uno
+           por reintento. =================================================== */
+        if ($estado === 'error' && stripos($mensaje, 'is not in user id') !== false
+            && preg_match('/user id (\d+) is not in user id (\d+) structure/i', $mensaje, $m)) {
+            try {
+                $qn = $pdo->prepare('SELECT usuario FROM acciones_saldo WHERE id = ?');
+                $qn->execute([$id]);
+                $quien = (string)($qn->fetchColumn() ?: ('accion ' . $id));
+                require_once __DIR__ . '/telegram_lib.php';
+                if (function_exists('tg_evento')) {
+                    tg_evento($pdo, 'jugador_de_otro_agente',
+                        '🚨 Un jugador nuestro está en la cuenta de otro agente', [
+                        'Jugador'  => $quien,
+                        'Qué dijo el panel' => 'el agente ' . $m[1] . ' no tiene al jugador '
+                                             . $m[2] . ' en su estructura',
+                        'Qué significa' => 'esa cuenta se creó desde NUESTRA cola pero con las '
+                                         . 'credenciales de otro agente. No va a aparecer en el '
+                                         . 'panel ni va a poder recibir una carga.',
+                        'Arreglo'  => 'Revisá que ningún bot de cliente esté apuntado a este '
+                                    . 'tenant (provisionar.php ya frena los mal apuntados). '
+                                    . 'Las cuentas ya creadas hay que moverlas o rehacerlas '
+                                    . 'a mano desde el panel.',
+                    ], 'jugador_de_otro_agente:' . $quien);
+                }
+            } catch (Throwable $e) { error_log('aviso jugador_de_otro_agente: ' . $e->getMessage()); }
+        }
+
         // El saldo que el bot leyo en el panel, como comprobante de la carga.
         // Puede no venir: si no pudo leerlo, se guarda NULL y no se inventa.
         $sAntes   = isset($body['saldo_antes'])   ? (float)$body['saldo_antes']   : null;
@@ -730,11 +776,28 @@ try {
                     cfg('DB_USER'), cfg('DB_PASS'),
                     [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]
                 );
+                /* SIN `LIMIT 1`, Y A PROPÓSITO. Si dos clientes activos comparten
+                   db_nombre --que pasó el 24/09 y volvió a pasar el 29/09-- un
+                   LIMIT 1 le daría a nuestro bot las credenciales de CUALQUIERA
+                   de los dos, al azar del orden del índice. Logueado como el
+                   agente equivocado, el bot crea los jugadores de nuestra cola
+                   en la cuenta de otro: existen en ganamos, no aparecen en
+                   nuestro panel, y el depósito muere con «User ID X is not in
+                   user ID Y structure».
+
+                   Con dos filas no se elige ninguna: el bot se queda con las de
+                   su .env, que es el comportamiento de siempre y el único que
+                   no puede crear jugadores en la cuenta de un tercero. */
                 $q = $ctl->prepare(
-                    'SELECT agente_usuario, agente_password FROM clientes WHERE db_nombre = ? LIMIT 1'
+                    "SELECT agente_usuario, agente_password FROM clientes
+                      WHERE db_nombre = ? AND estado = 'activo'"
                 );
                 $q->execute([(string)($GLOBALS['TENANT_DB'] ?? '')]);
-                if ($f = $q->fetch()) {
+                $filas = $q->fetchAll();
+                if (count($filas) > 1) {
+                    error_log('panel_credenciales: ' . count($filas) . ' clientes activos comparten '
+                        . (string)($GLOBALS['TENANT_DB'] ?? '') . ': no se entrega ninguna credencial');
+                } elseif ($f = ($filas[0] ?? null)) {
                     if ($pu === '') { $pu = trim((string)($f['agente_usuario'] ?? '')); }
                     if ($pp === '') { $pp = (string)($f['agente_password'] ?? ''); }
                 }

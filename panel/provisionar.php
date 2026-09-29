@@ -295,6 +295,124 @@ function tiene_bot_propio($slug) {
  * SIEMPRE -- el cambio solo aplicaba a clientes nuevos. Comparando contra
  * las constantes, la próxima pasada del cron los recrea sola.
  */
+/* ===========================================================================
+ * ¿A QUÉ COLA VA A COMER EL BOT DE ESTE CLIENTE?
+ *
+ * PASÓ DE VERDAD (29/09/2026). Nahuel: *"la landing creó usuarios que cuando
+ * los busqué en ganamos no aparecían"* -- holabeto299 y
+ * holacarmendaianasoledadgomez491 -- *"apareció luego de enlazar a Leandro"*.
+ *
+ * Los jugadores SÍ se habían creado. Bajo OTRO agente. El panel lo venía
+ * diciendo en el error del depósito, con el id de nuestro agente adentro:
+ *
+ *     "User ID 20284777 is not in user ID 39252159 structure"
+ *
+ * LA CADENA. El bot de altas de un cliente sale apuntado a
+ * `https://<dominio><+/slug> /gp-api/altas_cola.php` (abajo), y el tenant --o
+ * sea DE QUÉ COLA saca trabajo-- lo decide esa URL. Sus credenciales de agente,
+ * en cambio, son las del cliente. Si la URL resuelve a NUESTRO tenant, el bot
+ * saca altas de NUESTRA cola y las crea EN LA CUENTA DE ÉL:
+ *
+ *   - el jugador existe en ganamos, colgando del agente del cliente;
+ *   - el alta se confirma en nuestra base, con ese id_ganamos;
+ *   - en nuestro panel NO aparece, porque no es nuestro;
+ *   - y cualquier depósito muere con el error de arriba.
+ *
+ * Se llega ahí por dos caminos, y los dos son un dato mal cargado, no un bug:
+ * `path_tenant = 0` con nuestro dominio (la URL queda en la raíz, que es
+ * nuestra), o `db_nombre` compartido (el slug es suyo pero la base es la
+ * nuestra, que es el caso del 24/09 con el cliente `ganamos`).
+ *
+ * POR QUÉ NO ALCANZABA CON AVISAR. Desde el 24/09 esto ya avisaba por Telegram,
+ * y aún así pasó: el aviso llega, el bot arranca igual y sigue creando
+ * jugadores en la cuenta de otro mientras nadie lee el aviso. Un bot que NO
+ * arranca traba la cola y se ve en el acto; uno mal apuntado no se ve nunca.
+ * Por eso acá se BLOQUEA, y si el contenedor ya existe se lo baja.
+ *
+ * Devuelve '' si el destino es seguro, o el motivo si no.
+ * =========================================================================== */
+function bases_compartidas() {
+    static $set = null;
+    if ($set !== null) { return $set; }
+    $set = [];
+    $pdo = $GLOBALS['pdo'] ?? null;
+    if (!($pdo instanceof PDO)) { return $set; }
+    try {
+        $f = $pdo->query(
+            "SELECT db_nombre FROM clientes
+              WHERE db_nombre IS NOT NULL AND db_nombre <> '' AND estado = 'activo'
+              GROUP BY db_nombre HAVING COUNT(*) > 1"
+        )->fetchAll(PDO::FETCH_COLUMN);
+        foreach ($f as $d) { $set[strtolower(trim((string) $d))] = true; }
+    } catch (Throwable $e) { /* sin control: no se bloquea por esto */ }
+    return $set;
+}
+
+/**
+ * El slug que resuelve ESA url, o null si no se pudo averiguar.
+ * tenant_info.php es público y devuelve el slug que db.php resolvió para el
+ * host+path: exactamente la pregunta que hay que hacerse antes de darle esa
+ * URL a un bot con las credenciales de otro agente.
+ */
+function tenant_de_url($base) {
+    $ctx = stream_context_create(['http' => ['timeout' => 8, 'ignore_errors' => true],
+                                  'ssl'  => ['verify_peer' => true]]);
+    $r = @file_get_contents(rtrim($base, '/') . '/gp-api/tenant_info.php', false, $ctx);
+    if ($r === false || $r === '') { return null; }
+    $j = json_decode($r, true);
+    if (!is_array($j) || empty($j['ok'])) { return null; }
+    return strtolower(trim((string) ($j['slug'] ?? '')));
+}
+
+function destino_inseguro($c, $base) {
+    $slug = strtolower(preg_replace('/[^a-z0-9_-]/i', '', (string) $c['slug']));
+    $db   = strtolower(trim((string) ($c['db_nombre'] ?? '')));
+
+    if ($db !== '' && isset(bases_compartidas()[$db])) {
+        return 'su base (' . $db . ') la comparte con otro cliente activo';
+    }
+
+    /* NO SE BLOQUEA POR NO PODER PREGUNTAR. Si el dominio del cliente todavía
+       no resuelve, o el server está caído un minuto, eso no es evidencia de
+       que la URL apunte mal -- y dejar sin bot a todos los clientes porque se
+       cayó la red sería peor que el problema. Solo bloquea la respuesta que
+       dice, en letras, que esa URL es de OTRO tenant. */
+    $resuelto = tenant_de_url($base);
+    if ($resuelto !== null && $slug !== '' && $resuelto !== $slug) {
+        return 'su URL (' . $base . ') resuelve al tenant «' . $resuelto
+             . '», no al suyo: el bot comería de esa cola y crearía los '
+             . 'jugadores en la cuenta de agente de ' . $slug;
+    }
+    return '';
+}
+
+/** Baja el contenedor que quedó apuntando a la cola de otro, y avisa. */
+function frenar_bot_mal_apuntado($name, $slug, $motivo) {
+    $existe = trim((string) shell_exec(
+        'docker ps -aq --filter ' . escapeshellarg('name=^' . $name . '$') . ' 2>/dev/null'
+    ));
+    if ($existe !== '') {
+        shell_exec('docker rm -f ' . escapeshellarg($name) . ' 2>/dev/null');
+    }
+    echo date('c') . " BOT FRENADO $name: $motivo\n";
+    if (is_file(__DIR__ . '/../api/telegram_lib.php')) {
+        require_once __DIR__ . '/../api/telegram_lib.php';
+        if (function_exists('tg_evento')) {
+            tg_evento(null, 'bot_mal_apuntado', '🚨 Bot de un cliente apuntado a la cola de otro', [
+                'Cliente'  => $slug,
+                'Qué pasa' => $motivo,
+                'Hecho'    => ($existe !== '' ? 'Se BAJÓ el contenedor ' . $name . '.' : 'No se levantó.')
+                            . ' Mientras esté así, sus altas no salen -- y es a propósito:'
+                            . ' andando crearía los jugadores en la cuenta de agente equivocada,'
+                            . ' donde no los ve nadie.',
+                'Arreglo'  => 'En goldpaw_control.clientes, revisá `db_nombre` (tiene que ser'
+                            . ' gp_' . $slug . ') y `dominio`/`path_tenant` de ese cliente.'
+                            . ' La próxima pasada del cron lo levanta solo.',
+            ], 'bot_mal_apuntado:' . $slug);
+        }
+    }
+}
+
 function bot_creds_cambiaron($name, $user, $pass) {
     $env = (string) shell_exec(
         'docker inspect --format ' . escapeshellarg('{{range .Config.Env}}{{println .}}{{end}}')
@@ -338,6 +456,15 @@ function asegurar_bot($c, $cfg) {
     $base = 'https://' . $c['dominio'] . (!empty($c['path_tenant']) ? '/' . $slug : '');
 
     $name = 'bot-' . $slug;
+    /* MISMO CHEQUEO QUE EL DE ALTAS, y hace falta igual: este espeja jugadores
+       con las credenciales del cliente. Mal apuntado, le vuelca NUESTRO padrón
+       en su base -- los jugadores de uno en el CRM del otro. */
+    $mal = destino_inseguro($c, $base);
+    if ($mal !== '') {
+        frenar_bot_mal_apuntado($name, $slug, $mal);
+        return 'bot FRENADO: ' . $mal;
+    }
+
     $existe = trim((string) shell_exec('docker ps -aq --filter ' . escapeshellarg('name=^' . $name . '$') . ' 2>/dev/null'));
     if ($existe !== '') {
         if (!bot_creds_cambiaron($name, $user, $pass)) {
@@ -411,6 +538,13 @@ function asegurar_bot_altas($c, $cfg) {
     $base = 'https://' . $c['dominio'] . (!empty($c['path_tenant']) ? '/' . $slug : '');
 
     $name = 'altas-' . $slug;
+    /* ANTES DE NADA: ¿esa URL es la suya? Ver destino_inseguro(). */
+    $mal = destino_inseguro($c, $base);
+    if ($mal !== '') {
+        frenar_bot_mal_apuntado($name, $slug, $mal);
+        return 'bot de altas FRENADO: ' . $mal;
+    }
+
     $existe = trim((string) shell_exec('docker ps -aq --filter ' . escapeshellarg('name=^' . $name . '$') . ' 2>/dev/null'));
     if ($existe !== '') {
         if (!bot_creds_cambiaron($name, $user, $pass)) {
