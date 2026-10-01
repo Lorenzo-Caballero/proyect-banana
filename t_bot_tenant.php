@@ -68,24 +68,37 @@ chequear('y avisa con clave propia (no se tapa con el dedupe de los otros)',
 echo "\n=== 2. Los dos caminos que llevan al destino ajeno ===\n";
 chequear('db_nombre compartido con otro cliente activo',
          str_contains($prov, 'isset(bases_compartidas()[$db])'));
-chequear('y la URL que resuelve a otro tenant (dominio/path_tenant mal)',
-         str_contains($prov, '$resuelto = tenant_de_url($base)')
-         && str_contains($prov, '$resuelto !== $slug'));
-chequear('se pregunta a tenant_info.php, que devuelve el slug que resolvió db.php',
-         str_contains($prov, "/gp-api/tenant_info.php"));
+chequear('y otro cliente reclamando el mismo punto de entrada',
+         str_contains($prov, 'function duenos_del_destino(')
+         && str_contains($prov, '$otros = array_values(array_diff($duenos, [$slug]))'));
+/* EL CASO QUE COSTO CARO: un cliente cargado con NUESTRO dominio y sin
+   path_tenant reclama la raiz, que es nuestra puerta. */
+chequear('el caso raíz (dominio nuestro + path_tenant 0) se consulta aparte',
+         str_contains($prov, "COALESCE(path_tenant,0) = 0\"")
+         || str_contains($prov, 'COALESCE(path_tenant,0) = 0'));
+
+/* LA VERSION ANTERIOR DE ESTO TENIA UN FALSO POSITIVO QUE HABRIA HECHO MUCHO
+   DAÑO: comparaba el slug devuelto por tenant_info.php contra el del cliente,
+   y db.php deja TENANT_SLUG VACIO para los de dominio propio --que es el caso
+   normal, no el raro--. Daba distinto siempre: les habria bajado el bot a
+   todos ellos. Por eso la resolucion se hace contra la base, no por HTTP. */
+chequear('la verificación NO depende de una llamada HTTP',
+         !str_contains($prov, 'tenant_de_url') && !str_contains($prov, '/gp-api/tenant_info.php'),
+         'comparar el slug de tenant_info le baja el bot a todo cliente de dominio propio');
+chequear('y un cliente de dominio propio, solo suyo, NO se frena',
+         str_contains($prov, 'array_diff($duenos, [$slug])'),
+         'si el único dueño del destino es él mismo, no hay con quién competir');
 
 // ===========================================================================
 echo "\n=== 3. No se bloquea por no poder preguntar ===\n";
 /* Una red caída, un dominio que todavía no propagó, el server reiniciando:
    nada de eso prueba que la URL apunte mal. Solo bloquea la respuesta que
    dice, en letras, que ese endpoint es de otro tenant. */
-chequear('sin respuesta, tenant_de_url devuelve null',
-         str_contains($prov, 'if ($r === false || $r === \'\') { return null; }'));
+chequear('si no se puede preguntar, devuelve null',
+         str_contains($prov, '// no poder preguntar no frena a nadie'));
 chequear('y null NO frena el bot',
-         str_contains($prov, '$resuelto !== null && $slug !== \'\''),
-         'si un timeout frenara los bots, una caída de red dejaría sin altas a todos los clientes');
-chequear('el chequeo lleva timeout (no cuelga la pasada del cron)',
-         str_contains($prov, "'timeout' => 8"));
+         str_contains($prov, 'if (is_array($duenos) && $duenos)'),
+         'un error de consulta no puede dejar sin bot a todos los clientes');
 
 // ===========================================================================
 echo "\n=== 4. Con la base compartida no se elige una credencial al azar ===\n";

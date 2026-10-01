@@ -349,19 +349,57 @@ function bases_compartidas() {
 }
 
 /**
- * El slug que resuelve ESA url, o null si no se pudo averiguar.
- * tenant_info.php es público y devuelve el slug que db.php resolvió para el
- * host+path: exactamente la pregunta que hay que hacerse antes de darle esa
- * URL a un bot con las credenciales de otro agente.
+ * ¿Otro cliente activo reclama el MISMO punto de entrada que este?
+ *
+ * SE PREGUNTA A LA BASE Y NO POR HTTP, y la primera versión de esto lo hacía al
+ * revés -- le pedía el slug a tenant_info.php y lo comparaba contra el del
+ * cliente. Tenía un falso positivo que habría hecho mucho daño: db.php deja
+ * `TENANT_SLUG` VACÍO para los clientes de dominio propio (que es el caso
+ * normal, no el raro), así que la comparación daba distinto siempre y les
+ * habría bajado el bot a todos ellos.
+ *
+ * Esta versión reproduce la pregunta que de verdad importa: con esta
+ * combinación de dominio + path_tenant + slug, ¿a qué cliente le llegan las
+ * requests? Es la misma resolución que hace db.php. Si la contesta más de uno,
+ * o la contesta otro, el bot estaría comiendo de una cola ajena.
+ *
+ * Es local, determinista y no depende de que haya red -- que además era la
+ * otra debilidad de preguntar por HTTP: un timeout no prueba nada, pero sí
+ * costaba una llamada por cliente en cada pasada del cron.
  */
-function tenant_de_url($base) {
-    $ctx = stream_context_create(['http' => ['timeout' => 8, 'ignore_errors' => true],
-                                  'ssl'  => ['verify_peer' => true]]);
-    $r = @file_get_contents(rtrim($base, '/') . '/gp-api/tenant_info.php', false, $ctx);
-    if ($r === false || $r === '') { return null; }
-    $j = json_decode($r, true);
-    if (!is_array($j) || empty($j['ok'])) { return null; }
-    return strtolower(trim((string) ($j['slug'] ?? '')));
+function duenos_del_destino($c) {
+    $pdo = $GLOBALS['pdo'] ?? null;
+    if (!($pdo instanceof PDO)) { return null; }
+    $dom  = trim((string) ($c['dominio'] ?? ''));
+    $slug = strtolower(preg_replace('/[^a-z0-9_-]/i', '', (string) $c['slug']));
+    $path = !empty($c['path_tenant']) ? 1 : 0;
+    if ($dom === '') { return null; }
+
+    try {
+        if ($path === 1) {
+            // Entra por /<slug>/: lo identifica el par dominio + slug.
+            $q = $pdo->prepare(
+                "SELECT slug FROM clientes
+                  WHERE estado = 'activo' AND dominio = ? AND COALESCE(path_tenant,0) = 1
+                    AND LOWER(slug) = ?"
+            );
+            $q->execute([$dom, $slug]);
+        } else {
+            /* Entra por la RAÍZ del dominio. Acá está el caso que nos costó
+               caro: un cliente cargado con NUESTRO dominio y sin path_tenant
+               reclama la misma puerta que nosotros, y su bot termina sacando
+               altas de nuestra cola para crearlas en su cuenta de agente. */
+            $q = $pdo->prepare(
+                "SELECT slug FROM clientes
+                  WHERE estado = 'activo' AND dominio = ? AND COALESCE(path_tenant,0) = 0"
+            );
+            $q->execute([$dom]);
+        }
+        return array_map('strtolower', $q->fetchAll(PDO::FETCH_COLUMN));
+    } catch (Throwable $e) {
+        error_log('duenos_del_destino: ' . $e->getMessage());
+        return null;   // no poder preguntar no frena a nadie
+    }
 }
 
 function destino_inseguro($c, $base) {
@@ -372,16 +410,17 @@ function destino_inseguro($c, $base) {
         return 'su base (' . $db . ') la comparte con otro cliente activo';
     }
 
-    /* NO SE BLOQUEA POR NO PODER PREGUNTAR. Si el dominio del cliente todavía
-       no resuelve, o el server está caído un minuto, eso no es evidencia de
-       que la URL apunte mal -- y dejar sin bot a todos los clientes porque se
-       cayó la red sería peor que el problema. Solo bloquea la respuesta que
-       dice, en letras, que esa URL es de OTRO tenant. */
-    $resuelto = tenant_de_url($base);
-    if ($resuelto !== null && $slug !== '' && $resuelto !== $slug) {
-        return 'su URL (' . $base . ') resuelve al tenant «' . $resuelto
-             . '», no al suyo: el bot comería de esa cola y crearía los '
-             . 'jugadores en la cuenta de agente de ' . $slug;
+    /* NO SE FRENA POR NO PODER PREGUNTAR: null es "no sé", y dejar sin bot a
+       todos los clientes porque falló una consulta sería peor que el problema
+       que esto evita. */
+    $duenos = duenos_del_destino($c);
+    if (is_array($duenos) && $duenos) {
+        $otros = array_values(array_diff($duenos, [$slug]));
+        if ($otros) {
+            return 'su punto de entrada (' . $base . ') lo comparte con '
+                 . implode(', ', $otros) . ': su bot sacaría el trabajo de esa cola y '
+                 . 'crearía los jugadores en la cuenta de agente de ' . $slug;
+        }
     }
     return '';
 }

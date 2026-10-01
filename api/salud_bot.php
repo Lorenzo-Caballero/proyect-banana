@@ -13,6 +13,12 @@
  *                         latido). <10 = vivo. Cientos/miles = caído o
  *                         crash-loopeando.
  *   - altas_en_cola       pendientes + procesando ahora mismo.
+ *   - alta_trabada        la más vieja en cola: usuario, intentos, espera y el
+ *                         último mensaje del bot. CON intentos > 0 el bot la
+ *                         está trabajando y el backoff (5/20/60 min) explica la
+ *                         espera; con intentos = 0 no la está tomando, que es
+ *                         otro problema. Sin esto, las dos se ven igual.
+ *   - altas_ultima_falla  la última que quedó en 'error', con su motivo.
  *   - mas_vieja_min       minutos de la más vieja sin resolver. Con el bot
  *                         vivo esto tiene que ser ~0; si crece con latido
  *                         fresco, el bot vive pero el PANEL le rechaza el
@@ -108,6 +114,54 @@ try {
     error_log('salud_bot: ' . $e->getMessage());
 }
 
+/* POR QUE NO SALE EL ALTA QUE ESTA TRABADA.
+   Las cargas ya contaban su motivo (`cargas_ultima_falla`) y las altas no, y
+   esa asimetria cuesta exactamente en el momento en que importa: el 01/10/2026
+   habia un alta esperando hace 60 minutos con el bot latiendo cada segundo, y
+   desde afuera no habia forma de saber si era el nombre tomado, la sesion, el
+   WAF o el backoff -- las cuatro se ven igual: un numero que crece.
+
+   Se devuelve el estado de LA MAS VIEJA en cola (intentos y su ultimo mensaje)
+   y, aparte, la ultima que quedo en 'error'. Son dos cosas distintas: la
+   primera es el problema de ahora, la segunda es historia que puede no tener
+   nada que ver.
+
+   LOS INTENTOS SON LA CLAVE PARA NO LEER MAL EL NUMERO. Con intentos > 0 el
+   bot SI la esta trabajando y el backoff (5/20/60 min) explica la espera: eso
+   es el sistema funcionando, no un bot colgado. Con intentos = 0 y minutos
+   altos, el bot no la esta tomando, que es otro problema completamente. */
+$altaDet = null; $altaFalla = null;
+try {
+    $a = $pdo->query(
+        "SELECT usuario, estado, intentos, mensaje,
+                TIMESTAMPDIFF(MINUTE, pedido_en, NOW()) AS espera_min
+           FROM altas
+          WHERE estado IN ('pendiente', 'procesando')
+          ORDER BY pedido_en ASC LIMIT 1"
+    )->fetch();
+    if ($a) {
+        $altaDet = [
+            'usuario'    => (string)$a['usuario'],
+            'estado'     => (string)$a['estado'],
+            'intentos'   => (int)$a['intentos'],
+            'espera_min' => (int)$a['espera_min'],
+            'mensaje'    => mb_substr((string)($a['mensaje'] ?? ''), 0, 160),
+        ];
+    }
+    $af = $pdo->query(
+        "SELECT usuario, intentos, mensaje,
+                TIMESTAMPDIFF(MINUTE, COALESCE(tomado_en, pedido_en), NOW()) AS hace_min
+           FROM altas WHERE estado = 'error' ORDER BY id DESC LIMIT 1"
+    )->fetch();
+    if ($af) {
+        $altaFalla = 'error (hace ' . (int)$af['hace_min'] . ' min, '
+                   . (int)$af['intentos'] . ' intentos) ' . (string)$af['usuario'] . ': '
+                   . mb_substr((string)($af['mensaje'] ?? ''), 0, 120);
+    }
+} catch (Throwable $e) {
+    error_log('salud_bot altas: ' . $e->getMessage());
+}
+
 /* El loop de DEPOSITOS (acciones_saldo), aparte del de altas: un bot viejo
    crea altas pero no deposita, y esa asimetria es invisible sin esto.
    `ultima_falla` trae el mensaje del ultimo error/revisar (truncado): dice
@@ -164,6 +218,8 @@ echo json_encode([
     'bot_visto_hace_seg'        => $hace,
     'altas_en_cola'             => $enCola,
     'mas_vieja_min'             => $viejaMin,
+    'alta_trabada'              => $altaDet,
+    'altas_ultima_falla'        => $altaFalla,
     'bot_cargas_visto_hace_seg' => $cargasHace,
     'cargas_en_cola'            => $cargas,
     'cargas_mas_vieja_min'      => $cargasVieja,
