@@ -182,7 +182,7 @@ chequear('dos clientes con la misma base NO se facturan',
          && str_contains($cre, 'clientes activos comparten'),
          'le cobraría a los dos las cargas de uno');
 chequear('el estado se recalcula aunque no se haya cobrado nada',
-         str_contains($cron, 'cred_aplicar_estado($ctl, $c, $r[\'saldo\'])'),
+         str_contains($cron, 'cred_aplicar_estado($ctl, $c, $r[\'saldo\']'),
          'es lo que desbloquea al que acaba de cargar créditos');
 chequear('acreditar desbloquea el CRM en el acto',
          str_contains($cre, "\$saldo > 0 && (\$f['suscripcion_estado'] ?? '') === 'sin_saldo'"),
@@ -231,7 +231,79 @@ chequear('ajustar en positivo desbloquea al que estaba sin saldo',
          str_contains($pan, "creditos_ars + ? > 0 AND suscripcion_estado = 'sin_saldo'"));
 
 // ===========================================================================
-echo "\n=== 6. Idempotencia de verdad, contra MySQL ===\n";
+echo "\n=== 6. Lo que encontró la auditoría del circuito entero ===\n";
+/* Seis fallas reales que el código tenía después de escribirlo, encontradas
+   recorriendo el flujo de punta a punta. Cada chequeo de acá es una de ellas:
+   si vuelve a aparecer, este test lo dice antes que un cliente. */
+$aut = file_get_contents(__DIR__ . '/api/crm_creditos.php');
+$dia = file_get_contents(__DIR__ . '/panel/consumo_diario.php');
+$lib = file_get_contents(__DIR__ . '/api/creditos_lib.php');
+$crn = file_get_contents(__DIR__ . '/panel/consumo_cargas.php');
+
+/* (1) EL PEOR: sin esto el sistema se traba solo. El gate de crm_auth corta
+   todo el CRM de un cliente sin créditos; si esta pantalla queda detrás del
+   mismo corte, la ÚNICA que lo destraba está bloqueada también. */
+chequear('la pantalla de créditos NO pide saldo para entrar',
+         str_contains($aut, 'exigir_operador(false)'),
+         'sin esto: se queda sin créditos -> CRM bloqueado -> no puede entrar a cargar -> sin salida');
+chequear('y el rol admin se sigue exigiendo en POST',
+         str_contains($aut, "\$_SERVER['REQUEST_METHOD'] === 'POST' && operador_rol() !== 'admin'"),
+         'exigir_admin() no sirve acá: vuelve a pasar por el gate del saldo');
+/* Se busca la LLAMADA, no la palabra: el comentario de arriba del archivo
+   nombra exigir_admin() justamente para explicar por qué NO se usa, y un
+   str_contains pelado lo contaba como si se usara. */
+chequear('pero NO se LLAMA a exigir_admin(), que reintroduce el bloqueo',
+         !preg_match('/^\s*(\$\w+\s*=\s*)?exigir_admin\(\)\s*;/m', $aut));
+
+/* (2) DOBLE COBRO. El cron viejo no filtraba por modelo: al cliente de
+   transacción le cobraba también los ~63 USD/día de la suscripción, y como
+   nunca carga `saldo_usd` lo dejaba en 'sin_saldo' a los pocos días tuviera
+   los créditos que tuviera. */
+chequear('el cron de suscripción NO toca a los del modelo por transacción',
+         str_contains($dia, "COALESCE(cobro_modelo, 'suscripcion') = 'suscripcion'"),
+         'le cobraba las dos cosas, y lo bloqueaba igual por un saldo_usd que nunca usa');
+chequear('y el filtro tolera que la columna no exista todavía',
+         str_contains($dia, "COALESCE(cobro_modelo"),
+         'sin COALESCE, el cron viejo muere en un servidor sin la migración 11');
+
+/* (3) EL TRIAL. Un cliente nuevo entra con 0 créditos --todavía no
+   transfirió-- y la primera pasada del cron lo bloqueaba antes de que pudiera
+   mirar el producto. consumo_diario ya respetaba el trial; acá faltaba. */
+chequear('un cliente en trial no se bloquea por tener 0 créditos',
+         str_contains($lib, "if (\$estado === 'trial'"),
+         'un cliente nuevo entra con 0 créditos: lo bloqueaba en la primera pasada');
+chequear('y el trial vencido sí vuelve a las reglas normales',
+         str_contains($lib, "\$trialHasta >= date('Y-m-d')"));
+chequear('el cron le pasa trial_hasta',
+         str_contains($crn, "cred_aplicar_estado(\$ctl, \$c, \$r['saldo'], \$c['trial_hasta'] ?? null)")
+         && str_contains($crn, 'trial_hasta'));
+
+/* (4) EL CACHÉ DE SESIÓN. crm_auth cachea "sin saldo" 5 minutos. Tirar una
+   clave inventada no falla -- no hace nada, que es peor: el cliente paga,
+   sigue viendo el CRM bloqueado, y lo natural es que vuelva a pagar. */
+chequear('al acreditar se tira la clave de caché REAL',
+         str_contains($aut, "unset(\$_SESSION['saldo_plataforma_cache'])"),
+         'es la que usa crm_auth; una clave inventada no rompe nada y no hace nada');
+chequear('y no quedan claves de caché inventadas',
+         !str_contains($aut, 'crm_saldo_cache') && !str_contains($aut, 'crm_tirar_cache_saldo'));
+
+/* (5) exigir_operador() devuelve un STRING. Tratarlo como array dejaba la
+   primera letra del nombre como autor del movimiento. */
+chequear('el operador se usa como string, no como array',
+         !str_contains($aut, "\$operador['usuario']"),
+         'exigir_operador() devuelve string: $operador[\'usuario\'] da una letra suelta');
+
+/* (6) Un cliente que no está en el modelo no tiene dónde usar estos créditos:
+   dejarlo cargar sería cobrarle por algo que no consume. */
+chequear('no se le acepta una carga a quien no está en el modelo',
+         str_contains($aut, "Tu plan no se paga con créditos"));
+
+// y el código muerto que quedó de la primera escritura
+chequear('sin el SELECT ROW_COUNT() muerto en el cron',
+         !str_contains($crn, 'SELECT ROW_COUNT()') && !str_contains($crn, "prepare('SELECT 1')"));
+
+// ===========================================================================
+echo "\n=== 7. Idempotencia de verdad, contra MySQL ===\n";
 $port = getenv('T_PORT') ?: '';
 $pdo = null;
 if ($port !== '') {

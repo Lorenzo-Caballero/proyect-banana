@@ -168,10 +168,20 @@ function cred_cobrar_cliente(PDO $ctl, PDO $pdoCliente, array $cliente): array
  * cliente bloqueado con saldo, que es la clase de estado que nadie entiende
  * después. Acá se recalcula de lo que hay.
  */
-function cred_aplicar_estado(PDO $ctl, array $cliente, float $saldo): string
+function cred_aplicar_estado(PDO $ctl, array $cliente, float $saldo, ?string $trialHasta = null): string
 {
     $cid    = (int)$cliente['id'];
     $estado = (string)$cliente['suscripcion_estado'];
+
+    /* EL TRIAL NO SE BLOQUEA, y sin esto el modelo era inusable para un
+       cliente nuevo: entra con 0 créditos --todavía no transfirió nada-- y la
+       primera pasada del cron lo dejaba con el CRM bloqueado antes de poder
+       mirarlo. Es la misma regla que ya respeta consumo_diario.php para la
+       suscripción; acá faltaba. */
+    if ($estado === 'trial'
+        && ($trialHasta === null || $trialHasta === '' || $trialHasta >= date('Y-m-d'))) {
+        return 'trial';
+    }
 
     if ($saldo <= 0) {
         if ($estado !== 'sin_saldo') {

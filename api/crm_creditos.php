@@ -28,8 +28,30 @@ require_once __DIR__ . '/usdt_lib.php';
 
 header('Content-Type: application/json; charset=utf-8');
 
-$operador = exigir_operador();
-if ($_SERVER['REQUEST_METHOD'] === 'POST') { $operador = exigir_admin(); }
+/* ===========================================================================
+ * `false` = NO SE CHEQUEA EL SALDO PARA ENTRAR ACÁ, y es lo único que impide
+ * que esta pantalla sea inútil justo cuando hace falta.
+ *
+ * El gate de crm_auth.php corta con 402 a todo el CRM de un cliente sin
+ * créditos. Si esta pantalla también quedara detrás de ese corte, el cliente
+ * se quedaría sin saldo, se le bloquearía el CRM, y la ÚNICA pantalla que lo
+ * destraba estaría bloqueada igual: sin salida, y teniendo que escribirnos
+ * para algo que el sistema existe para resolver solo.
+ *
+ * Es la misma excepción que ya hace api/suscripcion.php, y por la misma
+ * razón -- su comentario lo dice textual: "un cliente sin saldo tiene que
+ * poder seguir entrando ahí para pagar y destrabarse".
+ *
+ * No afloja nada más: exigir_operador() igual pide sesión válida y, en POST,
+ * el token CSRF. El rol admin se chequea abajo a mano porque exigir_admin()
+ * vuelve a pasar por el gate del saldo.
+ * =========================================================================== */
+$operador = exigir_operador(false);
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && operador_rol() !== 'admin') {
+    http_response_code(403);
+    echo json_encode(['ok' => false, 'error' => 'Necesitás ser admin para esto']);
+    exit;
+}
 
 function cr_salir($data, int $code = 200): void
 {
@@ -134,6 +156,13 @@ if ($metodo === 'POST' && $accion === 'cargar') {
                 . 'Copialo completo desde tu billetera: son 64 caracteres.'], 400);
     }
 
+    /* Un cliente que NO está en el modelo por transacción no tiene dónde usar
+       estos créditos: su facturación la lleva el cron de suscripción. Dejarlo
+       cargar sería cobrarle por algo que no consume. */
+    if ((string)$cliente['cobro_modelo'] !== 'transaccion') {
+        cr_salir(['ok' => false, 'error' => 'Tu plan no se paga con créditos. Escribinos.'], 409);
+    }
+
     $wallet = cr_cfg($ctl, 'usdt_wallet');
     $cotiz  = (float)cr_cfg($ctl, 'usdt_cotizacion_ars', '0');
     $minCf  = (int)cr_cfg($ctl, 'usdt_min_confirmaciones', (string)USDT_CONFIRMACIONES_MIN);
@@ -190,16 +219,21 @@ if ($metodo === 'POST' && $accion === 'cargar') {
           WHERE txid = ?"
     )->execute([$v['monto'], $cotiz, $ars, $v['destino'], $v['confirmaciones'], $v['raw'], $txid]);
 
+    /* `$operador` es un STRING: exigir_operador() devuelve el nombre, no un
+       array. Tratarlo como array dejaba la primera letra del nombre como
+       autor del movimiento. */
     $saldo = cred_acreditar($ctl, $cid, $ars,
         'recarga USDT ' . rtrim(rtrim(number_format($v['monto'], 6, '.', ''), '0'), '.')
         . ' a $' . number_format($cotiz, 2, ',', '.') . ' (tx ' . substr($txid, 0, 12) . '…)',
-        (string)($operador['usuario'] ?? 'cliente'));
+        $operador !== '' ? $operador : 'cliente');
 
-    /* El gate de crm_auth cachea el "sin saldo" en la sesión unos minutos: si
-       no se tira, el cliente paga y sigue viendo el CRM bloqueado -- y lo
-       natural es que vuelva a pagar. */
-    if (function_exists('crm_tirar_cache_saldo')) { crm_tirar_cache_saldo(); }
-    unset($_SESSION['crm_saldo_cache'], $_SESSION['saldo_cache']);
+    /* EL NOMBRE DE ESTA CLAVE TIENE QUE SER EL EXACTO. El gate de crm_auth
+       cachea el "sin saldo" 5 minutos en la sesión; si no se tira la clave que
+       usa de verdad --`saldo_plataforma_cache`, la misma que limpia
+       suscripcion.php-- el cliente paga, sigue viendo el CRM bloqueado, y lo
+       natural es que vuelva a pagar. Tirar una clave inventada no falla: no
+       hace nada, que es peor. */
+    unset($_SESSION['saldo_plataforma_cache']);
 
     cr_salir(['ok' => true, 'usdt' => $v['monto'], 'cotizacion' => $cotiz,
               'acreditado' => $ars, 'saldo' => $saldo]);

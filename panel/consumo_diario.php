@@ -39,6 +39,13 @@ $clientes = $pdo->query(
     "SELECT id, saldo_usd, costo_diario_usd, suscripcion_estado, trial_hasta, ultimo_consumo
        FROM clientes
       WHERE estado = 'activo'
+       -- LOS DEL MODELO POR TRANSACCION NO PASAN POR ACA (migracion 11). Sin
+       -- este filtro se les cobraba LAS DOS COSAS: el prorrateo diario de la
+       -- suscripcion Y el % de cada carga. Y como un cliente de ese modelo
+       -- nunca carga `saldo_usd`, este cron lo habria dejado en 'sin_saldo'
+       -- --o sea con el CRM bloqueado-- a los pocos dias, tuviera los creditos
+       -- que tuviera. Se escribe tolerante a que la columna no exista todavia.
+       AND COALESCE(cobro_modelo, 'suscripcion') = 'suscripcion'
         AND (ultimo_consumo IS NULL OR ultimo_consumo < CURDATE())"
 )->fetchAll();
 

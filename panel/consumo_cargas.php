@@ -43,7 +43,8 @@ try {
 try {
     $clientes = $ctl->query(
         "SELECT id, slug, nombre, db_nombre, cobro_modelo, creditos_ars, comision_pct,
-                aviso_umbral_ars, creditos_desde, aviso_saldo_en, suscripcion_estado
+                aviso_umbral_ars, creditos_desde, aviso_saldo_en, suscripcion_estado,
+                trial_hasta
            FROM clientes
           WHERE estado = 'activo' AND cobro_modelo = 'transaccion'
             AND db_nombre IS NOT NULL AND db_nombre <> ''
@@ -95,7 +96,7 @@ foreach ($clientes as $c) {
         /* El estado se recalcula SIEMPRE, haya cobrado o no: es lo que
            desbloquea al que cargó créditos y lo que avisa al que se está
            quedando corto sin haber operado hoy. */
-        cred_aplicar_estado($ctl, $c, $r['saldo']);
+        cred_aplicar_estado($ctl, $c, $r['saldo'], $c['trial_hasta'] ?? null);
 
     } catch (Throwable $e) {
         log_línea("$slug: ERROR -> " . $e->getMessage());
@@ -168,11 +169,9 @@ if ($pend) {
                   WHERE id = ? AND estado = 'pendiente'"
             )->execute([$v['monto'], $cotiz, $ars, $v['destino'], $v['confirmaciones'], $v['raw'], $p['id']]);
 
-            /* El WHERE estado='pendiente' es la guarda: si dos pasadas del cron
-               se pisan, la segunda no encuentra la fila y no se acredita dos
-               veces. */
-            $q = $ctl->prepare("SELECT ROW_COUNT()");
-            $ctl->prepare('SELECT 1')->execute();
+            /* El WHERE estado='pendiente' del UPDATE es la guarda: si dos
+               pasadas del cron se pisan, la segunda no encuentra la fila en ese
+               estado y no acredita de nuevo. Se relee para saber cuál ganó. */
             $chk = $ctl->prepare("SELECT estado FROM recargas_usdt WHERE id = ?");
             $chk->execute([$p['id']]);
             if ($chk->fetchColumn() === 'acreditada') {
