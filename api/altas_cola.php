@@ -525,8 +525,24 @@ if ($accion === 'marcar' && $metodo === 'POST') {
                     $pdo->prepare("UPDATE altas SET usuario = ? WHERE id = ? AND estado <> 'ok'")
                         ->execute([$nuevo, $id]);
                     $renombrada = true;
-                    $mensaje = mb_substr("'$actual' estaba ocupado en la plataforma; "
-                                       . "se reintenta como '$nuevo'. " . $mensaje, 0, 500);
+                    /* EL MENSAJE TIENE QUE DECIR CUAL DE LAS DOS COSAS PASO.
+                       Hasta hoy decia siempre "estaba ocupado en la plataforma",
+                       pero el renombre se dispara por DOS motivos distintos: que
+                       el panel haya dicho que el nombre existe, o que el alta
+                       lleve dos intentos fallidos por lo que sea
+                       (alta_debe_renombrar). En el segundo caso esa frase es una
+                       conclusion inventada que ADEMAS se antepone al error real.
+
+                       Costo un diagnostico equivocado el 01/10/2026: un alta
+                       trabada hacia 70 minutos decia "estaba ocupado" cuando el
+                       error de verdad era un `Locator.click: Timeout` -- o sea el
+                       formulario colgado, que no tiene nada que ver con el
+                       nombre. Un mensaje que afirma de mas es peor que uno que no
+                       dice nada: manda a mirar donde no es. */
+                    $motivo = $eraNombreOcupado
+                        ? "'$actual' estaba ocupado en la plataforma"
+                        : "'$actual' falló $ronda " . ($ronda === 1 ? 'vez' : 'veces') . ", se renombra por las dudas";
+                    $mensaje = mb_substr("$motivo; se reintenta como '$nuevo'. " . $mensaje, 0, 500);
                     error_log("altas: alta $id renombrada de '$actual' a '$nuevo' (nombre ocupado)");
                 }
             }
