@@ -1286,7 +1286,29 @@ _USUARIOS_MARCA = "/tmp/gp_usuarios_visto"
 # Y no se pierde a nadie: se recuerda en que pagina quedo y la proxima arranca
 # ahi. Sin eso siempre se leerian los mismos primeros 1.500 y los ultimos --los
 # jugadores mas nuevos, justo los que importan-- no se espejarian nunca.
-USUARIOS_MAX_SEG = int(os.environ.get("USUARIOS_MAX_SEG", "70"))
+# EL PRESUPUESTO SE COMPARTE CON LAS CARGAS, aunque no lo parezca.
+#
+# `ejecutar_cargas.py` --el que deposita las fichas que el jugador ya pago--
+# corre cada minuto y toma EL MISMO `flock /tmp/gp_panel.lock` que este worker,
+# con `-w 45`: espera 45 segundos y si no lo consigue, PIERDE EL TURNO.
+#
+# Con 70 segundos solo para el espejo, mas las peticiones, el libro, el stock y
+# los retiros, esta pasada pasaba largo de esos 45 y las cargas se quedaban
+# afuera una vuelta tras otra. Nahuel el 01/10/2026: "estan tardando las
+# cargas" -- con la cola en cero cada vez que se miraba, porque el worker, las
+# pocas veces que entraba, la vaciaba.
+#
+# El comentario del lock decia "serializarlos no cuesta nada: cada uno tarda
+# segundos", y era cierto cuando se escribio. Dejo de serlo cuando el espejo
+# paso a barrer 3.000 jugadores con reintentos por el WAF. La suposicion
+# envejecio sin que nada fallara.
+#
+# 35 SEGUNDOS deja la pasada entera comodamente abajo de la ventana de 45, y no
+# pierde nada: el barrido RETOMA en la pagina donde corto y `saldo_visto_en` es
+# por fila, asi que cortar antes solo significa que el padron completo tarda mas
+# vueltas. Un saldo espejado con unos minutos mas de atraso es barato; una carga
+# que el jugador pago y no recibe, no.
+USUARIOS_MAX_SEG = int(os.environ.get("USUARIOS_MAX_SEG", "35"))
 _USUARIOS_PAGINA = "/tmp/gp_usuarios_pagina"
 
 

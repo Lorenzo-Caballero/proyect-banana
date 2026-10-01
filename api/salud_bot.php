@@ -19,6 +19,13 @@
  *                         espera; con intentos = 0 no la está tomando, que es
  *                         otro problema. Sin esto, las dos se ven igual.
  *   - altas_ultima_falla  la última que quedó en 'error', con su motivo.
+ *   - cargas_demora       cuánto TARDÓ cada carga de las últimas 6 h (promedio
+ *                         y peor caso, en segundos), desde que se pidió hasta
+ *                         que se ejecutó. Es lo que contesta "¿tardan?": la
+ *                         cola en cero no lo contesta, porque una cola vacía
+ *                         convive con cargas que tardaron ocho minutos.
+ *   - altas_demora        lo mismo para las altas. Una sana sale en 2-10 s por
+ *                         la API; si esto da minutos, está cayendo al formulario.
  *   - mas_vieja_min       minutos de la más vieja sin resolver. Con el bot
  *                         vivo esto tiene que ser ~0; si crece con latido
  *                         fresco, el bot vive pero el PANEL le rechaza el
@@ -205,6 +212,66 @@ try {
     error_log('salud_bot: ' . $e->getMessage());
 }
 
+/* CUANTO TARDA UNA CARGA, DE PUNTA A PUNTA.
+   `cargas_en_cola` dice cuántas esperan AHORA, y eso no contesta "¿tardan?":
+   una cola vacía es perfectamente compatible con cargas que tardaron ocho
+   minutos cada una -- el worker las despacha y la cola vuelve a cero, así que
+   mirando el instantáneo todo se ve bien.
+
+   Pasó el 01/10/2026: Nahuel reportó que las cargas tardaban y lo único que
+   había para mirar era una cola en cero y un worker latiendo. Sin esta medida
+   no se puede distinguir entre "el worker está trabado" y "el worker anda pero
+   arranca tarde", que se arreglan en lugares distintos.
+
+   Se mide desde que la carga se PIDIÓ hasta que se ejecutó, sobre las últimas
+   6 horas. El promedio dice cómo viene el servicio; el peor caso dice si hay
+   una cola de espera que el promedio esconde. */
+$cargasLat = null;
+try {
+    $l = $pdo->query(
+        "SELECT COUNT(*) AS n,
+                ROUND(AVG(TIMESTAMPDIFF(SECOND, creada_en, ejecutada_en))) AS prom,
+                MAX(TIMESTAMPDIFF(SECOND, creada_en, ejecutada_en)) AS peor
+           FROM acciones_saldo
+          WHERE tipo = 'cargar' AND estado = 'hecha'
+            AND ejecutada_en IS NOT NULL
+            AND ejecutada_en >= NOW() - INTERVAL 6 HOUR"
+    )->fetch();
+    if ($l && (int)$l['n'] > 0) {
+        $cargasLat = [
+            'hechas_6h'  => (int)$l['n'],
+            'prom_seg'   => (int)$l['prom'],
+            'peor_seg'   => (int)$l['peor'],
+        ];
+    }
+} catch (Throwable $e) {
+    error_log('salud_bot latencia: ' . $e->getMessage());
+}
+
+/* Lo mismo para las ALTAS: el tiempo real desde que se pidió la cuenta hasta
+   que quedó creada. Una sana sale en 2-10 s por la API; si esto da minutos,
+   está cayendo al formulario. */
+$altasLat = null;
+try {
+    $l = $pdo->query(
+        "SELECT COUNT(*) AS n,
+                ROUND(AVG(TIMESTAMPDIFF(SECOND, pedido_en, hecho_en))) AS prom,
+                MAX(TIMESTAMPDIFF(SECOND, pedido_en, hecho_en)) AS peor
+           FROM altas
+          WHERE estado = 'ok' AND hecho_en IS NOT NULL
+            AND hecho_en >= NOW() - INTERVAL 6 HOUR"
+    )->fetch();
+    if ($l && (int)$l['n'] > 0) {
+        $altasLat = [
+            'hechas_6h' => (int)$l['n'],
+            'prom_seg'  => (int)$l['prom'],
+            'peor_seg'  => (int)$l['peor'],
+        ];
+    }
+} catch (Throwable $e) {
+    error_log('salud_bot latencia altas: ' . $e->getMessage());
+}
+
 // ¿Corrió la migración 56 (bono_debitado)? Sin ella el bono igual se
 // deposita, pero la devolución automática y el desglose dependen del motivo.
 $mig56 = null;
@@ -223,6 +290,8 @@ echo json_encode([
     'bot_cargas_visto_hace_seg' => $cargasHace,
     'cargas_en_cola'            => $cargas,
     'cargas_mas_vieja_min'      => $cargasVieja,
+    'cargas_demora'             => $cargasLat,
+    'altas_demora'              => $altasLat,
     'cargas_ultima_falla'       => $falla,
     /* LO QUE EL COLECTOR PUDO LEER DEL PANEL. Lo escribe salud_colector.php
        con lo que le reporta el worker en cada pasada.
