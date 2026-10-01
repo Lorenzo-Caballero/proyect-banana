@@ -2479,6 +2479,60 @@
     font-size:12.5px;line-height:1.6;color:var(--muted)}
   .cobro-solo-aviso b{color:var(--txt);display:block;margin-bottom:2px}
 
+  /* ---- Creditos prepagos ---- */
+  .cred-top{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:16px}
+  .cred-saldo{flex:1 1 220px;padding:14px 16px;border-radius:12px;
+    background:linear-gradient(135deg,rgba(45,168,106,.14),rgba(45,168,106,.04));
+    border:1px solid rgba(45,168,106,.35)}
+  .cred-saldo.bajo{background:linear-gradient(135deg,rgba(245,166,35,.14),rgba(245,166,35,.04));
+    border-color:var(--orange)}
+  .cred-saldo.cero{background:linear-gradient(135deg,rgba(214,69,69,.15),rgba(214,69,69,.04));
+    border-color:#d64545}
+  .cred-lbl{display:block;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+  .cred-saldo b{display:block;font-size:30px;line-height:1.2;margin-top:3px;color:var(--txt);
+    font-variant-numeric:tabular-nums}
+  .cred-sub{display:block;font-size:12px;color:var(--muted);margin-top:4px}
+  .cred-mini{flex:1 1 200px;display:flex;flex-direction:column;gap:8px;justify-content:center}
+  .cred-mini>div{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+    padding:8px 12px;border-radius:9px;background:var(--card2,rgba(127,127,127,.07))}
+  .cred-mini span{font-size:12.5px;color:var(--muted)}
+  .cred-mini b{font-size:15px;font-variant-numeric:tabular-nums}
+
+  .cred-paso{display:flex;gap:12px;padding:14px 0;border-top:1px solid var(--linea,rgba(127,127,127,.18))}
+  .cred-num{flex:0 0 26px;height:26px;border-radius:50%;background:var(--orange);color:#1b1b1b;
+    font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center}
+  .cred-cont{flex:1;min-width:0}
+  .cred-cont>b{display:block;margin-bottom:3px}
+  .cred-cont>p{margin:0 0 9px;font-size:12.5px;line-height:1.6;color:var(--muted)}
+  .cred-dir-row{display:flex;gap:8px;flex-wrap:wrap}
+  .cred-dir-row .cb-input{flex:1 1 240px;min-width:0;font-family:ui-monospace,Menlo,Consolas,monospace;
+    font-size:12.5px}
+  .cred-warn{margin:8px 0 0;padding:8px 11px;border-radius:8px;font-size:12px;line-height:1.55;
+    background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.4);color:var(--muted)}
+  .cred-msg{margin-top:10px;padding:10px 13px;border-radius:9px;font-size:12.5px;line-height:1.6}
+  .cred-msg.ok{background:rgba(45,168,106,.12);border:1px solid rgba(45,168,106,.45)}
+  .cred-msg.mal{background:rgba(214,69,69,.12);border:1px solid rgba(214,69,69,.45)}
+  .cred-msg.esp{background:rgba(245,166,35,.12);border:1px solid rgba(245,166,35,.45)}
+
+  .cred-det{margin-top:14px;border-top:1px solid var(--linea,rgba(127,127,127,.18));padding-top:12px}
+  .cred-det summary{cursor:pointer;font-size:13px;color:var(--muted);user-select:none}
+  .cred-tabs{display:flex;gap:6px;margin:12px 0}
+  .cred-tab{padding:6px 13px;border-radius:999px;font-size:12.5px;cursor:pointer;
+    background:transparent;border:1px solid var(--linea,rgba(127,127,127,.3));color:var(--muted)}
+  .cred-tab.activa{background:var(--orange);border-color:var(--orange);color:#1b1b1b;font-weight:600}
+  .cred-tabla{overflow-x:auto}
+  .cred-tabla table{width:100%;border-collapse:collapse;font-size:12.5px}
+  .cred-tabla th{text-align:left;font-weight:600;color:var(--muted);padding:7px 9px;
+    border-bottom:1px solid var(--linea,rgba(127,127,127,.2));white-space:nowrap}
+  .cred-tabla td{padding:7px 9px;border-bottom:1px solid var(--linea,rgba(127,127,127,.1))}
+  .cred-tabla .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .cred-vacio{padding:16px;text-align:center;color:var(--muted);font-size:12.5px}
+  @media (max-width:560px){
+    .cred-saldo b{font-size:25px}
+    .cred-dir-row .cb-input{flex:1 1 100%}
+    .cred-dir-row .cb-btn{flex:1 1 100%}
+  }
+
   .mail-paso{display:flex;gap:12px;align-items:flex-start;padding:13px 0;
     border-bottom:1px solid var(--line)}
   .mail-paso:last-of-type{border-bottom:0}
@@ -5985,6 +6039,87 @@
       </div>
 
       <div class="cfg-sec">
+        <h3>Mis créditos</h3>
+        <span class="cfg-sec-linea"></span>
+      </div>
+
+      <!-- CREDITOS PREPAGOS. Solo se muestra si el cliente esta en el modelo
+           por transaccion: el que paga suscripcion por dia no tiene nada que
+           hacer aca, y una seccion que no le aplica a nadie confunde. La
+           decide el backend (crm_creditos.php -> modelo) y no el front. -->
+      <div class="cfg-card" id="credCard" style="display:none">
+        <div class="cfg-card-head">
+          <span class="cb-ico"><svg viewBox="0 0 24 24"><path d="M3 7h18v10H3zM3 10h18M7 14h4"/></svg></span>
+          <div class="cfg-card-txt">
+            <b>Créditos</b>
+            <span id="credPctTxt">De tu saldo se descuenta un % de cada carga que procesás.</span>
+          </div>
+        </div>
+        <div class="cfg-card-body">
+
+          <div class="cred-top">
+            <div class="cred-saldo" id="credSaldoBox">
+              <span class="cred-lbl">Saldo disponible</span>
+              <b id="credSaldo">—</b>
+              <span class="cred-sub" id="credSaldoSub"></span>
+            </div>
+            <div class="cred-mini">
+              <div><span>Últimos 30 días</span><b id="credGastado">—</b></div>
+              <div><span>Cargas procesadas</span><b id="credCargas">—</b></div>
+            </div>
+          </div>
+
+          <!-- PASO 1: a donde transferir. La direccion se copia con un boton y
+               nunca se pide tipearla: un caracter de mas en una direccion de
+               cripto manda la plata a la nada, sin vuelta. -->
+          <div class="cred-paso">
+            <div class="cred-num">1</div>
+            <div class="cred-cont">
+              <b>Transferí USDT a esta dirección</b>
+              <p>Red <b id="credRed">TRC20</b>. Mandá cualquier monto; se convierte a pesos
+                 a la cotización de hoy (<b id="credCotiz">—</b> por USDT).</p>
+              <div class="cred-dir-row">
+                <input class="cb-input" id="credWallet" readonly>
+                <button class="cb-btn cb-btn-sec" id="credCopiar" type="button">Copiar</button>
+              </div>
+              <p class="cred-warn" id="credRedWarn">
+                Mandá <b>solo USDT</b> y <b>solo por la red <span id="credRed2">TRC20</span></b>.
+                Otra red u otro token no se puede recuperar.
+              </p>
+            </div>
+          </div>
+
+          <!-- PASO 2: el hash. El monto NO lo declara el cliente: sale de la
+               cadena. Si lo declarara, esto seria un formulario para
+               regalarse creditos. -->
+          <div class="cred-paso">
+            <div class="cred-num">2</div>
+            <div class="cred-cont">
+              <b>Pegá el comprobante</b>
+              <p>Tu billetera te da un <b>hash</b> (o «ID de transacción») cuando enviás.
+                 Copialo y pegalo acá: verificamos la transferencia contra la red y
+                 acreditamos solo. No hace falta que nos avises.</p>
+              <div class="cred-dir-row">
+                <input class="cb-input" id="credTxid" autocomplete="off" spellcheck="false"
+                       placeholder="el hash de tu transferencia">
+                <button class="cb-btn" id="credCargar" type="button">Acreditar</button>
+              </div>
+              <div id="credMsg" class="cred-msg" style="display:none"></div>
+            </div>
+          </div>
+
+          <details class="cred-det">
+            <summary>Movimientos</summary>
+            <div class="cred-tabs">
+              <button class="cred-tab activa" data-credtab="recargas" type="button">Mis recargas</button>
+              <button class="cred-tab" data-credtab="consumos" type="button">En qué se usó</button>
+            </div>
+            <div id="credTabla" class="cred-tabla"></div>
+          </details>
+        </div>
+      </div>
+
+      <div class="cfg-sec">
         <h3>Cómo cobro</h3>
         <span class="cfg-sec-linea"></span>
       </div>
@@ -8273,7 +8408,7 @@
     /* Los preparativos que antes vivian en el click del rail van ACA, para
        que llegar por URL o por boton sea EXACTAMENTE lo mismo. */
     if(vista === "notificaciones") abrirNotif();   // desde el rail/URL siempre es masiva
-    if(vista === "config") { cargarConfig(); cobroCargar(); gnCargar(); }
+    if(vista === "config") { cargarConfig(); cobroCargar(); gnCargar(); credCargar(); }
     // La pestaña del navegador dice donde estas: con diez CRMs abiertos (un
     // operador multi-cliente los tiene), "CRM" diez veces no dice nada.
     document.title = (RUTA_LABEL[vista] || "CRM") + " · GOLDPAW CRM";
@@ -8644,7 +8779,192 @@
     }
   }
 
-  /* ====================== Cómo cobro (método de recarga) ======================
+  /* ========================= Mis créditos (crm_creditos.php) =========================
+   El saldo prepago con el que el cajero paga el servicio: se le descuenta un %
+   de cada carga que procesa, y lo recarga transfiriendo USDT.
+
+   EL MONTO NO SE PIDE ACÁ, y es lo que permite que el circuito sea automático:
+   el cliente pega el hash de su transferencia y el monto sale de la blockchain.
+   Si lo declarara él, esta pantalla sería un formulario para regalarse crédito.
+
+   La sección entera se esconde si el cliente no está en el modelo por
+   transacción (paga suscripción por día): lo decide el backend, no el front.
+   ================================================================================ */
+const API_CRED = API_BASE + "/crm_creditos.php";
+let CRED_EST = null;
+
+function credPlata(n){
+  return "$" + (Number(n)||0).toLocaleString("es-AR",{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+
+async function credCargar(){
+  let d;
+  try { d = await jget({accion: "estado"}, API_CRED); }
+  catch(e){ return; }
+  if(!d || !d.ok || d.modelo !== "transaccion"){
+    const c = $("#credCard"); if(c) c.style.display = "none";
+    return;
+  }
+  CRED_EST = d;
+  $("#credCard").style.display = "";
+
+  $("#credPctTxt").textContent =
+    "De tu saldo se descuenta el " + (d.pct||2) + "% de cada carga que procesás.";
+  $("#credSaldo").textContent = credPlata(d.saldo);
+
+  /* EL SALDO SE LEE EN CARGAS, NO EN PESOS. "$18.400" no le dice a nadie
+     cuánto le queda; "te alcanza para unos $920.000 en cargas" sí, porque es
+     la unidad en la que el cajero piensa su negocio. */
+  const box = $("#credSaldoBox");
+  box.classList.remove("bajo","cero");
+  if(d.saldo <= 0){
+    box.classList.add("cero");
+    $("#credSaldoSub").textContent = "Sin créditos: el CRM queda bloqueado hasta que cargues.";
+  } else {
+    const pct = Number(d.pct) || 2;
+    const enCargas = d.saldo * 100 / pct;
+    $("#credSaldoSub").textContent =
+      "Te alcanza para unos " + credPlata(enCargas) + " en cargas.";
+    if(d.umbral > 0 && d.saldo <= d.umbral) box.classList.add("bajo");
+  }
+
+  $("#credGastado").textContent = credPlata(d.gastado_30d);
+  $("#credCargas").textContent  = (d.cargas_30d||0).toLocaleString("es-AR");
+  $("#credRed").textContent  = d.red || "TRC20";
+  $("#credRed2").textContent = d.red || "TRC20";
+  $("#credCotiz").textContent = d.cotizacion > 0 ? credPlata(d.cotizacion) : "—";
+  $("#credWallet").value = d.wallet || "";
+
+  /* Sin billetera o sin cotización cargadas de nuestro lado, no se puede
+     acreditar nada. Se dice acá en vez de dejar que el cliente transfiera y
+     después falle: ahí ya mandó la plata. */
+  const listo = !!d.wallet && d.cotizacion > 0;
+  $("#credCargar").disabled = !listo;
+  $("#credCopiar").disabled = !listo;
+  if(!listo){
+    $("#credWallet").value = "";
+    $("#credWallet").placeholder = "todavía no está habilitada la carga por USDT";
+    credMsg("esp", "La carga automática todavía no está habilitada. Escribinos y la activamos.");
+  }
+}
+
+function credMsg(tipo, txt){
+  const m = $("#credMsg");
+  if(!m) return;
+  if(!txt){ m.style.display = "none"; return; }
+  m.className = "cred-msg " + tipo;
+  m.innerHTML = txt;
+  m.style.display = "";
+}
+
+document.addEventListener("click", async (ev)=>{
+  // ---- copiar la dirección ----
+  if(ev.target && ev.target.id === "credCopiar"){
+    const w = $("#credWallet").value.trim();
+    if(!w) return;
+    try { await navigator.clipboard.writeText(w); toast("Dirección copiada"); }
+    catch(e){ $("#credWallet").select(); document.execCommand("copy"); toast("Dirección copiada"); }
+    return;
+  }
+
+  // ---- acreditar un hash ----
+  if(ev.target && ev.target.id === "credCargar"){
+    const btn = ev.target;
+    const txid = $("#credTxid").value.trim();
+    if(!txid){ credMsg("mal", "Pegá el hash de tu transferencia."); return; }
+
+    btn.disabled = true;
+    const t = btn.textContent;
+    btn.textContent = "Verificando…";
+    credMsg("esp", "Buscando tu transferencia en la red…");
+    try {
+      const d = await jpost({accion:"cargar", txid}, API_CRED);
+      if(d && d.ok){
+        credMsg("ok", "<b>Listo, se acreditaron " + credPlata(d.acreditado) + ".</b><br>"
+              + d.usdt + " USDT a " + credPlata(d.cotizacion) + " por USDT. "
+              + "Tu saldo ahora es " + credPlata(d.saldo) + ".");
+        $("#credTxid").value = "";
+        credCargar();
+        credTabla("recargas");
+      } else {
+        /* 'pendiente' no es un error del cliente: su transferencia está bien y
+           solo falta que la red la confirme. Se acredita sola. */
+        credMsg(d && d.estado === "pendiente" ? "esp" : "mal",
+                (d && d.error) || "No se pudo verificar la transferencia.");
+      }
+    } catch(e){
+      credMsg("mal", "No se pudo verificar en este momento. Probá de nuevo en un rato.");
+    }
+    btn.disabled = false;
+    btn.textContent = t;
+    return;
+  }
+
+  // ---- pestañas de movimientos ----
+  if(ev.target && ev.target.dataset && ev.target.dataset.credtab){
+    document.querySelectorAll(".cred-tab").forEach(b=>b.classList.remove("activa"));
+    ev.target.classList.add("activa");
+    credTabla(ev.target.dataset.credtab);
+  }
+});
+
+// La tabla se pide recién al abrir el detalle: son hasta 200 filas que la
+// mayoría de las veces nadie mira.
+document.addEventListener("toggle", (ev)=>{
+  if(ev.target && ev.target.classList && ev.target.classList.contains("cred-det") && ev.target.open){
+    const act = document.querySelector(".cred-tab.activa");
+    credTabla(act ? act.dataset.credtab : "recargas");
+  }
+}, true);
+
+async function credTabla(cual){
+  const cont = $("#credTabla");
+  if(!cont) return;
+  cont.innerHTML = '<div class="cred-vacio">Cargando…</div>';
+  let d;
+  try { d = await jget({accion: (cual === "consumos" ? "consumos" : "recargas")}, API_CRED); }
+  catch(e){ cont.innerHTML = '<div class="cred-vacio">No se pudo cargar.</div>'; return; }
+
+  const it = (d && d.items) || [];
+  if(!it.length){
+    cont.innerHTML = '<div class="cred-vacio">'
+      + (cual === "consumos" ? "Todavía no se descontó nada." : "Todavía no cargaste créditos.")
+      + '</div>';
+    return;
+  }
+
+  const f = (x)=> x ? String(x).slice(0,16).replace("T"," ") : "—";
+  let h = "<table><thead><tr>";
+  if(cual === "consumos"){
+    h += "<th>Cuándo</th><th>Jugador</th><th>Vía</th><th class='num'>Carga</th>"
+       + "<th class='num'>%</th><th class='num'>Se descontó</th></tr></thead><tbody>";
+    it.forEach(r=>{
+      h += "<tr><td>" + f(r.cuando) + "</td><td>" + esc(r.usuario||"—") + "</td>"
+         + "<td>" + (r.via === "juego" ? "Depósitos" : "Transferencia") + "</td>"
+         + "<td class='num'>" + credPlata(r.monto_carga) + "</td>"
+         + "<td class='num'>" + r.comision_pct + "%</td>"
+         + "<td class='num'>" + credPlata(r.comision_ars) + "</td></tr>";
+    });
+  } else {
+    h += "<th>Cuándo</th><th>Hash</th><th class='num'>USDT</th>"
+       + "<th class='num'>Cotización</th><th class='num'>Acreditado</th><th>Estado</th></tr></thead><tbody>";
+    it.forEach(r=>{
+      const est = r.estado === "acreditada" ? "✅ acreditada"
+                : r.estado === "pendiente"  ? "⏳ confirmando"
+                : r.estado === "revision"   ? "🔎 en revisión" : "❌ rechazada";
+      h += "<tr><td>" + f(r.acreditado_en || r.creado) + "</td>"
+         + "<td title='" + esc(r.txid||"") + "'>" + esc(String(r.txid||"").slice(0,10)) + "…</td>"
+         + "<td class='num'>" + (r.monto_usdt ? Number(r.monto_usdt) : "—") + "</td>"
+         + "<td class='num'>" + (r.cotizacion ? credPlata(r.cotizacion) : "—") + "</td>"
+         + "<td class='num'>" + (r.monto_ars ? credPlata(r.monto_ars) : "—") + "</td>"
+         + "<td>" + est + (r.motivo ? "<br><span style='color:var(--muted);font-size:11.5px'>"
+                                    + esc(r.motivo) + "</span>" : "") + "</td></tr>";
+    });
+  }
+  cont.innerHTML = h + "</tbody></table>";
+}
+
+/* ====================== Cómo cobro (método de recarga) ======================
      Aparte de CFG_CAMPOS/cfgGuardar a propósito: vive en goldpaw_control via
      crm_cobro.php, no en config_crm -- otra base, otro endpoint, otro botón
      de guardar. jget/jpost ya resuelven sesión/CSRF igual que el resto del

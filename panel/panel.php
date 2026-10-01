@@ -397,6 +397,150 @@ switch ($accion) {
         }
     }
 
+    /* ===================================================================
+     * CRÉDITOS PREPAGOS (migración 11). El modelo con el que se vende el
+     * servicio: el cajero carga créditos en pesos con USDT y se le descuenta
+     * un % de cada carga que procesa.
+     *
+     * La billetera y la cotización son de LA PLATAFORMA, no de un cliente:
+     * viven en config_plataforma, igual que el token de MercadoPago.
+     * =================================================================== */
+    case 'cred_config_ver': {
+        $out = [];
+        foreach (['usdt_wallet', 'usdt_red', 'usdt_cotizacion_ars', 'usdt_min_confirmaciones'] as $k) {
+            $st = $pdo->prepare('SELECT valor FROM config_plataforma WHERE clave = ?');
+            $st->execute([$k]);
+            $out[$k] = (string) ($st->fetchColumn() ?: '');
+        }
+        salida(['ok' => true, 'config' => $out]);
+    }
+
+    case 'cred_config_guardar': {
+        $wallet = trim((string) ($in['usdt_wallet'] ?? ''));
+        $red    = trim((string) ($in['usdt_red'] ?? 'TRC20'));
+        $cotiz  = (float) ($in['usdt_cotizacion_ars'] ?? 0);
+        $conf   = (int) ($in['usdt_min_confirmaciones'] ?? 19);
+
+        /* UNA DIRECCIÓN MAL COPIADA MANDA LA PLATA DEL CLIENTE A LA NADA, sin
+           vuelta atrás. Se valida la forma acá porque es el único momento en
+           que alguien puede corregirla: después, lo que hay es una
+           transferencia perdida y un cliente que la pagó. */
+        if ($wallet !== '' && !preg_match('/^T[1-9A-HJ-NP-Za-km-z]{33}$/', $wallet)) {
+            salida(['ok' => false, 'error' => 'Esa no parece una dirección de Tron (TRC20). '
+                  . 'Empiezan con T y tienen 34 caracteres.'], 422);
+        }
+        if ($cotiz < 0) { salida(['ok' => false, 'error' => 'la cotización no puede ser negativa'], 422); }
+        if ($conf < 1)  { $conf = 19; }
+
+        $up = $pdo->prepare(
+            'INSERT INTO config_plataforma (clave, valor) VALUES (?,?)
+             ON DUPLICATE KEY UPDATE valor = VALUES(valor)'
+        );
+        $up->execute(['usdt_wallet', $wallet]);
+        $up->execute(['usdt_red', $red !== '' ? $red : 'TRC20']);
+        $up->execute(['usdt_cotizacion_ars', (string) $cotiz]);
+        $up->execute(['usdt_min_confirmaciones', (string) $conf]);
+        salida(['ok' => true]);
+    }
+
+    case 'cred_cliente_guardar': {
+        // El modelo de cobro y los números de ESTE cliente.
+        $id     = (int) ($in['id'] ?? 0);
+        $modelo = (string) ($in['cobro_modelo'] ?? '');
+        if ($id <= 0 || !in_array($modelo, ['suscripcion', 'transaccion'], true)) {
+            salida(['ok' => false, 'error' => 'faltan id o cobro_modelo'], 422);
+        }
+        $pct    = (float) ($in['comision_pct'] ?? 2);
+        $umbral = (float) ($in['aviso_umbral_ars'] ?? 0);
+        if ($pct <= 0 || $pct > 100) { salida(['ok' => false, 'error' => 'el % tiene que estar entre 0 y 100'], 422); }
+
+        /* AL PASAR A «TRANSACCIÓN» SE FIJA `creditos_desde` EN AHORA, si no
+           tenía. Sin ese corte, el primer cron le cobraría de una todas las
+           cargas viejas que encuentre en la ventana -- a un cliente con
+           movimiento eso le vacía el saldo en la primera pasada, y la primera
+           impresión del producto sería un robo. */
+        $sql = 'UPDATE clientes SET cobro_modelo = ?, comision_pct = ?, aviso_umbral_ars = ?';
+        $par = [$modelo, $pct, $umbral];
+        if ($modelo === 'transaccion') {
+            $sql .= ', creditos_desde = COALESCE(creditos_desde, NOW())';
+        }
+        $sql .= ' WHERE id = ?';
+        $par[] = $id;
+
+        try {
+            $st = $pdo->prepare($sql);
+            $st->execute($par);
+            salida(['ok' => true]);
+        } catch (PDOException $e) {
+            salida(['ok' => false, 'error' => 'no se pudo guardar (¿corriste la migración 11?)'], 500);
+        }
+    }
+
+    case 'cred_ajustar': {
+        /* Cargarle o descontarle créditos a mano: es el respaldo de cuando el
+           cliente transfirió por un camino que el verificador no puede leer
+           (otra red, un exchange que no da hash), y la forma de devolverle
+           algo mal cobrado. Queda auditado como cualquier otro ajuste. */
+        $id     = (int) ($in['id'] ?? 0);
+        $delta  = (float) ($in['delta_ars'] ?? 0);
+        $motivo = trim((string) ($in['motivo'] ?? ''));
+        if ($id <= 0 || $delta == 0.0) {
+            salida(['ok' => false, 'error' => 'faltan id o delta_ars (no puede ser 0)'], 422);
+        }
+        if ($motivo === '') {
+            // Un ajuste sin motivo es un número que en un mes no se puede explicar.
+            salida(['ok' => false, 'error' => 'poné el motivo del ajuste'], 422);
+        }
+        try {
+            $pdo->beginTransaction();
+            $st = $pdo->prepare(
+                "UPDATE clientes SET creditos_ars = creditos_ars + ?,
+                        suscripcion_estado = IF(creditos_ars + ? > 0 AND suscripcion_estado = 'sin_saldo',
+                                                'activa', suscripcion_estado)
+                  WHERE id = ?"
+            );
+            $st->execute([$delta, $delta, $id]);
+            if ($st->rowCount() < 1) {
+                $pdo->rollBack();
+                salida(['ok' => false, 'error' => 'cliente no existe'], 404);
+            }
+            $pdo->prepare(
+                'INSERT INTO ajustes_saldo_plataforma (cliente_id, delta_usd, motivo, operador) VALUES (?,?,?,?)'
+            )->execute([$id, 0, 'créditos ARS ' . ($delta > 0 ? '+' : '') . $delta . ': ' . $motivo, $oper]);
+            $pdo->commit();
+
+            $q = $pdo->prepare('SELECT creditos_ars FROM clientes WHERE id = ?');
+            $q->execute([$id]);
+            salida(['ok' => true, 'saldo' => (float) $q->fetchColumn()]);
+        } catch (PDOException $e) {
+            if ($pdo->inTransaction()) { $pdo->rollBack(); }
+            salida(['ok' => false, 'error' => 'no se pudo ajustar (¿corriste la migración 11?)'], 500);
+        }
+    }
+
+    case 'cred_resumen': {
+        /* Lo que factura el negocio por este modelo: cuánto se cobró, a
+           quiénes, y quién se está quedando sin créditos. */
+        try {
+            $filas = $pdo->query(
+                "SELECT c.id, c.slug, c.nombre, c.creditos_ars, c.comision_pct,
+                        c.aviso_umbral_ars, c.suscripcion_estado, c.creditos_desde,
+                        COALESCE(SUM(k.comision_ars), 0) AS cobrado_30d,
+                        COUNT(k.id) AS cargas_30d
+                   FROM clientes c
+                   LEFT JOIN consumos_plataforma k
+                          ON k.cliente_id = c.id AND k.cobrado_en >= NOW() - INTERVAL 30 DAY
+                  WHERE c.estado = 'activo' AND c.cobro_modelo = 'transaccion'
+                  GROUP BY c.id ORDER BY cobrado_30d DESC"
+            )->fetchAll();
+            $tot = 0.0;
+            foreach ($filas as $f) { $tot += (float) $f['cobrado_30d']; }
+            salida(['ok' => true, 'clientes' => $filas, 'total_30d' => $tot]);
+        } catch (PDOException $e) {
+            salida(['ok' => true, 'clientes' => [], 'total_30d' => 0, 'sin_migracion' => true]);
+        }
+    }
+
     case 'editar': {
         // Edita los datos de un cliente ya creado.
         //
