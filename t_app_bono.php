@@ -28,6 +28,20 @@
  *   8. Con la promo apagada: tiene_app se marca igual, pero nadie cobra ni
  *      queda marcador.
  *   9. app_promo viaja al widget solo con promo prendida y fichas > 0.
+ *  11. «Cargar fichas» a mano (el botón que usa el operador cuando el depósito
+ *      automático en ganamos no se pudo hacer) TAMBIÉN cuenta como "le entró
+ *      su primera plata": libera el bono de la app y cualquier bono pendiente
+ *      (ruleta, fidelización), igual que "cargar saldo" real.
+ *
+ *      EL AGUJERO (Nahuel, 25/09/2026, sobre Holabeto299): "no se le cargó
+ *      automáticamente el bono por descargar la app y también lo tuve que
+ *      hacer a mano". La cuenta no aparecía en el panel de ganamos, así que el
+ *      depósito automático no se pudo hacer; el operador le cargó las fichas
+ *      a mano desde el CRM ("cargar fichas") -- y ESE camino no liberaba nada:
+ *      `crm_cargar()` (la función detrás del botón) no llama a
+ *      `notif_app_bono_liberar()` ni a `crmnotif_bono_aplicar_fuera_de_recarga()`,
+ *      a diferencia de `crm_saldo()` (el botón "cargar saldo", la plata real),
+ *      que sí las llama desde el 18/09/2026.
  *
  *     T_PORT=3399 php t_app_bono.php
  */
@@ -44,6 +58,8 @@ $GLOBALS['pdo'] = $pdo;
 if (!function_exists('cfg')) { function cfg($c, $d = '') { return $d; } }
 require_once __DIR__ . '/api/config_crm.php';
 require_once __DIR__ . '/api/notificaciones_lib.php';
+require_once __DIR__ . '/api/crm_lib.php';           // crm_cargar() -- el boton "cargar fichas"
+require_once __DIR__ . '/api/crm_notificaciones.php'; // crmnotif_bono_aplicar_fuera_de_recarga()
 
 // El bono exige que la request venga del WebView del APK, que se identifica
 // con el sufijo GOLDPAW en el User-Agent (un fetch de navegador no puede
@@ -64,7 +80,8 @@ $U2 = 't_appbono_viejo';  // tenia la app de antes de la promo
 $U3 = 't_appbono_web';    // solo navegador
 $U6 = 't_appbono_carga';  // instala DESPUES de cargar
 $U7 = 't_appbono_sinapp'; // cargo pero nunca instalo
-$todos = [$U, $U2, $U3, $U6, $U7, 't_appbono_ua', 't_appbono_off'];
+$U8 = 't_appbono_manual'; // instalo, y su "primera plata" es una carga de FICHAS a mano (el caso de Beto)
+$todos = [$U, $U2, $U3, $U6, $U7, $U8, 't_appbono_ua', 't_appbono_off'];
 $limpiar = function () use ($pdo, $todos): void {
     foreach ($todos as $u) {
         $pdo->prepare("DELETE FROM usuarios WHERE username = ?")->execute([$u]);
@@ -72,6 +89,8 @@ $limpiar = function () use ($pdo, $todos): void {
         $pdo->prepare("DELETE FROM acciones_saldo WHERE usuario = ?")->execute([$u]);
         $pdo->prepare("DELETE FROM dispositivos WHERE usuario = ?")->execute([$u]);
         $pdo->prepare("DELETE FROM notificaciones WHERE usuario = ?")->execute([$u]);
+        try { $pdo->prepare("DELETE FROM bonos_pendientes WHERE usuario = ?")->execute([$u]); }
+        catch (Throwable $e) { /* migracion 33 sin correr en esta base de pruebas */ }
     }
     $pdo->prepare("DELETE FROM dispositivos WHERE device_id LIKE 't-appbono-%'")->execute();
 };
@@ -81,6 +100,7 @@ $pdo->prepare("INSERT INTO usuarios (id, username, balance, coins, bonus, tiene_
 $pdo->prepare("INSERT INTO usuarios (id, username, balance, coins, bonus, tiene_app) VALUES (990103, ?, 0, 0, 0, 0)")->execute([$U3]);
 $pdo->prepare("INSERT INTO usuarios (id, username, balance, coins, bonus, tiene_app) VALUES (990106, ?, 0, 0, 0, 0)")->execute([$U6]);
 $pdo->prepare("INSERT INTO usuarios (id, username, balance, coins, bonus, tiene_app) VALUES (990107, ?, 0, 0, 0, 0)")->execute([$U7]);
+$pdo->prepare("INSERT INTO usuarios (id, username, balance, coins, bonus, tiene_app) VALUES (990108, ?, 0, 0, 0, 0)")->execute([$U8]);
 
 cfg_crm_guardar($pdo, ['app_promo_activa' => '1', 'app_bono_fichas' => '1000'], 'test');
 
@@ -281,6 +301,75 @@ ok($vuelve === 0, 'reinstalar la app no le devuelve el bono que le quitaron');
 
 $pdo->prepare("DELETE FROM dispositivos WHERE device_id = 't-appbono-cancel-1'")->execute();
 $cancelLimpiar();
+
+// ---- 11. "cargar fichas" a mano libera igual que "cargar saldo" ------------
+echo "\n== 11. Cargar fichas a mano (el caso de Beto) ==\n";
+
+// El test 9 (justo arriba) apaga la promo y no la vuelve a prender: sin esto
+// notif_app_instalada() ni siquiera crea el marcador ($fichas <= 0 corta todo
+// antes de tocar la base), y el resto de este bloque falla en cadena por una
+// razon que no tiene nada que ver con lo que se esta probando.
+cfg_crm_guardar($pdo, ['app_promo_activa' => '1', 'app_bono_fichas' => '1000'], 'test');
+
+// Instala ANTES de cargar: queda el marcador, como en el test 1.
+notif_registrar_dispositivo($pdo, 't-appbono-manual', $U8, 'android', 'Pixel', '1.0', true);
+ok($marcas($U8) === 1, 'queda el marcador de la app (bono_app, monto 0)');
+ok($movs($U8) === 0, 'todavia no cobra nada');
+
+// Ademas tiene un bono PENDIENTE (25% de fidelizacion), como cualquier
+// jugador puede tener. crmnotif_bono_aplicar_fuera_de_recarga() es el que
+// tiene que encontrarlo y aplicarlo.
+crmnotif_bono_crear($pdo, $U8, 'pct', 25, 'fidelizacion');
+
+/* LA CUENTA NO APARECIA EN GANAMOS (el reporte real): el deposito automatico
+   no se pudo hacer, y el operador le carga las FICHAS a mano desde el CRM.
+   Esto es EXACTAMENTE lo que hace crm.php en la accion "cargar_fichas": llamar
+   a crm_cargar() con tipo='ficha'. */
+$r = crm_cargar($pdo, $U8, 'ficha', 400, 'carga manual (cuenta sin espejar)', 'crm', 'test-operador');
+ok(!empty($r['ok']), 'la carga de fichas a mano se registra bien');
+
+/* Estas dos lineas son las que crm.php agrega DESPUES de crm_cargar() cuando
+   tipo==='ficha' && monto>0 -- se prueban aca sueltas porque crm.php es un
+   dispatcher HTTP y no una libreria que se pueda invocar directo desde un
+   test. Que crm.php realmente las llame ahi lo confirma el chequeo de fuente
+   de mas abajo. */
+notif_app_bono_liberar($pdo, $U8);
+crmnotif_bono_aplicar_fuera_de_recarga($pdo, $U8, 400);
+
+ok($movs($U8) === 1, 'el bono de la app SE LIBERA con una carga de fichas a mano');
+ok($bonoExiste($U8), 'y existe de verdad (contador o encolado al juego)');
+
+$pend = $pdo->prepare("SELECT estado FROM bonos_pendientes WHERE usuario = ? AND tipo = 'pct'");
+$pend->execute([$U8]);
+ok($pend->fetchColumn() === 'aplicado', 'y el 25% pendiente TAMBIEN se aplica (25% de 400 = 100)');
+
+$stAplicado = $pdo->prepare(
+    "SELECT COUNT(*) FROM movimientos WHERE usuario = ? AND origen = 'crm_bono' AND monto = 100"
+);
+$stAplicado->execute([$U8]);
+ok((int)$stAplicado->fetchColumn() === 1, 'por el monto correcto (100 fichas: 25% de 400)');
+
+// Repetirlo (una segunda carga de fichas del mismo jugador) no vuelve a pagar.
+notif_app_bono_liberar($pdo, $U8);
+ok($movs($U8) === 1, 'y liberar de nuevo no duplica el bono de la app');
+
+/* LA GUARDA POSICIONAL: que crm.php de verdad llame a estas dos funciones
+   desde la accion cargar_fichas, y SOLO para fichas (no para cargar_bono --
+   un premio de ruleta, un bono prometido, etc, NO es "le entro plata", y
+   liberar el bono de la app ahi pagaria antes de que el jugador haya cargado
+   un peso). Sin este chequeo, alguien podria borrar las dos lineas de arriba
+   y los tests de comportamiento de este archivo seguirian en verde -- porque
+   los llaman sueltos, no a traves de crm.php. */
+$srcCrm = (string)file_get_contents(__DIR__ . '/api/crm.php');
+$iniAccion = strpos($srcCrm, "if (\$accion === 'cargar_fichas' || \$accion === 'cargar_bono')");
+ok($iniAccion !== false, 'crm.php todavia tiene la accion cargar_fichas/cargar_bono');
+$bloqueAccion = $iniAccion !== false ? substr($srcCrm, $iniAccion, 3200) : '';
+ok(str_contains($bloqueAccion, "\$tipo === 'ficha' && \$monto > 0"),
+   'el enganche esta condicionado a FICHAS positivas, no a cualquier cargar_fichas/cargar_bono');
+ok(str_contains($bloqueAccion, 'notif_app_bono_liberar($pdo, $usuario)'),
+   'crm.php llama a notif_app_bono_liberar() desde cargar_fichas');
+ok(str_contains($bloqueAccion, 'crmnotif_bono_aplicar_fuera_de_recarga($pdo, $usuario, $monto)'),
+   'crm.php llama a crmnotif_bono_aplicar_fuera_de_recarga() desde cargar_fichas');
 
 // ---- limpiar -----------------------------------------------------------------
 $limpiar();

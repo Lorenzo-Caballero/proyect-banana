@@ -1916,6 +1916,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $r = crm_cargar($pdo, $usuario, $tipo, $monto, $motivo, 'crm', $operador);
             if (!$r['ok']) { salir($r, 400); }
 
+            /* MISMO CRITERIO QUE crm_saldo() (crm_lib.php) PARA LA PLATA REAL:
+               una carga de FICHAS a mano TAMBIEN es la primera plata de este
+               jugador, y tambien puede tener un bono esperando.
+
+               EL AGUJERO (encontrado el 25/09/2026, reporte de Nahuel sobre
+               Holabeto299: *"no se le cargo automaticamente el bono por
+               descargar la app y tambien lo tuve que hacer a mano"*).
+               "Cargar saldo" (la plata REAL del juego, encolada para el
+               worker) SI liberaba el bono de instalar la app y cualquier bono
+               prometido (ruleta, fidelizacion) -- se arreglo el 18/09/2026,
+               con el comentario "una carga manual tambien es una carga".
+               "Cargar fichas" (este boton, el contador propio) se quedo
+               afuera de ese arreglo: es EXACTAMENTE el que se usa cuando el
+               deposito automatico en ganamos no se pudo hacer -- como con
+               Beto, cuya cuenta el bot no encontraba en el panel -- o sea que
+               falla justo en el caso que mas lo necesita.
+
+               No va adentro de crm_cargar(): esa funcion tambien la llaman la
+               ruleta, los premios de juego y los bonos prometidos (todos con
+               tipo='bono'), y ninguno de esos es "le entro plata" -- liberar
+               el bono de la app ahi pagaria antes de que el jugador haya
+               cargado un peso, la condicion que existe para evitarlo. Por eso
+               el chequeo va aca, solo para tipo='ficha' con monto positivo. */
+            if ($tipo === 'ficha' && $monto > 0) {
+                try {
+                    notif_app_bono_liberar($pdo, $usuario);
+                } catch (Throwable $e) {
+                    error_log('cargar_fichas (bono app): ' . $e->getMessage());
+                }
+                require_once __DIR__ . '/fichas_lib.php';
+                try {
+                    crmnotif_bono_aplicar_fuera_de_recarga($pdo, $usuario, $monto);
+                } catch (Throwable $e) {
+                    error_log('cargar_fichas (bono pendiente): ' . $e->getMessage());
+                }
+            }
+
             /* Avisarle al jugador. Solo cuando es un REGALO: un monto negativo
                es un ajuste del agente y no hay nada que festejar.
                notif_crear() no lanza nunca, asi que un problema con el aviso no
