@@ -121,14 +121,17 @@ chequear('y avisa por NUESTRO lado, que es el único que puede levantar el bot',
    no saca trabajo (sesión, API key, WAF). */
 chequear('distingue "no hay bot" de "el bot no toma trabajo"',
          str_contains($prov, "docker ps -q --filter")
-         && str_contains($prov, 'EXISTE pero no saca trabajo'));
+         && str_contains($prov, 'no se reinicia, pero no saca trabajo'));
 chequear('y nombra el arreglo concreto cuando faltan las credenciales',
          str_contains($prov, 'Configuracion -> Integracion con ganamos'),
          'un aviso que dice "algo no anda" se aprende a ignorar en dos días');
 /* La clave de dedupe lleva el slug y el ESTADO, no la cantidad: con el número
    adentro, cada alta nueva volvería a sonar. */
+/* La clave lleva el slug y el ESTADO del bot, nunca la cantidad: con el número
+   adentro, cada alta nueva volvería a sonar. */
 chequear('la clave del aviso no incluye la cantidad',
-         str_contains($prov, "'altas_colgadas:' . \$slug . ':' . (\$existe ? 'vivo' : 'sin-bot')"),
+         !preg_match('/altas_colgadas:.*\$n\b/', $prov)
+         && str_contains($prov, "'altas_colgadas:' . \$slug . ':'"),
          'con el número en la clave, cada alta nueva es un aviso nuevo');
 /* Las que no tienen password no cuentan: no se pueden crear igual, y mezclarlas
    haría sonar el aviso por algo que este arreglo no resuelve. */
@@ -139,6 +142,26 @@ chequear('y deja pasar el backoff normal antes de avisar',
          'avisar a los 2 minutos sería avisar del backoff, que es el sistema funcionando');
 chequear('el bot propio no se vigila por acá (ya tiene lo suyo)',
          str_contains($prov, 'tiene_bot_propio($slug)) { continue; }'));
+
+/* "EXISTE" NO ES "FUNCIONA". Un contenedor con `--restart unless-stopped` que
+   arranca, se muere y Docker relanza aparece en `docker ps` como si estuviera
+   sano: `Up 19 seconds` sobre un `Created 2 days ago`. Pasó el 03/10/2026 --el
+   bot de un cliente llevaba dos días así-- y este mismo aviso decía
+   "bot: existe", que es lo contrario de lo que había que mirar. */
+chequear('se distingue un bot sano de uno que se reinicia solo',
+         str_contains($prov, 'RestartCount') && str_contains($prov, '$enBucle'),
+         'docker ps muestra "Up 19 seconds" igual para un bot sano y uno en crash loop');
+chequear('y el arreglo que se sugiere es otro en ese caso',
+         str_contains($prov, 'SE ESTA REINICIANDO SOLO')
+         && str_contains($prov, 'el panel le rechaza el login'),
+         'mandar a mirar la sesión cuando el problema es la credencial pierde el tiempo');
+/* El estado entra en la clave de dedupe: si el bot pasa de "no existe" a
+   "reiniciándose", eso es una novedad y tiene que volver a sonar. */
+chequear('el estado del bot entra en la clave del aviso',
+         str_contains($prov, "'altas_colgadas:' . \$slug . ':' . \$comoEsta"));
+chequear('hacen falta varios reinicios para llamarlo bucle',
+         str_contains($prov, '$reinicios >= 3'),
+         'un reinicio suelto es un deploy, no un bot roto');
 
 // ===========================================================================
 echo "\n=== 5. Con la base compartida no se elige una credencial al azar ===\n";

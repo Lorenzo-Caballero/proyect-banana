@@ -852,19 +852,45 @@ foreach ($conCola as $c) {
         'docker ps -q --filter ' . escapeshellarg('name=^' . $name . '$') . ' 2>/dev/null'
     )) !== '';
 
+    /* "EXISTE" NO ES "FUNCIONA", y confundirlos manda a buscar al lugar
+       equivocado. Un contenedor con `--restart unless-stopped` que arranca,
+       se muere y Docker relanza aparece en `docker ps` como si estuviera
+       sano -- `Up 19 seconds` sobre un `Created 2 days ago`.
+       Paso el 03/10/2026: el bot de un cliente llevaba dos dias asi y este
+       mismo aviso decia "bot: existe", que es exactamente lo contrario de lo
+       que habia que mirar.
+       RestartCount lo dice sin ambiguedad: un bot sano no se reinicia. */
+    $reinicios = 0;
+    if ($existe) {
+        $rc = trim((string) shell_exec(
+            'docker inspect --format ' . escapeshellarg('{{.RestartCount}}')
+            . ' ' . escapeshellarg($name) . ' 2>/dev/null'
+        ));
+        if ($rc !== '' && ctype_digit($rc)) { $reinicios = (int) $rc; }
+    }
+    $enBucle = $existe && $reinicios >= 3;
+
     $sinCreds = trim((string) ($c['agente_usuario'] ?? '')) === '';
-    $arreglo  = $existe
-        ? "El contenedor $name EXISTE pero no saca trabajo. Mira `docker logs --tail 50 $name`: "
-          . "sesion vencida, API key, o el panel rechazandolo."
-        : ($sinCreds
-            ? "No hay contenedor $name porque el cliente todavia no cargo sus credenciales "
-              . "de agente. Las carga EL en su CRM: Configuracion -> Integracion con ganamos. "
-              . "Sin eso no se le puede levantar el bot y sus altas no van a salir nunca."
-            : "No hay contenedor $name y las credenciales ESTAN cargadas: la proxima pasada "
-              . "deberia levantarlo. Si no lo hace, mira la salida de este mismo script.");
+    $arreglo  = $enBucle
+        ? "El contenedor $name SE ESTA REINICIANDO SOLO ($reinicios veces): arranca, se muere y "
+          . "Docker lo relanza. La causa tipica es que el panel le rechaza el login -- las "
+          . "credenciales estan cargadas pero no entran (un typo, o se cambio la clave). "
+          . "Confirmalo con `docker logs --tail 40 $name` y corregilas en el CRM del cliente."
+        : ($existe
+            ? "El contenedor $name EXISTE y no se reinicia, pero no saca trabajo. Mira "
+              . "`docker logs --tail 50 $name`: sesion vencida, API key, o el panel rechazandolo."
+            : ($sinCreds
+                ? "No hay contenedor $name porque el cliente todavia no cargo sus credenciales "
+                  . "de agente. Las carga EL en su CRM: Configuracion -> Integracion con ganamos. "
+                  . "Sin eso no se le puede levantar el bot y sus altas no van a salir nunca."
+                : "No hay contenedor $name y las credenciales ESTAN cargadas: la proxima pasada "
+                  . "deberia levantarlo. Si no lo hace, mira la salida de este mismo script."));
+
+    $comoEsta = !$existe ? 'NO existe'
+              : ($enBucle ? "reiniciandose ($reinicios veces)" : 'existe');
 
     echo date('c') . " ALTAS COLGADAS $slug: $n esperando, la mas vieja hace "
-       . (int) ($r['espera'] ?? 0) . " min (bot: " . ($existe ? 'existe' : 'NO existe') . ")\n";
+       . (int) ($r['espera'] ?? 0) . " min (bot: $comoEsta)\n";
 
     /* La clave lleva el slug y el estado del bot, no la cantidad: si llevara el
        numero, cada alta nueva seria un aviso. Asi es uno por cliente y por
@@ -879,7 +905,7 @@ foreach ($conCola as $c) {
                 'Que hacer' => $arreglo,
                 'Ojo'       => 'El jugador ya se registro y esta esperando su cuenta. '
                              . 'Su CRM no avisa de esto si el cliente no configuro Telegram.',
-    ], 'altas_colgadas:' . $slug . ':' . ($existe ? 'vivo' : 'sin-bot'));
+    ], 'altas_colgadas:' . $slug . ':' . $comoEsta);
 }
 
 // ---------------------------------------------------------------------------
