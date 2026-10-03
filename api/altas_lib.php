@@ -468,7 +468,17 @@ function alta_limite_superado(PDO $pdo, string $ip): ?string
 //
 // Ajustable sin deploy en api/config.local.php: 'ALTAS_MAX_POR_IP' => 3
 // (0 = apagado).
-const ALTAS_MAX_POR_IP = 2;
+/* APAGADO POR PEDIDO DEL DUEÑO (03/10/2026): "elimina el tope maximo de
+   creacion de usuario". El mecanismo NO se borra -- se deja en 0, que es su
+   forma de apagado -- porque la razon por la que se puso sigue existiendo: el
+   18/09 un abusador se abria cuentas de a montones y el pedido fue
+   "imposibilitale crear una nueva cuenta". Volver a prenderlo es cambiar este
+   2 de vuelta, o poner 'ALTAS_MAX_POR_IP' => 2 en config.local.php sin tocar
+   codigo.
+
+   Borrar el codigo habria sido perder eso: el que lo necesite de nuevo tendria
+   que reescribirlo, y el proximo abusador llega antes. */
+const ALTAS_MAX_POR_IP = 0;
 
 function alta_max_por_ip(): int
 {
@@ -494,7 +504,9 @@ function alta_max_por_ip(): int
 // Ajustable sin deploy en api/config.local.php: 'ALTAS_MAX_POR_DEVICE' => 3
 // (0 = apagado). La excepcion legitima (una familia con un celular) la
 // resuelve un agente por el CRM, que no pasa por aca.
-const ALTAS_MAX_POR_DEVICE = 2;
+/* APAGADO, igual que el tope por IP (ver arriba). 0 = sin limite; la logica
+   queda intacta y se reactiva con un numero. */
+const ALTAS_MAX_POR_DEVICE = 0;
 
 function alta_max_por_device(): int
 {

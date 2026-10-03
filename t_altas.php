@@ -27,7 +27,15 @@ $pdo = new PDO(
     [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]
 );
 $GLOBALS['pdo'] = $pdo;
-if (!function_exists('cfg')) { function cfg($c, $d = '') { return $d; } }
+/* El stub de cfg lee de $GLOBALS['T_CFG'], asi los chequeos pueden FIJAR un
+   valor en vez de depender del default del codigo. Importa desde que los topes
+   de cuentas por persona se apagaron (default 0, 03/10/2026): un test atado al
+   default deja de probar la LOGICA justo cuando el default cambia, que es
+   cuando mas falta hace saber que la logica sigue sana. */
+$GLOBALS['T_CFG'] = [];
+if (!function_exists('cfg')) {
+    function cfg($c, $d = '') { return $GLOBALS['T_CFG'][$c] ?? $d; }
+}
 require_once __DIR__ . '/api/altas_lib.php';
 
 $ok = 0; $fail = 0;
@@ -614,7 +622,13 @@ echo "\n=== 10. Tope de cuentas por persona (por IP) ===\n";
 $IP_TOPE = '203.0.113.77';   // TEST-NET: nunca es una IP real
 $pdo->prepare("DELETE FROM altas WHERE ip IN (?, ?)")->execute([$IP_TOPE, '203.0.113.78']);
 
-chequear('el default es 2 cuentas por IP', alta_max_por_ip() === 2);
+/* APAGADO POR PEDIDO DEL DUEÑO (03/10/2026): "elimina el tope maximo de
+   creacion de usuario". Lo que se apago es el VALOR, no el mecanismo: la
+   logica se sigue probando abajo con el tope fijado a mano, para que el dia
+   que se vuelva a prender se sepa que funciona. */
+chequear('el tope por IP viene apagado de fabrica', alta_max_por_ip() === 0);
+$GLOBALS['T_CFG']['ALTAS_MAX_POR_IP'] = 2;
+chequear('y se puede prender sin tocar codigo', alta_max_por_ip() === 2);
 chequear('sin IP no frena (fail-open: nunca dejar sin cuenta por un dato que falta)',
          alta_tope_cuentas_superado($pdo, '') === null);
 chequear('con 0 cuentas puede', alta_tope_cuentas_superado($pdo, $IP_TOPE) === null);
@@ -659,7 +673,11 @@ echo "\n=== 11. Tope de cuentas por DISPOSITIVO (el freno automatico) ===\n";
    esperar a que un operador bloquee a nadie. */
 
 $pdo->exec("DELETE FROM dispositivos_usuarios WHERE device_id LIKE 'tst-dev-%'");
-chequear('el default es 2 cuentas por dispositivo', alta_max_por_device() === 2);
+/* APAGADO POR PEDIDO DEL DUEÑO (03/10/2026), igual que el de IP. La logica se
+   sigue probando abajo fijando el tope a mano. */
+chequear('el tope por dispositivo viene apagado de fabrica', alta_max_por_device() === 0);
+$GLOBALS['T_CFG']['ALTAS_MAX_POR_DEVICE'] = 2;
+chequear('y se puede prender sin tocar codigo', alta_max_por_device() === 2);
 chequear('sin device no frena (un navegador limpio no tiene: jamas alcanza a un jugador nuevo)',
          alta_tope_dispositivo_superado($pdo, '') === null);
 chequear('con 0 cuentas puede', alta_tope_dispositivo_superado($pdo, 'tst-dev-tope') === null);
