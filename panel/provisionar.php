@@ -1049,9 +1049,45 @@ Si alguna esta EN USO hay que darla de alta; si son restos, "
 // arranca en la próxima corrida sin re-provisionar nada.
 // ---------------------------------------------------------------------------
 $activos = $pdo->query(
-    "SELECT slug, dominio, path_tenant, agente_usuario, agente_password FROM clientes
-     WHERE estado = 'activo' AND agente_usuario IS NOT NULL AND agente_usuario <> ''"
+    "SELECT slug, dominio, path_tenant, db_nombre, agente_usuario, agente_password
+       FROM clientes
+      WHERE estado = 'activo' AND agente_usuario IS NOT NULL AND agente_usuario <> ''"
 )->fetchAll();
+
+/* EL RESULTADO DE LEVANTAR EL BOT, DONDE SE PUEDA CONSULTAR.
+ *
+ * PASO EL 01/10/2026: un cliente con las credenciales CARGADAS tenia 5 altas
+ * en cola, 56 minutos, y ningun bot. provisionar.php ya sabia por que --lo
+ * devuelve asegurar_bot_altas(): "falta la imagen", "no arranco: <error de
+ * docker>", "FRENADO: ..."-- pero ese texto solo se imprimia en el log del
+ * cron, que nadie abre hasta que alguien reclama.
+ *
+ * Tres dias seguidos el mismo patron: el dato existia y moria en un log. Se
+ * guarda en la base del PROPIO cliente para que salud_bot.php lo devuelva, que
+ * es donde ya se mira todo lo demas.
+ *
+ * Best-effort de punta a punta: si esto falla, el bot igual se levanto o no se
+ * levanto -- guardar el motivo no puede ser lo que rompa el aprovisionamiento.
+ */
+function guardar_estado_bot($cfg, $c, $msg) {
+    $db = trim((string) ($c['db_nombre'] ?? ''));
+    if ($db === '') { return; }
+    try {
+        $pc = new PDO(
+            'mysql:host=' . $cfg['DB_HOST'] . ';dbname=' . $db . ';charset=utf8mb4',
+            $cfg['DB_USER'], $cfg['DB_PASS'],
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+        );
+        $st = $pc->prepare(
+            "INSERT INTO config_crm (clave, valor) VALUES (?,?), (?,?)
+             ON DUPLICATE KEY UPDATE valor = VALUES(valor)"
+        );
+        $st->execute(['bot_altas_prov', mb_substr((string) $msg, 0, 300),
+                      'bot_altas_prov_en', date('Y-m-d H:i:s')]);
+    } catch (Throwable $e) {
+        // Sin config_crm, o la base caida: no pasa nada, es un extra.
+    }
+}
 
 foreach ($activos as $c) {
     $msg = asegurar_bot($c, $cfg);
@@ -1067,6 +1103,11 @@ foreach ($activos as $c) {
     if (strpos($msgAltas, 'levantado') !== false || strpos($msgAltas, 'NO') !== false) {
         echo date('c') . " bot-altas {$c['slug']}: $msgAltas\n";
     }
+    /* Se guarda SIEMPRE, no solo cuando hay novedad: "ya existía" es
+       exactamente la respuesta que hace falta cuando uno se pregunta por qué
+       las altas no salen -- dice que el contenedor está y que el problema es
+       otro. */
+    guardar_estado_bot($cfg, $c, $msgAltas);
 }
 
 // ---------------------------------------------------------------------------

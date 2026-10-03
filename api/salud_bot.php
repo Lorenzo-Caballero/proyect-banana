@@ -314,10 +314,24 @@ try {
         $fs = $qS->fetchAll();
         if (count($fs) === 1) {
             $tiene = trim((string)($fs[0]['agente_usuario'] ?? '')) !== '';
+            /* Lo último que dijo provisionar.php al intentar levantarle el
+               bot. Es la respuesta directa a "¿por qué no hay bot?" cuando las
+               credenciales están y aun así no aparece. */
+            $prov = ''; $provEn = '';
+            try {
+                $prov   = trim((string)cfg_crm($pdo, 'bot_altas_prov'));
+                $provEn = trim((string)cfg_crm($pdo, 'bot_altas_prov_en'));
+            } catch (Throwable $e2) {}
+
             $botAltas = [
                 'credenciales_cargadas' => $tiene,
+                'ultimo_intento'        => $prov !== '' ? $prov : null,
+                'ultimo_intento_en'     => $provEn !== '' ? $provEn : null,
                 'que_falta' => $tiene
-                    ? null
+                    ? ($prov === ''
+                        ? 'Las credenciales están, pero provisionar.php nunca reportó haber '
+                          . 'intentado levantar el bot: revisá que su cron esté corriendo en el VPS.'
+                        : null)
                     : 'El cliente todavía no cargó sus credenciales del panel de ganamos, '
                       . 'así que no se le puede levantar el bot y sus altas no salen. '
                       . 'Las carga él en su CRM: Configuración → Integración con ganamos.',
