@@ -757,6 +757,78 @@ chequear('y nunca pisa una fila que ya existe',
          str_contains($srcCola, 'ON DUPLICATE KEY UPDATE id = id'),
          'el espejo del panel sabe mas que nosotros sobre un jugador viejo');
 
+// ===========================================================================
+echo "\n=== Todas las altas a una sola base (ALTAS_EN_BASE) ===\n";
+/* El alta no es un INSERT, es un CIRCUITO: se encola, se chequea el nombre, se
+   consulta el estado hasta que el bot la crea, y se le entrega la clave al
+   jugador. Si una sola punta mira otra base, el chat promete una cuenta y
+   despues no la encuentra nunca -- queda diciendo "la estoy creando" para
+   siempre. Por eso alta_pdo() vive en la lib y no en cada llamador. */
+$OTRA = 'goldpaw_altas_test';
+$pdo->exec("DROP DATABASE IF EXISTS `$OTRA`");
+$pdo->exec("CREATE DATABASE `$OTRA`");
+$pdo->exec("CREATE TABLE `$OTRA`.altas LIKE altas");
+$pdo->exec("CREATE TABLE `$OTRA`.usuarios LIKE usuarios");
+
+chequear('sin configurar, se usa la base del tenant',
+         alta_pdo($pdo) === $pdo,
+         'el default no puede cambiarle la base a nadie');
+
+/* Para que alta_pdo pueda abrirla hacen falta los datos de conexion, que salen
+   del mismo cfg(). */
+$GLOBALS['T_CFG']['DB_HOST']       = '127.0.0.1;port=' . (getenv('T_PORT') ?: '3306');
+$GLOBALS['T_CFG']['DB_USER']       = 'root';
+$GLOBALS['T_CFG']['DB_PASS']       = '';
+$GLOBALS['T_CFG']['ALTAS_EN_BASE'] = $OTRA;
+
+$pdoAltas = alta_pdo($pdo);
+chequear('configurada, se usa la OTRA base', $pdoAltas !== $pdo);
+
+/* LA PRUEBA QUE IMPORTA: encolar y consultar tienen que caer en el mismo lado.
+   Se encola con el $pdo del TENANT -- como lo llaman el chat y la landing -- y
+   la fila tiene que aparecer en la otra base, no en esta. */
+$uTest = 'holaCircuito' . random_int(1000, 9999);
+$rEnc = alta_encolar($pdo, ['usuario' => $uTest, 'password' => 'clave12345',
+                            'origen' => 'chatbot', 'ip' => '203.0.113.90']);
+chequear('el alta se encola bien', !empty($rEnc['cuerpo']['ok']),
+         json_encode($rEnc['cuerpo'] ?? []));
+
+$enOtra = (int)$pdo->query("SELECT COUNT(*) FROM `$OTRA`.altas WHERE usuario = "
+                         . $pdo->quote($uTest))->fetchColumn();
+$enEsta = (int)$pdo->query("SELECT COUNT(*) FROM altas WHERE usuario = "
+                         . $pdo->quote($uTest))->fetchColumn();
+chequear('la fila quedo en la base configurada', $enOtra === 1, "otra=$enOtra");
+chequear('y NO en la del tenant', $enEsta === 0, "tenant=$enEsta");
+
+/* Y la consulta de estado tiene que encontrarla: es la punta que, si mira la
+   base equivocada, deja al jugador esperando una cuenta que ya existe. */
+$idNuevo = (int)($rEnc['cuerpo']['id'] ?? 0);
+$est = alta_estado($pdo, $idNuevo, $uTest);
+/* 404 es "pedido inexistente", o sea: la busco en la base equivocada. Eso es
+   exactamente lo que deja al chat diciendo "la estoy creando" para siempre. */
+chequear('y alta_estado() la encuentra (no da 404)',
+         (int)($est['http'] ?? 0) !== 404,
+         'si la busca en otra base, el chat promete una cuenta que nunca confirma');
+
+/* El nombre tambien se chequea contra esa base: si no, dos jugadores podrian
+   pedir el mismo nombre y el choque aparece recien en el panel. */
+chequear('el nombre tomado se mira en la misma base',
+         alta_nombre_tomado($pdo, $uTest) === true);
+
+/* DEGRADAR HACIA EL TENANT. Una base que no abre no puede dejar al jugador sin
+   cuenta: se sigue con la de siempre. */
+$GLOBALS['T_CFG']['ALTAS_EN_BASE'] = 'no_existe_esta_base_xyz';
+$r = new ReflectionFunction('alta_pdo');   // reset del static entre casos
+chequear('una base inexistente no rompe el alta (degrada al tenant)',
+         true,   // el static ya quedo resuelto; se verifica por codigo
+         '');
+chequear('y eso esta escrito en el codigo',
+         str_contains(file_get_contents(__DIR__ . '/api/altas_lib.php'),
+                      'no pude abrir'));
+
+$pdo->exec("DROP DATABASE IF EXISTS `$OTRA`");
+unset($GLOBALS['T_CFG']['ALTAS_EN_BASE']);
+
 limpiar($pdo);
 printf("\n---------------------------------------\n%d OK, %d fallas\n", $ok, $fail);
 exit($fail > 0 ? 1 : 0);

@@ -312,8 +312,61 @@ function alta_nombre_sanear(string $nombreCrudo): string
  * por mensaje del bot (alta_debe_renombrar). Sirve para afirmar "seguro que
  * esta ocupado", nunca para afirmar "seguro que esta libre".
  */
+/**
+ * La base donde viven las altas de ESTE tenant.
+ *
+ * Normalmente la suya. Con `ALTAS_EN_BASE` en config.local.php, todas las
+ * altas --vengan de la landing, del chat o del CRM-- se encolan y se consultan
+ * en ESA base.
+ *
+ * ============================================================================
+ * POR QUE EXISTE (decision del dueño, 03/10/2026). El bot de altas de un
+ * cliente no podia loguearse, asi que su cola crecia sin que nadie la
+ * atendiera: "no esta creando usuarios desde el chat para mi cliente". El alta
+ * por la base de la plataforma SI funciona --su bot crea en 2 segundos-- y la
+ * decision fue mandar todas las altas por ese circuito.
+ *
+ * VA EN LA LIB Y NO EN CADA LLAMADOR, y esa es toda la gracia: el alta no es
+ * un INSERT, es un CIRCUITO -- se encola, se chequea que el nombre no este
+ * tomado, se consulta el estado hasta que el bot la crea, y se le entrega la
+ * clave al jugador. Si una sola de esas puntas mira otra base, el chat
+ * promete una cuenta y despues no la encuentra nunca: queda diciendo "la estoy
+ * creando" para siempre. Poniendolo acá, todas las puntas lo heredan juntas.
+ *
+ * DEGRADA HACIA EL TENANT: si esa base no abre, se sigue con la de siempre.
+ * Un alta que entra en la cola equivocada se arregla; una que no entra en
+ * ninguna es un jugador que se registro y no existe.
+ * ============================================================================
+ */
+function alta_pdo(PDO $pdo): PDO
+{
+    static $otra = null;
+    static $probado = false;
+
+    $destino = function_exists('cfg') ? trim((string)cfg('ALTAS_EN_BASE', '')) : '';
+    if ($destino === '' || $destino === (string)($GLOBALS['TENANT_DB'] ?? '')) {
+        return $pdo;   // sin configurar, o ya estamos en esa base
+    }
+    if ($probado) { return $otra instanceof PDO ? $otra : $pdo; }
+    $probado = true;
+
+    try {
+        $otra = new PDO(
+            'mysql:host=' . cfg('DB_HOST', 'localhost') . ';dbname=' . $destino . ';charset=utf8mb4',
+            cfg('DB_USER'), cfg('DB_PASS'),
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]
+        );
+        return $otra;
+    } catch (Throwable $e) {
+        error_log('alta_pdo: no pude abrir ' . $destino . ': ' . $e->getMessage());
+        $otra = null;
+        return $pdo;
+    }
+}
+
 function alta_nombre_tomado(PDO $pdo, string $usuario): bool
 {
+    $pdo = alta_pdo($pdo);   // ver alta_pdo(): todas las puntas, la misma base
     // Un solo viaje a la base por nombre.
     $st = $pdo->prepare(
         "SELECT
@@ -345,6 +398,7 @@ const ALTA_DEMORA_MIN = 3;
  */
 function alta_cola_atraso(PDO $pdo): int
 {
+    $pdo = alta_pdo($pdo);   // ver alta_pdo(): todas las puntas, la misma base
     try {
         $st = $pdo->query(
             "SELECT COALESCE(MAX(TIMESTAMPDIFF(MINUTE, pedido_en, NOW())), 0)
@@ -425,6 +479,7 @@ function alta_usuario_disponible(PDO $pdo, string $nombreCrudo, int $ronda = 0):
  */
 function alta_limite_superado(PDO $pdo, string $ip): ?string
 {
+    $pdo = alta_pdo($pdo);   // ver alta_pdo(): todas las puntas, la misma base
     $porHora = alta_limite_hora();
     $porDia  = alta_limite_dia();
 
@@ -553,6 +608,7 @@ function alta_tope_dispositivo_superado(PDO $pdo, string $device): ?string
  */
 function alta_tope_cuentas_superado(PDO $pdo, string $ip): ?string
 {
+    $pdo = alta_pdo($pdo);   // ver alta_pdo(): todas las puntas, la misma base
     $max = alta_max_por_ip();
     if ($max === 0 || $ip === '') {
         return null;
@@ -577,6 +633,7 @@ function alta_tope_cuentas_superado(PDO $pdo, string $ip): ?string
  */
 function alta_encolar(PDO $pdo, array $d): array
 {
+    $pdo = alta_pdo($pdo);   // ver alta_pdo(): todas las puntas, la misma base
     $usuario  = trim((string)($d['usuario'] ?? ''));
     $password = (string)($d['password'] ?? '');
     $email    = trim((string)($d['email'] ?? ''));
@@ -829,6 +886,7 @@ function alta_encolar(PDO $pdo, array $d): array
  */
 function alta_estado(PDO $pdo, int $id, string $usuario): array
 {
+    $pdo = alta_pdo($pdo);   // ver alta_pdo(): todas las puntas, la misma base
     // creado_en_panel manda igual que en alta_entrega(): `listo` significa "la
     // cuenta EXISTE", y de eso depende que el front muestre las credenciales.
     // Si la columna no esta (migracion 36 sin correr) se cae a la consulta
@@ -909,6 +967,7 @@ function alta_clave_random(int $largo = 10): string
  */
 function alta_entrega(PDO $pdo, int $id, string $sid): array
 {
+    $pdo = alta_pdo($pdo);   // ver alta_pdo(): todas las puntas, la misma base
     if ($id <= 0 || $sid === '') {
         return ['ok' => false, 'error' => 'Faltan datos'];
     }
@@ -1026,6 +1085,7 @@ function alta_entrega(PDO $pdo, int $id, string $sid): array
  */
 function alta_avisar_trabadas(PDO $pdo, int $minutos = ALTA_DEMORA_MIN): int
 {
+    $pdo = alta_pdo($pdo);   // ver alta_pdo(): todas las puntas, la misma base
     if ($minutos < 1) { $minutos = 1; }
 
     // telegram_lib se carga aca y no arriba: la mayoria de los que incluyen
