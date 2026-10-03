@@ -175,7 +175,22 @@ if (!function_exists('tg_evento')) {
             return false;
         }
         try {
-            if (function_exists('cfg_crm_activo')
+            /* `$pdo instanceof PDO` Y NO SOLO function_exists: la firma acepta
+               null --los avisos de la PLATAFORMA (provisionar.php) no tienen la
+               base de ningun tenant-- pero cfg_crm_activo() exige un PDO de
+               verdad, asi que esto tiraba un TypeError y el aviso se perdia
+               entero.
+
+               Lo descubrio el 03/10/2026 una corrida a mano de provisionar.php:
+               "tg_evento: cfg_crm_activo(): Argument #1 ($pdo) must be of type
+               PDO, null given". NINGUN aviso de provisionar habia llegado nunca
+               -- ni el de bases compartidas del 24/09, ni el de altas colgadas.
+               Eran redes de seguridad que no estaban atadas.
+
+               Sin tenant no hay config de tenant que consultar, y un aviso de
+               infraestructura nuestra no se apaga desde el CRM de un cliente:
+               se manda. */
+            if ($pdo instanceof PDO && function_exists('cfg_crm_activo')
                 && !cfg_crm_activo($pdo, 'tg_ev_' . $tipo)) {
                 return false;
             }

@@ -425,6 +425,37 @@ function destino_inseguro($c, $base) {
     return '';
 }
 
+/**
+ * Aviso de PLATAFORMA por Telegram, con dedupe propio.
+ *
+ * tg_evento() sabe no repetirse, pero ese dedupe vive en la tabla `tg_avisos`
+ * de un TENANT y acá no hay ninguno: estos avisos son nuestros, no de un
+ * cliente. Sin dedupe, provisionar.php corre cada minuto y mandaria el mismo
+ * aviso 1.440 veces por dia -- y un canal que repite se deja de mirar, que es
+ * exactamente lo que estos avisos vienen a evitar.
+ *
+ * Se deduplica por ARCHIVO: la clave arma el nombre y, mientras el contenido
+ * no cambie, no se reenvia hasta que pasen las horas del tope. Si el contenido
+ * cambia (mas altas esperando, otro motivo), vuelve a sonar: eso es una
+ * novedad, no una repeticion.
+ */
+function avisar_plataforma($tipo, $titulo, $lineas, $clave, $horas = 6) {
+    $firma = sha1($clave . '|' . json_encode($lineas, JSON_UNESCAPED_UNICODE));
+    $marca = sys_get_temp_dir() . '/gp_aviso_' . preg_replace('/[^a-z0-9]+/i', '_', $clave) . '.txt';
+
+    if (is_file($marca)) {
+        $previo = trim((string) @file_get_contents($marca));
+        $edad   = time() - (int) @filemtime($marca);
+        if ($previo === $firma && $edad < $horas * 3600) { return; }
+    }
+    @file_put_contents($marca, $firma);
+
+    if (!is_file(__DIR__ . '/../api/telegram_lib.php')) { return; }
+    require_once __DIR__ . '/../api/telegram_lib.php';
+    if (!function_exists('tg_evento')) { return; }
+    tg_evento(null, $tipo, $titulo, $lineas, $clave);
+}
+
 /** Baja el contenedor que quedó apuntando a la cola de otro, y avisa. */
 function frenar_bot_mal_apuntado($name, $slug, $motivo) {
     $existe = trim((string) shell_exec(
@@ -434,10 +465,7 @@ function frenar_bot_mal_apuntado($name, $slug, $motivo) {
         shell_exec('docker rm -f ' . escapeshellarg($name) . ' 2>/dev/null');
     }
     echo date('c') . " BOT FRENADO $name: $motivo\n";
-    if (is_file(__DIR__ . '/../api/telegram_lib.php')) {
-        require_once __DIR__ . '/../api/telegram_lib.php';
-        if (function_exists('tg_evento')) {
-            tg_evento(null, 'bot_mal_apuntado', '🚨 Bot de un cliente apuntado a la cola de otro', [
+    avisar_plataforma('bot_mal_apuntado', '🚨 Bot de un cliente apuntado a la cola de otro', [
                 'Cliente'  => $slug,
                 'Qué pasa' => $motivo,
                 'Hecho'    => ($existe !== '' ? 'Se BAJÓ el contenedor ' . $name . '.' : 'No se levantó.')
@@ -447,9 +475,7 @@ function frenar_bot_mal_apuntado($name, $slug, $motivo) {
                 'Arreglo'  => 'En goldpaw_control.clientes, revisá `db_nombre` (tiene que ser'
                             . ' gp_' . $slug . ') y `dominio`/`path_tenant` de ese cliente.'
                             . ' La próxima pasada del cron lo levanta solo.',
-            ], 'bot_mal_apuntado:' . $slug);
-        }
-    }
+    ], 'bot_mal_apuntado:' . $slug);
 }
 
 function bot_creds_cambiaron($name, $user, $pass) {
@@ -840,14 +866,11 @@ foreach ($conCola as $c) {
     echo date('c') . " ALTAS COLGADAS $slug: $n esperando, la mas vieja hace "
        . (int) ($r['espera'] ?? 0) . " min (bot: " . ($existe ? 'existe' : 'NO existe') . ")\n";
 
-    if (is_file(__DIR__ . '/../api/telegram_lib.php')) {
-        require_once __DIR__ . '/../api/telegram_lib.php';
-        if (function_exists('tg_evento')) {
-            /* La clave lleva el slug y el estado del bot, no la cantidad: si
-               llevara el numero, cada alta nueva seria un aviso. Asi es uno por
-               cliente y por problema, y vuelve a sonar si el problema cambia. */
-            tg_evento(null, 'altas_colgadas',
-                '🔴 Un cliente tiene altas que no salen', [
+    /* La clave lleva el slug y el estado del bot, no la cantidad: si llevara el
+       numero, cada alta nueva seria un aviso. Asi es uno por cliente y por
+       problema, y vuelve a sonar si el problema cambia. */
+    avisar_plataforma('altas_colgadas',
+        '🔴 Un cliente tiene altas que no salen', [
                 'Cliente'  => (string) ($c['nombre'] ?? $slug) . " ($slug)",
                 'Esperando' => $n . ' alta(s), la mas vieja hace ' . (int) ($r['espera'] ?? 0) . ' min'
                              . ((int) ($r['sin_tocar'] ?? 0) === $n
@@ -856,9 +879,7 @@ foreach ($conCola as $c) {
                 'Que hacer' => $arreglo,
                 'Ojo'       => 'El jugador ya se registro y esta esperando su cuenta. '
                              . 'Su CRM no avisa de esto si el cliente no configuro Telegram.',
-            ], 'altas_colgadas:' . $slug . ':' . ($existe ? 'vivo' : 'sin-bot'));
-        }
-    }
+    ], 'altas_colgadas:' . $slug . ':' . ($existe ? 'vivo' : 'sin-bot'));
 }
 
 // ---------------------------------------------------------------------------
@@ -903,14 +924,9 @@ Cada uno ve los jugadores, la plata y los chats del otro. "
              . "en goldpaw_control.clientes ANTES de que alguno pueda entrar.";
         echo date('c') . " CLIENTES COMPARTIENDO BASE: " . implode(' | ', $lineas) . "
 ";
-        if (is_file(__DIR__ . '/../api/telegram_lib.php')) {
-            require_once __DIR__ . '/../api/telegram_lib.php';
-            if (function_exists('tg_evento')) {
-                tg_evento(null, 'bases_compartidas', '🚨 Dos clientes comparten base',
+        avisar_plataforma('bases_compartidas', '🚨 Dos clientes comparten base',
                           ['Detalle' => "
 " . $txt], 'bases_compartidas');
-            }
-        }
     }
 } catch (Throwable $e) {
     echo date('c') . " no pude revisar bases compartidas: " . $e->getMessage() . "
