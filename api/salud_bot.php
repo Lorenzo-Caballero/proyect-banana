@@ -318,23 +318,40 @@ try {
                bot. Es la respuesta directa a "¿por qué no hay bot?" cuando las
                credenciales están y aun así no aparece. */
             $prov = ''; $provEn = '';
+            $bEst = ''; $bDet = ''; $bEn = '';
             try {
                 $prov   = trim((string)cfg_crm($pdo, 'bot_altas_prov'));
                 $provEn = trim((string)cfg_crm($pdo, 'bot_altas_prov_en'));
+                /* Lo que el BOT mismo reporta (altas_cola.php?accion=estado_bot).
+                   Es la unica fuente que sabe por que no puede trabajar: el
+                   panel rechazandole el login se ve igual que todo lo demas
+                   desde afuera. */
+                $bEst = trim((string)cfg_crm($pdo, 'bot_altas_estado'));
+                $bDet = trim((string)cfg_crm($pdo, 'bot_altas_detalle'));
+                $bEn  = trim((string)cfg_crm($pdo, 'bot_altas_estado_en'));
             } catch (Throwable $e2) {}
 
             $botAltas = [
                 'credenciales_cargadas' => $tiene,
                 'ultimo_intento'        => $prov !== '' ? $prov : null,
                 'ultimo_intento_en'     => $provEn !== '' ? $provEn : null,
-                'que_falta' => $tiene
+                'bot_dice'              => $bEst !== '' ? $bEst : null,
+                'bot_detalle'           => $bDet !== '' ? $bDet : null,
+                'bot_dice_en'           => $bEn !== '' ? $bEn : null,
+                'que_falta' => $bEst === 'login_rechazado'
+                    ? 'El panel de ganamos le RECHAZA el login al bot ('
+                      . ($bDet !== '' ? $bDet : 'sin detalle') . '). Las credenciales están '
+                      . 'cargadas pero no entran: contraseña cambiada, un typo, o un captcha/2FA '
+                      . 'nuevo. Las corrige el cliente en su CRM: Configuración → Integración '
+                      . 'con ganamos.'
+                    : ($tiene
                     ? ($prov === ''
                         ? 'Las credenciales están, pero provisionar.php nunca reportó haber '
                           . 'intentado levantar el bot: revisá que su cron esté corriendo en el VPS.'
                         : null)
                     : 'El cliente todavía no cargó sus credenciales del panel de ganamos, '
                       . 'así que no se le puede levantar el bot y sus altas no salen. '
-                      . 'Las carga él en su CRM: Configuración → Integración con ganamos.',
+                      . 'Las carga él en su CRM: Configuración → Integración con ganamos.'),
             ];
         } elseif (count($fs) > 1) {
             $botAltas = ['credenciales_cargadas' => null,

@@ -111,6 +111,100 @@ if ($accion === 'encolar' && $metodo === 'POST') {
 }
 
 // ---------------------------------------------------------------------------
+// estado_bot: el bot cuenta por que NO puede trabajar.
+//
+// PASO DE VERDAD (03/10/2026). El bot de un cliente llevaba DOS DIAS en bucle:
+//
+//     Credenciales del panel: las del CRM (usuario oromaris333)
+//     ERROR | Segui en el login. Puede ser password incorrecta, captcha o 2FA.
+//
+// Sabia exactamente que pasaba, lo escribia clarito... en `docker logs`, que
+// nadie abre. Mientras tanto las altas se acumulaban, el cliente veia su CRM
+// normal, y desde afuera no habia forma de distinguir esto de un bot lento.
+//
+// El bot YA habla con este endpoint (reclama altas, marca resultados). Que
+// cuente tambien por que no puede entrar es una accion mas, y convierte dos
+// dias de silencio en una linea que se lee con un GET a salud_bot.php.
+//
+// Se guarda en config_crm del tenant: es informacion de operacion, no de un
+// alta puntual, y ahi ya viven los latidos de los otros workers.
+// ---------------------------------------------------------------------------
+if ($accion === 'estado_bot' && $metodo === 'POST') {
+
+    $body   = json_decode(file_get_contents('php://input'), true) ?: [];
+    $estado = mb_substr(trim((string)($body['estado'] ?? '')), 0, 20);
+    $det    = mb_substr(trim((string)($body['detalle'] ?? '')), 0, 300);
+
+    if ($estado === '') {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Falta el estado']);
+        exit;
+    }
+
+    try {
+        require_once __DIR__ . '/config_crm.php';
+        cfg_crm_guardar($pdo, [
+            'bot_altas_estado'    => $estado,
+            'bot_altas_detalle'   => $det,
+            'bot_altas_estado_en' => date('Y-m-d H:i:s'),
+        ], 'bot');
+    } catch (Throwable $e) {
+        // Que el bot no pueda contar su problema no puede ser otro problema.
+        error_log('estado_bot: ' . $e->getMessage());
+    }
+
+    echo json_encode(['ok' => true]);
+    exit;
+}
+
+// ---------------------------------------------------------------------------
+// estado_bot: el bot cuenta por que NO puede trabajar.
+//
+// PASO DE VERDAD (03/10/2026). El bot de un cliente llevaba DOS DIAS en bucle:
+//
+//     Credenciales del panel: las del CRM (usuario oromaris333)
+//     ERROR | Segui en el login. Puede ser password incorrecta, captcha o 2FA.
+//
+// Sabia exactamente que pasaba, lo escribia clarito... en `docker logs`, que
+// nadie abre. Mientras tanto las altas se acumulaban, el cliente veia su CRM
+// normal, y desde afuera no habia forma de distinguir esto de un bot lento.
+//
+// El bot YA habla con este endpoint (reclama altas, marca resultados). Que
+// cuente tambien por que no puede entrar es una accion mas, y convierte dos
+// dias de silencio en una linea que se lee con un GET a salud_bot.php.
+//
+// Se guarda en config_crm del tenant: es informacion de operacion, no de un
+// alta puntual, y ahi ya viven los latidos de los otros workers.
+// ---------------------------------------------------------------------------
+if ($accion === 'estado_bot' && $metodo === 'POST') {
+
+    $body   = json_decode(file_get_contents('php://input'), true) ?: [];
+    $estado = mb_substr(trim((string)($body['estado'] ?? '')), 0, 20);
+    $det    = mb_substr(trim((string)($body['detalle'] ?? '')), 0, 300);
+
+    if ($estado === '') {
+        http_response_code(400);
+        echo json_encode(['ok' => false, 'error' => 'Falta el estado']);
+        exit;
+    }
+
+    try {
+        require_once __DIR__ . '/config_crm.php';
+        cfg_crm_guardar($pdo, [
+            'bot_altas_estado'    => $estado,
+            'bot_altas_detalle'   => $det,
+            'bot_altas_estado_en' => date('Y-m-d H:i:s'),
+        ], 'bot');
+    } catch (Throwable $e) {
+        // Que el bot no pueda contar su problema no puede ser otro problema.
+        error_log('estado_bot: ' . $e->getMessage());
+    }
+
+    echo json_encode(['ok' => true]);
+    exit;
+}
+
+// ---------------------------------------------------------------------------
 // reintentar: devuelve a la cola un alta que quedo en 'error' por haber agotado
 // los intentos, SIN tocar la password.
 //
