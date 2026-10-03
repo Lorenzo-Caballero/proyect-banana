@@ -39,7 +39,7 @@ header('Content-Type: application/json; charset=utf-8');
    nombre ya existe en la plataforma. Ese SI se arregla insistiendo, porque
    cada intento va con un nombre nuevo. Rendirse a los 3 dejaba al jugador con
    un "no pudimos crear tu cuenta" cuando bastaba con probar una vez mas.
-   Los fallos de verdad siguen frenados por el backoff (5, 20, 60 minutos): 10
+   Los fallos de verdad siguen frenados por el backoff (MINUTOS_BACKOFF): 10
    intentos ahi son horas, no una tormenta de pedidos. */
 const MAX_INTENTOS   = 10;
 const MINUTOS_ZOMBIE = 15;   // reintentar los que quedaron colgados en 'procesando'
