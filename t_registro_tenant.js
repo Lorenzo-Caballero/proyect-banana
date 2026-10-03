@@ -79,6 +79,44 @@ chequear("está dicho que el jugador queda en nuestra base",
          /queda en NUESTRA base/.test(src),
          "es la consecuencia que va a aparecer como «no veo al jugador en mi CRM»");
 
+// ===========================================================================
+console.log("\n=== 4. Entra solo, con la sesión ya hecha ===");
+/* EL BUG QUE ESTO FIJA: el auto-login excluía a los clientes por path
+   (`if (esPorPath || ...) return false`), por un motivo que no aplicaba -- "el
+   proxy no preserva el slug". El login no necesita el slug: /api/user/login es
+   absoluto, va a LA MISMA plataforma para todos, y la sesión es una cookie del
+   ORIGEN, que es el mismo para la raíz y para /<slug>/.
+
+   El efecto era que el jugador de un cajero --justo el que menos sabe qué
+   hacer-- aterrizaba en la pantalla de login con una cuenta recién creada,
+   mientras el de la raíz entraba derecho. */
+chequear("el auto-login ya no excluye a los clientes por path",
+         !/if \(esPorPath \|\| !usuario \|\| !clave\)/.test(src),
+         "el jugador de un cajero caía en la pantalla de login con la cuenta hecha");
+chequear("y sigue cortando si falta usuario o clave",
+         /if \(!usuario \|\| !clave\) return false;/.test(src));
+chequear("el login va al endpoint de la plataforma, con la cookie del origen",
+         /fetch\('\/api\/user\/login'/.test(src) && /credentials: 'include'/.test(src));
+
+/* ENTRAR SOLO, PERO NO AL INSTANTE. En esta pantalla están el usuario y la
+   contraseña, y es la ÚNICA vez que el jugador los ve: irse de inmediato lo
+   deja adentro hoy y afuera mañana, cuando se cierre la sesión. */
+chequear("la cuenta regresiva espera a que la sesión esté lista",
+         /for \(let i = 0; i < 40 && !sesionLista; i\+\+\)/.test(src),
+         "entrar sin sesión es mandarlo justo a la pantalla de login que esto evita");
+chequear("y no arranca si el auto-login falló",
+         /if \(!sesionLista \|\| yendo\) return;/.test(src));
+chequear("le copia los datos antes de llevarlo",
+         /clipboard\.writeText\(/.test(src) && /Contraseña: /.test(src));
+chequear("y puede frenarla para anotarlos",
+         /autoQuedarse/.test(src),
+         "es la única pantalla donde ve su contraseña");
+/* Un solo `yendo` para los dos caminos (el copiado manual y el reloj): si
+   fueran dos, copiar mientras corre la cuenta dispararía dos navegaciones. */
+chequear("un solo guard contra la doble navegación",
+         (src.match(/let yendo = false;/g) || []).length === 1,
+         "con dos, copiar durante la cuenta regresiva navega dos veces");
+
 console.log("\n" + "-".repeat(39));
 console.log(ok + " OK, " + fail + " fallas");
 process.exit(fail > 0 ? 1 : 0);

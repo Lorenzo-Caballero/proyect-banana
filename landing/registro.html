@@ -168,6 +168,14 @@
     .check{animation:none}
   }
   @media (max-width:420px){ h1{font-size:26px} .mascota{width:100px;height:100px;font-size:50px} }
+
+    /* Aviso del ingreso automatico. Discreto: es informacion, no una alarma --
+       lo que el jugador tiene que mirar en esta pantalla son sus datos. */
+    .auto-aviso{margin-top:12px;padding:10px 12px;border-radius:10px;
+      background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);
+      font-size:13.5px;line-height:1.6;text-align:center}
+    .auto-aviso b{font-variant-numeric:tabular-nums}
+    .auto-aviso .link{display:block;margin-top:4px}
 </style>
 </head>
 <body>
@@ -234,6 +242,13 @@
       <div class="cred"><span class="k">Contraseña</span><span class="v" id="outPass"></span></div>
       <p class="aviso">La contraseña es siempre la misma: podés cambiarla más adelante desde tu cuenta.</p>
       <button class="btn" id="btnJugar" type="button" style="margin-top:16px">Entrar a jugar</button>
+      <!-- Cuenta regresiva del ingreso automatico. Oculto hasta que la sesion
+           esta hecha: anunciar que se entra solo y despues caer en la pantalla
+           de login seria peor que no anunciarlo. -->
+      <div class="auto-aviso" id="autoAviso" style="display:none">
+        Te copiamos los datos. Entrás solo en <b id="autoSeg">6</b>…
+        <button class="link" id="autoQuedarse" type="button">Esperá, los quiero anotar</button>
+      </div>
       <div style="text-align:center"><button class="link" id="btnCopiar" type="button">Copiar datos</button></div>
     </div>
   </main>
@@ -435,7 +450,18 @@
      pantalla de login de siempre. Nunca deja a nadie trabado. */
   let sesionLista = false;
   async function autologin(usuario, clave){
-    if (esPorPath || !usuario || !clave) return false;
+    /* ANTES ESTO EXCLUÍA A LOS CLIENTES POR PATH (`esPorPath ||`), por un
+       motivo que no aplicaba: "el proxy no preserva el slug". El login no
+       necesita el slug. `/api/user/login` es absoluto y va a LA MISMA
+       plataforma para todos --el proxy manda todo a ganamos7-- y la sesión es
+       una cookie del ORIGEN, que es ganamoscrm.online para la raíz y para
+       /<slug>/ por igual. O sea que la cookie que se pone acá ya está puesta
+       cuando el SPA levanta en /<slug>/.
+
+       El efecto de la exclusión era que el jugador de un cajero --justo el que
+       menos sabe qué hacer-- aterrizaba en la pantalla de login con una cuenta
+       recién creada, mientras el de la raíz entraba derecho. */
+    if (!usuario || !clave) return false;
     try {
       const r = await fetch('/api/user/login', {
         method: 'POST',
@@ -495,7 +521,10 @@
     // permite volver a esta página y ver los datos de nuevo. Borrarlo antes
     // de navegar hacía que el que volvía se encontrara con el formulario
     // vacío y se creara una SEGUNDA cuenta con otro nombre.
+    let yendo = false;
     const irAJugar = async ()=>{
+      if (yendo) return;
+      yendo = true;
       /* Si tocó "Entrar" antes de que el auto-login terminara, se lo espera un
          toque (máx ~1,2s) para no mandarlo a la pantalla de login por unos
          milisegundos de diferencia. Pasado ese margen, se navega igual: con
@@ -506,6 +535,53 @@
     $('btnJugar').onclick = irAJugar;
     $('btnJugar').textContent = 'Entrar a jugar';
 
+    /* ENTRAR SOLO, SIN TOCAR NADA (pedido del dueño, 03/10/2026). El paso
+       manual no agregaba nada: la cuenta ya está hecha y la sesión también.
+
+       PERO NO SE VA DE INMEDIATO, y los segundos no son decoración: en esta
+       pantalla están el usuario y la contraseña, y es la ÚNICA vez que el
+       jugador los ve. Irse al instante lo deja adentro del casino hoy y
+       afuera de su cuenta mañana, cuando se cierre la sesión y no sepa con
+       qué entrar. Por eso se le copian al portapapeles y se le avisa cuánto
+       falta, con un botón para quedarse mirándolos.
+
+       Arranca recién cuando la sesión está lista: entrar sin sesión sería
+       mandarlo a la pantalla de login, que es exactamente lo que esto viene a
+       evitar. Si el auto-login no sale, no hay cuenta regresiva y queda el
+       botón de siempre. */
+    const AUTO_SEG = 6;
+    (async ()=>{
+      for (let i = 0; i < 40 && !sesionLista; i++) { await dormir(150); }
+      if (!sesionLista || yendo) return;
+
+      try { await navigator.clipboard.writeText(
+        'Usuario: ' + p.usuario + '\nContraseña: ' + p.password); } catch(e){}
+
+      const av = document.getElementById('autoAviso');
+      if (!av) { irAJugar(); return; }
+      av.style.display = '';
+      let resta = AUTO_SEG;
+      const pintar = ()=>{
+        const n = document.getElementById('autoSeg');
+        if (n) n.textContent = resta;
+      };
+      pintar();
+      const t = setInterval(()=>{
+        if (yendo) { clearInterval(t); return; }
+        resta--;
+        pintar();
+        if (resta <= 0) { clearInterval(t); irAJugar(); }
+      }, 1000);
+
+      const quedarse = document.getElementById('autoQuedarse');
+      if (quedarse) {
+        quedarse.onclick = ()=>{
+          clearInterval(t);
+          av.innerHTML = '<b>Listo.</b> Anotá tus datos y entrá cuando quieras.';
+        };
+      }
+    })();
+
     /* La redirección automática se dispara cuando el jugador COPIA sus datos,
        no por un cronómetro. El motivo: recién cuando copió tiene las
        credenciales guardadas -- mandarlo a jugar antes (por tiempo) lo dejaba
@@ -515,7 +591,9 @@
        Solo se redirige tras un copiado EXITOSO: si el navegador no dejó copiar
        (permiso denegado, sin API), NO se navega -- sería echarlo sin sus
        datos; se le pide copiarlos a mano y el botón manual queda disponible. */
-    let yendo = false;
+    /* `yendo` se declara arriba, con irAJugar: lo comparten los dos caminos
+       --el copiado manual y la cuenta regresiva-- y justamente para eso sirve,
+       para que no se pisen si el jugador copia mientras corre el reloj. */
     const irTrasCopiar = ()=>{
       if (yendo) return;
       yendo = true;
