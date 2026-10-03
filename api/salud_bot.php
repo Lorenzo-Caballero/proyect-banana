@@ -19,6 +19,11 @@
  *                         espera; con intentos = 0 no la está tomando, que es
  *                         otro problema. Sin esto, las dos se ven igual.
  *   - altas_ultima_falla  la última que quedó en 'error', con su motivo.
+ *   - bot_altas           POR QUÉ no hay bot, cuando no lo hay. El caso que más
+ *                         cuesta: un cliente sin credenciales de agente no entra
+ *                         al bucle que levanta los bots, así que no falla nada y
+ *                         no se loguea nada -- sus altas simplemente se
+ *                         acumulan. Nunca expone la credencial, solo si está.
  *   - cargas_demora       cuánto TARDÓ cada carga de las últimas 6 h (promedio
  *                         y peor caso, en segundos), desde que se pidió hasta
  *                         que se ejecutó. Es lo que contesta "¿tardan?": la
@@ -272,6 +277,60 @@ try {
     error_log('salud_bot latencia altas: ' . $e->getMessage());
 }
 
+/* ¿POR QUÉ NO HAY BOT? La pregunta que faltaba contestar desde afuera.
+ *
+ * PASÓ EL 01/10/2026: un cliente tenía 4 altas en cola, la más vieja de 51
+ * minutos, con `intentos: 0` -- nadie las había tocado. Su bot no existía. Y la
+ * razón estaba a la vista en el código pero en ningún lado consultable: el
+ * bucle de provisionar.php que levanta los bots arranca con
+ *
+ *     WHERE estado='activo' AND agente_usuario IS NOT NULL AND agente_usuario <> ''
+ *
+ * Un cliente que todavía no cargó sus credenciales de agente NI SIQUIERA ENTRA
+ * a ese bucle. No falla al levantarse: no se intenta. Por eso no hay un solo
+ * mensaje de error en ningún log -- el silencio es por diseño, y desde afuera
+ * se ve igual que un bot roto, que se arregla en otro lado.
+ *
+ * `bot_altas` contesta eso en una línea. NO expone ninguna credencial: solo si
+ * están cargadas (bool), que es el dato que separa "lo tiene que hacer el
+ * cliente" de "lo tenemos que mirar nosotros".
+ */
+$botAltas = null;
+try {
+    $slugT = (string)($GLOBALS['TENANT_SLUG'] ?? '');
+    $dbT   = (string)($GLOBALS['TENANT_DB'] ?? '');
+    if ($dbT !== '') {
+        $ctlS = new PDO(
+            'mysql:host=' . cfg('DB_HOST', 'localhost')
+                . ';dbname=' . cfg('CONTROL_DB_NAME', 'goldpaw_control') . ';charset=utf8mb4',
+            cfg('DB_USER'), cfg('DB_PASS'),
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]
+        );
+        $qS = $ctlS->prepare(
+            "SELECT slug, agente_usuario FROM clientes
+              WHERE db_nombre = ? AND estado = 'activo'"
+        );
+        $qS->execute([$dbT]);
+        $fs = $qS->fetchAll();
+        if (count($fs) === 1) {
+            $tiene = trim((string)($fs[0]['agente_usuario'] ?? '')) !== '';
+            $botAltas = [
+                'credenciales_cargadas' => $tiene,
+                'que_falta' => $tiene
+                    ? null
+                    : 'El cliente todavía no cargó sus credenciales del panel de ganamos, '
+                      . 'así que no se le puede levantar el bot y sus altas no salen. '
+                      . 'Las carga él en su CRM: Configuración → Integración con ganamos.',
+            ];
+        } elseif (count($fs) > 1) {
+            $botAltas = ['credenciales_cargadas' => null,
+                         'que_falta' => 'Hay ' . count($fs) . ' clientes activos sobre esta misma base.'];
+        }
+    }
+} catch (Throwable $e) {
+    error_log('salud_bot bot_altas: ' . $e->getMessage());
+}
+
 // ¿Corrió la migración 56 (bono_debitado)? Sin ella el bono igual se
 // deposita, pero la devolución automática y el desglose dependen del motivo.
 $mig56 = null;
@@ -286,6 +345,7 @@ echo json_encode([
     'altas_en_cola'             => $enCola,
     'mas_vieja_min'             => $viejaMin,
     'alta_trabada'              => $altaDet,
+    'bot_altas'                 => $botAltas,
     'altas_ultima_falla'        => $altaFalla,
     'bot_cargas_visto_hace_seg' => $cargasHace,
     'cargas_en_cola'            => $cargas,
