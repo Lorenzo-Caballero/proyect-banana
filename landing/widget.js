@@ -152,33 +152,125 @@
     API_COBRO  = BASE_API + "/datos_cobro.php";
   }
 
+  /* De dónde sale el candidato a slug, en orden. Las tres fuentes existen por
+     un motivo distinto y ninguna sobra:
+
+       1. EL PATH. `/leandro/` y también `/leandro/loquesea`: hasta el
+          01/10/2026 solo se miraba el path de UN segmento exacto, así que
+          bastaba con que el SPA hubiera navegado un paso para que el widget ya
+          no viera de quién era la página.
+       2. EL REFERRER. El SPA hace su primer `pushState` en milisegundos; si el
+          widget arranca después, el path ya se perdió pero el referrer todavía
+          dice por dónde entró.
+       3. LO GUARDADO. Para cuando ya no queda rastro en la URL. */
+  function gpSlugCandidato() {
+    if (!MISMO_ORIGEN) { return ""; }
+    var p = location.pathname;
+
+    /* 1. DOS O MÁS SEGMENTOS (`/leandro/home`): el primero es el slug. Una
+          ruta del SPA de dos tramos cae acá también, y la descarta la API. */
+    var m = p.match(/^\/([a-z0-9-]{2,60})\/.+/i);
+    if (m) { return m[1].toLowerCase(); }
+
+    /* 2. UN SEGMENTO CON BARRA FINAL (`/leandro/`): es la forma del link que
+          se comparte, y la única que no puede ser una ruta del SPA. */
+    m = p.match(/^\/([a-z0-9-]{2,60})\/$/i);
+    if (m) { return m[1].toLowerCase(); }
+
+    /* 3. EL REFERRER, antes que un path de un solo tramo sin barra. Acá está
+          el caso que importa: parado en `/home` --que TIENE forma de slug y
+          por eso tapaba todo lo demás-- el path no dice de quién es la página,
+          pero el referrer todavía cuenta por dónde entró. Se exige el MISMO
+          host: si no, cualquiera manda tráfico con un referrer armado y elige
+          en qué CRM caen los mensajes. */
+    try {
+      if (document.referrer) {
+        var u = new URL(document.referrer);
+        if (u.host === location.host) {
+          var r = u.pathname.match(/^\/([a-z0-9-]{2,60})(?:\/|$)/i);
+          if (r) { return r[1].toLowerCase(); }
+        }
+      }
+    } catch (e) {}
+
+    /* 4. Un segmento sin barra (`/leandro`). Último porque es el más
+          ambiguo: `/home` tiene exactamente la misma forma. */
+    m = p.match(/^\/([a-z0-9-]{2,60})$/i);
+    return m ? m[1].toLowerCase() : "";
+  }
+
   (function () {
-    var m = MISMO_ORIGEN && location.pathname.match(/^\/([a-z0-9-]{2,60})\/?$/i);
-    var cand = m ? m[1].toLowerCase() : "";
+    /* LA RAÍZ EXACTA ES NUESTRA, Y ENTRAR AHÍ TIENE QUE SOLTAR AL CLIENTE
+       ANTERIOR. Sin esto el slug guardado no se limpiaba nunca: un navegador
+       que alguna vez entró a /leandro/ seguía mandando a SU CRM los mensajes
+       escritos en nuestra plataforma, para siempre. Es el mismo bug que el
+       reportado, con los papeles cambiados, y el más difícil de ver porque la
+       plata y los chats aparecen en el lugar equivocado sin que nada falle. */
+    if (MISMO_ORIGEN && location.pathname === "/") {
+      if (TENANT_SLUG) {
+        TENANT_SLUG = "";
+        try { localStorage.removeItem("gp_tenant_slug"); } catch (e) {}
+      }
+      gpArmarApi();
+      return;
+    }
+
+    var cand = gpSlugCandidato();
     if (!cand || cand === TENANT_SLUG) { gpArmarApi(); return; }
     var negadas = {};
     try { negadas = JSON.parse(sessionStorage.getItem("gp_tenant_no") || "{}"); } catch (e) {}
     if (negadas[cand]) { gpArmarApi(); return; }
 
-    if (/\/$/.test(location.pathname)) { TENANT_SLUG = cand; }   // optimista
+    /* Adopción OPTIMISTA SOLO CON BARRA FINAL (`/leandro/`), que es la forma
+       del link que se comparte y la única en que el path no puede ser una ruta
+       del SPA.
+
+       Adoptar siempre sería peor que el problema: en `/home` el widget pasaría
+       a pegarle a `/home/gp-api/...` durante el viaje de validación, y el
+       jugador que escriba justo ahí no le escribe a nadie. Los demás casos
+       --sin barra, o sacados del referrer-- se adoptan recién cuando la API
+       confirma que ese slug existe. */
+    if (/\/$/.test(location.pathname)) { TENANT_SLUG = cand; }
     gpArmarApi();
+
     fetch("/" + cand + "/gp-api/tenant_info.php", { cache: "no-store" })
-      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        /* "No se pudo preguntar" NO es "no existe". Una respuesta que no es
+           200 --red caída, 502 de un deploy-- no prueba nada, y con el código
+           viejo bastaba un parpadeo para que el slug quedara NEGADO en toda la
+           pestaña y el jugador terminara escribiendo en nuestro CRM. Solo un
+           ok:false explícito descarta al candidato. */
+        if (!r.ok) { throw { red: 1 }; }
+        return r.json();
+      })
       .then(function (d) {
-        if (!d || !d.ok) { throw 0; }
+        if (!d || !d.ok || (d.slug || "").toLowerCase() !== cand) { throw { red: 0 }; }
         TENANT_SLUG = cand;
         try { localStorage.setItem("gp_tenant_slug", cand); } catch (e) {}
       })
-      .catch(function () {
+      .catch(function (e) {
+        if (e && e.red) {
+          // No se pudo preguntar: se deja como estaba, sin negar nada.
+          return;
+        }
         negadas[cand] = 1;
-        try { sessionStorage.setItem("gp_tenant_no", JSON.stringify(negadas)); } catch (e) {}
+        try { sessionStorage.setItem("gp_tenant_no", JSON.stringify(negadas)); } catch (e2) {}
         if (TENANT_SLUG === cand) {
           TENANT_SLUG = "";
-          try { localStorage.removeItem("gp_tenant_slug"); } catch (e) {}
+          try { localStorage.removeItem("gp_tenant_slug"); } catch (e2) {}
         }
       })
       .then(gpArmarApi, gpArmarApi);
   })();
+
+  /* Para poder contestar "¿a qué CRM está mandando esta página?" sin leer el
+     código. Fue lo primero que hizo falta cuando los mensajes de un cliente
+     aparecieron en el CRM de la plataforma. */
+  try {
+    window.__gp_tenant = function () {
+      return { slug: TENANT_SLUG || "(plataforma)", api: BASE_API };
+    };
+  } catch (e) {}
 
   /* La API de la PLATAFORMA. Del bundle:
        Nn = { additionalBaseURL:"/api/user", loginUniversal:"/login",
