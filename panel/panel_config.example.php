@@ -24,6 +24,27 @@ return [
     // cada base como red de seguridad, además de la plantilla. Default:
     // /var/www/api/sql. Descomentar solo si tu layout es distinto.
     // 'SQL_DIR'   => '/var/www/api/sql',
+
+    // ---------------------------------------------------------------------
+    // CREAR LOS JUGADORES DE TODOS LOS CLIENTES CON NUESTRA CUENTA DE AGENTE
+    // (decision del dueno, 03/10/2026). Vacias o ausentes = cada cliente usa
+    // las suyas, que es el comportamiento de siempre.
+    //
+    // Afecta SOLO al bot de altas. El de sync sigue con las del cliente:
+    // espeja SUS jugadores contra SU base.
+    //
+    // ANTES DE PRENDERLO, LO QUE CAMBIA DE VERDAD: el nombre de usuario es
+    // unico en toda la plataforma, pero la PERTENENCIA es por agente -- el
+    // jugador queda colgando de la cuenta que lo creo. Con esto activo, los
+    // jugadores de un cliente quedan en NUESTRA estructura: no aparecen en su
+    // panel, el no les puede cargar fichas (el panel contesta "User ID X is
+    // not in user ID Y structure", el incidente del 29/09/2026) y las fichas
+    // que se les carguen salen de NUESTRO saldo de agente.
+    //
+    // O sea: resuelve el alta y mueve el problema al deposito. Si un cliente
+    // reclama que no puede cargarle a un jugador suyo, mirar esto primero.
+    // 'ALTAS_PANEL_USER' => '',
+    // 'ALTAS_PANEL_PASS' => '',
 ];
 
 // El token de MercadoPago (cobro de suscripción de los clientes a la
