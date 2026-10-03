@@ -101,7 +101,47 @@ chequear('y null NO frena el bot',
          'un error de consulta no puede dejar sin bot a todos los clientes');
 
 // ===========================================================================
-echo "\n=== 4. Con la base compartida no se elige una credencial al azar ===\n";
+echo "\n=== 4. Un cliente con la cola trabada se nota ===\n";
+/* PASÓ EL 01/10/2026: la cola de `leandro` tenía 2 altas, la más vieja de 42
+   minutos, con `intentos: 0` y sin un mensaje -- nadie las había tocado nunca,
+   porque su bot no existía. El jugador se registró y nunca tuvo cuenta.
+
+   EL AVISO YA EXISTÍA Y NO ALCANZABA: alta_avisar_trabadas() detecta este caso
+   desde el 04/09/2026 y lo describe bien, pero avisa por el Telegram DEL
+   TENANT donde corre, y un cliente recién dado de alta no lo tiene
+   configurado. El aviso se generaba y no lo recibía nadie. */
+chequear('provisionar revisa la cola de altas de cada cliente',
+         str_contains($prov, 'ALTAS COLGADAS')
+         && str_contains($prov, "estado IN ('pendiente', 'procesando')"),
+         'el aviso del propio tenant no llega: un cliente nuevo no tiene Telegram');
+chequear('y avisa por NUESTRO lado, que es el único que puede levantar el bot',
+         str_contains($prov, "'altas_colgadas'"));
+/* Las dos situaciones se arreglan en lugares distintos y el aviso tiene que
+   decir cuál es: sin contenedor (faltan credenciales) vs. con contenedor que
+   no saca trabajo (sesión, API key, WAF). */
+chequear('distingue "no hay bot" de "el bot no toma trabajo"',
+         str_contains($prov, "docker ps -q --filter")
+         && str_contains($prov, 'EXISTE pero no saca trabajo'));
+chequear('y nombra el arreglo concreto cuando faltan las credenciales',
+         str_contains($prov, 'Configuracion -> Integracion con ganamos'),
+         'un aviso que dice "algo no anda" se aprende a ignorar en dos días');
+/* La clave de dedupe lleva el slug y el ESTADO, no la cantidad: con el número
+   adentro, cada alta nueva volvería a sonar. */
+chequear('la clave del aviso no incluye la cantidad',
+         str_contains($prov, "'altas_colgadas:' . \$slug . ':' . (\$existe ? 'vivo' : 'sin-bot')"),
+         'con el número en la clave, cada alta nueva es un aviso nuevo');
+/* Las que no tienen password no cuentan: no se pueden crear igual, y mezclarlas
+   haría sonar el aviso por algo que este arreglo no resuelve. */
+chequear('solo cuenta las altas que el bot PUEDE crear',
+         str_contains($prov, 'AND password IS NOT NULL'));
+chequear('y deja pasar el backoff normal antes de avisar',
+         str_contains($prov, 'ALTAS_COLGADAS_MIN'),
+         'avisar a los 2 minutos sería avisar del backoff, que es el sistema funcionando');
+chequear('el bot propio no se vigila por acá (ya tiene lo suyo)',
+         str_contains($prov, 'tiene_bot_propio($slug)) { continue; }'));
+
+// ===========================================================================
+echo "\n=== 5. Con la base compartida no se elige una credencial al azar ===\n";
 /* El otro lado del mismo problema: nuestro bot pidiendo las credenciales del
    panel. Un LIMIT 1 sobre dos clientes que comparten db_nombre devuelve
    cualquiera de los dos, al azar del orden del índice -- y logueado como el
@@ -118,7 +158,7 @@ chequear('el bot cae a su .env, que es el comportamiento de siempre',
          str_contains($acc, 'se queda con las de su .env'));
 
 // ===========================================================================
-echo "\n=== 5. El error del panel se reconoce y se avisa ===\n";
+echo "\n=== 6. El error del panel se reconoce y se avisa ===\n";
 /* El mensaje REAL que quedó guardado en producción. Si el reconocimiento se
    rompe, este test lo dice antes que un jugador. */
 $real = 'deposito por API (200) {"status":234,"result":{},"error_message":'

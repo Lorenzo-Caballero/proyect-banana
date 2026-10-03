@@ -748,6 +748,120 @@ if ($huellaHoy !== '') {
 }
 
 // ---------------------------------------------------------------------------
+// ALTAS COLGADAS EN LA COLA DE UN CLIENTE.
+//
+// PASO DE VERDAD (01/10/2026). Nahuel: *"sigue tardando el alta de usuario,
+// por ejemplo desde mi cliente ganamoscrm.online/leandro/registro.html"*. No
+// tardaba: no salia nunca. Su cola tenia 2 altas, la mas vieja de 42 minutos,
+// con `intentos: 0` y sin un solo mensaje -- o sea que NADIE las habia tocado.
+// El bot de ese cliente no existia.
+//
+// EL AVISO YA EXISTIA Y NO ALCANZABA, que es lo que hace que esto valga la
+// pena. `alta_avisar_trabadas()` (api/altas_lib.php, del 04/09/2026) detecta
+// exactamente este caso y lo dice bien -- "pendientes que nadie tomo: el bot no
+// esta sondeando". Pero avisa por el Telegram DEL TENANT donde corre, y un
+// cliente recien dado de alta no tiene Telegram configurado. El aviso se
+// generaba y no lo recibia nadie.
+//
+// Y ADEMAS ES NUESTRO PROBLEMA, NO SUYO: el bot de un cliente lo levanta este
+// archivo. El unico que puede arreglarlo somos nosotros, asi que el aviso tiene
+// que llegar a nuestro lado. Por eso vive aca y no alla.
+//
+// Se mira la cola de CADA cliente y, si hay algo esperando, si existe el
+// contenedor que deberia atenderla. Las dos respuestas juntas distinguen los
+// dos problemas, que se arreglan en lugares distintos:
+//   sin contenedor  -> falta levantarlo (casi siempre: el cliente no cargo sus
+//                      credenciales de agente, y sin ellas no hay bot)
+//   con contenedor  -> el bot vive pero no saca trabajo (sesion, API key, WAF)
+// ---------------------------------------------------------------------------
+const ALTAS_COLGADAS_MIN = 15;   // debajo de esto es el backoff normal
+
+try {
+    $conCola = $pdo->query(
+        "SELECT id, slug, nombre, db_nombre, agente_usuario
+           FROM clientes
+          WHERE estado = 'activo' AND db_nombre IS NOT NULL AND db_nombre <> ''
+          ORDER BY slug"
+    )->fetchAll();
+} catch (Throwable $e) {
+    $conCola = [];
+    echo date('c') . " no pude listar clientes para revisar sus colas: " . $e->getMessage() . "\n";
+}
+
+foreach ($conCola as $c) {
+    $slug = preg_replace('/[^a-z0-9_-]/i', '', (string) $c['slug']);
+    if ($slug === '' || tiene_bot_propio($slug)) { continue; }   // el nuestro ya se vigila aparte
+
+    try {
+        $pc = new PDO(
+            'mysql:host=' . $cfg['DB_HOST'] . ';dbname=' . $c['db_nombre'] . ';charset=utf8mb4',
+            $cfg['DB_USER'], $cfg['DB_PASS'],
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]
+        );
+        /* Solo las que el bot PUEDE crear: sin password no hay nada que
+           tipear, y esa fila no sale igual (mismo criterio que
+           alta_avisar_trabadas). `intentos` separa "nadie la toco" de "se
+           intento y fallo". */
+        $q = $pc->prepare(
+            "SELECT COUNT(*) AS n,
+                    MAX(TIMESTAMPDIFF(MINUTE, pedido_en, NOW())) AS espera,
+                    SUM(intentos = 0) AS sin_tocar
+               FROM altas
+              WHERE estado IN ('pendiente', 'procesando')
+                AND password IS NOT NULL
+                AND pedido_en <= NOW() - INTERVAL ? MINUTE"
+        );
+        $q->execute([ALTAS_COLGADAS_MIN]);
+        $r = $q->fetch();
+    } catch (Throwable $e) {
+        // Una base caida o sin la tabla no es un cliente con la cola trabada.
+        continue;
+    }
+
+    $n = (int) ($r['n'] ?? 0);
+    if ($n < 1) { continue; }
+
+    $name   = 'altas-' . $slug;
+    $existe = trim((string) shell_exec(
+        'docker ps -q --filter ' . escapeshellarg('name=^' . $name . '$') . ' 2>/dev/null'
+    )) !== '';
+
+    $sinCreds = trim((string) ($c['agente_usuario'] ?? '')) === '';
+    $arreglo  = $existe
+        ? "El contenedor $name EXISTE pero no saca trabajo. Mira `docker logs --tail 50 $name`: "
+          . "sesion vencida, API key, o el panel rechazandolo."
+        : ($sinCreds
+            ? "No hay contenedor $name porque el cliente todavia no cargo sus credenciales "
+              . "de agente. Las carga EL en su CRM: Configuracion -> Integracion con ganamos. "
+              . "Sin eso no se le puede levantar el bot y sus altas no van a salir nunca."
+            : "No hay contenedor $name y las credenciales ESTAN cargadas: la proxima pasada "
+              . "deberia levantarlo. Si no lo hace, mira la salida de este mismo script.");
+
+    echo date('c') . " ALTAS COLGADAS $slug: $n esperando, la mas vieja hace "
+       . (int) ($r['espera'] ?? 0) . " min (bot: " . ($existe ? 'existe' : 'NO existe') . ")\n";
+
+    if (is_file(__DIR__ . '/../api/telegram_lib.php')) {
+        require_once __DIR__ . '/../api/telegram_lib.php';
+        if (function_exists('tg_evento')) {
+            /* La clave lleva el slug y el estado del bot, no la cantidad: si
+               llevara el numero, cada alta nueva seria un aviso. Asi es uno por
+               cliente y por problema, y vuelve a sonar si el problema cambia. */
+            tg_evento(null, 'altas_colgadas',
+                '🔴 Un cliente tiene altas que no salen', [
+                'Cliente'  => (string) ($c['nombre'] ?? $slug) . " ($slug)",
+                'Esperando' => $n . ' alta(s), la mas vieja hace ' . (int) ($r['espera'] ?? 0) . ' min'
+                             . ((int) ($r['sin_tocar'] ?? 0) === $n
+                                ? ' — NINGUNA fue intentada: no hay quien las tome.'
+                                : ''),
+                'Que hacer' => $arreglo,
+                'Ojo'       => 'El jugador ya se registro y esta esperando su cuenta. '
+                             . 'Su CRM no avisa de esto si el cliente no configuro Telegram.',
+            ], 'altas_colgadas:' . $slug . ':' . ($existe ? 'vivo' : 'sin-bot'));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // DOS CLIENTES CON LA MISMA BASE. Lo peor que puede pasarle a un multi-cliente.
 //
 // PASO DE VERDAD (24/09/2026): el cliente `ganamos` tenia db_nombre =
