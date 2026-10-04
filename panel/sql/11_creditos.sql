@@ -29,9 +29,7 @@ ALTER TABLE clientes
   ADD COLUMN IF NOT EXISTS aviso_umbral_ars DECIMAL(14,2) NOT NULL DEFAULT 10000.00
     COMMENT 'Debajo de esto se le avisa que se esta quedando sin creditos. 0 = no avisar.',
   ADD COLUMN IF NOT EXISTS creditos_desde DATETIME DEFAULT NULL
-    COMMENT 'Desde cuando se le cobra por transaccion. LAS CARGAS ANTERIORES NO SE COBRAN: '
-            'sin esto, activarle el modelo a un cliente con historial le vaciaria el saldo '
-            'de una con cargas de hace meses que nunca acordo pagar.',
+    COMMENT 'Desde cuando se cobra por transaccion; evita incluir cargas anteriores que el cliente no acordo pagar.',
   ADD COLUMN IF NOT EXISTS aviso_saldo_en DATETIME DEFAULT NULL
     COMMENT 'Ultimo aviso de saldo bajo. Evita repetirlo en cada pasada del cron.';
 
