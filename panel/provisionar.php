@@ -372,6 +372,7 @@ function duenos_del_destino($c) {
     if (!($pdo instanceof PDO)) { return null; }
     $dom  = trim((string) ($c['dominio'] ?? ''));
     $slug = strtolower(preg_replace('/[^a-z0-9_-]/i', '', (string) $c['slug']));
+    $ruta = strtolower(preg_replace('/[^a-z0-9-]/i', '', (string)($c['ruta_slug'] ?? $slug)));
     $path = !empty($c['path_tenant']) ? 1 : 0;
     if ($dom === '') { return null; }
 
@@ -381,9 +382,9 @@ function duenos_del_destino($c) {
             $q = $pdo->prepare(
                 "SELECT slug FROM clientes
                   WHERE estado = 'activo' AND dominio = ? AND COALESCE(path_tenant,0) = 1
-                    AND LOWER(slug) = ?"
+                    AND LOWER(COALESCE(ruta_slug,slug)) = ?"
             );
-            $q->execute([$dom, $slug]);
+            $q->execute([$dom, $ruta]);
         } else {
             /* Entra por la RAÍZ del dominio. Acá está el caso que nos costó
                caro: un cliente cargado con NUESTRO dominio y sin path_tenant
@@ -518,7 +519,8 @@ function asegurar_bot($c, $cfg) {
 
     // Cliente por-path: la API vive bajo /<slug>/gp-api/, no en la raíz del
     // dominio (que es compartida entre varios clientes de este tipo).
-    $base = 'https://' . $c['dominio'] . (!empty($c['path_tenant']) ? '/' . $slug : '');
+    $ruta = preg_replace('/[^a-z0-9-]/i', '', (string)($c['ruta_slug'] ?? $slug));
+    $base = 'https://' . $c['dominio'] . (!empty($c['path_tenant']) ? '/' . $ruta : '');
 
     $name = 'bot-' . $slug;
     /* MISMO CHEQUEO QUE EL DE ALTAS, y hace falta igual: este espeja jugadores
@@ -636,7 +638,8 @@ function asegurar_bot_altas($c, $cfg) {
         return 'sin bot de altas (faltan credenciales de agente)';
     }
 
-    $base = 'https://' . $c['dominio'] . (!empty($c['path_tenant']) ? '/' . $slug : '');
+    $ruta = preg_replace('/[^a-z0-9-]/i', '', (string)($c['ruta_slug'] ?? $slug));
+    $base = 'https://' . $c['dominio'] . (!empty($c['path_tenant']) ? '/' . $ruta : '');
 
     $name = 'altas-' . $slug;
     /* ANTES DE NADA: ¿esa URL es la suya? Ver destino_inseguro(). */
@@ -1138,7 +1141,7 @@ $conGlobales = trim((string) ($cfg['ALTAS_PANEL_USER'] ?? '')) !== ''
             && trim((string) ($cfg['ALTAS_PANEL_PASS'] ?? '')) !== '';
 
 $activos = $pdo->query(
-    "SELECT slug, dominio, path_tenant, db_nombre, agente_usuario, agente_password
+    "SELECT slug, ruta_slug, dominio, path_tenant, db_nombre, agente_usuario, agente_password
        FROM clientes
       WHERE estado = 'activo'"
     . ($conGlobales ? '' : " AND agente_usuario IS NOT NULL AND agente_usuario <> ''")

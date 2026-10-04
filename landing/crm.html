@@ -10951,9 +10951,9 @@ async function credTabla(cual){
       if (u.bloqueado){
         const b = u.bloqueo || {};
         elBloq.innerHTML = `<b>🚫 Bloqueado</b>` +
-          `No puede escribir en el chat (el campo se le deshabilita y lo deriva a ` +
-          `un agente), ni cargar, retirar, pedir una recarga o crear otra cuenta ` +
-          `desde su celular.` +
+          `El bot no le responde automáticamente; lo que escriba sigue llegando ` +
+          `a esta conversación para que lo revise un agente. No puede cargar, ` +
+          `retirar, pedir una recarga o crear otra cuenta desde su celular.` +
           (b.motivo ? `<br><b>Motivo:</b> ${esc(b.motivo)}` : "") +
           (b.por ? `<br><span style="color:var(--muted)">Lo bloqueó ${esc(b.por)}` +
                    (b.desde ? ` el ${esc(String(b.desde).slice(0,16))}` : "") + `</span>` : "") +
@@ -15538,8 +15538,8 @@ async function credTabla(cual){
       $("#bqOk").textContent     = estaba ? "Desbloquear" : "Bloquear";
       $("#bqOk").classList.toggle("peligro", !estaba);
       $("#bqSub").textContent = estaba
-        ? `@${st.usuario} va a poder volver a cargar, retirar y escribir por el chat.`
-        : `@${st.usuario} no va a poder cargar, retirar ni escribir por el chat.`;
+        ? `@${st.usuario} va a poder volver a cargar y retirar. El chat queda disponible.`
+        : `@${st.usuario} no va a poder cargar ni retirar. El chat seguirá disponible para que un agente revise sus mensajes.`;
 
       /* El motivo solo al bloquear: al desbloquear no hay nada que justificar.
          Se OCULTA, no se borra: la primera version hacia `.remove()` sobre la

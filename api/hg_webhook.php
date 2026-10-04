@@ -79,9 +79,10 @@ function hgw_resolver_tenant_por_host(): ?array
     try {
         if ($slug !== '') {
             $st = $ctl->prepare(
-                "SELECT id, db_nombre, dominio, slug, hg_propio_activo, hg_propio_token,
-                        hg_propio_account_id, hg_propio_webhook_secret, hg_propio_modo
-                   FROM clientes WHERE dominio = ? AND slug = ? AND path_tenant = 1 AND estado = 'activo' LIMIT 1"
+                "SELECT c.id,c.db_nombre,c.dominio,c.slug,c.hg_propio_activo,c.hg_propio_token,
+                        c.hg_propio_account_id,c.hg_propio_webhook_secret,c.hg_propio_modo
+                   FROM clientes_rutas_path r JOIN clientes c ON c.id=r.cliente_id
+                  WHERE r.dominio=? AND r.ruta_slug=? AND c.path_tenant=1 AND c.estado='activo' LIMIT 1"
             );
             $st->execute([$host, $slug]);
         } else {

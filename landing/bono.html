@@ -432,7 +432,7 @@
      Best-effort: si falla, quedan las credenciales y el login manual. */
   let sesionLista = false;
   async function autologin(usuario, clave){
-    if (esPorPath || !usuario || !clave) return false;
+    if (!usuario || !clave) return false;
     try {
       const r = await fetch('/api/user/login', {
         method: 'POST',
@@ -479,7 +479,7 @@
        SIN olvidar() antes de navegar (la lección de registro.html): el pedido
        guardado es lo único que permite volver y ver los datos de nuevo;
        borrarlo hacía que el que volvía se creara una SEGUNDA cuenta. */
-    const destino = esPorPath ? '/' + partesRuta[0] + '/' : '/';
+    const destino = esPorPath ? '/' + partesRuta[0] + '/#gp-chat' : '/#gp-chat';
     $('btnJugar').onclick = async ()=>{
       /* Si tocó "Entrar" antes de que el auto-login terminara, se lo espera
          un toque (máx ~1,2s). Después se navega igual: con sesión (lo

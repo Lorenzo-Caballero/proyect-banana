@@ -231,13 +231,10 @@ foreach (['lp.html', 'bono.html', 'registro.html'] as $pag) {
                           "localStorage.getItem('goldpaw_device')"));
 }
 
-echo "\n=== 5g. Mas de DOS cuentas la misma persona = ni chat ===\n";
+echo "\n=== 5g. Deteccion de multicuentas sin cerrar el chat ===\n";
 
-/* Pedido del dueño (18/09/2026): "que ni siquiera pueda hablar al chat si
-   tiene mas de dos cuentas la misma persona". ES un corte automatico —
-   decision del dueño que dio vuelta el "nada se bloquea solo" de este
-   archivo; el costo (telefono compartido legitimo) lo absorbe el agente,
-   porque el chat sigue entrando al CRM. */
+/* La señal queda disponible para controles administrativos, pero no silencia
+   la respuesta automatica ni bloquea la entrada del jugador. */
 $limpiar();
 $usuario('tv_mc1'); $usuario('tv_mc2'); $usuario('tv_mc3');
 vin_anotar_dispositivo($pdo, 'dev-mc', 'tv_mc1');
@@ -245,7 +242,7 @@ vin_anotar_dispositivo($pdo, 'dev-mc', 'tv_mc2');
 chequear('DOS cuentas en el aparato no cortan nada',
          !vin_multicuenta_excedida($pdo, '', 'dev-mc'));
 vin_anotar_dispositivo($pdo, 'dev-mc', 'tv_mc3');
-chequear('la TERCERA corta el chat, incluso anonimo (asi opera el que abre cuentas)',
+chequear('la TERCERA supera el umbral, incluso anonimo',
          vin_multicuenta_excedida($pdo, '', 'dev-mc'));
 chequear('otro aparato sigue como si nada',
          !vin_multicuenta_excedida($pdo, '', 'dev-ajeno'));
@@ -260,23 +257,23 @@ chequear('max=0 lo apaga entero (MULTICUENTA_MAX en config)',
 chequear('sin usuario y sin device no corta a nadie',
          !vin_multicuenta_excedida($pdo, '', ''));
 
-/* Y el chat lo usa de verdad (posicional). */
-chequear('chatbot.php corta al multicuenta antes de la IA',
-         str_contains(file_get_contents(__DIR__ . '/api/chatbot.php'),
-                      'vin_multicuenta_excedida('));
+/* La detección conserva su control de bonos, pero no debe apagar al bot. */
+$srcCB = file_get_contents(__DIR__ . '/api/chatbot.php');
+chequear('el bot contextualiza bonos duplicados',
+         str_contains($srcCB, 'chatbot_bloque_bonos_duplicados($pdo, $usuarioCliente)'));
+chequear('el corte multicuenta ya no interrumpe el chat',
+         !str_contains($srcCB, '$corteMulticuenta ||'));
 
-/* Ademas el CAMPO de escribir se deshabilita (18/09/2026, "que directamente
-   no le permita enviar ni escribir"): mis_mensajes reporta chat_cerrado en
-   cada sondeo y el widget cierra (y reabre) la entrada con eso. */
-chequear('mis_mensajes.php reporta chat_cerrado',
+/* El bloqueo automatico del campo se retiro (pedido del dueño, 04/10/2026).
+   Se conserva chat_cerrado=false por compatibilidad con widgets en cache. */
+chequear('mis_mensajes.php mantiene chat_cerrado en false',
          str_contains(file_get_contents(__DIR__ . '/api/mis_mensajes.php'),
-                      "'chat_cerrado' => \$chatCerrado"));
+                      "'chat_cerrado' => false"));
 $srcW2 = file_get_contents(__DIR__ . '/landing/widget.js');
-chequear('el widget deshabilita la entrada al verlo',
-         str_contains($srcW2, 'function chatEntradaCerrada(')
-         && str_contains($srcW2, 'chat_cerrado'));
-chequear('y el sondeo manda el device para cortar tambien al anonimo',
-         str_contains($srcW2, '"&device=" + encodeURIComponent(ls("goldpaw_device")'));
+chequear('el widget mantiene habilitada la entrada',
+         str_contains($srcW2, 'function chatEntradaAbierta(')
+         && str_contains($srcW2, 't.disabled = false;')
+         && !str_contains($srcW2, 't.disabled = cerrar;'));
 
 echo "
 === 5b. La IP NO vincula a nadie, y eso es a proposito ===

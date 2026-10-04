@@ -268,7 +268,8 @@ $cancelLimpiar = function () use ($pdo, $UC): void {
     $pdo->prepare("DELETE FROM acciones_saldo WHERE usuario = ?")->execute([$UC]);
 };
 $cancelLimpiar();
-$pdo->prepare("INSERT INTO usuarios (id, username, balance, coins, bonus, tiene_app) VALUES (990199, ?, 0, 0, 0, 1)")->execute([$UC]);
+$cancelId = (int)$pdo->query('SELECT COALESCE(MAX(id), 0) + 1 FROM usuarios')->fetchColumn();
+$pdo->prepare("INSERT INTO usuarios (id, username, balance, coins, bonus, tiene_app) VALUES (?, ?, 0, 0, 0, 1)")->execute([$cancelId, $UC]);
 $pdo->prepare("INSERT INTO movimientos (usuario, tipo, monto, motivo, origen)
                VALUES (?, 'bono', 0, 'Bono de la app: espera su próxima carga', 'bono_app')")->execute([$UC]);
 

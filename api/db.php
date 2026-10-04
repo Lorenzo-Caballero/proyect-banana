@@ -12,12 +12,10 @@
  * Host no registrado no conecta a nada.
  *
  * Clientes sin dominio propio (path_tenant=1 en `clientes`) entran por
- * https://ganamoscrm.online/<slug>/gp-api/algo.php en vez de un subdominio.
- * nginx es quien extrae ese <slug> del path (location con regex sobre
- * ^/([a-z0-9-]+)/gp-api/) y lo manda como header X-Tenant-Slug vía
- * fastcgi_param HTTP_X_TENANT_SLUG — acá solo se lee, nunca se parsea la URL
- * de nuevo. Si no llega ese header, es un cliente de dominio propio de
- * siempre y la resolución es igual que antes.
+ * https://ganamoscrm.online/<ruta-publica>/gp-api/algo.php. Nginx extrae esa
+ * ruta del path y la manda como X-Tenant-Slug; la tabla clientes_rutas_path
+ * la resuelve a un id interno estable y a su base. Las rutas antiguas quedan
+ * como alias. Si no llega el header, la resolución por dominio sigue igual.
  *
  * Credenciales en config.local.php (no van al repo):
  *   DB_HOST, DB_USER, DB_PASS   -> usuario de la app (con grant en todas las bases)
@@ -37,6 +35,9 @@ $__host = strtolower(preg_replace('/:\d+$/', '', $__host));
 // Cliente sin dominio propio: nginx lo manda como X-Tenant-Slug (ver arriba).
 // "" si no vino el header (caso normal, dominio propio).
 $__slug = isset($_SERVER['HTTP_X_TENANT_SLUG']) ? trim($_SERVER['HTTP_X_TENANT_SLUG']) : '';
+$__routeSlug = $__slug;
+$__clientSlug = '';
+$__publicSlug = '';
 
 $__dbHost  = cfg('DB_HOST', 'localhost');
 $__dbUser  = cfg('DB_USER');
@@ -51,19 +52,35 @@ try {
         array(PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION)
     );
     if ($__slug !== '') {
-        $__q = $__ctl->prepare(
-            "SELECT db_nombre FROM clientes
-             WHERE dominio = ? AND slug = ? AND path_tenant = 1 AND estado = 'activo' LIMIT 1"
-        );
-        $__q->execute(array($__host, $__slug));
+        try {
+            $__q = $__ctl->prepare(
+                "SELECT c.db_nombre,c.slug,c.ruta_slug FROM clientes_rutas_path r
+                   JOIN clientes c ON c.id=r.cliente_id
+                  WHERE r.dominio=? AND r.ruta_slug=? AND c.path_tenant=1 AND c.estado='activo' LIMIT 1"
+            );
+            $__q->execute(array($__host, $__slug));
+            $__tenant = $__q->fetch(PDO::FETCH_ASSOC);
+        } catch (PDOException $e) {
+            // Compatibilidad de despliegue: antes de correr la migración 12,
+            // conserva el ruteo anterior por slug interno.
+            $__q = $__ctl->prepare(
+                "SELECT db_nombre,slug,slug AS ruta_slug FROM clientes
+                 WHERE dominio=? AND slug=? AND path_tenant=1 AND estado='activo' LIMIT 1"
+            );
+            $__q->execute(array($__host, $__slug));
+            $__tenant = $__q->fetch(PDO::FETCH_ASSOC);
+        }
+        $__db = $__tenant['db_nombre'] ?? false;
+        $__clientSlug = (string)($__tenant['slug'] ?? '');
+        $__publicSlug = (string)($__tenant['ruta_slug'] ?? $__slug);
     } else {
         $__q = $__ctl->prepare(
             "SELECT db_nombre FROM clientes
              WHERE dominio = ? AND path_tenant = 0 AND estado = 'activo' LIMIT 1"
         );
         $__q->execute(array($__host));
+        $__db = $__q->fetchColumn();
     }
-    $__db = $__q->fetchColumn();
 } catch (PDOException $e) {
     http_response_code(500);
     die(json_encode(array('ok' => false, 'error' => 'No se pudo resolver el cliente')));
@@ -93,4 +110,6 @@ try {
 // Para quien lo necesite: qué cliente resolvimos.
 $GLOBALS['TENANT_DB']   = $__db;
 $GLOBALS['TENANT_HOST'] = $__host;
-$GLOBALS['TENANT_SLUG'] = $__slug;   // "" si es cliente de dominio propio
+$GLOBALS['TENANT_SLUG'] = $__clientSlug; // identidad estable; vacía en dominio propio
+$GLOBALS['TENANT_ROUTE_SLUG'] = $__routeSlug; // ruta solicitada, incluso si es alias
+$GLOBALS['TENANT_PUBLIC_SLUG'] = $__publicSlug; // ruta actual para generar enlaces nuevos

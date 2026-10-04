@@ -254,7 +254,7 @@ function hg_propio_api(string $metodo, string $path, ?array $body = null): array
 function hg_propio_webhook_url(): string
 {
     $host = (string)($GLOBALS['TENANT_HOST'] ?? $_SERVER['HTTP_HOST'] ?? 'ganamoscrm.online');
-    $slug = (string)($GLOBALS['TENANT_SLUG'] ?? '');
+    $slug = (string)($GLOBALS['TENANT_PUBLIC_SLUG'] ?? '');
     return 'https://' . $host . ($slug !== '' ? '/' . $slug : '') . '/gp-api/hg_webhook.php';
 }
 
@@ -268,7 +268,7 @@ function hg_propio_checkout_crear(float $monto, string $referencia, array $meta 
     $host = (string)($GLOBALS['TENANT_HOST'] ?? $_SERVER['HTTP_HOST'] ?? 'ganamoscrm.online');
     // Con slug, la vuelta del pago entra por /<slug>/: el jugador cae en la
     // plataforma de SU cliente y el widget re-captura el tenant de la URL.
-    $slug = (string)($GLOBALS['TENANT_SLUG'] ?? '');
+    $slug = (string)($GLOBALS['TENANT_PUBLIC_SLUG'] ?? '');
     [$code, $r] = hg_propio_api('POST', '/checkouts', [
         'country'          => 'AR',
         'amount'           => number_format($monto, 2, '.', ''),

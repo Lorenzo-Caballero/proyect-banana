@@ -79,7 +79,7 @@ function control_pdo(): PDO
 function cobro_webhook_url(): string
 {
     $host = (string)($GLOBALS['TENANT_HOST'] ?? $_SERVER['HTTP_HOST'] ?? 'ganamoscrm.online');
-    $slug = (string)($GLOBALS['TENANT_SLUG'] ?? '');
+    $slug = (string)($GLOBALS['TENANT_PUBLIC_SLUG'] ?? '');
     return 'https://' . $host . ($slug !== '' ? '/' . $slug : '') . '/gp-api/hg_webhook.php';
 }
 

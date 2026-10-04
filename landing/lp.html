@@ -606,16 +606,12 @@
     iniciarRotacionEspera();
   }
 
-  /* AUTO-LOGIN en la plataforma — el mismo bloque que registro.html, que era
-     el ÚNICO que lo tenía: el jugador de una landing del CRM recibía sus
-     credenciales y aterrizaba en la pantalla de login igual. Se loguea por
-     la persona apenas la cuenta está lista (mismo origen vía el proxy
-     replica/; endpoint /api/user/login, {status:0} = ok, sesión por cookie)
-     y "Entrar" cae al juego YA adentro. Best-effort: si falla, quedan las
-     credenciales y el login manual de siempre. */
+  /* AUTO-LOGIN en la plataforma Ganamos. El login usa el mismo origen y
+     endpoint para clientes con dominio propio o con ruta /<slug>/. Al terminar,
+     la cookie permite entrar al juego integrado con el asistente del cliente. */
   let sesionLista = false;
   async function autologin(usuario, clave){
-    if (esPorPath || !usuario || !clave) return false;
+    if (!usuario || !clave) return false;
     try {
       const r = await fetch('/api/user/login', {
         method: 'POST',
@@ -651,7 +647,7 @@
     // que permite volver a esta página y ver los datos de nuevo. Borrarlo
     // hacía que el que volvía se encontrara el formulario vacío y se creara
     // una SEGUNDA cuenta con otro nombre.
-    const destino = esPorPath ? '/' + partesRuta[0] + '/chat.html' : '/';
+    const destino = esPorPath ? '/' + partesRuta[0] + '/#gp-chat' : '/#gp-chat';
     const irAJugar = async ()=>{
       /* Si tocó "Entrar" antes de que el auto-login terminara, se lo espera
          un toque (máx ~1,2s). Después se navega igual: con sesión (lo

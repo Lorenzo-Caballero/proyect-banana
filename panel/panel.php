@@ -107,6 +107,16 @@ function slugify(string $s): string {
     $s = preg_replace('/[^a-z0-9]+/', '-', $s);
     return trim((string) $s, '-');
 }
+function ruta_slug_valida(string $s): bool {
+    static $reservadas = ['home','slots','casino','games','game','poker','live','sports','sportsbook',
+        'profile','account','deposit','withdraw','wallet','cashier','settings','history','support','help',
+        'rewards','affiliate','promos','promotions','bonus','bonuses','roulette','user','signup',
+        'forgot-password','login','logout','register','registration','chat','crm','admin','registro',
+        'bono','lp','gp-api','api','panel','replica','assets','img','fonts','css','js','sw'];
+    return strlen($s) >= 2 && strlen($s) <= 60
+        && preg_match('/^[a-z0-9]+(?:-[a-z0-9]+)*$/', $s)
+        && !in_array($s, $reservadas, true);
+}
 function salida(array $x, int $code = 200): void { http_response_code($code); echo json_encode($x); exit; }
 
 /**
@@ -182,11 +192,51 @@ if (!$oper) salida(['ok' => false, 'error' => 'no autorizado'], 401);
 switch ($accion) {
     case 'listar':
         $rows = $pdo->query(
-            'SELECT id,nombre,slug,dominio,path_tenant,cobro_alias,coins_por_peso,estado,creado,
+            'SELECT id,nombre,slug,ruta_slug,dominio,path_tenant,db_nombre,aprovisionado,aprov_detalle,cobro_alias,coins_por_peso,estado,creado,
                     saldo_usd,costo_diario_usd,suscripcion_estado,trial_hasta
              FROM clientes ORDER BY creado DESC'
         )->fetchAll();
         salida(['ok' => true, 'clientes' => $rows]);
+
+    case 'detalle_cliente': {
+        $id = (int) ($in['id'] ?? 0);
+        $st = $pdo->prepare('SELECT id,nombre,slug,ruta_slug,dominio,path_tenant,db_nombre,estado,creado,aprovisionado,aprov_detalle,notas FROM clientes WHERE id=?');
+        $st->execute([$id]);
+        $c = $st->fetch();
+        if (!$c) salida(['ok' => false, 'error' => 'no existe'], 404);
+        $dominio = rtrim((string)$c['dominio'], '/');
+        $base = 'https://' . $dominio . '/' . ((int)$c['path_tenant'] ? rawurlencode((string)($c['ruta_slug'] ?: $c['slug'])) . '/' : '');
+        $urls = ['crm' => $base . 'crm.html', 'jugadores' => $base, 'registro' => $base . 'registro.html', 'bono' => $base . 'bono.html'];
+        $rutasAnteriores = [];
+        if ((int)$c['path_tenant'] === 1) {
+            $qRutas = $pdo->prepare('SELECT ruta_slug FROM clientes_rutas_path WHERE cliente_id=? AND dominio=? AND ruta_slug<>? ORDER BY creada DESC');
+            $qRutas->execute([$id,$c['dominio'],(string)($c['ruta_slug'] ?: $c['slug'])]);
+            $rutasAnteriores = $qRutas->fetchAll(PDO::FETCH_COLUMN);
+        }
+        $diagnostico = ['base_datos' => 'no disponible', 'operadores' => [], 'chatbot_activo' => null, 'landings' => []];
+        try {
+            $db = cliente_db($pdo, $id);
+            if ($db) {
+                $cpdo = conectar_cliente($cfg, $db);
+                $diagnostico['base_datos'] = 'conectada';
+                $tables = $cpdo->query('SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE()')->fetchAll(PDO::FETCH_COLUMN);
+                if (in_array('operadores', $tables, true)) {
+                    $diagnostico['operadores'] = $cpdo->query('SELECT username,rol,activo,ultimo_login FROM operadores ORDER BY username')->fetchAll();
+                }
+                if (in_array('config_chatbot', $tables, true)) {
+                    $row = $cpdo->query('SELECT activo FROM config_chatbot LIMIT 1')->fetch();
+                    $diagnostico['chatbot_activo'] = $row ? (bool)$row['activo'] : null;
+                }
+                if (in_array('landings', $tables, true)) {
+                    $diagnostico['landings'] = $cpdo->query('SELECT slug,nombre,bono_pct FROM landings WHERE activa=1 ORDER BY nombre')->fetchAll();
+                    foreach ($diagnostico['landings'] as $landing) $urls['campania:' . $landing['nombre']] = $base . 'lp.html?l=' . rawurlencode((string)$landing['slug']);
+                }
+            }
+        } catch (Throwable $e) {
+            $diagnostico['base_datos'] = 'sin conexión';
+        }
+        salida(['ok' => true, 'cliente' => $c, 'urls' => $urls, 'rutas_anteriores' => $rutasAnteriores, 'diagnostico' => $diagnostico]);
+    }
 
     case 'ver':
         $id = (int) ($in['id'] ?? ($_GET['id'] ?? 0));
@@ -226,6 +276,9 @@ switch ($accion) {
         if ($slug === '') {
             salida(['ok' => false, 'error' => 'no se pudo generar un slug válido del nombre'], 422);
         }
+        if (!ruta_slug_valida($slug)) {
+            salida(['ok' => false, 'error' => 'esa ruta no está disponible o coincide con una página del sistema'], 422);
+        }
         $botKey = trim($in['bot_api_key'] ?? '') ?: bin2hex(random_bytes(24));
         // Nombre de la base del cliente: solo [a-z0-9_], porque va sin escapar
         // en un CREATE DATABASE del worker. gp_ de prefijo para no chocar con
@@ -263,17 +316,18 @@ switch ($accion) {
         $colsCrm = $hayCrmCols ? 'crm_usuario,crm_password_hash,' : '';
         $phCrm   = $hayCrmCols ? '?,?,' : '';
         try {
+            $pdo->beginTransaction();
             $st = $pdo->prepare(
                 'INSERT INTO clientes
-                 (nombre,slug,dominio,path_tenant,db_nombre,agente_usuario,agente_password,' . $colsCrm . 'cobro_alias,cobro_cbu,
+                 (nombre,slug,ruta_slug,dominio,path_tenant,db_nombre,agente_usuario,agente_password,' . $colsCrm . 'cobro_alias,cobro_cbu,
                   cobro_titular,coins_por_peso,' . col_ia($pdo) . ',bot_api_key,notas,suscripcion_estado,trial_hasta)
-                 VALUES (?,?,?,?,?,?,?,' . $phCrm . '?,?,?,?,?,?,?,?,?)'
+                 VALUES (?,?,?,?,?,?,?,?,' . $phCrm . '?,?,?,?,?,?,?,?,?)'
             );
             // Todo cliente nuevo arranca con 14 días de cortesía: el cron de
             // consumo (panel/consumo_diario.php) no le descuenta saldo ni lo
             // bloquea mientras siga en 'trial' y no haya pasado trial_hasta.
             $params = [
-                $nombre, $slug, $dominio, $pathTenant, $dbNombre,
+                $nombre, $slug, $slug, $dominio, $pathTenant, $dbNombre,
                 $in['agente_usuario'] ?? null, $in['agente_password'] ?? null,
             ];
             if ($hayCrmCols) {
@@ -292,12 +346,17 @@ switch ($accion) {
                 $in['notas'] ?? null,
                 'trial', date('Y-m-d', strtotime('+14 days')),
             ]));
+            $idNuevo = (int)$pdo->lastInsertId();
+            $pdo->prepare('INSERT INTO clientes_rutas_path (dominio,ruta_slug,cliente_id) VALUES (?,?,?)')
+                ->execute([$dominio, $slug, $idNuevo]);
+            $pdo->commit();
             // aprovisionado queda en 0 (default): el worker le crea la base en < 1 min.
             $url = $pathTenant ? ('https://' . $dominio . '/' . $slug . '/crm.html')
                                 : ('https://' . $dominio . '/crm.html');
-            salida(['ok' => true, 'id' => (int) $pdo->lastInsertId(), 'slug' => $slug,
+            salida(['ok' => true, 'id' => $idNuevo, 'slug' => $slug, 'ruta_slug' => $slug,
                     'db_nombre' => $dbNombre, 'bot_api_key' => $botKey, 'url' => $url]);
         } catch (PDOException $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
             $dup = $e->getCode() === '23000';
             salida(['ok' => false, 'error' => $dup ? 'ya existe un cliente con ese dominio y slug' : 'no se pudo crear'], $dup ? 409 : 500);
         }
@@ -544,10 +603,8 @@ switch ($accion) {
     case 'editar': {
         // Edita los datos de un cliente ya creado.
         //
-        // NO se toca `slug` ni `dominio`: son la URL con la que el cliente ya
-        // esta operando y la llave con la que db.php resuelve su base. Y
-        // `db_nombre` menos todavia -- cambiarlo apunta el CRM a otra base
-        // (o a una que no existe) sin mover un solo dato.
+        // `slug` and `db_nombre` stay fixed internal identifiers. Only the
+        // public path may change; its previous value remains an alias.
         $id = (int) ($in['id'] ?? 0);
         if ($id <= 0) salida(['ok' => false, 'error' => 'falta el id'], 422);
 
@@ -592,16 +649,52 @@ switch ($accion) {
         $vals[] = $id;
 
         try {
+            $pdo->beginTransaction();
+            $qCli = $pdo->prepare('SELECT id,dominio,path_tenant,slug,ruta_slug FROM clientes WHERE id=? FOR UPDATE');
+            $qCli->execute([$id]);
+            $cli = $qCli->fetch();
+            if (!$cli) { $pdo->rollBack(); salida(['ok'=>false,'error'=>'cliente no existe'],404); }
+            if (array_key_exists('ruta_slug', $in)) {
+                if ((int)$cli['path_tenant'] !== 1) {
+                    $pdo->rollBack();
+                    salida(['ok'=>false,'error'=>'la ruta se edita solo en clientes por ruta'],422);
+                }
+                $rutaNueva = strtolower(trim((string)$in['ruta_slug']));
+                if (!ruta_slug_valida($rutaNueva)) {
+                    $pdo->rollBack();
+                    salida(['ok'=>false,'error'=>'ruta inválida o reservada por el sistema'],422);
+                }
+                $rutaVieja = (string)($cli['ruta_slug'] ?: $cli['slug']);
+                if ($rutaNueva !== $rutaVieja) {
+                    $qRuta = $pdo->prepare('SELECT cliente_id FROM clientes_rutas_path WHERE dominio=? AND ruta_slug=?');
+                    $qRuta->execute([$cli['dominio'],$rutaNueva]);
+                    $duenoRuta = $qRuta->fetchColumn();
+                    if ($duenoRuta && (int)$duenoRuta !== $id) {
+                        $pdo->rollBack();
+                        salida(['ok'=>false,'error'=>'esa ruta ya está asignada o reservada por otro cliente'],409);
+                    }
+                    // Conservar tanto la ruta actual como el slug anterior
+                    // evita perder accesos y hace que ambos resuelvan al mismo id.
+                    $pdo->prepare('INSERT IGNORE INTO clientes_rutas_path (dominio,ruta_slug,cliente_id) VALUES (?,?,?)')
+                        ->execute([$cli['dominio'],$rutaVieja,$id]);
+                    $pdo->prepare('INSERT IGNORE INTO clientes_rutas_path (dominio,ruta_slug,cliente_id) VALUES (?,?,?)')
+                        ->execute([$cli['dominio'],$rutaNueva,$id]);
+                    $pdo->prepare('UPDATE clientes SET ruta_slug=? WHERE id=?')->execute([$rutaNueva,$id]);
+                }
+            }
             $st = $pdo->prepare('UPDATE clientes SET ' . implode(', ', $sets) . ' WHERE id = ?');
             $st->execute($vals);
             // rowCount 0 tambien pasa si guardaron sin cambiar nada, asi que
             // no alcanza para decir "no existe": se chequea aparte.
             $ex = $pdo->prepare('SELECT 1 FROM clientes WHERE id = ?');
             $ex->execute([$id]);
-            if (!$ex->fetchColumn()) salida(['ok' => false, 'error' => 'cliente no existe'], 404);
-            salida(['ok' => true]);
+            if (!$ex->fetchColumn()) { $pdo->rollBack(); salida(['ok' => false, 'error' => 'cliente no existe'], 404); }
+            $pdo->commit();
+            salida(['ok' => true, 'ruta_slug' => $rutaNueva ?? ($cli['ruta_slug'] ?: $cli['slug'])]);
         } catch (PDOException $e) {
-            salida(['ok' => false, 'error' => 'no se pudo guardar'], 500);
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            $dup = $e->getCode() === '23000';
+            salida(['ok' => false, 'error' => $dup ? 'esa ruta ya está asignada a este u otro cliente (también puede ser una ruta anterior reservada)' : 'no se pudo guardar'], $dup ? 409 : 500);
         }
     }
 
@@ -637,11 +730,15 @@ switch ($accion) {
             salida(['ok' => false, 'error' => 'el nombre no coincide'], 422);
         }
         try {
+            $pdo->beginTransaction();
+            $pdo->prepare('DELETE FROM clientes_rutas_path WHERE cliente_id=?')->execute([$id]);
             $pdo->prepare('DELETE FROM clientes WHERE id = ?')->execute([$id]);
+            $pdo->commit();
             // La base del cliente queda en el servidor, a proposito. Se informa
             // para que quien la quiera eliminar sepa cual es.
             salida(['ok' => true, 'modo' => 'purgado', 'db_huerfana' => $cli['db_nombre']]);
         } catch (PDOException $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
             salida(['ok' => false, 'error' => 'no se pudo borrar'], 500);
         }
     }

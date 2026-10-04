@@ -179,7 +179,15 @@
 
   if (!AUTH){
     body.className = 'gate';
-    body.innerHTML = 'Iniciá sesión para usar el asistente.<br><a href="acceso.html" target="_top">Ingresar</a>';
+    const path = location.pathname.split('/').filter(Boolean);
+    const tenant = path.length > 1 ? path[0] : '';
+    const link = document.createElement('a');
+    link.href = tenant ? '/' + encodeURIComponent(tenant) + '/#gp-chat' : '/#gp-chat';
+    link.target = '_top';
+    link.textContent = 'Ingresar a Ganamos';
+    body.textContent = 'Iniciá sesión en Ganamos para usar el asistente. ';
+    body.appendChild(document.createElement('br'));
+    body.appendChild(link);
     return;
   }
   const USUARIO = jwtUser(AUTH);

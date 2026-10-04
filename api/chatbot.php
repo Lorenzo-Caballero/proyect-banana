@@ -66,6 +66,7 @@ require_once __DIR__ . '/telegram_lib.php';
    arriba porque el primer uso está en el flujo del bot apagado, fuera de
    toda función. */
 require_once __DIR__ . '/vinculos_lib.php';
+require_once __DIR__ . '/chatbot_bonos_lib.php';
 /* ip_cliente(): la IP del jugador y no el edge de Cloudflare. Se carga acá
    arriba y no dentro de la función que la usa primero, porque ahora la miran
    DOS cosas en puntos distintos del archivo --el límite de tasa y el corte por
@@ -567,13 +568,9 @@ if (!$botActivo || !$iaEsteChat) {
    seguidas una vez. */
 $corteBloqueado = $usuarioCliente !== '' && function_exists('vin_bloqueado')
     && vin_bloqueado($pdo, $usuarioCliente);
-/* Y TAMBIEN AL MULTICUENTA, sin esperar el bloqueo (pedido del dueño,
-   18/09/2026: "que ni siquiera pueda hablar al chat si tiene mas de dos
-   cuentas la misma persona"). Corta por el aparato — alcanza al anonimo,
-   que es como opera el que abre cuentas — o por las señales de la cuenta
-   identificada. El umbral y el apagado viven en MULTICUENTA_MAX. */
-$corteMulticuenta = !$corteBloqueado && function_exists('vin_multicuenta_excedida')
-    && vin_multicuenta_excedida($pdo, $usuarioCliente, (string)($GLOBALS['CB_DEVICE_ID'] ?? ''));
+/* La detección de multicuentas no apaga el bot: los bonos tienen sus propios
+   candados al acreditarse y el contexto del jugador le permite explicar un
+   rechazo. Compartir aparato o superar el umbral no debe impedir conversar. */
 
 /* Y EL ULTIMO RECURSO: la IP. Cubre al unico que los otros dos no alcanzan --
    el que no tiene cuenta NI app, llega por el navegador, molesta, borra el
@@ -594,10 +591,10 @@ if ($ipChat !== '' && $sessionId !== '') {
         )->execute([$ipChat, $sessionId, $usuarioCliente !== '' ? $usuarioCliente : ('anon:' . $sessionId)]);
     } catch (Throwable $e) { /* sin la migracion 73 no hay columna: se sigue */ }
 }
-$corteIp = !$corteBloqueado && !$corteMulticuenta && $ipChat !== ''
+$corteIp = !$corteBloqueado && $ipChat !== ''
     && function_exists('vin_ip_bloqueada') && vin_ip_bloqueada($pdo, $ipChat) !== null;
 
-if ($corteBloqueado || $corteMulticuenta || $corteIp) {
+if ($corteBloqueado || $corteIp) {
     $ultimoUser = '';
     for ($i = count($historial) - 1; $i >= 0; $i--) {
         if ((($historial[$i]['role'] ?? '') === 'user') && !empty($historial[$i]['content'])) {
@@ -612,11 +609,11 @@ if ($corteBloqueado || $corteMulticuenta || $corteIp) {
         crm_registrar_turno($pdo, $sessionId, $ultimoUser, $aviso,
                             $usuarioCliente !== '' ? $usuarioCliente : null);
     }
-    // chat_cerrado: el widget deshabilita el campo de escribir al verlo
-    // (pedido del dueño, 18/09/2026). mis_mensajes.php manda el mismo flag
-    // en cada sondeo, que es lo que tambien lo REABRE tras un desbloqueo.
+    // Compatibilidad con widgets anteriores: false permite reabrir una entrada
+    // que una versión vieja haya deshabilitado. El chat queda escribible; el
+    // caso igual queda disponible para revisión humana.
     echo json_encode(['ok' => true, 'respuesta' => $aviso, 'bot_desactivado' => true,
-                      'chat_cerrado' => true],
+                      'chat_cerrado' => false],
                      JSON_UNESCAPED_UNICODE);
     exit;
 }
@@ -637,7 +634,8 @@ if ($usuarioCliente !== '') {
           . "- Usa ese usuario para las recargas y las consultas."
           . chatbot_bloque_estado_app($pdo, $usuarioCliente)
           . chatbot_bloque_bonos($pdo, $usuarioCliente)
-          . chatbot_bloque_bienvenida($pdo, $usuarioCliente);
+          . chatbot_bloque_bienvenida($pdo, $usuarioCliente)
+          . chatbot_bloque_bonos_duplicados($pdo, $usuarioCliente);
 } else {
     $sys .= "\n\nIDENTIDAD (esto manda sobre todo lo anterior):\n"
           . "El jugador NO inicio sesion. No sabes quien es.\n"

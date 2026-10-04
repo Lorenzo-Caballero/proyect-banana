@@ -2083,10 +2083,9 @@
       .then(function (r){ return r.json(); })
       .then(function (d){
         if (d && !d.ok) log("chat <- ERROR del server:", d.error || "(sin detalle)");
-        // El server cerro el chat para esta persona (bloqueada o
-        // multicuenta): se deshabilita el campo de escribir. La respuesta
-        // fija de este mismo turno se pinta normal, abajo.
-        if (d && d.chat_cerrado) chatEntradaCerrada(true);
+        // Un caso derivado o marcado para revisión sigue admitiendo mensajes.
+        // false reabre widgets viejos tras actualizar el backend.
+        if (d && d.chat_cerrado === false) chatEntradaAbierta();
         datos = d;
         // Cuánto "tarda en tipear" según el largo de la respuesta: ~28ms por
         // caracter, entre 1.1s y 4s. Una respuesta larga se siente escrita, no
@@ -2731,29 +2730,20 @@
     }, ms);
   }
 
-  /* CHAT CERRADO para esta persona (bloqueada, o con mas cuentas de las
-     permitidas): se deshabilita el propio campo de escribir — pedido del
-     dueño, 18/09/2026: "que directamente no le permita enviar ni escribir
-     mensajes". El server lo dice en cada sondeo (mis_mensajes.chat_cerrado)
-     y en la respuesta del turno; el MISMO flag en false lo reabre tras un
-     desbloqueo, sin recargar la pagina. El corte del lado del server queda
-     de respaldo para quien esquive la UI. */
-  var chatCerrado = false;
-  function chatEntradaCerrada(cerrar){
-    if (cerrar === chatCerrado) return;
-    chatCerrado = cerrar;
+  /* Compatibilidad al actualizar: deja disponibles los controles si esta
+     versión ya está abierta o el backend manda chat_cerrado=false. Derivar una
+     conversación pausa las respuestas del bot, nunca la entrada del jugador. */
+  function chatEntradaAbierta(){
     var t = document.getElementById("gp-t"),
         s = document.getElementById("gp-s"),
         a = document.getElementById("gp-att"),
         q = document.getElementById("gp-quick");
     if (!t) return;
-    t.disabled = cerrar;
-    if (cerrar) t.value = "";
-    t.placeholder = cerrar ? "El chat no está disponible. Un agente va a revisar tu caso."
-                           : "Escribí un mensaje…";
-    if (s) s.disabled = cerrar;
-    if (a) a.style.display = cerrar ? "none" : "";
-    if (q) q.style.display = cerrar ? "none" : "";
+    t.disabled = false;
+    t.placeholder = "Escribí un mensaje…";
+    if (s) s.disabled = false;
+    if (a) a.style.display = "";
+    if (q) q.style.display = "";
   }
 
   var lastLeidoUser = "";
@@ -2768,16 +2758,13 @@
     var abierto = panel.classList.contains("open");
     fetch(API_MIS + "?session_id=" + encodeURIComponent(sid) + "&desde=" + lastAgentId
           + (USUARIO ? "&usuario=" + encodeURIComponent(USUARIO) : "")
-          // El id de instalacion: con el, el server sabe si este chat esta
-          // CERRADO para esta persona aunque venga anonima (ver chat_cerrado).
-          + "&device=" + encodeURIComponent(ls("goldpaw_device") || "")
           + (abierto ? "&visto=1" : ""))
       .then(function (r){ return r.json(); })
       .then(function (d){
-        // Cerrar (o REABRIR tras un desbloqueo) el campo de escribir, con lo
-        // que diga el server en este sondeo.
-        if (d && d.ok && typeof d.chat_cerrado === "boolean"){
-          chatEntradaCerrada(d.chat_cerrado);
+        // Reabrir clientes que tengan un widget viejo que hubiese bloqueado la
+        // entrada. Los casos derivados también siguen abiertos.
+        if (d && d.ok && d.chat_cerrado === false){
+          chatEntradaAbierta();
         }
         if (d.ok && d.mensajes && d.mensajes.length){
           if (!panel.classList.contains("open")){

@@ -97,6 +97,8 @@
   td .dom{display:inline-flex;align-items:center;gap:6px;color:var(--vio);font-family:var(--mono);font-size:13px;
           text-decoration:none;white-space:nowrap}
   td .dom:hover{color:var(--gold)}
+  .client-detail{border:0;background:none;color:var(--vio);font:inherit;font-weight:700;padding:0;cursor:pointer;text-align:left}
+  .client-detail:hover{text-decoration:underline;color:var(--gold)}
   td .dom svg{width:13px;height:13px;opacity:.7}
   td .dom .op{color:var(--faint)}
   td .dom .sl{color:var(--gold)}
@@ -253,7 +255,7 @@
     <div class="tbl-wrap">
       <table>
         <thead><tr>
-          <th>Cliente</th><th>URL</th><th>Cobro</th><th>Coins/peso</th><th>Estado</th><th>Suscripción</th><th></th>
+          <th>Cliente</th><th>Enlaces</th><th>Cobro</th><th>Coins/peso</th><th>Estado</th><th>Suscripción</th><th></th>
         </tr></thead>
         <tbody id="tbody"></tbody>
       </table>
@@ -432,6 +434,12 @@
     <label>Nombre *</label>
     <input id="edNombre" class="field" placeholder="Casino del Fauno">
 
+    <div id="edRutaBox" class="hide">
+      <label style="margin-top:18px">Enlace público de jugadores</label>
+      <div class="url-field"><span class="prefijo" id="edRutaDominio"></span><input id="edRutaSlug" class="field" maxlength="60" autocomplete="off" spellcheck="false"></div>
+      <div class="hint"><span>Podés cambiar esta ruta. Las rutas anteriores seguirán llevando a la misma cuenta; la base, el bot y los datos del cliente no cambian.</span></div>
+    </div>
+
     <!-- Credenciales del agente y cuenta de cobro: las gestiona el cliente
          desde su CRM (ver el comentario en el modal de alta). -->
     <div class="hint" style="margin-top:14px">
@@ -448,8 +456,7 @@
 
     <div class="hint">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-      <span>La URL no se puede cambiar: es con la que el cliente ya está operando
-            y la que resuelve su base de datos.</span>
+      <span>En clientes por ruta solo se cambia el enlace público. El identificador interno, la base y los datos no se modifican.</span>
     </div>
 
     <div id="edMsg" class="msg"></div>
@@ -663,6 +670,26 @@
     });
   }
 
+  function abrirDetalle(id){
+    api("detalle_cliente", {id:Number(id)}).then(function(res){
+      if (!res.j || !res.j.ok) { alert((res.j && res.j.error) || "No pude cargar el detalle"); return; }
+      var c=res.j.cliente, d=res.j.diagnostico, urls=res.j.urls;
+      var ov=document.getElementById("ovDetalle");
+      if(!ov){ ov=document.createElement("div"); ov.id="ovDetalle"; ov.className="ov"; document.body.appendChild(ov); }
+      var links=Object.keys(urls).map(function(k){var label=k.indexOf('campania:')===0?'Landing: '+k.slice(9):k==='jugadores'?'Ganamos para jugadores':k==='crm'?'Panel del cliente (CRM)':k==='registro'?'Alta de jugadores':k==='bono'?'Landing de bienvenida':k;return '<div class="creado"><b>'+esc(label)+'</b><br><a href="'+esc(urls[k])+'" target="_blank" rel="noopener">'+esc(urls[k])+'</a> <button type="button" data-copy="'+esc(urls[k])+'">Copiar</button></div>';}).join("");
+      var ops=d.operadores.length?d.operadores.map(function(o){return '<li>'+esc(o.username)+' · '+esc(o.rol)+' · '+(Number(o.activo)?'activo':'inactivo')+' · último acceso: '+esc(o.ultimo_login||'nunca')+'</li>';}).join(""):'<li>Sin datos de operadores</li>';
+      var lands=d.landings.length?d.landings.map(function(l){return '<li>'+esc(l.nombre)+' · '+esc(l.bono_pct)+'% bienvenida</li>';}).join(""):'<li>Sin campañas activas encontradas</li>';
+      var aliases=(res.j.rutas_anteriores||[]).length?'<div class="creado"><b>Enlaces anteriores que siguen funcionando</b><ul>'+res.j.rutas_anteriores.map(function(r){return '<li><a href="https://'+esc(c.dominio)+'/'+esc(r)+'/" target="_blank" rel="noopener">/'+esc(r)+'/</a></li>';}).join('')+'</ul></div>':'';
+        ov.innerHTML='<div class="modal" style="max-width:760px"><div class="modal-head"><div><h3>'+esc(c.nombre)+'</h3><p class="sub">Enlaces y diagnóstico de solo lectura</p></div></div>'+links+
+          '<div class="creado"><b>Estado de la cuenta</b><dl><dt>CRM</dt><dd>'+esc(c.estado)+'</dd><dt>Ruta pública</dt><dd>'+esc(c.dominio)+(Number(c.path_tenant)?'/'+esc(c.ruta_slug||c.slug):'')+'</dd><dt>Identificador interno</dt><dd>'+esc(c.slug)+'</dd><dt>Provisionamiento</dt><dd>'+ (Number(c.aprovisionado)?'completado':'pendiente')+' '+esc(c.aprov_detalle||'')+'</dd><dt>Base del cliente</dt><dd>'+esc(d.base_datos)+'</dd><dt>Chatbot IA</dt><dd>'+ (d.chatbot_activo===null?'sin dato':d.chatbot_activo?'activo':'inactivo')+'</dd><dt>Creado</dt><dd>'+esc(c.creado)+'</dd></dl><p class="sub">Nombre, notas y ruta pública se editan con «Editar». El identificador interno y la base quedan fijos para conservar el aislamiento.</p><div><b>Notas</b><br>'+esc(c.notas||'Sin notas')+'</div></div>'+
+        aliases+'<div class="creado"><b>Operadores CRM</b><ul>'+ops+'</ul></div><div class="creado"><b>Campañas activas</b><ul>'+lands+'</ul></div>'+
+        '<div class="row-btns"><button class="btn ghost" id="detalleCerrar">Cerrar</button></div></div>';
+      ov.classList.add("on");
+      ov.onclick=function(e){if(e.target===ov||e.target.id==='detalleCerrar')ov.classList.remove('on');};
+      ov.querySelectorAll('[data-copy]').forEach(function(b){b.onclick=function(){navigator.clipboard.writeText(b.dataset.copy);};});
+    }).catch(function(){alert("No pude conectar para leer el detalle");});
+  }
+
   // ---------- login ----------
   function mostrarApp(){
     $("vLogin").classList.add("hide");
@@ -725,20 +752,17 @@
       $("vacio").classList.toggle("hide", cs.length > 0);
       cs.forEach(function(c){
         var tr = document.createElement("tr");
-        var domTxt = Number(c.path_tenant) ? (c.dominio + "/" + c.slug) : c.dominio;
+        var ruta = c.ruta_slug || c.slug;
+        var domTxt = Number(c.path_tenant) ? (c.dominio + "/" + ruta) : c.dominio;
         var domUrl = "https://" + domTxt + "/crm.html";
-        var domHtml = Number(c.path_tenant)
-          ? '<span class="op">'+esc(c.dominio)+'/</span><span class="sl">'+esc(c.slug)+'</span>'
-          : esc(c.dominio);
         var susEstado = c.suscripcion_estado || "trial";
         var susClase = susEstado === "activa" ? "activo" : (susEstado === "sin_saldo" ? "baja" : "pausado");
         var susTxt = susEstado === "sin_saldo" ? "sin saldo" : susEstado;
         var saldoTxt = "$" + Number(c.saldo_usd||0).toFixed(2) + " USD";
         tr.innerHTML =
-          '<td><strong>'+esc(c.nombre)+'</strong></td>'+
-          '<td><a class="dom" href="'+esc(domUrl)+'" target="_blank" rel="noopener">'+
-            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>'+
-            domHtml+'</a></td>'+
+          '<td><button class="client-detail" data-id="'+esc(c.id)+'">'+esc(c.nombre)+'</button></td>'+
+          '<td><a class="dom" href="'+esc(domUrl)+'" target="_blank" rel="noopener">CRM</a><br>'+
+            '<a class="dom" href="https://'+esc(domTxt)+'/" target="_blank" rel="noopener">Jugadores</a></td>'+
           '<td>'+esc(c.cobro_alias||"—")+'</td>'+
           '<td>'+esc(c.coins_por_peso)+'</td>'+
           '<td><span class="pill '+esc(c.estado)+'">'+esc(c.estado)+'</span></td>'+
@@ -752,6 +776,7 @@
         acc.appendChild(botonBorrar(c));
         tb.appendChild(tr);
       });
+      tb.querySelectorAll(".client-detail").forEach(function(b){b.onclick=function(){abrirDetalle(b.dataset.id);};});
     });
   }
   var ICO_PAUSA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
@@ -774,6 +799,7 @@
   // ---------- editar ----------
   var ICO_EDIT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>';
   var edId = 0;
+  var edPathTenant = false;
 
   function botonEditar(c){
     var b = document.createElement("button");
@@ -787,7 +813,8 @@
      (cbu, titular, notas...) y editar con lo que hay en la tabla los borraria. */
   function abrirEditar(c){
     edId = c.id;
-    $("edUrl").textContent = c.dominio + (Number(c.path_tenant) ? "/" + c.slug : "");
+    $("edUrl").textContent = c.dominio + (Number(c.path_tenant) ? "/" + (c.ruta_slug || c.slug) : "");
+    edPathTenant = Number(c.path_tenant) === 1;
     $("edMsg").className = "msg"; $("edMsg").textContent = "cargando...";
     // Las claves NUNCA se precargan: el server no las devuelve y un vacío acá
     // significa "dejala como está".
@@ -799,6 +826,9 @@
       var d = res.j.cliente || {};
       $("edNombre").value = d.nombre || "";
       $("edNotas").value  = d.notas || "";
+      $("edRutaBox").classList.toggle("hide", !edPathTenant);
+      $("edRutaDominio").textContent = d.dominio + "/";
+      $("edRutaSlug").value = d.ruta_slug || d.slug || "";
       $("edMsg").textContent = "";
     });
   }
@@ -814,7 +844,8 @@
     api("editar", {
       id: edId,
       nombre: nom,
-      notas: $("edNotas").value.trim()
+      notas: $("edNotas").value.trim(),
+      ruta_slug: edPathTenant ? $("edRutaSlug").value.trim() : undefined
     }).then(function(res){
       $("edGuardar").disabled = false;
       if (res.j && res.j.ok){ cerrarEditar(); cargar(); return; }
@@ -902,8 +933,9 @@
   function abrirOperadores(c){
     opClienteId = c.id;
     var esPath = Number(c.path_tenant) === 1;
-    $("opCliente").textContent = c.nombre + " · " + c.dominio + (esPath ? "/" + c.slug : "");
-    $("opUrl").textContent = "https://" + c.dominio + (esPath ? "/" + c.slug : "") + "/crm.html";
+    var ruta = c.ruta_slug || c.slug;
+    $("opCliente").textContent = c.nombre + " · " + c.dominio + (esPath ? "/" + ruta : "");
+    $("opUrl").textContent = "https://" + c.dominio + (esPath ? "/" + ruta : "") + "/crm.html";
     $("opUser").value = ""; $("opPass").value = "";
     $("opMsg").textContent = ""; $("opMsg").className = "msg";
     $("opLista").textContent = "cargando...";
@@ -1038,7 +1070,7 @@
         var out = $("crOut"); out.classList.remove("hide");
         out.innerHTML =
           '<dl>'+
-          '<dt>Slug</dt><dd>'+esc(res.j.slug)+'</dd>'+
+          '<dt>Ruta pública</dt><dd>'+esc(res.j.ruta_slug || res.j.slug)+'</dd>'+
           '<dt>URL del CRM</dt><dd><a href="'+esc(res.j.url)+'" target="_blank" rel="noopener">'+
             '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>'+
             esc(res.j.url)+'</a></dd>'+

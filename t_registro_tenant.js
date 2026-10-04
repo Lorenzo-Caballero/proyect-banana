@@ -117,6 +117,22 @@ chequear("un solo guard contra la doble navegación",
          (src.match(/let yendo = false;/g) || []).length === 1,
          "con dos, copiar durante la cuenta regresiva navega dos veces");
 
+// La landing custom usa el mismo auto-login y debe llevar al juego integrado,
+// nunca al chat interno que exige otra autenticación.
+const lp = fs.readFileSync(__dirname + "/landing/lp.html", "utf8");
+chequear("la landing custom permite auto-login también bajo /<slug>/",
+         !/if \(esPorPath \|\| !usuario \|\| !clave\) return false;/.test(lp));
+chequear("la landing custom abre el chat integrado de la plataforma del cliente",
+         /const destino = esPorPath \? '\/' \+ partesRuta\[0\] \+ '\/#gp-chat' : '\/#gp-chat';/.test(lp));
+const chat = fs.readFileSync(__dirname + "/landing/chat.html", "utf8");
+chequear("el chat legacy ya no manda al acceso 404 del tenant",
+         !/href="acceso\.html"/.test(chat) && /Ingresar a Ganamos/.test(chat));
+const bono = fs.readFileSync(__dirname + "/landing/bono.html", "utf8");
+chequear("la landing de bono también hace auto-login para clientes por ruta",
+         !/if \(esPorPath \|\| !usuario \|\| !clave\) return false;/.test(bono));
+chequear("y termina dentro de la plataforma del mismo cliente",
+         bono.includes("const destino = esPorPath ? '/' + partesRuta[0] + '/#gp-chat' : '/#gp-chat';"));
+
 console.log("\n" + "-".repeat(39));
 console.log(ok + " OK, " + fail + " fallas");
 process.exit(fail > 0 ? 1 : 0);

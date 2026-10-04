@@ -11,7 +11,8 @@
  *
  * Público a propósito (lo llama el navegador del jugador antes de tener
  * cuenta) y sin datos sensibles: solo confirma la existencia y devuelve el
- * slug/dominio, que el que pregunta ya tenía en la URL.
+ * ruta/dominio solicitados, que el que pregunta ya tenía en la URL. El slug
+ * que devuelve es la ruta pública (puede ser un alias), no la identidad interna.
  */
 
 declare(strict_types=1);
@@ -23,6 +24,6 @@ header('Cache-Control: no-store');
 
 echo json_encode([
     'ok'      => true,
-    'slug'    => (string)($GLOBALS['TENANT_SLUG'] ?? ''),
+    'slug'    => (string)($GLOBALS['TENANT_ROUTE_SLUG'] ?? ''),
     'dominio' => (string)($GLOBALS['TENANT_HOST'] ?? ''),
 ], JSON_UNESCAPED_UNICODE);

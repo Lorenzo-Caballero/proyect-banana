@@ -139,7 +139,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // (puede ser un cliente por-path: /<slug>/crm.html), no una fija --
         // si no, un cliente por-path volvería al CRM de otro dominio.
         $host   = $_SERVER['HTTP_HOST'] ?? 'ganamoscrm.online';
-        $slug   = $GLOBALS['TENANT_SLUG'] ?? '';
+        $slug   = $GLOBALS['TENANT_PUBLIC_SLUG'] ?? '';
         $base   = 'https://' . $host . ($slug !== '' ? '/' . $slug : '');
         $volver = $base . '/crm.html';
 

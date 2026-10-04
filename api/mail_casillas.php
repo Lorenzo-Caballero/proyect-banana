@@ -59,7 +59,7 @@ if (!function_exists('control_pdo')) {
 function mc_api_url(array $c): string
 {
     $dom  = trim((string)($c['dominio'] ?? ''));
-    $slug = trim((string)($c['slug'] ?? ''));
+    $slug = trim((string)($c['ruta_slug'] ?? $c['slug'] ?? ''));
     if ($dom === '') { return ''; }
     // path_tenant=1: entra por ganamoscrm.online/<slug>/... (ver sql/01_control).
     $base = 'https://' . $dom;
@@ -84,7 +84,7 @@ $accion = (string)($_GET['accion'] ?? 'listar');
 if ($accion === 'listar') {
     try {
         $filas = $ctl->query(
-            "SELECT slug, nombre, dominio, path_tenant,
+            "SELECT slug, ruta_slug, nombre, dominio, path_tenant,
                     mail_host, mail_puerto, mail_usuario, mail_clave,
                     mail_carpeta, mail_remitentes
                FROM clientes
@@ -147,7 +147,7 @@ if ($accion === 'listar') {
 if ($accion === 'reenvios') {
     try {
         $filas = $ctl->query(
-            "SELECT slug, nombre, dominio, path_tenant
+            "SELECT slug, ruta_slug, nombre, dominio, path_tenant
                FROM clientes
               WHERE mail_activo = 1 AND COALESCE(mail_modo, 'reenvio') = 'reenvio'
               ORDER BY slug"

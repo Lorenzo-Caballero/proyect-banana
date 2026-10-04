@@ -62,6 +62,15 @@ fi
 HASH="$(git rev-parse --short HEAD)"
 echo "==> versión del widget: $HASH"
 
+# Primero se aplican las migraciones de control. Son aditivas y compatibles
+# con el código que ya está sirviendo. Si alguna falla, se detiene el deploy
+# ANTES de publicar PHP que pueda depender de columnas o tablas faltantes.
+echo "==> migraciones del control (panel/sql -> goldpaw_control)"
+if ! php "$REPO/scripts/migrar-control.php"; then
+  echo "!! migración del control FALLÓ — no se publica el código." >&2
+  exit 1
+fi
+
 # ---------------------------------------------------------------------------
 # Publicar: repo -> /var/www. Es el paso que faltaba.
 #
@@ -130,11 +139,6 @@ else
   else
     echo "   !! no se pudo generar (¿sin root?). Las casillas de mail no se van a poder guardar." >&2
   fi
-fi
-
-echo "==> migraciones del control (panel/sql -> goldpaw_control)"
-if ! php "$REPO/scripts/migrar-control.php"; then
-  echo "   !! fallaron: features nuevos del panel pueden quedar a medias." >&2
 fi
 
 # ---------------------------------------------------------------------------
