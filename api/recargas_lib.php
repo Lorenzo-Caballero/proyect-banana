@@ -122,6 +122,8 @@ const RL_MARGEN_NOMBRE = 0.15;
 const RL_ALIAS   = 'ganamos1010';
 const RL_CBU     = '0000184305000041593023';
 const RL_TITULAR = 'Herrera Facundo Nahuel';
+// El respaldo global pertenece exclusivamente al CRM dueño.
+const RL_OWNER_CLIENT_ID = 8;
 // ==========================================================================
 
 /**
@@ -169,7 +171,7 @@ function rl_cliente_actual(): ?array
     if (!$ctl || $db === '') { return $c = null; }
     try {
         $st = $ctl->prepare(
-            'SELECT id, metodo_cobro, coins_por_peso, cobro_alias, cobro_cbu, cobro_titular,
+            'SELECT id, slug, metodo_cobro, coins_por_peso, cobro_alias, cobro_cbu, cobro_titular,
                     cobro_modo, cobro_fija_id,
                     hg_propio_activo, hg_propio_token, hg_propio_account_id,
                     hg_propio_webhook_secret, hg_propio_modo
@@ -271,11 +273,20 @@ function rl_cuenta_cobro(): array
         return $delPanel;
     }
 
+    // El respaldo global solo corresponde al CRM dueño. Un tenant sin
+    // billetera propia debe quedar sin datos de cobro, nunca heredar otra.
+    $c = rl_cliente_actual();
+    $esDueno = $c !== null && (int)($c['id'] ?? 0) === RL_OWNER_CLIENT_ID;
+
     // id=0 es el sentinel de "la principal" (nunca choca con un id real de
     // cobro_cuentas, que es AUTO_INCREMENT desde 1) -- lo usa rl_cuenta_elegida()
     // para saber si cobro_fija_id=NULL se refiere a esta cuenta.
-    $cta = ['id' => 0, 'alias' => RL_ALIAS, 'cbu' => RL_CBU, 'titular' => RL_TITULAR];
-    $c = rl_cliente_actual();
+    $cta = [
+        'id' => 0,
+        'alias' => $esDueno ? RL_ALIAS : '',
+        'cbu' => $esDueno ? RL_CBU : '',
+        'titular' => $esDueno ? RL_TITULAR : '',
+    ];
     if ($c) {
         if (trim((string)($c['cobro_alias'] ?? ''))   !== '') { $cta['alias']   = trim((string)$c['cobro_alias']); }
         if (trim((string)($c['cobro_cbu'] ?? ''))     !== '') { $cta['cbu']     = trim((string)$c['cobro_cbu']); }
@@ -292,8 +303,8 @@ function rl_cuenta_cobro(): array
  * (rotar al azar, o siempre la misma, segun cobro_modo -- nunca se le
  * muestran varias opciones a un mismo jugador a la vez).
  *
- * Siempre devuelve al menos la principal (con fallback a las constantes si
- * ni eso hay), asi el caller nunca tiene que manejar el caso "sin cuentas".
+ * Devuelve la principal aunque esté vacía para que un tenant sin billetera
+ * configurada no herede datos de otra cuenta.
  */
 function rl_cuentas_cobro(): array
 {
