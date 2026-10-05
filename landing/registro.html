@@ -276,32 +276,24 @@
   const partesRuta = location.pathname.split('/').filter(Boolean);
   const esPorPath = partesRuta.length >= 2 && partesRuta[1] === 'registro.html';
 
-  /* DÓNDE SE ENCOLA EL ALTA, QUE NO ES LO MISMO QUE A DÓNDE VA EL JUGADOR.
-     Son dos decisiones separadas y conviene que se lean así:
-
-       ALTAS_EN_RAIZ  -> en qué base entra el pedido de cuenta
-       esPorPath      -> a qué plataforma se manda al jugador después
-
-     Decisión del dueño (03/10/2026): "en /<slug>/registro.html usá
-     /registro.html, pero que redirija a /<slug>". El motivo es concreto: el
-     alta por la raíz FUNCIONA --el bot de la plataforma crea en 2 segundos--
-     y la del cliente no, porque su bot no puede loguearse. Con esto el
-     jugador se registra por el circuito sano y termina igual en la
-     plataforma de su cajero.
-
-     LO QUE HAY QUE SABER: el jugador queda en NUESTRA base, no en la del
-     cliente. No va a aparecer en el CRM de su cajero, y su chat y sus
-     recargas caen del lado nuestro. Va en la misma dirección que crear los
-     jugadores con nuestra cuenta de agente (ALTAS_PANEL_USER): el cliente
-     pone la plataforma, nosotros ponemos la operación.
-
-     Para volver a que cada cliente reciba sus propias altas, poner false. */
-  const ALTAS_EN_RAIZ = true;
-
-  const BASE_API = (esPorPath && !ALTAS_EN_RAIZ)
-                 ? '/' + partesRuta[0] + '/gp-api'
-                 : '/gp-api';
-  const API = BASE_API + "/crear_cuenta.php";
+  /* El destino de las altas es una opción por cliente. Ante una falla al
+     resolverlo, el alta no se manda a la base de otro tenant. */
+  function baseApiRegistro(esPath, slug, altasPropias) {
+    return esPath && altasPropias ? '/' + encodeURIComponent(slug) + '/gp-api' : '/gp-api';
+  }
+  let API = esPorPath ? '' : '/gp-api/crear_cuenta.php';
+  const API_LISTO = (async function(){
+    if (!esPorPath) return true;
+    try {
+      const slug = partesRuta[0];
+      const r = await fetch('/' + encodeURIComponent(slug) + '/gp-api/tenant_info.php', {cache:'no-store'});
+      if (!r.ok) return false;
+      const d = await r.json();
+      if (!d || !d.ok || d.slug !== slug) return false;
+      API = baseApiRegistro(true, slug, d.altas_propias === true) + '/crear_cuenta.php';
+      return true;
+    } catch (e) { return false; }
+  })();
 
   /* De que publicista vino el jugador (?pub=<slug>, el link que se le dio a
      cada publicista) y el click id de Meta (?fbclid=...). Se leen UNA vez al
@@ -687,6 +679,10 @@
     btn.disabled = true; btn.textContent = 'Creando…';
 
     try {
+      if (!(await API_LISTO) || !API) {
+        btn.disabled = false; btn.textContent = 'Crear cuenta';
+        return error('No pudimos verificar el destino del registro. Actualizá la página e intentá de nuevo.');
+      }
       const sid = nuevoSid();
       // fbp/fbc los deja el Pixel (meta-pixel.js, cargado al pie de la
       // pagina) en cookies -- para el momento del submit ya corrio. Sin

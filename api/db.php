@@ -38,6 +38,7 @@ $__slug = isset($_SERVER['HTTP_X_TENANT_SLUG']) ? trim($_SERVER['HTTP_X_TENANT_S
 $__routeSlug = $__slug;
 $__clientSlug = '';
 $__publicSlug = '';
+$__altasPropias = 0;
 
 $__dbHost  = cfg('DB_HOST', 'localhost');
 $__dbUser  = cfg('DB_USER');
@@ -54,7 +55,7 @@ try {
     if ($__slug !== '') {
         try {
             $__q = $__ctl->prepare(
-                "SELECT c.db_nombre,c.slug,c.ruta_slug FROM clientes_rutas_path r
+                "SELECT c.db_nombre,c.slug,c.ruta_slug,c.altas_propias FROM clientes_rutas_path r
                    JOIN clientes c ON c.id=r.cliente_id
                   WHERE r.dominio=? AND r.ruta_slug=? AND c.path_tenant=1 AND c.estado='activo' LIMIT 1"
             );
@@ -64,7 +65,7 @@ try {
             // Compatibilidad de despliegue: antes de correr la migración 12,
             // conserva el ruteo anterior por slug interno.
             $__q = $__ctl->prepare(
-                "SELECT db_nombre,slug,slug AS ruta_slug FROM clientes
+                "SELECT db_nombre,slug,slug AS ruta_slug,altas_propias FROM clientes
                  WHERE dominio=? AND slug=? AND path_tenant=1 AND estado='activo' LIMIT 1"
             );
             $__q->execute(array($__host, $__slug));
@@ -73,6 +74,7 @@ try {
         $__db = $__tenant['db_nombre'] ?? false;
         $__clientSlug = (string)($__tenant['slug'] ?? '');
         $__publicSlug = (string)($__tenant['ruta_slug'] ?? $__slug);
+        $__altasPropias = (int)($__tenant['altas_propias'] ?? 0) === 1;
     } else {
         $__q = $__ctl->prepare(
             "SELECT db_nombre FROM clientes
@@ -113,3 +115,4 @@ $GLOBALS['TENANT_HOST'] = $__host;
 $GLOBALS['TENANT_SLUG'] = $__clientSlug; // identidad estable; vacía en dominio propio
 $GLOBALS['TENANT_ROUTE_SLUG'] = $__routeSlug; // ruta solicitada, incluso si es alias
 $GLOBALS['TENANT_PUBLIC_SLUG'] = $__publicSlug; // ruta actual para generar enlaces nuevos
+$GLOBALS['TENANT_ALTAS_PROPIAS'] = $__altasPropias;

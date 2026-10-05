@@ -440,6 +440,13 @@
       <div class="hint"><span>Podés cambiar esta ruta. Las rutas anteriores seguirán llevando a la misma cuenta; la base, el bot y los datos del cliente no cambian.</span></div>
     </div>
 
+    <div id="edAltasBox" class="hide" style="margin-top:18px;padding:12px;border:1px solid var(--line);border-radius:11px;background:var(--card2)">
+      <label style="display:flex;align-items:flex-start;gap:9px;margin:0;cursor:pointer">
+        <input id="edAltasPropias" type="checkbox" style="margin-top:3px">
+        <span><b>Crear jugadores en el panel propio del cliente</b><br><small class="sub">Las altas van a su CRM y el bot usa sus credenciales de agente. Requiere credenciales guardadas y válidas.</small></span>
+      </label>
+    </div>
+
     <!-- Credenciales del agente y cuenta de cobro: las gestiona el cliente
          desde su CRM (ver el comentario en el modal de alta). -->
     <div class="hint" style="margin-top:14px">
@@ -829,6 +836,8 @@
       $("edRutaBox").classList.toggle("hide", !edPathTenant);
       $("edRutaDominio").textContent = d.dominio + "/";
       $("edRutaSlug").value = d.ruta_slug || d.slug || "";
+      $("edAltasBox").classList.toggle("hide", !edPathTenant);
+      $("edAltasPropias").checked = Number(d.altas_propias) === 1;
       $("edMsg").textContent = "";
     });
   }
@@ -845,7 +854,8 @@
       id: edId,
       nombre: nom,
       notas: $("edNotas").value.trim(),
-      ruta_slug: edPathTenant ? $("edRutaSlug").value.trim() : undefined
+      ruta_slug: edPathTenant ? $("edRutaSlug").value.trim() : undefined,
+      altas_propias: edPathTenant ? ($("edAltasPropias").checked ? 1 : 0) : undefined
     }).then(function(res){
       $("edGuardar").disabled = false;
       if (res.j && res.j.ok){ cerrarEditar(); cargar(); return; }

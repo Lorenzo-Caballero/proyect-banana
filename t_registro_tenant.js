@@ -7,14 +7,9 @@
  *   dónde se ENCOLA el alta   -> en qué base entra el pedido de cuenta
  *   a dónde se MANDA al jugador -> qué plataforma abre después
  *
- * Pedido del dueño (03/10/2026): *"en /<slug>/registro.html usá
- * /registro.html, pero que redirija a /<slug>"*. El motivo: el alta por la
- * raíz funciona --el bot de la plataforma crea en 2 segundos-- y la del
- * cliente no, porque su bot no puede loguearse.
- *
- * Si alguien más adelante "unifica" las dos, rompe una de las dos cosas:
- * o el alta vuelve a la cola muerta, o el jugador termina en la plataforma
- * equivocada. Por eso este test las mira por separado.
+ * El tenant decide si usa su cola/agente propios o si conserva el circuito
+ * global anterior. El destino de la plataforma sigue siendo una decisión
+ * independiente.
  *
  *     node t_registro_tenant.js
  */
@@ -29,55 +24,55 @@ function chequear(q, c, d) {
 
 const src = fs.readFileSync(__dirname + "/landing/registro.html", "utf8");
 
-/* Se ejecuta la lógica REAL del archivo, no una copia: una copia se queda
-   vieja justo cuando el original cambia. */
-function resolver(pathname) {
-  const m = src.match(
-    /const partesRuta = location\.pathname[\s\S]*?const API = BASE_API \+ "\/crear_cuenta\.php";/
+/* Se ejecuta el helper REAL de la página, no una copia de la lógica. */
+const helper = src.match(/function baseApiRegistro\(esPath, slug, altasPropias\) \{[\s\S]*?\n  \}/);
+if (!helper) throw new Error("no encontré baseApiRegistro en registro.html");
+const baseApi = new Function(helper[0] + "\nreturn baseApiRegistro;")();
+const destinoSrc = src.match(/const destino = .*?;/);
+if (!destinoSrc) throw new Error("no encontré la línea del destino");
+function destino(pathname) {
+  return new Function("esPorPath", "partesRuta", destinoSrc[0] + "\nreturn destino;")(
+    pathname.split("/").filter(Boolean).length >= 2,
+    pathname.split("/").filter(Boolean)
   );
-  if (!m) { throw new Error("no encontré el bloque de resolución en registro.html"); }
-  const destinoSrc = src.match(/const destino = .*?;/);
-  if (!destinoSrc) { throw new Error("no encontré la línea del destino"); }
-
-  const fn = new Function("location",
-    m[0] + "\n" + destinoSrc[0] + "\nreturn { api: API, destino: destino };");
-  return fn({ pathname: pathname });
 }
 
 // ===========================================================================
-console.log("=== 1. El alta entra por el circuito que funciona ===");
-const cli = resolver("/leandro/registro.html");
-chequear("desde /leandro/registro.html el alta va a la raíz",
-         cli.api === "/gp-api/crear_cuenta.php",
-         "ahí está el bot que crea en 2 segundos; el del cliente no puede loguearse");
+console.log("=== 1. El cliente elige la cola y agente propios ===");
+chequear("Leandro con altas propias usa su endpoint tenant",
+         baseApi(true, "leandro", true) === "/leandro/gp-api");
+chequear("los clientes sin la opción conservan el circuito global",
+         baseApi(true, "otro", false) === "/gp-api");
+chequear("el registro de la raíz conserva su endpoint",
+         baseApi(false, "", true) === "/gp-api");
+chequear("la página resuelve el destino desde tenant_info",
+         /tenant_info\.php/.test(src) && /d\.altas_propias === true/.test(src));
+chequear("si no puede verificar tenant_info, no envía el alta a otra base",
+         /if \(!\(await API_LISTO\) \|\| !API\)/.test(src));
+chequear("espera la resolución antes de encolar el alta",
+         /await API_LISTO/.test(src) && /fetch\(API,/.test(src));
 
-const raiz = resolver("/registro.html");
-chequear("y desde la raíz, igual que siempre",
-         raiz.api === "/gp-api/crear_cuenta.php");
+const cliente = { ruta: destino("/leandro/registro.html") };
+const raiz = { ruta: destino("/registro.html") };
 
 // ===========================================================================
 console.log("\n=== 2. Pero el jugador termina en SU plataforma ===");
 /* Esta es la mitad que se pierde si alguien "simplifica" borrando esPorPath:
    el alta saldría igual y el jugador caería en la plataforma de la casa. */
 chequear("desde /leandro/registro.html se lo manda a /leandro/",
-         cli.destino === "/leandro/#gp-chat",
+         cliente.ruta === "/leandro/#gp-chat",
          "sin esto el jugador de un cajero termina en la plataforma de otro");
 chequear("y desde la raíz, a la raíz",
-         raiz.destino === "/#gp-chat");
+         raiz.ruta === "/#gp-chat");
 
 // ===========================================================================
 console.log("\n=== 3. Las dos decisiones siguen siendo separables ===");
-/* El interruptor existe porque esto es una decisión de negocio, no una
-   constante de la naturaleza: el día que cada cliente tenga su bot andando,
-   se vuelve atrás cambiando false. */
-chequear("hay un interruptor explícito para volver atrás",
-         /const ALTAS_EN_RAIZ = true;/.test(src));
-chequear("y el destino NO depende de él",
-         /const destino = esPorPath \?/.test(src),
-         "si el destino colgara de ALTAS_EN_RAIZ, apagarlo mandaría al jugador a la raíz");
-chequear("está dicho que el jugador queda en nuestra base",
-         /queda en NUESTRA base/.test(src),
-         "es la consecuencia que va a aparecer como «no veo al jugador en mi CRM»");
+/* El destino del registro puede variar por tenant; el destino final al juego
+   conserva la ruta pública del mismo cliente. */
+chequear("la configuración de cola no altera el destino del jugador",
+         /const destino = esPorPath \?/.test(src));
+chequear("el alta propia es una opción por cliente en control",
+         /altas_propias/.test(src) && /tenant_info\.php/.test(src));
 
 // ===========================================================================
 console.log("\n=== 4. Entra solo, con la sesión ya hecha ===");

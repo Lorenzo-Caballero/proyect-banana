@@ -43,6 +43,9 @@ function chequear(string $q, bool $c, string $d = ''): void {
 
 $prov = file_get_contents(__DIR__ . '/panel/provisionar.php');
 $acc  = file_get_contents(__DIR__ . '/api/acciones_cola.php');
+$db   = file_get_contents(__DIR__ . '/api/db.php');
+$reg  = file_get_contents(__DIR__ . '/landing/registro.html');
+$mig  = file_get_contents(__DIR__ . '/panel/sql/13_altas_propias.sql');
 
 // ===========================================================================
 echo "=== 1. Un destino ajeno FRENA el bot (no solo avisa) ===\n";
@@ -63,6 +66,20 @@ chequear('frenar BAJA el contenedor que ya existía',
          'evitar levantarlo no alcanza: el que ya arrancó mal sigue creando cuentas');
 chequear('y avisa con clave propia (no se tapa con el dedupe de los otros)',
          str_contains($prov, "'bot_mal_apuntado:' . \$slug"));
+
+// ===========================================================================
+echo "\n=== 1b. Altas aisladas por cliente ===\n";
+chequear('la migracion conserva el comportamiento actual por defecto',
+         str_contains($mig, 'altas_propias TINYINT(1) NOT NULL DEFAULT 0'));
+chequear('la resolucion de ruta toma el modo de la fila del tenant',
+         str_contains($db, 'c.altas_propias') && str_contains($db, "\$GLOBALS['TENANT_ALTAS_PROPIAS']"));
+chequear('el registro usa su API solo cuando el tenant lo habilita',
+         str_contains($reg, 'd.altas_propias === true')
+         && str_contains($reg, 'baseApiRegistro(true, slug, d.altas_propias === true)'));
+chequear('el bot omite el override global para el agente propio',
+         str_contains($prov, '!$altasPropias && $userGlobal !== \'\' && $passGlobal !== \''));
+chequear('el bot de altas recibe el modo desde el registro de control',
+         str_contains($prov, 'agente_password, altas_propias'));
 
 // ===========================================================================
 echo "\n=== 2. Los dos caminos que llevan al destino ajeno ===\n";

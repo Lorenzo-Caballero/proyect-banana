@@ -26,4 +26,5 @@ echo json_encode([
     'ok'      => true,
     'slug'    => (string)($GLOBALS['TENANT_ROUTE_SLUG'] ?? ''),
     'dominio' => (string)($GLOBALS['TENANT_HOST'] ?? ''),
+    'altas_propias' => !empty($GLOBALS['TENANT_ALTAS_PROPIAS']),
 ], JSON_UNESCAPED_UNICODE);

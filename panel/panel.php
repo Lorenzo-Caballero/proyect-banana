@@ -630,6 +630,9 @@ switch ($accion) {
         if (array_key_exists('coins_por_peso', $in)) {
             $campos['coins_por_peso'] = (float) $in['coins_por_peso'];
         }
+        if (array_key_exists('altas_propias', $in)) {
+            $campos['altas_propias'] = !empty($in['altas_propias']) ? 1 : 0;
+        }
 
         // Las claves solo se pisan si mandaron una nueva: el formulario las
         // muestra vacias (nunca se devuelven), y un vacio ahi significa
@@ -650,10 +653,20 @@ switch ($accion) {
 
         try {
             $pdo->beginTransaction();
-            $qCli = $pdo->prepare('SELECT id,dominio,path_tenant,slug,ruta_slug FROM clientes WHERE id=? FOR UPDATE');
+            $qCli = $pdo->prepare('SELECT id,dominio,path_tenant,slug,ruta_slug,agente_usuario,agente_password FROM clientes WHERE id=? FOR UPDATE');
             $qCli->execute([$id]);
             $cli = $qCli->fetch();
             if (!$cli) { $pdo->rollBack(); salida(['ok'=>false,'error'=>'cliente no existe'],404); }
+            if (array_key_exists('altas_propias', $in) && !empty($in['altas_propias'])) {
+                if ((int)$cli['path_tenant'] !== 1) {
+                    $pdo->rollBack();
+                    salida(['ok'=>false,'error'=>'las altas propias requieren una ruta de cliente'],422);
+                }
+                if (trim((string)$cli['agente_usuario']) === '' || trim((string)$cli['agente_password']) === '') {
+                    $pdo->rollBack();
+                    salida(['ok'=>false,'error'=>'el cliente debe guardar primero sus credenciales de agente'],422);
+                }
+            }
             if (array_key_exists('ruta_slug', $in)) {
                 if ((int)$cli['path_tenant'] !== 1) {
                     $pdo->rollBack();

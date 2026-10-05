@@ -598,12 +598,13 @@ function asegurar_bot_altas($c, $cfg) {
     if (tiene_bot_propio($slug)) { return 'sin bot de altas (lo atiende su contenedor propio)'; }
     $user = (string) ($c['agente_usuario'] ?? '');
     $pass = (string) ($c['agente_password'] ?? '');
+    $altasPropias = !empty($c['altas_propias']);
 
     /* ===================================================================
-     * CREAR CON NUESTRA CUENTA DE AGENTE (decisión del dueño, 03/10/2026:
+     * CREAR CON LA CUENTA GLOBAL (decisión del dueño, 03/10/2026:
      * "para la creación de usuario usá por defecto las credenciales de
-     * nuestro panel"). Se activa poniendo ALTAS_PANEL_USER y
-     * ALTAS_PANEL_PASS en panel_config.php; sin eso, nada cambia.
+     * nuestro panel"). Es el comportamiento predeterminado; un tenant con
+     * altas_propias=1 usa exclusivamente sus credenciales de agente.
      *
      * SOLO EL BOT DE ALTAS. El de sync sigue con las credenciales del
      * cliente: espeja SUS jugadores contra SU base, y mezclarlo le volcaría
@@ -622,14 +623,13 @@ function asegurar_bot_altas($c, $cfg) {
      *     holacarmendaianasoledadgomez491);
      *   - las fichas que se les carguen salen de NUESTRO saldo de agente.
      *
-     * O sea que resuelve el alta y mueve el problema al depósito. Se deja
-     * porque es una decisión de negocio tomada a conciencia, no porque sea
-     * inocuo: el día que un cliente reclame que no puede cargarle a un
-     * jugador suyo, mirar acá primero.
+     * O sea que resuelve el alta y mueve el problema al depósito. Se conserva
+     * para tenants sin altas propias; el panel de clientes permite activar el
+     * circuito aislado cuando el cliente opera con su propio agente.
      * =================================================================== */
     $userGlobal = trim((string) ($cfg['ALTAS_PANEL_USER'] ?? ''));
     $passGlobal = trim((string) ($cfg['ALTAS_PANEL_PASS'] ?? ''));
-    if ($userGlobal !== '' && $passGlobal !== '') {
+    if (!$altasPropias && $userGlobal !== '' && $passGlobal !== '') {
         $user = $userGlobal;
         $pass = $passGlobal;
     }
@@ -1141,7 +1141,7 @@ $conGlobales = trim((string) ($cfg['ALTAS_PANEL_USER'] ?? '')) !== ''
             && trim((string) ($cfg['ALTAS_PANEL_PASS'] ?? '')) !== '';
 
 $activos = $pdo->query(
-    "SELECT slug, ruta_slug, dominio, path_tenant, db_nombre, agente_usuario, agente_password
+    "SELECT slug, ruta_slug, dominio, path_tenant, db_nombre, agente_usuario, agente_password, altas_propias
        FROM clientes
       WHERE estado = 'activo'"
     . ($conGlobales ? '' : " AND agente_usuario IS NOT NULL AND agente_usuario <> ''")
