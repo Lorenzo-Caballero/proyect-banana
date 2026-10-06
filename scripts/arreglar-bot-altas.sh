@@ -212,17 +212,41 @@ fi
 # limpia los del MISMO proyecto compose; pero un contenedor creado a mano (otro
 # nombre, otro proyecto) no lo toca. Se avisa para que se mate a mano.
 # ---------------------------------------------------------------------------
-vivos="$(docker ps --filter 'name=ganamos' --filter 'name=altas' --filter 'name=bot-' \
-           --format '{{.Names}}' 2>/dev/null | grep -viE 'ganamos-bot-creador|ganamos-bot-sync' || true)"
+vivos=""
+while IFS= read -r c; do
+  [ -n "$c" ] || continue
+  # En el VPS hay workers separados por cliente (altas-leandro, bot-ganamos,
+  # recaudadores, etc.). El nombre no determina qué cola consumen: comparar
+  # el comando y la URL efectiva evita marcarlos como competidores del root.
+  cfg="$(docker inspect -f '{{.Path}} {{join .Args " "}} {{range .Config.Env}}{{println .}}{{end}}' "$c" 2>/dev/null || true)"
+  case "$cfg" in
+    *bot_crear_jugador.py*) ;;
+    *) continue ;;
+  esac
+  case "$cfg" in
+    *"API_URL=$API_URL_NUEVA"*) ;;
+    *) continue ;;
+  esac
+  if [ -n "$vivos" ]; then
+    vivos="$(printf '%s\n%s' "$vivos" "$c")"
+  else
+    vivos="$c"
+  fi
+done <<EOF
+$(docker ps --format '{{.Names}}' 2>/dev/null)
+EOF
 if [ -n "$vivos" ]; then
   echo >&2
-  echo "!! OJO: hay otros contenedores del bot vivos ademas de ganamos-bot-creador:" >&2
-  printf '     %s\n' $vivos >&2
-  echo "   Si alguno sondea altas_cola.php, esta COMPITIENDO por la cola y las" >&2
-  echo "   altas van a caer al azar en uno u otro. Matalo:" >&2
-  for c in $vivos; do
+  echo "!! OJO: hay otros creadores vivos sondeando la cola root además de ganamos-bot-creador:" >&2
+  printf '%s\n' "$vivos" | sed 's/^/     /' >&2
+  echo "   Están COMPITIENDO por la misma cola y las altas pueden caer en cualquiera:" >&2
+  echo "   Evitá dos consumidores para evitar procesamiento duplicado. Revisá:" >&2
+  while IFS= read -r c; do
+    [ -n "$c" ] || continue
     echo "     docker update --restart=no $c && docker rm -f $c" >&2
-  done
+  done <<EOF
+$vivos
+EOF
 fi
 
 echo
