@@ -89,7 +89,7 @@ if ($accion === 'listar') {
                     (SELECT COUNT(*) FROM clientes c2
                       WHERE c2.db_nombre = clientes.db_nombre AND c2.estado = 'activo') AS duenos_db,
                     mail_host, mail_puerto, mail_usuario, mail_clave,
-                    mail_carpeta, mail_remitentes
+                    mail_carpeta, mail_remitentes, mail_exigir_dkim
                FROM clientes
               WHERE estado = 'activo' AND mail_activo = 1
                 AND COALESCE(mail_modo, 'imap') = 'imap'
@@ -141,6 +141,7 @@ if ($accion === 'listar') {
             'clave'      => $clave,
             'carpeta'    => (string)($c['mail_carpeta'] ?: 'INBOX'),
             'remitentes' => $rem,
+            'exigir_dkim' => (bool)($c['mail_exigir_dkim'] ?? false),
             'api_url'    => $url,
         ];
     }

@@ -57,7 +57,8 @@ ALTER TABLE clientes
 -- casilla en SOLO LECTURA (BODY.PEEK): nunca marca, mueve ni borra nada.
 ALTER TABLE clientes
   ADD COLUMN IF NOT EXISTS mail_carpeta VARCHAR(120) NOT NULL DEFAULT 'INBOX',
-  ADD COLUMN IF NOT EXISTS mail_remitentes VARCHAR(400) NULL DEFAULT NULL;
+  ADD COLUMN IF NOT EXISTS mail_remitentes VARCHAR(400) NULL DEFAULT NULL,
+  ADD COLUMN IF NOT EXISTS mail_exigir_dkim TINYINT(1) NOT NULL DEFAULT 0;
 
 -- `mail_activo` lo prende el cliente. Arranca apagado a propósito: una casilla
 -- a medio configurar que se pone a escuchar sola es peor que ninguna.

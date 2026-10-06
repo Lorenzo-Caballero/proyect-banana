@@ -108,6 +108,7 @@ chequear('las dos llamadas a guardar() pasan la cuenta',
 // ===========================================================================
 echo "\n=== 3. La clave NUNCA vuelve al CRM ===\n";
 $cobro = file_get_contents(__DIR__ . '/api/crm_cobro.php');
+$html = file_get_contents(__DIR__ . '/landing/crm.html');
 chequear('el estado manda «tiene_clave», no la clave',
          str_contains($cobro, "'tiene_clave'=> trim((string)(\$cliente['mail_clave'] ?? '')) !== ''"));
 chequear('no se devuelve mail_clave en ningún lado del CRM',
@@ -126,6 +127,18 @@ chequear('crm_cobro se niega a guardar sin llave',
          'guardar en claro la contraseña de la casilla de otra persona no es una opción');
 
 $cas = file_get_contents(__DIR__ . '/api/mail_casillas.php');
+chequear('la exigencia DKIM del dueño viaja desde su configuración hasta el colector',
+         str_contains($cas, 'mail_exigir_dkim')
+         && str_contains($cas, "'exigir_dkim' => (bool)(\$c['mail_exigir_dkim'] ?? false)")
+         && str_contains($col, '"exigir_dkim": bool(c.get("exigir_dkim", False))'));
+chequear('el CRM puede conservar la validación DKIM por casilla',
+         str_contains($cobro, "'exigir_dkim' => (int)(\$cliente['mail_exigir_dkim'] ?? 0) === 1")
+         && str_contains($cobro, "'mail_exigir_dkim = ?'")
+         && str_contains($html, 'mailExigirDkim')
+         && str_contains($html, 'exigir_dkim: $("#mailExigirDkim").checked'));
+chequear('la migración agrega el control DKIM apagado por defecto',
+         str_contains(file_get_contents(__DIR__ . '/panel/sql/09_mail_lectura.sql'),
+                      'ADD COLUMN IF NOT EXISTS mail_exigir_dkim TINYINT(1) NOT NULL DEFAULT 0'));
 chequear('el colector no recibe las casillas de clientes inactivos',
          substr_count($cas, "WHERE estado = 'activo' AND mail_activo = 1") === 2);
 chequear('el colector saltea bases compartidas entre clientes activos',

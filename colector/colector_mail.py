@@ -139,7 +139,7 @@ def casillas_del_panel() -> list:
             # Sin remitentes no se exige asunto: el filtro ya es la casilla
             # entera y pedir las dos cosas dejaria fuera avisos legitimos.
             "asunto_contiene": "",
-            "exigir_dkim": False,
+            "exigir_dkim": bool(c.get("exigir_dkim", False)),
             "desde_dias": 7,
             # LO QUE HACE QUE EL PAGO VAYA AL CLIENTE CORRECTO.
             "api_url": c.get("api_url", ""),

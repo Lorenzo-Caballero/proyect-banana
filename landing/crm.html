@@ -6293,6 +6293,11 @@
                   </div>
                   <p class="cfg-hint" style="margin-top:8px">Se completan solos con tu dirección.
                   Tocalos solo si tu correo es de un servidor propio.</p>
+                  <label class="mail-switch" style="margin-top:10px">
+                    <input type="checkbox" id="mailExigirDkim">
+                    <span>Exigir firma DKIM válida del banco</span>
+                  </label>
+                  <p class="cfg-hint">Aumenta la protección contra avisos falsos. Si tu banco no firma sus correos, dejalo apagado.</p>
                 </details>
               </div><!-- /#mailImap -->
 
@@ -9047,6 +9052,7 @@ async function credTabla(cual){
     $("#mailUsuario").value    = m.usuario || "";
     $("#mailCarpeta").value    = m.carpeta || "INBOX";
     $("#mailRemitentes").value = m.remitentes || "";
+    $("#mailExigirDkim").checked = !!m.exigir_dkim;
     $("#mailActivo").checked   = !!m.activo;
     /* La clave NUNCA vuelve del server, ni cifrada. Vacío = "no la cambies",
        igual que el token de HG Cash y el de Meta. */
@@ -9207,6 +9213,7 @@ async function credTabla(cual){
       clave: $("#mailClave").value,          // vacío = no la cambies
       carpeta: $("#mailCarpeta").value.trim() || "INBOX",
       remitentes: $("#mailRemitentes").value.trim(),
+      exigir_dkim: $("#mailExigirDkim").checked,
       activo: $("#mailActivo").checked,
     }, API_COBRO);
     b.disabled = false; b.textContent = txt;

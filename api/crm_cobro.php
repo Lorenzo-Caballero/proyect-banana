@@ -94,7 +94,7 @@ try {
    aparte y con try: un cliente cuya base todavía no la corrió tiene que poder
    seguir usando el resto de la pantalla. */
 $colsMail = 'mail_host, mail_puerto, mail_usuario, mail_clave, mail_carpeta, '
-          . 'mail_remitentes, mail_activo, mail_visto_en, mail_error, mail_modo';
+          . 'mail_remitentes, mail_exigir_dkim, mail_activo, mail_visto_en, mail_error, mail_modo';
 try {
     $st = $ctl->prepare(
         'SELECT id, slug, metodo_cobro, coins_por_peso, cobro_alias, cobro_cbu, cobro_titular, cobro_modo, cobro_fija_id,
@@ -163,6 +163,7 @@ if ($metodo === 'GET' && ($_GET['accion'] ?? '') === 'estado') {
             'tiene_clave'=> trim((string)($cliente['mail_clave'] ?? '')) !== '',
             'carpeta'    => (string)($cliente['mail_carpeta'] ?? 'INBOX'),
             'remitentes' => (string)($cliente['mail_remitentes'] ?? ''),
+            'exigir_dkim' => (int)($cliente['mail_exigir_dkim'] ?? 0) === 1,
             'activo'     => (int)($cliente['mail_activo'] ?? 0) === 1,
             /* LO QUE EVITA EL FALLO SILENCIOSO: cuándo funcionó por última vez
                y cuál fue el último error. Si el cliente revoca la contraseña
@@ -271,6 +272,7 @@ if ($metodo === 'POST') {
             if ($puerto < 1 || $puerto > 65535) { $puerto = 993; }
             $carp  = mb_substr(trim((string)($body['carpeta'] ?? 'INBOX')), 0, 120) ?: 'INBOX';
             $rem   = mb_substr(trim((string)($body['remitentes'] ?? '')), 0, 400);
+            $dkim  = !empty($body['exigir_dkim']);
             $act   = !empty($body['activo']);
             $clave = (string)($body['clave'] ?? '');
 
@@ -298,10 +300,10 @@ if ($metodo === 'POST') {
             if ($host === '' && $usr !== '') { $host = mail_host_probable($usr); }
 
             $sets = ['mail_host = ?', 'mail_puerto = ?', 'mail_usuario = ?',
-                     'mail_carpeta = ?', 'mail_remitentes = ?', 'mail_activo = ?',
+                     'mail_carpeta = ?', 'mail_remitentes = ?', 'mail_exigir_dkim = ?', 'mail_activo = ?',
                      'mail_modo = ?'];
             $args = [$host ?: null, $puerto, $usr ?: null, $carp, $rem ?: null,
-                     $act ? 1 : 0, $modo];
+                     $dkim ? 1 : 0, $act ? 1 : 0, $modo];
 
             if ($clave !== '') {
                 if (!cripto_disponible()) {
