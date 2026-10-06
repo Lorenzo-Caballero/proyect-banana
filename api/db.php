@@ -40,6 +40,13 @@ $__clientSlug = '';
 $__publicSlug = '';
 $__altasPropias = 0;
 
+$__tenantError = static function ($status, $publico, $detalle = '') {
+    if ($detalle !== '') { error_log('db.php tenant: ' . $detalle); }
+    http_response_code((int)$status);
+    header('Content-Type: application/json; charset=utf-8');
+    die(json_encode(array('ok' => false, 'error' => $publico)));
+};
+
 $__dbHost  = cfg('DB_HOST', 'localhost');
 $__dbUser  = cfg('DB_USER');
 $__dbPass  = cfg('DB_PASS');
@@ -57,19 +64,29 @@ try {
             $__q = $__ctl->prepare(
                 "SELECT c.db_nombre,c.slug,c.ruta_slug,c.altas_propias FROM clientes_rutas_path r
                    JOIN clientes c ON c.id=r.cliente_id
-                  WHERE r.dominio=? AND r.ruta_slug=? AND c.path_tenant=1 AND c.estado='activo' LIMIT 1"
+                  WHERE r.dominio=? AND r.ruta_slug=? AND c.path_tenant=1 AND c.estado='activo'"
             );
             $__q->execute(array($__host, $__slug));
-            $__tenant = $__q->fetch(PDO::FETCH_ASSOC);
+            $__filasTenant = $__q->fetchAll(PDO::FETCH_ASSOC);
+            if (count($__filasTenant) > 1) {
+                $__tenantError(503, 'Configuración de cliente ambigua',
+                    'varios clientes reclaman la ruta ' . $__host . '/' . $__slug);
+            }
+            $__tenant = $__filasTenant[0] ?? null;
         } catch (PDOException $e) {
             // Compatibilidad de despliegue: antes de correr la migración 12,
             // conserva el ruteo anterior por slug interno.
             $__q = $__ctl->prepare(
                 "SELECT db_nombre,slug,slug AS ruta_slug,altas_propias FROM clientes
-                 WHERE dominio=? AND slug=? AND path_tenant=1 AND estado='activo' LIMIT 1"
+                 WHERE dominio=? AND slug=? AND path_tenant=1 AND estado='activo'"
             );
             $__q->execute(array($__host, $__slug));
-            $__tenant = $__q->fetch(PDO::FETCH_ASSOC);
+            $__filasTenant = $__q->fetchAll(PDO::FETCH_ASSOC);
+            if (count($__filasTenant) > 1) {
+                $__tenantError(503, 'Configuración de cliente ambigua',
+                    'varios clientes reclaman la ruta legacy ' . $__host . '/' . $__slug);
+            }
+            $__tenant = $__filasTenant[0] ?? null;
         }
         $__db = $__tenant['db_nombre'] ?? false;
         $__clientSlug = (string)($__tenant['slug'] ?? '');
@@ -77,11 +94,18 @@ try {
         $__altasPropias = (int)($__tenant['altas_propias'] ?? 0) === 1;
     } else {
         $__q = $__ctl->prepare(
-            "SELECT db_nombre FROM clientes
-             WHERE dominio = ? AND path_tenant = 0 AND estado = 'activo' LIMIT 1"
+            "SELECT db_nombre, slug FROM clientes
+             WHERE dominio = ? AND path_tenant = 0 AND estado = 'activo'"
         );
         $__q->execute(array($__host));
-        $__db = $__q->fetchColumn();
+        $__filasTenant = $__q->fetchAll(PDO::FETCH_ASSOC);
+        if (count($__filasTenant) > 1) {
+            $__tenantError(503, 'Configuración de cliente ambigua',
+                'varios clientes activos reclaman el dominio raíz ' . $__host);
+        }
+        $__tenant = $__filasTenant[0] ?? null;
+        $__db = $__tenant['db_nombre'] ?? false;
+        $__clientSlug = (string)($__tenant['slug'] ?? '');
     }
 } catch (PDOException $e) {
     http_response_code(500);
@@ -91,6 +115,25 @@ try {
 if (!$__db) {
     http_response_code(404);
     die(json_encode(array('ok' => false, 'error' => 'Dominio no registrado: ' . $__host . ($__slug !== '' ? '/' . $__slug : ''))));
+}
+
+/* Una base compartida entre dos clientes activos es una fuga de datos, no una
+   degradación tolerable. El panel ya la detecta para corregirla; este control
+   evita que una petición alcance la base mientras la configuración siga mal.
+   No se elige un propietario arbitrario ni se sirve información compartida. */
+try {
+    $__qUnica = $__ctl->prepare(
+        "SELECT COUNT(*) FROM clientes WHERE db_nombre = ? AND estado = 'activo'"
+    );
+    $__qUnica->execute(array($__db));
+    $__duenosDb = (int)$__qUnica->fetchColumn();
+} catch (PDOException $e) {
+    $__tenantError(503, 'No se pudo validar el aislamiento del cliente',
+        'falló la comprobación de propietario de base para ' . $__db . ': ' . $e->getMessage());
+}
+if ($__duenosDb !== 1) {
+    $__tenantError(503, 'Base de cliente en conflicto; acceso temporalmente pausado',
+        $__duenosDb . ' clientes activos reclaman la base ' . $__db);
 }
 
 // 3) Conectar a la base de ESE cliente. De acá sale $pdo, igual que antes:

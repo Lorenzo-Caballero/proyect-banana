@@ -108,7 +108,7 @@ def url_casillas() -> str:
 def casillas_del_panel() -> list:
     """Las casillas que los clientes cargaron en su CRM. [] ante cualquier problema."""
     url = url_casillas()
-    key = os.getenv("API_KEY") or ""
+    key = os.getenv("API_TOKEN") or os.getenv("API_KEY") or ""
     if not url or not key:
         return []
     try:
@@ -159,7 +159,7 @@ def reportar_casilla(cuenta, ok, error=""):
     """
     slug = cuenta.get("slug") or ""
     url = url_casillas()
-    key = os.getenv("API_KEY") or ""
+    key = os.getenv("API_TOKEN") or os.getenv("API_KEY") or ""
     if not slug or not url or not key:
         return
     try:
@@ -323,7 +323,7 @@ def destinos_reenvio() -> dict:
     if _reenvio["mapa"] and (ahora - _reenvio["visto"]) < REENVIO_TTL:
         return _reenvio["mapa"]
     url = url_casillas()
-    key = os.getenv("API_KEY") or ""
+    key = os.getenv("API_TOKEN") or os.getenv("API_KEY") or ""
     if not url or not key:
         return _reenvio["mapa"]
     try:
