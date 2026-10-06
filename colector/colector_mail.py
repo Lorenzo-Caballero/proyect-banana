@@ -497,12 +497,26 @@ def guardar(con, c: dict, cuenta: dict = None):
         #   3. nuestra casilla                -> a la global del .env.
         # Equivocarse aca es acreditarle la plata de uno a los jugadores de
         # otro, sin que nada falle a la vista.
-        destino = (cuenta or {}).get("api_url", "")
         slug = c.get("reenvio_slug") or ""
         if slug:
             info = destinos_reenvio().get(slug) or {}
-            if info.get("api_url"):
-                destino = info["api_url"]
+            destino = (info.get("api_url") or "").strip()
+            if not destino:
+                log((cuenta or {}).get("nombre", "reenvio"),
+                    f"! no hay destino activo para el slug reenviado {slug}; no se acredita")
+                return None
+        elif cuenta and str(cuenta.get("nombre", "")).startswith("cli:"):
+            destino = (cuenta.get("api_url") or "").strip()
+            if not destino:
+                log(cuenta.get("nombre", "cliente"),
+                    "! casilla de cliente sin api_url propio; no se usa la API global")
+                return None
+        else:
+            # Solo las casillas locales del dueño usan API_URL. Las del panel
+            # y los mails reenviados tienen que resolver SU destino arriba;
+            # si no pueden, quedan sin UID para reintentar, nunca en la base
+            # de otro cliente.
+            destino = ""
         return A.guardar_pago(payload, url=destino)
     except Exception as e:
         log(c.get("cuenta", "?"), f"! error guardando en API: {e}")

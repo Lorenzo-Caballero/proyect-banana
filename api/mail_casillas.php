@@ -85,10 +85,13 @@ if ($accion === 'listar') {
     try {
         $filas = $ctl->query(
             "SELECT slug, ruta_slug, nombre, dominio, path_tenant,
+                    db_nombre,
+                    (SELECT COUNT(*) FROM clientes c2
+                      WHERE c2.db_nombre = clientes.db_nombre AND c2.estado = 'activo') AS duenos_db,
                     mail_host, mail_puerto, mail_usuario, mail_clave,
                     mail_carpeta, mail_remitentes
                FROM clientes
-              WHERE mail_activo = 1
+              WHERE estado = 'activo' AND mail_activo = 1
                 AND COALESCE(mail_modo, 'imap') = 'imap'
                 AND mail_host IS NOT NULL AND mail_host <> ''
                 AND mail_usuario IS NOT NULL AND mail_usuario <> ''
@@ -104,6 +107,14 @@ if ($accion === 'listar') {
 
     $out = [];
     foreach ($filas as $c) {
+        /* Si dos clientes activos apuntan a la misma base, NO entregamos esa
+           casilla al colector. La API también debe rechazar ese tenant, pero
+           la lectura del correo no debe empezar enviando sus avisos a un
+           destino cuya propiedad ya es ambigua. */
+        if ((int)($c['duenos_db'] ?? 0) !== 1) {
+            error_log('mail_casillas: base compartida, se saltea ' . $c['slug']);
+            continue;
+        }
         /* UNA CASILLA QUE NO SE PUEDE DESCIFRAR SE SALTEA, no se devuelve a
            medias: sin clave el colector intentaría un login vacío contra la
            casilla del cliente y lo único que lograría es que Gmail le cuente
@@ -147,9 +158,12 @@ if ($accion === 'listar') {
 if ($accion === 'reenvios') {
     try {
         $filas = $ctl->query(
-            "SELECT slug, ruta_slug, nombre, dominio, path_tenant
+            "SELECT slug, ruta_slug, nombre, dominio, path_tenant, db_nombre,
+                    (SELECT COUNT(*) FROM clientes c2
+                      WHERE c2.db_nombre = clientes.db_nombre AND c2.estado = 'activo') AS duenos_db
                FROM clientes
-              WHERE mail_activo = 1 AND COALESCE(mail_modo, 'reenvio') = 'reenvio'
+              WHERE estado = 'activo' AND mail_activo = 1
+                AND COALESCE(mail_modo, 'reenvio') = 'reenvio'
               ORDER BY slug"
         )->fetchAll(PDO::FETCH_ASSOC);
     } catch (Throwable $e) {
@@ -159,6 +173,10 @@ if ($accion === 'reenvios') {
     }
     $out = [];
     foreach ($filas as $c) {
+        if ((int)($c['duenos_db'] ?? 0) !== 1) {
+            error_log('mail_casillas reenvios: base compartida, se saltea ' . $c['slug']);
+            continue;
+        }
         $url = mc_api_url($c);
         if ($url === '') {
             error_log('mail_casillas: ' . $c['slug'] . ' sin dominio: no sé dónde acreditarle');

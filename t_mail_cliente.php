@@ -87,11 +87,18 @@ chequear('el colector pasa un destino explícito al guardar',
          str_contains($col, 'A.guardar_pago(payload, url=destino)'),
          'si vuelve a A.guardar_pago(payload), los pagos de los clientes caen en NUESTRA base');
 /* TRES destinos y el orden importa: reenvío del cliente > casilla IMAP del
-   cliente > la nuestra. */
-chequear('el destino arranca en la casilla de la cuenta',
-         str_contains($col, 'destino = (cuenta or {}).get("api_url", "")'));
-chequear('y un reenvío lo pisa con la base de SU dueño',
-         str_contains($col, 'destino = info["api_url"]'));
+   cliente > la nuestra. Si el destino de un cliente falta, NO se cae a casa. */
+chequear('la casilla IMAP del cliente usa su URL propia',
+         str_contains($col, 'elif cuenta and str(cuenta.get("nombre", "")).startswith("cli:"):')
+         && str_contains($col, 'destino = (cuenta.get("api_url") or "").strip()'));
+chequear('una casilla IMAP de cliente sin URL NO usa la API global',
+         str_contains($col, 'casilla de cliente sin api_url propio; no se usa la API global')
+         && str_contains($col, 'return None'));
+chequear('un reenvío lo dirige a la base de SU dueño',
+         str_contains($col, 'destino = (info.get("api_url") or "").strip()'));
+chequear('un reenvío sin destino NO cae en la base del dueño de la plataforma',
+         str_contains($col, 'no hay destino activo para el slug reenviado')
+         && str_contains($col, 'if not destino:'));
 chequear('y api_client la respeta sobre la global',
          str_contains($api, 'urllib.request.Request((url or API_URL)'));
 chequear('las dos llamadas a guardar() pasan la cuenta',
@@ -119,6 +126,11 @@ chequear('crm_cobro se niega a guardar sin llave',
          'guardar en claro la contraseña de la casilla de otra persona no es una opción');
 
 $cas = file_get_contents(__DIR__ . '/api/mail_casillas.php');
+chequear('el colector no recibe las casillas de clientes inactivos',
+         substr_count($cas, "WHERE estado = 'activo' AND mail_activo = 1") === 2);
+chequear('el colector saltea bases compartidas entre clientes activos',
+         substr_count($cas, "AS duenos_db") === 2
+         && substr_count($cas, 'if ((int)($c[\'duenos_db\'] ?? 0) !== 1)') === 2);
 chequear('una casilla que no se puede descifrar se SALTEA',
          str_contains($cas, 'if ($clave === null || $clave === \'\') {')
          && str_contains($cas, 'continue;'),
