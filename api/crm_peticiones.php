@@ -54,6 +54,17 @@ try {
         ? (json_decode(file_get_contents('php://input'), true) ?: [])
         : [];
     $accion = (string)($cuerpo['accion'] ?? $_GET['accion'] ?? 'listar');
+    $workerVisto = null;
+    try {
+        $workerVisto = $pdo->query(
+            "SELECT valor FROM config_crm WHERE clave='peticiones_worker_visto' LIMIT 1"
+        )->fetchColumn() ?: null;
+    } catch (Throwable $e) { /* despliegue anterior: se muestra como sin latido */ }
+    $workerActivo = false;
+    if ($workerVisto !== null) {
+        $ts = strtotime((string)$workerVisto);
+        $workerActivo = $ts !== false && $ts >= time() - 180;
+    }
 
     /* El badge cuenta lo que necesita a una persona: lo ambiguo ('revision'),
        lo que el panel rechazo ('error') y lo que hace rato que espera. Las que
@@ -298,7 +309,8 @@ try {
         }, $st->fetchAll(PDO::FETCH_ASSOC));
         $items = $enElLibro($items);
         $items = $yaAcreditada($items);
-        salir(['ok' => true, 'items' => $items, 'espera_min' => CRMP_ESPERA_MIN]);
+        salir(['ok' => true, 'items' => $items, 'espera_min' => CRMP_ESPERA_MIN,
+               'sondeador_activo' => $workerActivo, 'sondeador_visto' => $workerVisto]);
     }
 
     /* ---- cerrar: esta resuelta, pero fuera del CRM ----

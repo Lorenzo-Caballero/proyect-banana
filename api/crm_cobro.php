@@ -100,7 +100,7 @@ try {
         'SELECT id, slug, metodo_cobro, coins_por_peso, cobro_alias, cobro_cbu, cobro_titular, cobro_modo, cobro_fija_id,
                 hg_propio_activo, hg_propio_token, hg_propio_account_id, hg_propio_modo,
                 ' . $colsMail . '
-           FROM clientes WHERE db_nombre = ? LIMIT 1'
+           FROM clientes WHERE db_nombre = ? AND estado = \'activo\' LIMIT 1'
     );
     $st->execute([(string)($GLOBALS['TENANT_DB'] ?? '')]);
     $cliente = $st->fetch();
@@ -110,7 +110,7 @@ try {
     $st = $ctl->prepare(
         'SELECT id, metodo_cobro, coins_por_peso, cobro_alias, cobro_cbu, cobro_titular, cobro_modo, cobro_fija_id,
                 hg_propio_activo, hg_propio_token, hg_propio_account_id, hg_propio_modo
-           FROM clientes WHERE db_nombre = ? LIMIT 1'
+           FROM clientes WHERE db_nombre = ? AND estado = \'activo\' LIMIT 1'
     );
 }
 if (!$hayMail) {
@@ -275,6 +275,7 @@ if ($metodo === 'POST') {
             $dkim  = !empty($body['exigir_dkim']);
             $act   = !empty($body['activo']);
             $clave = (string)($body['clave'] ?? '');
+            $modo  = ($body['modo'] ?? 'reenvio') === 'imap' ? 'imap' : 'reenvio';
 
             /* PRENDERLA SIN LOS DATOS COMPLETOS es la forma de que el cliente
                crea que está cobrando y no. Se exige todo antes de dejar
@@ -290,8 +291,6 @@ if ($metodo === 'POST') {
             /* MODO. 'reenvio' no necesita ni servidor ni usuario: el cliente
                no nos da nada, solo reenvía. Por eso la exigencia de datos de
                abajo es solo para 'imap'. */
-            $modo = ($body['modo'] ?? 'reenvio') === 'imap' ? 'imap' : 'reenvio';
-
             /* SI NO VINO EL SERVIDOR, se deduce de la dirección. El front ya
                lo completa mientras el cliente escribe, pero esto lo cubre
                igual: si solo estuviera en el JS, un navegador viejo o un POST

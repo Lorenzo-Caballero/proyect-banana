@@ -127,7 +127,7 @@ if (!function_exists('ia_key_anthropic')) {
             }
             if (!$ctl instanceof PDO) { return ''; }
 
-            $st = $ctl->prepare('SELECT ia_key FROM clientes WHERE db_nombre = ? LIMIT 1');
+            $st = $ctl->prepare("SELECT ia_key FROM clientes WHERE db_nombre = ? AND estado = 'activo' LIMIT 1");
             $st->execute([$db]);
             return trim((string)$st->fetchColumn());
         } catch (Throwable $e) {

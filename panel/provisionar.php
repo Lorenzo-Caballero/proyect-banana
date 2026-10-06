@@ -534,7 +534,7 @@ function asegurar_bot($c, $cfg) {
 
     $existe = trim((string) shell_exec('docker ps -aq --filter ' . escapeshellarg('name=^' . $name . '$') . ' 2>/dev/null'));
     if ($existe !== '') {
-        if (!bot_creds_cambiaron($name, $user, $pass)) {
+        if (!bot_creds_cambiaron($name, $user, $pass) && !bot_imagen_actualizada($name)) {
             return 'bot ya existía';
         }
         shell_exec('docker rm -f ' . escapeshellarg($name) . ' 2>/dev/null');
@@ -573,6 +573,201 @@ function asegurar_bot($c, $cfg) {
         return 'bot levantado';
     }
     return 'bot NO arrancó: ' . substr($out, 0, 120);
+}
+
+/** Detecta una imagen nueva sin quitar workers cuando Docker no logra inspeccionarlos. */
+function bot_imagen_actualizada($name) {
+    $contenedor = trim((string)shell_exec(
+        'docker inspect --format ' . escapeshellarg('{{.Image}}') . ' '
+        . escapeshellarg($name) . ' 2>/dev/null'
+    ));
+    $actual = trim((string)shell_exec(
+        'docker image inspect --format ' . escapeshellarg('{{.Id}}')
+        . ' ganamos-bot:latest 2>/dev/null'
+    ));
+    return $contenedor !== '' && $actual !== '' && $contenedor !== $actual;
+}
+
+/**
+ * Un sondeador de solicitudes del panel por cliente.
+ *
+ * La API del bot queda bajo el dominio/ruta del tenant y el proceso conserva
+ * su propia sesión de Playwright. MODE=LIVE solo ejecuta depósitos cuando el
+ * matcher tiene una transferencia bancaria comprobada; sin IMAP las peticiones
+ * quedan visibles para resolución manual. No aprueba retiros.
+ */
+function asegurar_bot_peticiones($c, $cfg) {
+    $slug = preg_replace('/[^a-z0-9_-]/i', '', (string)($c['slug'] ?? ''));
+    if ($slug === '') { return 'sin sondeador: slug inválido'; }
+    $name = 'peticiones-' . $slug;
+    if (tiene_bot_propio($slug)) {
+        shell_exec('docker rm -f ' . escapeshellarg($name) . ' 2>/dev/null');
+        return 'lo atiende el colector principal';
+    }
+    $user = trim((string)($c['agente_usuario'] ?? ''));
+    $pass = (string)($c['agente_password'] ?? '');
+    if ($user === '' || $pass === '') {
+        // Si el cliente vació/cambió sus credenciales, no dejar un worker viejo
+        // autenticado con la contraseña anterior.
+        shell_exec('docker rm -f ' . escapeshellarg($name) . ' 2>/dev/null');
+        return 'sin sondeador: faltan credenciales de agente';
+    }
+
+    $ruta = preg_replace('/[^a-z0-9-]/i', '', (string)($c['ruta_slug'] ?? $slug));
+    $dominio = strtolower(trim((string)($c['dominio'] ?? '')));
+    if ($dominio === '' || preg_match('/[^a-z0-9.-]/', $dominio)) {
+        shell_exec('docker rm -f ' . escapeshellarg($name) . ' 2>/dev/null');
+        return 'sondeador FRENADO: dominio inválido';
+    }
+    $base = 'https://' . $dominio . (!empty($c['path_tenant']) ? '/' . $ruta : '');
+    $apiUrl = $base . '/gp-api/altas_cola.php';
+    $mal = destino_inseguro($c, $base);
+    if ($mal !== '') {
+        frenar_bot_mal_apuntado($name, $slug, $mal);
+        return 'sondeador FRENADO: ' . $mal;
+    }
+
+    $env = (string)shell_exec(
+        'docker inspect --format ' . escapeshellarg('{{range .Config.Env}}{{println .}}{{end}}')
+        . ' ' . escapeshellarg($name) . ' 2>/dev/null'
+    );
+    $actual = [];
+    foreach (explode("\n", $env) as $line) {
+        $p = strpos($line, '=');
+        if ($p !== false) { $actual[substr($line, 0, $p)] = substr($line, $p + 1); }
+    }
+    $esperadas = ['PANEL_USER'=>$user, 'PANEL_PASS'=>$pass, 'API_URL'=>$apiUrl,
+                  'LOGIN_URL'=>PANEL_LOGIN_URL, 'PANEL_URL'=>PANEL_CREATE_URL, 'MODE'=>'LIVE'];
+    $existe = trim((string)shell_exec(
+        'docker ps -aq --filter ' . escapeshellarg('name=^' . $name . '$') . ' 2>/dev/null'
+    ));
+    if ($existe !== '') {
+        $cambio = false;
+        foreach ($esperadas as $k=>$v) {
+            if (!array_key_exists($k, $actual) || $actual[$k] !== $v) { $cambio = true; break; }
+        }
+        if (!$cambio && !bot_imagen_actualizada($name)) {
+            $estado = trim((string)shell_exec(
+                'docker inspect --format ' . escapeshellarg('{{.State.Running}}') . ' '
+                . escapeshellarg($name) . ' 2>/dev/null'
+            ));
+            if ($estado === 'true') { return 'sondeador ya activo'; }
+        }
+        shell_exec('docker rm -f ' . escapeshellarg($name) . ' 2>/dev/null');
+    }
+
+    $apiKey = '';
+    if (is_file('/var/www/api/config.local.php')) {
+        $a = require '/var/www/api/config.local.php';
+        $apiKey = is_array($a) ? (string)($a['BOT_API_KEY'] ?? '') : '';
+    }
+    if (strlen($apiKey) < 16) { return 'sondeador NO levantado: falta BOT_API_KEY'; }
+    @mkdir('/opt/bots-peticiones/' . $slug, 0750, true);
+    $cmd = 'docker run -d --name ' . escapeshellarg($name)
+         . ' --restart unless-stopped --shm-size 1g --init -w /datos'
+         . ' -e ' . escapeshellarg('PANEL_USER=' . $user)
+         . ' -e ' . escapeshellarg('PANEL_PASS=' . $pass)
+         . ' -e ' . escapeshellarg('LOGIN_URL=' . PANEL_LOGIN_URL)
+         . ' -e ' . escapeshellarg('PANEL_URL=' . PANEL_CREATE_URL)
+         . ' -e ' . escapeshellarg('API_URL=' . $apiUrl)
+         . ' -e ' . escapeshellarg('API_KEY=' . $apiKey)
+         . ' -e MODE=LIVE -e PYTHONUNBUFFERED=1'
+         . ' -v ' . escapeshellarg('/opt/bots-peticiones/' . $slug . ':/datos')
+         . ' -v /opt/goldpaw/colector:/colector:ro'
+         . ' ganamos-bot:latest python /colector/aprobar_cargas.py --loop 60 2>&1';
+    $out = trim((string)shell_exec($cmd));
+    return preg_match('/^[0-9a-f]{12,}$/i', $out)
+        ? 'sondeador levantado'
+        : 'sondeador NO arrancó: ' . substr($out, 0, 140);
+}
+
+/**
+ * Un recaudador por cliente. La cola `recaudar_cola.php` pertenece a la base
+ * del tenant, así que el daemon también debe usar sus credenciales de agente
+ * y su URL. Solo retira cuando el operador confirma una corrida real en el CRM;
+ * una cola vacía o una prueba no mueve saldo.
+ */
+function asegurar_bot_recaudador($c, $cfg) {
+    $slug = preg_replace('/[^a-z0-9_-]/i', '', (string)($c['slug'] ?? ''));
+    if ($slug === '') { return 'sin recaudador: slug inválido'; }
+    $name = 'recaudador-' . $slug;
+    if (tiene_bot_propio($slug)) {
+        shell_exec('docker rm -f ' . escapeshellarg($name) . ' 2>/dev/null');
+        return 'lo atiende el recaudador principal';
+    }
+
+    $user = trim((string)($c['agente_usuario'] ?? ''));
+    $pass = (string)($c['agente_password'] ?? '');
+    if ($user === '' || $pass === '') {
+        shell_exec('docker rm -f ' . escapeshellarg($name) . ' 2>/dev/null');
+        return 'sin recaudador: faltan credenciales de agente';
+    }
+
+    $ruta = preg_replace('/[^a-z0-9-]/i', '', (string)($c['ruta_slug'] ?? $slug));
+    $dominio = strtolower(trim((string)($c['dominio'] ?? '')));
+    if ($dominio === '' || preg_match('/[^a-z0-9.-]/', $dominio)) {
+        shell_exec('docker rm -f ' . escapeshellarg($name) . ' 2>/dev/null');
+        return 'recaudador FRENADO: dominio inválido';
+    }
+    $base = 'https://' . $dominio . (!empty($c['path_tenant']) ? '/' . $ruta : '');
+    $apiUrl = $base . '/gp-api/altas_cola.php';
+    $mal = destino_inseguro($c, $base);
+    if ($mal !== '') {
+        frenar_bot_mal_apuntado($name, $slug, $mal);
+        return 'recaudador FRENADO: ' . $mal;
+    }
+
+    $env = (string)shell_exec(
+        'docker inspect --format ' . escapeshellarg('{{range .Config.Env}}{{println .}}{{end}}')
+        . ' ' . escapeshellarg($name) . ' 2>/dev/null'
+    );
+    $actual = [];
+    foreach (explode("\n", $env) as $line) {
+        $p = strpos($line, '=');
+        if ($p !== false) { $actual[substr($line, 0, $p)] = substr($line, $p + 1); }
+    }
+    $esperadas = ['PANEL_USER'=>$user, 'PANEL_PASS'=>$pass, 'API_URL'=>$apiUrl,
+                  'LOGIN_URL'=>PANEL_LOGIN_URL, 'PANEL_URL'=>PANEL_CREATE_URL];
+    $existe = trim((string)shell_exec(
+        'docker ps -aq --filter ' . escapeshellarg('name=^' . $name . '$') . ' 2>/dev/null'
+    ));
+    if ($existe !== '') {
+        $cambio = false;
+        foreach ($esperadas as $k=>$v) {
+            if (!array_key_exists($k, $actual) || $actual[$k] !== $v) { $cambio = true; break; }
+        }
+        if (!$cambio && !bot_imagen_actualizada($name)) {
+            $estado = trim((string)shell_exec(
+                'docker inspect --format ' . escapeshellarg('{{.State.Running}}') . ' '
+                . escapeshellarg($name) . ' 2>/dev/null'
+            ));
+            if ($estado === 'true') { return 'recaudador ya activo'; }
+        }
+        shell_exec('docker rm -f ' . escapeshellarg($name) . ' 2>/dev/null');
+    }
+
+    $apiKey = '';
+    if (is_file('/var/www/api/config.local.php')) {
+        $a = require '/var/www/api/config.local.php';
+        $apiKey = is_array($a) ? (string)($a['BOT_API_KEY'] ?? '') : '';
+    }
+    if (strlen($apiKey) < 16) { return 'recaudador NO levantado: falta BOT_API_KEY'; }
+    @mkdir('/opt/bots-recaudador/' . $slug, 0750, true);
+    $cmd = 'docker run -d --name ' . escapeshellarg($name)
+         . ' --restart unless-stopped --shm-size 1g --init -w /datos'
+         . ' -e ' . escapeshellarg('PANEL_USER=' . $user)
+         . ' -e ' . escapeshellarg('PANEL_PASS=' . $pass)
+         . ' -e ' . escapeshellarg('LOGIN_URL=' . PANEL_LOGIN_URL)
+         . ' -e ' . escapeshellarg('PANEL_URL=' . PANEL_CREATE_URL)
+         . ' -e ' . escapeshellarg('API_URL=' . $apiUrl)
+         . ' -e ' . escapeshellarg('API_KEY=' . $apiKey)
+         . ' -e PYTHONUNBUFFERED=1'
+         . ' -v ' . escapeshellarg('/opt/bots-recaudador/' . $slug . ':/datos')
+         . ' ganamos-bot:latest python /app/bot_recaudar.py --demonio --headless 2>&1';
+    $out = trim((string)shell_exec($cmd));
+    return preg_match('/^[0-9a-f]{12,}$/i', $out)
+        ? 'recaudador levantado'
+        : 'recaudador NO arrancó: ' . substr($out, 0, 140);
 }
 
 /**
@@ -651,7 +846,7 @@ function asegurar_bot_altas($c, $cfg) {
 
     $existe = trim((string) shell_exec('docker ps -aq --filter ' . escapeshellarg('name=^' . $name . '$') . ' 2>/dev/null'));
     if ($existe !== '') {
-        if (!bot_creds_cambiaron($name, $user, $pass)) {
+        if (!bot_creds_cambiaron($name, $user, $pass) && !bot_imagen_actualizada($name)) {
             return 'bot de altas ya existía';
         }
         shell_exec('docker rm -f ' . escapeshellarg($name) . ' 2>/dev/null');
@@ -1187,6 +1382,18 @@ foreach ($activos as $c) {
     // Solo se loguea cuando hay novedad (arrancó o falló), no el 'ya existía'.
     if (strpos($msg, 'levantado') !== false || strpos($msg, 'NO') !== false) {
         echo date('c') . " bot {$c['slug']}: $msg\n";
+    }
+
+    $msgPeticiones = asegurar_bot_peticiones($c, $cfg);
+    if (strpos($msgPeticiones, 'levantado') !== false || strpos($msgPeticiones, 'NO') !== false
+        || strpos($msgPeticiones, 'FRENADO') !== false) {
+        echo date('c') . " sondeador peticiones {$c['slug']}: $msgPeticiones\n";
+    }
+
+    $msgRecaudador = asegurar_bot_recaudador($c, $cfg);
+    if (strpos($msgRecaudador, 'levantado') !== false || strpos($msgRecaudador, 'NO') !== false
+        || strpos($msgRecaudador, 'FRENADO') !== false) {
+        echo date('c') . " recaudador {$c['slug']}: $msgRecaudador\n";
     }
 
     // Bot de altas (registro.html / crear_cuenta.php): mismo criterio, mismas

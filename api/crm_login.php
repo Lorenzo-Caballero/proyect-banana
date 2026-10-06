@@ -78,7 +78,7 @@ if ($accion === 'login') {
                 cfg('DB_USER'), cfg('DB_PASS'),
                 [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
             );
-            $st = $ctl->prepare('SELECT suscripcion_estado FROM clientes WHERE db_nombre = ? LIMIT 1');
+            $st = $ctl->prepare("SELECT suscripcion_estado FROM clientes WHERE db_nombre = ? AND estado = 'activo' LIMIT 1");
             $st->execute([$GLOBALS['TENANT_DB'] ?? '']);
             $sinSaldo = $st->fetchColumn() === 'sin_saldo';
         } catch (Throwable $e) {

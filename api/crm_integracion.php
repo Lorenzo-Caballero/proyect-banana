@@ -66,7 +66,7 @@ try {
     salir(['ok' => false, 'error' => 'No se pudo conectar a la base de control'], 500);
 }
 
-$st = $ctl->prepare('SELECT id, agente_usuario, agente_password FROM clientes WHERE db_nombre = ? LIMIT 1');
+$st = $ctl->prepare("SELECT id, agente_usuario, agente_password FROM clientes WHERE db_nombre = ? AND estado = 'activo' LIMIT 1");
 $st->execute([(string)($GLOBALS['TENANT_DB'] ?? '')]);
 $cliente = $st->fetch();
 if (!$cliente) { salir(['ok' => false, 'error' => 'cliente no resuelto'], 500); }

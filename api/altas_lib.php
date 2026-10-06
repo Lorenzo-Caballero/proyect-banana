@@ -343,6 +343,13 @@ function alta_pdo(PDO $pdo): PDO
     static $otra = null;
     static $probado = false;
 
+    // Un cliente con cola propia nunca debe heredar un destino global: eso
+    // mezcla altas, validaciones de username y estados con la base del dueño.
+    // `db.php` ya resolvió $pdo contra la base del cliente correspondiente.
+    if (!empty($GLOBALS['TENANT_ALTAS_PROPIAS'])) {
+        return $pdo;
+    }
+
     $destino = function_exists('cfg') ? trim((string)cfg('ALTAS_EN_BASE', '')) : '';
     if ($destino === '' || $destino === (string)($GLOBALS['TENANT_DB'] ?? '')) {
         return $pdo;   // sin configurar, o ya estamos en esa base

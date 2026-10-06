@@ -44,6 +44,7 @@ function chequear(string $q, bool $c, string $d = ''): void {
 $prov = file_get_contents(__DIR__ . '/panel/provisionar.php');
 $acc  = file_get_contents(__DIR__ . '/api/acciones_cola.php');
 $db   = file_get_contents(__DIR__ . '/api/db.php');
+$pet  = file_get_contents(__DIR__ . '/panel/provisionar.php');
 $reg  = file_get_contents(__DIR__ . '/landing/registro.html');
 $mig  = file_get_contents(__DIR__ . '/panel/sql/13_altas_propias.sql');
 
@@ -93,6 +94,50 @@ chequear('y otro cliente reclamando el mismo punto de entrada',
 chequear('el caso raíz (dominio nuestro + path_tenant 0) se consulta aparte',
          str_contains($prov, "COALESCE(path_tenant,0) = 0\"")
          || str_contains($prov, 'COALESCE(path_tenant,0) = 0'));
+
+// ===========================================================================
+echo "\n=== 2b. Una base duplicada no se sirve a dos clientes ===\n";
+chequear('la resolución verifica todos los dueños de la ruta, no un LIMIT 1',
+         str_contains($db, '$__q->fetchAll(PDO::FETCH_ASSOC)')
+         && str_contains($db, 'count($__filasTenant) > 1'),
+         'una ruta ambigua no puede elegir arbitrariamente a qué cliente conectar');
+chequear('la base debe tener exactamente un cliente activo',
+         str_contains($db, 'SELECT COUNT(*) FROM clientes WHERE db_nombre = ? AND estado = \'activo\'')
+         && str_contains($db, '$__duenosDb !== 1'),
+         'si dos filas activas reclaman la misma base, ninguna API debe servir esos datos');
+chequear('el conflicto de aislamiento responde con servicio pausado',
+         str_contains($db, "'Base de cliente en conflicto; acceso temporalmente pausado'")
+         && str_contains($db, '$__tenantError(503,'));
+
+// ===========================================================================
+echo "\n=== 2c. El worker de peticiones también respeta el tenant ===\n";
+$iPet = strpos($pet, 'function asegurar_bot_peticiones(');
+$petFn = $iPet !== false ? substr($pet, $iPet, 6200) : '';
+chequear('el worker valida dominio/ruta/base antes de levantar el contenedor',
+         str_contains($petFn, 'destino_inseguro($c, $base)')
+         && str_contains($petFn, 'frenar_bot_mal_apuntado($name, $slug, $mal)'));
+chequear('si faltan credenciales no deja activo el contenedor anterior',
+         str_contains($petFn, 'faltan credenciales de agente')
+         && str_contains($petFn, 'docker rm -f'));
+chequear('el sondeador usa la URL de este cliente y un perfil propio',
+         str_contains($petFn, "'API_URL'=>\$apiUrl")
+         && str_contains($petFn, '/opt/bots-peticiones/'));
+
+// El mismo problema de worker único afectaba también a las recaudaciones:
+// cada CRM tiene su propia cola y necesita su daemon aislado.
+$iRec = strpos($pet, 'function asegurar_bot_recaudador(');
+$recFn = $iRec !== false ? substr($pet, $iRec, 6200) : '';
+chequear('cada tenant tiene un recaudador con su API y su perfil',
+         str_contains($recFn, "'API_URL'=>\$apiUrl")
+         && str_contains($recFn, '/opt/bots-recaudador/')
+         && str_contains($recFn, 'bot_recaudar.py --demonio'));
+chequear('el recaudador verifica aislamiento del destino y credenciales',
+         str_contains($recFn, 'destino_inseguro($c, $base)')
+         && str_contains($recFn, 'faltan credenciales de agente'));
+chequear('workers tenant se recrean al cambiar la imagen desplegada',
+         str_contains($pet, 'function bot_imagen_actualizada($name)')
+         && substr_count($pet, 'bot_imagen_actualizada($name)') >= 5,
+         'un contenedor anterior no debe seguir con código Python obsoleto tras el deploy');
 
 /* LA VERSION ANTERIOR DE ESTO TENIA UN FALSO POSITIVO QUE HABRIA HECHO MUCHO
    DAÑO: comparaba el slug devuelto por tenant_info.php contra el del cliente,

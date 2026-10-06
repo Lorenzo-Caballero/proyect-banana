@@ -75,6 +75,17 @@ try {
     // ------------------------- evaluar ----------------------------
     if ($accion === 'evaluar') {
 
+        /* Latido por tenant: permite que el CRM distinga una cola realmente
+           vacía de un agente sin sondeador. No depende de Telegram ni de IMAP. */
+        try {
+            $pdo->prepare(
+                "INSERT INTO config_crm (clave, valor) VALUES ('peticiones_worker_visto', NOW())
+                 ON DUPLICATE KEY UPDATE valor = VALUES(valor)"
+            )->execute();
+        } catch (Throwable $e) {
+            error_log('peticiones_cola: no pude guardar latido del worker: ' . $e->getMessage());
+        }
+
         if (!array_key_exists('peticiones', $body) || !is_array($body['peticiones'])) {
             // Sin la clave no se toca nada: "no vino nada" no puede significar
             // "ganamos no tiene ninguna solicitud abierta" y disparar el cierre

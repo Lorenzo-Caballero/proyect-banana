@@ -411,6 +411,25 @@ if ($tokenCli !== '' && function_exists('jwt_verificar')) {
     }
 }
 
+/* El username que manda el widget puede quedar guardado tras cambiar de
+   cliente en el mismo navegador (todas las rutas comparten origen). Sin token
+   verificado, solo aceptamos una identidad que exista en LA base ya resuelta
+   por db.php. Así un usuario recordado del CRM dueño no bloquea el alta del
+   cliente ni se atribuye a su CRM. Si falla la consulta, se trata como anónimo:
+   nunca se bloquea un alta por una identidad que no pudimos validar. */
+if ($usuarioCliente !== '' && !$sesionVerificada) {
+    try {
+        $qIdentidad = $pdo->prepare('SELECT 1 FROM usuarios WHERE username = ? LIMIT 1');
+        $qIdentidad->execute([$usuarioCliente]);
+        if (!$qIdentidad->fetchColumn()) {
+            $usuarioCliente = '';
+        }
+    } catch (Throwable $e) {
+        error_log('chatbot: no pude validar identidad del tenant; sigo como anónimo');
+        $usuarioCliente = '';
+    }
+}
+
 /* El device_id del widget (localStorage 'goldpaw_device', el mismo con el que
    se registran las notificaciones). Dos usos, los dos de vinculos_lib:
    engordar dispositivos_usuarios con cada turno identificado —antes solo lo
@@ -764,13 +783,16 @@ $ejecutarTool = function (string $nombre, array $args) use ($pdo, &$usuarioDetec
     // una identidad: recien vale si el alta entra. Adoptarlo antes hacia que
     // un anonimo pidiendo un nombre ya OCUPADO se quedara con la conversacion
     // del jugador real de ese nombre -- y recibiera sus respuestas del CRM.
-    if (!empty($args['usuario']) && $nombre !== 'crear_cuenta') {
+    if (!empty($args['usuario']) && !in_array($nombre, ['crear_cuenta', 'identificar_usuario'], true)) {
         $usuarioDetectado = (string)$args['usuario'];
     }
     // $usuarioCliente sale de la sesion (token o header), NUNCA de lo que el
     // modelo haya sacado de la charla: si el jugador escribe "soy fulano", eso
     // llega en $args y para las fichas no se mira.
     $res = ejecutar_tool($pdo, $nombre, $args, $usuarioCliente, $sesionVerificada, $sessionId);
+    if ($nombre === 'identificar_usuario' && !empty($res['existe']) && !empty($res['usuario'])) {
+        $usuarioDetectado = (string)$res['usuario'];
+    }
     if ($nombre === 'cargar_al_juego' && !empty($res['ok']) && !empty($res['id'])) {
         $cargaInfo = ['id' => (int)$res['id'], 'monto' => (int)($res['monto'] ?? 0)];
     }
@@ -1080,6 +1102,9 @@ if (function_exists('notif_chat')) {
 }
 
 $salida = ['ok' => true, 'respuesta' => $texto];
+// Identidad efectiva tras validarla contra la base del tenant. El widget usa
+// esto para soltar un username viejo que el navegador haya heredado de otro CRM.
+$salida['usuario'] = $usuarioDetectado ?? '';
 // El id del mensaje del bot en el CRM: el widget lo ata a la(s) burbuja(s)
 // de esta respuesta para poder retraerlas si un operador las elimina.
 if ($mensajeIdBot > 0) { $salida['mensaje_id'] = $mensajeIdBot; }

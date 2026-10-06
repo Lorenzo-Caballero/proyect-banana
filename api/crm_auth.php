@@ -132,9 +132,13 @@ if (!function_exists('operador_login')) {
             'samesite' => 'Strict',
         ];
         session_set_cookie_params($cookie);
-        // Nombre propio (no el PHPSESSID de default) para no compartir
-        // cookie con otra cosa que corra en el mismo dominio/hosting.
-        session_name('goldpaw_crm');
+        // Cada tenant necesita su propia cookie: las rutas comparten host y
+        // path=/, por lo que una cookie con nombre fijo se pisa al iniciar
+        // sesión en otro CRM desde el mismo navegador. La carpeta de sesiones
+        // ya está aislada por base; el nombre acompaña ese mismo aislamiento.
+        $tenantDb = (string)($GLOBALS['TENANT_DB'] ?? 'default');
+        $tenantDb = preg_replace('/[^A-Za-z0-9_.-]/', '', $tenantDb) ?: 'default';
+        session_name('goldpaw_crm_' . substr(hash('sha256', $tenantDb), 0, 12));
         session_start();
 
         /* VENTANA DESLIZANTE (pata 3). Se reenvía la cookie con la vida
@@ -309,7 +313,7 @@ if (!function_exists('operador_login')) {
                 cfg('DB_USER'), cfg('DB_PASS'),
                 [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
             );
-            $st = $ctl->prepare('SELECT suscripcion_estado FROM clientes WHERE db_nombre = ? LIMIT 1');
+            $st = $ctl->prepare("SELECT suscripcion_estado FROM clientes WHERE db_nombre = ? AND estado = 'activo' LIMIT 1");
             $st->execute([$GLOBALS['TENANT_DB'] ?? '']);
             $estado = $st->fetchColumn();
             if ($estado === 'sin_saldo') {

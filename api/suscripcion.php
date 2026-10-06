@@ -70,7 +70,7 @@ function config_plataforma_get(PDO $ctl, string $clave, string $default = ''): s
 }
 
 $ctl = control_pdo();
-$st  = $ctl->prepare('SELECT id, saldo_usd, costo_diario_usd, suscripcion_estado FROM clientes WHERE db_nombre = ? LIMIT 1');
+$st  = $ctl->prepare("SELECT id, saldo_usd, costo_diario_usd, suscripcion_estado FROM clientes WHERE db_nombre = ? AND estado = 'activo' LIMIT 1");
 $st->execute([$GLOBALS['TENANT_DB'] ?? '']);
 $cliente = $st->fetch();
 if (!$cliente) { salir(['ok' => false, 'error' => 'cliente no resuelto'], 500); }

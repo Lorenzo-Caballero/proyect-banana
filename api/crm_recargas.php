@@ -143,6 +143,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                         r.estado,
                         CASE WHEN " . RC_VENCIDA_SQL_R . " THEN 'vencida' ELSE r.estado END AS estado_efectivo,
                         r.pago_id, r.mensaje, r.creada_en, r.vence_en, r.acreditada_en,
+                        r.pago_reportado_en, r.pago_reportado_origen,
+                        r.titular_declarado, r.trx_declarada, r.fecha_declarada,
                         TIMESTAMPDIFF(SECOND, NOW(), r.vence_en) AS segundos_para_vencer,
                         p.remitente AS pago_remitente, p.cuit AS pago_cuit, p.monto AS pago_monto,
                         a.id AS accion_id, a.estado AS accion_estado, a.monto AS accion_monto,
@@ -174,6 +176,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                             estado,
                             CASE WHEN " . RC_VENCIDA_SQL . " THEN 'vencida' ELSE estado END AS estado_efectivo,
                             pago_id, mensaje, creada_en, vence_en, acreditada_en,
+                            NULL AS pago_reportado_en, NULL AS pago_reportado_origen,
+                            NULL AS titular_declarado, NULL AS trx_declarada, NULL AS fecha_declarada,
                             TIMESTAMPDIFF(SECOND, NOW(), vence_en) AS segundos_para_vencer
                        FROM recargas
                       WHERE " . implode(' AND ', $where) . "

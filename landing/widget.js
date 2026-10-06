@@ -126,6 +126,28 @@
   var TENANT_SLUG = "";
   try { TENANT_SLUG = localStorage.getItem("gp_tenant_slug") || ""; } catch (e) {}
 
+  /* El mismo origen sirve al dueño y a todos los clientes por path. La cookie
+     de Ganamos y el localStorage del navegador pueden traer el usuario del
+     tenant anterior; nunca se hereda esa identidad al cambiar de entorno. */
+  function gpAislarIdentidad(slug){
+    var scope = slug || "root", previo = null;
+    try { previo = localStorage.getItem("gp_widget_scope"); } catch (e) {}
+    var limpiar = (previo === null && scope !== "root") || (previo !== null && previo !== scope);
+    if (limpiar) {
+      try {
+        localStorage.removeItem("goldpaw_user");
+        localStorage.removeItem("API_AUTH_ACCESS_TOKEN");
+      } catch (e) {}
+      if (typeof USUARIO !== "undefined") USUARIO = "";
+      if (typeof AUTH !== "undefined") AUTH = "";
+      if (typeof dePlataforma !== "undefined") dePlataforma = "";
+      if (typeof visto !== "undefined") visto = "";
+      if (typeof sid !== "undefined") sid = nuevoSid();
+      if (typeof panel !== "undefined" && typeof reiniciarCharla === "function") reiniciarCharla();
+    }
+    try { localStorage.setItem("gp_widget_scope", scope); } catch (e) {}
+  }
+
   /* OJO CON EL PREFIJO: en la replica es /gp-api, NO /api.
      /api/ es de la plataforma (ahi estan /api/user/login y /api/user/check).
      Si nuestra API viviera ahi, nginx se llevaria los pedidos de la plataforma
@@ -208,6 +230,19 @@
     return m ? m[1].toLowerCase() : "";
   }
 
+  /* The tenant entry URL is `/<slug>/`, but that is not a route in the
+     upstream Ganamos SPA. Once the slug has been validated and stored, move
+     the player to the SPA home route. The widget reads gp_tenant_slug there
+     and continues sending this player's CRM traffic to the selected tenant. */
+  function gpIrAHomeTenant(slug) {
+    if (!slug) return false;
+    var m = location.pathname.match(/^\/([a-z0-9-]{2,60})\/?$/i);
+    if (!m || m[1].toLowerCase() !== String(slug).toLowerCase()) return false;
+    if (location.pathname === "/home") return false;
+    location.replace("/home" + location.search + location.hash);
+    return true;
+  }
+
   (function () {
     /* LA RAÍZ EXACTA ES NUESTRA, Y ENTRAR AHÍ TIENE QUE SOLTAR AL CLIENTE
        ANTERIOR. Sin esto el slug guardado no se limpiaba nunca: un navegador
@@ -220,12 +255,18 @@
         TENANT_SLUG = "";
         try { localStorage.removeItem("gp_tenant_slug"); } catch (e) {}
       }
+      gpAislarIdentidad("");
       gpArmarApi();
       return;
     }
 
     var cand = gpSlugCandidato();
-    if (!cand || cand === TENANT_SLUG) { gpArmarApi(); return; }
+    if (!cand || cand === TENANT_SLUG) {
+      gpAislarIdentidad(TENANT_SLUG);
+      gpArmarApi();
+      if (cand === TENANT_SLUG && gpIrAHomeTenant(TENANT_SLUG)) return;
+      return;
+    }
     var negadas = {};
     try { negadas = JSON.parse(sessionStorage.getItem("gp_tenant_no") || "{}"); } catch (e) {}
     if (negadas[cand]) { gpArmarApi(); return; }
@@ -239,7 +280,7 @@
        jugador que escriba justo ahí no le escribe a nadie. Los demás casos
        --sin barra, o sacados del referrer-- se adoptan recién cuando la API
        confirma que ese slug existe. */
-    if (/\/$/.test(location.pathname)) { TENANT_SLUG = cand; }
+    if (/\/$/.test(location.pathname)) { TENANT_SLUG = cand; gpAislarIdentidad(TENANT_SLUG); }
     gpArmarApi();
 
     fetch("/" + cand + "/gp-api/tenant_info.php", { cache: "no-store" })
@@ -256,6 +297,8 @@
         if (!d || !d.ok || (d.slug || "").toLowerCase() !== cand) { throw { red: 0 }; }
         TENANT_SLUG = cand;
         try { localStorage.setItem("gp_tenant_slug", cand); } catch (e) {}
+        gpAislarIdentidad(TENANT_SLUG);
+        gpIrAHomeTenant(TENANT_SLUG);
       })
       .catch(function (e) {
         if (e && e.red) {
@@ -267,6 +310,7 @@
         if (TENANT_SLUG === cand) {
           TENANT_SLUG = "";
           try { localStorage.removeItem("gp_tenant_slug"); } catch (e2) {}
+          gpAislarIdentidad("");
         }
       })
       .then(gpArmarApi, gpArmarApi);
@@ -361,7 +405,8 @@
   });
   avisarVps("arranca", { host: location.hostname });
 
-  var CHAT_KEY = "goldpaw_chat";   // la charla guardada entre aperturas
+  function gpChatKey(){ return TENANT_SLUG ? "goldpaw_chat_" + TENANT_SLUG : "goldpaw_chat"; }
+  function gpSidKey(){ return TENANT_SLUG ? "goldpaw_sid_" + TENANT_SLUG : "goldpaw_sid"; }
   var MAX_GUARDADO = 80;           // cuantos mensajes se recuerdan (localStorage)
   var MAX_CONTEXTO = 50;           // cuantos turnos se le mandan al modelo (que lea casi todo)
 
@@ -1166,11 +1211,11 @@
     var s = (window.crypto && crypto.randomUUID)
       ? crypto.randomUUID()
       : ("s-" + Date.now() + "-" + Math.random().toString(36).slice(2));
-    lss("goldpaw_sid", s);
+    lss(gpSidKey(), s);
     return s;
   }
 
-  var sid = ls("goldpaw_sid") || nuevoSid();
+  var sid = ls(gpSidKey()) || nuevoSid();
 
   /* ---------- estilos ----------
    * Chat en vivo clásico: verde, cabecera oscura, fondo claro y burbujas tipo
@@ -1554,7 +1599,7 @@
    * el tiempo, y perder la conversacion cada vez seria insufrible.
    * ---------------------------------------------------------------- */
   function guardar(){
-    lss(CHAT_KEY, JSON.stringify({
+    lss(gpChatKey(), JSON.stringify({
       u: USUARIO,
       charla: charla.slice(-MAX_GUARDADO),
       historial: historial.slice(-MAX_CONTEXTO),
@@ -1564,7 +1609,7 @@
 
   function restaurar(){
     var d;
-    try { d = JSON.parse(ls(CHAT_KEY) || "null"); } catch (e) { return false; }
+    try { d = JSON.parse(ls(gpChatKey()) || "null"); } catch (e) { return false; }
     // Si la charla guardada era de otro usuario, no se muestra.
     if (!d || (d.u || "") !== USUARIO) return false;
     charla    = d.charla || [];
@@ -1585,7 +1630,7 @@
   function olvidar(){
     historial = []; charla = []; lastAgentId = 0;
     body.innerHTML = ""; saludado = false;
-    lsd(CHAT_KEY);
+    lsd(gpChatKey());
   }
 
   /* Cerró sesión: se borra TODO rastro del jugador anterior, en memoria y en
@@ -1600,7 +1645,7 @@
     AUTH = "";
     lsd("goldpaw_user");
     lsd("API_AUTH_ACCESS_TOKEN");   // el JWT del login propio
-    lsd("goldpaw_sid");
+    lsd(gpSidKey());
     sid = nuevoSid();             // uno nuevo YA: el proximo mensaje lo usa
   }
 
@@ -2127,6 +2172,25 @@
       .then(function (r){ return r.json(); })
       .then(function (d){
         if (d && !d.ok) log("chat <- ERROR del server:", d.error || "(sin detalle)");
+        /* El servidor resuelve la identidad dentro de la base de este tenant.
+           Si no confirma el usuario local guardado en el navegador, soltamos
+           ese rastro para que el próximo turno no se haga pasar por él. */
+        if (TENANT_SLUG && d && typeof d.usuario === "string") {
+          var usuarioServidor = limpiarUser(d.usuario);
+          if (usuarioServidor !== USUARIO) {
+            log("identidad ajustada por el tenant:", USUARIO || "(anonimo)", "->", usuarioServidor || "(anonimo)");
+            USUARIO = usuarioServidor;
+            dePlataforma = usuarioServidor;
+            if (USUARIO) lss("goldpaw_user", USUARIO);
+            else {
+              lsd("goldpaw_user");
+              AUTH = "";
+              lsd("API_AUTH_ACCESS_TOKEN");
+            }
+            pintarAtajos();
+            guardar();
+          }
+        }
         // Un caso derivado o marcado para revisión sigue admitiendo mensajes.
         // false reabre widgets viejos tras actualizar el backend.
         if (d && d.chat_cerrado === false) chatEntradaAbierta();

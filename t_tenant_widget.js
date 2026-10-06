@@ -105,7 +105,7 @@ console.log("\n=== 3. Una ruta del SPA no se adopta como cliente ===");
 chequear("/home tiene forma de candidato (y lo descarta la API)",
          candidatoCon("/home") === "home");
 chequear("la adopción optimista exige barra final",
-         /if \(\/\\\/\$\/\.test\(location\.pathname\)\) \{ TENANT_SLUG = cand; \}/.test(src),
+         /if \(\/\\\/\$\/\.test\(location\.pathname\)\) \{\s*TENANT_SLUG = cand;/.test(src),
          "adoptar /home de entrada rompe el chat durante la validación");
 chequear("y se valida que el slug que vuelve sea el pedido",
          /\(d\.slug \|\| ""\)\.toLowerCase\(\) !== cand/.test(src));

@@ -3287,6 +3287,7 @@
         <b>Comprobantes sin resolver</b>
         <span class="cap" id="compCap"></span>
       </div>
+      <div class="vista-ayuda" id="compManualAviso" style="display:none"></div>
       <div class="list" id="compList"></div>
     </aside>
     <div class="sep sep-comp" data-col=".comp-list-col" data-dir="1" data-var="--w-comp"
@@ -3335,9 +3336,10 @@
          pidio fichas por el chat y tiene que transferir. -->
     <p class="vista-ayuda">
       Cada fila es un jugador que pidió fichas por el chat y tiene que
-      transferirte. Cuando llega el mail del banco se acredita sola.
+      transferirte. Con IMAP activo, el sistema puede detectar el pago automáticamente.
       <b>Si pidió la carga desde el juego</b>, eso está en «Cargas del panel».
     </p>
+    <div class="vista-ayuda" id="cgManualAviso" role="status" style="display:none"></div>
     <div class="subhead">
       <label class="search">
         <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
@@ -3450,6 +3452,7 @@
       del juego) y <b>retiros</b> (desde el juego o por el chat). Es el mismo
       apartado que en el panel de ganamos.
     </p>
+    <div class="vista-ayuda" id="ptManualAviso" role="status" style="display:none"></div>
     <div class="subhead">
       <div class="tabs" id="ptFiltro">
         <button class="tab on" data-op="todos" type="button">Todos</button>
@@ -11705,6 +11708,14 @@ async function credTabla(cual){
     catch(e){ cont.innerHTML = `<div class="nouser">Error al cargar.</div>`; return; }
     if(!d.ok){ cont.innerHTML = `<div class="nouser">${esc(d.error||"Error")}</div>`; return; }
 
+    const avisoWorker = $("#ptManualAviso");
+    if(avisoWorker){
+      avisoWorker.style.display = d.sondeador_activo ? "none" : "";
+      avisoWorker.textContent = d.sondeador_activo
+        ? ""
+        : "ATENCIÓN: este CRM no recibió señal del sondeador del panel en los últimos 3 minutos. Las solicitudes hechas dentro de Ganamos podrían no aparecer aquí. Revisá Integración con Ganamos y el estado del sondeador; las solicitudes por chat siguen en sus bandejas de Cargas y Retiros.";
+    }
+
     if(d.sin_migracion){
       cont.innerHTML = `<div class="nouser">Falta aplicar la migración 48. Avisale a soporte.</div>`;
       return;
@@ -11865,6 +11876,16 @@ async function credTabla(cual){
     try{ d = await jget({accion:"listar"}, API_COMP); }
     catch(e){ $("#compList").innerHTML = `<div class="nouser">Error al cargar.</div>`; return; }
     if(!d.ok){ $("#compList").innerHTML = `<div class="nouser">${esc(d.error||"Error")}</div>`; return; }
+    try{
+      const cob = await jget({accion:"estado"}, API_COBRO);
+      const box = $("#compManualAviso");
+      if(cob && cob.ok && !(cob.mail && cob.mail.activo)){
+        box.style.display = "";
+        box.textContent = "Lectura de mail apagada: los comprobantes no se importan a esta bandeja. Mirá ‘Cargas por transferencia’ para ver quién informó que pagó y verificá el movimiento en el banco.";
+      } else {
+        box.style.display = "none";
+      }
+    }catch(e){ /* los comprobantes capturados se siguen mostrando */ }
     $("#compCap").textContent = d.items.length + (d.items.length===1 ? " pendiente" : " pendientes");
     if(!d.items.length){ $("#compList").innerHTML = `<div class="nouser">No hay comprobantes sin resolver.</div>`; return; }
     $("#compList").innerHTML = d.items.map(p=>`
@@ -12638,6 +12659,7 @@ async function credTabla(cual){
           <div class="cg-sub">#${r.id} · ref ${esc(r.referencia)} · ${r.coins} fichas · ${hace(r.creada_en)}${venceInfo}</div>
           <div class="cg-datos">${pagador}${bono}</div>
           ${nota}
+          ${r.pago_reportado_en ? `<div class="rr-yaesta" style="margin-top:8px"><b>El jugador dice que transfirió.</b> Revisar manualmente en el banco; declarado ${hace(r.pago_reportado_en)}${r.pago_reportado_origen ? " desde " + esc(r.pago_reportado_origen) : ""}${r.titular_declarado ? " · titular declarado: " + esc(r.titular_declarado) : ""}${r.trx_declarada ? " · operación informada: " + esc(r.trx_declarada) : ""}${r.fecha_declarada ? " · fecha: " + esc(r.fecha_declarada) : ""}</div>` : ""}
         </div>
         <div class="cg-monto">${money(r.monto_pedido)}</div>
         <div class="cg-acciones">${btnDestrabar}${btnResolver}${btn}</div>
@@ -12667,6 +12689,16 @@ async function credTabla(cual){
     try{ d = await jget({accion:"listar", estado:cgEstado, q:cgQ}, API_CG); }
     catch(e){ $("#cgList").innerHTML = `<div class="nouser">Error al cargar.</div>`; return; }
     if(!d.ok){ $("#cgList").innerHTML = `<div class="nouser">${esc(d.error||"Error")}</div>`; return; }
+    try{
+      const cob = await jget({accion:"estado"}, API_COBRO);
+      const box = $("#cgManualAviso");
+      if(cob && cob.ok && cob.metodo_cobro === "transferencia" && !(cob.mail && cob.mail.activo)){
+        box.style.display = "";
+        box.textContent = "Revisión manual activa: no hay lectura bancaria automática. Si un jugador informa que transfirió, esta fila lo indicará; verificá el ingreso en la cuenta de cobro antes de cargarle saldo desde su ficha. ‘Ya transferí’ por sí solo no confirma el pago.";
+      } else {
+        box.style.display = "none";
+      }
+    }catch(e){ /* si no se puede leer config, la bandeja sigue cargando */ }
     cgItems = d.items;
     $("#cgCap").textContent = d.items.length + (d.items.length===1 ? " carga" : " cargas");
     if(!d.items.length){ $("#cgList").innerHTML = `<div class="nouser">No hay cargas${cgEstado?" en ese estado":""}${cgQ?" para esa búsqueda":""}.</div>`; return; }

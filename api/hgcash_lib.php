@@ -119,7 +119,7 @@ function hg_cliente_actual(): ?array
     $ctl = hg_control();
     if (!$ctl || $db === '') { return null; }
     try {
-        $st = $ctl->prepare('SELECT id, nombre, db_nombre, dominio FROM clientes WHERE db_nombre = ? LIMIT 1');
+        $st = $ctl->prepare("SELECT id, nombre, db_nombre, dominio FROM clientes WHERE db_nombre = ? AND estado = \'activo\' LIMIT 1");
         $st->execute([$db]);
         $cli = $st->fetch(PDO::FETCH_ASSOC) ?: null;
     } catch (Throwable $e) {
@@ -209,7 +209,7 @@ function hg_propio_cfg(): ?array
         $st = $ctl->prepare(
             'SELECT id, dominio, path_tenant, slug, hg_propio_activo, hg_propio_token,
                     hg_propio_account_id, hg_propio_webhook_secret, hg_propio_modo
-               FROM clientes WHERE db_nombre = ? LIMIT 1'
+               FROM clientes WHERE db_nombre = ? AND estado = \'activo\' LIMIT 1'
         );
         $st->execute([$db]);
         $GLOBALS['__hg_propio_cache'] = $st->fetch(PDO::FETCH_ASSOC) ?: null;

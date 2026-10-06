@@ -82,18 +82,36 @@ function hgw_resolver_tenant_por_host(): ?array
                 "SELECT c.id,c.db_nombre,c.dominio,c.slug,c.hg_propio_activo,c.hg_propio_token,
                         c.hg_propio_account_id,c.hg_propio_webhook_secret,c.hg_propio_modo
                    FROM clientes_rutas_path r JOIN clientes c ON c.id=r.cliente_id
-                  WHERE r.dominio=? AND r.ruta_slug=? AND c.path_tenant=1 AND c.estado='activo' LIMIT 1"
+                  WHERE r.dominio=? AND r.ruta_slug=? AND c.path_tenant=1 AND c.estado='activo'"
             );
             $st->execute([$host, $slug]);
         } else {
             $st = $ctl->prepare(
                 "SELECT id, db_nombre, dominio, slug, hg_propio_activo, hg_propio_token,
                         hg_propio_account_id, hg_propio_webhook_secret, hg_propio_modo
-                   FROM clientes WHERE dominio = ? AND path_tenant = 0 AND estado = 'activo' LIMIT 1"
+                   FROM clientes WHERE dominio = ? AND path_tenant = 0 AND estado = 'activo'"
             );
             $st->execute([$host]);
         }
-        return $st->fetch(PDO::FETCH_ASSOC) ?: null;
+        $filas = $st->fetchAll(PDO::FETCH_ASSOC);
+        if (count($filas) !== 1) {
+            if (count($filas) > 1) {
+                $GLOBALS['HG_WEBHOOK_TENANT_ERROR'] = true;
+                error_log('hg_webhook: varios tenants reclaman el host/ruta ' . $host . '/' . $slug);
+            }
+            return null;
+        }
+        $tenant = $filas[0];
+        $duenos = $ctl->prepare(
+            "SELECT COUNT(*) FROM clientes WHERE db_nombre = ? AND estado = 'activo'"
+        );
+        $duenos->execute([(string)($tenant['db_nombre'] ?? '')]);
+        if ((int)$duenos->fetchColumn() !== 1) {
+            $GLOBALS['HG_WEBHOOK_TENANT_ERROR'] = true;
+            error_log('hg_webhook: base tenant compartida, se rechaza ' . (string)$tenant['db_nombre']);
+            return null;
+        }
+        return $tenant;
     } catch (Throwable $e) {
         error_log('hgw_resolver_tenant_por_host: ' . $e->getMessage());
         return null;
@@ -107,6 +125,9 @@ $raw = (string)file_get_contents('php://input');
 // cliente sin hg_propio_activo) sigue el modo "casa" de siempre, sin tocar
 // nada de lo que ya funcionaba.
 $tenantPropio = hgw_resolver_tenant_por_host();
+if (!empty($GLOBALS['HG_WEBHOOK_TENANT_ERROR'])) {
+    hgw_salir(['ok' => false, 'error' => 'Configuración del cliente en conflicto'], 503);
+}
 $esModoPropio = $tenantPropio !== null
     && (int)($tenantPropio['hg_propio_activo'] ?? 0) === 1
     && trim((string)($tenantPropio['hg_propio_token'] ?? '')) !== '';

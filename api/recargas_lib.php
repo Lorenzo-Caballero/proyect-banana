@@ -175,7 +175,7 @@ function rl_cliente_actual(): ?array
                     cobro_modo, cobro_fija_id,
                     hg_propio_activo, hg_propio_token, hg_propio_account_id,
                     hg_propio_webhook_secret, hg_propio_modo
-               FROM clientes WHERE db_nombre = ? LIMIT 1'
+               FROM clientes WHERE db_nombre = ? AND estado = \'activo\' LIMIT 1'
         );
         $st->execute([$db]);
         $c = $st->fetch(PDO::FETCH_ASSOC) ?: null;
@@ -2367,6 +2367,23 @@ function rl_declarar_pago(PDO $pdo, string $usuario, string $titular = '',
         return ['ok' => true, 'estado' => 'sin_pendiente'];
     }
 
+    /* Siempre dejar rastro de "ya transferi", aunque el jugador no haya
+       escrito titular o numero de operacion. Si IMAP esta apagado, esta marca
+       es la unica forma de que el operador vea el reclamo en su CRM. No cambia
+       el estado ni acredita: el matcher de banco sigue siendo la prueba. */
+    try {
+        $pdo->prepare(
+            "UPDATE recargas
+                SET pago_reportado_en = COALESCE(pago_reportado_en, NOW()),
+                    pago_reportado_origen = COALESCE(pago_reportado_origen, ?)
+              WHERE id = ? AND estado = 'pendiente'"
+        )->execute([mb_substr($origen, 0, 24), (int)$rec['id']]);
+    } catch (Throwable $e) {
+        // Migracion 78 pendiente en esta base: el reporte sigue respondiendo,
+        // pero no se debe afirmar que quedo persistido.
+        error_log('rl_declarar_pago: falta migracion 78: ' . $e->getMessage());
+    }
+
     // Guardar el titular (y el nro si vino). COALESCE + NULLIF: un dato vacio no
     // pisa lo que ya habia (el jugador pudo declararlo al crear la recarga).
     $titular = trim($titular);
@@ -2936,4 +2953,3 @@ function rl_marcar_cargado_a_mano(PDO $pdo, string $idUnico, string $usuario,
     return ['ok' => true, 'usuario' => $usuario,
             'huella_aprendida' => $aprendida, 'recargas_canceladas' => $canceladas];
 }
-
