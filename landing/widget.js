@@ -167,6 +167,15 @@
     if (!MISMO_ORIGEN) { return ""; }
     var p = location.pathname;
 
+    /* 0. EL HASH, antes que todo lo demas. El SPA de la plataforma normaliza
+          el path --entrar a /<slug>/ termina en /home, verificado el
+          05/10/2026: el servidor devuelve 200 y es el SPA el que navega-- pero
+          NO toca el hash. Asi que ahi el tenant sobrevive a la navegacion, a
+          un refresh y a un link compartido, sin depender de localStorage.
+          Se escribe solo (ver gpMarcarTenantEnUrl). */
+    var h = (location.hash || "").match(/(?:^|[#&])t=([a-z0-9-]{2,60})\b/i);
+    if (h) { return h[1].toLowerCase(); }
+
     /* 1. DOS O MÁS SEGMENTOS (`/leandro/home`): el primero es el slug. Una
           ruta del SPA de dos tramos cae acá también, y la descarta la API. */
     var m = p.match(/^\/([a-z0-9-]{2,60})\/.+/i);
@@ -262,6 +271,41 @@
       })
       .then(gpArmarApi, gpArmarApi);
   })();
+
+  /* Se marca despues de armar la API --con el slug ya resuelto-- y de nuevo un
+     rato despues: el SPA hace su primer replaceState en los primeros
+     milisegundos y se lleva el hash puesto si llega a escribirlo antes. */
+  gpMarcarTenantEnUrl();
+  setTimeout(gpMarcarTenantEnUrl, 1500);
+  setTimeout(gpMarcarTenantEnUrl, 4000);
+
+  /* DEJAR EL TENANT ESCRITO EN LA URL, en el hash.
+   *
+   * El SPA de la plataforma se lleva puesto el path: entrar a /<slug>/ termina
+   * en /home en milisegundos (medido el 05/10/2026 -- el servidor devuelve 200
+   * y el salto lo hace el SPA, que no reconoce esa ruta). Contra eso no hay
+   * nada que hacer desde acá: es su codigo.
+   *
+   * Pero el hash NO lo toca nadie, y ahi el dato sobrevive a lo que al path se
+   * le escapa: un refresh, una pestaña nueva, el modo incognito, un link que
+   * el jugador comparte. Sin esto, el unico rastro del cliente vive en
+   * localStorage -- y el dia que el jugador entra con los datos limpios, su
+   * chat aparece en el CRM de la plataforma.
+   *
+   * Se usa replaceState y solo se toca el HASH: el path queda intacto, asi que
+   * el SPA no se entera y no hay riesgo de pelearle el routing.
+   */
+  function gpMarcarTenantEnUrl() {
+    try {
+      if (!MISMO_ORIGEN || !TENANT_SLUG) { return; }
+      var h = location.hash || "";
+      if (new RegExp("(?:^|[#&])t=" + TENANT_SLUG + "\\b", "i").test(h)) { return; }
+      // Se conserva lo que ya hubiera (#gp-chat), que tambien es nuestro.
+      var limpio = h.replace(/^#/, "").replace(/(?:^|&)t=[a-z0-9-]*/ig, "");
+      var nuevo = "t=" + TENANT_SLUG + (limpio ? "&" + limpio.replace(/^&/, "") : "");
+      history.replaceState(null, "", location.pathname + location.search + "#" + nuevo);
+    } catch (e) {}
+  }
 
   /* Para poder contestar "¿a qué CRM está mandando esta página?" sin leer el
      código. Fue lo primero que hizo falta cuando los mensajes de un cliente

@@ -41,11 +41,11 @@ if (!m) {
   process.exit(1);
 }
 
-function candidatoCon(pathname, referrer, host) {
+function candidatoCon(pathname, referrer, host, hash) {
   host = host || "ganamoscrm.online";
   const sandbox = {
     MISMO_ORIGEN: true,
-    location: { pathname: pathname, host: host },
+    location: { pathname: pathname, host: host, hash: hash || "" },
     document: { referrer: referrer || "" },
     URL: URL,
   };
@@ -126,6 +126,40 @@ console.log("\n=== 5. Se puede responder a qué CRM está mandando ===");
 chequear("el widget expone el tenant que resolvió",
          /window\.__gp_tenant/.test(src),
          "fue lo primero que hizo falta y no existía");
+
+// ===========================================================================
+console.log("\n=== 6. El tenant queda escrito en la URL (el hash) ===");
+/* EL PROBLEMA QUE RESUELVE (05/10/2026): el SPA de la plataforma se lleva
+   puesto el path -- entrar a /<slug>/ termina en /home en milisegundos. Medido:
+   el servidor devuelve 200 sin redirect, el salto lo hace el SPA porque no
+   reconoce esa ruta. Es su código.
+
+   El hash NO lo toca nadie. Ahí el tenant sobrevive a lo que al path se le
+   escapa: un refresh, una pestaña nueva, el incógnito, un link compartido. Sin
+   esto el único rastro vive en localStorage, y el día que el jugador entra con
+   los datos limpios su chat aparece en el CRM de la plataforma. */
+chequear("parado en /home, el hash dice de quién es la página",
+         candidatoCon("/home", "", null, "#t=oromaris") === "oromaris",
+         "es lo único que sobrevive cuando el SPA ya se llevó el path");
+chequear("y gana sobre el path, que para entonces miente",
+         candidatoCon("/home", "", null, "#t=oromaris") !== "home",
+         "en /home el path dice 'home', que no es ningún cliente");
+chequear("convive con el #gp-chat que ya usábamos",
+         candidatoCon("/home", "", null, "#t=oromaris&gp-chat") === "oromaris");
+chequear("un hash sin tenant no inventa nada",
+         candidatoCon("/home", "", null, "#gp-chat") === "home");
+
+/* Y alguien tiene que ESCRIBIRLO, si no el hash nunca aparece. */
+chequear("el widget lo escribe en la URL",
+         /function gpMarcarTenantEnUrl\(\)/.test(src));
+chequear("con replaceState y tocando SOLO el hash",
+         /history\.replaceState\(null, "", location\.pathname \+ location\.search \+ "#"/.test(src),
+         "tocar el path sería pelearle el routing al SPA, que es de ellos");
+/* El SPA hace su primer replaceState en los primeros milisegundos: si el
+   widget escribe antes, se lo lleva puesto. Por eso se reintenta. */
+chequear("y lo reintenta, porque el SPA pisa la URL al arrancar",
+         (src.match(/setTimeout\(gpMarcarTenantEnUrl/g) || []).length >= 2,
+         "una sola pasada la borra el primer replaceState del SPA");
 
 console.log("\n" + "-".repeat(39));
 console.log(ok + " OK, " + fail + " fallas");
