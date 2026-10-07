@@ -574,12 +574,28 @@ switch ($accion) {
     }
 
     case 'landing_guardar': {
-        $id       = (int) ($in['id'] ?? 0);
-        $whatsapp = trim((string) ($in['whatsapp'] ?? ''));
-        $waTexto  = trim((string) ($in['wa_texto'] ?? ''));
-        $bonoPct  = max(0, min(200, (int) ($in['bono_pct'] ?? 0)));
-        if ($id <= 0)        { salida(['ok' => false, 'error' => 'falta el id del cliente'], 422); }
-        if ($whatsapp === '') { salida(['ok' => false, 'error' => 'poné el WhatsApp del cliente'], 422); }
+        /* DOS FORMAS DE LLAMARLO, y es la diferencia entre el producto y el
+           accesorio:
+             id > 0          -> la landing de un cliente nuestro (botón de su
+                                fila). El nombre sale del cliente y queda
+                                atada a él en el control.
+             id = 0 + nombre -> una landing SUELTA, que es como se vende por
+                                separado: no necesita cliente, ni CRM, ni
+                                base propia. Solo un nombre para reconocerla
+                                y el WhatsApp del que la compró.
+           El resto --en qué base se escribe, con qué credenciales se crean
+           las cuentas, cómo se arma el link-- es idéntico, y tiene que
+           seguir siéndolo: lo que se vende suelto es exactamente lo mismo. */
+        $id        = (int) ($in['id'] ?? 0);
+        $idLandingIn = (int) ($in['landing_id'] ?? 0);
+        $nombreIn  = trim((string) ($in['nombre'] ?? ''));
+        $whatsapp  = trim((string) ($in['whatsapp'] ?? ''));
+        $waTexto   = trim((string) ($in['wa_texto'] ?? ''));
+        $bonoPct   = max(0, min(200, (int) ($in['bono_pct'] ?? 0)));
+        if ($id <= 0 && $idLandingIn <= 0 && $nombreIn === '') {
+            salida(['ok' => false, 'error' => 'ponele un nombre para reconocerla'], 422);
+        }
+        if ($whatsapp === '') { salida(['ok' => false, 'error' => 'poné el WhatsApp'], 422); }
 
         require_once __DIR__ . '/../api/landings_lib.php';
 
@@ -607,15 +623,18 @@ switch ($accion) {
         [$db, $comoSale, $err] = landings_db_propia($pdo, $cfg);
         if ($err !== '') { salida(['ok' => false, 'error' => $err], 500); }
 
-        try {
-            $st = $pdo->prepare('SELECT nombre, slug, landing_id FROM clientes WHERE id = ?');
-            $st->execute([$id]);
-        } catch (PDOException $e) {
-            salida(['ok' => false, 'error' => 'falta la migración 14 del control '
-                                            . '(panel/sql/14_landing_cajero.sql)'], 500);
+        $c = null;
+        if ($id > 0) {
+            try {
+                $st = $pdo->prepare('SELECT nombre, slug, landing_id FROM clientes WHERE id = ?');
+                $st->execute([$id]);
+            } catch (PDOException $e) {
+                salida(['ok' => false, 'error' => 'falta la migración 14 del control '
+                                                . '(panel/sql/14_landing_cajero.sql)'], 500);
+            }
+            $c = $st->fetch();
+            if (!$c) { salida(['ok' => false, 'error' => 'cliente no existe'], 404); }
         }
-        $c = $st->fetch();
-        if (!$c) { salida(['ok' => false, 'error' => 'cliente no existe'], 404); }
 
         try {
             $cpdo = conectar_cliente($cfg, $db);
@@ -624,11 +643,28 @@ switch ($accion) {
                verifica antes de pasarlo: landings_guardar() con un id que no
                existe haría un UPDATE de 0 filas y devolvería "guardado" sin
                que exista ninguna landing. */
-            $idLanding = (int) ($c['landing_id'] ?? 0);
+            $idLanding = $c ? (int) ($c['landing_id'] ?? 0) : $idLandingIn;
             if ($idLanding > 0) {
                 $q = $cpdo->prepare('SELECT id FROM landings WHERE id = ?');
                 $q->execute([$idLanding]);
-                if (!$q->fetchColumn()) { $idLanding = 0; }
+                if (!$q->fetchColumn()) {
+                    /* NO ES LO MISMO SEGÚN DE DÓNDE VINO EL id, aunque el
+                       síntoma sea idéntico (la landing no está):
+
+                       del CONTROL es un puntero viejo -- alguien la borró
+                       desde el CRM y la fila del cliente quedó apuntando a la
+                       nada. Ahí rehacerla es exactamente lo que se quiere.
+
+                       del REQUEST es el operador editando una landing
+                       concreta que, mientras tanto, alguien borró. Rehacerla
+                       en silencio le devolvería "guardado" sobre algo que no
+                       es lo que estaba editando. Se le dice. */
+                    if (!$c) {
+                        salida(['ok' => false, 'error' => 'esa landing ya no existe '
+                                                        . '(¿la borraron desde otra pantalla?)'], 409);
+                    }
+                    $idLanding = 0;
+                }
             }
 
             /* Se guarda SOLO lo que elegimos, igual que lp_config_sanear() desde
@@ -636,11 +672,19 @@ switch ($accion) {
                la config entera congelaría los textos de hoy en cada landing. */
             $config = ['whatsapp' => ['numero' => $whatsapp]];
             if ($waTexto !== '') { $config['whatsapp']['texto'] = $waTexto; }
-            $r = landings_guardar(
-                $cpdo, $idLanding ?: null,
-                'Cajero: ' . $c['nombre'],
-                'wa', $bonoPct, $config
-            );
+            /* El nombre de una suelta lo pone el operador (el del que la
+               compró). Editando una suelta sin tocarlo, se conserva el que
+               ya tenía: mandar vacío no puede renombrarla a "". */
+            if ($c) {
+                $nombre = 'Cajero: ' . $c['nombre'];
+            } elseif ($nombreIn !== '') {
+                $nombre = $nombreIn;
+            } else {
+                $q = $cpdo->prepare('SELECT nombre FROM landings WHERE id = ?');
+                $q->execute([$idLanding]);
+                $nombre = (string) ($q->fetchColumn() ?: 'Landing');
+            }
+            $r = landings_guardar($cpdo, $idLanding ?: null, $nombre, 'wa', $bonoPct, $config);
             if (!$r) {
                 salida(['ok' => false, 'error' => 'no se pudo guardar en ' . $db
                                                 . ' (¿corrió la migración 52 en esa base?)'], 500);
@@ -649,11 +693,104 @@ switch ($accion) {
             salida(['ok' => false, 'error' => 'no pude escribir la landing en ' . $db], 500);
         }
 
-        $pdo->prepare('UPDATE clientes SET landing_id = ?, landing_slug = ? WHERE id = ?')
-            ->execute([$r['id'], $r['slug'], $id]);
+        /* Solo las de un cliente se anotan en el control. Una suelta no tiene
+           dónde anotarse -- ni lo necesita: vive sola en nuestra base y el
+           panel la lista desde ahí. */
+        if ($id > 0) {
+            $pdo->prepare('UPDATE clientes SET landing_id = ?, landing_slug = ? WHERE id = ?')
+                ->execute([$r['id'], $r['slug'], $id]);
+        }
 
         salida(['ok' => true, 'slug' => $r['slug'], 'url' => landing_url($cfg, $r['slug']),
                 'base' => $db, 'base_como' => $comoSale]);
+    }
+
+    /* Todas las landings de cajero de nuestra base, con el cliente dueño de
+       cada una si lo tiene. Las SUELTAS --las que se venden por separado--
+       son las que no aparecen en esa lista: no es un estado distinto, es
+       simplemente que nadie las reclama. */
+    case 'landing_listar': {
+        [$db, $comoSale, $err] = landings_db_propia($pdo, $cfg);
+        if ($err !== '') { salida(['ok' => false, 'error' => $err], 500); }
+
+        require_once __DIR__ . '/../api/landings_lib.php';
+
+        // Quién es dueño de qué, del lado del control.
+        $duenos = [];
+        try {
+            foreach ($pdo->query('SELECT id, nombre, landing_id FROM clientes WHERE landing_id IS NOT NULL') as $f) {
+                $duenos[(int) $f['landing_id']] = ['id' => (int) $f['id'], 'nombre' => $f['nombre']];
+            }
+        } catch (PDOException $e) {
+            /* Sin la migración 14 no hay dueños que mostrar, pero las
+               landings existen igual: se listan sin atribuir en vez de
+               dejar la pantalla vacía. */
+        }
+
+        $out = [];
+        try {
+            $cpdo = conectar_cliente($cfg, $db);
+            foreach (landings_listar($cpdo) as $l) {
+                if ((string) $l['plantilla'] !== 'wa') { continue; }   // las de promo son del CRM
+                $cfgL = landings_config_completa('wa', $l['config']);
+                $out[] = [
+                    'id'       => (int) $l['id'],
+                    'slug'     => (string) $l['slug'],
+                    'nombre'   => (string) $l['nombre'],
+                    'activa'   => (int) $l['activa'],
+                    'bono_pct' => (int) $l['bono_pct'],
+                    'whatsapp' => (string) ($cfgL['whatsapp']['numero'] ?? ''),
+                    'wa_texto' => (string) ($cfgL['whatsapp']['texto'] ?? ''),
+                    'url'      => landing_url($cfg, (string) $l['slug']),
+                    'cliente'  => $duenos[(int) $l['id']] ?? null,
+                ];
+            }
+        } catch (Throwable $e) {
+            salida(['ok' => false, 'error' => 'no pude leer las landings en ' . $db], 500);
+        }
+        salida(['ok' => true, 'base' => $db, 'base_como' => $comoSale, 'landings' => $out]);
+    }
+
+    case 'landing_estado': {
+        $idL = (int) ($in['landing_id'] ?? 0);
+        if ($idL <= 0) { salida(['ok' => false, 'error' => 'falta la landing'], 422); }
+        [$db, , $err] = landings_db_propia($pdo, $cfg);
+        if ($err !== '') { salida(['ok' => false, 'error' => $err], 500); }
+        require_once __DIR__ . '/../api/landings_lib.php';
+        try {
+            $nuevo = landings_toggle(conectar_cliente($cfg, $db), $idL);
+        } catch (Throwable $e) {
+            salida(['ok' => false, 'error' => 'no pude cambiarle el estado'], 500);
+        }
+        if ($nuevo === null) { salida(['ok' => false, 'error' => 'esa landing no existe'], 404); }
+        salida(['ok' => true, 'activa' => $nuevo ? 1 : 0]);
+    }
+
+    case 'landing_borrar': {
+        $idL = (int) ($in['landing_id'] ?? 0);
+        if ($idL <= 0) { salida(['ok' => false, 'error' => 'falta la landing'], 422); }
+        [$db, , $err] = landings_db_propia($pdo, $cfg);
+        if ($err !== '') { salida(['ok' => false, 'error' => $err], 500); }
+        require_once __DIR__ . '/../api/landings_lib.php';
+        try {
+            $cpdo = conectar_cliente($cfg, $db);
+            /* landings_borrar() se niega sola si la landing ya trajo
+               registros: borrarla dejaría esos jugadores sin dueño en
+               Publicidad. El mensaje que devuelve ya explica que se pausa
+               en vez de borrarse, así que se pasa tal cual. */
+            $r = landings_borrar($cpdo, $idL);
+        } catch (Throwable $e) {
+            salida(['ok' => false, 'error' => 'no pude borrarla'], 500);
+        }
+        if (empty($r['ok'])) { salida(['ok' => false, 'error' => $r['error'] ?? 'no se pudo'], 409); }
+
+        /* Y SE SUELTA EL VÍNCULO DEL CONTROL. Sin esto, el botón de la fila
+           de ese cliente seguiría apuntando a una landing que ya no existe. */
+        try {
+            $pdo->prepare('UPDATE clientes SET landing_id = NULL, landing_slug = NULL WHERE landing_id = ?')
+                ->execute([$idL]);
+        } catch (PDOException $e) { /* sin migración 14 no hay vínculo que soltar */ }
+        salida(['ok' => true]);
     }
 
     /* ===================================================================

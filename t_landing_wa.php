@@ -222,13 +222,57 @@ chequear('el WhatsApp se valida antes de escribir la landing',
    el CRM, landings_guardar() con ese id haría un UPDATE de 0 filas y
    devolvería "guardado" sin que exista ninguna landing: el panel mostraría un
    link que da 404 y nadie sabría por qué. */
-chequear('un landing_id que ya no existe se trata como "todavía no tiene"',
-         str_contains($panel, 'if (!$q->fetchColumn()) { $idLanding = 0; }'));
+chequear('un landing_id del control que ya no existe se rehace',
+         preg_match('/if \(!\$c\) \{.*?\}\s*\$idLanding = 0;/s', $panel) === 1,
+         'un puntero viejo dejaría el guardado roto para siempre');
 
 chequear('el vínculo cliente -> landing vive en el control, no en el JSON',
          is_file(__DIR__ . '/panel/sql/14_landing_cajero.sql')
          && str_contains(file_get_contents(__DIR__ . '/panel/sql/14_landing_cajero.sql'), 'landing_slug'),
          'adentro del config lo borraría lp_config_sanear al primer retoque desde el CRM');
+
+// ===========================================================================
+echo "\n=== 8. La landing SUELTA: el producto que se vende solo ===\n";
+/* Una landing no necesita cliente, ni CRM, ni base propia. Lo que la hace
+   vendible por separado es que todo lo caro ya está de nuestro lado: vive en
+   NUESTRA base y crea las cuentas con NUESTRO agente. Lo único que aporta el
+   comprador es su WhatsApp. */
+chequear('el panel lista, pausa y borra landings',
+         str_contains($panel, "case 'landing_listar'")
+         && str_contains($panel, "case 'landing_estado'")
+         && str_contains($panel, "case 'landing_borrar'"));
+
+chequear('se puede crear una sin cliente, con solo un nombre',
+         str_contains($panel, "if (\$id <= 0 && \$idLandingIn <= 0 && \$nombreIn === '')"),
+         'si exigiera cliente, no habría nada que vender por separado');
+
+/* SOLO LA DE UN CLIENTE SE ANOTA EN EL CONTROL. Una suelta no tiene dónde
+   anotarse y tampoco lo necesita; escribir ahí con id 0 no apuntaría a
+   ningún cliente. */
+chequear('el vínculo con el cliente se escribe solo si hay cliente',
+         preg_match('/if \(\$id > 0\) \{\s*\$pdo->prepare\(\'UPDATE clientes SET landing_id/', $panel) === 1);
+
+/* Y AL BORRAR SE SUELTA. Sin esto, el botón de la fila de ese cliente
+   seguiría apuntando a una landing que ya no existe. */
+chequear('borrar una landing suelta el puntero del cliente',
+         str_contains($panel, 'UPDATE clientes SET landing_id = NULL, landing_slug = NULL WHERE landing_id = ?'));
+
+/* El listado del panel es de landings de CAJERO. Las de promo del CRM usan
+   otras plantillas y no se tocan desde acá: mezclarlas haría que alguien
+   pause una campaña creyendo que apaga un link de WhatsApp. */
+chequear('el panel lista solo las de cajero, no las de promo del CRM',
+         str_contains($panel, "if ((string) \$l['plantilla'] !== 'wa') { continue; }"));
+
+/* LOS DOS "no está" NO SON LO MISMO. Del control es un puntero viejo y hay
+   que rehacerla; del request es el operador editando algo que alguien borró
+   mientras tanto, y ahí rehacerla en silencio le devuelve "guardado" sobre
+   otra cosa. */
+chequear('editar una landing que alguien borró avisa, no la recrea muda',
+         str_contains($panel, 'esa landing ya no existe'));
+
+/* Editar una suelta sin tocar el nombre no puede renombrarla a "". */
+chequear('mandar el nombre vacío conserva el que tenía',
+         str_contains($panel, "\$nombre = (string) (\$q->fetchColumn() ?: 'Landing');"));
 
 printf("\n%s\n%d OK, %d fallas\n", str_repeat('-', 39), $ok, $fail);
 exit($fail > 0 ? 1 : 0);

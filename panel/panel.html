@@ -245,6 +245,14 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
           Cobro (MercadoPago)
         </button>
+        <!-- La landing es un producto que se vende SOLO, sin cliente ni CRM
+             detrás: por eso entra por la barra de arriba y no por la fila de
+             un cliente. El botón de la fila sigue existiendo para la landing
+             DE un cliente, que es el otro caso. -->
+        <button class="btn" id="btnLandings" style="background:var(--card2);border:1px solid var(--line);color:var(--tx)">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18a8 8 0 0 1-4.1-1.1l-.3-.2-3 .8.8-2.9-.2-.3A8 8 0 1 1 12 20z"/></svg>
+          Landings
+        </button>
         <button class="btn" id="btnNuevo">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
           Nuevo cliente
@@ -420,6 +428,46 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
         Ajustar
       </button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: TODAS LAS LANDINGS (incluidas las que no son de ningún cliente) -->
+<div class="ov" id="ovLandings">
+  <div class="modal" style="max-width:860px">
+    <div class="modal-head">
+      <div class="ic">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18a8 8 0 0 1-4.1-1.1l-.3-.2-3 .8.8-2.9-.2-.3A8 8 0 1 1 12 20z"/></svg>
+      </div>
+      <div>
+        <h3>Landings</h3>
+        <p class="sub" id="lsSub">Crean la cuenta con nuestro agente y mandan al WhatsApp que pongas.</p>
+      </div>
+    </div>
+
+    <!-- ALTA / EDICIÓN. Es el mismo formulario para las dos cosas: editar
+         solo precarga los campos. -->
+    <div style="border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:16px">
+      <div id="lsFormTitulo" style="font-size:13px;font-weight:700;margin-bottom:10px">Nueva landing</div>
+      <div class="grid">
+        <div><input id="lsNombre" class="field" maxlength="80" placeholder="Para quién es (ej: Kiosco Tano)"></div>
+        <div><input id="lsWa" class="field" placeholder="WhatsApp: +54 9 11 2345-6789"></div>
+      </div>
+      <div class="grid" style="margin-top:10px">
+        <div><input id="lsTexto" class="field" maxlength="120" placeholder="Mensaje ya escrito (opcional)"></div>
+        <div><input id="lsBono" class="field" type="number" min="0" max="200" step="5" placeholder="Bono % (0 = sin bono)"></div>
+      </div>
+      <div class="row-btns" style="margin-top:12px;justify-content:flex-start">
+        <button class="btn" id="lsGuardar">Crear landing</button>
+        <button class="btn ghost" id="lsCancelar" style="display:none">Cancelar edición</button>
+      </div>
+      <div id="lsMsg" class="msg"></div>
+    </div>
+
+    <div class="tbl-wrap" id="lsLista"></div>
+
+    <div class="row-btns">
+      <button class="btn ghost" id="lsCerrar">Cerrar</button>
     </div>
   </div>
 </div>
@@ -1072,6 +1120,147 @@
     }).catch(function(){ m.className="msg err"; m.textContent="no pude conectar"; });
   }
 
+  /* ---------- todas las landings (el producto que se vende solo) ----------
+     Una landing NO necesita cliente, ni CRM, ni base propia: vive en nuestra
+     base, crea las cuentas con nuestro agente y deriva al WhatsApp que se le
+     cargue. Por eso se puede vender por separado, y por eso esta pantalla no
+     pide elegir un cliente.
+
+     Las de un cliente aparecen igual en la lista, marcadas: son LA MISMA cosa
+     con alguien anotado como dueno en el control. Dos pantallas para lo mismo
+     seria garantizar que una de las dos quede atras. */
+  var lsEditando = 0;
+
+  function abrirLandings(){
+    lsSalirDeEdicion();
+    $("lsMsg").textContent = ""; $("lsMsg").className = "msg";
+    $("lsLista").innerHTML = '<p class="sub" style="padding:10px">cargando...</p>';
+    $("ovLandings").classList.add("on");
+    lsCargar();
+  }
+  function cerrarLandings(){ $("ovLandings").classList.remove("on"); }
+
+  function lsSalirDeEdicion(){
+    lsEditando = 0;
+    $("lsFormTitulo").textContent = "Nueva landing";
+    $("lsGuardar").textContent = "Crear landing";
+    $("lsCancelar").style.display = "none";
+    $("lsNombre").value = ""; $("lsNombre").disabled = false;
+    $("lsWa").value = ""; $("lsTexto").value = ""; $("lsBono").value = "0";
+  }
+
+  function lsCargar(){
+    api("landing_listar", {}).then(function(res){
+      if (!res.j.ok){
+        $("lsLista").innerHTML = "";
+        $("lsMsg").className = "msg err"; $("lsMsg").textContent = res.j.error || "no se pudo";
+        return;
+      }
+      /* Se dice en que base se crean: es la decision que hace que la cuenta
+         salga con nuestro agente, y desde la pantalla es invisible. */
+      $("lsSub").textContent = "Crean la cuenta con nuestro agente (en " + res.j.base
+                             + ") y mandan al WhatsApp que pongas.";
+      var ls = res.j.landings || [];
+      if (!ls.length){
+        $("lsLista").innerHTML = '<p class="sub" style="padding:10px">Todavia no hay ninguna. Crea la primera arriba.</p>';
+        return;
+      }
+      var html = '<table><thead><tr><th>Landing</th><th>WhatsApp</th><th>Link</th><th>Estado</th><th></th></tr></thead><tbody>';
+      ls.forEach(function(l){
+        html += '<tr>'
+          + '<td><b>' + esc(l.nombre) + '</b>'
+          + (l.cliente ? '<br><span style="font-size:11px;color:var(--faint)">cliente: ' + esc(l.cliente.nombre) + '</span>'
+                       : '<br><span style="font-size:11px;color:var(--faint)">suelta</span>')
+          + (l.bono_pct > 0 ? '<br><span style="font-size:11px;color:var(--faint)">bono ' + esc(l.bono_pct) + '%</span>' : '')
+          + '</td>'
+          + '<td>' + esc(l.whatsapp || "-") + '</td>'
+          + '<td><a class="dom" href="' + esc(l.url) + '" target="_blank" rel="noopener">abrir</a> '
+          + '<button class="ls-copiar" data-url="' + esc(l.url) + '">copiar</button></td>'
+          + '<td><span class="pill ' + (l.activa ? "activo" : "pausado") + '">'
+          + (l.activa ? "activa" : "pausada") + '</span></td>'
+          + '<td class="acc">'
+          + '<button class="ls-editar" data-id="' + esc(l.id) + '">Editar</button>'
+          + '<button class="ls-estado" data-id="' + esc(l.id) + '">' + (l.activa ? "Pausar" : "Activar") + '</button>'
+          + '<button class="ls-borrar" data-id="' + esc(l.id) + '">Borrar</button>'
+          + '</td></tr>';
+      });
+      $("lsLista").innerHTML = html + '</tbody></table>';
+
+      $("lsLista").querySelectorAll(".ls-copiar").forEach(function(b){
+        b.onclick = function(){
+          navigator.clipboard && navigator.clipboard.writeText(b.dataset.url);
+          b.textContent = "copiado!";
+          setTimeout(function(){ b.textContent = "copiar"; }, 1500);
+        };
+      });
+      $("lsLista").querySelectorAll(".ls-editar").forEach(function(b){
+        b.onclick = function(){
+          var l = ls.filter(function(x){ return String(x.id) === b.dataset.id; })[0];
+          if (!l) return;
+          lsEditando = l.id;
+          $("lsFormTitulo").textContent = "Editando: " + l.nombre;
+          $("lsGuardar").textContent = "Guardar cambios";
+          $("lsCancelar").style.display = "";
+          $("lsNombre").value = l.nombre;
+          /* El nombre de la landing DE un cliente sale del nombre del
+             cliente: dejarlo editable aca prometeria un cambio que el
+             proximo guardado desde su fila pisaria sin avisar. */
+          $("lsNombre").disabled = !!l.cliente;
+          $("lsWa").value = l.whatsapp || "";
+          $("lsTexto").value = l.wa_texto || "";
+          $("lsBono").value = l.bono_pct;
+          $("lsMsg").textContent = ""; $("lsMsg").className = "msg";
+        };
+      });
+      $("lsLista").querySelectorAll(".ls-estado").forEach(function(b){
+        b.onclick = function(){
+          api("landing_estado", { landing_id: Number(b.dataset.id) }).then(function(r){
+            if (!r.j.ok){ $("lsMsg").className = "msg err"; $("lsMsg").textContent = r.j.error || "no se pudo"; return; }
+            lsCargar();
+          });
+        };
+      });
+      $("lsLista").querySelectorAll(".ls-borrar").forEach(function(b){
+        b.onclick = function(){
+          if (!confirm("Borrar esta landing? El link deja de funcionar.")) return;
+          api("landing_borrar", { landing_id: Number(b.dataset.id) }).then(function(r){
+            if (!r.j.ok){
+              /* El error de "ya trajo registros" explica que se pause en vez
+                 de borrarse: se muestra entero, no se resume. */
+              $("lsMsg").className = "msg err"; $("lsMsg").textContent = r.j.error || "no se pudo";
+              return;
+            }
+            $("lsMsg").className = "msg ok"; $("lsMsg").textContent = "Borrada.";
+            lsCargar(); cargar();
+          });
+        };
+      });
+    }).catch(function(){
+      $("lsLista").innerHTML = "";
+      $("lsMsg").className = "msg err"; $("lsMsg").textContent = "no pude conectar";
+    });
+  }
+
+  function lsGuardar(){
+    var m = $("lsMsg"); m.className = "msg"; m.textContent = "guardando...";
+    api("landing_guardar", {
+      landing_id: lsEditando,
+      nombre:   $("lsNombre").value.trim(),
+      whatsapp: $("lsWa").value.trim(),
+      wa_texto: $("lsTexto").value.trim(),
+      bono_pct: parseInt($("lsBono").value, 10) || 0
+    }).then(function(res){
+      if (res.j.ok){
+        m.className = "msg ok";
+        m.textContent = "Listo. El link esta en la lista, boton copiar.";
+        lsSalirDeEdicion();
+        lsCargar(); cargar();
+      } else {
+        m.className = "msg err"; m.textContent = res.j.error || "no se pudo";
+      }
+    }).catch(function(){ m.className = "msg err"; m.textContent = "no pude conectar"; });
+  }
+
   /* ---------- landing de cajero ----------
      Una landing por cliente: el jugador se registra ahí, la cuenta sale con
      NUESTRA cuenta de agente, y al terminar se lo manda al WhatsApp de ESE
@@ -1258,6 +1447,12 @@
   $("opCerrar").onclick = cerrarOperadores;
   $("opCrear").onclick = crearOperador;
   $("ovOp").addEventListener("click", function(e){ if(e.target === $("ovOp")) cerrarOperadores(); });
+  $("btnLandings").onclick = abrirLandings;
+  $("lsCerrar").onclick = cerrarLandings;
+  $("lsGuardar").onclick = lsGuardar;
+  $("lsCancelar").onclick = lsSalirDeEdicion;
+  $("ovLandings").addEventListener("click", function(e){ if(e.target === $("ovLandings")) cerrarLandings(); });
+
   $("laCerrar").onclick = cerrarLanding;
   $("laGuardar").onclick = guardarLanding;
   $("laCopiar").onclick = function(){
