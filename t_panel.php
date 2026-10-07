@@ -70,6 +70,7 @@ $pdo->exec(
        id             INT AUTO_INCREMENT PRIMARY KEY,
        nombre         VARCHAR(120) NOT NULL DEFAULT 't',
        slug           VARCHAR(60)  NOT NULL,
+       estado         VARCHAR(20)  NOT NULL DEFAULT 'activo',
        dominio        VARCHAR(190) NOT NULL DEFAULT 'x',
        db_nombre      VARCHAR(80)  DEFAULT NULL,
        metodo_cobro   ENUM('transferencia','hgcash') NOT NULL DEFAULT 'transferencia',

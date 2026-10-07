@@ -52,6 +52,30 @@ function limpiar(PDO $pdo): void {
 }
 limpiar($pdo);
 
+echo "\n=== 0. Un tenant propio no encola sin su agente ===\n";
+$GLOBALS['TENANT_ALTAS_PROPIAS'] = true;
+$GLOBALS['TENANT_AGENT_CONFIGURED'] = false;
+$sinAgente = alta_encolar($pdo, [
+    'usuario' => 'holaTstTenantSinAgente',
+    'password' => 'clave12345',
+    'origen' => 'landing',
+]);
+chequear('falla cerrado con un mensaje de preparación (503)',
+         ($sinAgente['http'] ?? 0) === 503
+         && ($sinAgente['cuerpo']['codigo'] ?? '') === 'tenant_sin_configurar');
+$qSinAgente = $pdo->prepare('SELECT COUNT(*) FROM altas WHERE usuario=?');
+$qSinAgente->execute(['holaTstTenantSinAgente']);
+chequear('no deja una solicitud colgada en ninguna cola', (int)$qSinAgente->fetchColumn() === 0);
+
+// Una alta propia tampoco puede desviarse a ALTAS_EN_BASE aunque exista el
+// override legacy configurado para tenants antiguos.
+$GLOBALS['TENANT_AGENT_CONFIGURED'] = true;
+$GLOBALS['T_CFG']['ALTAS_EN_BASE'] = 'goldpaw_altas_test';
+chequear('un tenant propio siempre conserva su base aunque exista el override global',
+         alta_pdo($pdo) === $pdo);
+unset($GLOBALS['TENANT_ALTAS_PROPIAS'], $GLOBALS['TENANT_AGENT_CONFIGURED'],
+      $GLOBALS['T_CFG']['ALTAS_EN_BASE']);
+
 // ===========================================================================
 echo "\n=== 1. Reconocer que el nombre estaba ocupado ===\n";
 
