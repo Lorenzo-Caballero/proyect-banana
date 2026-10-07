@@ -1693,6 +1693,11 @@
   /* Se levanta en cuanto la plataforma confirma una sesion. Hasta entonces, la
      cuenta recien creada es solo credenciales en pantalla. */
   var gpEntroAlgunaVez = false;
+  /* El UNICO motivo que vacia la charla. Es una constante y no un string
+     suelto a proposito: asi un llamador nuevo no puede borrar por accidente
+     escribiendo el texto parecido -- tiene que nombrarla, que es tanto como
+     leer por que existe. */
+  var MOTIVO_MANUAL = "el jugador tocó Empezar de nuevo";
   function marcarAltaReciente(u){
     reciencreada = u || "";
     if (reciencreada) { lss("gp_alta_reciente", reciencreada); } else { lsd("gp_alta_reciente"); }
@@ -1713,10 +1718,30 @@
    * unica vez que los ve. El `motivo` queda en el log para que, si alguna vez
    * hay que mirar de nuevo, se vea en un segundo cual de los caminos fue --
    * eso es exactamente lo que falto las tres veces anteriores. */
+  /* SOLO BORRA EL JUGADOR, A MANO. Decision del dueño (05/10/2026): "que no se
+   * borre el chat automaticamente".
+   *
+   * Venian CUATRO intentos de condicionar el borrado --por tenant, por
+   * restauracion, por suelte de sesion, por cuenta recien creada-- y cada uno
+   * tapaba un camino dejando otro abierto. La ultima captura lo mostro en su
+   * peor forma: el chat se vacio EN MEDIO de la entrega, entre "Usuario:" y
+   * "Contraseña:", y quedo la contraseña sola sin el usuario que le
+   * corresponde. Inservible.
+   *
+   * La regla deja de tener excepciones: ningun camino automatico borra. El
+   * unico que borra es el boton "Empezar de nuevo", que aprieta el jugador
+   * cuando el quiere.
+   *
+   * NO SE PIERDE EL AISLAMIENTO, que era lo que esos borrados cuidaban: la
+   * charla se guarda con su dueño adentro y restaurar() no muestra la de otro
+   * usuario, ademas de guardarse por tenant (gpChatKey). O sea que la
+   * separacion entre dos personas, o entre dos clientes, sigue estando donde
+   * de verdad hace falta -- al MOSTRAR, no al vaciar la pantalla de alguien
+   * que esta en medio de algo. */
   function olvidar(motivo){
-    if (reciencreada && !gpEntroAlgunaVez){
-      log("NO se borra la charla (" + (motivo || "sin motivo") + "): la cuenta "
-          + reciencreada + " todavia no inicio sesion y tiene sus datos en pantalla");
+    if (motivo !== MOTIVO_MANUAL){
+      log("NO se borra la charla (" + (motivo || "sin motivo")
+          + "): solo se vacia cuando el jugador toca Empezar de nuevo");
       return false;
     }
     log("se borra la charla:", motivo || "sin motivo");
@@ -2005,7 +2030,16 @@
   }
 
   function reiniciarCharla(motivo){
-    olvidar(motivo || "reiniciarCharla");
+    /* SI NO SE BORRO, NO SE SALUDA. Antes saludaba igual, y eso metia un
+       "¡Hola! Soy Camila..." en medio de una conversacion en curso -- se vio
+       en la captura del 05/10/2026, con el saludo pegado arriba de la
+       contraseña que el jugador acababa de recibir. El saludo tiene sentido
+       sobre una pantalla en blanco; sobre una charla viva es ruido que ademas
+       hace pensar que algo se reinicio. */
+    if (!olvidar(motivo || "reiniciarCharla")){
+      pintarAtajos();   // los atajos SI pueden haber cambiado (entro o salio)
+      return;
+    }
     pintarAtajos();   // entró o salió: los atajos de antes ya no aplican
     if (panel.classList.contains("open")) saludar();
   }
@@ -2081,7 +2115,7 @@
      (por un error que ya se arregló en el server), lo sigue viendo en su
      propio historial y lo repite. Esto lo borra y arranca en blanco. */
   $("gp-nuevo").addEventListener("click", function (){
-    reiniciarCharla("el jugador tocó Empezar de nuevo");
+    reiniciarCharla(MOTIVO_MANUAL);
   });
 
   text.addEventListener("input", function (){

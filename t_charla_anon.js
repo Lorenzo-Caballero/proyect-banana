@@ -141,9 +141,17 @@ console.log("\n=== 7. La guarda está en el EMBUDO, no en cada camino ===");
    y vale para los cinco. */
 chequear("olvidar() es quien decide, y recibe el motivo",
          /function olvidar\(motivo\)\{/.test(src));
-chequear("con una cuenta recién creada sin entrar, NO borra",
-         /if \(reciencreada && !gpEntroAlgunaVez\)\{[\s\S]{0,200}return false;/.test(src),
-         "es la regla única que cubre los cinco caminos");
+/* LA REGLA YA NO TIENE EXCEPCIONES. Cuatro intentos de condicionar el borrado
+   --por tenant, por restauración, por suelte, por cuenta recién creada-- y
+   cada uno tapaba un camino dejando otro abierto. La última captura lo mostró
+   en su peor forma: el chat se vació EN MEDIO de la entrega, entre "Usuario:"
+   y "Contraseña:", y quedó la contraseña sola. Ahora solo borra el jugador. */
+chequear("NINGÚN camino automático borra la charla",
+         /if \(motivo !== MOTIVO_MANUAL\)\{[\s\S]{0,300}return false;/.test(src),
+         "cualquier excepción vuelve a abrir una puerta que después hay que perseguir");
+chequear("el único motivo que borra es una constante, no un string suelto",
+         /var MOTIVO_MANUAL = /.test(src) && /reiniciarCharla\(MOTIVO_MANUAL\)/.test(src),
+         "con un string suelto, un llamador nuevo borra por accidente");
 chequear("y la bandera solo se levanta cuando la plataforma confirma sesión",
          /gpEntroAlgunaVez = true;\s*\/\/ la plataforma confirmo una sesion de verdad/.test(src),
          "si se levantara sola, la guarda no serviría de nada");
@@ -151,10 +159,16 @@ chequear("y la bandera solo se levanta cuando la plataforma confirma sesión",
 /* CADA CAMINO DICE QUIÉN ES. Las tres vueltas anteriores se perdieron
    justamente por no saber cuál de ellos era: con el motivo en el log, la
    próxima vez se ve en un segundo. */
-const motivos = (src.match(/reiniciarCharla\("[^"]+"\)/g) || []);
-chequear("los cuatro llamadores están etiquetados",
+const motivos = (src.match(/reiniciarCharla\((?:"[^"]+"|MOTIVO_MANUAL)\)/g) || []);
+chequear("los llamadores están etiquetados",
          motivos.length >= 4,
          "sin el motivo, un borrado inesperado vuelve a costar tres vueltas");
+/* Y si no borró, tampoco saluda: un "¡Hola! Soy Camila" en medio de una
+   charla viva es ruido, y hace pensar que algo se reinició. Se vio pegado
+   arriba de la contraseña en la captura del 05/10. */
+chequear("si no borró, no mete un saludo nuevo",
+         /if \(!olvidar\(motivo \|\| "reiniciarCharla"\)\)\{[\s\S]{0,200}return;/.test(src),
+         "el saludo sobre una charla en curso parece un reinicio que no pasó");
 chequear("y el que borra lo deja escrito en el log",
          /log\("se borra la charla:", motivo/.test(src));
 chequear("igual que el que NO borra",
