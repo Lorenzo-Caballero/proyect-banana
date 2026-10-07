@@ -1504,6 +1504,9 @@ def _usuarios_paginas(ctx) -> list:
 
 ACTIVOS_MINUTOS = int(os.environ.get("ACTIVOS_MINUTOS", "15"))
 ACTIVOS_TOPE    = int(os.environ.get("ACTIVOS_TOPE", "60"))
+# No lanzar 60 GETs seguidos al panel en cada minuto: el WAF interpreta esa
+# rafaga como automatizacion abusiva y corta justo las lecturas de saldo.
+ACTIVOS_PAUSA_S = float(os.environ.get("ACTIVOS_PAUSA_S", "0.2"))
 
 
 def refrescar_saldos_activos(ctx, solo_ver: bool) -> None:
@@ -1552,7 +1555,9 @@ def refrescar_saldos_activos(ctx, solo_ver: bool) -> None:
     # arregla el reintento; si se cayeron tres al hilo el WAF esta cerrado y
     # seguir pidiendo 60 veces solo gasta el minuto de la pasada.
     seguidos = 0
-    for nombre in nombres:
+    for indice, nombre in enumerate(nombres):
+        if indice and ACTIVOS_PAUSA_S > 0:
+            time.sleep(ACTIVOS_PAUSA_S)
         try:
             url = (f"{PANEL_API}/agent_admin/user/?count=5&page=0"
                    f"&username={quote(str(nombre))}")

@@ -253,6 +253,14 @@ except ns_json['RespuestaPanelInvalida']:
 else:
     chequear('un HTTP 401 no se confunde con lista vacia ni challenge', False)
 
+f_activos = next(n for n in arbol.body
+                 if isinstance(n, ast.FunctionDef) and n.name == 'refrescar_saldos_activos')
+chequear('el barrido activo limita la rafaga de consultas al panel',
+         any(isinstance(n, ast.Name) and n.id == 'ACTIVOS_PAUSA_S'
+             for n in ast.walk(f_activos))
+         and any(isinstance(n, ast.Attribute) and n.attr == 'sleep'
+                 for n in ast.walk(f_activos)))
+
 # ---------------------------------------------------------------------------
 print('\n=== 5. NUNCA una escritura ===')
 # La regla que sostiene todo esto. Escrito como test y no como comentario
