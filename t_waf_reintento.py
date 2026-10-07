@@ -165,9 +165,8 @@ chequear('el primer reintento NO recarga la pagina', panel.despejes == 0,
 
 print('\n=== 3. Si insiste, se despeja con el navegador ===')
 # `ctx.request` no ejecuta JavaScript: puede llevar la cookie de clearance que
-# ya tiene, pero no conseguir una nueva. Eso solo lo hace la pagina. Va en el
-# ANTEULTIMO intento: recargar cuesta ~3 s y en la unica medicion que llego
-# hasta ahi no despejo nada, asi que primero se deja pasar la rafaga.
+# ya tiene, pero no conseguir una nueva. Se fuerza una renovacion en Chromium
+# cuando la rafaga persiste y luego quedan lecturas para recuperarse.
 panel, d, err = correr(['waf', 'waf', 'waf', 'ok'], intentos=4)
 chequear('el cuarto intento sale', err is None and d == {'dato': 'ok'})
 chequear('y antes se recargo la pagina del panel UNA vez', panel.despejes == 1,
@@ -202,9 +201,57 @@ chequear('y cada una es mas larga que la anterior',
          len(valores) >= 3 and all(valores[i] < valores[i + 1]
                                    for i in range(len(valores) - 1)),
          'valores=%s' % valores)
-chequear('la primera es la que se midio funcionando (1,5 s)',
-         bool(valores) and valores[0] == 1.5,
-         'con 0,5 s se quedo sin intentos en el primer barrido')
+chequear('la rafaga recibe pausas crecientes y cuatro oportunidades',
+         len(valores) >= 4 and valores[0] >= 1.5,
+         'con pausas cortas se agotaban los intentos durante la misma rafaga')
+
+print('\n=== 4c. Una respuesta desconocida nunca parece un fin de lista ===')
+_items = next(n for n in arbol.body
+              if isinstance(n, ast.FunctionDef) and n.name == '_usuarios_items')
+_estrictos = next(n for n in arbol.body
+                  if isinstance(n, ast.FunctionDef) and n.name == '_usuarios_items_estrictos')
+ns_items = {'RespuestaPanelInvalida': RuntimeError}
+exec(compile(ast.Module(body=[_items, _estrictos], type_ignores=[]), '<t>', 'exec'), ns_items)
+chequear('un [] del panel es una pagina vacia valida',
+         ns_items['_usuarios_items_estrictos']([], 'test') == [])
+try:
+    ns_items['_usuarios_items_estrictos']({'error': 'login'}, 'test')
+except RuntimeError:
+    chequear('un JSON sin lista se rechaza, no se vuelve []', True)
+else:
+    chequear('un JSON sin lista se rechaza, no se vuelve []', False)
+try:
+    ns_items['_usuarios_items_estrictos']([{'balance': 1}], 'test')
+except RuntimeError:
+    chequear('filas sin usuario se rechazan', True)
+else:
+    chequear('filas sin usuario se rechazan', False)
+
+_json_fn = next(n for n in arbol.body
+                if isinstance(n, ast.FunctionDef) and n.name == '_json')
+ns_json = {'es_challenge': es_challenge, 'DesafioWAF': DesafioWAF,
+           'RespuestaPanelInvalida': type('RespuestaPanelInvalida', (RuntimeError,), {})}
+exec(compile(ast.Module(body=[_json_fn], type_ignores=[]), '<t>', 'exec'), ns_json)
+class RespuestaFake:
+    def __init__(self, status, payload):
+        self.status = status
+        self.ok = 200 <= status < 300
+        self.payload = payload
+    def text(self): return str(self.payload)
+    def json(self): return self.payload
+
+try:
+    ns_json['_json'](RespuestaFake(503, {'error': 'temporario'}))
+except DesafioWAF:
+    chequear('un HTTP 503 vuelve al circuito seguro de reintentos', True)
+else:
+    chequear('un HTTP 503 vuelve al circuito seguro de reintentos', False)
+try:
+    ns_json['_json'](RespuestaFake(401, {'error': 'sesion vencida'}))
+except ns_json['RespuestaPanelInvalida']:
+    chequear('un HTTP 401 no se confunde con lista vacia ni challenge', True)
+else:
+    chequear('un HTTP 401 no se confunde con lista vacia ni challenge', False)
 
 # ---------------------------------------------------------------------------
 print('\n=== 5. NUNCA una escritura ===')

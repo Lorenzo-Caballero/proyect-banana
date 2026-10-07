@@ -157,6 +157,10 @@ class DesafioWAF(RuntimeError):
     en vez de la respuesta real. No se marca nada y se reintenta despues."""
 
 
+class RespuestaPanelInvalida(RuntimeError):
+    """El panel respondio, pero el payload no tiene la forma esperada."""
+
+
 def url_cola() -> str:
     """De API_URL (.../gp-api/altas_cola.php) sacamos .../gp-api/peticiones_cola.php.
 
@@ -224,27 +228,27 @@ def _json(r):
         raise DesafioWAF(f"no pude leer la respuesta: {e}")
     if es_challenge(txt):
         raise DesafioWAF("el panel devolvio HTML (challenge del WAF)")
+    # Un error JSON no es una lista vacia ni un saldo valido. Los bloqueos
+    # temporales (403/429/503) entran al mismo reintento WAF; 401 es sesion vencida.
+    status = getattr(r, "status", 200)
+    if not getattr(r, "ok", 200 <= status < 300):
+        # Las respuestas de limitacion/bloqueo temporal tambien son seguras de
+        # reintentar: esta funcion solo se usa para lecturas.
+        if status in (403, 429, 503):
+            raise DesafioWAF(f"el panel respondio HTTP {status} (bloqueo temporal)")
+        raise RespuestaPanelInvalida(f"el panel respondio HTTP {status}")
     try:
         return r.json()
     except Exception:
         raise DesafioWAF(f"respuesta no-JSON del panel: {txt[:200]}")
 
 
-WAF_INTENTOS = int(os.environ.get("WAF_INTENTOS", "4"))   # el original + 3
-# CUANTO SE ESPERA ANTES DE CADA REINTENTO, medido en produccion el 18/09/2026.
-#
-# Con 1,5 s: un barrido completo recibio 10 challenges y los 10 se resolvieron
-# en el SEGUNDO intento. Ninguno llego al tercero.
-#
-# De ahi se saco la conclusion equivocada --"la espera no es lo que lo arregla,
-# el challenge es por request"-- y se bajo a 0,5 s. El primer barrido con ese
-# valor se quedo sin intentos en la pagina 1: tres challenges seguidos en cinco
-# segundos. Se resolvian en el segundo intento POR la espera, no a pesar de
-# ella: el WAF desafia de a rafagas y hay que dejarlas pasar.
-#
-# Por eso ahora la espera CRECE. La rafaga corta se paga barato (1,5 s, que es
-# el caso normal) y la larga tiene tiempo de aflojar sin gastar intentos.
-WAF_ESPERAS_S = [1.5, 3.0, 5.0]
+WAF_INTENTOS = int(os.environ.get("WAF_INTENTOS", "5"))   # el original + 4
+# El WAF desafia en rafagas. A los reintentos se les da tiempo de aflojar; si
+# persiste, Chromium navega al panel para renovar la cookie de clearance antes
+# de las ultimas consultas. El espejo conserva pagina y retoma al cron siguiente
+# si el presupuesto se termina: no pierde las filas que ya leyo.
+WAF_ESPERAS_S = [2.0, 4.0, 7.0, 10.0]
 
 # QUE PUDO HACER ESTA PASADA. Se llena sobre la marcha y se reporta al final a
 # salud_colector.php, que es el que decide si amerita un Telegram.
@@ -275,8 +279,18 @@ def _despejar_waf(ctx) -> bool:
             return False
         pag = pags[0]
         pag.goto(USERS_URL, wait_until="domcontentloaded", timeout=30_000)
-        pag.wait_for_timeout(2500)
-        return True
+        # La pagina debe tener tiempo real para ejecutar JS de clearance. Si el
+        # challenge sigue visible, no fingimos que la cookie se renovo.
+        for espera in (2500, 5000, 7500):
+            pag.wait_for_timeout(espera)
+            try:
+                cuerpo = pag.content()
+            except Exception:
+                cuerpo = ""
+            if cuerpo and not es_challenge(cuerpo):
+                return True
+        log.warning("el navegador sigue viendo el challenge del WAF al recuperar sesion")
+        return False
     except Exception as e:
         log.info("no pude despejar el challenge: %s", str(e)[:120])
         return False
@@ -313,13 +327,10 @@ def leer_json(ctx, url: str, que: str, **kw):
             PASADA["challenges"] = PASADA.get("challenges", 0) + 1
             if intento >= WAF_INTENTOS:
                 break
-            # La espera primero, siempre: es lo que deja pasar la rafaga y lo
-            # que resolvio los 10 challenges del barrido medido. La recarga de
-            # la pagina --3 segundos, y en la unica medicion que llego hasta
-            # ahi no alcanzo a despejar nada-- queda para el ANTEULTIMO
-            # intento: si la rafaga no aflojo sola, puede ser la cookie.
+            # Separar reintentos deja terminar la rafaga; despues se fuerza una
+            # renovacion de clearance en Chromium (ctx.request no ejecuta JS).
             time.sleep(WAF_ESPERAS_S[min(intento - 1, len(WAF_ESPERAS_S) - 1)])
-            if intento == WAF_INTENTOS - 1:
+            if intento == 2:
                 _despejar_waf(ctx)
             log.info("%s: challenge del WAF, reintento (%d de %d)",
                      que, intento + 1, WAF_INTENTOS)
@@ -1397,6 +1408,23 @@ def _usuarios_items(data):
     return None
 
 
+def _usuarios_items_estrictos(data, que: str) -> list:
+    """Distingue una pagina vacia real de un payload desconocido del panel.
+
+    None significa que no encontramos una lista en la respuesta; solo [] es un
+    fin de pagina valido. Confundir ambos deja parte de los saldos viejos y
+    marca el espejo como exitoso.
+    """
+    items = _usuarios_items(data)
+    if items is None:
+        raise RespuestaPanelInvalida(f"{que}: respuesta sin lista de usuarios")
+    if any(not isinstance(u, dict) for u in items):
+        raise RespuestaPanelInvalida(f"{que}: la lista contiene filas invalidas")
+    if any(not (u.get("username") or u.get("login")) for u in items):
+        raise RespuestaPanelInvalida(f"{que}: una fila no tiene username")
+    return items
+
+
 def _usuarios_paginas(ctx) -> list:
     """Todos los jugadores del agente, paginados.
 
@@ -1432,8 +1460,9 @@ def _usuarios_paginas(ctx) -> list:
         url = (f"{PANEL_API}/agent_admin/user/?count={USUARIOS_POR_PAGINA}&page={pagina}"
                f"&user_id={agent_id}&is_banned=false&is_direct_structure=false")
         try:
-            items = _usuarios_items(
-                leer_json(ctx, url, f"espejo de saldos (pagina {pagina})", timeout=45_000)) or []
+            items = _usuarios_items_estrictos(
+                leer_json(ctx, url, f"espejo de saldos (pagina {pagina})", timeout=45_000),
+                f"espejo de saldos (pagina {pagina})")
         except DesafioWAF:
             # NO SE TIRA LO QUE YA SALIO BIEN. Medido el 18/09/2026: el WAF se
             # planto en la pagina 9 y agoto los cuatro intentos, y con eso se
@@ -1451,9 +1480,17 @@ def _usuarios_paginas(ctx) -> list:
             _guardar_pagina(pagina)
             completo = False
             break
+        except RespuestaPanelInvalida:
+            if not todos:
+                raise
+            log.warning("espejo de saldos: respuesta invalida en pagina %d. "
+                        "Guardo las %d anteriores y retomo ahi.", pagina, pagina)
+            _guardar_pagina(pagina)
+            completo = False
+            break
         if not items:
             break
-        todos += [_usuario_normalizado(u) for u in items if isinstance(u, dict)]
+        todos += [_usuario_normalizado(u) for u in items]
         if len(items) < USUARIOS_POR_PAGINA:
             break
         pagina += 1
@@ -1498,7 +1535,12 @@ def refrescar_saldos_activos(ctx, solo_ver: bool) -> None:
         r = ctx.request.get(
             f"{_url_usuarios()}?accion=activos&minutos={ACTIVOS_MINUTOS}&limite={ACTIVOS_TOPE}",
             headers={"X-API-Key": key}, timeout=30_000)
-        nombres = ((r.json() or {}).get("usuarios") or [])
+        if not r.ok:
+            raise RespuestaPanelInvalida(f"usuarios activos respondio HTTP {r.status}")
+        payload = r.json() or {}
+        nombres = payload.get("usuarios") if isinstance(payload, dict) else None
+        if not isinstance(nombres, list):
+            raise RespuestaPanelInvalida("usuarios activos respondio un payload inesperado")
     except Exception as e:
         log.warning("saldos activos: no pude pedir la lista: %s", e)
         return
@@ -1514,8 +1556,9 @@ def refrescar_saldos_activos(ctx, solo_ver: bool) -> None:
         try:
             url = (f"{PANEL_API}/agent_admin/user/?count=5&page=0"
                    f"&username={quote(str(nombre))}")
-            items = _usuarios_items(
-                leer_json(ctx, url, f"saldo de {nombre}", timeout=20_000)) or []
+            items = _usuarios_items_estrictos(
+                leer_json(ctx, url, f"saldo de {nombre}", timeout=20_000),
+                f"saldo de {nombre}")
             for u in items:
                 if not isinstance(u, dict):
                     continue
