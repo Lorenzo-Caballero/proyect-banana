@@ -118,7 +118,8 @@ console.log("\n=== 6. Y se borra cuando entra, que es lo pedido ===");
    pantalla no suma, y empezar limpio con su nombre sí. */
 chequear("al entrar con la cuenta nueva se reinicia la charla",
          /var entroConLaNueva = reciencreada && quien === reciencreada;/.test(src)
-         && /if \(entroConLaNueva\)\{\s*\n\s*reiniciarCharla\(\);/.test(src));
+         && /if \(entroConLaNueva\)\{[\s\S]{0,400}?reiniciarCharla\(/.test(src),
+         "es el borrado que SÍ se pidió: cuando ya usó las credenciales");
 chequear("y se levanta la marca, para no repetirlo",
          /if \(entroConLaNueva\) \{ marcarAltaReciente\(""\); \}/.test(src));
 /* La marca sobrevive a una recarga: el jugador puede cerrar y volver antes de
@@ -126,6 +127,38 @@ chequear("y se levanta la marca, para no repetirlo",
 chequear("la marca sobrevive a recargar la página",
          /ls\("gp_alta_reciente"\)/.test(src) && /lss\("gp_alta_reciente"/.test(src),
          "sin persistirla, una recarga antes de entrar vuelve a borrarle todo");
+
+// ===========================================================================
+console.log("\n=== 7. La guarda está en el EMBUDO, no en cada camino ===");
+/* POR QUÉ ESTO IMPORTA MÁS QUE EL ARREGLO EN SÍ. El 05/10/2026 se arreglaron
+   TRES caminos de a uno --el aislamiento por tenant, la restauración de la
+   charla, el suelte de sesión-- y el chat se seguía borrando: cada arreglo
+   tapaba una puerta y quedaba otra abierta. Son CUATRO los que llaman a
+   reiniciarCharla(), más el aislamiento. Taparlas una por una es una carrera
+   que se pierde.
+
+   La regla vive en olvidar(), que es por donde pasan todos. Se escribe una vez
+   y vale para los cinco. */
+chequear("olvidar() es quien decide, y recibe el motivo",
+         /function olvidar\(motivo\)\{/.test(src));
+chequear("con una cuenta recién creada sin entrar, NO borra",
+         /if \(reciencreada && !gpEntroAlgunaVez\)\{[\s\S]{0,200}return false;/.test(src),
+         "es la regla única que cubre los cinco caminos");
+chequear("y la bandera solo se levanta cuando la plataforma confirma sesión",
+         /gpEntroAlgunaVez = true;\s*\/\/ la plataforma confirmo una sesion de verdad/.test(src),
+         "si se levantara sola, la guarda no serviría de nada");
+
+/* CADA CAMINO DICE QUIÉN ES. Las tres vueltas anteriores se perdieron
+   justamente por no saber cuál de ellos era: con el motivo en el log, la
+   próxima vez se ve en un segundo. */
+const motivos = (src.match(/reiniciarCharla\("[^"]+"\)/g) || []);
+chequear("los cuatro llamadores están etiquetados",
+         motivos.length >= 4,
+         "sin el motivo, un borrado inesperado vuelve a costar tres vueltas");
+chequear("y el que borra lo deja escrito en el log",
+         /log\("se borra la charla:", motivo/.test(src));
+chequear("igual que el que NO borra",
+         /log\("NO se borra la charla \(/.test(src));
 
 console.log("\n" + "-".repeat(39));
 console.log(ok + " OK, " + fail + " fallas");

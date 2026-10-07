@@ -1690,15 +1690,40 @@
    * charla, que es lo que pidio el dueño) o cuando se cierra el chat. */
   var reciencreada = "";
   try { reciencreada = ls("gp_alta_reciente") || ""; } catch (e) {}
+  /* Se levanta en cuanto la plataforma confirma una sesion. Hasta entonces, la
+     cuenta recien creada es solo credenciales en pantalla. */
+  var gpEntroAlgunaVez = false;
   function marcarAltaReciente(u){
     reciencreada = u || "";
     if (reciencreada) { lss("gp_alta_reciente", reciencreada); } else { lsd("gp_alta_reciente"); }
   }
 
-  function olvidar(){
+  /* EL EMBUDO. Todo lo que borra la charla pasa por aca -- reiniciarCharla(),
+   * el suelte de sesion, el aislamiento por tenant, el boton "empezar de
+   * nuevo" --, asi que la guarda vive aca y no en cada llamador.
+   *
+   * POR QUE ACA Y NO EN CADA UNO: el 05/10/2026 se arreglaron tres caminos de
+   * a uno (el aislamiento, la restauracion, el suelte) y el chat se seguia
+   * borrando, porque cada arreglo tapaba una puerta y quedaba otra. Son seis
+   * los que llaman: taparlas una por una es una carrera que se pierde. En el
+   * embudo la regla se escribe UNA vez y vale para los seis.
+   *
+   * LA REGLA: con una cuenta recien creada que todavia no inicio sesion, la
+   * charla NO se borra. Ahi adentro estan su usuario y su contraseña, y es la
+   * unica vez que los ve. El `motivo` queda en el log para que, si alguna vez
+   * hay que mirar de nuevo, se vea en un segundo cual de los caminos fue --
+   * eso es exactamente lo que falto las tres veces anteriores. */
+  function olvidar(motivo){
+    if (reciencreada && !gpEntroAlgunaVez){
+      log("NO se borra la charla (" + (motivo || "sin motivo") + "): la cuenta "
+          + reciencreada + " todavia no inicio sesion y tiene sus datos en pantalla");
+      return false;
+    }
+    log("se borra la charla:", motivo || "sin motivo");
     historial = []; charla = []; lastAgentId = 0;
     body.innerHTML = ""; saludado = false;
     lsd(gpChatKey());
+    return true;
   }
 
   /* Cerró sesión: se borra TODO rastro del jugador anterior, en memoria y en
@@ -1979,8 +2004,8 @@
     pintar("b", saludo);
   }
 
-  function reiniciarCharla(){
-    olvidar();
+  function reiniciarCharla(motivo){
+    olvidar(motivo || "reiniciarCharla");
     pintarAtajos();   // entró o salió: los atajos de antes ya no aplican
     if (panel.classList.contains("open")) saludar();
   }
@@ -2056,7 +2081,7 @@
      (por un error que ya se arregló en el server), lo sigue viendo en su
      propio historial y lo repite. Esto lo borra y arranca en blanco. */
   $("gp-nuevo").addEventListener("click", function (){
-    reiniciarCharla();
+    reiniciarCharla("el jugador tocó Empezar de nuevo");
   });
 
   text.addEventListener("input", function (){
@@ -3119,6 +3144,7 @@
          "quiero que se elimine el chat despues de que el usuario haya iniciado
          sesion con la cuenta recien creada". Ya uso sus credenciales, asi que
          dejarlas en pantalla no suma y empezar limpio con su nombre si. */
+      gpEntroAlgunaVez = true;   // la plataforma confirmo una sesion de verdad
       var entroConLaNueva = reciencreada && quien === reciencreada;
       if (entroConLaNueva) { marcarAltaReciente(""); }
 
@@ -3126,7 +3152,10 @@
       USUARIO = quien;
       lss("goldpaw_user", USUARIO);
       if (entroConLaNueva){
-        reiniciarCharla();
+        /* ESTO ES LO QUE SE PIDIO: borrar el chat cuando el jugador entra con
+           la cuenta recien creada. Llega aca con gpEntroAlgunaVez ya en true,
+           asi que la guarda del embudo lo deja pasar. */
+        reiniciarCharla("entro con la cuenta recien creada");
         pintarAtajos();
         return;
       }
@@ -3134,7 +3163,7 @@
         guardar();        // re-guardar la MISMA charla bajo el usuario nuevo
         pintarAtajos();   // ahora tiene sesion: los atajos cambian
       } else {
-        reiniciarCharla();
+        reiniciarCharla("cambió a otro usuario logueado");
       }
       /* ACÁ SE RESETEABA EL FRENO para que el cartel saliera en cada inicio
          de sesión, y se sacó el 14/09/2026 junto con el resto del spam. Quien
@@ -3169,7 +3198,7 @@
             teniaSesion === true ? "(cerro sesion)" : "(cargo sin sesion)");
         avisarVps("SUELTA", { u: USUARIO });
         limpiarSesion();
-        reiniciarCharla();
+        reiniciarCharla("suelte: la plataforma dice que no hay sesión");
         notifRegistrar();   // lo desatamos: que no reciba los avisos del otro
         sinSesion = 0;
       }
