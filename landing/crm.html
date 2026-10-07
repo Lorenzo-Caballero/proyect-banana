@@ -2721,6 +2721,12 @@
      interno de cada una dejaria media pantalla muerta (el mismo problema que
      ya se arreglo en Notificaciones). */
   #viewPeticiones{overflow-y:auto;overflow-x:hidden}
+  /* Peticiones desplaza la vista completa. Las listas internas suelen crecer
+     hasta medir exactamente lo mismo que su contenido, así que `overflow:auto`
+     más `overscroll-behavior:contain` atrapaba el gesto sobre las filas y no
+     lo dejaba llegar al panel (sobre todo en táctil). Que las listas aporten
+     altura y que el único scroll vertical sea el de #viewPeticiones. */
+  #viewPeticiones .list{flex:0 0 auto;overflow-y:visible;overscroll-behavior-y:auto}
   .nv-ef-fila.es-trx{opacity:.55}
   .nv-ef-fila.es-trx .nv-ef-barra i{background:var(--muted)}
   .nv-ef-nom .trx{font-style:normal;cursor:help;color:var(--muted)}
