@@ -50,6 +50,41 @@ function pago(string $id, string $remitente, string $cuit = '',
 
 limpiar($pdo);
 
+echo "\n=== Una solicitud que desaparece no se da por resuelta ===\n";
+$pdo->exec("DELETE FROM peticiones_carga WHERE request_id IN (90000201, 90000202)");
+$pdo->prepare(
+    "INSERT INTO peticiones_carga (request_id, username, monto, estado, pago_id_unico, primera_vez)
+     VALUES (?, 'test_ausente', 1000, 'esperando', ?, NOW())"
+)->execute([90000201, 'TEST-RESERVA-90000201']);
+$pdo->prepare(
+    "INSERT INTO peticiones_carga (request_id, username, monto, estado, primera_vez)
+     VALUES (?, 'test_ausente', 1000, 'esperando', NOW())"
+)->execute([90000202]);
+$nAusentes = pc_marcar_ausentes_revision($pdo, [90000202], 2);
+$ausente = $pdo->query(
+    "SELECT estado, pago_id_unico, motivo FROM peticiones_carga WHERE request_id=90000201"
+)->fetch();
+$vista = $pdo->query(
+    "SELECT estado FROM peticiones_carga WHERE request_id=90000202"
+)->fetchColumn();
+chequear('una solicitud ausente pasa a revisión manual',
+         $nAusentes === 1 && $ausente['estado'] === 'revision'
+         && str_contains($ausente['motivo'], 'verificar manualmente'));
+chequear('la reserva de pago se conserva hasta comprobar qué pasó',
+         $ausente['pago_id_unico'] === 'TEST-RESERVA-90000201');
+chequear('una solicitud que sigue abierta no cambia de estado', $vista === 'esperando');
+$srcColaAusentes = file_get_contents(__DIR__ . '/api/peticiones_cola.php');
+$srcUiAusentes = file_get_contents(__DIR__ . '/landing/crm.html');
+chequear('la API cuenta las que manda a revisión, no las que cierra',
+         str_contains($srcColaAusentes, "'revisionadas' =>")
+         && !str_contains($srcColaAusentes, "'cerradas' =>"));
+chequear('el worker informa que requieren revisión manual',
+         str_contains(file_get_contents(__DIR__ . '/colector/aprobar_cargas.py'),
+                      'quedan para revisar en el CRM'));
+chequear('la pantalla explica que desaparecer no confirma aprobación',
+         str_contains($srcUiAusentes, 'eso por sí solo no confirma si se aprobó o rechazó'));
+$pdo->exec("DELETE FROM peticiones_carga WHERE request_id IN (90000201, 90000202)");
+
 // ===========================================================================
 echo "\n=== 1. Sin transferencia todavia ===\n";
 
@@ -442,10 +477,10 @@ $pdo->exec("DELETE FROM recargas WHERE usuario LIKE 'test_dup%'");
 $recargaDup = function (string $u, float $monto, string $cuando) use ($pdo): void {
     $pdo->prepare(
         "INSERT INTO recargas (usuario, coins, monto_pedido, monto_base, estado,
-                               referencia, creada_en, acreditada_en)
-         VALUES (?, ?, ?, ?, 'acreditada', ?, ?, ?)"
+                               referencia, creada_en, vence_en, acreditada_en)
+         VALUES (?, ?, ?, ?, 'acreditada', ?, ?, ?, ?)"
     )->execute([$u, (int)$monto, $monto, $monto,
-                'TD' . substr(md5($u . $monto . $cuando), 0, 6), $cuando, $cuando]);
+                'TD' . substr(md5($u . $monto . $cuando), 0, 6), $cuando, $cuando, $cuando]);
 };
 
 $ahoraD = date('Y-m-d H:i:s');

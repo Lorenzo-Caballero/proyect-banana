@@ -205,6 +205,33 @@ if (!defined('PC_ESPERA_MIN')) {
     define('PC_ESPERA_MIN', 15);
 }
 
+if (!function_exists('pc_marcar_ausentes_revision')) {
+    /**
+     * Una solicitud que desaparece de la bandeja abierta de Ganamos no prueba
+     * que haya sido aprobada: pudo aprobarse, rechazarse o haberse perdido la
+     * sesión del sondeador. Mantenerla en revisión evita esconderla del CRM y
+     * conserva cualquier transferencia que ya estuviera reservada hasta que
+     * una persona compruebe el historial.
+     */
+    function pc_marcar_ausentes_revision(PDO $pdo, array $vistas, int $dias): int
+    {
+        $dias = max(1, min(30, $dias));
+        $sql = "UPDATE peticiones_carga
+                   SET estado = 'revision',
+                       motivo = 'Ya no aparece entre las solicitudes abiertas de Ganamos; verificar manualmente en el historial.'
+                 WHERE estado = 'esperando'
+                   AND primera_vez >= DATE_SUB(NOW(), INTERVAL " . ($dias + 1) . " DAY)";
+        $vistas = array_values(array_unique(array_filter(array_map('intval', $vistas), static fn($id) => $id > 0)));
+        if ($vistas) {
+            $marcas = implode(',', array_fill(0, count($vistas), '?'));
+            $sql .= " AND request_id NOT IN ($marcas)";
+        }
+        $st = $pdo->prepare($sql);
+        $st->execute($vistas);
+        return $st->rowCount();
+    }
+}
+
 if (!function_exists('pc_ya_acreditada')) {
     /**
      * ¿A este jugador ya se le acredito ESTE monto por el chat?

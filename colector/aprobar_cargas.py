@@ -427,8 +427,9 @@ def evaluar(ctx, solicitudes: list, dias: int) -> list:
     if not res.get("ok"):
         log.error("el CRM rechazo la evaluacion: %s", str(res)[:300])
         return []
-    if res.get("cerradas"):
-        log.info("%s solicitud(es) cerradas: se resolvieron fuera del CRM", res["cerradas"])
+    if res.get("revisionadas"):
+        log.warning("%s solicitud(es) ya no aparecen abiertas en Ganamos; quedan para revisar en el CRM",
+                    res["revisionadas"])
     return res.get("datos") or []
 
 

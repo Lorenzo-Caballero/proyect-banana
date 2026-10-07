@@ -137,29 +137,16 @@ try {
             $vistas[] = $rid;
         }
 
-        /* 2) Las que teniamos esperando y ganamos ya no lista: alguien las
-              resolvio por fuera (un agente aprobo o rechazo a mano). Se cierran
-              y SE SUELTA la transferencia que tuvieran reclamada, si no quedaria
-              trabada para siempre.
+        /* 2) La solicitud desapareció de la bandeja abierta de Ganamos. Eso
+              por sí solo NO prueba que se haya aprobado: pudo rechazarse,
+              resolverse por fuera o la sesión pudo devolver una lista vacía.
+              La dejamos visible en revisión y conservamos cualquier pago
+              reservado hasta que una persona confirme el historial.
 
-              Solo dentro de la ventana que el worker realmente miro: una
-              solicitud mas vieja que eso no aparece en el listado por la fecha,
-              no porque se haya resuelto. */
-        $cerradas = 0;
-        $sqlCerrar = "UPDATE peticiones_carga
-                         SET estado = 'cerrada', pago_id_unico = NULL,
-                             motivo = 'se resolvio fuera del CRM'
-                       WHERE estado = 'esperando'
-                         AND primera_vez >= DATE_SUB(NOW(), INTERVAL " . ($dias + 1) . " DAY)";
-        if ($vistas) {
-            $marcas = implode(',', array_fill(0, count($vistas), '?'));
-            $st = $pdo->prepare($sqlCerrar . " AND request_id NOT IN ($marcas)");
-            $st->execute($vistas);
-        } else {
-            $st = $pdo->prepare($sqlCerrar);
-            $st->execute();
-        }
-        $cerradas = $st->rowCount();
+              Solo dentro de la ventana que el worker realmente miró: una
+              solicitud más vieja no aparece por la fecha, no porque haya
+              cambiado de estado. */
+        $revisionadas = pc_marcar_ausentes_revision($pdo, $vistas, $dias);
 
         // 3) Decidir sobre cada una que siga esperando.
         $abiertasPorMonto = [];
@@ -397,7 +384,7 @@ try {
         }
 
         $pdo->commit();
-        echo json_encode(['ok' => true, 'cerradas' => $cerradas, 'datos' => $datos],
+        echo json_encode(['ok' => true, 'revisionadas' => $revisionadas, 'datos' => $datos],
                          JSON_UNESCAPED_UNICODE);
         exit;
     }
