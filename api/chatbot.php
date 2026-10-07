@@ -944,7 +944,8 @@ try {
             tg_evento($pdo, 'salud', '🤖 El chat no está pudiendo responder', [
                 'Error'     => mb_substr($e->getMessage(), 0, 200),
                 'Qué pasa'  => 'El modelo de IA rechaza las llamadas y no hay respaldo que responda.',
-                'Qué hacer' => 'Abrir chatbot_diag.php?clave=ver-chatbot y revisar la cuota/key del modelo. '
+                'Qué hacer' => 'Iniciar sesión como admin del CRM y abrir chatbot_diag.php?clave=ver-chatbot; '
+                             . 'revisar la cuota y facturación de Anthropic/DashScope. '
                              . 'Los mensajes de los jugadores quedan guardados en el CRM.',
             ], 'chatbot_caido');
         }

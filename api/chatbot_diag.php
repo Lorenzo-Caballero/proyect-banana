@@ -1,6 +1,6 @@
 <?php
 /**
- * Diagnostico del chatbot. Abrilo en el NAVEGADOR (pasa el WAF/Cloudflare):
+ * Diagnostico del chatbot. Solo para un administrador con sesión iniciada:
  *   https://ganamoscrm.online/gp-api/chatbot_diag.php?clave=ver-chatbot
  *
  * Prueba el camino REAL del chat (Qwen, con la MISMA resolucion de key que
@@ -9,7 +9,8 @@
  * Cloudflare devuelve su "error code: 502" y el motivo real queda solo en el
  * error_log del server, que este archivo tambien vuelca).
  *
- * BORRALO del server cuando termines.
+ * No publica claves, pero sí detalles de configuración y registros; por eso
+ * exige la sesión admin del CRM antes de probar proveedores o leer logs.
  */
 
 require __DIR__ . '/config.php';
@@ -17,7 +18,12 @@ require __DIR__ . '/config.php';
 $ok = isset($_GET['clave']) && $_GET['clave'] === 'ver-chatbot';
 if (!$ok) { http_response_code(404); exit; }
 
+require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/crm_auth.php';
+exigir_admin();
+
 header('Content-Type: text/plain; charset=utf-8');
+header('Cache-Control: no-store, private');
 @ini_set('display_errors', '1');
 @ini_set('display_startup_errors', '1');
 error_reporting(E_ALL);
