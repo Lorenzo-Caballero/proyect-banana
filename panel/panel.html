@@ -338,12 +338,11 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
       Notas
     </label>
-    <!-- Acá hubo un campo de clave de IA por cliente. Se sacó (15/09/2026):
-         el chatbot de todos los clientes habla con la MISMA clave de
-         Anthropic del servidor (ANTHROPIC_API_KEY en config.local.php), la
-         que ya usa ganamoscrm.online. No hay nada que cargar por cliente; si
-         algún día uno necesita clave propia, existe clientes.ia_key en la
-         base y api/ia_key.php ya la resuelve primero. -->
+    <!-- La clave del modelo de chat pertenece al servidor, no a este cliente:
+         se configura en api/config.local.php (OPENAI_API_KEY para GPT o
+         ANTHROPIC_API_KEY para Claude). El contexto, historial y herramientas
+         siguen usando la base aislada del cliente. `clientes.ia_key` solo se
+         reserva para Anthropic y no se debe reutilizar con OpenAI. -->
     <textarea id="fNotas" class="field" rows="2" placeholder="Notas (opcional)" style="margin-top:10px"></textarea>
 
     <div id="crMsg" class="msg"></div>

@@ -1,6 +1,6 @@
 <?php
 /**
- * Proxy del chatbot -> Qwen, CON herramientas (tool use).
+ * Proxy del chatbot -> GPT / Claude / Qwen, CON herramientas (tool use).
  *
  * El bot no solo conversa: puede EJECUTAR acciones contra nuestra API
  * (identificar al jugador, crear una recarga, cargar fichas, pedir un retiro,
@@ -16,7 +16,7 @@
  * le perdia el hilo en dialogos con ramas -- el caso testigo: preguntaba "¿ya
  * tenes cuenta?", el jugador respondia "si" y contestaba "ok, te creo una".
  *
- * Ahora va Qwen por su modo COMPATIBLE CON OPENAI, que es otro formato de
+ * Qwen usa el formato COMPATIBLE CON OPENAI, que es otro formato de
  * mensajes: la respuesta viene en choices[0].message (Cohere la ponia en
  * message) y los errores en error.message (Cohere, en message). Si algun dia
  * se vuelve a cambiar de proveedor, eso es lo que hay que mirar -- esta todo
@@ -29,10 +29,11 @@
  *                     ANTHROPIC_API_KEY el chat arranca igual.
  *   2) QWEN_BASE_URL  opcional, default en QWEN_BASE_DEF.
  *   3) QWEN_MODEL     opcional, default en QWEN_MODEL_DEF.
- *   3b) CHAT_MODEL    opcional: si es un modelo claude-... (ej. claude-sonnet-5)
- *                     y hay ANTHROPIC_API_KEY, el chat corre sobre Claude por su
- *                     endpoint compatible con OpenAI. Vaciarlo vuelve a Qwen.
- *   3c) ANTHROPIC_WORKSPACE_ID  opcional: si la key de Anthropic es a nivel
+ *   3b) CHAT_MODEL    opcional: `gpt-5.4-mini` usa OPENAI_API_KEY y el endpoint
+ *                     oficial de OpenAI. `claude-...` usa Anthropic. Vacio
+ *                     mantiene Qwen como primario.
+ *   3c) OPENAI_API_KEY clave del proveedor OpenAI (no es una suscripcion ChatGPT).
+ *   3d) ANTHROPIC_WORKSPACE_ID  opcional: si la key de Anthropic es a nivel
  *                     ORGANIZACION, el endpoint compat exige este id (si no, da
  *                     400). Con una key ya scopeada a un workspace, dejar vacio.
  *   4) El contexto del juego -> chatbot_contexto.php (editable desde el CRM)
@@ -138,6 +139,9 @@ const QWEN_MODEL_DEF = 'qwen-plus';
 // el primario se queda sin cuota. Solo modelos que SI hacen tool-calling --
 // qwen-vl-max queda afuera a proposito (ignora las tools). Se prueban en orden.
 const QWEN_FALLBACK_DEF = 'qwen-turbo,qwen-max';
+// OpenAI y Claude (Anthropic) comparten el protocolo Chat Completions, pero
+// cada proveedor recibe su propia key y parametros de salida.
+const OPENAI_CHAT_BASE = 'https://api.openai.com/v1';
 // Claude (Anthropic) por su endpoint COMPATIBLE con OpenAI: mismo cuerpo,
 // mismas tools y misma respuesta (choices[0].message.tool_calls) que Qwen, asi
 // que el resto del loop no cambia. Se PRENDE poniendo CHAT_MODEL=claude-... y
@@ -375,11 +379,15 @@ $TOOLS = [
 // de Qwen siempre, y una instalacion solo-Claude daba 500 con el chat sano.
 require_once __DIR__ . '/ia_key.php';
 $key = ia_key_qwen();
+$chatModel = trim((string)cfg('CHAT_MODEL', ''));
+$hayOpenAI = ia_chat_openai_activo($chatModel, ia_key_openai());
 $hayQwen   = strlen($key) >= 20;
-$hayClaude = ia_chat_claude_activo(trim((string)cfg('CHAT_MODEL', '')), ia_key_anthropic());
-if (!$hayQwen && !$hayClaude) {
+// La clave de OpenAI es global, mientras que `clientes.ia_key` sigue siendo
+// exclusivamente Anthropic (tambien la usa vision_lib.php para comprobantes).
+$hayClaude = ia_chat_claude_activo($chatModel, ia_key_anthropic());
+if (!$hayQwen && !$hayClaude && !$hayOpenAI) {
     http_response_code(500);
-    error_log('chatbot: sin clave de IA (ni CHAT_MODEL+ANTHROPIC_API_KEY ni QWEN_API_KEY) en api/config.local.php');
+    error_log('chatbot: sin clave de IA (OPENAI_API_KEY, CHAT_MODEL+Anthropic o QWEN_API_KEY) en api/config.local.php');
     echo json_encode(['ok' => false, 'error' => 'El chatbot no esta configurado']);
     exit;
 }
@@ -2023,11 +2031,10 @@ function procesar_chat(array $mensajes, callable $llamarModelo, callable $ejecut
         // cual, o el modelo no sabe a que pedido corresponde cada resultado.
         // `content` va aunque sea null: algunos modelos rechazan el mensaje
         // si falta la clave.
-        $mensajes[] = [
-            'role'       => 'assistant',
-            'content'    => $msg['content'] ?? '',
-            'tool_calls' => $toolCalls,
-        ];
+        // La API pide devolver el mensaje del asistente tal como llegó antes
+        // de enviar los resultados de las funciones. Preservamos los campos
+        // adicionales del protocolo (además de content y tool_calls).
+        $mensajes[] = array_merge($msg, ['role' => 'assistant']);
 
         // Ejecutar cada herramienta y devolver el resultado
         foreach ($toolCalls as $tc) {
@@ -2928,6 +2935,37 @@ function ia_chat(string $key, array $mensajes, array $tools): array
     // `tools` vacio en vez de ignorarlo.
     if ($tools) { $cuerpo['tools'] = $tools; }
 
+    /* PRIMARIO: GPT de OpenAI, cuando CHAT_MODEL= gpt-... y OPENAI_API_KEY
+       esta configurada. GPT-5.4 mini admite Chat Completions y function
+       calling. Se usa reasoning_effort=none y max_completion_tokens para
+       mantener baja la latencia/coste y reservar el limite para texto visible.
+       Si falla por cuota, key o transporte, el flujo sigue por Qwen y Cohere. */
+    $openaiModel = trim((string)cfg('CHAT_MODEL', ''));
+    $openaiKey   = ia_key_openai();
+    if (ia_chat_openai_activo($openaiModel, $openaiKey)) {
+        $oc = $cuerpo;
+        $oc['model'] = $openaiModel;
+        unset($oc['temperature'], $oc['max_tokens']);
+        $oc['max_completion_tokens'] = MAX_TOKENS;
+        $oc['reasoning_effort'] = 'none';
+        try {
+            $ro = ia_chat_post(OPENAI_CHAT_BASE . '/chat/completions', $openaiKey, $oc, [], 45);
+            if ($ro['http'] === 200) { return $ro; }
+            $errorOpenAI = (string)($ro['data']['error']['message'] ?? 'sin detalle');
+            error_log('chatbot: OpenAI (' . $openaiModel . ') dio HTTP ' . $ro['http']
+                    . '; sigo con Qwen de respaldo. Error: '
+                    . mb_substr($errorOpenAI, 0, 300));
+            ia_chat_aviso_respaldo('Qwen ' . $modelo, (int)$ro['http'], false);
+        } catch (Throwable $e) {
+            $ro = ['http' => 0, 'data' => ['error' => ['message' => $e->getMessage()]], 'raw' => ''];
+            error_log('chatbot: OpenAI no respondio (' . $e->getMessage() . '); sigo con Qwen');
+            ia_chat_aviso_respaldo('Qwen ' . $modelo, 0, false);
+        }
+        // Ante cualquier rechazo o caída del proveedor principal se intenta
+        // el respaldo existente; el error de GPT solo se devuelve si tambien
+        // fallan Qwen y Cohere.
+    }
+
     /* PRIMARIO: Claude, si esta configurado (CHAT_MODEL=claude-... y
        ANTHROPIC_API_KEY). Mucho mejor coherencia para un bot que maneja plata.
        Va por el endpoint compatible con OpenAI, asi que solo cambia el modelo,
@@ -2955,10 +2993,10 @@ function ia_chat(string $key, array $mensajes, array $tools): array
             error_log('chatbot: Claude (' . $claudeModel . ') dio HTTP ' . $rc['http']
                     . '; sigo con Qwen de respaldo. Respuesta de Claude: '
                     . mb_substr((string)($rc['raw'] ?? ''), 0, 400));
-            ia_chat_aviso_respaldo('Qwen ' . $modelo, (int)$rc['http'], true);
+            ia_chat_aviso_respaldo('Qwen ' . $modelo, (int)$rc['http'], false, 'Claude');
         } catch (Throwable $e) {
             error_log('chatbot: Claude no respondio (' . $e->getMessage() . '); sigo con Qwen');
-            ia_chat_aviso_respaldo('Qwen ' . $modelo, 0, true);
+            ia_chat_aviso_respaldo('Qwen ' . $modelo, 0, false, 'Claude');
         }
     }
 
@@ -3040,7 +3078,7 @@ function ia_chat(string $key, array $mensajes, array $tools): array
             $rc = ['http' => 0, 'data' => [], 'raw' => ''];
         }
         if ($rc['http'] === 200) {
-            ia_chat_aviso_respaldo('Cohere ' . $modCo, (int)$r['http'], false);
+            ia_chat_aviso_respaldo('Cohere ' . $modCo, (int)$r['http'], false, 'Qwen');
             return $rc;
         }
         error_log('chatbot: el respaldo Cohere tampoco respondio (HTTP ' . $rc['http'] . ')');
@@ -3053,10 +3091,13 @@ function ia_chat(string $key, array $mensajes, array $tools): array
 
 
 /** Avisa por Telegram, UNA vez mientras dure, que el chat corre en respaldo.
- *  $mismoQwen: true si el respaldo es otro modelo Qwen (mismo contexto, el
- *  jugador ni lo nota); false si tuvo que saltar a otro proveedor (Cohere),
- *  que cambia el caracter del bot. Best-effort: nunca rompe el turno. */
-function ia_chat_aviso_respaldo(string $cual, int $httpPrimario, bool $mismoQwen): void
+ * Best-effort: nunca rompe el turno. */
+function ia_chat_aviso_respaldo(
+    string $cual,
+    int $httpPrimario,
+    bool $mismoQwen,
+    string $proveedorPrincipal = 'Qwen'
+): void
 {
     error_log('chatbot: corriendo sobre el respaldo ' . $cual
             . ' (el primario dio HTTP ' . $httpPrimario . ')');
@@ -3069,11 +3110,12 @@ function ia_chat_aviso_respaldo(string $cual, int $httpPrimario, bool $mismoQwen
                     : 'El modelo principal del chat rechazó la llamada (HTTP '
                       . $httpPrimario . ': cuota agotada o key inválida).',
                 'Impacto'   => $mismoQwen
-                    ? 'Es otro modelo del mismo Qwen: mismo contexto y herramientas, el jugador no lo nota.'
-                    : 'Es otro proveedor (Cohere): el chat responde, pero puede portarse distinto.',
+                    ? 'Es otro modelo del mismo proveedor Qwen: mismo contexto y herramientas.'
+                    : 'El chat cambió de ' . $proveedorPrincipal . ' a ' . $cual
+                      . '; conserva contexto y herramientas, pero puede responder distinto.',
                 'Qué hacer' => $httpPrimario === 0
-                    ? 'Revisar la conectividad o el estado del proveedor principal.'
-                    : 'Revisar la cuota/facturación del proveedor principal.',
+                    ? 'Revisar la conectividad o el estado de ' . $proveedorPrincipal . '.'
+                    : 'Revisar la cuota/facturación de ' . $proveedorPrincipal . '.',
             ], 'chatbot_respaldo:' . $cual);
         }
     } catch (Throwable $e) {

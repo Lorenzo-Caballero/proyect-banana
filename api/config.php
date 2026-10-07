@@ -18,8 +18,10 @@
  *   BOT_API_KEY                            identica al API_KEY del .env del bot
  *   ADMIN_PASS                             entrada a admin_usuarios.php
  *   JWT_SECRET                             firma del login propio (auth.php)
- *   COHERE_API_KEY                         el chatbot (hoy lee tambien la de Qwen)
- *   ANTHROPIC_API_KEY                      opcional: leer comprobantes con vision
+ *   COHERE_API_KEY                         fallback historico del chatbot
+ *   OPENAI_API_KEY                         chatbot cuando CHAT_MODEL=gpt-5.4-mini
+ *   CHAT_MODEL                             modelo primario (gpt-5.4-mini, claude-...)
+ *   ANTHROPIC_API_KEY                      vision y chatbot Claude opcional
  *   FINANZAS_COSTO_POR_FICHA               opcionales, umbrales del panel de
  *   FINANZAS_UMBRAL_RETIRO_GRANDE          finanzas; sin ellas se usan los
  *   FINANZAS_UMBRAL_RETIRO_MUY_GRANDE      defaults del codigo

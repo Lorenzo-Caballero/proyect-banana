@@ -3,7 +3,8 @@
  * Diagnostico del chatbot. Solo para un administrador con sesión iniciada:
  *   https://ganamoscrm.online/gp-api/chatbot_diag.php?clave=ver-chatbot
  *
- * Prueba el camino REAL del chat (Qwen, con la MISMA resolucion de key que
+ * Prueba los caminos reales del chat (GPT, Claude y Qwen, con la MISMA
+ * resolucion de keys que
  * chatbot.php) y muestra el error exacto que provoca el 502 -- incluido un
  * fatal que no se ve en la respuesta porque mata al worker de PHP (ahi
  * Cloudflare devuelve su "error code: 502" y el motivo real queda solo en el
@@ -57,6 +58,8 @@ $claudeKey   = ia_key_anthropic();
 $claudeOn    = $claudeModel !== '' && stripos($claudeModel, 'claude') === 0
             && strlen(trim($claudeKey)) > 20;   // el MISMO predicado que ia_chat_claude_activo()
 $origen      = ia_key_origen();
+$openaiKey   = ia_key_openai();
+$openaiOn    = ia_chat_openai_activo($claudeModel, $openaiKey);
 
 $keyQwen   = (string)cfg('QWEN_API_KEY');
 $keyCohere = (string)cfg('COHERE_API_KEY');
@@ -65,8 +68,10 @@ $key       = ia_key_qwen();
 $base   = rtrim((string)cfg('QWEN_BASE_URL', QWEN_BASE_DEF), '/');
 $modelo = (string)cfg('QWEN_MODEL', QWEN_MODEL_DEF);
 
-echo "\n=== PRIMARIO: CLAUDE (Anthropic) ===\n";
+echo "\n=== MODELO PRINCIPAL CONFIGURADO ===\n";
 echo "CHAT_MODEL        : " . ($claudeModel !== '' ? $claudeModel : '(vacio -> el chat corre en Qwen)') . "\n";
+echo "clave de OpenAI   : " . ($openaiKey !== '' ? 'cargada (' . strlen($openaiKey) . ' chars)' : 'VACIA') . "\n";
+echo "GPT activo        : " . ($openaiOn ? 'SI' : 'NO') . "\n";
 // Las claves NO se imprimen nunca, ni recortadas: este endpoint se abre para
 // diagnosticar y una clave filtrada no se puede desfiltrar. Solo largo/origen.
 echo "clave de Anthropic: " . ($claudeKey !== ''
@@ -86,14 +91,67 @@ if ($keyQwen === '' && $keyCohere !== '') {
     echo "     Esa key NO sirve contra Qwen (DashScope): da 401.\n";
     echo "     Arreglo: agregar 'QWEN_API_KEY' => 'sk-...' en api/config.local.php\n";
 }
-if (!$claudeOn && ($key === '' || strlen($key) < 20)) {
-    echo "\n=> No hay NINGUN camino con clave usable: ni Claude (CHAT_MODEL +\n";
-    echo "   clave de Anthropic) ni Qwen. El chat esta caido. Configura al menos uno.\n";
+if (!$claudeOn && !$openaiOn && ($key === '' || strlen($key) < 20)) {
+    echo "\n=> No hay NINGUN camino con clave usable: ni GPT (CHAT_MODEL + OPENAI_API_KEY),\n";
+    echo "   ni Claude (CHAT_MODEL + Anthropic), ni Qwen. El chat esta caido.\n";
     volcar_log();
     exit;
 }
-if ($claudeOn && ($key === '' || strlen($key) < 20)) {
-    echo "\n  >> Sin clave de Qwen usable: el chat vive SOLO de Claude, sin respaldo.\n";
+if (($claudeOn || $openaiOn) && ($key === '' || strlen($key) < 20)) {
+    echo "\n  >> Sin clave de Qwen usable: el chat vive solo del modelo principal, sin respaldo.\n";
+}
+
+// ---------------------------------------------------------------------------
+// Llamada a OpenAI con una herramienta `ping` sin efectos secundarios. Fuerza
+// el tool call para verificar que no solo responde texto, también función.
+// ---------------------------------------------------------------------------
+if ($openaiOn) {
+    echo "\n=== LLAMADA A OPENAI (GPT + function calling) ===\n";
+    $bodyO = [
+        'model' => $claudeModel,
+        'messages' => [['role' => 'user', 'content' => 'Llama a ping ahora.']],
+        'reasoning_effort' => 'none',
+        'max_completion_tokens' => 40,
+        'tool_choice' => 'required',
+        'tools' => [[
+            'type' => 'function',
+            'function' => [
+                'name' => 'ping',
+                'description' => 'Prueba segura sin efectos secundarios.',
+                'parameters' => [
+                    'type' => 'object', 'properties' => [], 'required' => [],
+                    'additionalProperties' => false,
+                ],
+                'strict' => true,
+            ],
+        ]],
+    ];
+    $ch = curl_init('https://api.openai.com/v1/chat/completions');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode($bodyO, JSON_UNESCAPED_UNICODE),
+        CURLOPT_HTTPHEADER => [
+            'Content-Type: application/json', 'Accept: application/json',
+            'Authorization: Bearer ' . $openaiKey,
+        ],
+        CURLOPT_TIMEOUT => 30,
+    ]);
+    $rawO = curl_exec($ch);
+    $httpO = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $errO = curl_error($ch);
+    curl_close($ch);
+    echo "  http = $httpO\n";
+    if ($rawO === false) {
+        echo "  curl_error = $errO\n";
+    } else {
+        $dataO = json_decode((string)$rawO, true) ?: [];
+        $callsO = $dataO['choices'][0]['message']['tool_calls'] ?? [];
+        echo "  tool_calls = " . (count($callsO) > 0 ? 'SI (' . count($callsO) . ')' : 'NO') . "\n";
+        if ($httpO !== 200) {
+            $msgO = $dataO['error']['message'] ?? '(sin error.message)';
+            echo "  error = " . substr((string)$msgO, 0, 500) . "\n";
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

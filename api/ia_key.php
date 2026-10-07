@@ -13,8 +13,13 @@
  *     cada cliente gasta su propia cuota de Anthropic, y el que no carga
  *     clave usa la del dueño.
  *
- *   - EL LUGAR DE QWEN (`ia_key_qwen`): el RESPALDO del chat (si Claude
- *     rechaza o no contesta, ia_chat() sigue con Qwen) y el lector de
+ *   - EL LUGAR DE OPENAI (`ia_key_openai`): el modelo principal del chat
+ *     cuando CHAT_MODEL empieza con `gpt-`. Usa OPENAI_API_KEY del servidor;
+ *     no reutiliza `clientes.ia_key`, porque esa columna contiene una clave
+ *     de Anthropic y mezclar proveedores deja al chat sin autenticar.
+ *
+ *   - EL LUGAR DE QWEN (`ia_key_qwen`): el respaldo del chat si el modelo
+ *     principal rechaza o no contesta, y el lector de
  *     comprobantes del CRM (comprobante_leer.php, qwen-vl). SIEMPRE las
  *     claves globales del server: QWEN_API_KEY, o COHERE_API_KEY como nombre
  *     viejo del mismo campo. La clave del cliente NO entra acá a propósito —
@@ -35,6 +40,13 @@
  */
 
 if (!function_exists('ia_key_anthropic')) {
+
+    /** El modelo GPT principal solo se activa con modelo y clave OpenAI. */
+    function ia_chat_openai_activo(string $model, string $key): bool
+    {
+        return stripos(trim($model), 'gpt-') === 0
+            && strlen(trim($key)) > 20;
+    }
 
     /**
      * La clave para hablar con ANTHROPIC (el chat sobre Claude y la visión):
@@ -65,6 +77,12 @@ if (!function_exists('ia_key_anthropic')) {
         $q = (string)cfg('QWEN_API_KEY');
         if ($q !== '') { return $q; }
         return (string)cfg('COHERE_API_KEY');
+    }
+
+    /** Clave global de OpenAI para el proveedor GPT del chatbot. */
+    function ia_key_openai(): string
+    {
+        return trim((string)cfg('OPENAI_API_KEY'));
     }
 
     /** Resuelve una sola vez por proceso y cachea (incluido el "no hay"). */
