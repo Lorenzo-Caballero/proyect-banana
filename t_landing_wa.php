@@ -270,6 +270,16 @@ chequear('el panel lista solo las de cajero, no las de promo del CRM',
 chequear('editar una landing que alguien borró avisa, no la recrea muda',
          str_contains($panel, 'esa landing ya no existe'));
 
+/* NI EL BONO. La pantalla de Landings no lo muestra, así que no lo manda:
+   leerlo como 0 haría que guardar un cambio de WhatsApp le apague el bono a
+   una landing que lo tenía, sin que nadie lo pida y sin que se vea. */
+chequear('mandar el bono ausente conserva el que tenía',
+         str_contains($panel, "\$bonoDado  = array_key_exists('bono_pct', \$in);")
+         && str_contains($panel, 'if (!$bonoDado && $idLanding > 0) {'),
+         'ausente se estaría leyendo como cero');
+chequear('y al crear sin bono queda en 0',
+         str_contains($panel, "max(0, min(200, (int) (\$in['bono_pct'] ?? 0)))"));
+
 /* Editar una suelta sin tocar el nombre no puede renombrarla a "". */
 chequear('mandar el nombre vacío conserva el que tenía',
          str_contains($panel, "\$nombre = (string) (\$q->fetchColumn() ?: 'Landing');"));

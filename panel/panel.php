@@ -591,6 +591,12 @@ switch ($accion) {
         $nombreIn  = trim((string) ($in['nombre'] ?? ''));
         $whatsapp  = trim((string) ($in['whatsapp'] ?? ''));
         $waTexto   = trim((string) ($in['wa_texto'] ?? ''));
+        /* AUSENTE NO ES CERO. La pantalla de Landings no muestra el bono, así
+           que no lo manda; si acá se leyera como 0, guardar un cambio de
+           WhatsApp le apagaría el bono a una landing que lo tenía — sin que
+           nadie lo pida y sin que se vea en ninguna parte. Ausente = dejalo
+           como está (y 0 al crear, que es el default razonable). */
+        $bonoDado  = array_key_exists('bono_pct', $in);
         $bonoPct   = max(0, min(200, (int) ($in['bono_pct'] ?? 0)));
         if ($id <= 0 && $idLandingIn <= 0 && $nombreIn === '') {
             salida(['ok' => false, 'error' => 'ponele un nombre para reconocerla'], 422);
@@ -683,6 +689,11 @@ switch ($accion) {
                 $q = $cpdo->prepare('SELECT nombre FROM landings WHERE id = ?');
                 $q->execute([$idLanding]);
                 $nombre = (string) ($q->fetchColumn() ?: 'Landing');
+            }
+            if (!$bonoDado && $idLanding > 0) {
+                $q = $cpdo->prepare('SELECT bono_pct FROM landings WHERE id = ?');
+                $q->execute([$idLanding]);
+                $bonoPct = (int) ($q->fetchColumn() ?: 0);
             }
             $r = landings_guardar($cpdo, $idLanding ?: null, $nombre, 'wa', $bonoPct, $config);
             if (!$r) {

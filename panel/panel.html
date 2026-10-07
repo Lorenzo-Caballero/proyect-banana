@@ -453,9 +453,8 @@
         <div><input id="lsNombre" class="field" maxlength="80" placeholder="Para quién es (ej: Kiosco Tano)"></div>
         <div><input id="lsWa" class="field" placeholder="WhatsApp: +54 9 11 2345-6789"></div>
       </div>
-      <div class="grid" style="margin-top:10px">
-        <div><input id="lsTexto" class="field" maxlength="120" placeholder="Mensaje ya escrito (opcional)"></div>
-        <div><input id="lsBono" class="field" type="number" min="0" max="200" step="5" placeholder="Bono % (0 = sin bono)"></div>
+      <div style="margin-top:10px">
+        <input id="lsTexto" class="field" maxlength="120" placeholder="Mensaje ya escrito (opcional)">
       </div>
       <div class="row-btns" style="margin-top:12px;justify-content:flex-start">
         <button class="btn" id="lsGuardar">Crear landing</button>
@@ -1146,7 +1145,7 @@
     $("lsGuardar").textContent = "Crear landing";
     $("lsCancelar").style.display = "none";
     $("lsNombre").value = ""; $("lsNombre").disabled = false;
-    $("lsWa").value = ""; $("lsTexto").value = ""; $("lsBono").value = "0";
+    $("lsWa").value = ""; $("lsTexto").value = "";
   }
 
   function lsCargar(){
@@ -1208,7 +1207,6 @@
           $("lsNombre").disabled = !!l.cliente;
           $("lsWa").value = l.whatsapp || "";
           $("lsTexto").value = l.wa_texto || "";
-          $("lsBono").value = l.bono_pct;
           $("lsMsg").textContent = ""; $("lsMsg").className = "msg";
         };
       });
@@ -1247,8 +1245,11 @@
       landing_id: lsEditando,
       nombre:   $("lsNombre").value.trim(),
       whatsapp: $("lsWa").value.trim(),
-      wa_texto: $("lsTexto").value.trim(),
-      bono_pct: parseInt($("lsBono").value, 10) || 0
+      wa_texto: $("lsTexto").value.trim()
+      /* El bono NO viaja desde acá. Esta pantalla no lo muestra, y mandar 0
+         por no mostrarlo le pondría el bono en cero a una landing que lo
+         tenía -- un cambio que nadie pidió y que no se ve en ningún lado.
+         Omitirlo le dice al server "no lo toques". */
     }).then(function(res){
       if (res.j.ok){
         m.className = "msg ok";
