@@ -13,5 +13,4 @@ ALTER TABLE clientes
 INSERT INTO clientes (nombre, slug, dominio, db_nombre, estado)
 VALUES ('Ganamos (Fauno)', 'ganamos', 'ganamos.faunotattoo.com', 'u722310012_fauno888', 'activo')
 ON DUPLICATE KEY UPDATE
-  db_nombre = VALUES(db_nombre),
   estado    = 'activo';

@@ -104,6 +104,15 @@ chequear(
         : ''
 );
 
+/* Las migraciones del control también se ejecutan en cada deploy. Esta semilla
+   registra `ganamos`, pero un ON DUPLICATE KEY UPDATE no puede volver a pisar
+   db_nombre: los clientes pueden tener una asignación propia corregida luego
+   del alta (justamente el caso ganamos -> gp_ganamos). */
+$controlSeed = (string)@file_get_contents(__DIR__ . '/panel/sql/02_db_por_cliente.sql');
+chequear('la semilla de clientes no pisa db_nombre al repetirse',
+    !preg_match('/ON\s+DUPLICATE\s+KEY\s+UPDATE\s+db_nombre\s*=/i', $controlSeed),
+    'migrar-control.php corre todas las migraciones cada deploy: repetir esta asignación resetea la base del cliente');
+
 printf("\n---------------------------------------\n%d OK, %d fallas (%d migraciones revisadas)\n",
     $ok, $fail, $revisados);
 exit($fail > 0 ? 1 : 0);
