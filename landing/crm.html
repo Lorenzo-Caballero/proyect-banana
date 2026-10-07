@@ -1628,8 +1628,8 @@
   @media(prefers-reduced-motion:reduce){ .rail-badge.urgente{animation:none} }
 
   /* ---- Comprobantes sin resolver (Fase A, Módulo 1) ---- */
-  .view-row{flex:1;display:flex;gap:12px;min-width:0}
-  .comp-list-col{width:var(--w-comp,360px);min-width:260px;display:flex;flex-direction:column;overflow:hidden}
+  .view-row{flex:1;display:flex;gap:12px;min-width:0;min-height:0}
+  .comp-list-col{width:var(--w-comp,360px);min-width:260px;min-height:0;display:flex;flex-direction:column;overflow:hidden}
   .comp-head{padding:16px 18px 14px;border-bottom:1px solid var(--line);display:flex;
     justify-content:space-between;align-items:center;gap:12px}
   /* Mismo peso que .cb-title (Configuracion/Chatbot): navegar entre
@@ -1641,7 +1641,8 @@
   .comp-row.sel{background:var(--violetSoft);box-shadow:inset 0 0 0 1px var(--violet)}
   .comp-row .cr-top{display:flex;justify-content:space-between;gap:8px;font-weight:700;font-size:14px}
   .comp-row .cr-sub{color:var(--muted);font-size:12.5px;margin-top:3px}
-  .comp-detail-col{flex:1;min-width:0;overflow-y:auto;padding:22px}
+  .comp-detail-col{flex:1;min-width:0;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+    -webkit-overflow-scrolling:touch;padding:22px}
   .comp-info{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:22px}
   .comp-info .ci{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:11px 13px}
   .comp-info .ci .k{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
@@ -1727,7 +1728,17 @@
   }
 
   /* ---- Retiros pendientes (Fase A, Módulo 2) ---- */
-  .view-panel{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;min-height:0}
+  /* Contrato común de desplazamiento para todas las secciones: cada panel
+     puede crecer y desplazarse dentro del espacio de la app. Las tablas y
+     listas mantienen sus áreas internas de scroll cuando están acotadas. */
+  .view-panel{flex:1;display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden;
+    overscroll-behavior:contain;-webkit-overflow-scrolling:touch;min-width:0;min-height:0}
+  /* Comprobantes es la única vista que usa .view-row en vez de .view-panel.
+     Sin min-height:0, el flex-item conserva la altura del contenido y body
+     (que está bloqueado) lo recorta: los scrolls internos nunca reciben un
+     alto real. */
+  #viewComprobantes{min-height:0;overflow-y:auto;overflow-x:hidden;
+    overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
   /* Entrada de vista: un fade con una subida corta cada vez que se cambia de
      seccion. Pasar de display:none a flex reinicia la animacion solo, sin
      JS. Es LA diferencia entre "la pantalla salto" y "navegue a otro lado". */

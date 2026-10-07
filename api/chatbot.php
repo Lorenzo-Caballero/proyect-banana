@@ -2915,7 +2915,7 @@ function ia_chat(string $key, array $mensajes, array $tools): array
         $ws = trim((string)cfg('ANTHROPIC_WORKSPACE_ID', ''));
         if ($ws !== '') { $claudeHeaders[] = 'anthropic-workspace-id: ' . $ws; }
         try {
-            $rc = ia_chat_post(CLAUDE_COMPAT_BASE . '/chat/completions', $claudeKey, $cc, $claudeHeaders);
+            $rc = ia_chat_post(CLAUDE_COMPAT_BASE . '/chat/completions', $claudeKey, $cc, $claudeHeaders, 45);
             if ($rc['http'] === 200) { return $rc; }
             error_log('chatbot: Claude (' . $claudeModel . ') dio HTTP ' . $rc['http']
                     . '; sigo con Qwen de respaldo. Respuesta de Claude: '
@@ -2923,11 +2923,23 @@ function ia_chat(string $key, array $mensajes, array $tools): array
             ia_chat_aviso_respaldo('Qwen ' . $modelo, (int)$rc['http'], true);
         } catch (Throwable $e) {
             error_log('chatbot: Claude no respondio (' . $e->getMessage() . '); sigo con Qwen');
+            ia_chat_aviso_respaldo('Qwen ' . $modelo, 0, true);
         }
     }
 
     $url = $base . '/chat/completions';
-    $r = ia_chat_post($url, $key, $cuerpo);
+    /* Los errores de transporte (especialmente los timeouts) también tienen
+       que activar los respaldos. Antes curl_exec lanzaba la excepción y el
+       turno terminaba ahí, después de esperar los 60 s del modelo principal. */
+    try {
+        $r = ia_chat_post($url, $key, $cuerpo, [], 45);
+    } catch (Throwable $e) {
+        $r = ['http' => 0,
+              'data' => ['error' => ['message' => $e->getMessage()]],
+              'raw' => ''];
+        error_log('chatbot: Qwen principal no respondió (' . $e->getMessage()
+                . '); pruebo los respaldos');
+    }
     if ($r['http'] === 200) { return $r; }
 
     /* RESPALDO. Un 401/403 no es "el jugador pregunto algo raro": es la CUENTA
@@ -2948,13 +2960,14 @@ function ia_chat(string $key, array $mensajes, array $tools): array
        chat: la hace Claude Haiku aparte (verificar_comprobante), asi que al
        chat no le hace falta un modelo con vision, le hace falta uno con tools.
 
-       Solo 401/403 disparan el respaldo: un 429 (rate limit) o un 5xx son
-       transitorios y el propio jugador reintenta; cambiar de modelo por un
-       pico de trafico seria inestable a lo bobo. */
-    if (!in_array($r['http'], [401, 403], true)) { return $r; }
+       401/403 (cuenta/cuota) y los errores de transporte (HTTP 0) disparan
+       el respaldo. Un 429 o un 5xx siguen siendo transitorios: el jugador
+       reintenta y no cambiamos de modelo por un pico de trafico. */
+    if (!in_array($r['http'], [0, 401, 403], true)) { return $r; }
 
-    error_log('chatbot: el modelo primario (' . $modelo . ') rechazo la llamada '
-            . '(HTTP ' . $r['http'] . ', cuota o key); pruebo los respaldos');
+    error_log('chatbot: el modelo primario (' . $modelo . ') fallo '
+            . ($r['http'] === 0 ? '(error de transporte)' : '(HTTP ' . $r['http'] . ', cuota o key)')
+            . '; pruebo los respaldos');
 
     // 1) Otros modelos Qwen: mismo endpoint, misma key, mismo contexto y tools.
     $alternos = array_values(array_filter(array_map('trim',
@@ -2962,7 +2975,13 @@ function ia_chat(string $key, array $mensajes, array $tools): array
     foreach ($alternos as $alt) {
         if ($alt === '' || strcasecmp($alt, $modelo) === 0) { continue; }
         $c = $cuerpo; $c['model'] = $alt;
-        $ra = ia_chat_post($url, $key, $c);
+        try {
+            $ra = ia_chat_post($url, $key, $c, [], 18);
+        } catch (Throwable $e) {
+            error_log('chatbot: respaldo Qwen ' . $alt . ' no respondió ('
+                    . $e->getMessage() . '); sigo con el próximo');
+            continue;
+        }
         if ($ra['http'] === 200) {
             ia_chat_aviso_respaldo('Qwen ' . $alt, (int)$r['http'], true);
             return $ra;
@@ -2979,7 +2998,12 @@ function ia_chat(string $key, array $mensajes, array $tools): array
         $baseCo = rtrim((string)cfg('COHERE_COMPAT_BASE', 'https://api.cohere.ai/compatibility/v1'), '/');
         $modCo  = (string)cfg('COHERE_COMPAT_MODEL', 'command-r-08-2024');
         $c = $cuerpo; $c['model'] = $modCo;
-        $rc = ia_chat_post($baseCo . '/chat/completions', $keyCo, $c);
+        try {
+            $rc = ia_chat_post($baseCo . '/chat/completions', $keyCo, $c, [], 18);
+        } catch (Throwable $e) {
+            error_log('chatbot: el respaldo Cohere no respondió (' . $e->getMessage() . ')');
+            $rc = ['http' => 0, 'data' => [], 'raw' => ''];
+        }
         if ($rc['http'] === 200) {
             ia_chat_aviso_respaldo('Cohere ' . $modCo, (int)$r['http'], false);
             return $rc;
@@ -3005,12 +3029,16 @@ function ia_chat_aviso_respaldo(string $cual, int $httpPrimario, bool $mismoQwen
         if (function_exists('tg_evento') && isset($GLOBALS['pdo'])) {
             tg_evento($GLOBALS['pdo'], 'salud', '⚠️ El chat está usando un modelo de respaldo', [
                 'Respaldo'  => $cual,
-                'Qué pasa'  => 'El modelo principal del chat rechaza las llamadas (HTTP '
-                             . $httpPrimario . ': cuota agotada o key inválida).',
+                'Qué pasa'  => $httpPrimario === 0
+                    ? 'El proveedor principal no respondió a tiempo; el chat pasó a un modelo de respaldo.'
+                    : 'El modelo principal del chat rechazó la llamada (HTTP '
+                      . $httpPrimario . ': cuota agotada o key inválida).',
                 'Impacto'   => $mismoQwen
                     ? 'Es otro modelo del mismo Qwen: mismo contexto y herramientas, el jugador no lo nota.'
                     : 'Es otro proveedor (Cohere): el chat responde, pero puede portarse distinto.',
-                'Qué hacer' => 'Revisar la cuota/facturación de la cuenta DashScope, o dejar el respaldo si alcanza.',
+                'Qué hacer' => $httpPrimario === 0
+                    ? 'Revisar la conectividad o el estado del proveedor principal.'
+                    : 'Revisar la cuota/facturación del proveedor principal.',
             ], 'chatbot_respaldo:' . $cual);
         }
     } catch (Throwable $e) {
@@ -3028,7 +3056,7 @@ function ia_chat_aviso_respaldo(string $cual, int $httpPrimario, bool $mismoQwen
  *  mantiene la conexion y las rondas siguientes salen por la que ya esta
  *  abierta. Entre requests PHP no persiste nada (FPM resetea los static),
  *  asi que no hay conexiones colgadas que cuidar. */
-function ia_chat_post(string $url, string $key, array $cuerpo, array $extraHeaders = []): array
+function ia_chat_post(string $url, string $key, array $cuerpo, array $extraHeaders = [], int $timeout = 60): array
 {
     static $ch = null;
     if ($ch === null) {
@@ -3049,8 +3077,8 @@ function ia_chat_post(string $url, string $key, array $cuerpo, array $extraHeade
         CURLOPT_POST           => true,
         CURLOPT_POSTFIELDS     => json_encode($cuerpo, JSON_UNESCAPED_UNICODE),
         CURLOPT_HTTPHEADER     => $headers,
-        CURLOPT_TIMEOUT        => 60,   // los modelos con vision tardan mas
-        CURLOPT_CONNECTTIMEOUT => 10,
+        CURLOPT_TIMEOUT        => max(1, $timeout),
+        CURLOPT_CONNECTTIMEOUT => min(10, max(1, $timeout)),
     ]);
     $raw  = curl_exec($ch);
     $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
