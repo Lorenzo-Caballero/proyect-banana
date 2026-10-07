@@ -2635,6 +2635,10 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
             return ['ok' => false, 'codigo' => 'ocupado',
                     'error' => 'Ese nombre de usuario ya esta ocupado. Pedile otro.'];
         }
+        if (($r['cuerpo']['codigo'] ?? '') === 'tenant_sin_configurar') {
+            return ['ok' => false, 'codigo' => 'tenant_sin_configurar',
+                    'error' => 'Este canal todavía no está habilitado para crear cuentas. Avisale al administrador para que termine la configuración.'];
+        }
         /* EL MOTIVO VA REDACTADO PARA EL JUGADOR, no crudo.
            El modelo relata estos errores con sus palabras, y con el texto
            tecnico se los inventa: con "Usuario invalido: 4 a 64 caracteres..."

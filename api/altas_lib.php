@@ -640,6 +640,18 @@ function alta_tope_cuentas_superado(PDO $pdo, string $ip): ?string
  */
 function alta_encolar(PDO $pdo, array $d): array
 {
+    // Un cliente nuevo trabaja con su propio agente. No aceptar pedidos antes
+    // de que el operador haya cargado esas credenciales: si no hay worker
+    // propio, la cola queda esperando y la alternativa global cruza jugadores.
+    if (!empty($GLOBALS['TENANT_ALTAS_PROPIAS'])
+        && empty($GLOBALS['TENANT_AGENT_CONFIGURED'])) {
+        return ['http' => 503, 'cuerpo' => [
+            'ok' => false,
+            'codigo' => 'tenant_sin_configurar',
+            'error' => 'El registro todavía no está habilitado. Contactá al administrador para completar la configuración de la cuenta.',
+        ]];
+    }
+
     $pdo = alta_pdo($pdo);   // ver alta_pdo(): todas las puntas, la misma base
     $usuario  = trim((string)($d['usuario'] ?? ''));
     $password = (string)($d['password'] ?? '');

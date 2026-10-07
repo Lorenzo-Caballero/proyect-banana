@@ -313,15 +313,23 @@ switch ($accion) {
                 . 'corrella o creá el cliente sin acceso al CRM y usá después el botón Operadores'], 422);
         }
 
+        // Todo tenant creado desde el panel debe dar de alta en SU agente y
+        // en SU cola. Si la migración no existe, fallar cerrado: omitir este
+        // dato haría que el bot use la cuenta global por compatibilidad.
+        try { $pdo->query('SELECT altas_propias FROM clientes LIMIT 0'); }
+        catch (Throwable $e) {
+            salida(['ok' => false, 'error' => 'falta la migración 13 de altas aisladas (panel/sql/13_altas_propias.sql); no se creó el cliente'], 422);
+        }
+
         $colsCrm = $hayCrmCols ? 'crm_usuario,crm_password_hash,' : '';
         $phCrm   = $hayCrmCols ? '?,?,' : '';
         try {
             $pdo->beginTransaction();
             $st = $pdo->prepare(
                 'INSERT INTO clientes
-                 (nombre,slug,ruta_slug,dominio,path_tenant,db_nombre,agente_usuario,agente_password,' . $colsCrm . 'cobro_alias,cobro_cbu,
+                 (nombre,slug,ruta_slug,dominio,path_tenant,db_nombre,agente_usuario,agente_password,altas_propias,' . $colsCrm . 'cobro_alias,cobro_cbu,
                   cobro_titular,coins_por_peso,' . col_ia($pdo) . ',bot_api_key,notas,suscripcion_estado,trial_hasta)
-                 VALUES (?,?,?,?,?,?,?,?,' . $phCrm . '?,?,?,?,?,?,?,?,?)'
+                 VALUES (?,?,?,?,?,?,?,?,1,' . $phCrm . '?,?,?,?,?,?,?,?,?)'
             );
             // Todo cliente nuevo arranca con 14 días de cortesía: el cron de
             // consumo (panel/consumo_diario.php) no le descuenta saldo ni lo

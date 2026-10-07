@@ -796,10 +796,10 @@ function asegurar_bot_altas($c, $cfg) {
     $altasPropias = !empty($c['altas_propias']);
 
     /* ===================================================================
-     * CREAR CON LA CUENTA GLOBAL (decisión del dueño, 03/10/2026:
-     * "para la creación de usuario usá por defecto las credenciales de
-     * nuestro panel"). Es el comportamiento predeterminado; un tenant con
-     * altas_propias=1 usa exclusivamente sus credenciales de agente.
+     * COMPATIBILIDAD CON TENANTS LEGACY. Las filas antiguas con
+     * altas_propias=0 siguen usando la cuenta global si está configurada.
+     * Todo cliente nuevo nace con altas_propias=1 y usa exclusivamente sus
+     * credenciales, para que jugadores y operaciones queden bajo su agente.
      *
      * SOLO EL BOT DE ALTAS. El de sync sigue con las credenciales del
      * cliente: espeja SUS jugadores contra SU base, y mezclarlo le volcaría
@@ -819,8 +819,8 @@ function asegurar_bot_altas($c, $cfg) {
      *   - las fichas que se les carguen salen de NUESTRO saldo de agente.
      *
      * O sea que resuelve el alta y mueve el problema al depósito. Se conserva
-     * para tenants sin altas propias; el panel de clientes permite activar el
-     * circuito aislado cuando el cliente opera con su propio agente.
+     * solo para filas legacy que ya eligieron el circuito global; el alta de
+     * clientes nuevos no puede entrar en ese modo por defecto.
      * =================================================================== */
     $userGlobal = trim((string) ($cfg['ALTAS_PANEL_USER'] ?? ''));
     $passGlobal = trim((string) ($cfg['ALTAS_PANEL_PASS'] ?? ''));
@@ -905,13 +905,87 @@ foreach ($pend as $c) {
         continue;
     }
 
+    /* La base se nombra a partir del slug, pero puede haber quedado una base
+       huérfana de una prueba anterior con ese mismo nombre. `CREATE DATABASE
+       IF NOT EXISTS` + saltar la plantilla cuando existe `usuarios` la
+       adoptaría silenciosamente y mezclaría jugadores. Cada base nueva recibe
+       una identidad inmutable; solo se reusa si coincide con el id y slug que
+       la reclaman en el plano de control. */
+    try {
+        $qExisteDb = $pdo->prepare(
+            'SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?'
+        );
+        $qExisteDb->execute([$db]);
+        $dbYaExiste = (int)$qExisteDb->fetchColumn() > 0;
+    } catch (Throwable $e) {
+        marcar($pdo, $c['id'], false, 'no pude verificar si la base ya existía: ' . $e->getMessage());
+        echo date('c') . " ERROR {$c['slug']}: no se pudo verificar la base\n";
+        continue;
+    }
+
+    if ($dbYaExiste) {
+        $marcaExiste = trim((string)shell_exec(
+            'mariadb ' . escapeshellarg($db)
+            . " -N -e \"SHOW TABLES LIKE 'gp_tenant_identity'\" 2>/dev/null"
+        ));
+        if ($marcaExiste !== '') {
+            $identidad = trim((string)shell_exec(
+                'mariadb ' . escapeshellarg($db)
+                . ' -N -e ' . escapeshellarg('SELECT CONCAT(tenant_id, "|", tenant_slug) FROM gp_tenant_identity LIMIT 1')
+                . ' 2>/dev/null'
+            ));
+            $esperada = (int)$c['id'] . '|' . (string)$c['slug'];
+            if ($identidad !== $esperada) {
+                marcar($pdo, $c['id'], false, 'base ocupada por otra identidad (se esperaba ' . $esperada . ')');
+                echo date('c') . " ERROR {$c['slug']}: base ocupada por otra identidad; aprovisionamiento frenado\n";
+                continue;
+            }
+        } else {
+            $tablasPrevias = trim((string)shell_exec(
+                'mariadb ' . escapeshellarg($db) . ' -N -e "SHOW TABLES" 2>/dev/null'
+            ));
+            if ($tablasPrevias !== '') {
+                marcar($pdo, $c['id'], false, 'base preexistente con tablas pero sin identidad; requiere revisión manual');
+                echo date('c') . " ERROR {$c['slug']}: base preexistente sin identidad; aprovisionamiento frenado para proteger datos\n";
+                continue;
+            }
+        }
+    }
+
     // crear base + grant (root por socket)
+    $o1 = [];
     $sql = "CREATE DATABASE IF NOT EXISTS `$db` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; "
          . "GRANT ALL PRIVILEGES ON `$db`.* TO '{$cfg['DB_USER']}'@'localhost'; FLUSH PRIVILEGES;";
     exec('mariadb -e ' . escapeshellarg($sql) . ' 2>&1', $o1, $r1);
     if ($r1 !== 0) {
         marcar($pdo, $c['id'], false, 'crear/grant: ' . implode(' ', $o1));
         echo date('c') . " ERROR {$c['slug']}: " . implode(' ', $o1) . "\n";
+        continue;
+    }
+
+    // La marca queda desde antes de cargar el esquema: si el cron se corta a
+    // mitad, la próxima pasada puede retomar solo ESTA base y no adoptar otra.
+    $tenantId = (int)$c['id'];
+    $tenantSlug = (string)$c['slug']; // slug ya validado al crear el cliente
+    $marcaSql = "CREATE TABLE IF NOT EXISTS gp_tenant_identity ("
+              . "tenant_id INT NOT NULL PRIMARY KEY, tenant_slug VARCHAR(60) NOT NULL UNIQUE, "
+              . "created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB; "
+              . "INSERT IGNORE INTO gp_tenant_identity (tenant_id,tenant_slug) VALUES ("
+              . $tenantId . "," . escapeshellarg($tenantSlug) . ");";
+    exec('mariadb ' . escapeshellarg($db) . ' -e ' . escapeshellarg($marcaSql) . ' 2>&1', $oMarca, $rMarca);
+    if ($rMarca !== 0) {
+        marcar($pdo, $c['id'], false, 'no pude fijar identidad de base: ' . implode(' ', $oMarca));
+        echo date('c') . " ERROR {$c['slug']}: no se pudo fijar identidad de base\n";
+        continue;
+    }
+    $identidad = trim((string)shell_exec(
+        'mariadb ' . escapeshellarg($db)
+        . ' -N -e ' . escapeshellarg('SELECT CONCAT(tenant_id, "|", tenant_slug) FROM gp_tenant_identity LIMIT 1')
+        . ' 2>/dev/null'
+    ));
+    if ($identidad !== $tenantId . '|' . $tenantSlug) {
+        marcar($pdo, $c['id'], false, 'la identidad de base no coincide; aprovisionamiento frenado');
+        echo date('c') . " ERROR {$c['slug']}: identidad de base no coincide\n";
         continue;
     }
 
@@ -939,6 +1013,11 @@ foreach ($pend as $c) {
     // linea: aca adentro solo entran los que tienen aprovisionado = 0.
     $migMsg = aplicar_migraciones($db);
     if ($migMsg !== '') { echo date('c') . " {$c['slug']} migraciones: $migMsg\n"; }
+    if (strpos($migMsg, 'con error') !== false || strpos($migMsg, 'sin carpeta') === 0) {
+        marcar($pdo, $c['id'], false, 'migraciones incompletas: ' . $migMsg);
+        echo date('c') . " ERROR {$c['slug']}: migraciones incompletas; workers no se habilitan\n";
+        continue;
+    }
 
     /* El acceso al CRM que se cargo en el alta (migracion 08 del control):
        crear el operador ADMIN en la base recien nacida, en esta misma pasada.

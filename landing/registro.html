@@ -281,6 +281,7 @@
   function baseApiRegistro(esPath, slug, altasPropias) {
     return esPath && altasPropias ? '/' + encodeURIComponent(slug) + '/gp-api' : '/gp-api';
   }
+  let REGISTRO_CONFIGURADO = true;
   let API = esPorPath ? '' : '/gp-api/crear_cuenta.php';
   const API_LISTO = (async function(){
     if (!esPorPath) return true;
@@ -290,6 +291,7 @@
       if (!r.ok) return false;
       const d = await r.json();
       if (!d || !d.ok || d.slug !== slug) return false;
+      REGISTRO_CONFIGURADO = d.registro_configurado !== false;
       API = baseApiRegistro(true, slug, d.altas_propias === true) + '/crear_cuenta.php';
       return true;
     } catch (e) { return false; }
@@ -682,6 +684,10 @@
       if (!(await API_LISTO) || !API) {
         btn.disabled = false; btn.textContent = 'Crear cuenta';
         return error('No pudimos verificar el destino del registro. Actualizá la página e intentá de nuevo.');
+      }
+      if (!REGISTRO_CONFIGURADO) {
+        btn.disabled = false; btn.textContent = 'Crear cuenta';
+        return error('El registro todavía no está habilitado. Avisale al administrador para que complete la configuración.');
       }
       const sid = nuevoSid();
       // fbp/fbc los deja el Pixel (meta-pixel.js, cargado al pie de la

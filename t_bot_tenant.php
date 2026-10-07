@@ -70,10 +70,36 @@ chequear('y avisa con clave propia (no se tapa con el dedupe de los otros)',
 
 // ===========================================================================
 echo "\n=== 1b. Altas aisladas por cliente ===\n";
-chequear('la migracion conserva el comportamiento actual por defecto',
-         str_contains($mig, 'altas_propias TINYINT(1) NOT NULL DEFAULT 0'));
+chequear('la migracion pone las altas propias como default para clientes nuevos',
+         str_contains($mig, 'altas_propias TINYINT(1) NOT NULL DEFAULT 1')
+         && str_contains($mig, 'ALTER COLUMN altas_propias SET DEFAULT 1'));
+chequear('el alta del panel crea cada tenant con agente propio',
+         str_contains(file_get_contents(__DIR__ . '/panel/panel.php'), 'agente_password,altas_propias,')
+         && str_contains(file_get_contents(__DIR__ . '/panel/panel.php'), 'VALUES (?,?,?,?,?,?,?,?,1,'));
+chequear('el alta falla cerrada si falta la migracion de aislamiento',
+         str_contains(file_get_contents(__DIR__ . '/panel/panel.php'), 'falta la migración 13 de altas aisladas'));
+chequear('el provisionador no adopta una base preexistente sin identidad',
+         str_contains($prov, 'gp_tenant_identity')
+         && str_contains($prov, 'base preexistente con tablas pero sin identidad; requiere revisión manual'));
+chequear('el aprovisionamiento valida que la base pertenezca al id y slug esperados',
+         str_contains($prov, "\$esperada = (int)\$c['id'] . '|' . (string)\$c['slug']")
+         && str_contains($prov, 'identidad de base no coincide'));
+chequear('una migracion incompleta deja el tenant sin aprovisionar',
+         str_contains($prov, "strpos(\$migMsg, 'con error') !== false")
+         && str_contains($prov, "marcar(\$pdo, \$c['id'], false, 'migraciones incompletas: ' . \$migMsg)"));
 chequear('la resolucion de ruta toma el modo de la fila del tenant',
          str_contains($db, 'c.altas_propias') && str_contains($db, "\$GLOBALS['TENANT_ALTAS_PROPIAS']"));
+chequear('la resolucion por dominio propio tambien lee el modo del tenant',
+         str_contains($db, 'SELECT db_nombre, slug, altas_propias, agente_usuario, agente_password FROM clientes'));
+chequear('la API solo exporta si el registro esta configurado, nunca credenciales',
+         str_contains(file_get_contents(__DIR__ . '/api/tenant_info.php'), "'registro_configurado'")
+         && !str_contains(file_get_contents(__DIR__ . '/api/tenant_info.php'), "'agente_usuario'"));
+chequear('la cola rechaza pedidos si el agente propio no esta configurado',
+         str_contains(file_get_contents(__DIR__ . '/api/altas_lib.php'), "'codigo' => 'tenant_sin_configurar'")
+         && str_contains(file_get_contents(__DIR__ . '/api/altas_lib.php'), "'http' => 503"));
+chequear('registro.html avisa antes de pedir y no deja un alta colgada',
+         str_contains($reg, 'REGISTRO_CONFIGURADO = d.registro_configurado !== false')
+         && str_contains($reg, 'if (!REGISTRO_CONFIGURADO)'));
 chequear('el registro usa su API solo cuando el tenant lo habilita',
          str_contains($reg, 'd.altas_propias === true')
          && str_contains($reg, 'baseApiRegistro(true, slug, d.altas_propias === true)'));

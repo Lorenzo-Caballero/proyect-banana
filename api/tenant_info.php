@@ -27,4 +27,7 @@ echo json_encode([
     'slug'    => (string)($GLOBALS['TENANT_ROUTE_SLUG'] ?? ''),
     'dominio' => (string)($GLOBALS['TENANT_HOST'] ?? ''),
     'altas_propias' => !empty($GLOBALS['TENANT_ALTAS_PROPIAS']),
+    // Solo estado de preparación, nunca se devuelven las credenciales.
+    'registro_configurado' => empty($GLOBALS['TENANT_ALTAS_PROPIAS'])
+        || !empty($GLOBALS['TENANT_AGENT_CONFIGURED']),
 ], JSON_UNESCAPED_UNICODE);

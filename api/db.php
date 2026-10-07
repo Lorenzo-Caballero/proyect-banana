@@ -39,6 +39,7 @@ $__routeSlug = $__slug;
 $__clientSlug = '';
 $__publicSlug = '';
 $__altasPropias = 0;
+$__agenteConfigurado = false;
 
 $__tenantError = static function ($status, $publico, $detalle = '') {
     if ($detalle !== '') { error_log('db.php tenant: ' . $detalle); }
@@ -62,7 +63,8 @@ try {
     if ($__slug !== '') {
         try {
             $__q = $__ctl->prepare(
-                "SELECT c.db_nombre,c.slug,c.ruta_slug,c.altas_propias FROM clientes_rutas_path r
+                "SELECT c.db_nombre,c.slug,c.ruta_slug,c.altas_propias,
+                        c.agente_usuario,c.agente_password FROM clientes_rutas_path r
                    JOIN clientes c ON c.id=r.cliente_id
                   WHERE r.dominio=? AND r.ruta_slug=? AND c.path_tenant=1 AND c.estado='activo'"
             );
@@ -77,7 +79,8 @@ try {
             // Compatibilidad de despliegue: antes de correr la migración 12,
             // conserva el ruteo anterior por slug interno.
             $__q = $__ctl->prepare(
-                "SELECT db_nombre,slug,slug AS ruta_slug,altas_propias FROM clientes
+                "SELECT db_nombre,slug,slug AS ruta_slug,altas_propias,
+                        agente_usuario,agente_password FROM clientes
                  WHERE dominio=? AND slug=? AND path_tenant=1 AND estado='activo'"
             );
             $__q->execute(array($__host, $__slug));
@@ -92,9 +95,11 @@ try {
         $__clientSlug = (string)($__tenant['slug'] ?? '');
         $__publicSlug = (string)($__tenant['ruta_slug'] ?? $__slug);
         $__altasPropias = (int)($__tenant['altas_propias'] ?? 0) === 1;
+        $__agenteConfigurado = trim((string)($__tenant['agente_usuario'] ?? '')) !== ''
+            && trim((string)($__tenant['agente_password'] ?? '')) !== '';
     } else {
         $__q = $__ctl->prepare(
-            "SELECT db_nombre, slug FROM clientes
+            "SELECT db_nombre, slug, altas_propias, agente_usuario, agente_password FROM clientes
              WHERE dominio = ? AND path_tenant = 0 AND estado = 'activo'"
         );
         $__q->execute(array($__host));
@@ -106,6 +111,9 @@ try {
         $__tenant = $__filasTenant[0] ?? null;
         $__db = $__tenant['db_nombre'] ?? false;
         $__clientSlug = (string)($__tenant['slug'] ?? '');
+        $__altasPropias = (int)($__tenant['altas_propias'] ?? 0) === 1;
+        $__agenteConfigurado = trim((string)($__tenant['agente_usuario'] ?? '')) !== ''
+            && trim((string)($__tenant['agente_password'] ?? '')) !== '';
     }
 } catch (PDOException $e) {
     http_response_code(500);
@@ -159,3 +167,4 @@ $GLOBALS['TENANT_SLUG'] = $__clientSlug; // identidad estable; vacía en dominio
 $GLOBALS['TENANT_ROUTE_SLUG'] = $__routeSlug; // ruta solicitada, incluso si es alias
 $GLOBALS['TENANT_PUBLIC_SLUG'] = $__publicSlug; // ruta actual para generar enlaces nuevos
 $GLOBALS['TENANT_ALTAS_PROPIAS'] = $__altasPropias;
+$GLOBALS['TENANT_AGENT_CONFIGURED'] = $__agenteConfigurado;
