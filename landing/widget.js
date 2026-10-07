@@ -1610,8 +1610,34 @@
   function restaurar(){
     var d;
     try { d = JSON.parse(ls(gpChatKey()) || "null"); } catch (e) { return false; }
-    // Si la charla guardada era de otro usuario, no se muestra.
-    if (!d || (d.u || "") !== USUARIO) return false;
+    if (!d) { return false; }
+
+    /* LA CHARLA DEL ANONIMO ES DEL MISMO QUE SE ACABA DE IDENTIFICAR.
+     *
+     * Hasta el 05/10/2026 esto decia `if ((d.u||"") !== USUARIO) return false`,
+     * sin distinguir "otro jugador" de "el mismo, un segundo despues". Y el
+     * caso que mas duele es justo el segundo: el jugador entra anonimo
+     * (USUARIO=""), pide una cuenta por el chat, el bot se la crea, el widget
+     * pasa a USUARIO="holaXXX" -- y la charla guardada queda "de otro".
+     *
+     * Se borraba la pantalla entera EN EL MOMENTO EXACTO en que acababa de
+     * recibir su usuario y su contraseña. Reportado asi: "apenas le da el
+     * nombre de usuario y contraseña la ventana del chat se limpia y se borra
+     * todo".
+     *
+     * La regla correcta es la que ya usa el servidor en crm_adoptar_anon():
+     * una charla ANONIMA se ADOPTA al identificarse --es la misma persona--;
+     * una charla de OTRO usuario con nombre si se descarta, porque ahi si son
+     * dos personas distintas. */
+    var dueno = d.u || "";
+    if (dueno !== USUARIO) {
+      var adoptable = dueno === "" && USUARIO !== "";
+      if (!adoptable) { return false; }
+      d.u = USUARIO;
+      // Se re-guarda ya con el dueño nuevo: si no, la proxima restauracion
+      // vuelve a encontrarla "de otro" y la pierde igual.
+      try { lss(gpChatKey(), JSON.stringify(d)); } catch (e) {}
+    }
     charla    = d.charla || [];
     historial = d.historial || [];
     lastAgentId = d.lastAgentId || 0;
