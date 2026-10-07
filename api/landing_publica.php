@@ -37,9 +37,17 @@ if (!$l) {
     exit;
 }
 
+$cfg = landings_config_completa((string)$l['plantilla'], $l['config']);
+
+/* EL NUMERO SALE NORMALIZADO, O NO SALE. La decisión de si sirve para un wa.me
+   se toma acá —una sola vez, en PHP— y no en el navegador: así la página no
+   tiene que repetir la validación y un número mal escrito se comporta igual
+   que ninguno (la landing manda al casino, como siempre). */
+$cfg['whatsapp']['numero'] = landings_wa_numero((string)($cfg['whatsapp']['numero'] ?? ''));
+
 echo json_encode(['ok' => true, 'landing' => [
     'slug'      => $l['slug'],
     'plantilla' => $l['plantilla'],
     'bono_pct'  => (int)$l['bono_pct'],
-    'config'    => landings_config_completa((string)$l['plantilla'], $l['config']),
+    'config'    => $cfg,
 ]], JSON_UNESCAPED_UNICODE);

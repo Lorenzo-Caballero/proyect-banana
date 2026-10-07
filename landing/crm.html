@@ -4774,10 +4774,21 @@
             y su estética. El bono se acredita solo en la <b>primera carga</b> de quien se registró
             por esa página, automático.</p>
           </div>
-          <button class="cb-btn" id="lpNuevaBtn" type="button">
-            <svg viewBox="0 0 24 24" width="15" height="15" style="vertical-align:-2px;margin-right:5px"><path d="M12 5v14M5 12h14"/></svg>
-            Nueva landing
-          </button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="cb-btn" id="lpNuevaBtn" type="button">
+              <svg viewBox="0 0 24 24" width="15" height="15" style="vertical-align:-2px;margin-right:5px"><path d="M12 5v14M5 12h14"/></svg>
+              Nueva landing
+            </button>
+            <!-- Botón propio y no "elegí la plantilla en el desplegable": es
+                 otra cosa que se viene a hacer. El que entra a armarle el link
+                 a un cajero sabe qué quiere, y buscarlo entre cinco presets de
+                 colores es donde se abandona. -->
+            <button class="cb-btn" id="lpNuevaWaBtn" type="button"
+                    style="background:#1e8e4f" title="Crea cuentas y manda al jugador al WhatsApp del cajero">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" style="vertical-align:-2px;margin-right:5px"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18a8 8 0 0 1-4.1-1.1l-.3-.2-3 .8.8-2.9-.2-.3A8 8 0 1 1 12 20z"/></svg>
+              Landing de cajero
+            </button>
+          </div>
         </div>
         <div class="lp-lista" id="lpLista"><div class="ag-vacio">Cargando…</div></div>
       </div>
@@ -4823,6 +4834,12 @@
               tocar. Lo único que se configura es <b>el % del bono</b>: la página no lo
               anuncia (el botón dice siempre «Crear mi cuenta»), pero el sistema se lo
               acredita solo en la primera carga a quien se registre por este link.</p>
+              <p class="cb-help" id="lpWaNota" style="display:none;margin-top:8px">Igual que
+              «Solo registro» —<b>la tarjeta de alta sola</b>, sin nada de estética que
+              tocar— pero al crear la cuenta <b>manda al jugador al WhatsApp que cargues
+              abajo</b> en vez de al juego, con su usuario ya escrito. Es la que se usa para
+              hacer <b>una landing por cajero</b>: las cuentas salen con nuestras
+              credenciales y cada link deriva a su número.</p>
             </div>
 
             <div class="cb-field">
@@ -4833,6 +4850,21 @@
               la carga: si lo cambiás, vale también para los que ya se registraron y todavía no
               hicieron su primera carga.</p>
               <input id="lpBono" class="cb-input" type="number" min="0" max="200" step="5" style="margin-top:8px;width:120px">
+            </div>
+
+            <div class="cb-field" id="lpCampoWhatsapp" style="display:none">
+              <label class="cb-flabel" for="lpWaNumero">WhatsApp del cajero</label>
+              <p class="cb-help">Al crear la cuenta, el jugador va directo a este WhatsApp
+              —con su usuario ya escrito en el mensaje, así no hay que preguntárselo— en vez
+              de entrar al juego. <b>Escribilo con el código de país y el + adelante</b>, como
+              lo tenés en la agenda: <code>+54 9 11 2345-6789</code>. Sin el país no se usa:
+              un número a medias abriría el chat de un desconocido. Si lo dejás vacío, la
+              landing manda al casino como cualquier otra.</p>
+              <input id="lpWaNumero" class="cb-input" maxlength="25" placeholder="+54 9 11 2345-6789" style="margin-top:8px;max-width:260px">
+              <label class="cb-flabel" for="lpWaTexto" style="margin-top:12px">Mensaje que ya le aparece escrito</label>
+              <p class="cb-help">Lo que el jugador manda al abrir el chat. El usuario se le suma
+              solo al final.</p>
+              <input id="lpWaTexto" class="cb-input" maxlength="120" placeholder="Hola, acabo de crear mi cuenta" style="margin-top:8px">
             </div>
 
             <div class="cb-field" id="lpCampoColores">
@@ -17156,6 +17188,7 @@ ${cuando}.
       textos:   Object.assign({}, p.textos),
       imagenes: Object.assign({logo:"", fondo:""}, p.imagenes),
       tamanos:  Object.assign({cifra:"100", boton:"100", aire:"100"}, p.tamanos),
+      whatsapp: Object.assign({numero:"", texto:""}, p.whatsapp),
     };
   }
 
@@ -17177,6 +17210,9 @@ ${cuando}.
     // Una fila guardada antes de que existieran los tamaños no trae la
     // sección: se completa acá para que los sliders y la preview no fallen.
     lpDraft.config.tamanos = lpDraft.config.tamanos || {cifra:"100", boton:"100", aire:"100"};
+    // Igual que los tamaños: una landing guardada antes de que existiera la
+    // derivación no trae la sección, y sin esto el campo rompería al pintar.
+    lpDraft.config.whatsapp = lpDraft.config.whatsapp || {numero:"", texto:""};
 
     $("#lpEdTitulo").textContent = l ? ("Editar: " + l.nombre) : "Nueva landing";
     $("#lpMsg").textContent = "";
@@ -17204,10 +17240,19 @@ ${cuando}.
     // plantilla. Lo único editable queda el nombre interno (hace falta para
     // crearla y de él sale el link) y el % del bono, que la página no
     // muestra pero el sistema paga solo en la primera carga.
-    const solo = lpDraft && lpDraft.plantilla === "registro";
+    const plant = lpDraft ? lpDraft.plantilla : "";
+    // 'wa' es "Solo registro" + la derivación: misma página pelada, así que
+    // esconde los mismos campos.
+    const solo = plant === "registro" || plant === "wa";
+    const esWa = plant === "wa";
     ["#lpCampoColores", "#lpCampoTamanos", "#lpCampoTextos", "#lpCampoImagenes"]
       .forEach(sel => { $(sel).style.display = solo ? "none" : ""; });
-    $("#lpPlantillaNota").style.display = solo ? "" : "none";
+    // El campo del WhatsApp aparece SOLO en su plantilla: en las demás no se
+    // usa, y un campo que no hace nada se llena igual y después nadie entiende
+    // por qué no derivó.
+    $("#lpCampoWhatsapp").style.display = esWa ? "" : "none";
+    $("#lpPlantillaNota").style.display = (solo && !esWa) ? "" : "none";
+    $("#lpWaNota").style.display = esWa ? "" : "none";
   }
 
   function lpPintarCampos(){
@@ -17226,6 +17271,8 @@ ${cuando}.
       el.value = v;
       el.nextElementSibling.textContent = v + "%";
     });
+    $("#lpWaNumero").value = lpDraft.config.whatsapp.numero || "";
+    $("#lpWaTexto").value  = lpDraft.config.whatsapp.texto  || "";
     lpPintarImagenes();
   }
 
@@ -17278,6 +17325,13 @@ ${cuando}.
     });
   });
 
+  $("#lpWaNumero").addEventListener("input", () => {
+    lpDraft.config.whatsapp.numero = $("#lpWaNumero").value;
+  });
+  $("#lpWaTexto").addEventListener("input", () => {
+    lpDraft.config.whatsapp.texto = $("#lpWaTexto").value;
+  });
+
   $("#lpLinkCopiar").addEventListener("click", () => {
     navigator.clipboard?.writeText($("#lpLinkUrl").value);
     toast("Link copiado");
@@ -17294,6 +17348,10 @@ ${cuando}.
     lpDraft.plantilla = clave;
     lpDraft.config.colores = base.colores;
     lpDraft.config.textos  = base.textos;
+    /* El WhatsApp NO se pisa: cambiar de plantilla reinicia la ESTETICA, y el
+       número del cajero es un dato, no un color. Igual que las imágenes y el
+       bono, que ya quedaban. Perderlo al mirar otra plantilla sería borrar en
+       silencio lo único que hace distinta a esta landing. */
     lpPintarCampos();
     lpPreview();
   });
@@ -17367,9 +17425,18 @@ ${cuando}.
         lpEditando = d.id;
         $("#lpEdTitulo").textContent = "Editar: " + nombre;
         lpPintarLink(d.slug);
-        $("#lpMsg").className = "cb-msg ok";
-        $("#lpMsg").textContent = esNueva ? "¡Creada! Tu link está arriba, listo para copiar." : "Guardada";
-        toast(esNueva ? "Landing creada" : "Landing guardada");
+        /* EL AVISO DEL SERVER GANA sobre el "Guardada" de siempre. Hoy el
+           único es el WhatsApp que no sirve para un link: se guardó igual,
+           pero si no se dice acá el cajero se entera al no recibir a nadie. */
+        if (d.aviso){
+          $("#lpMsg").className = "cb-msg err";
+          $("#lpMsg").textContent = d.aviso;
+          toast("Revisá el WhatsApp");
+        } else {
+          $("#lpMsg").className = "cb-msg ok";
+          $("#lpMsg").textContent = esNueva ? "¡Creada! Tu link está arriba, listo para copiar." : "Guardada";
+          toast(esNueva ? "Landing creada" : "Landing guardada");
+        }
         // Refrescar el cache de la lista en silencio, para que al Volver ya
         // esté la tarjeta nueva sin otro fetch.
         try{
@@ -17392,6 +17459,23 @@ ${cuando}.
   });
 
   $("#lpNuevaBtn").addEventListener("click", () => lpEditar(0));
+
+  /* "Landing de cajero" es el mismo editor abierto ya en la plantilla 'wa',
+     no un formulario aparte: así el circuito de alta, el link, el bono y la
+     vista previa siguen siendo UNO. Duplicarlo sería tener dos páginas de
+     registro que se van separando con cada arreglo. */
+  $("#lpNuevaWaBtn").addEventListener("click", () => {
+    lpEditar(0);
+    if (!lpPlantillas.wa) return;      // server viejo: queda la landing común
+    lpDraft.plantilla = "wa";
+    const base = lpConfigDePlantilla("wa");
+    lpDraft.config.colores = base.colores;
+    lpDraft.config.textos  = base.textos;
+    $("#lpEdTitulo").textContent = "Nueva landing de cajero";
+    lpPintarCampos();
+    lpPreview();
+    $("#lpNombre").focus();
+  });
   $("#lpVolverBtn").addEventListener("click", lpMostrarLista);
 
   // ---------- arranque ----------

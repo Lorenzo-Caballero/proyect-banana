@@ -43,7 +43,8 @@ function lp_salir($data, int $code = 200): void
  */
 function lp_config_sanear(array $cruda): array
 {
-    $limpia = ['colores' => [], 'textos' => [], 'imagenes' => [], 'tamanos' => []];
+    $limpia = ['colores' => [], 'textos' => [], 'imagenes' => [],
+                'tamanos' => [], 'whatsapp' => []];
 
     foreach (['fondo', 'acento', 'destacado', 'texto'] as $k) {
         $v = trim((string)($cruda['colores'][$k] ?? ''));
@@ -68,6 +69,24 @@ function lp_config_sanear(array $cruda): array
             $limpia['tamanos'][$k] = (string)$v;
         }
     }
+    /* EL WHATSAPP DEL CAJERO (plantilla 'wa'). El número se guarda COMO LO
+       ESCRIBIÓ el operador —solo se le quita lo que no puede ser parte de un
+       teléfono— y NO normalizado. Es a propósito: si se guardara normalizado,
+       uno mal escrito se perdería al guardar y al volver al editor vería el
+       campo vacío sin entender por qué. Guardando lo que puso, lo ve y lo
+       corrige. Quién decide si sirve para un link es landings_wa_numero(), en
+       el único lugar donde el link se arma. */
+    $num = trim((string)($cruda['whatsapp']['numero'] ?? ''));
+    if ($num !== '') {
+        $limpia['whatsapp']['numero'] = mb_substr(trim(preg_replace('/[^0-9+()\s-]/', '', $num)), 0, 25);
+    }
+    /* El texto SÍ se puede dejar vacío: landings_wa_link() pone el de siempre.
+       Va recortado porque termina en una URL. */
+    $txt = trim((string)($cruda['whatsapp']['texto'] ?? ''));
+    if ($txt !== '') {
+        $limpia['whatsapp']['texto'] = mb_substr($txt, 0, 120);
+    }
+
     foreach (['logo', 'fondo'] as $k) {
         $v = trim((string)($cruda['imagenes'][$k] ?? ''));
         // Solo rutas del propio server hacia uploads/landings: nunca una URL
@@ -134,7 +153,19 @@ if ($metodo === 'POST') {
             }
             crm_bitacora($pdo, $operador, $id ? 'landing_editar' : 'landing_crear',
                          "id={$r['id']} slug={$r['slug']} bono={$bonoPct}%");
-            lp_salir(['ok' => true, 'id' => $r['id'], 'slug' => $r['slug']]);
+
+            /* AVISO, NO ERROR. Si el número no sirve para un wa.me la landing
+               se guarda igual (todo el resto es válido), pero hay que DECIRLO:
+               un WhatsApp mal escrito no rompe nada a la vista —la página sale
+               publicada y con su botón de siempre— y el cajero se enteraría
+               recién al no recibir a nadie. */
+            $aviso = '';
+            $numCrudo = (string)($config['whatsapp']['numero'] ?? '');
+            if ($numCrudo !== '' && landings_wa_numero($numCrudo) === '') {
+                $aviso = 'Guardada, pero el WhatsApp NO se va a usar: escribilo con el '
+                       . 'código de país y el + adelante, así: +54 9 11 2345-6789';
+            }
+            lp_salir(['ok' => true, 'id' => $r['id'], 'slug' => $r['slug'], 'aviso' => $aviso]);
         }
 
         if ($accion === 'toggle') {

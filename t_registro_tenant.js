@@ -117,8 +117,12 @@ chequear("un solo guard contra la doble navegación",
 const lp = fs.readFileSync(__dirname + "/landing/lp.html", "utf8");
 chequear("la landing custom permite auto-login también bajo /<slug>/",
          !/if \(esPorPath \|\| !usuario \|\| !clave\) return false;/.test(lp));
+/* El destino de lp.html dejó de ser una línea sola: la plantilla 'wa' puede
+   derivar al WhatsApp del cajero (ver t_landing_wa.js). Lo que este chequeo
+   cuida sigue siendo lo mismo — que SIN derivación el jugador termine en la
+   plataforma de SU cliente y no en la nuestra — así que mira esa rama. */
 chequear("la landing custom abre el chat integrado de la plataforma del cliente",
-         /const destino = esPorPath \? '\/' \+ partesRuta\[0\] \+ '\/#gp-chat' : '\/#gp-chat';/.test(lp));
+         /esPorPath \? '\/' \+ partesRuta\[0\] \+ '\/#gp-chat' : '\/#gp-chat'/.test(lp));
 const chat = fs.readFileSync(__dirname + "/landing/chat.html", "utf8");
 chequear("el chat legacy ya no manda al acceso 404 del tenant",
          !/href="acceso\.html"/.test(chat) && /Ingresar a Ganamos/.test(chat));

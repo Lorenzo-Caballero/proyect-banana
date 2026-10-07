@@ -41,6 +41,16 @@ function landings_plantillas(): array
     // estos defaults sin caso especial.
     $tamanos = ['cifra' => '100', 'boton' => '100', 'aire' => '100'];
 
+    /* DERIVACION A WHATSAPP. Vacio = la landing se comporta como siempre (el
+       jugador entra al casino). Con numero, al terminar el alta se lo manda al
+       WhatsApp de ESE cajero en vez de al juego.
+
+       Existe porque el dueño capta jugadores con sus propias credenciales y
+       despues los deriva al cajero que corresponde: una landing por cajero,
+       cada una con su numero. Sin esto habria que hacer una pagina a mano por
+       cliente, y cada cambio de telefono seria un deploy. */
+    $whatsapp = ['numero' => '', 'texto' => 'Hola, acabo de crear mi cuenta'];
+
     return [
         'oro' => [
             'nombre'  => 'Oro y violeta',
@@ -48,6 +58,7 @@ function landings_plantillas(): array
             'textos'  => $textosBase,
             'imagenes' => $imagenes,
             'tamanos' => $tamanos,
+            'whatsapp' => $whatsapp,
         ],
         'neon' => [
             'nombre'  => 'Neón',
@@ -55,6 +66,7 @@ function landings_plantillas(): array
             'textos'  => $textosBase,
             'imagenes' => $imagenes,
             'tamanos' => $tamanos,
+            'whatsapp' => $whatsapp,
         ],
         'fuego' => [
             'nombre'  => 'Fuego',
@@ -62,6 +74,7 @@ function landings_plantillas(): array
             'textos'  => $textosBase,
             'imagenes' => $imagenes,
             'tamanos' => $tamanos,
+            'whatsapp' => $whatsapp,
         ],
         // Layout distinto, no un preset más: lp.html muestra SOLO el
         // formulario "Creá tu cuenta" centrado, sin hero ni promo, y el botón
@@ -73,8 +86,81 @@ function landings_plantillas(): array
             'textos'  => $textosBase,
             'imagenes' => $imagenes,
             'tamanos' => $tamanos,
+            'whatsapp' => $whatsapp,
+        ],
+
+        /* REGISTRO + WHATSAPP: una por cajero. Misma pantalla que 'registro'
+           --solo el formulario de alta-- pero al terminar manda al jugador al
+           WhatsApp del cajero en vez de al casino, con su usuario ya escrito
+           en el mensaje.
+
+           Es una plantilla aparte y no una casilla de 'registro' para que en
+           el CRM sea UN BOTON: el que la elige sabe para que sirve sin leer
+           ninguna ayuda, y el campo del numero aparece solo cuando hace
+           falta. */
+        'wa' => [
+            'nombre'  => 'Registro + WhatsApp',
+            'colores' => ['fondo' => '#06281d', 'acento' => '#25d366', 'destacado' => '#9bf6c8', 'texto' => '#eafff4'],
+            'textos'  => array_merge($textosBase, [
+                'cta' => 'Crear mi cuenta',
+            ]),
+            'imagenes' => $imagenes,
+            'tamanos' => $tamanos,
+            'whatsapp' => $whatsapp,
         ],
     ];
+}
+
+/**
+ * El numero de WhatsApp, listo para un link wa.me, o '' si no hay.
+ *
+ * wa.me quiere SOLO digitos con el pais adelante: nada de +, espacios, guiones
+ * ni parentesis. El operador va a escribirlo como lo tiene en la agenda
+ * --"+54 9 11 2345-6789"-- y pedirle que lo limpie a mano es garantizar que
+ * algun dia quede un link roto que nadie prueba hasta que un jugador se cae
+ * del embudo.
+ *
+ * LO QUE NO SE HACE ES ADIVINAR EL PAIS, y de ahi las dos longitudes minimas.
+ * Un wa.me con el codigo equivocado abre un chat con un desconocido: no tira
+ * ningun error, la landing publica el link igual, y lo que se pierde es el
+ * jugador que la termino. Asi que ante la duda no se arma.
+ */
+function landings_wa_numero(string $crudo): string
+{
+    $crudo = trim($crudo);
+    /* EL "+" ES LA PRUEBA DE QUE EL OPERADOR DECLARO EL PAIS. Es el unico
+       dato que lo distingue de un numero local, porque la longitud sola no
+       alcanza. */
+    $declaroPais = str_starts_with($crudo, '+');
+
+    $d = preg_replace('/\D+/', '', $crudo);
+    if ($d === null || $d === '') { return ''; }
+    $d = ltrim($d, '0');                 // el 0 de tronco: "011 ..." / "0054 ..."
+    if (strlen($d) > 15) { return ''; }   // 15 es el maximo del plan E.164
+
+    /* SIN "+" HACEN FALTA 11 DIGITOS, no 10, y la diferencia es todo el
+       problema: un celular argentino escrito como lo tiene cualquiera en la
+       agenda --"11 2345-6789"-- son EXACTAMENTE 10 digitos, y es el error mas
+       probable de este operador. Con el pais adelante son 13. Diez digitos
+       pelados tambien es un numero de EEUU sin el 1, asi que igual faltaria el
+       pais: rechazarlo nunca pierde un numero que estuviera completo.
+       Con "+" se confia y alcanzan 8 (hay paises con numeros cortos). */
+    return strlen($d) >= ($declaroPais ? 8 : 11) ? $d : '';
+}
+
+/** El link completo de WhatsApp para una landing, o '' si no esta configurada. */
+function landings_wa_link(array $cfg, string $usuario = ''): string
+{
+    $num = landings_wa_numero((string)($cfg['whatsapp']['numero'] ?? ''));
+    if ($num === '') { return ''; }
+    $txt = trim((string)($cfg['whatsapp']['texto'] ?? ''));
+    if ($txt === '') { $txt = 'Hola, acabo de crear mi cuenta'; }
+    /* EL USUARIO VA EN EL MENSAJE, y es lo que hace util la derivacion: el
+       cajero recibe "soy holaMartina847" y sabe a quien cargarle sin
+       preguntar. Sin eso, el jugador llega diciendo "hola" y hay que
+       averiguar quien es. */
+    if ($usuario !== '') { $txt .= ' (usuario: ' . $usuario . ')'; }
+    return 'https://wa.me/' . $num . '?text=' . rawurlencode($txt);
 }
 
 /**
@@ -93,7 +179,7 @@ function landings_config_completa(string $plantilla, ?string $configJson): array
     if (!is_array($propio)) {
         return $base;
     }
-    foreach (['colores', 'textos', 'imagenes', 'tamanos'] as $seccion) {
+    foreach (['colores', 'textos', 'imagenes', 'tamanos', 'whatsapp'] as $seccion) {
         foreach ($base[$seccion] as $k => $v) {
             $valor = $propio[$seccion][$k] ?? null;
             if (is_string($valor) && $valor !== '') {
