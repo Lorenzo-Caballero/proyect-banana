@@ -289,6 +289,10 @@ def post_reintentando_challenge(post, url, data, timeout=45_000,
                             nuevo_api, count=1)
 
     nuevo_bot = bot
+    # Corrige también la variante del marcador que dejó una primera versión
+    # del overlay como comentario doble; no altera el código ejecutable.
+    nuevo_bot = nuevo_bot.replace('    # ' + MARCA_DEP_WAF,
+                                  '    ' + MARCA_DEP_WAF)
     if MARCA_DEP_WAF not in nuevo_bot:
         vieja_llamada = '''        r = page.context.request.post(
             url, data={"operation": OP_DEPOSITO, "amount": int(round(monto))},
@@ -319,7 +323,7 @@ def post_reintentando_challenge(post, url, data, timeout=45_000,
             return "deposito/WAF: no encuentro la evaluación del cuerpo; no modifiqué archivos"
         nuevo_bot = nuevo_bot.replace(
             estado,
-            '    # ' + MARCA_DEP_WAF + '\n'
+            '    ' + MARCA_DEP_WAF + '\n'
             '    txt = (txt_full or "")[:300]\n'
             '    if intentos > 1:\n'
             '        log.warning("  deposito %s: challenge WAF, resuelto en %d intento(s)",\n'
