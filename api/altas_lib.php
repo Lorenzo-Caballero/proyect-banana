@@ -149,6 +149,52 @@ function alta_validar(string $usuario, string $password, string $email): ?string
  * que la persona no eligió le deja un usuario que no reconoce y no va a poder
  * recordar.
  */
+/**
+ * ¿Esto tiene forma de NOMBRE, o es una frase?
+ *
+ * EL AGUJERO QUE CIERRA, y lo abrió la defensa anterior (05/10/2026). Al
+ * exigir que el nombre estuviera en lo que dijo el jugador, el modelo encontró
+ * la salida obvia: mandar el mensaje ENTERO como nombre. Resultado real en
+ * producción: `holaNotengocuentaquierocrearuna548`, armado con "No tengo
+ * cuenta, quiero crear una".
+ *
+ * Cumplía la regla --el jugador escribió eso-- y era igual de inventado. Por
+ * eso hacen falta las dos preguntas juntas: "¿lo dijo él?" y "¿esto es un
+ * nombre?". Un nombre de usuario es UNA palabra; una oración no lo es, por más
+ * que salga de su teclado.
+ *
+ * Tres señales, cualquiera alcanza para rechazarlo:
+ *   - demasiado largo: nadie elige un usuario de más de 18 letras;
+ *   - demasiadas palabras: tres o más es una frase, no un nombre;
+ *   - palabras de pedido ("quiero", "cuenta", "crear"): eso es lo que el
+ *     jugador PIDE, no cómo se quiere llamar.
+ */
+function alta_nombre_parece_frase(string $nombre): bool
+{
+    $txt = trim($nombre);
+    if ($txt === '') { return true; }
+
+    // Tres o más palabras es una oración. "Juan Perez" (dos) sigue pasando.
+    if (preg_match_all('/\S+/u', $txt) >= 3) { return true; }
+
+    $plano = mb_strtolower((string)preg_replace('/[^\p{L}\p{N}]+/u', '', $txt), 'UTF-8');
+    if (str_starts_with($plano, 'hola')) { $plano = substr($plano, 4); }
+    $plano = rtrim($plano, '0123456789');
+
+    /* 18 CARACTERES. Un nombre real raro supera eso ("maximiliano" son 11,
+       "juanperez" 9); una frase pegada lo revienta siempre. Es el corte que
+       separa los dos mundos sin pedirle al jugador que se acorte el nombre. */
+    if (mb_strlen($plano) > 18) { return true; }
+
+    /* Lo que el jugador PIDE, no cómo se llama. Si alguna de estas aparece, el
+       modelo está pasando el pedido en vez del nombre. */
+    foreach (['quiero', 'crear', 'cuenta', 'usuario', 'registr', 'necesito',
+              'podes', 'puedes', 'hacer', 'nueva', 'nuevo', 'tengo'] as $pista) {
+        if (str_contains($plano, $pista)) { return true; }
+    }
+    return false;
+}
+
 function alta_nombre_lo_dijo_el_jugador(string $nombre, array $historial): bool
 {
     $norm = static function (string $t): string {

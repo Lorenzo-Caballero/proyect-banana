@@ -143,7 +143,22 @@
       if (typeof dePlataforma !== "undefined") dePlataforma = "";
       if (typeof visto !== "undefined") visto = "";
       if (typeof sid !== "undefined") sid = nuevoSid();
-      if (typeof panel !== "undefined" && typeof reiniciarCharla === "function") reiniciarCharla();
+      /* NO SE BORRA LA CHARLA ACA, y antes si se borraba (reiniciarCharla()).
+         Dos motivos:
+
+         1. ES REDUNDANTE. La charla ya se guarda por tenant --gpChatKey()
+            devuelve "goldpaw_chat_<slug>"-- asi que la de un cliente no puede
+            mezclarse con la de otro. Lo que esta funcion tiene que aislar es
+            la IDENTIDAD (usuario y token), y eso lo sigue haciendo arriba.
+
+         2. ES DAÑINO, y se vio en produccion el 05/10/2026: "apenas le da el
+            nombre de usuario y contraseña la ventana del chat se limpia y se
+            borra todo". Esto corre al ARRANCAR, antes de que la validacion
+            async confirme el slug; si el tenant se resuelve distinto entre el
+            primer instante y la respuesta, borraba la conversacion entera --
+            incluidas las credenciales recien entregadas, que es la unica vez
+            que el jugador las ve. */
+      if (typeof pintarAtajos === "function") { try { pintarAtajos(); } catch (e) {} }
     }
     try { localStorage.setItem("gp_widget_scope", scope); } catch (e) {}
   }

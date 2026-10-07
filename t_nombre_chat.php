@@ -98,6 +98,44 @@ chequear('un nombre de dos letras no pasa por coincidencia',
          alta_nombre_lo_dijo_el_jugador('ab', hist(['quiero abrir una cuenta'])) === false);
 
 // ===========================================================================
+echo "\n=== 4b. Un nombre es una palabra, no una frase ===\n";
+/* EL AGUJERO QUE ABRIO LA DEFENSA ANTERIOR. Al exigir que el nombre estuviera
+   en lo que dijo el jugador, el modelo encontro la salida obvia: mandar el
+   mensaje ENTERO. Resultado real (05/10/2026):
+   `holaNotengocuentaquierocrearuna548`, armado con "No tengo cuenta, quiero
+   crear una". Cumplia la regla y era igual de inventado. */
+chequear('el caso real: el mensaje entero convertido en nombre',
+         alta_nombre_parece_frase('holaNotengocuentaquierocrearuna548') === true,
+         'paso la defensa del historial porque el jugador SI escribio eso');
+chequear('la frase cruda tambien',
+         alta_nombre_parece_frase('No tengo cuenta, quiero crear una') === true);
+chequear('tres palabras ya es una frase',
+         alta_nombre_parece_frase('quiero una cuenta') === true);
+chequear('y lo que el jugador PIDE no es como se llama',
+         alta_nombre_parece_frase('crearcuenta') === true);
+
+/* Y NO puede rechazar nombres de verdad: una defensa que le discute el nombre
+   a quien lo eligio bien es un bucle. */
+foreach (['Martina', 'juanperez', 'Juan Perez', 'Coco', 'maximiliano',
+          'holaMartina847', 'elpepe', 'lauri23'] as $bueno) {
+    chequear("deja pasar un nombre real: $bueno",
+             alta_nombre_parece_frase($bueno) === false);
+}
+/* El corte de largo tiene que separar los dos mundos sin pedirle a nadie que
+   se acorte el nombre. */
+chequear('un nombre largo pero razonable pasa (11 letras)',
+         alta_nombre_parece_frase('maximiliano') === false);
+chequear('y uno de 25 letras pegadas no',
+         alta_nombre_parece_frase('estenombreesdemasiadolargo') === true);
+
+/* El orden importa: si se mirara primero el historial, el mensaje entero
+   pasaria, porque el jugador lo escribio. */
+$cb0 = file_get_contents(__DIR__ . '/api/chatbot.php');
+chequear('se chequea la FORMA antes que el historial',
+         strpos($cb0, 'alta_nombre_parece_frase($u)') < strpos($cb0, 'alta_nombre_lo_dijo_el_jugador($u'),
+         'al reves, el mensaje entero pasa: el jugador lo escribio');
+
+// ===========================================================================
 echo "\n=== 5. Está enganchado en el chat, y antes de crear ===\n";
 $cb = file_get_contents(__DIR__ . '/api/chatbot.php');
 chequear('crear_cuenta lo consulta',

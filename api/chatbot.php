@@ -2381,6 +2381,16 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
 
            Acá no se adivina si parece inventado: se mira si está en lo que el
            jugador escribió. El historial llega en el mismo request. */
+        /* ¿ES UN NOMBRE O ES UNA FRASE? Va ANTES de mirar el historial, porque
+           el mensaje entero del jugador SÍ está en el historial: fue la salida
+           que encontró el modelo cuando se le exigió que el nombre viniera de
+           él (`holaNotengocuentaquierocrearuna548`, visto en producción). Las
+           dos preguntas juntas son la defensa; cada una sola tiene su hueco. */
+        if (function_exists('alta_nombre_parece_frase') && alta_nombre_parece_frase($u)) {
+            return ['ok' => false, 'codigo' => 'nombre_no_pedido',
+                    'error' => '¿Qué nombre de usuario querés para tu cuenta? Una sola palabra.'];
+        }
+
         $histTool = $GLOBALS['CB_HISTORIAL'] ?? [];
         if (function_exists('alta_nombre_lo_dijo_el_jugador')
             && !alta_nombre_lo_dijo_el_jugador($u, is_array($histTool) ? $histTool : [])) {
