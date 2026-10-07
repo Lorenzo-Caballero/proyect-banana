@@ -440,6 +440,11 @@ if ($usuarioCliente !== '' && !$sesionVerificada) {
    borra esquiva la señal, pero el que la deja se ata solo — y en la practica
    (16-17/09) es la señal que mas cuentas del mismo abusador juntó. */
 $GLOBALS['CB_DEVICE_ID'] = mb_substr(trim((string)($body['device_id'] ?? '')), 0, 64);
+/* El historial, para ejecutar_tool(). Va por GLOBALS y no por parametro --
+   mismo patron que CB_DEVICE_ID de arriba-- porque ejecutar_tool() tiene seis
+   argumentos ya y esto lo usa UNA herramienta: crear_cuenta, para verificar
+   que el nombre que el modelo quiere crear lo haya dicho el jugador. */
+$GLOBALS['CB_HISTORIAL'] = $historial;
 if ($GLOBALS['CB_DEVICE_ID'] !== '' && $usuarioCliente !== ''
     && function_exists('vin_anotar_dispositivo')) {
     vin_anotar_dispositivo($pdo, $GLOBALS['CB_DEVICE_ID'], $usuarioCliente);
@@ -2368,6 +2373,21 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
         // ordena al modelo pedir el nombre de verdad. Un jugador que quisiera
         // llamarse asi es rarisimo y puede elegir otro; el dano de crear cuentas
         // con nombres que la persona no eligio es peor.
+        /* EL NOMBRE TIENE QUE HABERLO DICHO EL JUGADOR. La lista de
+           placeholders de abajo atrapa los genéricos ("jugador123") pero no
+           los plausibles, y el 05/10/2026 se vio justo eso en producción: a
+           "no tengo cuenta, quiero crear una" el bot contestó "dale, ya te la
+           estoy creando" y creó `holaJuanperez584`. Nadie pidió ese nombre.
+
+           Acá no se adivina si parece inventado: se mira si está en lo que el
+           jugador escribió. El historial llega en el mismo request. */
+        $histTool = $GLOBALS['CB_HISTORIAL'] ?? [];
+        if (function_exists('alta_nombre_lo_dijo_el_jugador')
+            && !alta_nombre_lo_dijo_el_jugador($u, is_array($histTool) ? $histTool : [])) {
+            return ['ok' => false, 'codigo' => 'nombre_no_pedido',
+                    'error' => '¿Qué nombre de usuario querés para tu cuenta?'];
+        }
+
         if (function_exists('alta_nombre_es_placeholder') && alta_nombre_es_placeholder($u)) {
             // `error` player-safe: el modelo lo suele mostrar tal cual, y en este
             // caso lo correcto ES preguntarle el nombre. La cuenta NO se creo

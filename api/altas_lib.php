@@ -124,6 +124,57 @@ function alta_validar(string $usuario, string $password, string $email): ?string
  * de verdad como su usuario, opcionalmente con un prefijo generico y numeros.
  * Un "juan123" o un "jugadorcito" pasan -- son nombres reales.
  */
+/**
+ * ¿El nombre que el modelo quiere crear lo dijo EL JUGADOR?
+ *
+ * LA LISTA DE PLACEHOLDERS NO ALCANZA, y se vio en producción el 05/10/2026.
+ * A "no tengo cuenta, quiero crear una" --sin ningún nombre-- el bot contestó
+ * "dale, ya te la estoy creando" y creó `holaJuanperez584`. El modelo no
+ * inventó un genérico tipo "jugador123" (eso sí lo atrapaba
+ * alta_nombre_es_placeholder): inventó un nombre PLAUSIBLE, que es
+ * precisamente lo que una lista de palabras no puede atrapar.
+ *
+ * Esto cambia la pregunta. En vez de "¿parece inventado?" --que se contesta
+ * adivinando-- pregunta "¿esto lo escribió el jugador?", que se contesta
+ * MIRANDO: el historial del chat está acá mismo. Un nombre que no aparece en
+ * ningún mensaje suyo no lo eligió él, diga lo que diga el modelo.
+ *
+ * Se compara con tolerancia porque el modelo normaliza: el jugador escribe
+ * "Juan Pérez" y el modelo manda "juanperez". Se bajan acentos, se saca todo
+ * lo que no es letra o número, y se busca el nombre adentro de lo que dijo.
+ *
+ * ANTE LA DUDA, QUE PREGUNTE. Sin historial (el primer mensaje) o con un
+ * nombre muy corto devuelve false, y el que llama pide el nombre de nuevo.
+ * Preguntar una vez de más cuesta un mensaje; crear una cuenta con un nombre
+ * que la persona no eligió le deja un usuario que no reconoce y no va a poder
+ * recordar.
+ */
+function alta_nombre_lo_dijo_el_jugador(string $nombre, array $historial): bool
+{
+    $norm = static function (string $t): string {
+        $t = mb_strtolower(trim($t), 'UTF-8');
+        $t = strtr($t, ['á'=>'a','é'=>'e','í'=>'i','ó'=>'o','ú'=>'u','ü'=>'u','ñ'=>'n']);
+        return (string)preg_replace('/[^a-z0-9]+/', '', $t);
+    };
+
+    $buscado = $norm($nombre);
+    /* El prefijo `hola` lo pone el sistema (alta_usuario_disponible), no el
+       jugador: buscarlo adentro de lo que escribió nunca daría. */
+    if (str_starts_with($buscado, 'hola')) { $buscado = substr($buscado, 4); }
+    $buscado = rtrim($buscado, '0123456789');
+
+    // Menos de 3 letras no es un nombre: cualquier texto lo "contendría".
+    if (mb_strlen($buscado) < 3) { return false; }
+
+    foreach ($historial as $m) {
+        if (!is_array($m)) { continue; }
+        if (($m['role'] ?? '') !== 'user') { continue; }   // SOLO lo que dijo él
+        $dicho = $norm((string)($m['content'] ?? ''));
+        if ($dicho !== '' && str_contains($dicho, $buscado)) { return true; }
+    }
+    return false;
+}
+
 function alta_nombre_es_placeholder(string $nombre): bool
 {
     return (bool)preg_match(
