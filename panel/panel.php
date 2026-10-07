@@ -145,6 +145,63 @@ function conectar_cliente(array $cfg, string $db): PDO {
     );
 }
 
+/* =====================================================================
+ * LANDINGS DE CAJERO. Una landing por cliente: el jugador se registra ahí y,
+ * al crearse la cuenta, lo manda al WhatsApp de ESE cliente en vez de entrar
+ * al casino.
+ *
+ * LO QUE DECIDE TODO ES EN QUE BASE SE ESCRIBE. La landing se sirve desde
+ * NUESTRO dominio, así que lp.html encola el alta contra NUESTRO tenant y la
+ * cuenta sale con NUESTRAS credenciales de agente -- que es exactamente lo
+ * que se pidió. Si por error se escribiera en la base del cliente, la landing
+ * ni siquiera aparecería en nuestro dominio (landing_publica.php la busca por
+ * host) y el link daría 404.
+ *
+ * Por eso esto NO adivina: si no puede identificar nuestra base, falla con el
+ * arreglo escrito. Una landing en la base equivocada no tira ningún error --
+ * simplemente no existe para el que abre el link.
+ * ===================================================================== */
+
+/** El slug de NUESTRO propio tenant. Mismo marcador que usa provisionar.php
+ *  (SLUGS_CON_BOT_PROPIO): somos un cliente más en la tabla, pero el único
+ *  con bot propio. Se puede pisar con 'LANDINGS_DB' en panel_config.php. */
+const SLUG_PROPIO = 'ganamoscrm';
+
+/**
+ * La base donde viven las landings de cajero: LA NUESTRA.
+ * Devuelve [db|null, comoSeResolvio, error].
+ */
+function landings_db_propia(PDO $pdo, array $cfg): array
+{
+    $forzada = trim((string) ($cfg['LANDINGS_DB'] ?? ''));
+    if ($forzada !== '') {
+        if (!preg_match('/^[a-z0-9_]+$/i', $forzada)) {
+            return [null, '', "LANDINGS_DB ('{$forzada}') no es un nombre de base válido"];
+        }
+        return [$forzada, "LANDINGS_DB de panel_config.php", ''];
+    }
+    try {
+        $st = $pdo->prepare('SELECT db_nombre FROM clientes WHERE slug = ? LIMIT 1');
+        $st->execute([SLUG_PROPIO]);
+        $db = (string) ($st->fetchColumn() ?: '');
+    } catch (PDOException $e) {
+        return [null, '', 'no pude leer la tabla clientes'];
+    }
+    if ($db === '' || !preg_match('/^[a-z0-9_]+$/i', $db)) {
+        return [null, '', 'no encuentro nuestro propio tenant (slug "' . SLUG_PROPIO . '"). '
+                        . 'Agregá LANDINGS_DB con el nombre de nuestra base a panel_config.php'];
+    }
+    return [$db, 'el cliente con slug "' . SLUG_PROPIO . '"', ''];
+}
+
+/** El link público de una landing nuestra. Sale de CF_ZONE_NAME, que es el
+ *  dominio donde corre nuestra plataforma. */
+function landing_url(array $cfg, string $slug): string
+{
+    $host = trim((string) ($cfg['CF_ZONE_NAME'] ?? '')) ?: 'ganamoscrm.online';
+    return 'https://' . $host . '/lp.html?l=' . rawurlencode($slug);
+}
+
 /**
  * Crea la tabla `operadores` en la base del cliente si no está. Idempotente y
  * seguro sobre bases que ya la tienen (IF NOT EXISTS no toca la existente). Es
@@ -462,6 +519,141 @@ switch ($accion) {
             $pdo->rollBack();
             salida(['ok' => false, 'error' => 'no se pudo ajustar el saldo'], 500);
         }
+    }
+
+    /* ===================================================================
+     * LANDING DE CAJERO (migración 14 del control). Ver landings_db_propia().
+     * =================================================================== */
+    case 'landing_ver': {
+        $id = (int) ($in['id'] ?? 0);
+        if ($id <= 0) { salida(['ok' => false, 'error' => 'falta el id del cliente'], 422); }
+
+        [$db, $comoSale, $err] = landings_db_propia($pdo, $cfg);
+        if ($err !== '') { salida(['ok' => false, 'error' => $err], 500); }
+
+        $st = $pdo->prepare('SELECT nombre, landing_id, landing_slug FROM clientes WHERE id = ?');
+        try {
+            $st->execute([$id]);
+        } catch (PDOException $e) {
+            salida(['ok' => false, 'error' => 'falta la migración 14 del control '
+                                            . '(panel/sql/14_landing_cajero.sql)'], 500);
+        }
+        $c = $st->fetch();
+        if (!$c) { salida(['ok' => false, 'error' => 'cliente no existe'], 404); }
+
+        $landing = null;
+        if ((int) $c['landing_id'] > 0) {
+            try {
+                require_once __DIR__ . '/../api/landings_lib.php';
+                $cpdo = conectar_cliente($cfg, $db);
+                $q = $cpdo->prepare('SELECT id, slug, nombre, plantilla, bono_pct, activa, config FROM landings WHERE id = ?');
+                $q->execute([(int) $c['landing_id']]);
+                $row = $q->fetch();
+                /* Si no está, se trata como "todavía no tiene": alguien la
+                   borró desde el CRM y el id del control quedó colgando.
+                   Insistir con un id muerto haría fallar el guardado para
+                   siempre, sin forma de salir desde el panel. */
+                if ($row) {
+                    $cfgL = landings_config_completa((string) ($row['plantilla'] ?: 'wa'), $row['config']);
+                    $landing = [
+                        'id'       => (int) $row['id'],
+                        'slug'     => (string) $row['slug'],
+                        'activa'   => (int) $row['activa'],
+                        'bono_pct' => (int) $row['bono_pct'],
+                        'whatsapp' => (string) ($cfgL['whatsapp']['numero'] ?? ''),
+                        'wa_texto' => (string) ($cfgL['whatsapp']['texto'] ?? ''),
+                        'url'      => landing_url($cfg, (string) $row['slug']),
+                    ];
+                }
+            } catch (Throwable $e) {
+                salida(['ok' => false, 'error' => 'no pude leer la landing en ' . $db], 500);
+            }
+        }
+        salida(['ok' => true, 'cliente' => $c['nombre'], 'base' => $db,
+                'base_como' => $comoSale, 'landing' => $landing]);
+    }
+
+    case 'landing_guardar': {
+        $id       = (int) ($in['id'] ?? 0);
+        $whatsapp = trim((string) ($in['whatsapp'] ?? ''));
+        $waTexto  = trim((string) ($in['wa_texto'] ?? ''));
+        $bonoPct  = max(0, min(200, (int) ($in['bono_pct'] ?? 0)));
+        if ($id <= 0)        { salida(['ok' => false, 'error' => 'falta el id del cliente'], 422); }
+        if ($whatsapp === '') { salida(['ok' => false, 'error' => 'poné el WhatsApp del cliente'], 422); }
+
+        require_once __DIR__ . '/../api/landings_lib.php';
+
+        /* QUE EL api/ DESPLEGADO CONOZCA LA PLANTILLA. landings_guardar() cae
+           a 'oro' cuando no la reconoce, en silencio: con un api/ viejo la
+           landing se crearía igual, publicada y linda, y no derivaría a nadie
+           -- el fallo más caro posible, porque todo parece haber salido bien.
+           Pasa si el panel se desplegó y api/ no. */
+        if (!isset(landings_plantillas()['wa'])) {
+            salida(['ok' => false, 'error' => 'el api/ desplegado no conoce la plantilla "wa": '
+                                            . 'actualizá /var/www/api (git pull + deploy.sh)'], 500);
+        }
+
+        /* SE VALIDA ANTES DE ESCRIBIR NADA. Acá sí es un error y no un aviso
+           (a diferencia del CRM, donde la landing ya existe y se está
+           retocando): una landing de cajero SIN WhatsApp que funcione no
+           tiene ningún sentido -- es lo único que la distingue de una común,
+           y publicarla igual sería entregarle al cliente un link que manda
+           sus jugadores a nuestro casino sin avisarle a nadie. */
+        if (landings_wa_numero($whatsapp) === '') {
+            salida(['ok' => false, 'error' => 'ese WhatsApp no sirve para un link: escribilo con '
+                                            . 'el código de país y el + adelante, así: +54 9 11 2345-6789'], 422);
+        }
+
+        [$db, $comoSale, $err] = landings_db_propia($pdo, $cfg);
+        if ($err !== '') { salida(['ok' => false, 'error' => $err], 500); }
+
+        try {
+            $st = $pdo->prepare('SELECT nombre, slug, landing_id FROM clientes WHERE id = ?');
+            $st->execute([$id]);
+        } catch (PDOException $e) {
+            salida(['ok' => false, 'error' => 'falta la migración 14 del control '
+                                            . '(panel/sql/14_landing_cajero.sql)'], 500);
+        }
+        $c = $st->fetch();
+        if (!$c) { salida(['ok' => false, 'error' => 'cliente no existe'], 404); }
+
+        try {
+            $cpdo = conectar_cliente($cfg, $db);
+
+            /* El id guardado puede estar muerto (borrada desde el CRM). Se
+               verifica antes de pasarlo: landings_guardar() con un id que no
+               existe haría un UPDATE de 0 filas y devolvería "guardado" sin
+               que exista ninguna landing. */
+            $idLanding = (int) ($c['landing_id'] ?? 0);
+            if ($idLanding > 0) {
+                $q = $cpdo->prepare('SELECT id FROM landings WHERE id = ?');
+                $q->execute([$idLanding]);
+                if (!$q->fetchColumn()) { $idLanding = 0; }
+            }
+
+            /* Se guarda SOLO lo que elegimos, igual que lp_config_sanear() desde
+               el CRM: los defaults de la plantilla se aplican al leer. Guardar
+               la config entera congelaría los textos de hoy en cada landing. */
+            $config = ['whatsapp' => ['numero' => $whatsapp]];
+            if ($waTexto !== '') { $config['whatsapp']['texto'] = $waTexto; }
+            $r = landings_guardar(
+                $cpdo, $idLanding ?: null,
+                'Cajero: ' . $c['nombre'],
+                'wa', $bonoPct, $config
+            );
+            if (!$r) {
+                salida(['ok' => false, 'error' => 'no se pudo guardar en ' . $db
+                                                . ' (¿corrió la migración 52 en esa base?)'], 500);
+            }
+        } catch (Throwable $e) {
+            salida(['ok' => false, 'error' => 'no pude escribir la landing en ' . $db], 500);
+        }
+
+        $pdo->prepare('UPDATE clientes SET landing_id = ?, landing_slug = ? WHERE id = ?')
+            ->execute([$r['id'], $r['slug'], $id]);
+
+        salida(['ok' => true, 'slug' => $r['slug'], 'url' => landing_url($cfg, $r['slug']),
+                'base' => $db, 'base_como' => $comoSale]);
     }
 
     /* ===================================================================

@@ -424,6 +424,55 @@
   </div>
 </div>
 
+<!-- MODAL LANDING DE CAJERO -->
+<div class="ov" id="ovLanding">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="ic">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18a8 8 0 0 1-4.1-1.1l-.3-.2-3 .8.8-2.9-.2-.3A8 8 0 1 1 12 20z"/></svg>
+      </div>
+      <div>
+        <h3>Landing de cajero</h3>
+        <p class="sub" id="laCliente"></p>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div><input id="laWa" class="field" placeholder="WhatsApp del cliente: +54 9 11 2345-6789"></div>
+      <div><input id="laBono" class="field" type="number" min="0" max="200" step="5" placeholder="Bono % (0 = sin bono)"></div>
+    </div>
+    <div style="margin-top:10px">
+      <input id="laTexto" class="field" maxlength="120" placeholder="Mensaje que le aparece ya escrito (opcional)">
+    </div>
+
+    <div class="hint">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+      <span>El jugador entra por este link, se crea la cuenta <b>con nuestra cuenta de agente</b>
+      y lo manda al WhatsApp del cliente con su usuario ya escrito.
+      <b>El WhatsApp va con código de país y el + adelante</b>: sin eso no se guarda, porque un
+      número a medias abre el chat de un desconocido y nadie se entera.</span>
+    </div>
+
+    <!-- El link es lo que se vino a buscar: aparece acá apenas existe. -->
+    <div id="laLinkbar" style="display:none;margin-top:14px">
+      <input id="laUrl" class="field" readonly style="font-size:12.5px">
+      <div class="row-btns" style="margin-top:8px;justify-content:flex-start">
+        <button class="btn ghost" id="laCopiar" type="button">Copiar link</button>
+        <button class="btn ghost" id="laAbrir" type="button">Abrir</button>
+      </div>
+    </div>
+
+    <div id="laMsg" class="msg"></div>
+    <div class="row-btns">
+      <button class="btn ghost" id="laCerrar">Cerrar</button>
+      <button class="btn" id="laGuardar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+        Guardar
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL EDITAR CLIENTE -->
 <div class="ov" id="ovEd">
   <div class="modal">
@@ -784,6 +833,7 @@
         var acc = tr.querySelector(".acc");
         acc.appendChild(botonOperadores(c));
         acc.appendChild(botonSaldo(c));
+        acc.appendChild(botonLanding(c));
         acc.appendChild(botonEditar(c));
         acc.appendChild(botonEstado(c));
         acc.appendChild(botonBorrar(c));
@@ -1022,6 +1072,84 @@
     }).catch(function(){ m.className="msg err"; m.textContent="no pude conectar"; });
   }
 
+  /* ---------- landing de cajero ----------
+     Una landing por cliente: el jugador se registra ahí, la cuenta sale con
+     NUESTRA cuenta de agente, y al terminar se lo manda al WhatsApp de ESE
+     cliente con su usuario ya escrito.
+
+     Se arma desde acá y no desde el CRM del cliente porque la landing tiene
+     que vivir en NUESTRA base: es lo que hace que el alta use nuestras
+     credenciales. El panel es el único lugar que ve las dos cosas. */
+  var ICO_WA = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18a8 8 0 0 1-4.1-1.1l-.3-.2-3 .8.8-2.9-.2-.3A8 8 0 1 1 12 20z"/></svg>';
+  var laClienteId = 0;
+
+  function botonLanding(c){
+    var b = document.createElement("button");
+    b.innerHTML = ICO_WA + "<span>Landing</span>";
+    b.title = "Landing que crea cuentas y deriva a su WhatsApp";
+    b.onclick = function(){ abrirLanding(c); };
+    return b;
+  }
+
+  function laPintarLink(url){
+    $("laLinkbar").style.display = url ? "" : "none";
+    $("laUrl").value = url || "";
+  }
+
+  function abrirLanding(c){
+    laClienteId = c.id;
+    $("laCliente").textContent = c.nombre + " · cargando…";
+    $("laWa").value = ""; $("laTexto").value = ""; $("laBono").value = "0";
+    $("laMsg").textContent = ""; $("laMsg").className = "msg";
+    laPintarLink("");
+    $("ovLanding").classList.add("on");
+
+    api("landing_ver", { id: c.id }).then(function(res){
+      if (!res.j.ok){
+        $("laCliente").textContent = c.nombre;
+        $("laMsg").className = "msg err"; $("laMsg").textContent = res.j.error || "no se pudo";
+        return;
+      }
+      /* SE DICE EN QUE BASE SE ESCRIBE. Es la decisión que hace que esto
+         funcione o no, y es invisible: una landing en la base equivocada no
+         da error, simplemente no existe para el que abre el link. */
+      $("laCliente").textContent = c.nombre + " · se crea en " + res.j.base;
+      var l = res.j.landing;
+      if (l){
+        $("laWa").value = l.whatsapp || "";
+        $("laTexto").value = l.wa_texto || "";
+        $("laBono").value = l.bono_pct;
+        laPintarLink(l.url);
+        if (!l.activa){
+          $("laMsg").className = "msg err";
+          $("laMsg").textContent = "Ojo: esta landing está PAUSADA. El link devuelve 404 hasta que la actives desde el CRM.";
+        }
+      }
+    }).catch(function(){
+      $("laMsg").className = "msg err"; $("laMsg").textContent = "no pude conectar";
+    });
+  }
+
+  function cerrarLanding(){ $("ovLanding").classList.remove("on"); }
+
+  function guardarLanding(){
+    var m = $("laMsg"); m.className = "msg"; m.textContent = "guardando...";
+    api("landing_guardar", {
+      id: laClienteId,
+      whatsapp: $("laWa").value.trim(),
+      wa_texto: $("laTexto").value.trim(),
+      bono_pct: parseInt($("laBono").value, 10) || 0
+    }).then(function(res){
+      if (res.j.ok){
+        m.className = "msg ok"; m.textContent = "Listo. El link de abajo es el que le pasás al cliente.";
+        laPintarLink(res.j.url);
+        cargar();
+      } else {
+        m.className = "msg err"; m.textContent = res.j.error || "no se pudo";
+      }
+    }).catch(function(){ m.className = "msg err"; m.textContent = "no pude conectar"; });
+  }
+
   // ---------- config de cobro (MercadoPago, único para toda la plataforma) ----------
   function abrirMp(){
     $("mpToken").value = ""; $("mpMsg").textContent = ""; $("mpMsg").className = "msg";
@@ -1130,6 +1258,16 @@
   $("opCerrar").onclick = cerrarOperadores;
   $("opCrear").onclick = crearOperador;
   $("ovOp").addEventListener("click", function(e){ if(e.target === $("ovOp")) cerrarOperadores(); });
+  $("laCerrar").onclick = cerrarLanding;
+  $("laGuardar").onclick = guardarLanding;
+  $("laCopiar").onclick = function(){
+    navigator.clipboard && navigator.clipboard.writeText($("laUrl").value);
+    $("laCopiar").textContent = "¡Copiado!";
+    setTimeout(function(){ $("laCopiar").textContent = "Copiar link"; }, 1500);
+  };
+  $("laAbrir").onclick = function(){ window.open($("laUrl").value, "_blank"); };
+  $("ovLanding").addEventListener("click", function(e){ if(e.target === $("ovLanding")) cerrarLanding(); });
+
   $("saCerrar").onclick = cerrarSaldo;
   $("saAjustar").onclick = ajustarSaldo;
   $("ovSaldo").addEventListener("click", function(e){ if(e.target === $("ovSaldo")) cerrarSaldo(); });

@@ -183,5 +183,52 @@ if (!preg_match('/function lp_config_sanear\(array \$cruda\): array\s*\{.*?\n\}/
                ['whatsapp']['numero'] === '');
 }
 
+// ===========================================================================
+echo "\n=== 7. El panel del dueño: la landing de cada cliente ===\n";
+/* Chequeos ESTRUCTURALES sobre panel/panel.php: miran el código, no lo
+   ejecutan (las acciones necesitan las dos bases). Están igual porque lo que
+   cuidan es el orden y la ausencia de fallbacks, que es justo lo que se
+   rompe sin que nadie lo note. */
+$panel = file_get_contents(__DIR__ . '/panel/panel.php');
+
+chequear('el panel sabe crear y leer la landing de un cliente',
+         str_contains($panel, "case 'landing_guardar'") && str_contains($panel, "case 'landing_ver'"));
+
+/* LA DECISIÓN QUE HACE QUE ESTO FUNCIONE: en qué base se escribe. Tiene que
+   ser la NUESTRA — es lo que hace que la cuenta salga con nuestras
+   credenciales de agente. Escrita en la del cliente, la landing no da ningún
+   error: landing_publica.php la busca por host y el link devuelve 404. */
+chequear('la base se resuelve en un solo lugar',
+         str_contains($panel, 'function landings_db_propia'));
+chequear('y NO adivina: sin identificarla, falla con el arreglo escrito',
+         str_contains($panel, 'Agregá LANDINGS_DB con el nombre de nuestra base'),
+         'un default silencioso escribiría la landing en la base equivocada');
+
+/* EL NÚMERO SE VALIDA ANTES DE ESCRIBIR NADA, y acá es un error y no un
+   aviso como en el CRM: una landing de cajero sin WhatsApp que funcione es un
+   link que manda los jugadores del cliente a nuestro casino sin avisarle a
+   nadie. El orden es lo que se chequea — con la validación después, la
+   landing ya quedó creada. */
+$posGuardar = strpos($panel, "case 'landing_guardar'");
+$posValida  = strpos($panel, "landings_wa_numero(\$whatsapp) === ''", $posGuardar ?: 0);
+// La ASIGNACIÓN, no cualquier mención: un comentario que nombre la función
+// se adelantaría a la validación y haría fallar esto sin que nada esté mal.
+$posEscribe = strpos($panel, '$r = landings_guardar(', $posGuardar ?: 0);
+chequear('el WhatsApp se valida antes de escribir la landing',
+         $posValida !== false && $posEscribe !== false && $posValida < $posEscribe,
+         'si se valida después, la landing rota ya existe');
+
+/* UN id COLGADO NO PUEDE PASAR COMO BUENO. Si alguien borró la landing desde
+   el CRM, landings_guardar() con ese id haría un UPDATE de 0 filas y
+   devolvería "guardado" sin que exista ninguna landing: el panel mostraría un
+   link que da 404 y nadie sabría por qué. */
+chequear('un landing_id que ya no existe se trata como "todavía no tiene"',
+         str_contains($panel, 'if (!$q->fetchColumn()) { $idLanding = 0; }'));
+
+chequear('el vínculo cliente -> landing vive en el control, no en el JSON',
+         is_file(__DIR__ . '/panel/sql/14_landing_cajero.sql')
+         && str_contains(file_get_contents(__DIR__ . '/panel/sql/14_landing_cajero.sql'), 'landing_slug'),
+         'adentro del config lo borraría lp_config_sanear al primer retoque desde el CRM');
+
 printf("\n%s\n%d OK, %d fallas\n", str_repeat('-', 39), $ok, $fail);
 exit($fail > 0 ? 1 : 0);
