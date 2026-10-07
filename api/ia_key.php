@@ -49,6 +49,26 @@ if (!function_exists('ia_key_anthropic')) {
     }
 
     /**
+     * OPENAI_API_KEY es la señal de migracion: al agregarla se elige GPT
+     * automaticamente, aunque CHAT_MODEL conserve el Claude anterior.
+     * OPENAI_CHAT_MODEL permite fijar otro modelo sin tocar CHAT_MODEL.
+     */
+    function ia_chat_model_resolver(
+        string $configurado,
+        string $openaiKey,
+        string $openaiModel = 'gpt-5.4-mini'
+    ): string
+    {
+        $configurado = trim($configurado);
+        if (strlen(trim($openaiKey)) > 20) {
+            if (stripos($configurado, 'gpt-') === 0) { return $configurado; }
+            $openaiModel = trim($openaiModel);
+            return $openaiModel !== '' ? $openaiModel : 'gpt-5.4-mini';
+        }
+        return $configurado;
+    }
+
+    /**
      * La clave para hablar con ANTHROPIC (el chat sobre Claude y la visión):
      * la del cliente si cargó una, si no la ANTHROPIC_API_KEY del server.
      * Cadena vacía si no hay ninguna.
@@ -83,6 +103,16 @@ if (!function_exists('ia_key_anthropic')) {
     function ia_key_openai(): string
     {
         return trim((string)cfg('OPENAI_API_KEY'));
+    }
+
+    /** Modelo efectivo del chatbot según las credenciales configuradas. */
+    function ia_chat_model_actual(): string
+    {
+        return ia_chat_model_resolver(
+            (string)cfg('CHAT_MODEL', ''),
+            ia_key_openai(),
+            (string)cfg('OPENAI_CHAT_MODEL', 'gpt-5.4-mini')
+        );
     }
 
     /** Resuelve una sola vez por proceso y cachea (incluido el "no hay"). */

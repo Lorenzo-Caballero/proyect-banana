@@ -19,6 +19,14 @@ function comprobar_openai(string $caso, string $modelo, string $clave, bool $esp
     else { $fail++; echo "  FALLA $caso\n"; }
 }
 
+function comprobar_modelo_resuelto(string $caso, string $configurado, string $clave, string $modeloEsperado, string $modeloOpenAI = 'gpt-5.4-mini'): void
+{
+    global $ok, $fail;
+    $real = ia_chat_model_resolver($configurado, $clave, $modeloOpenAI);
+    if ($real === $modeloEsperado) { $ok++; echo "  OK    $caso\n"; }
+    else { $fail++; echo "  FALLA $caso (obtenido: $real)\n"; }
+}
+
 $KEY = str_repeat('k', 40);
 $casos = [
     ['GPT-5.4 mini con clave valida', 'gpt-5.4-mini', $KEY, true],
@@ -35,6 +43,12 @@ $casos = [
 foreach ($casos as [$nombre, $modelo, $clave, $esperado]) {
     comprobar_openai($nombre, $modelo, $clave, $esperado);
 }
+
+echo "\n=== Selección automática al agregar OPENAI_API_KEY ===\n";
+comprobar_modelo_resuelto('clave OpenAI activa GPT aunque siga CHAT_MODEL de Claude', 'claude-haiku-4-5-20251001', $KEY, 'gpt-5.4-mini');
+comprobar_modelo_resuelto('sin clave OpenAI conserva el modelo Claude', 'claude-haiku-4-5-20251001', '', 'claude-haiku-4-5-20251001');
+comprobar_modelo_resuelto('modelo GPT explícito tiene prioridad', 'gpt-5.4-mini-2026-03-17', $KEY, 'gpt-5.4-mini-2026-03-17');
+comprobar_modelo_resuelto('OPENAI_CHAT_MODEL permite elegir otro GPT', 'claude-haiku-4-5-20251001', $KEY, 'gpt-5.4-nano', 'gpt-5.4-nano');
 
 printf("\n%d OK, %d fallas\n", $ok, $fail);
 exit($fail === 0 ? 0 : 1);

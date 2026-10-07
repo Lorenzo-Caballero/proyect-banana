@@ -339,8 +339,8 @@
       Notas
     </label>
     <!-- La clave del modelo de chat pertenece al servidor, no a este cliente:
-         se configura en api/config.local.php (OPENAI_API_KEY para GPT o
-         ANTHROPIC_API_KEY para Claude). El contexto, historial y herramientas
+         se configura en api/config.local.php (OPENAI_API_KEY activa GPT;
+         CHAT_MODEL conserva el modo Claude legado). El contexto, historial y herramientas
          siguen usando la base aislada del cliente. `clientes.ia_key` solo se
          reserva para Anthropic y no se debe reutilizar con OpenAI. -->
     <textarea id="fNotas" class="field" rows="2" placeholder="Notas (opcional)" style="margin-top:10px"></textarea>

@@ -29,10 +29,10 @@
  *                     ANTHROPIC_API_KEY el chat arranca igual.
  *   2) QWEN_BASE_URL  opcional, default en QWEN_BASE_DEF.
  *   3) QWEN_MODEL     opcional, default en QWEN_MODEL_DEF.
- *   3b) CHAT_MODEL    opcional: `gpt-5.4-mini` usa OPENAI_API_KEY y el endpoint
- *                     oficial de OpenAI. `claude-...` usa Anthropic. Vacio
- *                     mantiene Qwen como primario.
- *   3c) OPENAI_API_KEY clave del proveedor OpenAI (no es una suscripcion ChatGPT).
+ *   3b) OPENAI_API_KEY si se agrega, activa GPT-5.4 mini automáticamente.
+ *                     OPENAI_CHAT_MODEL puede fijar otro modelo GPT.
+ *   3c) CHAT_MODEL    modelo legado de Claude; se usa si no hay clave OpenAI.
+ *                     Vacío y sin clave OpenAI mantiene Qwen.
  *   3d) ANTHROPIC_WORKSPACE_ID  opcional: si la key de Anthropic es a nivel
  *                     ORGANIZACION, el endpoint compat exige este id (si no, da
  *                     400). Con una key ya scopeada a un workspace, dejar vacio.
@@ -379,7 +379,7 @@ $TOOLS = [
 // de Qwen siempre, y una instalacion solo-Claude daba 500 con el chat sano.
 require_once __DIR__ . '/ia_key.php';
 $key = ia_key_qwen();
-$chatModel = trim((string)cfg('CHAT_MODEL', ''));
+$chatModel = ia_chat_model_actual();
 $hayOpenAI = ia_chat_openai_activo($chatModel, ia_key_openai());
 $hayQwen   = strlen($key) >= 20;
 // La clave de OpenAI es global, mientras que `clientes.ia_key` sigue siendo
@@ -2935,12 +2935,13 @@ function ia_chat(string $key, array $mensajes, array $tools): array
     // `tools` vacio en vez de ignorarlo.
     if ($tools) { $cuerpo['tools'] = $tools; }
 
-    /* PRIMARIO: GPT de OpenAI, cuando CHAT_MODEL= gpt-... y OPENAI_API_KEY
-       esta configurada. GPT-5.4 mini admite Chat Completions y function
+    /* PRIMARIO: GPT de OpenAI cuando OPENAI_API_KEY está configurada. Si no
+       se indicó otro GPT, usa gpt-5.4-mini, aunque CHAT_MODEL conserve el
+       Claude anterior. GPT-5.4 mini admite Chat Completions y function
        calling. Se usa reasoning_effort=none y max_completion_tokens para
        mantener baja la latencia/coste y reservar el limite para texto visible.
        Si falla por cuota, key o transporte, el flujo sigue por Qwen y Cohere. */
-    $openaiModel = trim((string)cfg('CHAT_MODEL', ''));
+    $openaiModel = ia_chat_model_actual();
     $openaiKey   = ia_key_openai();
     if (ia_chat_openai_activo($openaiModel, $openaiKey)) {
         $oc = $cuerpo;
@@ -2972,7 +2973,7 @@ function ia_chat(string $key, array $mensajes, array $tools): array
        la base y la key -- el formato de mensajes/tools/respuesta es el mismo.
        Si Claude rechaza (cuota/key/modelo malo) o no contesta, NO se cae el
        chat: se avisa y sigue con Qwen de respaldo (el bloque de abajo). */
-    $claudeModel = trim((string)cfg('CHAT_MODEL', ''));
+    $claudeModel = ia_chat_model_actual();
     // ia_key_anthropic(): la clave del CLIENTE si cargo una en el panel del
     // dueño, si no la ANTHROPIC_API_KEY global. Es el unico lugar donde entra
     // la clave por cliente -- el respaldo Qwen de abajo usa siempre la global

@@ -53,13 +53,14 @@ echo "error_log    : " . (ini_get('error_log') ?: '(el del php-fpm/servidor)') .
 //   - RESPALDO Qwen: QWEN_API_KEY (o COHERE_API_KEY, el nombre viejo).
 // ---------------------------------------------------------------------------
 require_once __DIR__ . '/ia_key.php';
-$claudeModel = trim((string)cfg('CHAT_MODEL', ''));
+$modelConfig = trim((string)cfg('CHAT_MODEL', ''));
+$chatModel   = ia_chat_model_actual();
 $claudeKey   = ia_key_anthropic();
-$claudeOn    = $claudeModel !== '' && stripos($claudeModel, 'claude') === 0
+$claudeOn    = $chatModel !== '' && stripos($chatModel, 'claude') === 0
             && strlen(trim($claudeKey)) > 20;   // el MISMO predicado que ia_chat_claude_activo()
 $origen      = ia_key_origen();
 $openaiKey   = ia_key_openai();
-$openaiOn    = ia_chat_openai_activo($claudeModel, $openaiKey);
+$openaiOn    = ia_chat_openai_activo($chatModel, $openaiKey);
 
 $keyQwen   = (string)cfg('QWEN_API_KEY');
 $keyCohere = (string)cfg('COHERE_API_KEY');
@@ -69,7 +70,8 @@ $base   = rtrim((string)cfg('QWEN_BASE_URL', QWEN_BASE_DEF), '/');
 $modelo = (string)cfg('QWEN_MODEL', QWEN_MODEL_DEF);
 
 echo "\n=== MODELO PRINCIPAL CONFIGURADO ===\n";
-echo "CHAT_MODEL        : " . ($claudeModel !== '' ? $claudeModel : '(vacio -> el chat corre en Qwen)') . "\n";
+echo "CHAT_MODEL config : " . ($modelConfig !== '' ? $modelConfig : '(vacio)') . "\n";
+echo "Modelo efectivo   : " . ($chatModel !== '' ? $chatModel : '(Qwen)') . "\n";
 echo "clave de OpenAI   : " . ($openaiKey !== '' ? 'cargada (' . strlen($openaiKey) . ' chars)' : 'VACIA') . "\n";
 echo "GPT activo        : " . ($openaiOn ? 'SI' : 'NO') . "\n";
 // Las claves NO se imprimen nunca, ni recortadas: este endpoint se abre para
@@ -92,7 +94,7 @@ if ($keyQwen === '' && $keyCohere !== '') {
     echo "     Arreglo: agregar 'QWEN_API_KEY' => 'sk-...' en api/config.local.php\n";
 }
 if (!$claudeOn && !$openaiOn && ($key === '' || strlen($key) < 20)) {
-    echo "\n=> No hay NINGUN camino con clave usable: ni GPT (CHAT_MODEL + OPENAI_API_KEY),\n";
+    echo "\n=> No hay NINGUN camino con clave usable: ni GPT (OPENAI_API_KEY),\n";
     echo "   ni Claude (CHAT_MODEL + Anthropic), ni Qwen. El chat esta caido.\n";
     volcar_log();
     exit;
@@ -108,7 +110,7 @@ if (($claudeOn || $openaiOn) && ($key === '' || strlen($key) < 20)) {
 if ($openaiOn) {
     echo "\n=== LLAMADA A OPENAI (GPT + function calling) ===\n";
     $bodyO = [
-        'model' => $claudeModel,
+        'model' => $chatModel,
         'messages' => [['role' => 'user', 'content' => 'Llama a ping ahora.']],
         'reasoning_effort' => 'none',
         'max_completion_tokens' => 40,
@@ -162,7 +164,7 @@ if ($openaiOn) {
 if ($claudeOn) {
     echo "\n=== LLAMADA A CLAUDE (el primario real del chat) ===\n";
     $cuerpoC = json_encode([
-        'model'      => $claudeModel,
+        'model'      => $chatModel,
         'messages'   => [['role' => 'user', 'content' => 'Responde solo con la palabra: hola']],
         'max_tokens' => 20,
     ], JSON_UNESCAPED_UNICODE);
