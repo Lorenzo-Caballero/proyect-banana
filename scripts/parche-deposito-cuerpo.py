@@ -25,12 +25,14 @@ contenedor. El arreglo definitivo lo tiene que hacer Fauno en el repo del bot.
 """
 import io
 import os
+import re
 import sys
 
 # Se puede apuntar a otro lado para probarlo antes de tocar produccion.
 APP = os.environ.get("GP_APP", "/app")
 MARCA = "# [goldpaw] parche cuerpo-del-deposito"
 MARCA_ALTA = "# [goldpaw] reintento del challenge en el alta"
+MARCA_DEP_WAF = "# [goldpaw] reintento WAF inmediato deposito"
 
 NUEVA_FUNCION = '''
 ''' + MARCA + '''
@@ -238,10 +240,118 @@ def parchar_alta_waf(ver: bool) -> str:
     return "bot_crear_jugador.py (alta/WAF): PARCHADO (respaldo en .gp-bak-alta)"
 
 
+def parchar_deposito_waf(ver: bool) -> str:
+    """Reintenta un POST de saldo solo ante el challenge explícito del WAF.
+
+    Las escrituras ambiguas nunca se repiten: un timeout, login HTML o cuerpo
+    ilegible queda para revisión. `/exhk` y el refresh nos permiten saber que
+    el WAF interceptó el POST antes del backend. Tres intentos breves resuelven
+    challenges puntuales sin esperar cinco ciclos de cola.
+    """
+    pa = os.path.join(APP, "alta_api.py")
+    pb = os.path.join(APP, "bot_crear_jugador.py")
+    if not os.path.isfile(pa) or not os.path.isfile(pb):
+        return "deposito/WAF: faltan alta_api.py o bot_crear_jugador.py"
+    api = io.open(pa, encoding="utf-8").read()
+    bot = io.open(pb, encoding="utf-8").read()
+
+    helper = '''
+# [goldpaw] reintento WAF inmediato deposito
+def post_reintentando_challenge(post, url, data, timeout=45_000,
+                                intentos=3, dormir=None):
+    """Repite solo cuando el WAF prueba que el POST no llegó al backend."""
+    import time
+    total = max(1, int(intentos))
+    pausa = dormir or time.sleep
+    for indice in range(total):
+        respuesta = post(url, data=data, timeout=timeout)
+        try:
+            cuerpo = respuesta.text()
+        except Exception:
+            return respuesta, None, indice + 1
+        if not es_challenge(cuerpo) or indice == total - 1:
+            return respuesta, cuerpo, indice + 1
+        pausa(1.5 * (indice + 1))
+    raise RuntimeError("bucle de reintentos de depósito terminó inesperadamente")
+'''
+
+    nuevo_api = api
+    if "def post_reintentando_challenge(" not in nuevo_api:
+        ancla = "\ndef _leer_cuerpo_deposito("
+        if ancla not in nuevo_api:
+            return "deposito/WAF: no encuentro el lugar seguro para insertar helper"
+        nuevo_api = nuevo_api.replace(ancla, "\n" + helper + ancla, 1)
+
+    # Un 200 sin cuerpo no confirma el movimiento: debe ir a revisión.
+    if re.search(r"if cuerpo is None:\s*return \"hecha\"", nuevo_api):
+        nuevo_api = re.sub(r"if cuerpo is None:\s*return \"hecha\"",
+                            'if cuerpo is None:\n            return "revisar"',
+                            nuevo_api, count=1)
+
+    nuevo_bot = bot
+    if MARCA_DEP_WAF not in nuevo_bot:
+        vieja_llamada = '''        r = page.context.request.post(
+            url, data={"operation": OP_DEPOSITO, "amount": int(round(monto))},
+            timeout=45_000)
+        st = r.status
+        try:
+            # [goldpaw] parche cuerpo-del-deposito: ENTERO para decidir; el
+            # recorte a 300 es solo para el mensaje de la cola. Recortar antes
+            # de mirar era lo que hacia imposible parsear la respuesta.
+            txt_full = r.text()
+            txt = txt_full[:300]
+        except Exception:
+            txt_full = None
+            txt = ""
+'''
+        nueva_llamada = '''        r, txt_full, intentos = alta_api.post_reintentando_challenge(
+            page.context.request.post, url,
+            data={"operation": OP_DEPOSITO, "amount": int(round(monto))},
+            timeout=45_000, intentos=3, dormir=time.sleep)
+        st = r.status
+'''
+        if bot.count(vieja_llamada) != 1:
+            return ("deposito/WAF: no encuentro exactamente una llamada de depósito "
+                    "sin parche; no modifiqué archivos")
+        nuevo_bot = nuevo_bot.replace(vieja_llamada, nueva_llamada, 1)
+        estado = '    estado = alta_api.evaluar_deposito(st, txt_full)'
+        if estado not in nuevo_bot:
+            return "deposito/WAF: no encuentro la evaluación del cuerpo; no modifiqué archivos"
+        nuevo_bot = nuevo_bot.replace(
+            estado,
+            '    # ' + MARCA_DEP_WAF + '\n'
+            '    txt = (txt_full or "")[:300]\n'
+            '    if intentos > 1:\n'
+            '        log.warning("  deposito %s: challenge WAF, resuelto en %d intento(s)",\n'
+            '                    id_ganamos, intentos)\n'
+            + estado,
+            1)
+
+    try:
+        compile(nuevo_api, pa, "exec")
+        compile(nuevo_bot, pb, "exec")
+    except SyntaxError as e:
+        return "deposito/WAF: el parche no compila (%s); no modifiqué archivos" % e
+
+    ya_api = nuevo_api == api
+    ya_bot = nuevo_bot == bot
+    if ya_api and ya_bot:
+        return "deposito/WAF: ya parcheado"
+    if ver:
+        return "deposito/WAF: SE PARCHARIA alta_api=%s bot=%s" % (
+            "no" if ya_api else "sí", "no" if ya_bot else "sí")
+    io.open(pa + ".gp-bak-reintento-waf", "w", encoding="utf-8").write(api)
+    io.open(pb + ".gp-bak-reintento-waf", "w", encoding="utf-8").write(bot)
+    io.open(pa, "w", encoding="utf-8").write(nuevo_api)
+    io.open(pb, "w", encoding="utf-8").write(nuevo_bot)
+    return "deposito/WAF: PARCHADO (respaldo en .gp-bak-reintento-waf)"
+
+
 def main() -> int:
     ver = "--ver" in sys.argv
     print("=== parche cuerpo-del-deposito %s ===" % ("(solo mirar)" if ver else ""))
-    for r in (parchar_alta_api(ver), parchar_bot(ver), parchar_alta_waf(ver)):
+    for r in (parchar_alta_api(ver), parchar_bot(ver), parchar_alta_waf(ver),
+              parchar_deposito_waf(ver)):
         print("  " + r)
     if not ver:
         print("\n  Reinicia el contenedor para que tome el cambio:")

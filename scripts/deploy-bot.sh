@@ -37,6 +37,13 @@ GIT_HASH="$(git rev-parse --short HEAD)"
 export GIT_HASH
 echo "==> version a desplegar: $GIT_HASH"
 
+# El subrepositorio del bot pertenece a otro mantenedor y el VPS conserva
+# cambios locales que no están en su upstream. Este overlay versionado en
+# GOLDPAW se aplica DESPUÉS del pull y ANTES del build, para que el arreglo del
+# challenge en depósitos sobreviva tanto a este deploy como a los siguientes.
+echo "==> aplicando el overlay seguro de reintentos de depósito"
+GP_APP="$BOT_DIR" python3 "$(dirname "$0")/parche-deposito-cuerpo.py"
+
 # El .env (URLs + API key), la verificacion contra la cola y el rebuild los
 # hace el script de siempre. GIT_HASH viaja exportado y queda horneado en la
 # imagen (docker-compose.yml lo pasa como build-arg).
