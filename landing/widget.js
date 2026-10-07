@@ -129,9 +129,30 @@
   /* El mismo origen sirve al dueño y a todos los clientes por path. La cookie
      de Ganamos y el localStorage del navegador pueden traer el usuario del
      tenant anterior; nunca se hereda esa identidad al cambiar de entorno. */
-  function gpAislarIdentidad(slug){
+  function gpAislarIdentidad(slug, confirmado){
     var scope = slug || "root", previo = null;
     try { previo = localStorage.getItem("gp_widget_scope"); } catch (e) {}
+
+    /* SOLO CON EL TENANT CONFIRMADO. Esta funcion borra `goldpaw_user`, y eso
+     * tiene una consecuencia que no se ve: al quedar USUARIO vacio, la charla
+     * --que ya esta guardada a nombre de holaXXX-- deja de mostrarse. Para el
+     * jugador es identico a que se la borren.
+     *
+     * Y se llamaba tambien en los momentos INCIERTOS: la adopcion optimista
+     * del slug, y el catch de cuando la validacion falla. Ahi el tenant no
+     * cambio de verdad -- todavia no se sabe cual es. El SPA navega a /home,
+     * el widget evalua "home" como candidato, la API lo niega, y esa negacion
+     * terminaba limpiando la identidad de alguien que estaba en medio de una
+     * conversacion.
+     *
+     * Es el quinto intento sobre el mismo sintoma ("se sigue borrando"), y los
+     * cuatro anteriores miraban el borrado explicito. Este no borraba: hacia
+     * invisible. */
+    if (!confirmado) {
+      try { log("aislamiento: no se toca nada, el tenant todavia no esta confirmado (" + scope + ")"); } catch (e) {}
+      return;
+    }
+
     var limpiar = (previo === null && scope !== "root") || (previo !== null && previo !== scope);
     if (limpiar) {
       try {
@@ -270,14 +291,14 @@
         TENANT_SLUG = "";
         try { localStorage.removeItem("gp_tenant_slug"); } catch (e) {}
       }
-      gpAislarIdentidad("");
+      gpAislarIdentidad("", true);
       gpArmarApi();
       return;
     }
 
     var cand = gpSlugCandidato();
     if (!cand || cand === TENANT_SLUG) {
-      gpAislarIdentidad(TENANT_SLUG);
+      gpAislarIdentidad(TENANT_SLUG, true);
       gpArmarApi();
       if (cand === TENANT_SLUG && gpIrAHomeTenant(TENANT_SLUG)) return;
       return;
@@ -295,7 +316,7 @@
        jugador que escriba justo ahí no le escribe a nadie. Los demás casos
        --sin barra, o sacados del referrer-- se adoptan recién cuando la API
        confirma que ese slug existe. */
-    if (/\/$/.test(location.pathname)) { TENANT_SLUG = cand; gpAislarIdentidad(TENANT_SLUG); }
+    if (/\/$/.test(location.pathname)) { TENANT_SLUG = cand; gpAislarIdentidad(TENANT_SLUG, false); }
     gpArmarApi();
 
     fetch("/" + cand + "/gp-api/tenant_info.php", { cache: "no-store" })
@@ -312,7 +333,7 @@
         if (!d || !d.ok || (d.slug || "").toLowerCase() !== cand) { throw { red: 0 }; }
         TENANT_SLUG = cand;
         try { localStorage.setItem("gp_tenant_slug", cand); } catch (e) {}
-        gpAislarIdentidad(TENANT_SLUG);
+        gpAislarIdentidad(TENANT_SLUG, true);   // la API lo confirmo
         gpIrAHomeTenant(TENANT_SLUG);
       })
       .catch(function (e) {
@@ -325,7 +346,10 @@
         if (TENANT_SLUG === cand) {
           TENANT_SLUG = "";
           try { localStorage.removeItem("gp_tenant_slug"); } catch (e2) {}
-          gpAislarIdentidad("");
+          /* NO confirmado: que este candidato no sea un tenant no prueba que
+             el jugador haya cambiado de cliente. Limpiarle la identidad acá
+             le hacía invisible la charla. */
+          gpAislarIdentidad("", false);
         }
       })
       .then(gpArmarApi, gpArmarApi);
@@ -1646,9 +1670,30 @@
      * dos personas distintas. */
     var dueno = d.u || "";
     if (dueno !== USUARIO) {
-      var adoptable = dueno === "" && USUARIO !== "";
+      /* DOS formas de que esta charla sea del que esta mirando:
+
+         a) era ANONIMA y recien se identifico (el alta por chat);
+         b) es de la cuenta que ESTE navegador acaba de crear y la identidad se
+            perdio en el camino (goldpaw_user lo borra el aislamiento por
+            tenant). Sin (b), la charla con sus credenciales adentro queda
+            guardada pero INVISIBLE, que para el jugador es igual a borrada --
+            es el sintoma que se reporto cinco veces.
+
+         Es acotado a proposito: solo la cuenta que este dispositivo creo recien
+         (gp_alta_reciente). La charla de otro jugador con nombre sigue sin
+         mostrarse, porque adentro estan SUS credenciales. */
+      var adoptable = (dueno === "" && USUARIO !== "")
+                   || (USUARIO === "" && reciencreada && dueno === reciencreada);
       if (!adoptable) { return false; }
-      d.u = USUARIO;
+      /* En el caso (b) el dueño correcto es el de la charla, no el USUARIO
+         vacio: pisarlo con "" la dejaria anonima y perderia a quien pertenece.
+         Ademas se recupera la identidad, que es lo que se habia perdido. */
+      if (USUARIO === "" && dueno !== "") {
+        USUARIO = dueno;
+        try { lss("goldpaw_user", USUARIO); } catch (e) {}
+      } else {
+        d.u = USUARIO;
+      }
       // Se re-guarda ya con el dueño nuevo: si no, la proxima restauracion
       // vuelve a encontrarla "de otro" y la pierde igual.
       try { lss(gpChatKey(), JSON.stringify(d)); } catch (e) {}

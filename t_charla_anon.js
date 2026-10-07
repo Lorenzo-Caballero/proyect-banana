@@ -36,17 +36,21 @@ const src = fs.readFileSync(__dirname + "/landing/widget.js", "utf8");
 const m = src.match(/var dueno = d\.u \|\| "";[\s\S]*?\n    \}/);
 if (!m) { console.log("  FALLA no encontré el bloque de adopción en widget.js"); process.exit(1); }
 
-/** Devuelve {mostrar, guardado} corriendo el código real. */
-function restaurarCon(dueno, usuario) {
+/** Devuelve {mostrar, guardado} corriendo el código real.
+ *  `reciente` = lo que vale gp_alta_reciente (la cuenta que ESTE dispositivo
+ *  acaba de crear), que es la segunda vía de adopción. */
+function restaurarCon(dueno, usuario, reciente) {
   const d = { u: dueno, charla: [{ q: "bot", t: "hola" }] };
   let guardado = null;
-  const fn = new Function("d", "USUARIO", "lss", "gpChatKey", "JSON",
-    m[0] + "\nreturn { mostrar: true, d: d };");
+  const fn = new Function("d", "USUARIO", "lss", "gpChatKey", "JSON", "reciencreada",
+    m[0] + "\nreturn { mostrar: true, d: d, USUARIO: USUARIO };");
   /* El código real hace `return false` cuando no se adopta, así que la
      función puede devolver un booleano O el objeto: hay que distinguirlos, no
      leerle `.mostrar` a un false (da undefined y el test miente). */
-  const r = fn(d, usuario, (k, v) => { guardado = JSON.parse(v); }, () => "k", JSON);
-  return { mostrar: r !== false && !!r.mostrar, guardado: guardado };
+  const r = fn(d, usuario, (k, v) => { guardado = JSON.parse(v); }, () => "k", JSON,
+               reciente || "");
+  return { mostrar: r !== false && !!r.mostrar, guardado: guardado,
+           usuario: r !== false ? r.USUARIO : usuario };
 }
 
 // ===========================================================================
@@ -173,6 +177,44 @@ chequear("y el que borra lo deja escrito en el log",
          /log\("se borra la charla:", motivo/.test(src));
 chequear("igual que el que NO borra",
          /log\("NO se borra la charla \(/.test(src));
+
+// ===========================================================================
+console.log("\n=== 8. La charla guardada pero INVISIBLE ===");
+/* EL QUINTO REPORTE del mismo síntoma ("se sigue borrando"), y los cuatro
+   arreglos anteriores miraban el borrado explícito. Este camino no borra:
+   hace INVISIBLE, que para el jugador es exactamente lo mismo.
+
+   gpAislarIdentidad() borra `goldpaw_user`. Al quedar USUARIO vacío, la charla
+   --guardada a nombre de holaXXX-- deja de mostrarse. Y se llamaba también en
+   los momentos INCIERTOS: la adopción optimista del slug y el catch de cuando
+   la validación falla. El SPA navega a /home, el widget evalúa "home" como
+   candidato, la API lo niega, y esa negación le limpiaba la identidad a alguien
+   en medio de una conversación. */
+const invisible = restaurarCon("holaMartina847", "", "holaMartina847");
+chequear("la charla de la cuenta recién creada se recupera aunque se pierda la identidad",
+         invisible.mostrar === true,
+         "sin esto queda guardada pero invisible, que es igual a borrada");
+chequear("y se recupera también el usuario",
+         invisible.usuario === "holaMartina847",
+         "quedar anónimo con una cuenta recién creada rompe todo lo que sigue");
+/* ACOTADO A PROPÓSITO: solo la cuenta que ESTE dispositivo creó recién. La de
+   otro jugador sigue sin mostrarse, porque adentro están SUS credenciales. */
+chequear("pero la de otro jugador sigue sin mostrarse",
+         restaurarCon("holaPedro12", "", "holaMartina847").mostrar === false,
+         "adentro de esa charla están las credenciales de Pedro");
+
+console.log("\n=== 9. El aislamiento solo actúa con el tenant CONFIRMADO ===");
+chequear("gpAislarIdentidad recibe si el tenant está confirmado",
+         /function gpAislarIdentidad\(slug, confirmado\)\{/.test(src));
+chequear("y sin confirmar no toca nada",
+         /if \(!confirmado\) \{[\s\S]{0,300}return;/.test(src),
+         "la adopción optimista y la validación fallida no prueban un cambio de cliente");
+chequear("la adopción optimista se marca como NO confirmada",
+         /gpAislarIdentidad\(TENANT_SLUG, false\)/.test(src));
+chequear("y la validación fallida tampoco confirma",
+         /gpAislarIdentidad\("", false\)/.test(src));
+chequear("pero la raíz y el slug validado sí",
+         /gpAislarIdentidad\("", true\)/.test(src) && /gpAislarIdentidad\(TENANT_SLUG, true\)/.test(src));
 
 console.log("\n" + "-".repeat(39));
 console.log(ok + " OK, " + fail + " fallas");
