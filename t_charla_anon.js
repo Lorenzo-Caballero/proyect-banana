@@ -89,6 +89,44 @@ chequear("se nombra el espejo del servidor (crm_adoptar_anon)",
 chequear("y el caso que lo motivó queda documentado",
          /se limpia y se borra\s*\n?\s*\* todo|acababa de recibir su usuario y su contraseña/.test(src));
 
+// ===========================================================================
+console.log("\n=== 5. La cuenta recién creada no se suelta antes de entrar ===");
+/* EL CASO (Nahuel, 05/10/2026): "sigue borrando el chat pocos segundos después
+   de haber otorgado al usuario el nombre de usuario y contraseña".
+
+   El sondeo de sesión corre cada ~1,2 s y, si ve que hay USUARIO pero la
+   plataforma dice que no hay nadie, a las 3 pasadas (~4 s) lo SUELTA: limpia
+   la sesión y borra la charla. Para una cuenta recién creada eso no es una
+   sesión perdida -- es una que todavía no empezó: el jugador tiene las
+   credenciales en pantalla y aún no entró. Le borraba lo único que necesitaba
+   justo cuando lo necesitaba. */
+chequear("se marca el alta al ENTREGAR las credenciales",
+         /marcarAltaReciente\(d\.usuario \|\| ""\);/.test(src),
+         "si no se marca, el sondeo la suelta a los ~4 segundos");
+chequear("y el sondeo no la suelta mientras no haya entrado",
+         /if \(reciencreada && USUARIO === reciencreada\)\{\s*\n\s*sinSesion = 0;/.test(src),
+         "es el suelte que le borraba la pantalla");
+/* El suelte original sigue intacto para lo que fue escrito: el que cerró
+   sesión, o la página que carga con un usuario viejo guardado. */
+chequear("pero el suelte de siempre sigue en pie",
+         /\} else if \(teniaSesion === true \|\| sinSesion >= 3\)\{/.test(src),
+         "un jugador que cerró sesión SÍ tiene que soltarse");
+
+console.log("\n=== 6. Y se borra cuando entra, que es lo pedido ===");
+/* "quiero que se elimine el chat después de que el usuario haya iniciado
+   sesión con la cuenta recién creada". Ya usó las credenciales: dejarlas en
+   pantalla no suma, y empezar limpio con su nombre sí. */
+chequear("al entrar con la cuenta nueva se reinicia la charla",
+         /var entroConLaNueva = reciencreada && quien === reciencreada;/.test(src)
+         && /if \(entroConLaNueva\)\{\s*\n\s*reiniciarCharla\(\);/.test(src));
+chequear("y se levanta la marca, para no repetirlo",
+         /if \(entroConLaNueva\) \{ marcarAltaReciente\(""\); \}/.test(src));
+/* La marca sobrevive a una recarga: el jugador puede cerrar y volver antes de
+   entrar, y ahí el sondeo lo soltaría igual. */
+chequear("la marca sobrevive a recargar la página",
+         /ls\("gp_alta_reciente"\)/.test(src) && /lss\("gp_alta_reciente"/.test(src),
+         "sin persistirla, una recarga antes de entrar vuelve a borrarle todo");
+
 console.log("\n" + "-".repeat(39));
 console.log(ok + " OK, " + fail + " fallas");
 process.exit(fail > 0 ? 1 : 0);

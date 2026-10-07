@@ -1668,6 +1668,33 @@
     return charla.length > 0;
   }
 
+  /* LA CUENTA RECIEN CREADA TODAVIA NO INICIO SESION, Y ESO ES NORMAL.
+   *
+   * Cuando el chat le crea la cuenta, el widget adopta ese usuario -- pero el
+   * jugador todavia no entro a la plataforma: tiene las credenciales en
+   * pantalla y nada mas. El sondeo de sesion ve "hay USUARIO pero la
+   * plataforma dice que no hay nadie" y, a las 3 pasadas (~4 s), lo SUELTA:
+   * limpia la sesion y borra la charla.
+   *
+   * Reportado asi (05/10/2026): "sigue borrando el chat pocos segundos despues
+   * de haber otorgado al usuario el nombre de usuario y contraseña". Se le
+   * borraban las credenciales de la pantalla antes de poder usarlas.
+   *
+   * El suelte esta BIEN para lo que fue escrito --un jugador que cerro sesion,
+   * o una pagina que cargo con un usuario viejo guardado-- y no se toca. Lo
+   * que faltaba es distinguir ese caso de este: una cuenta recien nacida que
+   * AUN NO entro ninguna vez no es una sesion perdida, es una sesion que
+   * todavia no empezo.
+   *
+   * La marca se levanta sola en cuanto el jugador entra (ahi si se reinicia la
+   * charla, que es lo que pidio el dueño) o cuando se cierra el chat. */
+  var reciencreada = "";
+  try { reciencreada = ls("gp_alta_reciente") || ""; } catch (e) {}
+  function marcarAltaReciente(u){
+    reciencreada = u || "";
+    if (reciencreada) { lss("gp_alta_reciente", reciencreada); } else { lsd("gp_alta_reciente"); }
+  }
+
   function olvidar(){
     historial = []; charla = []; lastAgentId = 0;
     body.innerHTML = ""; saludado = false;
@@ -2578,6 +2605,14 @@
               return;
             }
             cerrar();
+            /* DESDE ACA Y HASTA QUE ENTRE, no se lo suelta. El sondeo de
+               sesion ve "hay USUARIO y la plataforma dice que no hay nadie" y
+               a las 3 pasadas (~4 s) limpia la sesion y borra la charla -- con
+               estas credenciales adentro, que es la unica vez que las ve.
+               Para una cuenta recien nacida eso no es una sesion perdida: es
+               una que todavia no empezo. La marca se levanta sola cuando
+               inicia sesion, y ahi si se reinicia la charla. */
+            marcarAltaReciente(d.usuario || "");
             pintarVarios([
               "¡Listo! Ya te creé la cuenta. Anotá estos datos:",
               "Usuario: " + d.usuario,
@@ -3079,9 +3114,22 @@
       // (crm_conversacion_id adopta el anon:sid). Solo si cambia de un usuario
       // logueado a OTRO (otra persona en el mismo navegador) se borra, para no
       // mezclar dos identidades en el mismo hilo.
+      /* ENTRO CON LA CUENTA RECIEN CREADA: era lo que estabamos esperando.
+         Se levanta la marca y la charla SI se reinicia -- pedido del dueño:
+         "quiero que se elimine el chat despues de que el usuario haya iniciado
+         sesion con la cuenta recien creada". Ya uso sus credenciales, asi que
+         dejarlas en pantalla no suma y empezar limpio con su nombre si. */
+      var entroConLaNueva = reciencreada && quien === reciencreada;
+      if (entroConLaNueva) { marcarAltaReciente(""); }
+
       var eraAnonimo = !USUARIO;
       USUARIO = quien;
       lss("goldpaw_user", USUARIO);
+      if (entroConLaNueva){
+        reiniciarCharla();
+        pintarAtajos();
+        return;
+      }
       if (eraAnonimo){
         guardar();        // re-guardar la MISMA charla bajo el usuario nuevo
         pintarAtajos();   // ahora tiene sesion: los atajos cambian
@@ -3111,7 +3159,12 @@
           un jugador que SI esta logueado. */
     if (!hay && USUARIO){
       sinSesion++;
-      if (teniaSesion === true || sinSesion >= 3){
+      /* La cuenta recien creada todavia no entro: que no haya sesion es lo
+         ESPERADO, no una sesion perdida. Soltarla ahora le borra las
+         credenciales de la pantalla justo cuando las necesita. */
+      if (reciencreada && USUARIO === reciencreada){
+        sinSesion = 0;
+      } else if (teniaSesion === true || sinSesion >= 3){
         log("SUELTA usuario:", USUARIO,
             teniaSesion === true ? "(cerro sesion)" : "(cargo sin sesion)");
         avisarVps("SUELTA", { u: USUARIO });
