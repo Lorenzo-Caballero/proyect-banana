@@ -48,6 +48,7 @@ $pet  = file_get_contents(__DIR__ . '/panel/provisionar.php');
 $reg  = file_get_contents(__DIR__ . '/landing/registro.html');
 $mig  = file_get_contents(__DIR__ . '/panel/sql/13_altas_propias.sql');
 $scopePatch = file_get_contents(__DIR__ . '/scripts/parche-scope-tenant.py');
+$loginWafPatch = file_get_contents(__DIR__ . '/scripts/parche-login-waf.py');
 $botDeploy = file_get_contents(__DIR__ . '/scripts/deploy-bot.sh');
 
 // ===========================================================================
@@ -146,6 +147,14 @@ chequear('el overlay limita sync y recaudación a jugadores directos',
 chequear('el despliegue aplica el overlay antes de construir la imagen',
          str_contains($botDeploy, 'parche-scope-tenant.py')
          && strpos($botDeploy, 'parche-scope-tenant.py')
+              < strpos($botDeploy, 'bash "$SCRIPT_DIR/arreglar-bot-altas.sh"'));
+chequear('el overlay de login espera y despeja WAF antes de reintentar',
+         str_contains($loginWafPatch, 'timeout=45_000')
+         && str_contains($loginWafPatch, 'if not despejar_waf(page):')
+         && str_contains($loginWafPatch, 'page.goto(LOGIN_URL'));
+chequear('el despliegue aplica el overlay de login antes de reconstruir',
+         strpos($botDeploy, 'parche-login-waf.py') !== false
+         && strpos($botDeploy, 'parche-login-waf.py')
               < strpos($botDeploy, 'bash "$SCRIPT_DIR/arreglar-bot-altas.sh"'));
 $iPet = strpos($pet, 'function asegurar_bot_peticiones(');
 $petFn = $iPet !== false ? substr($pet, $iPet, 6200) : '';

@@ -51,6 +51,12 @@ GP_APP="$BOT_DIR" python3 "$SCRIPT_DIR/parche-deposito-cuerpo.py"
 echo "==> aplicando el alcance multicliente a sync y recaudación"
 GP_BOT_DIR="$BOT_DIR" python3 "$SCRIPT_DIR/parche-scope-tenant.py"
 
+# La portada del panel resuelve el challenge en Chromium, pero necesita más
+# que el timeout base de Playwright. El overlay reintenta una vez tras validar
+# que el navegador ya obtuvo la página sin challenge.
+echo "==> aplicando el timeout/reintento del login detrás del WAF"
+GP_BOT_DIR="$BOT_DIR" python3 "$SCRIPT_DIR/parche-login-waf.py"
+
 # El .env (URLs + API key), la verificacion contra la cola y el rebuild los
 # hace el script de siempre. GIT_HASH viaja exportado y queda horneado en la
 # imagen (docker-compose.yml lo pasa como build-arg).
