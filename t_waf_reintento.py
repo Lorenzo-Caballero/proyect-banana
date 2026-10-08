@@ -139,6 +139,14 @@ for firma, cuerpo in [
     chequear('reconoce la firma: %s' % firma, es_challenge(cuerpo) is True,
              'si no se reconoce, no se reintenta y la operacion queda esperando a una persona')
 
+# Cloudflare documenta cf-mitigated: challenge como marca de todas sus
+# Challenge Pages, incluso cuando el cuerpo cambia. La señal es independiente
+# del HTML y permite clasificar también respuestas 403.
+chequear('reconoce la cabecera oficial de Cloudflare aunque el cuerpo sea opaco',
+         es_challenge('respuesta opaca', {'cf-mitigated': 'challenge'}) is True)
+chequear('no confunde otros valores de cf-mitigated con un challenge',
+         es_challenge('{"status":0}', {'cf-mitigated': 'none'}) is False)
+
 # Y LO QUE NO ES CHALLENGE, que importa igual o mas: repetir una escritura solo
 # es seguro cuando SABEMOS que no llego al backend.
 for que, cuerpo in [

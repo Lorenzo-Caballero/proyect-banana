@@ -174,12 +174,16 @@ class GanamosAPI:
         """Valida el HTTP status y detecta si la respuesta es en
         realidad una página de challenge del WAF (ServicePipe) en vez
         del JSON esperado, antes de intentar parsearla."""
-        r.raise_for_status()
         snippet = r.text.lstrip()[:500]
-        if snippet.lower().startswith("<!doctype html") or "servicepipe" in snippet.lower():
+        try:
+            cf_challenge = str(r.headers.get("cf-mitigated", "")).strip().lower() == "challenge"
+        except Exception:
+            cf_challenge = False
+        if cf_challenge or snippet.lower().startswith("<!doctype html") or "servicepipe" in snippet.lower():
             raise WAFChallengeError(
                 f"Respuesta no-JSON de {r.url} (parece challenge de WAF)."
             )
+        r.raise_for_status()
         return r.json()
 
     def list_pending_deposits(self, days_back: int = 2) -> list[dict]:

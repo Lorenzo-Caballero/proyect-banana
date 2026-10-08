@@ -33,6 +33,7 @@ APP = os.environ.get("GP_APP", "/app")
 MARCA = "# [goldpaw] parche cuerpo-del-deposito"
 MARCA_ALTA = "# [goldpaw] reintento del challenge en el alta"
 MARCA_DEP_WAF = "# [goldpaw] reintento WAF inmediato deposito"
+MARCA_CF_HEADER = "# [goldpaw] cf-mitigated header detector"
 
 NUEVA_FUNCION = '''
 ''' + MARCA + '''
@@ -250,10 +251,58 @@ def parchar_deposito_waf(ver: bool) -> str:
     """
     pa = os.path.join(APP, "alta_api.py")
     pb = os.path.join(APP, "bot_crear_jugador.py")
+    pr = os.path.join(APP, "bot_recaudar.py")
     if not os.path.isfile(pa) or not os.path.isfile(pb):
         return "deposito/WAF: faltan alta_api.py o bot_crear_jugador.py"
     api = io.open(pa, encoding="utf-8").read()
     bot = io.open(pb, encoding="utf-8").read()
+    recaudar = io.open(pr, encoding="utf-8").read() if os.path.isfile(pr) else None
+
+    nuevo_api = api
+    if MARCA_CF_HEADER not in nuevo_api:
+        firma = "def es_challenge(cuerpo) -> bool:"
+        ancla = "    ini = (cuerpo or \"\")[:2000]"
+        if firma not in nuevo_api or nuevo_api.count(ancla) != 1:
+            return "WAF/headers: no encontre el detector de alta_api.py; no modifiqué archivos"
+        nuevo_api = nuevo_api.replace(firma, "def es_challenge(cuerpo, headers=None) -> bool:", 1)
+        check = ('    ' + MARCA_CF_HEADER + '\n'
+                 '    try:\n'
+                 '        if str((headers or {}).get("cf-mitigated", "")).strip().lower() == "challenge":\n'
+                 '            return True\n'
+                 '    except Exception:\n'
+                 '        pass\n')
+        nuevo_api = nuevo_api.replace(ancla, check + ancla, 1)
+
+    nuevo_bot = bot
+    if MARCA_CF_HEADER not in nuevo_bot:
+        ancla = "if not alta_api.es_challenge(txt) or _intento_waf == _WAF_INTENTOS - 1:"
+        parcheado = ('if not alta_api.es_challenge(txt, getattr(resp, "headers", None)) '
+                     'or _intento_waf == _WAF_INTENTOS - 1:')
+        if nuevo_bot.count(ancla) == 1:
+            nuevo_bot = nuevo_bot.replace(
+                ancla,
+                MARCA_CF_HEADER + '\n                ' + parcheado, 1)
+        elif nuevo_bot.count(parcheado) == 1:
+            nuevo_bot = nuevo_bot.replace(
+                parcheado,
+                MARCA_CF_HEADER + '\n                ' + parcheado, 1)
+        else:
+            return "WAF/headers: no encontre el fast-path de altas; no modifiqué archivos"
+
+    nuevo_recaudar = recaudar
+    if nuevo_recaudar is not None and MARCA_CF_HEADER not in nuevo_recaudar:
+        get_line = "if alta_api.es_challenge(txt):"
+        post_line = "if not alta_api.es_challenge(cuerpo):"
+        if nuevo_recaudar.count(get_line) != 1 or nuevo_recaudar.count(post_line) != 1:
+            return "WAF/headers: no encontre los dos detectores de bot_recaudar.py; no modifiqué archivos"
+        nuevo_recaudar = nuevo_recaudar.replace(
+            get_line,
+            'if alta_api.es_challenge(txt, getattr(r, "headers", None)):', 1)
+        nuevo_recaudar = nuevo_recaudar.replace(
+            post_line,
+            'if not alta_api.es_challenge(cuerpo, getattr(r, "headers", None)):', 1)
+        nuevo_recaudar = nuevo_recaudar.replace(
+            "import alta_api", "import alta_api\n" + MARCA_CF_HEADER, 1)
 
     helper = '''
 # [goldpaw] reintento WAF inmediato deposito
@@ -269,13 +318,12 @@ def post_reintentando_challenge(post, url, data, timeout=45_000,
             cuerpo = respuesta.text()
         except Exception:
             return respuesta, None, indice + 1
-        if not es_challenge(cuerpo) or indice == total - 1:
+        if not es_challenge(cuerpo, getattr(respuesta, "headers", None)) or indice == total - 1:
             return respuesta, cuerpo, indice + 1
         pausa(1.5 * (indice + 1))
     raise RuntimeError("bucle de reintentos de depósito terminó inesperadamente")
 '''
 
-    nuevo_api = api
     if "def post_reintentando_challenge(" not in nuevo_api:
         ancla = "\ndef _leer_cuerpo_deposito("
         if ancla not in nuevo_api:
@@ -288,7 +336,6 @@ def post_reintentando_challenge(post, url, data, timeout=45_000,
                             'if cuerpo is None:\n            return "revisar"',
                             nuevo_api, count=1)
 
-    nuevo_bot = bot
     # Corrige también la variante del marcador que dejó una primera versión
     # del overlay como comentario doble; no altera el código ejecutable.
     nuevo_bot = nuevo_bot.replace('    # ' + MARCA_DEP_WAF,
@@ -334,21 +381,29 @@ def post_reintentando_challenge(post, url, data, timeout=45_000,
     try:
         compile(nuevo_api, pa, "exec")
         compile(nuevo_bot, pb, "exec")
+        if nuevo_recaudar is not None:
+            compile(nuevo_recaudar, pr, "exec")
     except SyntaxError as e:
         return "deposito/WAF: el parche no compila (%s); no modifiqué archivos" % e
 
     ya_api = nuevo_api == api
     ya_bot = nuevo_bot == bot
-    if ya_api and ya_bot:
+    ya_recaudar = nuevo_recaudar is None or nuevo_recaudar == recaudar
+    if ya_api and ya_bot and ya_recaudar:
         return "deposito/WAF: ya parcheado"
     if ver:
-        return "deposito/WAF: SE PARCHARIA alta_api=%s bot=%s" % (
-            "no" if ya_api else "sí", "no" if ya_bot else "sí")
+        return "WAF headers: SE PARCHARIA alta_api=%s creador=%s recaudador=%s" % (
+            "no" if ya_api else "sí", "no" if ya_bot else "sí",
+            "no" if ya_recaudar else "sí")
     io.open(pa + ".gp-bak-reintento-waf", "w", encoding="utf-8").write(api)
     io.open(pb + ".gp-bak-reintento-waf", "w", encoding="utf-8").write(bot)
+    if nuevo_recaudar is not None and not ya_recaudar:
+        io.open(pr + ".gp-bak-waf-headers", "w", encoding="utf-8").write(recaudar)
     io.open(pa, "w", encoding="utf-8").write(nuevo_api)
     io.open(pb, "w", encoding="utf-8").write(nuevo_bot)
-    return "deposito/WAF: PARCHADO (respaldo en .gp-bak-reintento-waf)"
+    if nuevo_recaudar is not None and not ya_recaudar:
+        io.open(pr, "w", encoding="utf-8").write(nuevo_recaudar)
+    return "WAF headers: PARCHADO en alta, creador y recaudador (con respaldos)"
 
 
 def main() -> int:

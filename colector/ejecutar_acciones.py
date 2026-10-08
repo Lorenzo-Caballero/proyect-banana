@@ -66,7 +66,12 @@ logging.basicConfig(
 log = logging.getLogger("acciones")
 
 
-def _es_challenge(texto: str) -> bool:
+def _es_challenge(texto: str, headers=None) -> bool:
+    try:
+        if str((headers or {}).get("cf-mitigated", "")).strip().lower() == "challenge":
+            return True
+    except Exception:
+        pass
     t = (texto or "").lstrip()[:400].lower()
     return t.startswith("<!doctype html") or "just a moment" in t or "servicepipe" in t
 
@@ -83,7 +88,7 @@ class Cola:
 
     def pendientes(self) -> list:
         r = self.s.get(self.url, params={"accion": "pendientes"}, timeout=20)
-        if _es_challenge(r.text):
+        if _es_challenge(r.text, getattr(r, "headers", None)):
             raise WAFChallengeError("El WAF de Hostinger bloqueo la lectura de la cola.")
         r.raise_for_status()
         return r.json().get("datos", [])

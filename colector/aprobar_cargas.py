@@ -173,7 +173,7 @@ def url_cola() -> str:
     return base.rsplit("/", 1)[0] + "/peticiones_cola.php"
 
 
-def es_challenge(cuerpo: str) -> bool:
+def es_challenge(cuerpo: str, headers=None) -> bool:
     """¿Este 200 lo contesto el WAF y no el panel?
 
     EL 200 FALSO ES EL PROBLEMA ENTERO. ServicePipe no devuelve 403: devuelve
@@ -205,6 +205,14 @@ def es_challenge(cuerpo: str) -> bool:
     Ante la duda devuelve False y el que llama tiene su propia red -- si no es
     JSON valido, igual termina en 'revisar'.
     """
+    # Cloudflare identifica sus Challenge Pages con esta cabecera en todos
+    # los tipos de challenge. ServicePipe puede no incluirla, por eso se
+    # conserva tambien la deteccion por cuerpo para los challenges existentes.
+    try:
+        if str((headers or {}).get("cf-mitigated", "")).strip().lower() == "challenge":
+            return True
+    except Exception:
+        pass
     if not cuerpo:
         return False
     cabeza = cuerpo.lstrip()[:2000].lower()
@@ -226,7 +234,7 @@ def _json(r):
         txt = r.text()
     except Exception as e:
         raise DesafioWAF(f"no pude leer la respuesta: {e}")
-    if es_challenge(txt):
+    if es_challenge(txt, getattr(r, "headers", None)):
         raise DesafioWAF("el panel devolvio HTML (challenge del WAF)")
     # Un error JSON no es una lista vacia ni un saldo valido. Los bloqueos
     # temporales (403/429/503) entran al mismo reintento WAF; 401 es sesion vencida.
@@ -517,7 +525,7 @@ def retirar_del_jugador(ctx, id_ganamos: int, monto: float) -> tuple[str, str]:
 
     # Mismo detector de challenge que usa _json() en este archivo.
     cabeza = cuerpo.lstrip()[:500].lower()
-    if es_challenge(cuerpo):
+    if es_challenge(cuerpo, getattr(r, "headers", None)):
         # El WAF contesto el: la request NO llego al backend, asi que no se
         # descontó nada. Se devuelve a la cola para reintentar -- no es
         # 'revisar' justamente porque aca SI sabemos que no paso nada.
@@ -675,7 +683,7 @@ def rechazar(ctx, request_id: int) -> tuple[str, str]:
             cuerpo = r.text()
         except Exception:
             cuerpo = ""
-        if not es_challenge(cuerpo):
+        if not es_challenge(cuerpo, getattr(r, "headers", None)):
             break
         # MISMOS INTENTOS Y MISMA ESPERA QUE UNA LECTURA, y por el mismo motivo:
         # un challenge prueba que la request no llego al backend. La espera
@@ -735,7 +743,7 @@ def aprobar(ctx, request_id: int) -> tuple[str, str]:
         except Exception:
             cuerpo = ""
         # Mismo detector que _json() y retirar_del_jugador().
-        if not es_challenge(cuerpo):
+        if not es_challenge(cuerpo, getattr(r, "headers", None)):
             break
         # MISMOS INTENTOS Y MISMA ESPERA QUE UNA LECTURA, y por el mismo motivo:
         # un challenge prueba que la request no llego al backend. La espera

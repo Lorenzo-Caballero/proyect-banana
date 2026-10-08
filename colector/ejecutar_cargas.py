@@ -168,7 +168,7 @@ def marcar(ctx, id_accion: int, estado: str, mensaje: str) -> None:
         log.error("  no pude marcar la accion %s como %s: %s", id_accion, estado, e)
 
 
-def es_challenge_waf(cuerpo: str) -> bool:
+def es_challenge_waf(cuerpo: str, headers=None) -> bool:
     """¿Esto es el challenge anti-bot de ServicePipe en vez de la API?
 
     La firma es inconfundible y esta documentada en CLAUDE.md: una pagina HTML
@@ -180,6 +180,11 @@ def es_challenge_waf(cuerpo: str) -> bool:
     que el deposito no ocurrio, con certeza, y por lo tanto REINTENTAR ES
     SEGURO: no hay forma de depositar dos veces por esta via.
     """
+    try:
+        if str((headers or {}).get("cf-mitigated", "")).strip().lower() == "challenge":
+            return True
+    except Exception:
+        pass
     t = (cuerpo or "")[:2000]
     if "/exhk" in t:
         return True
@@ -261,7 +266,7 @@ def depositar(ctx, id_ganamos: int, monto: float) -> tuple[str, str]:
         except Exception:
             pass
 
-        if not es_challenge_waf(cuerpo_full):
+        if not es_challenge_waf(cuerpo_full, getattr(r, "headers", None)):
             break
         # El WAF nos desafio: la request NO llego al backend, asi que se puede
         # repetir sin riesgo de depositar dos veces. Suele alcanzar con
@@ -276,7 +281,7 @@ def depositar(ctx, id_ganamos: int, monto: float) -> tuple[str, str]:
 
     cuerpo_txt = cuerpo_full[:300]
 
-    if es_challenge_waf(cuerpo_full):
+    if es_challenge_waf(cuerpo_full, getattr(r, "headers", None)):
         # Agotados los reintentos. NUNCA 'error': devolverle las fichas no
         # corresponde (el jugador no tiene la culpa y el deposito sigue
         # debiendose), y NUNCA 'hecha': no se deposito nada.
