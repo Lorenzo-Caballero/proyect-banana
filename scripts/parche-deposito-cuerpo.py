@@ -124,6 +124,14 @@ def parchar_bot(ver: bool) -> str:
     src = io.open(p, encoding="utf-8").read()
     if MARCA in src:
         return "bot_crear_jugador.py: ya parchado"
+    # El overlay WAF posterior reemplazó el bloque antiguo del depósito por
+    # post_reintentando_challenge(). En ese estado ya no existe ninguna de las
+    # dos líneas que buscaba el parche original, pero el cuerpo completo sí se
+    # evalúa; reconocerlo evita anunciar un error falso en cada deploy.
+    if (MARCA_DEP_WAF in src
+            and "post_reintentando_challenge(" in src
+            and "evaluar_deposito(st, txt_full)" in src):
+        return "bot_crear_jugador.py (deposito): ya parchado"
 
     # 1) El cuerpo se recortaba a 300 ANTES de mirarlo: asi no se puede parsear.
     a = "            txt = r.text()[:300]"
