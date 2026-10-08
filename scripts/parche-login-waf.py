@@ -22,6 +22,34 @@ NEW = '''    # [goldpaw] el login puede tardar por el challenge WAF; Chromium lo
             raise
         page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=45_000)'''
 MARKER = "# [goldpaw] el login puede tardar por el challenge WAF; Chromium lo resuelve."
+BACKOFF_MARKER = "# [goldpaw] enfriamiento ante credenciales rechazadas"
+BACKOFF_ANCHOR = "    MAX_FORM_POR_VUELTA = 8"
+BACKOFF_CODE = '''    MAX_FORM_POR_VUELTA = 8
+
+
+''' + BACKOFF_MARKER + '''
+try:
+    ESPERA_LOGIN_FALLIDO = max(300, int(os.environ.get("ESPERA_LOGIN_FALLIDO", "900")))
+except ValueError:
+    ESPERA_LOGIN_FALLIDO = 900'''
+
+
+def parchar_enfriamiento(src: str, path: str, solo_ver: bool) -> tuple[str, str]:
+    """Define el cooldown que ya usa el camino de login rechazado.
+
+    Una revisión de producción encontró que el camino de fallo referenciaba
+    ESPERA_LOGIN_FALLIDO sin definirla, convirtiendo un rechazo de login en
+    NameError y reinicios rápidos del contenedor.
+    """
+    if BACKOFF_MARKER in src:
+        return src, "bot_crear_jugador.py: enfriamiento de login ya aplicado"
+    if "ESPERA_LOGIN_FALLIDO =" in src:
+        return src, "bot_crear_jugador.py: ESPERA_LOGIN_FALLIDO ya está definido"
+    if src.count(BACKOFF_ANCHOR) != 1:
+        return src, "bot_crear_jugador.py: no encontré el ancla del cooldown; no toqué nada"
+    if solo_ver:
+        return src, "bot_crear_jugador.py: se agregaría cooldown de 900 s al login rechazado"
+    return src.replace(BACKOFF_ANCHOR, BACKOFF_CODE, 1), "bot_crear_jugador.py: aplicado cooldown de login"
 
 
 def main() -> int:
@@ -32,6 +60,26 @@ def main() -> int:
     except OSError as e:
         print(f"ERROR bot_crear_jugador.py: no se puede leer ({e})", file=sys.stderr)
         return 1
+
+    updated, estado_backoff = parchar_enfriamiento(source, PATH, solo_ver)
+    print(estado_backoff)
+    if "no encontré" in estado_backoff:
+        return 1
+    if not solo_ver and updated != source:
+        try:
+            compile(updated, PATH, "exec")
+        except SyntaxError as e:
+            print(f"ERROR el cooldown no compila ({e})", file=sys.stderr)
+            return 1
+        backup = PATH + ".gp-bak-login-backoff"
+        if not os.path.exists(backup):
+            with open(PATH, encoding="utf-8") as f:
+                original = f.read()
+            with open(backup, "w", encoding="utf-8", newline="") as f:
+                f.write(original)
+        with open(PATH, "w", encoding="utf-8", newline="") as f:
+            f.write(updated)
+        source = updated
 
     if MARKER in source:
         print("OK bot_crear_jugador.py: timeout WAF/login ya aplicado")
