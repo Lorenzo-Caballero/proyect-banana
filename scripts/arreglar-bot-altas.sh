@@ -36,10 +36,36 @@
 #      haciendo (menos concurrencia + reintento del challenge), que es lo que
 #      la medicion del 15/09 ya decia que era el problema real.
 #
+#   5. 08/10/2026: VUELTA A agents.ganamos7.com, por decisión del dueño, con
+#      el WAF desafiando el 100% de las altas en ganamosonline (logs de
+#      produccion del 7-8/10: cada alta recibia 5 challenges seguidos y caia
+#      al formulario, que cruza el MISMO WAF y tambien falla; de la 447 en
+#      adelante no salio ninguna). ganamos7 es el UNICO dominio sin Cloudflare
+#      adelante, y las altas por ahi estan PROBADAS (16/09: creado id=38929348
+#      en 2 segundos por fast-path).
+#
+#      Y ESTA VEZ EL CAMBIO SURTE EFECTO DE VERDAD. El paso 4 "no se movio"
+#      porque las altas usan la URL ABSOLUTA horneada en alta_endpoint.json y
+#      este script nunca la tocaba: cambiaba el login y nada mas. Ahora el
+#      bloque 2.b resetea ese archivo cuando el dominio cambia, asi el bot
+#      re-aprende el endpoint contra ganamos7. Sin eso, cambiar el dominio
+#      aca es un no-op silencioso para las altas -- la trampa del 18/09.
+#
+#      RIESGO CONOCIDO, EL DEPOSITO. El 18/09 un deposito contra ganamos7 dio
+#      {"error_message":"Unauthorized"} (JSON del backend, no un challenge).
+#      Esa prueba estaba contaminada --las altas seguian en ganamosonline por
+#      la URL horneada, solo el deposito cruzo-- y la contradice la medicion
+#      del 16/09, donde el circuito de la plata entero dio 26/0 por ganamos7.
+#      No se puede cerrar sin un deposito real. Por eso: despues de desplegar,
+#      VERIFICAR UN DEPOSITO (cargar fichas a un jugador) antes de confiar.
+#      Si da Unauthorized, volver es una linea (PANEL_URL_NUEVA/LOGIN_URL_NUEVA
+#      a ganamosonline) y correr este script de nuevo.
+#
 # ANTES DE VOLVER A TOCAR ESTO: que las altas salgan NO prueba que el dominio
-# ande, porque usan la URL grabada en alta_endpoint.json y no esta variable.
-# Lo que prueba algo es un DEPOSITO. Borra ese archivo si queres que el bot
-# re-aprenda el endpoint contra el dominio nuevo.
+# ande por si solo -- pero desde el bloque 2.b el endpoint horneado se resetea
+# con el dominio, asi que ya no hay el no-op silencioso de antes. Lo que sigue
+# sin estar cubierto es el DEPOSITO: eso se prueba cargando fichas, no creando
+# usuarios.
 #
 # Arregla las tres URLs del .env, verifica que la API conteste con la clave
 # que tiene el bot, y reinicia el contenedor.
@@ -57,8 +83,13 @@ CFG="${CFG:-/var/www/api/config.local.php}"
 DOMINIO="${DOMINIO:-ganamoscrm.online}"
 
 API_URL_NUEVA="https://$DOMINIO/gp-api/altas_cola.php"
-PANEL_URL_NUEVA="https://agents.ganamosonline.com/user/create-player"
-LOGIN_URL_NUEVA="https://agents.ganamosonline.com/"
+# agents.ganamos7.com es el ÚNICO dominio sin Cloudflare adelante (nginx
+# pelado). Los demás --ganamosonline, ganamos.net, ganamosbet-- están todos
+# detrás de Cloudflare/ServicePipe, y de ahí salen los challenges que el
+# 7-8/10/2026 pasaron a desafiar el 100% de las altas y frenaron la creación
+# de usuarios. Medido: curl pelado da 200 en ganamos7 y 403 en ganamosonline.
+PANEL_URL_NUEVA="https://agents.ganamos7.com/user/create-player"
+LOGIN_URL_NUEVA="https://agents.ganamos7.com/"
 
 echo "==> Bot en:  $BOT_DIR"
 [ -f "$ENV" ] || { echo "!! No existe $ENV — pasá BOT_DIR=/ruta/al/bot" >&2; exit 1; }
@@ -114,6 +145,45 @@ fijar LOGIN_URL "$LOGIN_URL_NUEVA"
 
 echo "==> .env actualizado:"
 grep -E '^(API_URL|PANEL_URL|LOGIN_URL)=' "$ENV" | sed 's/^/    /'
+
+# ---------------------------------------------------------------------------
+# 2.b  RESETEAR EL ENDPOINT HORNEADO SI EL DOMINIO CAMBIO.
+#
+# Esto es lo que hacía que cambiar de dominio NO surtiera efecto, y lo que
+# confundió el 18/09/2026. El fast-path aprende el endpoint de alta UNA vez y
+# lo guarda con la URL ABSOLUTA en /datos/alta_endpoint.json; después lo usa
+# tal cual (url = plantilla["url"]). O sea que cambiar PANEL_URL/LOGIN_URL acá
+# mueve SOLO el login: las altas siguen pegándole al dominio viejo horneado en
+# ese archivo, en silencio. Parece que el bot "se movió" --el login sí-- pero
+# las altas no.
+#
+# /datos está bind-montado a $BOT_DIR/datos (el único mount del compose), así
+# que el archivo se borra desde el host. Borrarlo obliga al bot a re-aprender
+# el endpoint contra el dominio NUEVO en el primer alta (cae al formulario esa
+# vez y re-hornea). Se respalda antes: si algo sale mal, se restaura y vuelve
+# todo como estaba.
+PANEL_HOST_NUEVO="$(printf '%s' "$PANEL_URL_NUEVA" | sed -E 's#https?://([^/]+).*#\1#')"
+ENDPOINT_FILE="$BOT_DIR/datos/alta_endpoint.json"
+if [ -f "$ENDPOINT_FILE" ]; then
+  HOST_HORNEADO="$(grep -oE 'https?://[^/"]+' "$ENDPOINT_FILE" | head -1 | sed -E 's#https?://##')"
+  if [ -n "$HOST_HORNEADO" ] && [ "$HOST_HORNEADO" != "$PANEL_HOST_NUEVO" ]; then
+    echo "==> El endpoint horneado apunta a $HOST_HORNEADO, pero ahora vamos a $PANEL_HOST_NUEVO."
+    echo "    Lo reseteo para que las altas re-aprendan contra el dominio nuevo"
+    echo "    (si no, seguirían yendo a $HOST_HORNEADO sin un solo error a la vista)."
+    mv "$ENDPOINT_FILE" "$ENDPOINT_FILE.bak.$(date +%Y%m%d%H%M%S)"
+    # La sesión horneada es del dominio viejo: se descarta también para que el
+    # bot re-loguee limpio contra el nuevo en vez de arrastrar cookies muertas.
+    # (El bot re-loguea solo si la sesión no vale, pero empezar fresco evita
+    # cualquier estado a medias.)
+    for s in estado_sesion.json estado_session_storage.json; do
+      [ -f "$BOT_DIR/datos/$s" ] && mv "$BOT_DIR/datos/$s" "$BOT_DIR/datos/$s.bak.$(date +%Y%m%d%H%M%S)" || true
+    done
+  else
+    echo "==> El endpoint horneado ya apunta a $PANEL_HOST_NUEVO: nada que resetear."
+  fi
+else
+  echo "==> No hay endpoint horneado todavía: el bot lo aprende solo en el primer alta."
+fi
 
 # ---------------------------------------------------------------------------
 # 3. Verificar ANTES de reiniciar: que la API conteste con esa clave.

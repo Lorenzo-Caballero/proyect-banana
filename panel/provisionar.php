@@ -242,17 +242,21 @@ function cf_dns_upsert($dominio, $cfg) {
 /* El panel de agentes al que le pegan TODOS los bots de clientes. Una sola
    constante para que el run y la comparacion de abajo no puedan divergir.
 
-   VOLVIO A ganamosonline el 18/09/2026. El cambio a ganamos7 del 16/09 se
-   apoyaba en que un alta de prueba salia por fast-path -- y esa prueba no
-   probaba nada: el endpoint de alta se aprende una vez y se guarda con la URL
-   ABSOLUTA en /datos/alta_endpoint.json, que quedo en ganamosonline. Las altas
-   nunca se movieron. El unico que cruzo de verdad fue el deposito, y contesto
-   {"status":1,"error_message":"Unauthorized"} -- JSON del backend, no un
-   challenge: la request llega y la sesion de ganamos7 no alcanza para
-   depositar. Dos dias sin acreditar una sola carga por API.
-   Ver scripts/arreglar-bot-altas.sh para la historia completa. */
-const PANEL_LOGIN_URL  = 'https://agents.ganamosonline.com/';
-const PANEL_CREATE_URL = 'https://agents.ganamosonline.com/user/create-player';
+   VOLVIO A ganamos7 el 08/10/2026, por decision del dueño, con el WAF de
+   ganamosonline (Cloudflare/ServicePipe) desafiando el 100% de las altas y
+   frenando la creacion de usuarios. ganamos7 es el UNICO dominio sin
+   Cloudflare adelante.
+
+   El 18/09 se habia vuelto a ganamosonline porque un deposito contra ganamos7
+   dio {"error_message":"Unauthorized"}. Esa prueba estaba contaminada: las
+   altas seguian en ganamosonline por la URL ABSOLUTA horneada en
+   /datos/alta_endpoint.json --nunca se movieron-- y solo el deposito cruzo.
+   El arreglo de fondo (resetear ese archivo al cambiar de dominio) vive en
+   scripts/arreglar-bot-altas.sh, bloque 2.b. RIESGO ABIERTO: el deposito por
+   ganamos7 no esta reconfirmado; verificar una carga de fichas despues de
+   desplegar. Ver ese script para la historia completa. */
+const PANEL_LOGIN_URL  = 'https://agents.ganamos7.com/';
+const PANEL_CREATE_URL = 'https://agents.ganamos7.com/user/create-player';
 
 /* SLUGS QUE YA TIENEN BOT PROPIO Y NO SE APROVISIONAN.
    `ganamoscrm` es NUESTRO propio negocio, y lo atienden desde antes del
@@ -455,6 +459,35 @@ function avisar_plataforma($tipo, $titulo, $lineas, $clave, $horas = 6) {
     require_once __DIR__ . '/../api/telegram_lib.php';
     if (!function_exists('tg_evento')) { return; }
     tg_evento(null, $tipo, $titulo, $lineas, $clave);
+}
+
+/**
+ * Borra el endpoint de alta horneado si quedó apuntando a otro dominio.
+ *
+ * El fast-path aprende el endpoint UNA vez y lo guarda con la URL absoluta en
+ * <dir>/alta_endpoint.json; después lo usa tal cual. Como ese archivo vive en
+ * el volumen del cliente, recrear el contenedor con otro PANEL_URL no lo
+ * mueve: las altas siguen yendo al dominio viejo, sin un solo error. Borrarlo
+ * obliga al bot a re-aprenderlo contra $panelUrl en el primer alta. Se respalda
+ * por las dudas. La sesión horneada (estado_sesion*) también es del dominio
+ * viejo: se descarta para que re-loguee limpio.
+ */
+function resetear_endpoint_horneado($dir, $panelUrl, $slug) {
+    $file = $dir . '/alta_endpoint.json';
+    if (!is_file($file)) { return; }
+    $hostNuevo = parse_url($panelUrl, PHP_URL_HOST) ?: '';
+    $hostViejo = '';
+    $j = json_decode((string) @file_get_contents($file), true);
+    if (is_array($j) && !empty($j['url'])) {
+        $hostViejo = parse_url((string) $j['url'], PHP_URL_HOST) ?: '';
+    }
+    if ($hostNuevo === '' || $hostViejo === '' || $hostViejo === $hostNuevo) { return; }
+    @rename($file, $file . '.bak.' . date('YmdHis'));
+    foreach (['estado_sesion.json', 'estado_session_storage.json'] as $s) {
+        if (is_file($dir . '/' . $s)) { @rename($dir . '/' . $s, $dir . '/' . $s . '.bak.' . date('YmdHis')); }
+    }
+    echo date('c') . " bot-altas $slug: endpoint horneado apuntaba a $hostViejo"
+       . " -> reseteado para re-aprender contra $hostNuevo\n";
 }
 
 /** Baja el contenedor que quedó apuntando a la cola de otro, y avisa. */
@@ -872,6 +905,14 @@ function asegurar_bot_altas($c, $cfg) {
     // propia sesión de Playwright (estado_sesion.json) en su carpeta, no se
     // pisan entre sí aunque compartan las mismas credenciales de agente.
     @mkdir('/opt/bots-altas/' . $slug, 0750, true);
+
+    /* RESETEAR EL ENDPOINT HORNEADO SI APUNTA A OTRO DOMINIO. Mismo motivo que
+       en scripts/arreglar-bot-altas.sh (bloque 2.b): el fast-path guarda la
+       URL ABSOLUTA del alta en alta_endpoint.json y la usa tal cual. Recrear
+       el contenedor con PANEL_URL nuevo NO lo mueve -- el archivo vive en el
+       volumen /opt/bots-altas/<slug> y sobrevive. Sin esto, mover el dominio
+       deja las altas del cliente yendo al viejo, en silencio. */
+    resetear_endpoint_horneado('/opt/bots-altas/' . $slug, PANEL_CREATE_URL, $slug);
 
     $cmd = 'docker run -d '
          . '--name ' . escapeshellarg($name) . ' '
