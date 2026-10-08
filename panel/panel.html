@@ -245,13 +245,11 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
           Cobro (MercadoPago)
         </button>
-        <!-- La landing es un producto que se vende SOLO, sin cliente ni CRM
-             detrás: por eso entra por la barra de arriba y no por la fila de
-             un cliente. El botón de la fila sigue existiendo para la landing
-             DE un cliente, que es el otro caso. -->
+        <!-- Esta pantalla administra únicamente la landing propia de Ganamos.
+             Cada comprador configura la suya desde su CRM o desde /replica/configurar.html. -->
         <button class="btn" id="btnLandings" style="background:var(--card2);border:1px solid var(--line);color:var(--tx)">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18a8 8 0 0 1-4.1-1.1l-.3-.2-3 .8.8-2.9-.2-.3A8 8 0 1 1 12 20z"/></svg>
-          Landings
+          Mi landing
         </button>
         <button class="btn" id="btnNuevo">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
@@ -294,6 +292,13 @@
     </label>
     <input id="fNombre" class="field" placeholder="Casino del Fauno">
 
+    <label style="margin-top:18px">Producto *</label>
+    <select id="fProducto" class="field">
+      <option value="crm">CRM completo</option>
+      <option value="landing">Landing independiente (sin acceso al CRM)</option>
+    </select>
+    <div class="hint"><span>El cliente CRM configura sus datos desde su CRM. El comprador del producto Landing usa un portal aparte para conectar su panel Ganamos y su WhatsApp, sin recibir acceso al CRM.</span></div>
+
     <label>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20Z"/></svg>
       URL del cliente
@@ -320,6 +325,7 @@
          prioritario hasta que las cargue; provisionar.php levanta el bot
          solo cuando aparecen. panel.php sigue aceptando los campos por
          compatibilidad, pero este panel ya no los manda. -->
+    <div id="fCrmAccessBox">
     <label style="margin-top:22px">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
       Acceso al CRM del cliente
@@ -340,6 +346,15 @@
             Antes de compartir su landing, debe cargar sus credenciales de agente
             en Configuración. Hasta entonces, el registro se informa como no disponible
             y no queda ninguna solicitud trabada.</span>
+    </div>
+    </div>
+    <div id="fLandingAccessBox" class="hide">
+      <label style="margin-top:20px">Acceso del cliente a configurar su landing *</label>
+      <div class="grid">
+        <div><input id="fPortalUser" class="field" placeholder="usuario para el portal" autocomplete="off"></div>
+        <div><input id="fPortalPass" class="field" type="password" placeholder="contraseña inicial (mín. 10)" autocomplete="new-password"></div>
+      </div>
+      <div class="hint"><span>Entregale este acceso al comprador. En <b>/replica/configurar.html</b> él carga su usuario y contraseña Ganamos y el WhatsApp de su negocio. Este acceso no abre el CRM ni nuestro panel.</span></div>
     </div>
 
     <label style="margin-top:22px">
@@ -432,7 +447,7 @@
   </div>
 </div>
 
-<!-- MODAL: TODAS LAS LANDINGS (incluidas las que no son de ningún cliente) -->
+<!-- MODAL: LANDING PROPIA DE GANAMOS -->
 <div class="ov" id="ovLandings">
   <div class="modal" style="max-width:860px">
     <div class="modal-head">
@@ -440,8 +455,8 @@
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18a8 8 0 0 1-4.1-1.1l-.3-.2-3 .8.8-2.9-.2-.3A8 8 0 1 1 12 20z"/></svg>
       </div>
       <div>
-        <h3>Landings</h3>
-        <p class="sub" id="lsSub">Crean la cuenta con nuestro agente y mandan al WhatsApp que pongas.</p>
+        <h3>Landing propia de Ganamos</h3>
+        <p class="sub" id="lsSub">Este enlace usa tu propio agente Ganamos. Cada cliente administra la suya desde su acceso.</p>
       </div>
     </div>
 
@@ -785,7 +800,7 @@
       var c=res.j.cliente, d=res.j.diagnostico, urls=res.j.urls;
       var ov=document.getElementById("ovDetalle");
       if(!ov){ ov=document.createElement("div"); ov.id="ovDetalle"; ov.className="ov"; document.body.appendChild(ov); }
-      var links=Object.keys(urls).map(function(k){var label=k.indexOf('campania:')===0?'Landing: '+k.slice(9):k==='jugadores'?'Ganamos para jugadores':k==='crm'?'Panel del cliente (CRM)':k==='registro'?'Alta de jugadores':k==='bono'?'Landing de bienvenida':k;return '<div class="creado"><b>'+esc(label)+'</b><br><a href="'+esc(urls[k])+'" target="_blank" rel="noopener">'+esc(urls[k])+'</a> <button type="button" data-copy="'+esc(urls[k])+'">Copiar</button></div>';}).join("");
+      var links=Object.keys(urls).map(function(k){var label=k.indexOf('campania:')===0?'Landing: '+k.slice(9):k==='configuracion'?'Portal de configuración':k==='jugadores'?'Ganamos para jugadores':k==='crm'?'Panel del cliente (CRM)':k==='registro'?'Alta de jugadores':k==='bono'?'Landing de bienvenida':k;return '<div class="creado"><b>'+esc(label)+'</b><br><a href="'+esc(urls[k])+'" target="_blank" rel="noopener">'+esc(urls[k])+'</a> <button type="button" data-copy="'+esc(urls[k])+'">Copiar</button></div>';}).join("");
       var ops=d.operadores.length?d.operadores.map(function(o){return '<li>'+esc(o.username)+' · '+esc(o.rol)+' · '+(Number(o.activo)?'activo':'inactivo')+' · último acceso: '+esc(o.ultimo_login||'nunca')+'</li>';}).join(""):'<li>Sin datos de operadores</li>';
       var lands=d.landings.length?d.landings.map(function(l){return '<li>'+esc(l.nombre)+' · '+esc(l.bono_pct)+'% bienvenida</li>';}).join(""):'<li>Sin campañas activas encontradas</li>';
       var aliases=(res.j.rutas_anteriores||[]).length?'<div class="creado"><b>Enlaces anteriores que siguen funcionando</b><ul>'+res.j.rutas_anteriores.map(function(r){return '<li><a href="https://'+esc(c.dominio)+'/'+esc(r)+'/" target="_blank" rel="noopener">/'+esc(r)+'/</a></li>';}).join('')+'</ul></div>':'';
@@ -864,23 +879,25 @@
         var ruta = c.ruta_slug || c.slug;
         var domTxt = Number(c.path_tenant) ? (c.dominio + "/" + ruta) : c.dominio;
         var domUrl = "https://" + domTxt + "/crm.html";
+        var esSoloLanding = c.producto === "landing";
+        var linkAcceso = esSoloLanding
+          ? '<a class="dom" href="https://' + esc(c.dominio) + '/replica/configurar.html" target="_blank" rel="noopener">Portal landing</a>'
+          : '<a class="dom" href="' + esc(domUrl) + '" target="_blank" rel="noopener">CRM</a><br><a class="dom" href="https://' + esc(domTxt) + '/" target="_blank" rel="noopener">Ganamos</a>';
         var susEstado = c.suscripcion_estado || "trial";
         var susClase = susEstado === "activa" ? "activo" : (susEstado === "sin_saldo" ? "baja" : "pausado");
         var susTxt = susEstado === "sin_saldo" ? "sin saldo" : susEstado;
         var saldoTxt = "$" + Number(c.saldo_usd||0).toFixed(2) + " USD";
         tr.innerHTML =
-          '<td><button class="client-detail" data-id="'+esc(c.id)+'">'+esc(c.nombre)+'</button></td>'+
-          '<td><a class="dom" href="'+esc(domUrl)+'" target="_blank" rel="noopener">CRM</a><br>'+
-            '<a class="dom" href="https://'+esc(domTxt)+'/" target="_blank" rel="noopener">Jugadores</a></td>'+
+          '<td><button class="client-detail" data-id="'+esc(c.id)+'">'+esc(c.nombre)+'</button>'+(esSoloLanding?'<br><span style="font-size:11px;color:var(--faint)">Solo landing</span>':'')+'</td>'+
+          '<td>'+linkAcceso+'</td>'+
           '<td>'+esc(c.cobro_alias||"—")+'</td>'+
           '<td>'+esc(c.coins_por_peso)+'</td>'+
           '<td><span class="pill '+esc(c.estado)+'">'+esc(c.estado)+'</span></td>'+
           '<td><span class="pill '+susClase+'">'+esc(susTxt)+'</span><br><span style="font-size:11.5px;color:var(--faint)">'+esc(saldoTxt)+'</span></td>'+
           '<td class="acc"></td>';
         var acc = tr.querySelector(".acc");
-        acc.appendChild(botonOperadores(c));
+        if (!esSoloLanding) acc.appendChild(botonOperadores(c));
         acc.appendChild(botonSaldo(c));
-        acc.appendChild(botonLanding(c));
         acc.appendChild(botonEditar(c));
         acc.appendChild(botonEstado(c));
         acc.appendChild(botonBorrar(c));
@@ -1119,15 +1136,9 @@
     }).catch(function(){ m.className="msg err"; m.textContent="no pude conectar"; });
   }
 
-  /* ---------- todas las landings (el producto que se vende solo) ----------
-     Una landing NO necesita cliente, ni CRM, ni base propia: vive en nuestra
-     base, crea las cuentas con nuestro agente y deriva al WhatsApp que se le
-     cargue. Por eso se puede vender por separado, y por eso esta pantalla no
-     pide elegir un cliente.
-
-     Las de un cliente aparecen igual en la lista, marcadas: son LA MISMA cosa
-     con alguien anotado como dueno en el control. Dos pantallas para lo mismo
-     seria garantizar que una de las dos quede atras. */
+  /* ---------- landing propia de Ganamos ----------
+     Esta pantalla solo gestiona nuestro tenant. Los clientes del CRM usan su
+     módulo Landings; los compradores sin CRM usan /replica/configurar.html. */
   var lsEditando = 0;
 
   function abrirLandings(){
@@ -1155,10 +1166,7 @@
         $("lsMsg").className = "msg err"; $("lsMsg").textContent = res.j.error || "no se pudo";
         return;
       }
-      /* Se dice en que base se crean: es la decision que hace que la cuenta
-         salga con nuestro agente, y desde la pantalla es invisible. */
-      $("lsSub").textContent = "Crean la cuenta con nuestro agente (en " + res.j.base
-                             + ") y mandan al WhatsApp que pongas.";
+      $("lsSub").textContent = "Landing de nuestro tenant (" + res.j.base + "). Los clientes configuran la suya desde su CRM o portal.";
       var ls = res.j.landings || [];
       if (!ls.length){
         $("lsLista").innerHTML = '<p class="sub" style="padding:10px">Todavia no hay ninguna. Crea la primera arriba.</p>';
@@ -1384,7 +1392,8 @@
   }
 
   function limpiar(){
-    ["fNombre","fSlug","fCrmUser","fCrmPass","fNotas"].forEach(function(i){$(i).value="";});
+    ["fNombre","fSlug","fCrmUser","fCrmPass","fPortalUser","fPortalPass","fNotas"].forEach(function(i){$(i).value="";});
+    $("fProducto").value="crm"; $("fLandingAccessBox").classList.add("hide"); $("fCrmAccessBox").classList.remove("hide");
     slugEditadoAMano = false;
   }
 
@@ -1396,12 +1405,24 @@
     }
     api("crear", {
       nombre:$("fNombre").value, slug: slug,
+      producto:$("fProducto").value,
       crm_usuario:$("fCrmUser").value.trim(), crm_password:$("fCrmPass").value,
+      landing_portal_usuario:$("fPortalUser").value.trim(),
+      landing_portal_password:$("fPortalPass").value,
       notas:$("fNotas").value
     }).then(function(res){
       if (res.j.ok){
         msg.className="msg ok"; msg.textContent="¡Cliente creado!";
         var out = $("crOut"); out.classList.remove("hide");
+        if (res.j.producto === "landing") {
+          out.innerHTML = '<b>Acceso inicial del comprador</b><dl>'+
+            '<dt>Portal</dt><dd><a href="'+esc(res.j.portal_url)+'" target="_blank" rel="noopener">'+esc(res.j.portal_url)+'</a></dd>'+
+            '<dt>Usuario</dt><dd>'+esc(res.j.portal_usuario)+'</dd>'+
+            '<dt>Contraseña inicial</dt><dd>'+esc(res.j.portal_password)+'</dd>'+
+            '<dt>Landing</dt><dd>Se publica cuando el comprador termine la configuración.</dd>'+
+            '</dl><p class="hint">Entregale estos datos al comprador por un canal privado. La contraseña no vuelve a mostrarse.</p>';
+          limpiar(); cargar(); return;
+        }
         out.innerHTML =
           '<dl>'+
           '<dt>Ruta pública</dt><dd>'+esc(res.j.ruta_slug || res.j.slug)+'</dd>'+
@@ -1441,6 +1462,10 @@
   // directamente -- a partir de ahí, escribir en "nombre" no lo pisa más.
   $("fNombre").addEventListener("input", function(){
     if (!slugEditadoAMano) $("fSlug").value = slugify($("fNombre").value);
+  });
+  $("fProducto").addEventListener("change", function(){
+    $("fLandingAccessBox").classList.toggle("hide", this.value !== "landing");
+    $("fCrmAccessBox").classList.toggle("hide", this.value === "landing");
   });
   $("fSlug").addEventListener("input", function(){ slugEditadoAMano = true; });
   $("btnCrear").onclick = crear;

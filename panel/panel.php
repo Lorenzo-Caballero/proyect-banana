@@ -111,7 +111,7 @@ function ruta_slug_valida(string $s): bool {
     static $reservadas = ['home','slots','casino','games','game','poker','live','sports','sportsbook',
         'profile','account','deposit','withdraw','wallet','cashier','settings','history','support','help',
         'rewards','affiliate','promos','promotions','bonus','bonuses','roulette','user','signup',
-        'forgot-password','login','logout','register','registration','chat','crm','admin','registro',
+        'forgot-password','login','logout','register','registration','chat','crm','admin','registro','configurar',
         'bono','lp','gp-api','api','panel','replica','assets','img','fonts','css','js','sw'];
     return strlen($s) >= 2 && strlen($s) <= 60
         && preg_match('/^[a-z0-9]+(?:-[a-z0-9]+)*$/', $s)
@@ -146,25 +146,16 @@ function conectar_cliente(array $cfg, string $db): PDO {
 }
 
 /* =====================================================================
- * LANDINGS DE CAJERO. Una landing por cliente: el jugador se registra ahí y,
- * al crearse la cuenta, lo manda al WhatsApp de ESE cliente en vez de entrar
- * al casino.
- *
- * LO QUE DECIDE TODO ES EN QUE BASE SE ESCRIBE. La landing se sirve desde
- * NUESTRO dominio, así que lp.html encola el alta contra NUESTRO tenant y la
- * cuenta sale con NUESTRAS credenciales de agente -- que es exactamente lo
- * que se pidió. Si por error se escribiera en la base del cliente, la landing
- * ni siquiera aparecería en nuestro dominio (landing_publica.php la busca por
- * host) y el link daría 404.
- *
- * Por eso esto NO adivina: si no puede identificar nuestra base, falla con el
- * arreglo escrito. Una landing en la base equivocada no tira ningún error --
- * simplemente no existe para el que abre el link.
+ * LANDING PROPIA DEL OPERADOR. Este bloque solo edita la página de Ganamos.
+ * Las landings de clientes CRM se guardan desde su propio CRM, y el producto
+ * Landing independiente usa landing_portal.php. No usar este helper para
+ * guardar datos de clientes: la base se resuelve exclusivamente a la del
+ * operador de la plataforma.
  * ===================================================================== */
 
-/** El slug de NUESTRO propio tenant. Mismo marcador que usa provisionar.php
- *  (SLUGS_CON_BOT_PROPIO): somos un cliente más en la tabla, pero el único
- *  con bot propio. Se puede pisar con 'LANDINGS_DB' en panel_config.php. */
+/** El slug del tenant propio del operador. Mismo marcador que usa
+ *  provisionar.php (SLUGS_CON_BOT_PROPIO). Se puede pisar con 'LANDINGS_DB'
+ *  en panel_config.php. */
 const SLUG_PROPIO = 'ganamoscrm';
 
 /**
@@ -249,7 +240,7 @@ if (!$oper) salida(['ok' => false, 'error' => 'no autorizado'], 401);
 switch ($accion) {
     case 'listar':
         $rows = $pdo->query(
-            'SELECT id,nombre,slug,ruta_slug,dominio,path_tenant,db_nombre,aprovisionado,aprov_detalle,cobro_alias,coins_por_peso,estado,creado,
+            'SELECT id,nombre,slug,ruta_slug,dominio,path_tenant,db_nombre,producto,aprovisionado,aprov_detalle,cobro_alias,coins_por_peso,estado,creado,
                     saldo_usd,costo_diario_usd,suscripcion_estado,trial_hasta
              FROM clientes ORDER BY creado DESC'
         )->fetchAll();
@@ -257,13 +248,15 @@ switch ($accion) {
 
     case 'detalle_cliente': {
         $id = (int) ($in['id'] ?? 0);
-        $st = $pdo->prepare('SELECT id,nombre,slug,ruta_slug,dominio,path_tenant,db_nombre,estado,creado,aprovisionado,aprov_detalle,notas FROM clientes WHERE id=?');
+        $st = $pdo->prepare('SELECT id,nombre,slug,ruta_slug,dominio,path_tenant,db_nombre,producto,estado,creado,aprovisionado,aprov_detalle,notas FROM clientes WHERE id=?');
         $st->execute([$id]);
         $c = $st->fetch();
         if (!$c) salida(['ok' => false, 'error' => 'no existe'], 404);
         $dominio = rtrim((string)$c['dominio'], '/');
         $base = 'https://' . $dominio . '/' . ((int)$c['path_tenant'] ? rawurlencode((string)($c['ruta_slug'] ?: $c['slug'])) . '/' : '');
-        $urls = ['crm' => $base . 'crm.html', 'jugadores' => $base, 'registro' => $base . 'registro.html', 'bono' => $base . 'bono.html'];
+        $urls = ($c['producto'] ?? 'crm') === 'landing'
+            ? ['configuracion' => 'https://' . $dominio . '/replica/configurar.html']
+            : ['crm' => $base . 'crm.html', 'jugadores' => $base, 'registro' => $base . 'registro.html', 'bono' => $base . 'bono.html'];
         $rutasAnteriores = [];
         if ((int)$c['path_tenant'] === 1) {
             $qRutas = $pdo->prepare('SELECT ruta_slug FROM clientes_rutas_path WHERE cliente_id=? AND dominio=? AND ruta_slug<>? ORDER BY creada DESC');
@@ -286,7 +279,12 @@ switch ($accion) {
                 }
                 if (in_array('landings', $tables, true)) {
                     $diagnostico['landings'] = $cpdo->query('SELECT slug,nombre,bono_pct FROM landings WHERE activa=1 ORDER BY nombre')->fetchAll();
-                    foreach ($diagnostico['landings'] as $landing) $urls['campania:' . $landing['nombre']] = $base . 'lp.html?l=' . rawurlencode((string)$landing['slug']);
+                    // El producto independiente publica su enlace al comprador
+                    // cuando el portal confirma que el bot está en ejecución.
+                    // No ofrecer acá un enlace directo que saltee esa comprobación.
+                    if (($c['producto'] ?? 'crm') !== 'landing') {
+                        foreach ($diagnostico['landings'] as $landing) $urls['campania:' . $landing['nombre']] = $base . 'lp.html?l=' . rawurlencode((string)$landing['slug']);
+                    }
                 }
             }
         } catch (Throwable $e) {
@@ -311,7 +309,7 @@ switch ($accion) {
            quien tenga la pantalla abierta.
            Se reemplazan por un booleano `<campo>_cargada`, que es lo unico que
            el formulario necesita saber para decir 'vacio = no cambiar'. */
-        $secretos = ['agente_password', 'ia_key', 'cohere_key', 'bot_api_key',
+        $secretos = ['agente_password', 'ia_key', 'cohere_key', 'bot_api_key', 'landing_portal_password_hash',
                      'crm_password_hash', 'hg_propio_token', 'hg_propio_webhook_secret'];
         foreach ($secretos as $sx) {
             if (!array_key_exists($sx, $c)) { continue; }
@@ -344,6 +342,26 @@ switch ($accion) {
         $iaKey = trim((string) ($in['ia_key'] ?? ($in['cohere_key'] ?? '')));
         if ($iaKey === '') { $iaKey = null; }   // vacio = usa la clave del sistema
 
+        // El producto Landing no entrega acceso a nuestro plano de control ni
+        // al CRM. Solo recibe un usuario inicial para /replica/configurar.html;
+        // desde ahí el comprador carga las credenciales de su panel Ganamos.
+        $producto = (string)($in['producto'] ?? 'crm');
+        if (!in_array($producto, ['crm','landing'], true)) {
+            salida(['ok'=>false,'error'=>'producto inválido'],422);
+        }
+        $portalUser = trim((string)($in['landing_portal_usuario'] ?? ''));
+        $portalPass = (string)($in['landing_portal_password'] ?? '');
+        if ($producto === 'landing') {
+            if (!preg_match('/^[a-zA-Z0-9_.-]{3,80}$/', $portalUser) || strlen($portalPass) < 10) {
+                salida(['ok'=>false,'error'=>'Para el portal de landing, definí usuario y contraseña de al menos 10 caracteres.'],422);
+            }
+            try { $pdo->query('SELECT producto,landing_portal_usuario,landing_portal_password_hash FROM clientes LIMIT 0'); }
+            catch (Throwable $e) {
+                salida(['ok'=>false,'error'=>'Falta aplicar panel/sql/15_landing_autoservicio.sql antes de crear este producto.'],422);
+            }
+        }
+        $portalHash = $producto === 'landing' ? password_hash($portalPass, PASSWORD_DEFAULT) : null;
+
         /* Acceso al CRM del cliente (migracion 08 del control): usuario + HASH
            de la clave. provisionar.php crea el operador admin en la base del
            cliente en la misma pasada que la crea -- asi el cliente nace
@@ -351,6 +369,7 @@ switch ($accion) {
            La clave en claro no se guarda nunca: se hashea aca y viaja hash. */
         $crmUser = trim((string) ($in['crm_usuario'] ?? ''));
         $crmPass = (string) ($in['crm_password'] ?? '');
+        if ($producto === 'landing') { $crmUser = ''; $crmPass = ''; }
         if ($crmUser !== '' || $crmPass !== '') {
             if ($crmUser === '' || strlen($crmPass) < 6) {
                 salida(['ok' => false, 'error' => 'acceso al CRM: usuario y contraseña (mínimo 6) van juntos'], 422);
@@ -380,13 +399,18 @@ switch ($accion) {
 
         $colsCrm = $hayCrmCols ? 'crm_usuario,crm_password_hash,' : '';
         $phCrm   = $hayCrmCols ? '?,?,' : '';
+        $hayPortalCols = false;
+        try { $pdo->query('SELECT producto,landing_portal_usuario,landing_portal_password_hash FROM clientes LIMIT 0'); $hayPortalCols = true; }
+        catch (Throwable $e) {}
+        $colsPortal = $hayPortalCols ? 'producto,landing_portal_usuario,landing_portal_password_hash,' : '';
+        $phPortal = $hayPortalCols ? '?,?,?,' : '';
         try {
             $pdo->beginTransaction();
             $st = $pdo->prepare(
                 'INSERT INTO clientes
-                 (nombre,slug,ruta_slug,dominio,path_tenant,db_nombre,agente_usuario,agente_password,altas_propias,' . $colsCrm . 'cobro_alias,cobro_cbu,
+                 (nombre,slug,ruta_slug,dominio,path_tenant,db_nombre,agente_usuario,agente_password,altas_propias,' . $colsPortal . $colsCrm . 'cobro_alias,cobro_cbu,
                   cobro_titular,coins_por_peso,' . col_ia($pdo) . ',bot_api_key,notas,suscripcion_estado,trial_hasta)
-                 VALUES (?,?,?,?,?,?,?,?,1,' . $phCrm . '?,?,?,?,?,?,?,?,?)'
+                 VALUES (?,?,?,?,?,?,?,?,1,' . $phPortal . $phCrm . '?,?,?,?,?,?,?,?,?)'
             );
             // Todo cliente nuevo arranca con 14 días de cortesía: el cron de
             // consumo (panel/consumo_diario.php) no le descuenta saldo ni lo
@@ -395,6 +419,11 @@ switch ($accion) {
                 $nombre, $slug, $slug, $dominio, $pathTenant, $dbNombre,
                 $in['agente_usuario'] ?? null, $in['agente_password'] ?? null,
             ];
+            if ($hayPortalCols) {
+                $params[] = $producto;
+                $params[] = $producto === 'landing' ? $portalUser : null;
+                $params[] = $portalHash;
+            }
             if ($hayCrmCols) {
                 $params[] = $crmUser !== '' ? $crmUser : null;
                 $params[] = $crmHash;
@@ -418,12 +447,29 @@ switch ($accion) {
             // aprovisionado queda en 0 (default): el worker le crea la base en < 1 min.
             $url = $pathTenant ? ('https://' . $dominio . '/' . $slug . '/crm.html')
                                 : ('https://' . $dominio . '/crm.html');
-            salida(['ok' => true, 'id' => $idNuevo, 'slug' => $slug, 'ruta_slug' => $slug,
-                    'db_nombre' => $dbNombre, 'bot_api_key' => $botKey, 'url' => $url]);
+            $out = ['ok' => true, 'id' => $idNuevo, 'slug' => $slug, 'ruta_slug' => $slug,
+                    'producto' => $producto, 'db_nombre' => $dbNombre];
+            if ($producto === 'landing') {
+                $out['portal_url'] = 'https://' . $dominio . '/replica/configurar.html';
+                $out['portal_usuario'] = $portalUser;
+                $out['portal_password'] = $portalPass; // se devuelve una sola vez; solo se guarda el hash.
+            } else {
+                $out['bot_api_key'] = $botKey;
+                $out['url'] = $url;
+            }
+            salida($out);
         } catch (PDOException $e) {
             if ($pdo->inTransaction()) $pdo->rollBack();
             $dup = $e->getCode() === '23000';
-            salida(['ok' => false, 'error' => $dup ? 'ya existe un cliente con ese dominio y slug' : 'no se pudo crear'], $dup ? 409 : 500);
+            $msgDup = 'ya existe un cliente con ese dominio y slug';
+            if ($dup && $producto === 'landing' && $portalUser !== '') {
+                try {
+                    $qDup = $pdo->prepare("SELECT 1 FROM clientes WHERE landing_portal_usuario=? LIMIT 1");
+                    $qDup->execute([$portalUser]);
+                    if ($qDup->fetchColumn()) { $msgDup = 'ya existe un acceso al portal con ese usuario'; }
+                } catch (Throwable $ignored) {}
+            }
+            salida(['ok' => false, 'error' => $dup ? $msgDup : 'no se pudo crear'], $dup ? 409 : 500);
         }
         // no cae acá
 
@@ -439,6 +485,9 @@ switch ($accion) {
 
     case 'listar_operadores': {
         $id = (int) ($in['id'] ?? ($_GET['id'] ?? 0));
+        $tipo = $pdo->prepare("SELECT producto FROM clientes WHERE id=?");
+        $tipo->execute([$id]);
+        if ($tipo->fetchColumn() === 'landing') salida(['ok'=>false,'error'=>'Este cliente no tiene CRM ni usuarios de CRM; solo administra su portal de landing.'],422);
         $db = cliente_db($pdo, $id);
         if ($db === null) salida(['ok' => false, 'error' => 'cliente no existe'], 404);
         try {
@@ -461,6 +510,9 @@ switch ($accion) {
         if ($usr === '' || strlen($pass) < 6) {
             salida(['ok' => false, 'error' => 'usuario y contraseña (mínimo 6) obligatorios'], 422);
         }
+        $tipo = $pdo->prepare("SELECT producto FROM clientes WHERE id=?");
+        $tipo->execute([$id]);
+        if ($tipo->fetchColumn() === 'landing') salida(['ok'=>false,'error'=>'Este cliente compró solo Landing y no tiene acceso al CRM.'],422);
         $db = cliente_db($pdo, $id);
         if ($db === null) salida(['ok' => false, 'error' => 'cliente no existe'], 404);
         try {
@@ -521,76 +573,19 @@ switch ($accion) {
         }
     }
 
-    /* ===================================================================
-     * LANDING DE CAJERO (migración 14 del control). Ver landings_db_propia().
-     * =================================================================== */
-    case 'landing_ver': {
-        $id = (int) ($in['id'] ?? 0);
-        if ($id <= 0) { salida(['ok' => false, 'error' => 'falta el id del cliente'], 422); }
-
-        [$db, $comoSale, $err] = landings_db_propia($pdo, $cfg);
-        if ($err !== '') { salida(['ok' => false, 'error' => $err], 500); }
-
-        $st = $pdo->prepare('SELECT nombre, landing_id, landing_slug FROM clientes WHERE id = ?');
-        try {
-            $st->execute([$id]);
-        } catch (PDOException $e) {
-            salida(['ok' => false, 'error' => 'falta la migración 14 del control '
-                                            . '(panel/sql/14_landing_cajero.sql)'], 500);
-        }
-        $c = $st->fetch();
-        if (!$c) { salida(['ok' => false, 'error' => 'cliente no existe'], 404); }
-
-        $landing = null;
-        if ((int) $c['landing_id'] > 0) {
-            try {
-                require_once __DIR__ . '/../api/landings_lib.php';
-                $cpdo = conectar_cliente($cfg, $db);
-                $q = $cpdo->prepare('SELECT id, slug, nombre, plantilla, bono_pct, activa, config FROM landings WHERE id = ?');
-                $q->execute([(int) $c['landing_id']]);
-                $row = $q->fetch();
-                /* Si no está, se trata como "todavía no tiene": alguien la
-                   borró desde el CRM y el id del control quedó colgando.
-                   Insistir con un id muerto haría fallar el guardado para
-                   siempre, sin forma de salir desde el panel. */
-                if ($row) {
-                    $cfgL = landings_config_completa((string) ($row['plantilla'] ?: 'wa'), $row['config']);
-                    $landing = [
-                        'id'       => (int) $row['id'],
-                        'slug'     => (string) $row['slug'],
-                        'activa'   => (int) $row['activa'],
-                        'bono_pct' => (int) $row['bono_pct'],
-                        'whatsapp' => (string) ($cfgL['whatsapp']['numero'] ?? ''),
-                        'wa_texto' => (string) ($cfgL['whatsapp']['texto'] ?? ''),
-                        'url'      => landing_url($cfg, (string) $row['slug']),
-                    ];
-                }
-            } catch (Throwable $e) {
-                salida(['ok' => false, 'error' => 'no pude leer la landing en ' . $db], 500);
-            }
-        }
-        salida(['ok' => true, 'cliente' => $c['nombre'], 'base' => $db,
-                'base_como' => $comoSale, 'landing' => $landing]);
-    }
+    case 'landing_ver':
+        salida(['ok' => false, 'error' => 'La landing de cada cliente se configura desde su propio CRM o desde /replica/configurar.html.'], 410);
 
     case 'landing_guardar': {
-        /* DOS FORMAS DE LLAMARLO, y es la diferencia entre el producto y el
-           accesorio:
-             id > 0          -> la landing de un cliente nuestro (botón de su
-                                fila). El nombre sale del cliente y queda
-                                atada a él en el control.
-             id = 0 + nombre -> una landing SUELTA, que es como se vende por
-                                separado: no necesita cliente, ni CRM, ni
-                                base propia. Solo un nombre para reconocerla
-                                y el WhatsApp del que la compró.
-           El resto --en qué base se escribe, con qué credenciales se crean
-           las cuentas, cómo se arma el link-- es idéntico, y tiene que
-           seguir siéndolo: lo que se vende suelto es exactamente lo mismo. */
+        // Esta acción queda solo para la landing de nuestro propio tenant.
         $id        = (int) ($in['id'] ?? 0);
         $idLandingIn = (int) ($in['landing_id'] ?? 0);
         $nombreIn  = trim((string) ($in['nombre'] ?? ''));
         $whatsapp  = trim((string) ($in['whatsapp'] ?? ''));
         $waTexto   = trim((string) ($in['wa_texto'] ?? ''));
+        if ($id > 0) {
+            salida(['ok' => false, 'error' => 'No configures la landing de un cliente desde el panel administrador. El cliente la administra desde su CRM o desde /replica/configurar.html.'], 410);
+        }
         /* AUSENTE NO ES CERO. La pantalla de Landings no muestra el bono, así
            que no lo manda; si acá se leyera como 0, guardar un cambio de
            WhatsApp le apagaría el bono a una landing que lo tenía — sin que
@@ -742,6 +737,10 @@ switch ($accion) {
         try {
             $cpdo = conectar_cliente($cfg, $db);
             foreach (landings_listar($cpdo) as $l) {
+                // El panel de control solo administra landings de Ganamos.
+                // Las landings ya vinculadas a un cliente quedan fuera de esta
+                // lista; cada cliente las gestiona desde su propio espacio.
+                if (isset($duenos[(int)$l['id']])) { continue; }
                 if ((string) $l['plantilla'] !== 'wa') { continue; }   // las de promo son del CRM
                 $cfgL = landings_config_completa('wa', $l['config']);
                 $out[] = [

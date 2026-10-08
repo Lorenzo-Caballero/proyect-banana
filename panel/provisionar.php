@@ -846,7 +846,11 @@ function asegurar_bot_altas($c, $cfg) {
 
     $existe = trim((string) shell_exec('docker ps -aq --filter ' . escapeshellarg('name=^' . $name . '$') . ' 2>/dev/null'));
     if ($existe !== '') {
-        if (!bot_creds_cambiaron($name, $user, $pass) && !bot_imagen_actualizada($name)) {
+        // Un contenedor parado también aparece en `docker ps -aq`. Antes se
+        // devolvía "ya existía" sin comprobar si seguía ejecutándose, y el
+        // portal podía declarar lista una conexión que nunca procesaría altas.
+        $corriendo = trim((string) shell_exec('docker ps -q --filter ' . escapeshellarg('name=^' . $name . '$') . ' 2>/dev/null'));
+        if ($corriendo !== '' && !bot_creds_cambiaron($name, $user, $pass) && !bot_imagen_actualizada($name)) {
             return 'bot de altas ya existía';
         }
         shell_exec('docker rm -f ' . escapeshellarg($name) . ' 2>/dev/null');
@@ -1415,7 +1419,8 @@ $conGlobales = trim((string) ($cfg['ALTAS_PANEL_USER'] ?? '')) !== ''
             && trim((string) ($cfg['ALTAS_PANEL_PASS'] ?? '')) !== '';
 
 $activos = $pdo->query(
-    "SELECT slug, ruta_slug, dominio, path_tenant, db_nombre, agente_usuario, agente_password, altas_propias
+    "SELECT slug, ruta_slug, dominio, path_tenant, db_nombre, agente_usuario, agente_password, altas_propias,
+            COALESCE(producto,'crm') AS producto
        FROM clientes
       WHERE estado = 'activo'"
     . ($conGlobales ? '' : " AND agente_usuario IS NOT NULL AND agente_usuario <> ''")
@@ -1457,22 +1462,24 @@ function guardar_estado_bot($cfg, $c, $msg) {
 }
 
 foreach ($activos as $c) {
-    $msg = asegurar_bot($c, $cfg);
-    // Solo se loguea cuando hay novedad (arrancó o falló), no el 'ya existía'.
-    if (strpos($msg, 'levantado') !== false || strpos($msg, 'NO') !== false) {
-        echo date('c') . " bot {$c['slug']}: $msg\n";
-    }
-
-    $msgPeticiones = asegurar_bot_peticiones($c, $cfg);
-    if (strpos($msgPeticiones, 'levantado') !== false || strpos($msgPeticiones, 'NO') !== false
-        || strpos($msgPeticiones, 'FRENADO') !== false) {
-        echo date('c') . " sondeador peticiones {$c['slug']}: $msgPeticiones\n";
-    }
-
-    $msgRecaudador = asegurar_bot_recaudador($c, $cfg);
-    if (strpos($msgRecaudador, 'levantado') !== false || strpos($msgRecaudador, 'NO') !== false
-        || strpos($msgRecaudador, 'FRENADO') !== false) {
-        echo date('c') . " recaudador {$c['slug']}: $msgRecaudador\n";
+    // El producto Landing es deliberadamente sin CRM: no sincroniza jugadores,
+    // no sondea peticiones ni ejecuta recaudación. Solo necesita el bot de altas
+    // que crea usuarios en el agente Ganamos del comprador.
+    if (($c['producto'] ?? 'crm') !== 'landing') {
+        $msg = asegurar_bot($c, $cfg);
+        if (strpos($msg, 'levantado') !== false || strpos($msg, 'NO') !== false) {
+            echo date('c') . " bot {$c['slug']}: $msg\n";
+        }
+        $msgPeticiones = asegurar_bot_peticiones($c, $cfg);
+        if (strpos($msgPeticiones, 'levantado') !== false || strpos($msgPeticiones, 'NO') !== false
+            || strpos($msgPeticiones, 'FRENADO') !== false) {
+            echo date('c') . " sondeador peticiones {$c['slug']}: $msgPeticiones\n";
+        }
+        $msgRecaudador = asegurar_bot_recaudador($c, $cfg);
+        if (strpos($msgRecaudador, 'levantado') !== false || strpos($msgRecaudador, 'NO') !== false
+            || strpos($msgRecaudador, 'FRENADO') !== false) {
+            echo date('c') . " recaudador {$c['slug']}: $msgRecaudador\n";
+        }
     }
 
     // Bot de altas (registro.html / crear_cuenta.php): mismo criterio, mismas
@@ -1506,7 +1513,7 @@ $ESPEJO_ATRASADO_MIN = 30; // el sync espeja usuarios cada pocos minutos
 $problemas = [];
 
 $todos = $pdo->query(
-    "SELECT slug, db_nombre, agente_usuario FROM clientes
+    "SELECT slug, db_nombre, agente_usuario, COALESCE(producto,'crm') AS producto FROM clientes
       WHERE estado = 'activo' AND db_nombre IS NOT NULL"
 )->fetchAll();
 
@@ -1547,6 +1554,12 @@ foreach ($todos as $c) {
             $problemas[] = "$slug: $atascadas alta(s) sin atender hace mas de {$ALTA_ATASCADA_MIN} min";
             $suyos[] = "$atascadas alta(s) de jugadores sin resolver hace mas de "
                      . "{$ALTA_ATASCADA_MIN} minutos.";
+        }
+
+        // Un cliente de solo Landing no tiene pagos, mensajes, espejo ni avisos
+        // del CRM. Sus únicas señales relevantes son credenciales y altas en cola.
+        if (($c['producto'] ?? 'crm') === 'landing') {
+            continue;
         }
 
         // 3. Comprobantes que entraron y nadie resolvio.

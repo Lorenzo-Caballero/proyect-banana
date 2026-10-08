@@ -211,7 +211,8 @@ malos=0
 # Los archivos que mas veces nos hicieron creer que un arreglo no funcionaba
 # cuando en realidad no habia llegado al server.
 for f in api/chatbot.php api/altas_lib.php api/crear_cuenta.php \
-         api/alta_estado.php landing/widget.js landing/registro.html; do
+         api/alta_estado.php landing/widget.js landing/registro.html \
+         landing/configurar.html panel/landing_portal.php; do
   dst="$WEB/$(echo "$f" | sed 's|^api/|api/|; s|^landing/|replica/|; s|^panel/|panel/|')"
   if [ ! -f "$dst" ]; then
     echo "   !! falta $dst" >&2; malos=$((malos+1)); continue
