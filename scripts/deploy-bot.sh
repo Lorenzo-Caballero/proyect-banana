@@ -45,6 +45,12 @@ echo "==> version a desplegar: $GIT_HASH"
 echo "==> aplicando el overlay seguro de reintentos de depósito"
 GP_APP="$BOT_DIR" python3 "$SCRIPT_DIR/parche-deposito-cuerpo.py"
 
+# El CRM de cada cliente debe leer solo sus jugadores directos. Fauno mantiene
+# el repo Bot-python; este overlay versionado conserva el aislamiento también
+# después de cada pull/rebuild, sin pisar su repo ni su trabajo local.
+echo "==> aplicando el alcance multicliente a sync y recaudación"
+GP_BOT_DIR="$BOT_DIR" python3 "$SCRIPT_DIR/parche-scope-tenant.py"
+
 # El .env (URLs + API key), la verificacion contra la cola y el rebuild los
 # hace el script de siempre. GIT_HASH viaja exportado y queda horneado en la
 # imagen (docker-compose.yml lo pasa como build-arg).

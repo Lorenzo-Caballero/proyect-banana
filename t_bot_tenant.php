@@ -47,6 +47,8 @@ $db   = file_get_contents(__DIR__ . '/api/db.php');
 $pet  = file_get_contents(__DIR__ . '/panel/provisionar.php');
 $reg  = file_get_contents(__DIR__ . '/landing/registro.html');
 $mig  = file_get_contents(__DIR__ . '/panel/sql/13_altas_propias.sql');
+$scopePatch = file_get_contents(__DIR__ . '/scripts/parche-scope-tenant.py');
+$botDeploy = file_get_contents(__DIR__ . '/scripts/deploy-bot.sh');
 
 // ===========================================================================
 echo "=== 1. Un destino ajeno FRENA el bot (no solo avisa) ===\n";
@@ -137,6 +139,14 @@ chequear('el conflicto de aislamiento responde con servicio pausado',
 
 // ===========================================================================
 echo "\n=== 2c. El worker de peticiones también respeta el tenant ===\n";
+$scopeDirecto = '&is_direct_structure=true';
+chequear('el overlay limita sync y recaudación a jugadores directos',
+         substr_count($scopePatch, '"&is_direct_structure=false"') === 2
+         && substr_count($scopePatch, '"&is_direct_structure=true"') === 2);
+chequear('el despliegue aplica el overlay antes de construir la imagen',
+         str_contains($botDeploy, 'parche-scope-tenant.py')
+         && strpos($botDeploy, 'parche-scope-tenant.py')
+              < strpos($botDeploy, 'bash "$SCRIPT_DIR/arreglar-bot-altas.sh"'));
 $iPet = strpos($pet, 'function asegurar_bot_peticiones(');
 $petFn = $iPet !== false ? substr($pet, $iPet, 6200) : '';
 chequear('el worker valida dominio/ruta/base antes de levantar el contenedor',
