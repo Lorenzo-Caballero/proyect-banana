@@ -52,6 +52,25 @@ def parchar_enfriamiento(src: str, path: str, solo_ver: bool) -> tuple[str, str]
     return src.replace(BACKOFF_ANCHOR, BACKOFF_CODE, 1), "bot_crear_jugador.py: aplicado cooldown de login"
 
 
+def ya_tiene_login_con_waf(src: str) -> bool:
+    """¿El repo del bot ya trae el arreglo, con otras palabras?
+
+    UN OVERLAY TIENE QUE RECONOCER QUE EL UPSTREAM LO ABSORBIO. Este parche
+    detectaba "ya aplicado" por un comentario literal, así que cuando el
+    arreglo entró al repo del bot con otra redacción no lo reconoció, no
+    encontró el ancla vieja y salió con 1 -- y deploy-bot.sh corre con
+    `set -e`, de modo que eso ABORTA EL DEPLOY ENTERO: ni `arreglar-bot-altas`
+    ni la reposición del colector, que es el circuito de la plata.
+
+    Por eso se mira el CODIGO y no un comentario: la navegación de login con
+    timeout ampliado y el despeje del WAF. El comentario lo reescribe
+    cualquiera; esto es lo que hace el arreglo.
+    """
+    return ("page.goto(LOGIN_URL" in src
+            and "timeout=45_000" in src
+            and "despejar_waf(page)" in src)
+
+
 def main() -> int:
     solo_ver = "--ver" in sys.argv
     try:
@@ -81,7 +100,7 @@ def main() -> int:
             f.write(updated)
         source = updated
 
-    if MARKER in source:
+    if MARKER in source or ya_tiene_login_con_waf(source):
         print("OK bot_crear_jugador.py: timeout WAF/login ya aplicado")
         return 0
     if source.count(OLD) != 1:
