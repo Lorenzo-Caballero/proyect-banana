@@ -17,10 +17,10 @@
  * inactividad (2 días -> 20%, 3 -> 25%... configurable en el CRM), un empujón
  * automático para volver:
  *
- *   - un bono PORCENTUAL sobre su próxima carga (bonos_pendientes tipo 'pct',
- *     que crmnotif_bono_aplicar_en_recarga ya aplica solo al acreditarse la
- *     recarga, y desde ese mismo cambio el monto entra AL JUEGO junto con
- *     las fichas);
+ *   - un bono porcentual o una cantidad fija de fichas para su próxima carga
+ *     (bonos_pendientes, que crmnotif_bono_aplicar_en_recarga aplica solo al
+ *     acreditarse la recarga, y desde ese mismo cambio el monto entra AL JUEGO
+ *     junto con las fichas);
  *   - la push en el celular (notif_crear) y el mensaje de Camila en el chat
  *     (crm_avisar_jugador);
  *   - en los escalones marcados, un giro de cortesía de la ruleta (se otorga
@@ -78,10 +78,28 @@ if (!function_exists('fid_tramos')) {
             if (!is_array($t)) { return null; }
             $dias = (int)($t['dias'] ?? 0);
             $pct  = (int)($t['pct'] ?? 0);
-            if ($dias < 1 || $dias > 365 || $pct < 1 || $pct > 200) { return null; }
+            $ruleta = !empty($t['ruleta']) ? 1 : 0;
+            $tipo = trim((string)($t['bono_tipo'] ?? $t['tipo'] ?? ($pct > 0 ? 'pct' : 'ninguno')));
+            $valor = (int)($t['bono_valor'] ?? ($tipo === 'pct' ? $pct : 0));
+            if ($dias < 1 || $dias > 365 || !in_array($tipo, ['ninguno', 'pct', 'fichas'], true)) { return null; }
+            if (($tipo === 'pct' && ($valor < 1 || $valor > 200))
+                || ($tipo === 'fichas' && ($valor < 1 || $valor > 100000000))) { return null; }
             if (isset($vistos[$dias])) { return null; }   // dos escalones con los mismos dias
             $vistos[$dias] = true;
-            $out[] = ['dias' => $dias, 'pct' => $pct, 'ruleta' => !empty($t['ruleta']) ? 1 : 0];
+            $limpiar = static function ($s, int $max): string {
+                $s = preg_replace('/[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F]/u', '', trim((string)$s)) ?? '';
+                return function_exists('mb_substr') ? mb_substr($s, 0, $max) : substr($s, 0, $max);
+            };
+            $out[] = [
+                'dias' => $dias,
+                'pct' => $tipo === 'pct' ? $valor : 0, // compatibilidad con reportes anteriores
+                'bono_tipo' => $tipo,
+                'bono_valor' => $tipo === 'ninguno' ? 0 : $valor,
+                'ruleta' => $ruleta,
+                'titulo_push' => $limpiar($t['titulo_push'] ?? '', 120),
+                'mensaje_push' => $limpiar($t['mensaje_push'] ?? '', 320),
+                'mensaje_chat' => $limpiar($t['mensaje_chat'] ?? '', 900),
+            ];
         }
         usort($out, fn($a, $b) => $a['dias'] <=> $b['dias']);
         return $out;
@@ -292,13 +310,20 @@ if (!function_exists('fid_tramos')) {
     function fid_avisar_uno(PDO $pdo, string $usuario, string $actividadRef,
                             int $diasInactivo, array $tramo): bool
     {
+        $ruletaOn = !function_exists('cfg_crm_activo') || cfg_crm_activo($pdo, 'ruleta_activa');
+        // No prometemos premios de ruleta si la función está apagada. Aunque
+        // el escalón también tenga bono, omitir el giro volvería engañoso el
+        // mensaje personalizado; se reintentará en la próxima pasada.
+        if (!empty($tramo['ruleta']) && !$ruletaOn) { return false; }
         // 1) EL CANDADO, antes que todo lo demás.
         try {
             $g = $pdo->prepare(
-                "INSERT IGNORE INTO fidelizacion_avisos (usuario, dias, pct, ruleta, actividad_ref)
-                 VALUES (?,?,?,?,?)"
+                "INSERT IGNORE INTO fidelizacion_avisos
+                    (usuario, dias, pct, ruleta, actividad_ref, premio_tipo, premio_valor)
+                 VALUES (?,?,?,?,?,?,?)"
             );
-            $g->execute([$usuario, $tramo['dias'], $tramo['pct'], $tramo['ruleta'], $actividadRef]);
+            $g->execute([$usuario, $tramo['dias'], $tramo['pct'], $tramo['ruleta'], $actividadRef,
+                         $tramo['bono_tipo'], $tramo['bono_valor']]);
             if ($g->rowCount() !== 1) { return false; }
             $avisoId = (int)$pdo->lastInsertId();
         } catch (Throwable $e) {
@@ -323,8 +348,8 @@ if (!function_exists('fid_tramos')) {
               el jugador acaba de leer en el aviso. */
         $bonoId = null;
         try {
-            if (function_exists('crmnotif_bono_crear')) {
-                $r = crmnotif_bono_crear($pdo, $usuario, 'pct', $tramo['pct'], 'fidelizacion');
+            if ($tramo['bono_tipo'] !== 'ninguno' && function_exists('crmnotif_bono_crear')) {
+                $r = crmnotif_bono_crear($pdo, $usuario, $tramo['bono_tipo'], $tramo['bono_valor'], 'fidelizacion');
                 if (!empty($r['ok'])) { $bonoId = (int)$r['id']; }
             }
             if ($bonoId !== null) {
@@ -333,6 +358,10 @@ if (!function_exists('fid_tramos')) {
             }
         } catch (Throwable $e) {
             error_log('fid_avisar_uno (bono): ' . $e->getMessage());
+        }
+        if ($tramo['bono_tipo'] !== 'ninguno' && $bonoId === null) {
+            $pdo->prepare("DELETE FROM fidelizacion_avisos WHERE id = ?")->execute([$avisoId]);
+            return false; // no anunciar un bono que no quedó registrado
         }
 
         /* 3) El giro de cortesía, si el escalón lo trae y no tiene uno esperando.
@@ -350,7 +379,6 @@ if (!function_exists('fid_tramos')) {
            sondeo. Este era el único camino que prometía sin mirar. */
         $conGiro = false;
         $giroId   = null;   // para atarlo al aviso, igual que el bono de %
-        $ruletaOn = !function_exists('cfg_crm_activo') || cfg_crm_activo($pdo, 'ruleta_activa');
         if (!empty($tramo['ruleta']) && $ruletaOn) {
             try {
                 if (function_exists('crmnotif_cortesia_disponible')
@@ -367,16 +395,53 @@ if (!function_exists('fid_tramos')) {
                 error_log('fid_avisar_uno (giro): ' . $e->getMessage());
             }
         }
+        if ($tramo['bono_tipo'] === 'ninguno' && !empty($tramo['ruleta']) && !$conGiro) {
+            $pdo->prepare("DELETE FROM fidelizacion_avisos WHERE id = ?")->execute([$avisoId]);
+            return false; // no anunciar giro inexistente; se podrá reintentar
+        }
 
         // 4) Los avisos. La push siempre; el chat solo si alguna vez chateó
         //    (crm_avisar_jugador devuelve false y no hace nada si no).
-        $pct = (int)$tramo['pct'];
+        $premio = $tramo['bono_tipo'] === 'pct'
+            ? $tramo['bono_valor'] . '% extra'
+            : ($tramo['bono_tipo'] === 'fichas'
+                ? number_format($tramo['bono_valor'], 0, ',', '.') . ' fichas'
+                : ($conGiro ? 'un giro de ruleta' : 'una invitación'));
+        $tokens = ['{usuario}' => $usuario, '{dias}' => (string)$diasInactivo,
+                   '{premio}' => $premio, '{carga}' => 'tu próxima carga'];
+        $porDefecto = [
+            'titulo_push' => $tramo['bono_tipo'] === 'pct' ? '🎁 Un ' . $tramo['bono_valor'] . '% extra te espera'
+                : ($tramo['bono_tipo'] === 'fichas' ? '🎁 Te esperan fichas extra'
+                    : ($conGiro ? '🎰 Te regalamos un giro' : '🎁 Una propuesta para vos')),
+            'mensaje_push' => 'Hace {dias} días que no te vemos. '
+                . ($tramo['bono_tipo'] === 'pct' ? 'Tu próxima carga tiene un ' . $tramo['bono_valor'] . '% extra de regalo. '
+                    : ($tramo['bono_tipo'] === 'fichas' ? 'Te esperan ' . number_format($tramo['bono_valor'], 0, ',', '.') . ' fichas extra. '
+                        : 'Tenemos una propuesta para vos. '))
+                . ($conGiro ? 'Tenés un giro regalado disponible.' : ''),
+            'mensaje_chat' => '¡Hola! Hace {dias} días que no te vemos por acá 😢 '
+                . ($tramo['bono_tipo'] === 'pct' ? 'Te dejamos un ' . $tramo['bono_valor'] . '% extra para tu próxima carga. '
+                    : ($tramo['bono_tipo'] === 'fichas' ? 'Te dejamos ' . number_format($tramo['bono_valor'], 0, ',', '.') . ' fichas extra para tu próxima carga. '
+                        : 'Tenemos una propuesta para vos. '))
+                . ($conGiro ? 'También tenés un giro regalado de la ruleta 🎰.' : ''),
+        ];
+        $titulo = strtr($tramo['titulo_push'] !== '' ? $tramo['titulo_push'] : $porDefecto['titulo_push'], $tokens);
+        $cuerpo = strtr($tramo['mensaje_push'] !== '' ? $tramo['mensaje_push'] : $porDefecto['mensaje_push'], $tokens);
+        $msg = strtr($tramo['mensaje_chat'] !== '' ? $tramo['mensaje_chat'] : $porDefecto['mensaje_chat'], $tokens);
+        if ($tramo['bono_tipo'] !== 'ninguno' && !preg_match('/pendiente.*pr[oó]xima carga|pr[oó]xima carga.*pendiente/i', $cuerpo)) {
+            $cuerpo .= ' El bono queda pendiente y se acredita con tu próxima carga.';
+        }
+        if ($tramo['bono_tipo'] !== 'ninguno' && !preg_match('/pendiente.*pr[oó]xima carga|pr[oó]xima carga.*pendiente/i', $msg)) {
+            $msg .= ' El bono queda pendiente y se acredita con tu próxima carga.';
+        }
+        if ($conGiro) {
+            if (!preg_match('/ruleta|giro/i', $cuerpo)) { $cuerpo .= ' También tenés un giro regalado de la ruleta disponible.'; }
+            if (!preg_match('/ruleta|giro/i', $msg)) { $msg .= ' También tenés un giro regalado de la ruleta disponible.'; }
+            $cuerpo .= ' Si ganás en la ruleta, el premio se acredita con tu próxima carga.';
+            $msg .= ' Si ganás en la ruleta, el premio queda pendiente y se acredita con tu próxima carga.';
+        }
         try {
             if (function_exists('notif_crear')) {
-                $cuerpo = 'Hace ' . $diasInactivo . ' días que no te vemos. Tu próxima carga '
-                        . 'viene con un ' . $pct . '% extra de regalo, cargues lo que cargues.';
-                if ($conGiro) { $cuerpo .= ' Y tenés un giro gratis de la ruleta esperándote.'; }
-                $notifId = notif_crear($pdo, $usuario, '🎁 Un ' . $pct . '% extra te espera',
+                $notifId = notif_crear($pdo, $usuario, $titulo,
                                        $cuerpo, 'promo', null, 'fidelizacion');
 
                 /* EL BONO QUEDA ATADO AL AVISO QUE LO PROMETIO. Sin esto no hay
@@ -410,12 +475,6 @@ if (!function_exists('fid_tramos')) {
         }
         try {
             if (function_exists('crm_avisar_jugador')) {
-                $msg = '¡Hola! Hace ' . $diasInactivo . ' días que no te vemos por acá 😢 '
-                     . 'Te dejé un ' . $pct . '% extra para tu próxima carga: cargás lo que '
-                     . 'quieras y te sumo el bono al toque, solo.';
-                if ($conGiro) {
-                    $msg .= ' Y de paso te regalé un giro de la ruleta, entrá y giralo cuando quieras 🎰';
-                }
                 crm_avisar_jugador($pdo, $usuario, $msg);
             }
         } catch (Throwable $e) {
@@ -496,6 +555,8 @@ if (!function_exists('fid_analitica')) {
                         MIN(a.enviado_en)                  AS primer_aviso,
                         MAX(a.dias)                        AS escalon_ultimo,
                         MAX(a.pct)                         AS pct_max,
+                        SUBSTRING_INDEX(GROUP_CONCAT(a.premio_tipo ORDER BY a.dias DESC, a.enviado_en DESC SEPARATOR ','), ',', 1) AS premio_tipo,
+                        CAST(SUBSTRING_INDEX(GROUP_CONCAT(a.premio_valor ORDER BY a.dias DESC, a.enviado_en DESC SEPARATOR ','), ',', 1) AS UNSIGNED) AS premio_valor,
                         MAX(a.ruleta)                      AS con_giro,
                         COUNT(*)                           AS avisos
                    FROM fidelizacion_avisos a
@@ -575,6 +636,8 @@ if (!function_exists('fid_analitica')) {
                 'usuario'   => (string)$r['usuario'],
                 'escalon'   => $esc,
                 'pct'       => (int)$r['pct_max'],
+                'bono_tipo' => (string)($r['premio_tipo'] ?? ((int)$r['pct_max'] > 0 ? 'pct' : 'ninguno')),
+                'bono_valor'=> (int)($r['premio_valor'] ?? $r['pct_max']),
                 'giro'      => (int)$r['con_giro'] === 1,
                 'avisos'    => (int)$r['avisos'],
                 'aviso_en'  => (string)$r['primer_aviso'],

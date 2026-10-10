@@ -1306,7 +1306,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                     $stats['por_tramo'][(int)$f['dias']] = (int)$f['n'];
                 }
                 $stats['ultimos'] = $pdo->query(
-                    "SELECT usuario, dias, pct, ruleta, enviado_en
+                    "SELECT usuario, dias, pct, ruleta, premio_tipo, premio_valor, enviado_en
                        FROM fidelizacion_avisos ORDER BY id DESC LIMIT 20"
                 )->fetchAll(PDO::FETCH_ASSOC);
             } catch (Throwable $e) { /* sin migracion 65 */ }
@@ -1372,6 +1372,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
                    'alcance' => $alcance,
                    'publico' => (string)(cfg_crm($pdo, 'fid_publico') ?: 'app'),
                    'dias_max' => (int)(cfg_crm($pdo, 'fid_dias_max') ?? 30),
+                   'ruleta_activa' => cfg_crm_activo($pdo, 'ruleta_activa'),
                    'publico_nums' => $publicoNums,
                    'ultima_pasada' => (string)(cfg_crm($pdo, 'fid_visto_en') ?? ''),
                    'stats'  => $stats]);
@@ -2040,7 +2041,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $tramos = fid_parsear_tramos(json_encode($body['tramos'] ?? []));
             if ($tramos === null) {
                 salir(['ok' => false,
-                       'error' => 'Escalones inválidos: entre 1 y 10, días 1-365 sin repetir, % de 1 a 200'], 400);
+                       'error' => 'Escalones inválidos: entre 1 y 10, días 1-365 sin repetir; porcentaje 1-200, fichas 1-100.000.000 o sin bono.'], 400);
             }
             /* LISTA BLANCA Y NO TEXTO LIBRE: este valor decide a cuanta gente
                se le promete plata. Cualquier cosa rara cae en 'app', que es el
@@ -2057,7 +2058,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ], $operador);
             crm_bitacora($pdo, $operador, 'fid_guardar',
                 ($activa === '1' ? 'activa' : 'apagada') . ' · ' . count($tramos) . ' escalones: '
-                . implode(', ', array_map(fn($t) => $t['dias'] . 'd=' . $t['pct'] . '%'
+                . implode(', ', array_map(fn($t) => $t['dias'] . 'd=' . ($t['bono_tipo'] === 'ninguno' ? 'sin bono' : $t['bono_valor'] . ($t['bono_tipo'] === 'pct' ? '%' : ' fichas'))
                     . ($t['ruleta'] ? '+giro' : ''), $tramos)));
             salir(['ok' => true, 'tramos' => $tramos, 'activa' => $activa === '1']);
         }
@@ -2625,6 +2626,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         // ---- bonos pendientes (prometidos por notificación) ----
+        if ($accion === 'ruleta_regalar') {
+            $usuario = trim((string)($body['usuario'] ?? ''));
+            if ($usuario === '') { salir(['ok' => false, 'error' => 'Falta usuario'], 400); }
+            if (!cfg_crm_activo($pdo, 'ruleta_activa')) {
+                salir(['ok' => false, 'error' => 'La ruleta está apagada. Activala antes de regalar un giro.'], 409);
+            }
+            if (crmnotif_cortesia_disponible($pdo, $usuario)) {
+                salir(['ok' => false, 'error' => 'Este jugador ya tiene un giro regalado pendiente.'], 409);
+            }
+            $stConv = $pdo->prepare("SELECT 1 FROM conversaciones WHERE clave = ? OR usuario = ? LIMIT 1");
+            $stConv->execute([$usuario, $usuario]);
+            $hayChat = (bool)$stConv->fetchColumn();
+            $hayPush = notif_alcance($pdo, $usuario) > 0;
+            if (!$hayChat && !$hayPush) {
+                salir(['ok' => false, 'codigo' => 'sin_canal',
+                       'error' => 'No hay chat ni celular activo para avisarle. No se creó el regalo.'], 409);
+            }
+            $r = crmnotif_bono_crear($pdo, $usuario, 'giro', 0, $operador);
+            if (empty($r['ok'])) { salir($r, 400); }
+
+            $mensaje = '¡Hola! Te regalamos un giro de la ruleta 🎰. Podés usarlo desde la app. Si ganás, el premio queda pendiente y se acredita junto con tu próxima carga.';
+            $chatEnviado = crm_avisar_jugador($pdo, $usuario, $mensaje);
+            $pushId = notif_crear($pdo, $usuario, '🎰 Te regalamos un giro',
+                'Tenés un giro de ruleta para usar desde la app. Si ganás, el premio se acredita junto con tu próxima carga.',
+                'ruleta', null, 'crm');
+            if (!$chatEnviado && $pushId <= 0) {
+                crmnotif_bono_borrar($pdo, (int)$r['id']);
+                salir(['ok' => false, 'error' => 'No pude encolar el aviso al celular. El regalo se canceló; probá de nuevo.'], 500);
+            }
+            crm_bitacora($pdo, $operador, 'ruleta_regalar', $usuario . ' · bono pendiente ' . (int)$r['id']);
+            salir(['ok' => true, 'id' => (int)$r['id'], 'chat_enviado' => $chatEnviado,
+                   'push_enviado' => $pushId > 0]);
+        }
+
         if ($accion === 'bono_crear') {
             $usuario = trim((string)($body['usuario'] ?? ''));
             $tipo    = (string)($body['tipo'] ?? '');

@@ -1054,15 +1054,22 @@
     .us-cards{padding:12px 12px 0}
     .fid-graf{padding:12px}
   }
-  .fid-editor{border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-top:4px}
-  .fid-cab,.fid-fila{display:grid;grid-template-columns:30px 150px 120px 1fr 44px;gap:8px;align-items:center;padding:9px 12px}
-  .fid-cab{background:var(--panel2);font:700 10.5px inherit;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
-  .fid-fila{border-top:1px solid var(--line)}
+  .fid-editor{display:flex;flex-direction:column;gap:10px;margin-top:4px}
+  .fid-fila{display:flex;flex-direction:column;gap:12px;padding:13px;border:1px solid var(--line);border-radius:13px;background:var(--panel2)}
   .fid-fila.mal{background:var(--redSoft)}
-  .fid-num{color:var(--muted2);font-size:12px}
-  .fid-in{display:flex;align-items:center;gap:6px}
-  .fid-in input{width:64px;text-align:center}
-  .fid-in .suf{color:var(--muted);font-size:12px;white-space:nowrap}
+  .fid-edit-head{display:flex;align-items:center;gap:10px}
+  .fid-edit-head b{margin-right:auto;font-size:13px}
+  .fid-edit-head label{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:12px}
+  .fid-edit-head input{width:70px;text-align:center}
+  .fid-premios{display:grid;grid-template-columns:minmax(140px,1fr) minmax(150px,1fr) minmax(180px,1.3fr);gap:10px;align-items:end}
+  .fid-premio-cantidad.oculto{display:none}
+  .fid-mensajes{display:grid;grid-template-columns:1fr 1.3fr 1.3fr;gap:10px}
+  .fid-mensajes textarea{min-height:76px;resize:vertical}
+  .fid-token-hint{grid-column:1/-1;margin-top:-5px}
+  .fid-campo{display:flex;flex-direction:column;gap:5px;min-width:0}
+  .fid-campo>span{font-size:11px;font-weight:700;color:var(--muted)}
+  .fid-campo input,.fid-campo select,.fid-campo textarea{width:100%;min-width:0}
+  @media(max-width:760px){.fid-premios,.fid-mensajes{grid-template-columns:1fr}.fid-token-hint{grid-column:auto}.fid-edit-head{flex-wrap:wrap}.fid-edit-head b{width:100%}}
   .fid-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;border:1px solid var(--line2);
     background:none;color:var(--muted);cursor:pointer;font:600 12px inherit;transition:.15s}
   .fid-chip.on{border-color:var(--orange);color:var(--orange);background:rgba(245,166,35,.1)}
@@ -3304,6 +3311,7 @@
         </div>
         <div class="acts" style="margin-top:9px">
           <button class="act bono" id="btnBono"><svg viewBox="0 0 24 24"><polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/></svg> Cargar bono</button>
+          <button class="act bono" id="btnRegalarRuleta"><svg viewBox="0 0 24 24"><path d="M4 8h16v4H4zM6 12v9h12v-9M12 8v13M12 8S10 3 7.5 3a2.5 2.5 0 0 0 0 5H12zm0 0h4.5a2.5 2.5 0 0 0 0-5C14 3 12 8 12 8z"/></svg> Regalar giro de ruleta</button>
           <!-- El rescate de bonos que quedaron en el contador (ruleta, cargas
                viejas, o un bono cargado mientras habia una carga en curso):
                los manda TODOS al juego en un solo deposito. -->
@@ -5178,12 +5186,8 @@
             </label>
           </div>
 
-          <div class="fid-editor">
-            <div class="fid-cab">
-              <span></span><span>Días sin jugar</span><span>Bono</span><span>Regalo extra</span><span></span>
-            </div>
-            <div id="fidTramos"></div>
-          </div>
+          <div class="cfg-hint" id="fidConfigHint" style="margin:10px 0 7px">Cada escalón puede tener bono en porcentaje, fichas o ningún bono; también podés regalar la ruleta. Personalizá título y textos por separado. Variables: <code>{usuario}</code>, <code>{dias}</code>, <code>{premio}</code>, <code>{carga}</code>.</div>
+          <div class="fid-editor" id="fidTramos"></div>
           <p class="cfg-hint" id="fidValid" style="display:none;color:var(--red);margin-top:6px"></p>
           <div class="rc-acciones">
             <button class="btn-sec" id="fidAgregar" type="button">+ Agregar escalón</button>
@@ -5191,8 +5195,8 @@
             <span class="cfg-hint" id="fidMotor" style="margin-left:auto;align-self:center"></span>
           </div>
           <p class="cfg-hint" style="margin-top:8px">
-            Al cruzar cada escalón el bono <b>se mejora, no se suma</b>: siempre vale el % más alto alcanzado.
-            «Giro de ruleta» regala además un giro de cortesía (independiente del giro diario).
+            Al cruzar cada escalón, el bono nuevo reemplaza el anterior de esta campaña; no se acumulan entre sí.
+            «Sin bono» y ruleta activada regala solo el giro. Los premios de la ruleta también quedan pendientes hasta la próxima carga. La ruleta no tiene giros diarios automáticos.
             Si el jugador vuelve a jugar, el ciclo arranca de cero.
           </p>
         </div>
@@ -5282,7 +5286,7 @@
             <div style="overflow-x:auto">
               <table class="fid-q">
                 <thead><tr>
-                  <th>Jugador</th><th>Escalón</th><th>Bono</th>
+                  <th>Jugador</th><th>Escalón</th><th>Premio</th>
                   <th>Avisado</th><th>Volvió</th><th>Tardó</th><th>Cargó</th>
                 </tr></thead>
                 <tbody id="fidQBody"></tbody>
@@ -5573,8 +5577,8 @@
         <div class="cfg-card-head">
           <span class="cb-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"/></svg></span>
           <div class="cfg-card-txt">
-            <b>Ruleta de bonos</b>
-            <span>Un giro por día. Apagada, el jugador deja de verla y no puede girar.</span>
+            <b>Ruleta promocional</b>
+            <span>Solo se juega con un giro regalado desde el CRM o Fidelización. No hay giros diarios automáticos.</span>
           </div>
           <label class="cb-switch">
             <input type="checkbox" id="cfgRuleta">
@@ -6928,7 +6932,7 @@
      Editor de escalones (dias -> % -> giro) + estado de la campaña. El motor
      corre por cron en el server (fidelizacion.php); aca solo se configura y
      se mira el rendimiento. */
-  let fidTramos = [];    // [{dias,pct,ruleta}] — el estado del editor
+  let fidTramos = [];    // [{dias,bono_tipo,bono_valor,ruleta,textos...}]
   let fidPublicoNums = null; // {app, contacto, todos} — cuánta gente alcanza cada opción
 
   /* CUÁNTA GENTE ALCANZA LA OPCIÓN ELEGIDA, al lado del selector. Sin este
@@ -6948,17 +6952,46 @@
   let fidAlcance = {};   // {dias: jugadores hoy en esa banda}
   let fidSel = 0;        // escalón seleccionado (alimenta la vista previa)
 
-  /* Los MISMOS textos que arma el server (fidelizacion_lib): la vista previa
-     no inventa — si se cambia el mensaje allá, hay que reflejarlo acá. */
+  function fidPremioTexto(t){
+    if(t.bono_tipo==="pct") return t.bono_valor+"% extra";
+    if(t.bono_tipo==="fichas") return nf.format(t.bono_valor)+" fichas";
+    return t.ruleta ? "un giro de ruleta" : "una invitación";
+  }
+  function fidPlantillasDefault(t){
+    const premio=fidPremioTexto(t);
+    return {
+      titulo_push:t.bono_tipo==="pct" ? "🎁 Un "+t.bono_valor+"% extra te espera"
+        : (t.bono_tipo==="fichas" ? "🎁 Te esperan fichas extra" : (t.ruleta ? "🎰 Te regalamos un giro" : "🎁 Una propuesta para vos")),
+      mensaje_push:"Hace {dias} días que no te vemos. "+(t.bono_tipo==="ninguno"?"Tenemos una propuesta para vos.":"Te espera "+premio+" para {carga}.")+(t.ruleta?" También tenés un giro de ruleta regalado.":""),
+      mensaje_chat:"¡Hola {usuario}! Hace {dias} días que no te vemos. "+(t.bono_tipo==="ninguno"?"Tenemos una propuesta para vos.":"Te dejamos "+premio+" para {carga}.")+(t.ruleta?" También te regalamos un giro de ruleta 🎰.":"")
+    };
+  }
+  function fidTramoNormalizar(t){
+    const pct=Number(t.pct)||0;
+    const tipo=t.bono_tipo || (pct>0?"pct":"ninguno");
+    const x={dias:+t.dias||1,bono_tipo:tipo,bono_valor:+(t.bono_valor ?? (tipo==="pct"?pct:0))||0,
+      pct:tipo==="pct"?(+(t.bono_valor ?? pct)||0):0,ruleta:t.ruleta?1:0,
+      titulo_push:t.titulo_push||"",mensaje_push:t.mensaje_push||"",mensaje_chat:t.mensaje_chat||""};
+    return x;
+  }
+  function fidExpandir(texto,t){
+    return String(texto||"").replace(/\{usuario\}/gi,"jugador")
+      .replace(/\{dias\}/gi,String(t.dias)).replace(/\{premio\}/gi,fidPremioTexto(t))
+      .replace(/\{carga\}/gi,"tu próxima carga");
+  }
+  function fidCondicion(texto,t,chat){
+    let s=texto;
+    if(t.bono_tipo!=="ninguno" && !/pendiente.*pr[oó]xima carga|pr[oó]xima carga.*pendiente/i.test(s)) s+=" El bono queda pendiente y se acredita con tu próxima carga.";
+    if(t.ruleta){
+      if(!/ruleta|giro/i.test(s)) s+=" También tenés un giro regalado de la ruleta disponible.";
+      s+=chat?" Si ganás en la ruleta, el premio queda pendiente y se acredita con tu próxima carga.":" Si ganás en la ruleta, el premio se acredita con tu próxima carga.";
+    }
+    return s;
+  }
   function fidTextos(t){
-    const dias = t.dias, pct = t.pct, giro = !!t.ruleta;
-    let push = "Hace " + dias + " días que no te vemos. Tu próxima carga viene con un "
-             + pct + "% extra de regalo, cargues lo que cargues.";
-    if (giro) push += " Y tenés un giro gratis de la ruleta esperándote.";
-    let chat = "¡Hola! Hace " + dias + " días que no te vemos por acá 😢 Te dejé un "
-             + pct + "% extra para tu próxima carga: cargás lo que quieras y te sumo el bono al toque, solo.";
-    if (giro) chat += " Y de paso te regalé un giro de la ruleta, entrá y giralo cuando quieras 🎰";
-    return { pushT: "🎁 Un " + pct + "% extra te espera", pushC: push, chat };
+    const def=fidPlantillasDefault(t);
+    return {pushT:fidExpandir(t.titulo_push||def.titulo_push,t),pushC:fidCondicion(fidExpandir(t.mensaje_push||def.mensaje_push,t),t,false),
+      chat:fidCondicion(fidExpandir(t.mensaje_chat||def.mensaje_chat,t),t,true)};
   }
 
   function fidPrever(){
@@ -6967,7 +7000,8 @@
     if(fidSel >= orden.length) fidSel = orden.length-1;
     const t = orden[fidSel];
     const x = fidTextos(t);
-    $("#fidPrevCual").textContent = "· escalón de " + t.dias + " días (" + t.pct + "%)"
+    const premio=t.bono_tipo==="ninguno"?"sin bono":(t.bono_tipo==="pct"?t.bono_valor+"%":nf.format(t.bono_valor)+" fichas");
+    $("#fidPrevCual").textContent = "· escalón de " + t.dias + " días (" + premio + (t.ruleta?" + ruleta":"") + ")"
       + " — tocá otra parada de la línea para cambiar";
     $("#fidPrevPushT").textContent = x.pushT;
     $("#fidPrevPushC").textContent = x.pushC;
@@ -6981,7 +7015,7 @@
       const alc = fidAlcance[t.dias];
       return `<div class="fid-paso ${i===fidSel?"sel":""}" data-paso="${i}">
         <div class="fid-nodo">${t.dias}d</div>
-        <div class="fid-pct">+${t.pct}%</div>
+        <div class="fid-pct">${t.bono_tipo==="pct"?t.bono_valor+"%":(t.bono_tipo==="fichas"?nf.format(t.bono_valor)+" fichas":(t.ruleta?"Ruleta":"Sin premio"))}</div>
         <div class="fid-dias">${t.dias} día${t.dias===1?"":"s"} sin jugar</div>
         ${t.ruleta ? '<div class="fid-extra">🎰 + giro</div>' : ''}
         ${alc !== undefined ? `<div class="fid-alcance">${nf.format(alc)} hoy</div>` : ''}
@@ -7000,7 +7034,9 @@
     fidTramos.forEach((t,i)=>{
       let mal = false;
       if(!(t.dias>=1 && t.dias<=365)){ mal=true; prob = "Los días van de 1 a 365."; }
-      if(!(t.pct>=1 && t.pct<=200)){ mal=true; prob = "El % va de 1 a 200."; }
+      if(!["ninguno","pct","fichas"].includes(t.bono_tipo)){ mal=true; prob = "Elegí un tipo de premio válido."; }
+      if(t.bono_tipo==="pct" && !(t.bono_valor>=1 && t.bono_valor<=200)){ mal=true; prob = "El porcentaje debe ir de 1 a 200."; }
+      if(t.bono_tipo==="fichas" && !(t.bono_valor>=1 && t.bono_valor<=100000000)){ mal=true; prob = "Las fichas deben estar entre 1 y 100.000.000."; }
       if(vistos[t.dias] !== undefined){ mal=true; prob = "Hay dos escalones con " + t.dias + " días."; }
       vistos[t.dias] = i;
       const fila = document.querySelector(`.fid-fila[data-fila="${i}"]`);
@@ -7016,33 +7052,42 @@
 
   function fidPintarTramos(){
     const cont = $("#fidTramos"); if(!cont) return;
-    cont.innerHTML = fidTramos.map((t,i)=>`
+    cont.innerHTML = fidTramos.map((t,i)=>{
+      const def=fidPlantillasDefault(t);
+      return `
       <div class="fid-fila" data-fila="${i}">
-        <span class="fid-num">${i+1}</span>
-        <span class="fid-in">
-          <input class="cb-input" inputmode="numeric" data-i="${i}" data-k="dias" value="${t.dias}">
-          <span class="suf">días</span>
-        </span>
-        <span class="fid-in">
-          <input class="cb-input" inputmode="numeric" data-i="${i}" data-k="pct" value="${t.pct}">
-          <span class="suf">%</span>
-        </span>
-        <span>
-          <button type="button" class="fid-chip ${t.ruleta?"on":""}" data-i="${i}" data-k="ruleta">
-            🎰 Giro de ruleta ${t.ruleta ? "· SÍ" : "· no"}
-          </button>
-        </span>
-        <button class="fid-x" type="button" data-quitar="${i}" title="Quitar escalón">✕</button>
-      </div>`).join("");
+        <div class="fid-edit-head"><b>Escalón ${i+1}</b><label>Días sin jugar <input class="cb-input" type="number" min="1" max="365" data-i="${i}" data-k="dias" value="${t.dias}"></label><button class="fid-x" type="button" data-quitar="${i}" title="Quitar escalón">✕</button></div>
+        <div class="fid-premios">
+          <label class="fid-campo"><span>Premio de carga</span><select class="cb-input" data-i="${i}" data-k="bono_tipo"><option value="ninguno" ${t.bono_tipo==="ninguno"?"selected":""}>Sin bono</option><option value="pct" ${t.bono_tipo==="pct"?"selected":""}>Porcentaje extra</option><option value="fichas" ${t.bono_tipo==="fichas"?"selected":""}>Fichas fijas</option></select></label>
+          <label class="fid-campo fid-premio-cantidad ${t.bono_tipo==="ninguno"?"oculto":""}"><span>${t.bono_tipo==="pct"?"Porcentaje":"Cantidad de fichas"}</span><input class="cb-input" type="number" min="1" max="${t.bono_tipo==="pct"?200:100000000}" data-i="${i}" data-k="bono_valor" value="${t.bono_valor}"></label>
+          <label class="fid-campo"><span>Ruleta</span><button type="button" class="fid-chip ${t.ruleta?"on":""}" data-i="${i}" data-k="ruleta">🎰 ${t.ruleta ? "Giro incluido" : "Sin giro"}</button></label>
+        </div>
+        <div class="fid-mensajes">
+          <label class="fid-campo"><span>Título de la notificación</span><input class="cb-input" maxlength="120" data-i="${i}" data-k="titulo_push" value="${esc(t.titulo_push)}" placeholder="${esc(def.titulo_push)}"></label>
+          <label class="fid-campo"><span>Texto de la notificación</span><textarea class="cb-input" maxlength="320" data-i="${i}" data-k="mensaje_push" placeholder="${esc(def.mensaje_push)}">${esc(t.mensaje_push)}</textarea></label>
+          <label class="fid-campo"><span>Mensaje del chat</span><textarea class="cb-input" maxlength="900" data-i="${i}" data-k="mensaje_chat" placeholder="${esc(def.mensaje_chat)}">${esc(t.mensaje_chat)}</textarea></label>
+          <span class="cfg-hint fid-token-hint">Variables disponibles: {usuario}, {dias}, {premio}, {carga}. La condición de acreditación con la próxima carga se agrega automáticamente cuando corresponda.</span>
+        </div>
+      </div>`;
+    }).join("");
 
     const refrescar = ()=>{ fidPintarTimeline(); fidPrever(); fidValidar(); };
-    cont.querySelectorAll("input[data-k]").forEach(el=>{
+    cont.querySelectorAll("input[data-k],textarea[data-k]").forEach(el=>{
       el.addEventListener("input", ()=>{
         const i = +el.dataset.i;
-        fidTramos[i][el.dataset.k] = parseInt(el.value,10) || 0;
+        const k=el.dataset.k;
+        fidTramos[i][k] = k==="dias"||k==="bono_valor" ? (parseInt(el.value,10)||0) : el.value;
+        if(k==="bono_valor") fidTramos[i].pct=fidTramos[i].bono_tipo==="pct"?fidTramos[i].bono_valor:0;
         refrescar();
       });
     });
+    cont.querySelectorAll("select[data-k]").forEach(el=>el.addEventListener("change",()=>{
+      const t=fidTramos[+el.dataset.i]; t.bono_tipo=el.value;
+      if(t.bono_tipo==="pct" && !t.bono_valor) t.bono_valor=20;
+      if(t.bono_tipo==="fichas" && !t.bono_valor) t.bono_valor=1000;
+      t.pct=t.bono_tipo==="pct"?t.bono_valor:0;
+      fidPintarTramos(); refrescar();
+    }));
     cont.querySelectorAll("button[data-k='ruleta']").forEach(el=>{
       el.addEventListener("click", ()=>{
         const i = +el.dataset.i;
@@ -7082,7 +7127,11 @@
     $("#fidPublico").value  = d.publico ?? "app";
     $("#fidDiasMax").value  = (d.dias_max ?? 30);
     fidPublicoHint();
-    fidTramos  = (d.tramos||[]).map(t=>({dias:+t.dias, pct:+t.pct, ruleta:t.ruleta?1:0}));
+    const fidConfigHint=$("#fidConfigHint");
+    if(fidConfigHint) fidConfigHint.innerHTML = d.ruleta_activa
+      ? 'Cada escalón puede tener bono en porcentaje, fichas o ningún bono; también podés regalar la ruleta. Personalizá título y textos por separado. Variables: <code>{usuario}</code>, <code>{dias}</code>, <code>{premio}</code>, <code>{carga}</code>.'
+      : 'La ruleta está apagada. Podés configurarla, pero los escalones que la incluyen no se enviarán hasta activarla. Cada escalón también admite bono en porcentaje, fichas o ningún bono; título y textos son editables.';
+    fidTramos  = (d.tramos||[]).map(fidTramoNormalizar);
     fidAlcance = d.alcance || {};
     fidSel = Math.max(0, fidTramos.length-1);   // arranca mostrando el escalón más alto
     fidPintarTramos(); fidPintarTimeline(); fidPrever();
@@ -7317,7 +7366,7 @@
       return '<tr>' +
         '<td class="u" data-label="Jugador">' + esc(a.usuario) + '</td>' +
         '<td data-label="Escalón">' + a.escalon + ' días' + (a.avisos>1 ? ' <span class="cfg-hint">(' + a.avisos + ' avisos)</span>' : '') + '</td>' +
-        '<td data-label="Bono">+' + a.pct + '%' + (a.giro ? ' 🎰' : '') + '</td>' +
+        '<td data-label="Premio">' + (a.bono_tipo==="pct" && a.bono_valor>0 ? '+' + a.bono_valor + '% ' : (a.bono_tipo==="fichas" && a.bono_valor>0 ? nf.format(a.bono_valor) + ' fichas ' : '')) + (a.giro ? '🎰 Giro' : '') + ((!a.giro && (!a.bono_tipo||a.bono_tipo==="ninguno")) ? 'Sin premio' : '') + '</td>' +
         '<td data-label="Avisado">' + fidHace(a.aviso_en) + '</td>' +
         '<td data-label="Volvió" class="fid-' + e + '"><span class="fid-pt"></span>' + etq + '</td>' +
         '<td data-label="Tardó">' + (a.horas!==null && a.horas!==undefined ? fidDias(a.horas/24) : "—") + '</td>' +
@@ -7363,7 +7412,8 @@
 
   $("#fidAgregar")?.addEventListener("click", ()=>{
     const ultimo = fidTramos[fidTramos.length-1];
-    fidTramos.push({ dias:(ultimo? ultimo.dias+1 : 2), pct:(ultimo? Math.min(200,ultimo.pct+5) : 20), ruleta:0 });
+    const dias=ultimo?ultimo.dias+1:2;
+    fidTramos.push(fidTramoNormalizar({dias,bono_tipo:"pct",bono_valor:20,ruleta:0}));
     fidPintarTramos(); fidPintarTimeline(); fidPrever();
   });
   $("#fidGuardar")?.addEventListener("click", async ()=>{
@@ -15524,7 +15574,8 @@ async function credTabla(cual){
        pct      no toca nada hoy; se aplica solo en su proxima recarga
                 acreditada (rl_acreditar -> crmnotif_bono_aplicar_en_recarga).
        fichas   igual que pct pero con una cantidad fija.
-       giro     ni siquiera espera una carga: le queda un giro de ruleta.
+       giro     habilita un giro regalado. Si gana, el premio queda pendiente
+                y se acredita con la próxima carga.
 
      Las tres ultimas son `bonos_pendientes` (migracion 33) y ya existian: se
      creaban desde Difusion y avisos, tipeando el usuario. Aca se llama al MISMO
@@ -15540,7 +15591,7 @@ async function credTabla(cual){
              ayuda:"<b>No se acredita ahora.</b> Se le suman solas la próxima vez que cargue, cargue lo que cargue.",
              label:"Cantidad", ph:"Ej: 500" },
     giro:  { chip:"Un giro de ruleta",
-             ayuda:"<b>No espera que cargue.</b> Le queda un giro gratis, además del que ya tiene por día. Lo usa desde la app.",
+             ayuda:"El giro se puede usar ahora. <b>No se acredita ahora el premio:</b> si gana, queda pendiente y se acredita junto con su próxima carga. La ruleta solo está disponible mediante giros regalados.",
              label:"", ph:"" },
   };
 
@@ -15746,6 +15797,20 @@ async function credTabla(cual){
   $("#btnSaldo").addEventListener("click", ()=>abrirModal("cargar_saldo","Cargar saldo",true));
   $("#btnRetiro").addEventListener("click", ()=>abrirModal("retirar_saldo","Retirar saldo",true));
   $("#btnBono").addEventListener("click", ()=>abrirModal("cargar_bono","Cargar bono",false));
+  $("#btnRegalarRuleta").addEventListener("click", async e=>{
+    if(!st.usuario){ toast("Esta conversación no tiene usuario vinculado"); return; }
+    const btn=e.currentTarget;
+    if(!confirm(`¿Regalar un giro de ruleta a @${st.usuario}? Si gana, el premio se acreditará con su próxima carga.`)) return;
+    btn.disabled=true;
+    try{
+      const d=await jpost({accion:"ruleta_regalar",usuario:st.usuario});
+      if(!d.ok){ toast(d.error || "No se pudo regalar el giro"); return; }
+      const canales=[d.chat_enviado?"mensaje en chat":"sin conversación de chat",d.push_enviado?"aviso al celular":"sin celular registrado"];
+      toast("Giro regalado. El premio, si gana, queda para su próxima carga ("+canales.join(" · ")+").");
+      abrir(st.convId);
+    }catch(err){ toast("No se pudo regalar el giro"); }
+    finally{ btn.disabled=false; }
+  });
   // Manda TODO el bonus acumulado del jugador al juego, en un deposito.
   $("#btnBonosJuego").addEventListener("click", async ()=>{
     if(!st.usuario){ toast("Esta conversación no tiene usuario vinculado"); return; }

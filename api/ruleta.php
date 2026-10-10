@@ -1,22 +1,10 @@
 <?php
 /**
- * ruleta.php — Ruleta diaria. El premio se acredita en BONOS.
+ * ruleta.php — Ruleta promocional. Solo se usa con giros regalados.
  *
- * Flujo nuevo (girar primero, reclamar despues):
- *   GET                         -> { ok, premios:[{label,bonus}] }  (para dibujar)
- *   POST { accion:"girar", session_id }
- *        -> el SERVIDOR elige el premio, lo guarda con un token y lo devuelve
- *           SIN acreditar. 1 giro por sesion por dia.
- *        { ok, indice, token, bonus, label, ya_giro, reclamado, mensaje }
- *   POST { accion:"reclamar", token, usuario }
- *        -> valida el usuario y deja el premio PENDIENTE (bonos_pendientes):
- *           se acredita solo junto con la proxima carga (18/09/2026). Sin la
- *           migracion 33, degrada a acreditar en usuarios.bonus en el acto.
- *           1 reclamo por usuario por dia.
- *        { ok, bonus, usuario, pendiente }  o  { ok:false, error/codigo }
- *
- * Seguridad: el premio se decide en el server y queda atado al token; el cliente
- * no puede elegir cuanto gana ni reclamar un premio que no giro.
+ * No hay giro diario gratuito. GET sirve los premios y muestra si el jugador
+ * autenticado tiene una cortesía pendiente. POST solo acepta girar_cortesia;
+ * todo premio se registra en bonos_pendientes y se acredita con la próxima carga.
  */
 
 declare(strict_types=1);
@@ -30,6 +18,8 @@ if (is_file($crmLib)) { require_once $crmLib; }
 // (bono de ruleta prometido por notificacion, fuera del limite diario normal).
 $crmNotif = __DIR__ . '/crm_notificaciones.php';
 if (is_file($crmNotif)) { require_once $crmNotif; }
+$authLib = __DIR__ . '/auth_lib.php';
+if (is_file($authLib)) { require_once $authLib; }
 
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
@@ -83,8 +73,8 @@ function salir($data, int $code = 200): void
 }
 
 /**
- * ¿Este usuario tiene un giro para reclamar hoy? true si NO reclamó nada hoy.
- * Se mira reclamado (no el mero giro): "Nada" también marca el día usado.
+ * Compatibilidad histórica para revisar giros antiguos. El widget actual no
+ * usa ni anuncia este giro diario.
  */
 function giro_disponible(PDO $pdo, string $usuario): bool
 {
@@ -96,9 +86,8 @@ function giro_disponible(PDO $pdo, string $usuario): bool
 }
 
 // --------------------------- GET: premios para dibujar ---------------------
-// Con ?usuario=NOMBRE agrega `disponible`: si ese jugador todavía puede
-// reclamar hoy. El widget lo usa para decidir si el FAB palpita o queda quieto,
-// en vez de fiarse solo de localStorage (que no cruza dispositivos).
+// Con ?usuario=NOMBRE agrega `disponible`: true solo si tiene un giro de
+// cortesía regalado. No hay tirada diaria automática.
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     $u      = trim((string)($_GET['usuario'] ?? ''));
     $activa = cfg_crm_activo($pdo, 'ruleta_activa');
@@ -112,11 +101,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         if ($msg !== '') { $out['mensaje'] = $msg; }
         salir($out);
     }
-    if ($u !== '') {
-        $out['disponible'] = giro_disponible($pdo, $u);
-        $out['cortesia_disponible'] = function_exists('crmnotif_cortesia_disponible')
-            ? crmnotif_cortesia_disponible($pdo, $u) : false;
-    }
+    $cortesia = $u !== '' && function_exists('crmnotif_cortesia_disponible')
+        ? crmnotif_cortesia_disponible($pdo, $u) : false;
+    $out['cortesia_disponible'] = $cortesia;
+    $out['disponible'] = $cortesia;
     salir($out);
 }
 
@@ -144,6 +132,13 @@ if ($accion !== 'premios' && !cfg_crm_activo($pdo, 'ruleta_activa')) {
         'codigo'   => 'ruleta_apagada',
         'error'    => $msg !== '' ? $msg : 'La ruleta no está disponible en este momento.',
     ], 403);
+}
+
+// Los giros diarios anónimos quedaron deshabilitados: el único camino para
+// jugar es una cortesía pendiente, creada desde el CRM o Fidelización.
+if (!in_array($accion, ['girar_cortesia', 'premios'], true)) {
+    salir(['ok' => false, 'codigo' => 'requiere_regalo',
+           'error' => 'La ruleta solo está disponible con un giro regalado.'], 403);
 }
 
 try {
@@ -289,6 +284,17 @@ try {
         if ($usuario === '') {
             salir(['ok' => false, 'error' => 'Falta el usuario'], 400);
         }
+        // Si el widget tiene el JWT propio, este manda: no aceptar un username
+        // diferente ni caer a identidad sin firmar ante un token inválido.
+        $jwt = trim((string)($body['token'] ?? ''));
+        if ($jwt !== '') {
+            $claims = function_exists('jwt_verificar') ? jwt_verificar($jwt, cfg('JWT_SECRET')) : false;
+            $identidad = is_array($claims) ? (string)($claims['username'] ?? '') : '';
+            if ($identidad === '' || !hash_equals(mb_strtolower($identidad), mb_strtolower($usuario))) {
+                salir(['ok' => false, 'codigo' => 'sesion_invalida', 'error' => 'La sesión no corresponde a este jugador. Volvé a iniciar sesión.'], 401);
+            }
+            $usuario = $identidad;
+        }
         if (!function_exists('crmnotif_cortesia_disponible') || !crmnotif_cortesia_disponible($pdo, $usuario)) {
             salir(['ok' => false, 'codigo' => 'sin_cortesia', 'error' => 'No tenés un giro de cortesía disponible.']);
         }
@@ -339,22 +345,31 @@ try {
 
         $indice = elegir_indice();
         $bonus  = (int)PREMIOS[$indice]['bonus'];
-        // Mismo criterio que el reclamo normal (18/09/2026): el premio queda
-        // pendiente y entra con la próxima carga; sin migración 33, se
-        // acredita en el acto como antes.
+        // El premio queda pendiente y entra con la próxima carga acreditada.
         $pendiente = false;
         if ($bonus > 0) {
-            if (function_exists('crmnotif_bono_crear')) {
-                $rp = crmnotif_bono_crear($pdo, $usuario, 'fichas', $bonus, 'ruleta_cortesia');
-                $pendiente = !empty($rp['ok']);
-            }
+            $rp = function_exists('crmnotif_bono_crear')
+                ? crmnotif_bono_crear($pdo, $usuario, 'fichas', $bonus, 'ruleta_cortesia')
+                : ['ok' => false];
+            $pendiente = !empty($rp['ok']);
             if (!$pendiente) {
-                if (function_exists('crm_cargar')) {
-                    $r = crm_cargar($pdo, $usuario, 'bono', $bonus, 'Giro de cortesía', 'ruleta_cortesia');
-                    if (!$r['ok']) { salir(['ok' => false, 'error' => $r['error'] ?? 'No se pudo acreditar'], 400); }
-                } else {
-                    $pdo->prepare("UPDATE usuarios SET bonus = bonus + ? WHERE username = ?")->execute([$bonus, $usuario]);
+                // Si falla el ledger, devolver el giro: nunca acreditar este
+                // premio de forma inmediata ni dejar que se pierda en silencio.
+                try {
+                    $pdo->beginTransaction();
+                    $pdo->prepare("UPDATE ruleta_giros_cortesia SET estado = 'pendiente', usado_en = NULL WHERE id = ? AND estado = 'usado'")
+                        ->execute([(int)$g['id']]);
+                    if (!empty($g['bono_pendiente_id'])) {
+                        $pdo->prepare("UPDATE bonos_pendientes SET estado = 'pendiente', aplicado_en = NULL WHERE id = ? AND tipo = 'giro'")
+                            ->execute([(int)$g['bono_pendiente_id']]);
+                    }
+                    $pdo->commit();
+                } catch (Throwable $e) {
+                    if ($pdo->inTransaction()) { $pdo->rollBack(); }
+                    error_log('ruleta: no pude restaurar la cortesía: ' . $e->getMessage());
                 }
+                salir(['ok' => false, 'codigo' => 'premio_pendiente_error',
+                       'error' => 'Salió un premio, pero no pude dejarlo pendiente. El giro sigue disponible; probá de nuevo.'], 503);
             }
         }
 

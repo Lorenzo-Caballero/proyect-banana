@@ -946,6 +946,10 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
         if (!in_array($tipo, CRMNOTIF_BONO_TIPOS, true)) {
             return ['ok' => false, 'error' => 'Tipo de bono inválido'];
         }
+        if ($tipo === 'giro' && function_exists('cfg_crm_activo')
+            && !cfg_crm_activo($pdo, 'ruleta_activa')) {
+            return ['ok' => false, 'error' => 'La ruleta está apagada; no se puede regalar un giro ahora.'];
+        }
         if ($tipo !== 'giro' && $valor <= 0) {
             return ['ok' => false, 'error' => 'El valor tiene que ser mayor a 0'];
         }
@@ -957,6 +961,16 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
 
         $pdo->beginTransaction();
         try {
+            if ($tipo === 'giro') {
+                $pendienteGiro = $pdo->prepare(
+                    "SELECT 1 FROM ruleta_giros_cortesia WHERE usuario = ? AND estado = 'pendiente' LIMIT 1 FOR UPDATE"
+                );
+                $pendienteGiro->execute([$usuario]);
+                if ($pendienteGiro->fetchColumn()) {
+                    $pdo->rollBack();
+                    return ['ok' => false, 'error' => 'Este jugador ya tiene un giro regalado pendiente'];
+                }
+            }
             /* EL BONO NUEVO REEMPLAZA AL ANTERIOR, NO SE SUMA.
                EL PEDIDO (Nahuel, 19/09/2026): *"si a una persona le mandamos un
                bono del 20% y no lo usa, al siguiente día cuando le mandamos uno

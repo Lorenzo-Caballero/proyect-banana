@@ -3291,17 +3291,11 @@
   /* =====================================================================
    * RULETA DE BONOS
    *
-   * Mismo contrato que en la web (api/ruleta.php): se gira primero — el
-   * SERVIDOR elige el premio y lo ata a un token, sin acreditar nada — y
-   * recien al reclamar con un usuario valido se suma a usuarios.bonus.
-   *
-   * En la app, si el jugador ya inicio sesion no hay que preguntarle el
-   * usuario: lo reclamamos con el que ya conocemos.
+   * La ruleta solo funciona con un giro regalado desde CRM/fidelizacion.
+   * El jugador autenticado consume ese regalo y, si gana, el premio queda
+   * pendiente hasta su proxima carga.
    * ===================================================================*/
-  var RULETA_DIA = "goldpaw_ruleta_dia";
-
-  /* Si a la ruleta le queda giro HOY. Vive afuera de cargarRuleta() porque el
-     hub de juegos tambien lo mira para pintar su chip. */
+  /* Solo indica si este usuario autenticado tiene un giro regalado pendiente. */
   var ruletaDisponible = false;
 
   var cssR =
@@ -3379,27 +3373,26 @@
   ov.innerHTML =
     '<div class="gpr-card">'+
     '<button class="gpr-x" id="gpr-x" aria-label="Cerrar">&times;</button>'+
-    '<h2>Giro <span style="color:#E3B14A">gratis</span></h2>'+
-    '<div class="sub">Girá y reclamá tu premio en bonos</div>'+
+    '<h2>Giro <span style="color:#E3B14A">regalado</span></h2>'+
+    '<div class="sub">Usá tu giro regalado. Si ganás, el premio se acredita con tu próxima carga.</div>'+
     '<div class="gpr-wrap"><div class="gpr-pin"></div>'+
     '<svg class="gpr-wheel" id="gpr-wheel" viewBox="0 0 200 200"></svg>'+
     '<div class="gpr-hub">'+SVG_RULETA+'</div></div>'+
     '<div class="gpr-res" id="gpr-res"></div>'+
-    '<input class="gpr-in" id="gpr-user" type="text" placeholder="Tu usuario del juego" autocomplete="username">'+
     '<div class="gpr-msg" id="gpr-msg"></div>'+
-    '<button class="gpr-btn" id="gpr-spin" type="button">Girar</button>'+
+    '<button class="gpr-btn" id="gpr-spin" type="button">Usar giro</button>'+
     '<button class="gpr-skip" id="gpr-skip" type="button">Ahora no</button>'+
     '</div>';
   document.body.appendChild(ov);
 
   var fabR = document.createElement("button");
   fabR.id = "gpr-fab";
-  fabR.setAttribute("aria-label", "Ruleta de bonos — girá y ganá");
+  fabR.setAttribute("aria-label", "Ruleta — usar giro regalado");
   fabR.innerHTML = SVG_RULETA;
 
   var tagR = document.createElement("div");
   tagR.id = "gpr-fab-tag";
-  tagR.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg><span>¡Girá y ganá!</span>';
+  tagR.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg><span>¡Tenés un giro!</span>';
 
   var fabRWrap = document.createElement("div");
   fabRWrap.id = "gpr-fab-wrap";
@@ -3407,7 +3400,7 @@
   fabRWrap.appendChild(fabR);
   document.body.appendChild(fabRWrap);
 
-  var wheel = $("gpr-wheel"), inUser = $("gpr-user"), msgR = $("gpr-msg");
+  var wheel = $("gpr-wheel"), msgR = $("gpr-msg");
   var btnR = $("gpr-spin"), resR = $("gpr-res");
 
   var COLORES = [
@@ -3419,7 +3412,7 @@
   // telefono y descuadran las porciones.
   var FALLBACK = [{label:"400"},{label:"1.000"},{label:"Nada"},{label:"500"},{label:"2.000"}];
 
-  var premios = [], rot = 0, fase = "girar", giro = null, girando = false;
+  var premios = [], rot = 0, girando = false;
 
   function pol(r, a){ var rad = Math.PI * a / 180; return [100 + r*Math.cos(rad), 100 + r*Math.sin(rad)]; }
 
@@ -3453,7 +3446,6 @@
 
   function abrirRuleta(){
     ov.classList.add("show");
-    lss(RULETA_DIA, new Date().toISOString().slice(0, 10));
     // Con el modal abierto no tiene sentido que el globo siga latiendo detrás.
     fabR.classList.add("quieto");
   }
@@ -3469,96 +3461,44 @@
   $("gpr-x").addEventListener("click", cerrarRuleta);
   $("gpr-skip").addEventListener("click", cerrarRuleta);
 
-  function reclamar(usuario){
-    btnR.disabled = true; btnR.textContent = "Reclamando…"; msgR.textContent = "";
-    fetch(API_RULETA, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ accion: "reclamar", token: giro.token, usuario: usuario })
-    })
-      .then(function (r){ return r.json(); })
-      .then(function (d){
-        if (d.ok){
-          resR.className = "gpr-res show";
-          // Desde el 18/09/2026 el premio queda PENDIENTE y entra con la
-          // próxima carga (d.pendiente). El texto viejo queda de respaldo
-          // para un server sin la migración 33, que acredita en el acto.
-          resR.innerHTML = "<b>+" + d.bonus + " bonos</b>" + (d.pendiente
-            ? "Se acreditan solos junto con tu próxima carga. ¡Volvé mañana!"
-            : "Acreditados en tu cuenta. ¡Volvé mañana!");
-          inUser.style.display = "none";
-          btnR.style.display = "none";
-          $("gpr-skip").textContent = "Listo";
-          // Ya reclamó: no queda giro hoy. El FAB deja de palpitar y de mostrar
-          // el letrero (queda visible pero quieto hasta mañana).
-          pintarEstadoRuleta(false);
-        } else {
-          msgR.textContent = d.error || "No se pudo reclamar.";
-          btnR.disabled = false; btnR.textContent = "Reclamar premio";
-        }
-      })
-      .catch(function (){
-        msgR.textContent = "No se pudo conectar. Probá de nuevo.";
-        btnR.disabled = false; btnR.textContent = "Reclamar premio";
-      });
-  }
-
   function doGirar(){
+    if (!USUARIO){ msgR.textContent = "Iniciá sesión para usar tu giro regalado."; return; }
     girando = true; btnR.disabled = true; btnR.textContent = "Girando…"; msgR.textContent = "";
     fetch(API_RULETA, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ accion: "girar", session_id: sid })
+      body: JSON.stringify({ accion: "girar_cortesia", usuario: USUARIO, token: AUTH || undefined })
     })
       .then(function (r){ return r.json(); })
       .then(function (d){
         if (!d.ok || typeof d.indice !== "number"){
-          msgR.textContent = d.error || "No se pudo girar.";
-          btnR.disabled = false; btnR.textContent = "Girar"; girando = false;
+          msgR.textContent = d.error || "No se pudo usar el giro.";
+          btnR.disabled = false; btnR.textContent = "Usar giro"; girando = false;
           return;
         }
-        giro = d;
         girarHasta(d.indice);
         setTimeout(function (){
           girando = false;
-          if (d.reclamado){
-            resR.className = "gpr-res show nada";
-            resR.innerHTML = "<b>" + d.label + "</b>" + (d.mensaje || "Ya reclamaste tu premio de hoy.");
-            btnR.style.display = "none";
-            pintarEstadoRuleta(false);   // sin giro hasta mañana
-            return;
-          }
           if (d.bonus > 0){
             resR.className = "gpr-res show";
-            if (USUARIO){
-              // Ya sabemos quien es: se reclama solo.
-              resR.innerHTML = "<b>¡Salió " + d.label + "!</b>Acreditando a " + USUARIO + "…";
-              fase = "reclamar";
-              reclamar(USUARIO);
-            } else {
-              resR.innerHTML = "<b>¡Salió " + d.label + "!</b>Ingresá tu usuario para reclamarlo en bonos.";
-              inUser.style.display = "block"; inUser.focus();
-              btnR.disabled = false; btnR.textContent = "Reclamar premio";
-              fase = "reclamar";
-            }
+            resR.innerHTML = "<b>¡Salió " + d.label + "! +" + d.bonus + " bonos</b>El premio queda pendiente y se acredita junto con tu próxima carga.";
           } else {
             resR.className = "gpr-res show nada";
-            resR.innerHTML = "<b>" + d.label + "</b>¡Suerte la próxima! Volvé mañana.";
-            btnR.style.display = "none";
-            pintarEstadoRuleta(false);   // "Nada" igual consume el giro del día
+            resR.innerHTML = "<b>" + d.label + "</b>Esta vez no salió premio. Gracias por jugar.";
           }
+          btnR.style.display = "none";
+          $("gpr-skip").textContent = "Listo";
+          pintarEstadoRuleta(false);
         }, 4700);   // dura lo que la animacion de la rueda
       })
       .catch(function (){
         msgR.textContent = "No se pudo conectar. Probá de nuevo.";
-        btnR.disabled = false; btnR.textContent = "Girar"; girando = false;
+        btnR.disabled = false; btnR.textContent = "Usar giro"; girando = false;
       });
   }
 
   btnR.addEventListener("click", function (){
     if (girando) return;
-    if (fase === "girar") { doGirar(); return; }
-    var u = (USUARIO || inUser.value).trim();
-    if (!u){ msgR.textContent = "Escribí tu usuario del juego."; inUser.focus(); return; }
-    reclamar(u);
+    doGirar();
   });
 
   /* La ruleta ya no manda sola sobre el globo: ese boton ahora abre el hub y
@@ -3579,17 +3519,14 @@
        escondia despues: con la ruleta apagada desde el CRM igual aparecian el
        globo y el letrero "¡Girá y ganá!" un instante. Prometerle un premio a
        alguien y borrarselo medio segundo despues es peor que no ofrecerlo. */
-    var yaJugoHoy = ls(RULETA_DIA) === new Date().toISOString().slice(0, 10);
+    var tieneGiro = false;
 
     var url = API_RULETA + (USUARIO ? ("?usuario=" + encodeURIComponent(USUARIO)) : "");
     return fetch(url)
       .then(function (r){ return r.json(); })
       .then(function (d){
         premios = (d && d.premios && d.premios.length) ? d.premios : FALLBACK;
-        // Si el server sabe del usuario, su 'disponible' manda.
-        if (d && typeof d.disponible === "boolean"){
-          yaJugoHoy = !d.disponible;
-        }
+        tieneGiro = !!(d && d.cortesia_disponible && USUARIO);
       })
       .catch(function (){
         /* Sin respuesta se dibuja con los premios de respaldo: el dibujo es
@@ -3599,7 +3536,7 @@
         premios = FALLBACK;
       })
       .then(function (){
-        ruletaDisponible = !yaJugoHoy;
+        ruletaDisponible = tieneGiro;
         try { dibujar(); } catch (e) { log("ruleta: error al dibujar", String(e && e.message || e)); }
       });
   }
@@ -3750,7 +3687,7 @@
   ovJ.innerHTML =
     '<div id="gpj-sheet">' +
     '<h3>Juegos</h3>' +
-    '<p class="gpj-sub">Premios en bonos, gratis todos los días.</p>' +
+    '<p class="gpj-sub">Hay juegos gratis todos los días. Los premios de ruleta se acreditan con tu próxima carga.</p>' +
     '<div id="gpj-lista"></div>' +
     '<button id="gpj-cerrar" type="button">Cerrar</button>' +
     '</div>';
@@ -3795,8 +3732,8 @@
     if (j.requiere_login && !jugadorConocido()) return { txt: "Entrá a tu cuenta", hay: false };
     if (clave === "ruleta") {
       return ruletaDisponible
-        ? { txt: "Girá gratis", hay: true }
-        : { txt: "Volvé mañana", hay: false };
+        ? { txt: "Giro regalado", hay: true }
+        : { txt: "Sin giro regalado", hay: false };
     }
     if (clave === "slot") {
       return j.restantes > 0

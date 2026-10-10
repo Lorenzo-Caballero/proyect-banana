@@ -199,11 +199,16 @@ ok($avisos() === $antes, 'sin ultima_actividad (no sabemos): sin aviso');
 // ---- 7. la validacion de escalones -------------------------------------------
 echo "7. fid_parsear_tramos\n";
 ok(fid_parsear_tramos('[{"dias":2,"pct":20},{"dias":2,"pct":30}]') === null, 'días repetidos: rechazado');
-ok(fid_parsear_tramos('[{"dias":2,"pct":0}]') === null, '0%: rechazado');
+ok((fid_parsear_tramos('[{"dias":2,"pct":0}]')[0]['bono_tipo'] ?? '') === 'ninguno', 'config legacy sin porcentaje: migra a sin bono');
 ok(fid_parsear_tramos('[{"dias":400,"pct":20}]') === null, '400 días: rechazado');
 ok(fid_parsear_tramos('basura') === null, 'JSON roto: rechazado');
 $t = fid_parsear_tramos('[{"dias":7,"pct":40},{"dias":2,"pct":20}]');
 ok(is_array($t) && $t[0]['dias'] === 2, 'ordena por días ascendente');
+$t = fid_parsear_tramos('[{"dias":3,"bono_tipo":"fichas","bono_valor":5000,"ruleta":1,"mensaje_chat":"Hola {usuario}"}]');
+ok(($t[0]['bono_tipo'] ?? '') === 'fichas' && ($t[0]['bono_valor'] ?? 0) === 5000 && ($t[0]['ruleta'] ?? 0) === 1, 'premio en fichas + ruleta: parsea');
+ok(($t[0]['mensaje_chat'] ?? '') === 'Hola {usuario}', 'texto personalizado: conserva variables');
+ok(fid_parsear_tramos('[{"dias":3,"bono_tipo":"fichas","bono_valor":0}]') === null, 'fichas en cero: rechazado');
+ok(fid_parsear_tramos('[{"dias":3,"bono_tipo":"magia","bono_valor":1}]') === null, 'tipo desconocido: rechazado');
 
 
 // ===========================================================================
