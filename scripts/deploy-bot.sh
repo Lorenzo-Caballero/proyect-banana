@@ -51,11 +51,42 @@ GP_APP="$BOT_DIR" python3 "$SCRIPT_DIR/parche-deposito-cuerpo.py"
 echo "==> aplicando el alcance multicliente a sync y recaudación"
 GP_BOT_DIR="$BOT_DIR" python3 "$SCRIPT_DIR/parche-scope-tenant.py"
 
+# Vigilante por tenant: solo adelanta reintentos con una firma inequívoca del
+# WAF, conserva intentos y no accede al panel ni al socket de Docker.
+echo "==> aplicando el watchdog seguro de altas WAF"
+GP_BOT_DIR="$BOT_DIR" python3 "$SCRIPT_DIR/parche-watchdog-altas.py"
+
 # La portada del panel resuelve el challenge en Chromium, pero necesita más
 # que el timeout base de Playwright. El overlay reintenta una vez tras validar
 # que el navegador ya obtuvo la página sin challenge.
 echo "==> aplicando el timeout/reintento del login detrás del WAF"
 GP_BOT_DIR="$BOT_DIR" python3 "$SCRIPT_DIR/parche-login-waf.py"
+
+# Ganamos puede mostrar una encuesta modal sobre el formulario de creación.
+# El bot la cierra por su botón X antes de interactuar con el alta.
+echo "==> aplicando el cierre de la encuesta que bloquea las altas"
+GP_BOT_DIR="$BOT_DIR" python3 "$SCRIPT_DIR/parche-survey-modal.py"
+
+# El panel puede demorar o desafiar al navegador al abrir el formulario. Evita
+# que el timeout por defecto convierta una navegación lenta en un alta fallida.
+echo "==> aplicando recuperación de navegación del formulario de altas"
+GP_BOT_DIR="$BOT_DIR" python3 "$SCRIPT_DIR/parche-navegacion-alta.py"
+
+# La respuesta exitosa de este panel puede ser un 307 a /users/all. Conservar
+# y validar Location evita repetir una creación ya aceptada.
+echo "==> aplicando confirmación del redirect del formulario de altas"
+GP_BOT_DIR="$BOT_DIR" python3 "$SCRIPT_DIR/parche-redirect-forma-alta.py"
+
+# No confundir un redirect del WAF a /exhk con un alta creada; preservar la
+# firma explícita para que el watchdog aplique solo a challenges comprobados.
+echo "==> aplicando la detección segura del challenge al confirmar el alta"
+GP_BOT_DIR="$BOT_DIR" python3 "$SCRIPT_DIR/parche-firma-challenge-alta.py"
+
+# Si tres POST de alta reciben el challenge explícito, no se espera al backoff
+# largo ni se manda el formulario por el mismo WAF: se prueba una alternativa
+# inmediata, con otro username y conservando el ID/SID original del jugador.
+echo "==> instalando fallback rápido para altas bloqueadas explícitamente por WAF"
+GP_BOT_DIR="$BOT_DIR" python3 "$SCRIPT_DIR/parche-fallback-waf-alta.py"
 
 # El .env (URLs + API key), la verificacion contra la cola y el rebuild los
 # hace el script de siempre. GIT_HASH viaja exportado y queda horneado en la
@@ -120,6 +151,16 @@ done
 if [ -n "$ok" ]; then
   echo "==> OK — el contenedor corre $GIT_HASH"
   docker compose logs --tail=15 creador | sed 's/^/    /'
+
+  # El vigilante corre como proceso aislado y solo tiene API_URL/API_KEY. No
+  # debe quedar como mero código en la imagen: cada tenant necesita el worker.
+  vigilante="$(docker compose ps -q vigila-altas 2>/dev/null || true)"
+  if [ -z "$vigilante" ] || [ "$(docker inspect --format '{{.State.Running}}' "$vigilante" 2>/dev/null || true)" != "true" ]; then
+    echo "!! El servicio vigila-altas no está corriendo; no doy el deploy por completo." >&2
+    docker compose logs --tail=30 vigila-altas 2>&1 | sed 's/^/    /' >&2 || true
+    exit 1
+  fi
+  echo "==> watchdog WAF de altas activo"
 
   # UN solo bot sondeando la cola. Dos = altas intermitentes (una cae en cada
   # uno, y la que cae en el viejo con la sesion rota tarda minutos). Paso DOS

@@ -152,6 +152,30 @@ function meta_evento(PDO $pdo, string $evento, array $datos = []): string
         return '';
     }
 
+    // En modo recomendado se reporta cada depósito confirmado, también los
+    // repetidos y los de jugadores antiguos. El modo alternativo limita el
+    // evento Purchase a uno ya aceptado por Meta por jugador. Usamos el ledger
+    // de eventos para que un error/pendiente no consuma el único evento.
+    if ($evento === 'Purchase'
+        && (string)cfg_crm($pdo, 'meta_purchase_mode') === 'primera'
+        && !empty($datos['usuario'])) {
+        try {
+            $stPrevio = $pdo->prepare(
+                "SELECT 1 FROM meta_eventos
+                  WHERE evento = 'Purchase' AND usuario = ? AND estado = 'enviado'
+                  LIMIT 1"
+            );
+            $stPrevio->execute([mb_substr((string)$datos['usuario'], 0, 64)]);
+            if ($stPrevio->fetchColumn()) {
+                return '';
+            }
+        } catch (Throwable $e) {
+            // Si falta la tabla o la lectura falla, el ajuste no puede bloquear
+            // una carga real: conserva el comportamiento recomendado (enviar).
+            error_log('meta: no pude comprobar Purchase previo: ' . $e->getMessage());
+        }
+    }
+
     // PageView es el unico evento que trae su propio event_id (generado en
     // el navegador, en meta-pixel.js): la deduplicacion con el Pixel del
     // browser exige el MISMO id exacto de los dos lados, y acá no hay `ref`

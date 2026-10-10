@@ -2195,6 +2195,33 @@
     text-transform:uppercase;letter-spacing:.06em;color:var(--muted);opacity:.7}
   .pb-tab-lp.on{background:var(--violetSoft);border-color:var(--violet);color:var(--violet2)}
   .pb-tab-agregar:hover{border-color:var(--violet);color:var(--violet2)}
+  .pb-vistas{display:flex;gap:8px;padding:0 20px 14px;border-bottom:1px solid var(--line);margin-bottom:14px}
+  .pb-vista-btn{border:1px solid var(--line);background:var(--panel2);color:var(--muted);
+    border-radius:9px;padding:9px 14px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
+  .pb-vista-btn.on{background:var(--violetSoft);border-color:var(--violet);color:var(--violet2)}
+  .pb-eventos-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:0 20px 12px}
+  .pb-eventos-tools input{background:var(--panel2);border:1px solid var(--line);color:var(--txt);
+    border-radius:8px;padding:8px 10px;min-height:36px;font:inherit;font-size:12px}
+  .pb-eventos-tools input[type=search]{min-width:180px;flex:1}
+  .pb-eventos-resumen{color:var(--muted);font-size:12px;padding:0 20px 10px}
+  .pb-evento-estado{display:inline-flex;align-items:center;border-radius:999px;padding:4px 8px;
+    font-size:10.5px;font-weight:700;white-space:nowrap;background:var(--panel3);color:var(--muted)}
+  .pb-evento-estado.enviado{background:rgba(58,196,125,.15);color:var(--green2)}
+  .pb-evento-estado.error{background:rgba(238,91,113,.15);color:#ff899a}
+  .pb-evento-estado.pendiente{background:rgba(246,190,74,.15);color:#f6c764}
+  .pb-evento-respuesta{max-width:380px;color:var(--muted);font-size:11px;margin-top:4px}
+  .pb-evento-respuesta summary{cursor:pointer;max-width:380px;overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap;color:var(--muted);list-style:none}
+  .pb-evento-respuesta summary::-webkit-details-marker{display:none}
+  .pb-evento-respuesta summary::after{content:" · ver respuesta";color:var(--violet2);font-weight:700}
+  .pb-evento-respuesta[open] summary{white-space:normal;overflow:visible}
+  .pb-evento-respuesta pre{white-space:pre-wrap;overflow-wrap:anywhere;max-width:min(70vw,520px);
+    max-height:220px;overflow:auto;background:var(--panel);border:1px solid var(--line);
+    border-radius:8px;padding:8px;margin:6px 0 0;color:var(--txt);font:11px/1.45 ui-monospace,monospace}
+  .pb-eventos-pager{display:flex;justify-content:flex-end;align-items:center;gap:10px;padding:0 20px 20px}
+  .pb-eventos-pager span{color:var(--muted);font-size:12px}
+  @media(max-width:640px){.pb-vistas{padding-left:12px;padding-right:12px}.pb-eventos-tools{padding-left:12px;padding-right:12px}
+    .pb-eventos-resumen{padding-left:12px;padding-right:12px}.pb-eventos-pager{padding-left:12px;padding-right:12px}}
 
   .pb-landing-row{display:flex;align-items:center;gap:12px;padding:12px 16px;margin:0 20px 14px;
     background:var(--panel2);border:1px solid var(--line);border-radius:12px;flex-wrap:wrap}
@@ -4375,6 +4402,13 @@
     <!-- Contenido real, oculto hasta publicidad_ok -->
     <div id="pbContenido" class="fn-contenido" style="display:none">
 
+      <div class="pb-vistas" role="tablist" aria-label="Secciones de Meta Ads">
+        <button class="pb-vista-btn on" id="pbVistaCampaniasBtn" type="button" role="tab" aria-selected="true">Campañas y embudo</button>
+        <button class="pb-vista-btn" id="pbVistaEventosBtn" type="button" role="tab" aria-selected="false">Historial de eventos</button>
+      </div>
+
+      <div id="pbVistaCampanias">
+
       <div class="fn-header">
         <b>Publicidad</b>
         <div class="fn-export-mini">
@@ -4486,16 +4520,6 @@
           <div class="sub">cargado a mano</div>
         </div>
         <div class="fn-card">
-          <div class="k">Registros</div>
-          <div class="v" id="pbRegistros">—</div>
-          <div class="sub">cuentas creadas desde la landing</div>
-        </div>
-        <div class="fn-card">
-          <div class="k">Primeras cargas</div>
-          <div class="v" id="pbPrimerasCargas">—</div>
-          <div class="sub" id="pbConversion">—</div>
-        </div>
-        <div class="fn-card">
           <div class="k">Cargas totales</div>
           <div class="v" id="pbCargasTotales">—</div>
           <div class="sub">depósitos confirmados, no solo el primero</div>
@@ -4514,11 +4538,6 @@
           <div class="k">Ticket promedio</div>
           <div class="v" id="pbTicketPromedio">—</div>
           <div class="sub">por carga</div>
-        </div>
-        <div class="fn-card">
-          <div class="k">Volvió a cargar</div>
-          <div class="v" id="pbVolvioACargar">—</div>
-          <div class="sub" id="pbVolvioDetalle">—</div>
         </div>
       </div>
 
@@ -4649,6 +4668,41 @@
           <tfoot id="pbGastoTodoTot" style="display:none"></tfoot>
         </table>
       </div>
+
+      </div><!-- /pbVistaCampanias -->
+
+      <section id="pbVistaEventos" style="display:none" aria-label="Historial de eventos enviados a Meta">
+        <div class="fn-explicacion" style="margin:0 20px 14px">
+          <b>Auditoría de Conversions API.</b> Acá ves los eventos enviados por el servidor y la respuesta recibida de Meta.
+          Los PageView enviados únicamente desde el Pixel del navegador no se guardan en este historial. “Enviado” confirma
+          una respuesta exitosa de la API; la atribución a una campaña y su ventana (por ejemplo, 7 días) se configuran en Meta Ads.
+        </div>
+        <div class="pb-tabs" id="pbEventosEstados" aria-label="Filtrar eventos">
+          <button class="pb-tab on" data-estado="" type="button">Todos</button>
+          <button class="pb-tab" data-estado="enviado" type="button">Enviados</button>
+          <button class="pb-tab" data-estado="pendiente" type="button">En cola</button>
+          <button class="pb-tab" data-estado="error" type="button">Fallidos</button>
+        </div>
+        <div class="pb-eventos-tools">
+          <input type="search" id="pbEvUsuario" placeholder="Buscar jugador" autocomplete="off">
+          <input type="date" id="pbEvDesde" aria-label="Desde">
+          <input type="date" id="pbEvHasta" aria-label="Hasta">
+          <button class="btn-mini-accion" id="pbEvBuscar" type="button">Filtrar</button>
+          <button class="btn-mini-accion" id="pbEvActualizar" type="button">Actualizar</button>
+        </div>
+        <div class="pb-eventos-resumen" id="pbEventosResumen">Cargando historial…</div>
+        <div class="pb-tabla-wrap">
+          <table class="pb-tabla" style="min-width:760px">
+            <thead><tr><th>Fecha</th><th>Jugador</th><th>Evento</th><th>Monto</th><th>Estado / respuesta</th></tr></thead>
+            <tbody id="pbEventosLista"><tr><td colspan="5" class="ag-vacio">Cargando…</td></tr></tbody>
+          </table>
+        </div>
+        <div class="pb-eventos-pager">
+          <button class="btn-mini-accion" id="pbEvAnterior" type="button">Anterior</button>
+          <span id="pbEvPagina">—</span>
+          <button class="btn-mini-accion" id="pbEvSiguiente" type="button">Siguiente</button>
+        </div>
+      </section>
 
     </div>
   </div>
@@ -6039,6 +6093,12 @@
             <label><input type="checkbox" id="cfgMetaCheckout"> <span><b>InitiateCheckout</b> — pidió cargar fichas</span></label>
             <label><input type="checkbox" id="cfgMetaPurchase"> <span><b>Purchase</b> — las fichas se acreditaron</span></label>
           </div>
+          <label class="cb-flabel" style="margin-top:16px" for="cfgMetaPurchaseMode">Qué depósitos enviar a Meta</label>
+          <select class="cb-input" id="cfgMetaPurchaseMode">
+            <option value="todos">Todos los depósitos acreditados (recomendado)</option>
+            <option value="primera">Solo el primer Purchase aceptado por jugador</option>
+          </select>
+          <p class="cfg-hint">La opción recomendada informa también las recargas de jugadores existentes. Meta decide la atribución según sus datos de coincidencia y la ventana configurada en el conjunto de anuncios; el CRM no limita los depósitos a 7 días.</p>
 
           <label class="cb-flabel" style="margin-top:16px">Código de prueba <span class="cfg-opt">(opcional)</span></label>
           <input class="cb-input" id="cfgMetaTest" placeholder="TEST12345" autocomplete="off">
@@ -8584,6 +8644,7 @@
     meta_ev_registro: { el: "#cfgMetaRegistro", tipo: "bool"  },
     meta_ev_checkout: { el: "#cfgMetaCheckout", tipo: "bool"  },
     meta_ev_purchase: { el: "#cfgMetaPurchase", tipo: "bool"  },
+    meta_purchase_mode: { el: "#cfgMetaPurchaseMode", tipo: "texto" },
   };
 
   /* El bloque del mensaje solo aplica con la ruleta APAGADA: mostrarlo con la
@@ -14425,6 +14486,11 @@ async function credTabla(cual){
   let pbVerificado = false;
   let pbFiltroActual = "hoy";
   let pbRangoActual = null;
+  let pbMetaVista = "campanias";
+  let pbEvEstado = "";
+  let pbEvPaginaActual = 0;
+  let pbEvTotal = 0;
+  const PB_EV_POR_PAGINA = 50;
 
   /* CUANTOS DIAS MUESTRA LA TABLA DE CARGA DE GASTO.
      Es SU ventana, deliberadamente separada del filtro de arriba. Nahuel:
@@ -14480,6 +14546,75 @@ async function credTabla(cual){
     if(r.status === 403){ pbMostrarGate(); throw new Error("publicidad_no_verificado"); }
     return r.json();
   }
+
+  function pbCambiarVistaMeta(vista){
+    pbMetaVista = vista === "eventos" ? "eventos" : "campanias";
+    const campanias = pbMetaVista === "campanias";
+    $("#pbVistaCampanias").style.display = campanias ? "" : "none";
+    $("#pbVistaEventos").style.display = campanias ? "none" : "";
+    $("#pbVistaCampaniasBtn").classList.toggle("on", campanias);
+    $("#pbVistaEventosBtn").classList.toggle("on", !campanias);
+    $("#pbVistaCampaniasBtn").setAttribute("aria-selected", campanias ? "true" : "false");
+    $("#pbVistaEventosBtn").setAttribute("aria-selected", campanias ? "false" : "true");
+    if(!campanias) pbCargarEventosMeta();
+  }
+
+  async function pbCargarEventosMeta(){
+    const lista = $("#pbEventosLista");
+    const resumen = $("#pbEventosResumen");
+    lista.innerHTML = '<tr><td colspan="5" class="ag-vacio">Cargando eventos…</td></tr>';
+    $("#pbEvActualizar").disabled = true;
+    const params = {
+      accion: "eventos_meta", estado: pbEvEstado,
+      usuario: $("#pbEvUsuario").value.trim(),
+      desde: $("#pbEvDesde").value, hasta: $("#pbEvHasta").value,
+      pagina: pbEvPaginaActual
+    };
+    let d;
+    try{ d = await pbGetJson(params); }
+    catch(e){
+      if(e.message !== "publicidad_no_verificado" && e.message !== "sesion_requerida"){
+        resumen.textContent = "No se pudo cargar el historial. Probá actualizar.";
+        lista.innerHTML = '<tr><td colspan="5" class="ag-vacio">Error al consultar los eventos</td></tr>';
+      }
+      $("#pbEvActualizar").disabled = false;
+      return;
+    }
+    $("#pbEvActualizar").disabled = false;
+    if(!d.ok){
+      resumen.textContent = d.error || "No se pudo cargar el historial.";
+      lista.innerHTML = '<tr><td colspan="5" class="ag-vacio">Error al consultar los eventos</td></tr>';
+      return;
+    }
+    pbEvTotal = Number(d.total) || 0;
+    const eventos = Array.isArray(d.eventos) ? d.eventos : [];
+    if(!eventos.length){
+      lista.innerHTML = '<tr><td colspan="5" class="ag-vacio">No hay eventos con estos filtros</td></tr>';
+    } else {
+      const labels = {enviado:"Enviado", pendiente:"En cola", error:"Fallido"};
+      lista.innerHTML = eventos.map(ev=>{
+        const estado = String(ev.estado || "");
+        const respuesta = String(ev.respuesta || "");
+        const fechaOriginal = String(ev.creado || "");
+        const fecha = fechaOriginal.replace(" ", "T");
+        const fechaDate = fecha ? new Date(fecha) : null;
+        const fechaFmt = fechaDate && !Number.isNaN(fechaDate.getTime())
+          ? fechaDate.toLocaleString("es-AR") : fechaOriginal || "—";
+        const valor = ev.valor == null || ev.valor === "" ? "—" : money(Number(ev.valor));
+        const status = `<span class="pb-evento-estado ${esc(estado)}">${esc(labels[estado] || estado || "—")}</span>`;
+        const detalle = respuesta ? `<details class="pb-evento-respuesta"><summary>${esc(respuesta.slice(0, 140))}${respuesta.length > 140 ? "…" : ""}</summary><pre>${esc(respuesta)}</pre></details>` : "";
+        return `<tr><td>${esc(fechaFmt)}</td><td>${esc(ev.usuario || "—")}</td><td>${esc(ev.evento || "—")}</td><td>${esc(valor)}</td><td>${status}${detalle}</td></tr>`;
+      }).join("");
+    }
+    const paginas = Math.max(1, Math.ceil(pbEvTotal / PB_EV_POR_PAGINA));
+    resumen.textContent = pbEvTotal
+      ? `${pbEvTotal.toLocaleString("es-AR")} eventos · ${pbEvEstado ? ({enviado:"enviados",pendiente:"en cola",error:"fallidos"}[pbEvEstado] || "filtrados") : "todos los estados"}`
+      : "No hay eventos registrados para estos filtros.";
+    $("#pbEvPagina").textContent = `Página ${pbEvPaginaActual + 1} de ${paginas}`;
+    $("#pbEvAnterior").disabled = pbEvPaginaActual <= 0;
+    $("#pbEvSiguiente").disabled = (pbEvPaginaActual + 1) >= paginas;
+  }
+
   async function pbPostJson(data){
     const r = await pbFetch(API_PB, {
       method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(data)
@@ -14878,8 +15013,8 @@ async function credTabla(cual){
 
   // ---------- embudo + rentabilidad ----------
   function pbLimpiarEmbudo(){
-    ["pbGasto","pbRegistros","pbPrimerasCargas","pbCargasTotales","pbCargasPorJugador",
-     "pbDepositado","pbTicketPromedio","pbVolvioACargar","pbCpr","pbCpa","pbDejaJugador",
+    ["pbGasto","pbCargasTotales","pbCargasPorJugador",
+     "pbDepositado","pbTicketPromedio","pbCpr","pbCpa","pbDejaJugador",
      "pbDejaPrimera","pbRoasPrimera",
      "pbRoas","pbGanancia","pfRegistros","pfPrimerasCargas","pfVolvieron",
      "pfConvRegACarga","pfConvCargaVolvio","pfVisitas","pfConvVisitasReg"]
@@ -14944,18 +15079,10 @@ async function credTabla(cual){
     $("#pfConvCargaVolvio").textContent = m.volvio_a_cargar_pct==null ? "—" : m.volvio_a_cargar_pct + "%";
 
     $("#pbGasto").textContent = money(m.gasto);
-    $("#pbRegistros").textContent = nf.format(m.registros);
-    $("#pbPrimerasCargas").textContent = nf.format(m.primeras_cargas);
-    $("#pbConversion").textContent = m.conversion_pct==null ? "—" : m.conversion_pct + "% de conversión";
     $("#pbCargasTotales").textContent = nf.format(m.cargas_totales);
     $("#pbCargasPorJugador").textContent = m.cargas_por_jugador==null ? "—" : m.cargas_por_jugador.toFixed(2);
     $("#pbDepositado").textContent = money(m.depositado);
     $("#pbTicketPromedio").textContent = m.ticket_promedio==null ? "—" : money(m.ticket_promedio);
-    $("#pbVolvioACargar").textContent = m.volvio_a_cargar_pct==null ? "—" : m.volvio_a_cargar_pct + "%";
-    $("#pbVolvioDetalle").textContent = m.jugadores_con_carga
-      ? `${m.jugadores_volvieron} de ${m.jugadores_con_carga}`
-      : "—";
-
     $("#pbAvisoGasto").style.display = m.gasto > 0 ? "none" : "flex";
     $("#pbCpr").textContent = r.costo_por_registro==null ? "—" : money(r.costo_por_registro);
     $("#pbCpa").textContent = r.costo_por_carga==null ? "—" : money(r.costo_por_carga);
@@ -15302,6 +15429,33 @@ async function credTabla(cual){
     }
   });
   $("#pbPass").addEventListener("keydown", e=>{ if(e.key==="Enter") $("#pbPassBtn").click(); });
+
+  $("#pbVistaCampaniasBtn").addEventListener("click", ()=>pbCambiarVistaMeta("campanias"));
+  $("#pbVistaEventosBtn").addEventListener("click", ()=>pbCambiarVistaMeta("eventos"));
+  $("#pbEventosEstados").addEventListener("click", e=>{
+    const b = e.target.closest("[data-estado]"); if(!b) return;
+    pbEvEstado = b.dataset.estado || "";
+    pbEvPaginaActual = 0;
+    $("#pbEventosEstados").querySelectorAll(".pb-tab").forEach(tab=>tab.classList.toggle("on", tab === b));
+    pbCargarEventosMeta();
+  });
+  function pbAplicarFiltrosEventos(){
+    const desde = $("#pbEvDesde").value, hasta = $("#pbEvHasta").value;
+    if(desde && hasta && desde > hasta){ toast("La fecha 'desde' no puede ser posterior a 'hasta'"); return; }
+    pbEvPaginaActual = 0;
+    pbCargarEventosMeta();
+  }
+  $("#pbEvBuscar").addEventListener("click", pbAplicarFiltrosEventos);
+  $("#pbEvActualizar").addEventListener("click", pbCargarEventosMeta);
+  $("#pbEvUsuario").addEventListener("keydown", e=>{ if(e.key === "Enter") pbAplicarFiltrosEventos(); });
+  $("#pbEvAnterior").addEventListener("click", ()=>{
+    if(pbEvPaginaActual <= 0) return;
+    pbEvPaginaActual--; pbCargarEventosMeta();
+  });
+  $("#pbEvSiguiente").addEventListener("click", ()=>{
+    if((pbEvPaginaActual + 1) * PB_EV_POR_PAGINA >= pbEvTotal) return;
+    pbEvPaginaActual++; pbCargarEventosMeta();
+  });
 
   $("#pbFiltrosRapidos").addEventListener("click", e=>{
     const b = e.target.closest(".fn-filtro-btn"); if(!b) return;

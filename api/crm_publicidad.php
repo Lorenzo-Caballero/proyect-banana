@@ -284,6 +284,56 @@ if ($metodo === 'GET') {
             salir(['ok' => true, 'publicistas' => publicidad_listar($pdo)]);
         }
 
+        // Historial de Conversion API: solo lecturas, protegidas por el mismo
+        // gate de reverificación que el resto de Publicidad. No se exponen
+        // tokens ni payloads de usuario, solo estado y respuesta de Meta.
+        if ($accion === 'eventos_meta') {
+            $estado = strtolower(trim((string)($_GET['estado'] ?? '')));
+            if (!in_array($estado, ['', 'enviado', 'pendiente', 'error'], true)) {
+                salir(['ok' => false, 'error' => 'Estado inválido'], 400);
+            }
+            $usuario = mb_substr(trim((string)($_GET['usuario'] ?? '')), 0, 64);
+            $desde = trim((string)($_GET['desde'] ?? ''));
+            $hasta = trim((string)($_GET['hasta'] ?? ''));
+            foreach (['desde' => $desde, 'hasta' => $hasta] as $nombre => $fecha) {
+                if ($fecha !== '') {
+                    $partes = explode('-', $fecha);
+                    if (count($partes) !== 3 || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha)
+                        || !checkdate((int)$partes[1], (int)$partes[2], (int)$partes[0])) {
+                        salir(['ok' => false, 'error' => "Fecha $nombre inválida"], 400);
+                    }
+                }
+            }
+            if ($desde !== '' && $hasta !== '' && $desde > $hasta) {
+                salir(['ok' => false, 'error' => 'La fecha desde no puede superar hasta'], 400);
+            }
+            $pagina = max(0, min(200, (int)($_GET['pagina'] ?? 0)));
+            $limite = 50;
+            $where = [];
+            $params = [];
+            if ($estado !== '') { $where[] = 'estado = ?'; $params[] = $estado; }
+            if ($usuario !== '') { $where[] = 'usuario LIKE ?'; $params[] = '%' . $usuario . '%'; }
+            if ($desde !== '') { $where[] = 'creado >= ?'; $params[] = $desde . ' 00:00:00'; }
+            if ($hasta !== '') { $where[] = 'creado <= ?'; $params[] = $hasta . ' 23:59:59'; }
+            $cond = $where ? ' WHERE ' . implode(' AND ', $where) : '';
+            $st = $pdo->prepare("SELECT COUNT(*) FROM meta_eventos$cond");
+            $st->execute($params);
+            $total = (int)$st->fetchColumn();
+            $st = $pdo->prepare(
+                "SELECT id, creado, usuario, evento, valor, moneda, estado, respuesta
+                   FROM meta_eventos$cond
+                  ORDER BY id DESC
+                  LIMIT $limite OFFSET " . ($pagina * $limite)
+            );
+            $st->execute($params);
+            $eventos = array_map(static function (array $fila): array {
+                $fila['respuesta'] = mb_substr((string)($fila['respuesta'] ?? ''), 0, 1000);
+                return $fila;
+            }, $st->fetchAll());
+            salir(['ok' => true, 'eventos' => $eventos, 'total' => $total,
+                   'pagina' => $pagina, 'por_pagina' => $limite]);
+        }
+
         if ($accion === 'embudo') {
             $seg = pub_segmento();
             [$desde, $hasta] = pub_rango_fechas();

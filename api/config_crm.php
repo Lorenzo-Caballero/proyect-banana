@@ -443,6 +443,9 @@ const CFG_CRM_DEFAULTS = [
     'meta_ev_registro' => '1',
     'meta_ev_checkout' => '1',
     'meta_ev_purchase' => '1',
+    // Purchase: todos los depósitos acreditados (incluidas recargas repetidas)
+    // o solo un Purchase aceptado por Meta por jugador.
+    'meta_purchase_mode' => 'todos',
 
     // Cuando se leyeron por ultima vez los datos bancarios del panel de
     // ganamos (lo escribe bancos_sync.php). No lo edita nadie a mano: sirve

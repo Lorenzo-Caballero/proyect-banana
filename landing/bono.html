@@ -327,8 +327,7 @@
   const POLL_RAPIDO = 500;              // primeras ~20 vueltas (~10 s)
   const POLL_LENTO  = 4000;
   const POLL_VUELTAS_RAPIDAS = 20;
-  const AVISO_MS    = 90 * 1000;
-  const LIMITE_MS   = 6 * 60 * 1000;
+  const LIMITE_CARGA_VISIBLE_MS = 30 * 1000;
   const VENCE_MS    = 24 * 3600 * 1000;
 
   const $ = id => document.getElementById(id);
@@ -422,6 +421,18 @@
     iniciarRotacionEspera();
   }
 
+  function marcarAltaPendiente(){
+    detenerRotacionEspera();
+    $('esperaTitulo').textContent = 'El alta sigue pendiente';
+    const spinner = $('vistaEspera').querySelector('.spinner');
+    const barra = $('vistaEspera').querySelector('.barra');
+    if (spinner) spinner.style.display = 'none';
+    if (barra) barra.style.display = 'none';
+    $('esperaNota').textContent =
+      'No vuelvas a registrarte: conservamos este pedido y seguiremos verificándolo. ' +
+      'Podés salir; al volver a esta página retomaremos el mismo pedido.';
+  }
+
   /* AUTO-LOGIN en la plataforma — el mismo bloque que registro.html, que era
      el ÚNICO que lo tenía: el jugador de ESTA landing (justo el del tráfico
      de publicidad) recibía sus credenciales y aterrizaba en la pantalla de
@@ -493,6 +504,14 @@
   async function sondear(p){
     verEspera(p.usuario);
 
+    // Cortamos el spinner visible a los 30s, no el pedido externo: cancelar
+    // una llamada ambigua podría dejar una cuenta creada pero sin confirmar.
+    const transcurrido = Math.max(0, Date.now() - (p.desde || Date.now()));
+    const timerPendiente = setTimeout(
+      marcarAltaPendiente,
+      Math.max(0, LIMITE_CARGA_VISIBLE_MS - transcurrido)
+    );
+
     let vuelta = 0;
     for(;;){
       await dormir(vuelta++ < POLL_VUELTAS_RAPIDAS ? POLL_RAPIDO : POLL_LENTO);
@@ -504,6 +523,7 @@
                           (p.sid ? '&sid=' + encodeURIComponent(p.sid) : '');
         const res = await fetch(url, { cache:'no-store' });
         if (res.status === 404){
+          clearTimeout(timerPendiente);
           olvidar();
           return error('No encontramos tu pedido. Probá de nuevo.');
         }
@@ -516,6 +536,7 @@
       if (!data) continue;
 
       if (data.listo){
+        clearTimeout(timerPendiente);
         if (data.password) p.password = data.password;
         if (data.usuario)  p.usuario  = data.usuario;
         p.listo = true;
@@ -524,18 +545,11 @@
       }
 
       if (data.fallo){
+        clearTimeout(timerPendiente);
         olvidar();
         return error('No pudimos crear la cuenta. Probá con otro nombre.');
       }
 
-      const esperando = Date.now() - (p.desde || Date.now());
-      if (esperando > LIMITE_MS){
-        $('esperaNota').textContent =
-          'Está tardando más de lo normal, pero el pedido no se pierde. ' +
-          'Podés escribirnos por chat con tu usuario.';
-      } else if (esperando > AVISO_MS){
-        $('esperaNota').textContent = 'Seguimos en eso, no cierres la página…';
-      }
     }
   }
 

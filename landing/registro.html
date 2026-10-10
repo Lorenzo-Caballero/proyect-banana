@@ -349,8 +349,7 @@
   const POLL_RAPIDO = 500;    // primeros ~10 s
   const POLL_LENTO  = 4000;
   const POLL_VUELTAS_RAPIDAS = 20;
-  const AVISO_MS    = 90 * 1000;        // a los 90s cambiamos el texto
-  const LIMITE_MS   = 6 * 60 * 1000;    // a los 6 min lo mandamos al chat
+  const LIMITE_CARGA_VISIBLE_MS = 30 * 1000;
   const VENCE_MS    = 24 * 3600 * 1000; // pedido guardado que ya no interesa
 
   const $ = id => document.getElementById(id);
@@ -609,8 +608,29 @@
   }
 
   // -- Esperar al bot -------------------------------------------------------
+  function marcarAltaPendiente(){
+    detenerRotacionEspera();
+    $('esperaTitulo').textContent = 'El alta sigue pendiente';
+    const spinner = $('vistaEspera').querySelector('.spinner');
+    const barra = $('vistaEspera').querySelector('.barra');
+    if (spinner) spinner.style.display = 'none';
+    if (barra) barra.style.display = 'none';
+    $('esperaNota').textContent =
+      'No vuelvas a registrarte: conservamos este pedido y seguiremos verificándolo. ' +
+      'Podés salir; al volver a esta página retomaremos el mismo pedido.';
+  }
+
   async function sondear(p){
     verEspera(p.usuario);
+
+    // La persona nunca queda mirando un spinner más de 30 segundos. Esto no
+    // cancela una operación que el panel externo podría haber recibido: dejarla
+    // seguir permite confirmar el resultado sin crear una cuenta duplicada.
+    const transcurrido = Math.max(0, Date.now() - (p.desde || Date.now()));
+    const timerPendiente = setTimeout(
+      marcarAltaPendiente,
+      Math.max(0, LIMITE_CARGA_VISIBLE_MS - transcurrido)
+    );
 
     let vuelta = 0;
     for(;;){
@@ -627,6 +647,7 @@
         const res = await fetch(url, { cache:'no-store' });
 
         if (res.status === 404){       // el pedido no existe: no hay nada que esperar
+          clearTimeout(timerPendiente);
           olvidar();
           return error('No encontramos tu pedido. Probá de nuevo.');
         }
@@ -639,6 +660,7 @@
       if (!data) continue;
 
       if (data.listo){
+        clearTimeout(timerPendiente);
         // La clave llega ACÁ, no antes: recién ahora la cuenta existe de verdad
         // en el panel. Solo la manda una vez, así que se guarda en el acto.
         if (data.password) p.password = data.password;
@@ -649,18 +671,11 @@
       }
 
       if (data.fallo){
+        clearTimeout(timerPendiente);
         olvidar();
         return error('No pudimos crear la cuenta. Probá con otro nombre de usuario.');
       }
 
-      const esperando = Date.now() - (p.desde || Date.now());
-      if (esperando > LIMITE_MS){
-        $('esperaNota').textContent =
-          'Está tardando más de lo normal, pero el pedido no se pierde. ' +
-          'Podés escribirnos por chat con tu usuario.';
-      } else if (esperando > AVISO_MS){
-        $('esperaNota').textContent = 'Seguimos en eso, no cierres la página…';
-      }
     }
   }
 

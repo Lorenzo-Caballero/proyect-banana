@@ -23,6 +23,21 @@
 
 $cfg = require __DIR__ . '/panel_config.php';
 
+// El cron corre cada minuto, pero aprovisionar varios clientes puede tardar
+// más. Sin exclusión, dos pasadas se pisan: ambas detectan contenedores en
+// transición y los recrean, incluyendo los vigilantes recién levantados.
+// Solo una pasada puede tocar Docker a la vez; la siguiente vuelta del cron
+// recoge el trabajo pendiente.
+$lock = @fopen('/var/lock/goldpaw-provisionar.lock', 'c');
+if (!$lock) {
+    fwrite(STDERR, '[' . date('c') . "] no se pudo abrir el lock del provisionador\n");
+    exit(1);
+}
+if (!flock($lock, LOCK_EX | LOCK_NB)) {
+    fwrite(STDOUT, '[' . date('c') . "] otra pasada de provisionar.php sigue activa; esta vuelta se omite\n");
+    exit(0);
+}
+
 $PLANTILLA = '/root/plantilla_esquema.sql';
 
 // Carpeta de migraciones versionadas (api/sql/). Por defecto la que sirve la
@@ -933,6 +948,87 @@ function asegurar_bot_altas($c, $cfg) {
     return 'bot de altas NO arrancó: ' . substr($out, 0, 120);
 }
 
+/**
+ * Asegura un vigilante WAF por cliente. Solo recibe la URL y clave de SU API:
+ * no tiene credenciales de Ganamos, datos de jugadores ni acceso al socket
+ * Docker. La recuperación propiamente dicha es una operación privada y
+ * acotada de altas_cola.php.
+ */
+function asegurar_bot_watchdog_altas($c, $estadoAltas = '') {
+    static $imagenWatchdogOk = null;
+    $slug = preg_replace('/[^a-z0-9_-]/i', '', (string)($c['slug'] ?? ''));
+    if ($slug === '' || tiene_bot_propio($slug)) {
+        return 'watchdog omitido (este tenant usa el creador principal)';
+    }
+    if (strpos((string)$estadoAltas, 'sin bot de altas') !== false
+        || strpos((string)$estadoAltas, 'FRENADO') !== false) {
+        return 'watchdog omitido (no hay bot de altas habilitado para este tenant)';
+    }
+    $apiKey = '';
+    if (is_file('/var/www/api/config.local.php')) {
+        $a = require '/var/www/api/config.local.php';
+        $apiKey = is_array($a) ? (string)($a['BOT_API_KEY'] ?? '') : '';
+    }
+    if (strlen($apiKey) < 16) {
+        return 'watchdog NO levantado: falta BOT_API_KEY';
+    }
+
+    $ruta = preg_replace('/[^a-z0-9-]/i', '', (string)($c['ruta_slug'] ?? $slug));
+    $base = 'https://' . $c['dominio'] . (!empty($c['path_tenant']) ? '/' . $ruta : '');
+    $mal = destino_inseguro($c, $base);
+    if ($mal !== '') {
+        return 'watchdog FRENADO: ' . $mal;
+    }
+    $apiUrl = $base . '/gp-api/altas_cola.php';
+    $name = 'altas-waf-' . $slug;
+    $filtro = 'name=^' . $name . '$';
+    $id = trim((string)shell_exec('docker ps -aq --filter ' . escapeshellarg($filtro) . ' 2>/dev/null'));
+    // Comparar el identificador completo con el mismo formato que devuelve
+    // `docker inspect .Image` (sha256:...). `docker images -q` omite ese
+    // prefijo, por lo que una comparación directa recrearía el watchdog en
+    // cada pasada del cron aunque siguiera usando la imagen correcta.
+    $imagen = trim((string)shell_exec('docker image inspect --format '
+        . escapeshellarg('{{.Id}}') . ' ganamos-bot:latest 2>/dev/null'));
+    if ($imagen === '') {
+        return 'watchdog NO levantado: falta la imagen ganamos-bot:latest';
+    }
+    if ($imagenWatchdogOk === null) {
+        $check = 'docker run --rm --entrypoint python ganamos-bot:latest -c '
+            . escapeshellarg('import os,sys; sys.exit(0 if os.path.isfile("/app/bot.py") else 1)')
+            . ' >/dev/null 2>&1 && echo ok || echo no';
+        $imagenWatchdogOk = trim((string)shell_exec($check)) === 'ok';
+    }
+    if (!$imagenWatchdogOk) {
+        return 'watchdog pendiente: la imagen todavía no contiene bot.py';
+    }
+
+    if ($id !== '') {
+        $corriendo = trim((string)shell_exec('docker ps -q --filter ' . escapeshellarg($filtro) . ' 2>/dev/null'));
+        $env = (string)shell_exec('docker inspect --format '
+            . escapeshellarg('{{range .Config.Env}}{{println .}}{{end}}')
+            . ' ' . escapeshellarg($name) . ' 2>/dev/null');
+        $imagenActual = trim((string)shell_exec('docker inspect --format '
+            . escapeshellarg('{{.Image}}') . ' ' . escapeshellarg($name) . ' 2>/dev/null'));
+        $configOk = strpos($env, 'API_URL=' . $apiUrl . "\n") !== false
+            && strpos($env, 'API_KEY=' . $apiKey . "\n") !== false;
+        if ($corriendo !== '' && $configOk && $imagenActual === $imagen) {
+            return 'watchdog ya existía';
+        }
+        shell_exec('docker rm -f ' . escapeshellarg($name) . ' 2>/dev/null');
+    }
+
+    $cmd = 'docker run -d --name ' . escapeshellarg($name)
+         . ' --restart unless-stopped --init'
+         . ' -e ' . escapeshellarg('API_URL=' . $apiUrl)
+         . ' -e ' . escapeshellarg('API_KEY=' . $apiKey)
+         . ' -e WATCHDOG_SEGUNDOS=60'
+         . ' ganamos-bot:latest python /app/bot.py 2>&1';
+    $out = trim((string)shell_exec($cmd));
+    return preg_match('/^[0-9a-f]{12,}$/i', $out)
+        ? 'watchdog levantado'
+        : 'watchdog NO arrancó: ' . substr($out, 0, 120);
+}
+
 // ---------------------------------------------------------------------------
 // Pasada 1: provisionar clientes nuevos (base + DNS)
 // ---------------------------------------------------------------------------
@@ -1529,6 +1625,11 @@ foreach ($activos as $c) {
     $msgAltas = asegurar_bot_altas($c, $cfg);
     if (strpos($msgAltas, 'levantado') !== false || strpos($msgAltas, 'NO') !== false) {
         echo date('c') . " bot-altas {$c['slug']}: $msgAltas\n";
+    }
+    $msgWatchdog = asegurar_bot_watchdog_altas($c, $msgAltas);
+    if (strpos($msgWatchdog, 'levantado') !== false || strpos($msgWatchdog, 'NO') !== false
+        || strpos($msgWatchdog, 'FRENADO') !== false) {
+        echo date('c') . " watchdog-altas {$c['slug']}: $msgWatchdog\n";
     }
     /* Se guarda SIEMPRE, no solo cuando hay novedad: "ya existía" es
        exactamente la respuesta que hace falta cuando uno se pregunta por qué

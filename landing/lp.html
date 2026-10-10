@@ -224,9 +224,30 @@
     line-height:1.6}
   body.rota .hero,body.rota .hoja,body.rota .fondo{display:none}
   body.rota .caida{display:block}
+  .caida button{margin-top:18px;padding:12px 20px;border:1px solid var(--line);border-radius:12px;
+    background:rgba(255,255,255,.08);color:var(--texto);font:600 14px 'Poppins',sans-serif;cursor:pointer}
+  html.lp-config-pendiente .hero,html.lp-config-pendiente .fondo,
+  html.lp-config-pendiente .fondo-img,html.lp-config-pendiente .hoja{visibility:hidden}
 </style>
+<noscript><style>
+  body .hero,body .fondo,body .fondo-img,body .hoja{display:none!important}
+  body .caida{display:block!important}
+  body .caida button{display:none!important}
+</style></noscript>
 </head>
 <body>
+
+<script>
+/* No mostrar los valores de ejemplo de lp.html antes de recibir la
+   configuración real de una landing publicada. */
+(function(){
+  const p = new URLSearchParams(location.search);
+  let slug = (p.get('l') || '').trim().toLowerCase().replace(/^[^a-z0-9]+|[^a-z0-9-]+$/g, '');
+  if (p.get('preview') !== '1' && /^[a-z0-9-]{1,24}$/.test(slug)) {
+    document.documentElement.classList.add('lp-config-pendiente');
+  }
+})();
+</script>
 
 <div class="fondo-img" id="fondoImg"></div>
 
@@ -258,7 +279,10 @@
   <p class="legal" id="legal">Jugá con responsabilidad · Solo mayores de 18 años</p>
 </main>
 
-<p class="caida">Esta página ya no está disponible.<br>Si buscabas jugar, escribinos por el chat.</p>
+<div class="caida" id="caida" role="alert">
+  Esta landing no está disponible en este momento.<br>Volvé a intentarlo en unos minutos o habilitá JavaScript.
+  <br><button id="reintentar" type="button">Reintentar</button>
+</div>
 
 <div class="fondo" id="fondo"></div>
 
@@ -472,29 +496,32 @@
       if (d && d.tipo === 'lp_config' && d.landing) aplicar(d.landing);
     });
   } else {
-    /* Modo SIN BONO: no promete un % que no se va a cumplir. Se usa cuando la
-       landing no existe / esta pausada / no hay slug: en esos casos el server
-       crea el alta con origen 'landing' (sin bono), asi que la pagina no debe
-       ofrecer uno. El formulario SIGUE activo -- el jugador vino de un anuncio
-       y tiene que poder registrarse igual (antes la pagina se declaraba
-       'caida' y no dejaba crear ninguna cuenta: por eso las landings con el
-       slug mal, pausadas o sin la migracion 52 no registraban a nadie). */
+    /* Una URL sin slug sigue siendo un registro general, sin oferta asociada.
+       Una landing publicada con slug válido, en cambio, necesita cargar sus
+       datos reales antes de mostrar el formulario o aceptar altas. */
     function sinBono(){
       document.body.classList.add('sin-bono');
       $('bonoPct').textContent = '0';
       $('btn').textContent = 'Crear mi cuenta';
     }
 
+    function configNoDisponible(){
+      document.documentElement.classList.remove('lp-config-pendiente');
+      document.body.classList.add('rota');
+    }
+
     if (SLUG){
       fetch(BASE_API + '/landing_publica.php?slug=' + encodeURIComponent(SLUG), { cache:'no-store' })
         .then(res => {
-          // 404 = no existe o esta pausada; 400 = slug que el server no acepta.
-          // Ya no se cae la pagina: se registra sin bono (ver arriba).
-          if (res.status === 404 || res.status === 400){ sinBono(); return null; }
-          return res.json().catch(() => null);
+          if (!res.ok) throw new Error('No se pudo cargar la configuración de la landing.');
+          return res.json();
         })
-        .then(data => { if (data && data.ok) aplicar(data.landing); })
-        .catch(() => {});   // sin red: quedan los defaults del CSS, la pagina vive igual
+        .then(data => {
+          if (!data || !data.ok || !data.landing) throw new Error('La respuesta de la landing no es válida.');
+          aplicar(data.landing);
+          document.documentElement.classList.remove('lp-config-pendiente');
+        })
+        .catch(configNoDisponible);
 
       /* Contar la visita -- SOLO la pagina real, nunca la preview del CRM (ahi
          cada tecleo del operador contaria como visita). El pageview de una
@@ -534,6 +561,8 @@
     }
   }
 
+  $('reintentar').addEventListener('click', ()=>location.reload());
+
   /* ======================================================================
      De acá para abajo es el flujo de alta de bono.html, sin cambios de
      fondo: solo PROMO (arriba) y el freno en modo preview.
@@ -544,8 +573,7 @@
   const POLL_RAPIDO = 500;
   const POLL_LENTO  = 4000;
   const POLL_VUELTAS_RAPIDAS = 20;
-  const AVISO_MS    = 90 * 1000;
-  const LIMITE_MS   = 6 * 60 * 1000;
+  const LIMITE_CARGA_VISIBLE_MS = 30 * 1000;
   const VENCE_MS    = 24 * 3600 * 1000;
 
   const usuario = $('usuario'), msg = $('msg'), btn = $('btn'), form = $('form');
@@ -636,6 +664,18 @@
     $('esperaNota').textContent = 'Suele tardar menos de un minuto.';
     ver('vistaEspera');
     iniciarRotacionEspera();
+  }
+
+  function marcarAltaPendiente(){
+    detenerRotacionEspera();
+    $('esperaTitulo').textContent = 'El alta sigue pendiente';
+    const spinner = $('vistaEspera').querySelector('.spinner');
+    const barra = $('vistaEspera').querySelector('.barra');
+    if (spinner) spinner.style.display = 'none';
+    if (barra) barra.style.display = 'none';
+    $('esperaNota').textContent =
+      'No vuelvas a registrarte: conservamos este pedido y seguiremos verificándolo. ' +
+      'Podés salir; al volver a esta página retomaremos el mismo pedido.';
   }
 
   /* AUTO-LOGIN en la plataforma Ganamos. El login usa el mismo origen y
@@ -732,6 +772,14 @@
   async function sondear(p){
     verEspera(p.usuario);
 
+    // No dejamos al visitante frente a un spinner indefinido. El alta queda
+    // activa para reconciliar respuestas lentas o ambiguas del panel externo.
+    const transcurrido = Math.max(0, Date.now() - (p.desde || Date.now()));
+    const timerPendiente = setTimeout(
+      marcarAltaPendiente,
+      Math.max(0, LIMITE_CARGA_VISIBLE_MS - transcurrido)
+    );
+
     let vuelta = 0;
     for(;;){
       await dormir(vuelta++ < POLL_VUELTAS_RAPIDAS ? POLL_RAPIDO : POLL_LENTO);
@@ -743,6 +791,7 @@
                           (p.sid ? '&sid=' + encodeURIComponent(p.sid) : '');
         const res = await fetch(url, { cache:'no-store' });
         if (res.status === 404){
+          clearTimeout(timerPendiente);
           olvidar();
           return error('No encontramos tu pedido. Probá de nuevo.');
         }
@@ -753,6 +802,7 @@
       if (!data) continue;
 
       if (data.listo){
+        clearTimeout(timerPendiente);
         if (data.password) p.password = data.password;
         if (data.usuario)  p.usuario  = data.usuario;
         p.listo = true;
@@ -761,18 +811,11 @@
       }
 
       if (data.fallo){
+        clearTimeout(timerPendiente);
         olvidar();
         return error('No pudimos crear la cuenta. Probá con otro nombre.');
       }
 
-      const esperando = Date.now() - (p.desde || Date.now());
-      if (esperando > LIMITE_MS){
-        $('esperaNota').textContent =
-          'Está tardando más de lo normal, pero el pedido no se pierde. ' +
-          'Podés escribirnos por chat con tu usuario.';
-      } else if (esperando > AVISO_MS){
-        $('esperaNota').textContent = 'Seguimos en eso, no cierres la página…';
-      }
     }
   }
 

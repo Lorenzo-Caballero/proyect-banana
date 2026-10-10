@@ -10,6 +10,7 @@
  *   GET  ?accion=ver&limite=20     -> espia la cola sin reclamar nada
  *   GET  ?accion=pendientes&limite=10  -> RECLAMA y devuelve registros
  *   POST ?accion=liberar      -> destraba los que quedaron en 'procesando'
+ *   POST ?accion=vigilar_waf  -> adelanta esperas largas con challenge confirmado
  *   POST ?accion=marcar       -> {"id":1,"estado":"ok","mensaje":"..."}
  *
  * Todas exigen el header:  X-API-Key: <BOT_API_KEY>
@@ -201,6 +202,48 @@ if ($accion === 'estado_bot' && $metodo === 'POST') {
     }
 
     echo json_encode(['ok' => true]);
+    exit;
+}
+
+// ---------------------------------------------------------------------------
+// vigilar_waf: recuperación extra, muy acotada, de desafíos comprobados.
+//
+// El bot principal ya resuelve el WAF con Chromium y reintenta. Este vigilante
+// solo adelanta el siguiente intento cuando la cola conserva la firma
+// inequívoca de ServicePipe/Cloudflare (/exhk o cf-mitigated: challenge), el
+// alta lleva al menos tres intentos y el backoff todavía la dejaría esperando
+// más de tres minutos. Nunca toca `procesando`, nunca reinicia el contenedor, no pone
+// intentos en cero y no actúa sobre respuestas ambiguas (HTML/login/timeout).
+// Los intentos siguen limitados por MAX_INTENTOS, así que no hay ciclo infinito.
+//
+// Lo invoca bot/bot.py con la clave privada de ESTE tenant. `db.php` resuelve
+// la base a partir del host/ruta; el vigilante no puede cruzar clientes.
+// ---------------------------------------------------------------------------
+if ($accion === 'vigilar_waf' && $metodo === 'POST') {
+    try {
+        $q = $pdo->prepare(
+            "UPDATE altas
+                SET proximo_intento_en = NULL
+              WHERE estado = 'pendiente'
+                AND password IS NOT NULL
+                AND intentos >= 3
+                AND intentos < " . MAX_INTENTOS . "
+                AND pedido_en > DATE_SUB(NOW(), INTERVAL 2 DAY)
+                AND tomado_en < DATE_SUB(NOW(), INTERVAL 3 MINUTE)
+                AND proximo_intento_en > DATE_ADD(NOW(), INTERVAL 3 MINUTE)
+                AND (LOWER(mensaje) LIKE '%/exhk%'
+                     OR LOWER(mensaje) LIKE '%cf-mitigated: challenge%')"
+        );
+        $q->execute();
+        echo json_encode([
+            'ok' => true,
+            'reintentos_adelantados' => $q->rowCount(),
+        ], JSON_UNESCAPED_UNICODE);
+    } catch (Throwable $e) {
+        error_log('altas_cola vigilar_waf: ' . $e->getMessage());
+        http_response_code(500);
+        echo json_encode(['ok' => false, 'error' => 'No se pudo revisar la cola']);
+    }
     exit;
 }
 
@@ -583,6 +626,13 @@ if ($accion === 'marcar' && $metodo === 'POST') {
        y al final recibe las credenciales con el nombre que SI se pudo crear. */
     $renombrada = false;
     $eraNombreOcupado = false;
+    // Un challenge explícito prueba que este POST no llegó a crear la cuenta.
+    // En el primer fallo confirmado hacemos una sola recuperación inmediata
+    // con otro username; no se crea otra fila ni se pierde el SID de entrega.
+    $mensajeLower = mb_strtolower($mensaje);
+    $esChallengeWaf = str_contains($mensajeLower, '/exhk')
+                   || str_contains($mensajeLower, 'cf-mitigated: challenge');
+    $respaldoWafRapido = false;
     if ($estado === 'error') {
         try {
             /* `intentos` se lee ANTES de decidir, no solo para elegir el sufijo:
@@ -597,11 +647,12 @@ if ($accion === 'marcar' && $metodo === 'POST') {
             $fila   = $q->fetch() ?: [];
             $actual = (string)($fila['usuario'] ?? '');
             $ronda  = (int)($fila['intentos'] ?? 0);
+            $respaldoWafRapido = $esChallengeWaf && $ronda === 1;
             /* Se mide sobre el mensaje ORIGINAL y antes de mutarlo: el texto
                que el renombre le antepone ("estaba ocupado...") matchea la
                pista 'ocupado' y haria verdadera esta pregunta SIEMPRE. */
             $eraNombreOcupado = alta_parece_nombre_ocupado($mensaje);
-            if ($actual !== '' && alta_debe_renombrar($mensaje, $ronda)) {
+            if ($actual !== '' && ($respaldoWafRapido || alta_debe_renombrar($mensaje, $ronda))) {
                 /* Se parte del nombre SIN el sufijo numerico que podamos
                    haberle puesto antes: si no, cada reintento lo alarga
                    ("Juan" -> "Juan123" -> "Juan123456"). Si el jugador eligio
@@ -635,9 +686,12 @@ if ($accion === 'marcar' && $metodo === 'POST') {
                        dice nada: manda a mirar donde no es. */
                     $motivo = $eraNombreOcupado
                         ? "'$actual' estaba ocupado en la plataforma"
-                        : "'$actual' falló $ronda " . ($ronda === 1 ? 'vez' : 'veces') . ", se renombra por las dudas";
+                        : ($respaldoWafRapido
+                            ? "el WAF bloqueó el primer intento; se prueba con '$nuevo'"
+                            : "'$actual' falló $ronda " . ($ronda === 1 ? 'vez' : 'veces') . ", se renombra por las dudas");
                     $mensaje = mb_substr("$motivo; se reintenta como '$nuevo'. " . $mensaje, 0, 500);
-                    error_log("altas: alta $id renombrada de '$actual' a '$nuevo' (nombre ocupado)");
+                    error_log("altas: alta $id renombrada de '$actual' a '$nuevo'"
+                        . ($respaldoWafRapido ? ' (fallback rápido por challenge WAF)' : ''));
                 }
             }
         } catch (Throwable $e) {
@@ -671,7 +725,7 @@ if ($accion === 'marcar' && $metodo === 'POST') {
            panel caido. El renombre "a ciegas" del segundo fallo conserva su
            espera; el salto es solo para el diagnostico de nombre ocupado,
            que es al que le urge. */
-        if ($renombrada && $eraNombreOcupado) {
+        if (($renombrada && $eraNombreOcupado) || $respaldoWafRapido) {
             $pdo->prepare("UPDATE altas SET proximo_intento_en = NULL
                             WHERE id = ? AND estado = 'pendiente'")->execute([$id]);
         }

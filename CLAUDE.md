@@ -924,7 +924,7 @@ jugadores.
   > | Aprobar / rechazar una carga | reintenta; si persiste → `revisar` | una persona lo mira en el CRM |
   > | Retirarle fichas al jugador | nunca `hecha` con respuesta ilegible → `revisar` | `t_retiro_api.py` |
   > | Fijar el bono de una carga | no lo fija y sigue | la carga se aprueba igual, sin bono |
-  > | Alta de un jugador | reintenta (`es_challenge()`, bot repo) | `monitor-altas.sh` avisa si la cola se traba |
+  > | Alta de un jugador | reintenta (`es_challenge()`, bot repo); `bot.py` adelanta solo esperas largas con firma WAF confirmada | API privada del tenant; no reinicia el creador |
   > | Solicitudes de carga (leer) | reintenta 4 veces | `monitor-cargas.sh` |
   > | Espejo de saldos (leer) | reintenta por página, retoma si se pasa del presupuesto | **Telegram a los 20 min sin leer** |
   > | Libro de operaciones (leer) | reintenta | **Telegram a los 30 min** |
@@ -934,7 +934,7 @@ jugadores.
   > reintentan**: es la misma regla mirada desde los dos lados. Lo que faltaba
   > —y se agregó ese día— es el aviso: con el WAF tapando las lecturas **no se
   > rompe nada visible**, el CRM abre y las cargas se aprueban, y lo único que
-  > pasa es que los saldos envejecen en silencio. `monitor-altas.sh` y
+  > pasa es que los saldos envejecen en silencio. El monitor antiguo de altas y
   > `monitor-cargas.sh` dan **verde** en ese escenario porque miran el worker y
   > la cola, no lo que el worker pudo leer. Ahora el colector reporta a
   > `salud_colector.php` qué pudo leer en cada pasada, y `salud_bot.php` lo
@@ -978,7 +978,7 @@ jugadores.
 
 - **Los avisos de Telegram salen de DOS lugares, y solo uno deja rastro.**
   `tg_evento()` (PHP) registra en `tg_avisos` cuando lleva clave de dedupe; los
-  **watchdogs de `scripts/*.sh`** (`monitor-cargas.sh`, `monitor-altas.sh`,
+  **watchdogs de `scripts/*.sh`** (`monitor-cargas.sh`, el antiguo monitor de altas,
   `monitor-sitio.sh`, en el crontab) le pegan **directo a la API de Telegram
   con `curl`** y no escriben nada en la base.
 
