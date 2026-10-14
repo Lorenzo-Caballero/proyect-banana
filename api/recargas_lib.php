@@ -238,6 +238,45 @@ function rl_crm_con_ia(): bool
 }
 
 /**
+ * ¿EL MATCHER ACREDITA SOLO, O LA RECARGA ESPERA APROBACIÓN HUMANA?
+ *
+ * Modo "asistido" (goldpaw_control.clientes.recarga_auto, migración 17 del
+ * control). Con 0, cuando el matcher del mail del banco encuentra a quién
+ * acreditarle y confirma la plata, NO suma las fichas: deja la recarga en
+ * 'por_aprobar' para que un agente la cierre con un click desde el CRM.
+ *
+ * MISMO default-allow que rl_crm_con_ia, Y POR LA MISMA RAZÓN, pero acá pesa
+ * más todavía: si esto devolviera false ante una duda, un control caído
+ * dejaría SIN ACREDITAR las recargas de TODOS los clientes --incluido el
+ * nuestro-- y la plata de la gente quedaría trabada esperando una aprobación
+ * que nadie sabe que tiene que dar. Así que solo un 0 EXPLÍCITO del control
+ * activa el modo manual; cualquier duda acredita como siempre.
+ */
+function rl_recarga_auto(): bool
+{
+    static $v = null, $intentado = false;
+    if ($intentado) { return $v; }
+    $intentado = true;
+    $v = true;                                  // default-allow (acredita solo)
+    $ctl = rl_control();
+    $db  = (string)($GLOBALS['TENANT_DB'] ?? cfg('DB_NAME'));
+    if (!$ctl || $db === '') { return $v; }
+    try {
+        $st = $ctl->prepare(
+            'SELECT recarga_auto FROM clientes WHERE db_nombre = ? AND estado = \'activo\' LIMIT 1'
+        );
+        $st->execute([$db]);
+        $r = $st->fetchColumn();
+        if ($r !== false) { $v = (int)$r === 1; }
+    } catch (Throwable $e) {
+        // Sin la columna (migración 17 sin correr) -> acredita solo, lo de
+        // siempre. Nunca se traba la plata por una columna que falta.
+        error_log('rl_recarga_auto: ' . $e->getMessage());
+    }
+    return $v;
+}
+
+/**
  * CUANTOS COINS VALE UN PESO PARA ESTE CLIENTE.
  *
  * El panel del dueño pedia este numero desde siempre (campo «Coins por peso»)
@@ -888,9 +927,18 @@ function rl_consultar(PDO $pdo, string $refOUsuario): array
         'usuario'      => $r['usuario'],
         'coins'        => (int)$r['coins'],
         'monto_pedido' => $r['monto_pedido'],
-        'estado'       => $r['estado'],   // pendiente|acreditada|vencida|cancelada|revision
+        'estado'       => $r['estado'],   // pendiente|acreditada|vencida|cancelada|revision|por_aprobar
         'saldo_actual' => $saldo !== false && $saldo !== null ? (int)$saldo : null,
     ];
+
+    /* MODO ASISTIDO: la plata ENTRÓ y se confirmó, pero un agente todavía no la
+       aprobó. Para el jugador NO es "pendiente" (ya transfirió y llegó) ni
+       "acreditada" (todavía no tiene las fichas): es "en confirmación". Se le
+       da al bot un mensaje claro para que no diga ni "no llegó" ni "ya está". */
+    if ($r['estado'] === 'por_aprobar') {
+        $out['mensaje'] = 'Ya recibimos tu transferencia y la estamos confirmando. '
+                        . 'En un ratito te acreditamos las fichas.';
+    }
 
     /* Si sigue pendiente, mirar si la plata YA ENTRO y quedo trabada en
        revision. Va aca y no en una herramienta nueva a proposito: es
@@ -1383,6 +1431,146 @@ function rl_acreditar(PDO $pdo, array &$recarga, string $idUnico, string $conf,
     // solo primera carga, el prometido suele ser para inactivos que ya
     // cargaron antes.
     $recarga['bono']       = $bono + max(0, $bonoPrometido);
+}
+
+/**
+ * MODO ASISTIDO — RESERVAR una recarga para que un agente la apruebe.
+ *
+ * Es el "casi acreditar": el matcher ya decidió, pero no se suman fichas. Deja
+ * la recarga 'por_aprobar' con el pago atado (pago_id) y el motivo del match,
+ * y el pago 'por_aprobar' con el recarga_id, para que el click de aprobación
+ * cierre EXACTAMENTE este par sin volver a adivinar. Espejo de rl_acreditar
+ * pero sin coins, sin movimientos, sin huella: todo eso lo hace la aprobación.
+ *
+ * Corre DENTRO de la transacción del matcher (no comitea), igual que
+ * rl_acreditar.
+ */
+function rl_reservar_para_aprobar(PDO $pdo, array $recarga, string $idUnico,
+                                  string $conf, ?string $confianza = null): void
+{
+    $confianza = in_array($confianza, ['alta', 'media', 'manual'], true) ? $confianza : null;
+    try {
+        $pdo->prepare(
+            "UPDATE recargas SET estado='por_aprobar', pago_id=?, mensaje=?,
+                    match_confianza=?, match_motivo=?
+              WHERE id=?"
+        )->execute([$idUnico, $conf, $confianza, mb_substr($conf, 0, 200), $recarga['id']]);
+    } catch (Throwable $e) {
+        // Sin la migración 45 (match_*) se reserva igual, sin esa trazabilidad.
+        $pdo->prepare("UPDATE recargas SET estado='por_aprobar', pago_id=?, mensaje=? WHERE id=?")
+            ->execute([$idUnico, $conf, $recarga['id']]);
+    }
+    // El pago queda RESERVADO para esta recarga: ni 'usado' (no se acreditó) ni
+    // 'revision' (no es ambiguo). Así el matcher no lo vuelve a tomar y la
+    // aprobación sabe cuál es.
+    $pdo->prepare("UPDATE pagos SET estado='por_aprobar', recarga_id=? WHERE id_unico=?")
+        ->execute([$recarga['id'], $idUnico]);
+}
+
+/**
+ * MODO ASISTIDO — el agente APRUEBA una recarga reservada, desde el CRM.
+ *
+ * Hace lo único que faltaba: acreditar de verdad (rl_acreditar) + los pasos de
+ * siempre (cargar al juego, notificar, Purchase). Reusa rl_acreditar entero,
+ * así el modo asistido y el automático acreditan por el MISMO código: no hay
+ * dos caminos de acreditación que se vayan separando.
+ *
+ * IDEMPOTENTE Y A PRUEBA DE DOS AGENTES, que es el riesgo central (acreditar
+ * dos veces la misma transferencia). El UPDATE que "toma" la recarga es
+ * condicional a que siga 'por_aprobar': si dos agentes tocan el botón a la
+ * vez, o el mismo dos veces, solo el primero cambia una fila y acredita; el
+ * resto ve rowCount 0 y corta sin sumar nada. La guarda es la fila, no un
+ * chequeo previo que otra request podría pisar en el medio.
+ *
+ * Devuelve ['ok'=>bool, 'resultado'=>'acreditada'|'ya_resuelta'|'no_existe', ...].
+ */
+function rl_aprobar_recarga(PDO $pdo, int $recargaId, ?string $operador = null): array
+{
+    $pdo->beginTransaction();
+    try {
+        // Tomar la recarga SOLO si sigue por_aprobar. El rowCount es el candado
+        // contra la doble acreditación: el segundo que llega no cambia ninguna
+        // fila. FOR UPDATE de la fila que vamos a leer a continuación.
+        $tomar = $pdo->prepare(
+            "UPDATE recargas SET estado='pendiente'
+              WHERE id=? AND estado='por_aprobar'"
+        );
+        $tomar->execute([$recargaId]);
+        if ($tomar->rowCount() !== 1) {
+            // O no existe, o ya la tomó/acreditó otro. Se distingue para el CRM.
+            $pdo->rollBack();
+            $st = $pdo->prepare("SELECT estado FROM recargas WHERE id=? LIMIT 1");
+            $st->execute([$recargaId]);
+            $est = $st->fetchColumn();
+            if ($est === false) { return ['ok' => false, 'resultado' => 'no_existe']; }
+            return ['ok' => true, 'resultado' => 'ya_resuelta', 'estado' => (string)$est];
+        }
+
+        // La recarga, ya tomada (vuelta a 'pendiente' un instante para que
+        // rl_acreditar la cierre con su lógica normal, incluido es_primera).
+        $rg = $pdo->prepare("SELECT * FROM recargas WHERE id=? LIMIT 1");
+        $rg->execute([$recargaId]);
+        $recarga = $rg->fetch();
+        if (!$recarga) { $pdo->rollBack(); return ['ok' => false, 'resultado' => 'no_existe']; }
+
+        $idUnico = (string)($recarga['pago_id'] ?? '');
+        if ($idUnico === '') {
+            // Reservada sin pago atado: no debería pasar, pero no se inventa un
+            // pago. Se deja como estaba para que una persona lo mire.
+            $pdo->rollBack();
+            return ['ok' => false, 'resultado' => 'sin_pago'];
+        }
+
+        $conf = (string)($recarga['mensaje'] ?? 'aprobada por el agente');
+        $confianza = in_array($recarga['match_confianza'] ?? null, ['alta','media','manual'], true)
+            ? (string)$recarga['match_confianza'] : 'manual';
+        rl_acreditar($pdo, $recarga, $idUnico, $conf, $operador, $confianza);
+        $pdo->commit();
+
+        // Mismos pasos post-acreditación que el camino automático, después del
+        // commit por el mismo motivo (un rollback no puede dejar avisado algo
+        // que no se acreditó).
+        rl_cargar_al_juego_auto($pdo, $recarga);
+        rl_notificar_acreditada($pdo, $recarga);
+        rl_reportar_purchase($pdo, $recarga);
+
+        return [
+            'ok' => true, 'resultado' => 'acreditada',
+            'usuario' => $recarga['usuario'], 'coins' => (int)$recarga['coins'],
+            'referencia' => $recarga['referencia'], 'recarga_id' => (int)$recarga['id'],
+        ];
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) { $pdo->rollBack(); }
+        error_log('rl_aprobar_recarga: ' . $e->getMessage());
+        return ['ok' => false, 'resultado' => 'error', 'error' => 'no se pudo aprobar'];
+    }
+}
+
+/**
+ * Las recargas esperando aprobación (modo asistido), para la cola del CRM.
+ * Trae lo que el agente necesita para decidir: quién, cuánto, de qué cuenta
+ * vino la transferencia y qué tan seguro estuvo el match.
+ */
+function rl_recargas_por_aprobar(PDO $pdo, int $limite = 100): array
+{
+    try {
+        $st = $pdo->prepare(
+            "SELECT r.id, r.usuario, r.referencia, r.coins, r.monto_pedido,
+                    r.mensaje, r.match_confianza, r.creada_en,
+                    p.monto AS pago_monto, p.remitente AS pago_titular,
+                    p.cuit AS pago_cuit, p.capturado_en AS pago_en
+               FROM recargas r
+               LEFT JOIN pagos p ON p.id_unico = r.pago_id
+              WHERE r.estado='por_aprobar'
+              ORDER BY r.creada_en ASC
+              LIMIT " . max(1, min(500, $limite))
+        );
+        $st->execute();
+        return $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    } catch (Throwable $e) {
+        // Sin la migración 80 (el estado) no hay nada en por_aprobar: lista vacía.
+        return [];
+    }
 }
 
 /**
@@ -2323,6 +2511,40 @@ function rl_matchear_y_acreditar(PDO $pdo, string $idUnico, float $monto): array
             $pdo->prepare("UPDATE pagos SET estado='revision' WHERE id_unico=?")->execute([$idUnico]);
             $pdo->commit();
             return ['resultado' => 'revision', 'mensaje' => 'sin recarga unica que coincida'];
+        }
+
+        /* MODO ASISTIDO: el matcher ya hizo lo difícil --encontró la recarga y
+           confirmó la plata-- pero este cliente aprueba a mano. En vez de
+           acreditar, se RESERVA: la recarga queda 'por_aprobar' con el pago
+           atado, y un agente la cierra con un click (rl_aprobar_recarga). No
+           se suman fichas acá. El jugador no cobra todavía, pero el sistema ya
+           sabe exactamente qué acreditarle, así que el click no adivina nada.
+
+           Se decide con el recarga YA elegido: así el modo asistido no cambia
+           en nada el matcheo (mismas capas, mismas guardas), solo el paso
+           final. Y revision/camino A siguen saliendo antes por sus returns, a
+           propósito: un pago ambiguo o reclamado por el botón «Depósitos» no
+           es algo que el agente deba "aprobar" -- es algo que debe resolver. */
+        if (!rl_recarga_auto()) {
+            rl_reservar_para_aprobar($pdo, $recarga, $idUnico, $conf, $confianza);
+            $pdo->commit();
+            // Aviso para que el agente sepa que hay una esperando su visto
+            // bueno. Sale del propio matcher (no del barrido de revisión):
+            // acá la plata ya está confirmada, el jugador espera.
+            if (function_exists('tg_evento')) {
+                tg_evento($pdo, 'por_aprobar', '🕒 Transferencia para aprobar', [
+                    'Jugador' => (string)$recarga['usuario'],
+                    'Fichas'  => number_format((int)$recarga['coins'], 0, ',', '.'),
+                    'Qué'     => 'Confirmá la carga desde el CRM (Por aprobar).',
+                ], 'por_aprobar:' . $idUnico);
+            }
+            return [
+                'resultado'  => 'por_aprobar',
+                'usuario'    => $recarga['usuario'],
+                'coins'      => (int)$recarga['coins'],
+                'referencia' => $recarga['referencia'],
+                'recarga_id' => (int)$recarga['id'],
+            ];
         }
 
         rl_acreditar($pdo, $recarga, $idUnico, $conf, null, $confianza);

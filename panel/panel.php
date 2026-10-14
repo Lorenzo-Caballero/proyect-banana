@@ -252,7 +252,8 @@ switch ($accion) {
         $rows = $pdo->query(
             'SELECT id,nombre,slug,ruta_slug,dominio,path_tenant,db_nombre,producto,aprovisionado,aprov_detalle,cobro_alias,coins_por_peso,estado,creado,
                     saldo_usd,costo_diario_usd,suscripcion_estado,trial_hasta'
-                    . (tiene_col_clientes($pdo, 'crm_con_ia') ? ',crm_con_ia' : '') . '
+                    . (tiene_col_clientes($pdo, 'crm_con_ia') ? ',crm_con_ia' : '')
+                    . (tiene_col_clientes($pdo, 'recarga_auto') ? ',recarga_auto' : '') . '
              FROM clientes ORDER BY creado DESC'
         )->fetchAll();
         salida(['ok' => true, 'clientes' => $rows]);
@@ -260,7 +261,8 @@ switch ($accion) {
     case 'detalle_cliente': {
         $id = (int) ($in['id'] ?? 0);
         $st = $pdo->prepare('SELECT id,nombre,slug,ruta_slug,dominio,path_tenant,db_nombre,producto,estado,creado,aprovisionado,aprov_detalle,notas'
-            . (tiene_col_clientes($pdo, 'crm_con_ia') ? ',crm_con_ia' : '') . ' FROM clientes WHERE id=?');
+            . (tiene_col_clientes($pdo, 'crm_con_ia') ? ',crm_con_ia' : '')
+            . (tiene_col_clientes($pdo, 'recarga_auto') ? ',recarga_auto' : '') . ' FROM clientes WHERE id=?');
         $st->execute([$id]);
         $c = $st->fetch();
         if (!$c) salida(['ok' => false, 'error' => 'no existe'], 404);
@@ -411,12 +413,17 @@ switch ($accion) {
 
         $colsCrm = $hayCrmCols ? 'crm_usuario,crm_password_hash,' : '';
         $phCrm   = $hayCrmCols ? '?,?,' : '';
-        // CRM "solo bandeja" (sin chatbot IA). Default 1 = con IA, lo de
-        // siempre. El producto landing no tiene chat, así que no aplica.
+        // Modo del CRM (3 niveles), guardados en dos flags independientes:
+        //   completo      -> crm_con_ia=1, recarga_auto=1
+        //   asistido      -> crm_con_ia=1, recarga_auto=0 (IA atiende, humano aprueba)
+        //   solo bandeja  -> crm_con_ia=0 (sin IA; recarga_auto no aplica)
+        // Default 1/1 = completo, lo de siempre. Landing no tiene chat.
         $crmConIa = ($producto === 'landing') ? 1 : (array_key_exists('crm_con_ia', $in) ? (!empty($in['crm_con_ia']) ? 1 : 0) : 1);
-        $hayIaCol = tiene_col_clientes($pdo, 'crm_con_ia');
-        $colsIa   = $hayIaCol ? 'crm_con_ia,' : '';
-        $phIa     = $hayIaCol ? '?,' : '';
+        $recargaAuto = ($producto === 'landing') ? 1 : (array_key_exists('recarga_auto', $in) ? (!empty($in['recarga_auto']) ? 1 : 0) : 1);
+        $hayIaCol  = tiene_col_clientes($pdo, 'crm_con_ia');
+        $hayRAuto  = tiene_col_clientes($pdo, 'recarga_auto');
+        $colsIa    = ($hayIaCol ? 'crm_con_ia,' : '') . ($hayRAuto ? 'recarga_auto,' : '');
+        $phIa      = ($hayIaCol ? '?,' : '') . ($hayRAuto ? '?,' : '');
         $hayPortalCols = false;
         try { $pdo->query('SELECT producto,landing_portal_usuario,landing_portal_password_hash FROM clientes LIMIT 0'); $hayPortalCols = true; }
         catch (Throwable $e) {}
@@ -447,6 +454,7 @@ switch ($accion) {
                 $params[] = $crmHash;
             }
             if ($hayIaCol) { $params[] = $crmConIa; }
+            if ($hayRAuto) { $params[] = $recargaAuto; }
             $st->execute(array_merge($params, [
                 $in['cobro_alias'] ?? null, $in['cobro_cbu'] ?? null, $in['cobro_titular'] ?? null,
                 (float) ($in['coins_por_peso'] ?? 1),
@@ -1004,6 +1012,10 @@ switch ($accion) {
         // reventaría el UPDATE entero con "no se pudo guardar".
         if (array_key_exists('crm_con_ia', $in) && tiene_col_clientes($pdo, 'crm_con_ia')) {
             $campos['crm_con_ia'] = !empty($in['crm_con_ia']) ? 1 : 0;
+        }
+        // Modo asistido: el matcher acredita solo (1) o espera aprobación (0).
+        if (array_key_exists('recarga_auto', $in) && tiene_col_clientes($pdo, 'recarga_auto')) {
+            $campos['recarga_auto'] = !empty($in['recarga_auto']) ? 1 : 0;
         }
 
         // Las claves solo se pisan si mandaron una nueva: el formulario las

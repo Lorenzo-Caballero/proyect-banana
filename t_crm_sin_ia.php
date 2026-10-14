@@ -112,7 +112,7 @@ echo "\n=== 5. El panel guarda y edita el modo ===\n";
 $panel = file_get_contents(__DIR__ . '/panel/panel.php');
 chequear('crear acepta crm_con_ia (default 1 = con IA)',
          str_contains($panel, "array_key_exists('crm_con_ia', \$in)")
-         && str_contains($panel, '$colsIa   = $hayIaCol'));
+         && str_contains($panel, "\$hayIaCol  = tiene_col_clientes(\$pdo, 'crm_con_ia')"));
 chequear('la landing no lleva modo IA (no tiene chat)',
          str_contains($panel, "(\$producto === 'landing') ? 1 :"));
 chequear('editar lo toca solo si vino Y la columna existe',

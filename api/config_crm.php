@@ -187,6 +187,7 @@ const CFG_CRM_DEFAULTS = [
     // derivaciones a quien atiende.
     'tg_ev_derivacion' => '1',   // el bot paso una charla a un humano
     'tg_ev_revision'   => '1',   // entro una transferencia que no se pudo casar
+    'tg_ev_por_aprobar' => '1',  // (modo asistido) transferencia confirmada esperando aprobacion
     'tg_ev_retiro'     => '1',   // un jugador pidio retirar
     'tg_ev_salud'      => '1',   // algo esta roto / sin actividad
     // Estos dos son informativos, no piden accion: sirven para mirar el

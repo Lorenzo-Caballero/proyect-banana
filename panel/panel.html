@@ -299,13 +299,16 @@
     </select>
     <div class="hint"><span>El cliente CRM configura sus datos desde su CRM. El comprador del producto Landing usa un portal aparte para conectar su panel Ganamos y su WhatsApp, sin recibir acceso al CRM.</span></div>
 
-    <!-- Modo del CRM: con chatbot IA o solo bandeja. Solo aplica al producto
-         CRM; la landing no tiene chat, así que se esconde con fProducto. -->
-    <div id="fModoIaBox" style="margin-top:18px;padding:12px;border:1px solid var(--line);border-radius:11px;background:var(--card2)">
-      <label style="display:flex;align-items:flex-start;gap:9px;margin:0;cursor:pointer">
-        <input id="fSinIa" type="checkbox" style="margin-top:3px;accent-color:var(--ok,#31c48d)">
-        <span><b>CRM sin chatbot IA (solo bandeja)</b><br><small class="sub">El jugador escribe y lo atiende SIEMPRE una persona: nada de recargas, cargas de fichas ni comprobantes automáticos. Para venderlo como atención humana. Se puede cambiar después.</small></span>
-      </label>
+    <!-- Modo del CRM. Solo aplica al producto CRM; la landing no tiene chat,
+         así que se esconde con fProducto. -->
+    <div id="fModoIaBox" style="margin-top:18px">
+      <label>Modo del CRM</label>
+      <select id="fModo" class="field" style="margin-top:6px">
+        <option value="completo">Completo — la IA atiende y acredita las cargas sola</option>
+        <option value="asistido">Asistido — la IA atiende, pero vos aprobás cada carga</option>
+        <option value="bandeja">Solo bandeja — sin IA, atiende siempre una persona</option>
+      </select>
+      <div class="hint" id="fModoHint" style="margin-top:8px"><span></span></div>
     </div>
 
     <label>
@@ -573,13 +576,16 @@
       </label>
     </div>
 
-    <!-- Modo del CRM: con chatbot IA o solo bandeja. Se puede cambiar cuando
-         sea; el chatbot lo respeta al instante (candado desde el control). -->
-    <div id="edModoIaBox" class="hide" style="margin-top:18px;padding:12px;border:1px solid var(--line);border-radius:11px;background:var(--card2)">
-      <label style="display:flex;align-items:flex-start;gap:9px;margin:0;cursor:pointer">
-        <input id="edSinIa" type="checkbox" style="margin-top:3px;accent-color:var(--ok,#31c48d)">
-        <span><b>CRM sin chatbot IA (solo bandeja)</b><br><small class="sub">Lo atiende siempre una persona. Tildarlo apaga el bot aunque el cliente lo prenda desde su CRM.</small></span>
-      </label>
+    <!-- Modo del CRM. Se puede cambiar cuando sea; el chatbot y el matcher lo
+         respetan al instante (candado desde el control). -->
+    <div id="edModoIaBox" class="hide" style="margin-top:18px">
+      <label>Modo del CRM</label>
+      <select id="edModo" class="field" style="margin-top:6px">
+        <option value="completo">Completo — la IA atiende y acredita las cargas sola</option>
+        <option value="asistido">Asistido — la IA atiende, pero vos aprobás cada carga</option>
+        <option value="bandeja">Solo bandeja — sin IA, atiende siempre una persona</option>
+      </select>
+      <div class="hint" id="edModoHint" style="margin-top:8px"><span></span></div>
     </div>
 
     <!-- Credenciales del agente y cuenta de cobro: las gestiona el cliente
@@ -905,10 +911,12 @@
         var susClase = susEstado === "activa" ? "activo" : (susEstado === "sin_saldo" ? "baja" : "pausado");
         var susTxt = susEstado === "sin_saldo" ? "sin saldo" : susEstado;
         var saldoTxt = "$" + Number(c.saldo_usd||0).toFixed(2) + " USD";
-        // "Sin IA" solo se marca en productos CRM con la columna presente y en 0.
-        var etiqueta = esSoloLanding
-          ? '<br><span style="font-size:11px;color:var(--faint)">Solo landing</span>'
-          : (Number(c.crm_con_ia) === 0 ? '<br><span style="font-size:11px;color:var(--faint)">CRM sin IA</span>' : '');
+        // El modo se marca solo cuando NO es el default (completo), para no
+        // ensuciar la lista: "Asistido" o "Solo bandeja".
+        var modoTxt = esSoloLanding ? "Solo landing"
+          : (Number(c.crm_con_ia) === 0 ? "CRM sin IA"
+             : (Number(c.recarga_auto) === 0 ? "Asistido" : ""));
+        var etiqueta = modoTxt ? '<br><span style="font-size:11px;color:var(--faint)">'+modoTxt+'</span>' : '';
         tr.innerHTML =
           '<td><button class="client-detail" data-id="'+esc(c.id)+'">'+esc(c.nombre)+'</button>'+etiqueta+'</td>'+
           '<td>'+linkAcceso+'</td>'+
@@ -986,7 +994,8 @@
       // que no haría nada). tildado = sin IA.
       edTieneModoIa = (d.producto !== "landing") && (d.crm_con_ia !== undefined && d.crm_con_ia !== null);
       $("edModoIaBox").classList.toggle("hide", !edTieneModoIa);
-      $("edSinIa").checked = Number(d.crm_con_ia) === 0;
+      $("edModo").value = flagsAModo(d);
+      pintarHint("edModo","edModoHint");
       $("edMsg").textContent = "";
     });
   }
@@ -1005,7 +1014,8 @@
       notas: $("edNotas").value.trim(),
       ruta_slug: edPathTenant ? $("edRutaSlug").value.trim() : undefined,
       altas_propias: edPathTenant ? ($("edAltasPropias").checked ? 1 : 0) : undefined,
-      crm_con_ia: edTieneModoIa ? ($("edSinIa").checked ? 0 : 1) : undefined
+      crm_con_ia: edTieneModoIa ? modoAFlags($("edModo").value).crm_con_ia : undefined,
+      recarga_auto: edTieneModoIa ? modoAFlags($("edModo").value).recarga_auto : undefined
     }).then(function(res){
       $("edGuardar").disabled = false;
       if (res.j && res.j.ok){ cerrarEditar(); cargar(); return; }
@@ -1421,10 +1431,33 @@
       .replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");
   }
 
+  // Un modo (texto del select) <-> los dos flags que guarda el control.
+  //   completo : crm_con_ia=1, recarga_auto=1
+  //   asistido : crm_con_ia=1, recarga_auto=0
+  //   bandeja  : crm_con_ia=0  (recarga_auto no aplica; se manda 1 por prolijidad)
+  var MODO_HINT = {
+    completo: "El chatbot atiende y, cuando llega la transferencia, acredita las fichas solo.",
+    asistido: "El chatbot atiende y crea la recarga, pero la ficha se acredita cuando VOS la aprobás desde el CRM (sección «Por aprobar»). Para el cajero que quiere controlar cada carga.",
+    bandeja:  "Sin chatbot: cada mensaje lo responde una persona. Atención 100% humana."
+  };
+  function modoAFlags(modo){
+    if(modo === "bandeja")  return { crm_con_ia:0, recarga_auto:1 };
+    if(modo === "asistido") return { crm_con_ia:1, recarga_auto:0 };
+    return { crm_con_ia:1, recarga_auto:1 };   // completo
+  }
+  function flagsAModo(c){
+    if(Number(c.crm_con_ia) === 0) return "bandeja";
+    if(Number(c.recarga_auto) === 0) return "asistido";
+    return "completo";
+  }
+  function pintarHint(selId, hintId){
+    var h = $(hintId); if(h) h.querySelector("span").textContent = MODO_HINT[$(selId).value] || "";
+  }
+
   function limpiar(){
     ["fNombre","fSlug","fCrmUser","fCrmPass","fPortalUser","fPortalPass","fNotas"].forEach(function(i){$(i).value="";});
     $("fProducto").value="crm"; $("fLandingAccessBox").classList.add("hide"); $("fCrmAccessBox").classList.remove("hide");
-    $("fSinIa").checked = false; $("fModoIaBox").classList.remove("hide");
+    $("fModo").value = "completo"; pintarHint("fModo","fModoHint"); $("fModoIaBox").classList.remove("hide");
     slugEditadoAMano = false;
   }
 
@@ -1437,8 +1470,8 @@
     api("crear", {
       nombre:$("fNombre").value, slug: slug,
       producto:$("fProducto").value,
-      // 1 = con IA (lo de siempre); el checkbox invierte: tildado = sin IA.
-      crm_con_ia: $("fSinIa").checked ? 0 : 1,
+      crm_con_ia: modoAFlags($("fModo").value).crm_con_ia,
+      recarga_auto: modoAFlags($("fModo").value).recarga_auto,
       crm_usuario:$("fCrmUser").value.trim(), crm_password:$("fCrmPass").value,
       landing_portal_usuario:$("fPortalUser").value.trim(),
       landing_portal_password:$("fPortalPass").value,
@@ -1499,9 +1532,10 @@
   $("fProducto").addEventListener("change", function(){
     $("fLandingAccessBox").classList.toggle("hide", this.value !== "landing");
     $("fCrmAccessBox").classList.toggle("hide", this.value === "landing");
-    // La landing no tiene chat: el modo IA no aplica.
+    // La landing no tiene chat: el modo no aplica.
     $("fModoIaBox").classList.toggle("hide", this.value === "landing");
   });
+  $("fModo").addEventListener("change", function(){ pintarHint("fModo","fModoHint"); });
   $("fSlug").addEventListener("input", function(){ slugEditadoAMano = true; });
   $("btnCrear").onclick = crear;
   $("ov").addEventListener("click", function(e){ if(e.target === $("ov")) cerrar(); });

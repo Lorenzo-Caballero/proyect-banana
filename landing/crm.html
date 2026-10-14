@@ -3035,6 +3035,10 @@
       <button class="rail-item" data-nav="comprobantes" data-tip="Comprobantes" data-corto="Compr."><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg><span class="rail-badge" id="badgeComprobantes"></span></button>
       <button class="rail-item" data-nav="retencion" data-tip="Retención: ¿los jugadores se quedan?" data-corto="Retención"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M21 7h-5"/><path d="M21 7v5"/></svg></button>
       <button class="rail-item" data-nav="peticiones" data-tip="Peticiones de jugadores: depósitos y retiros" data-corto="Peticiones"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg><span class="rail-badge" id="badgePeticiones"></span></button>
+      <!-- Solo en modo asistido: oculto salvo que haya recargas esperando tu
+           visto bueno. Un cliente "completo" nunca genera por_aprobar, así que
+           el badge queda en 0 y el ítem no aparece nunca. -->
+      <button class="rail-item" id="railPorAprobar" data-nav="por_aprobar" data-tip="Transferencias para aprobar" data-corto="Por aprobar" style="display:none"><svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><span class="rail-badge" id="badgePorAprobar"></span></button>
       <!-- El badge de Retiros ya no tiene item propio, pero su contador se
            sigue calculando: vive acá escondido y ptBadge() lo suma al de
            Peticiones. Asi no hubo que tocar actualizarBadgeRetiros(). -->
@@ -3493,6 +3497,18 @@
     <h4 class="pt-sec-tit" style="margin-top:22px">Mes a mes</h4>
     <div class="reten-scroll"><table class="reten-tabla" id="retenMeses"></table></div>
     <p class="cfg-hint" id="retenPie" style="margin-top:10px"></p>
+  </div>
+
+  <div class="card-col view-panel" id="viewPorAprobar" style="display:none">
+    <div class="comp-head">
+      <b>Transferencias para aprobar</b>
+    </div>
+    <p class="vista-ayuda">
+      El chatbot atendió y ya <b>recibimos y confirmamos</b> estas transferencias
+      (el mail del banco las verificó). Falta tu visto bueno: al aprobar, se le
+      <b>acreditan las fichas</b> al jugador. Mientras tanto no se le cargó nada.
+    </p>
+    <div id="paList" class="list"><div class="nouser">Cargando…</div></div>
   </div>
 
   <div class="card-col view-panel" id="viewPeticiones" style="display:none">
@@ -6813,7 +6829,7 @@
      esconder datos en atributos del DOM. */
   let listaCache = new Map();
   let debounce, pollList, pollConv, pollBadgeComp, pollBadgeRet, pollRetirosVista, pollCargasVista,
-      pollBadgePet, pollPeticionesVista, pollRecaudarVista;
+      pollBadgePet, pollPeticionesVista, pollRecaudarVista, pollBadgePA, pollPorAprobarVista;
 
   // ---------- sesion de operador: shell vs. login (Fase 0.5) ----------
   function ocultarBoot(){ const b=$("#bootLoading"); if(b) b.style.display="none"; }
@@ -8105,9 +8121,11 @@
     pollBadgeComp = setInterval(actualizarBadgeComp, 25000);
     pollBadgeRet = setInterval(actualizarBadgeRetiros, 25000);
     pollBadgePet = setInterval(actualizarBadgePeticiones, 25000);
+    pollBadgePA = setInterval(actualizarBadgePorAprobar, 25000);
     actualizarBadgeComp();
     actualizarBadgeRetiros();
     actualizarBadgePeticiones();
+    actualizarBadgePorAprobar();
   }
   /* ---------- VOLVER A LA PESTAÑA REFRESCA AL INSTANTE ----------
      EL PROBLEMA (Nahuel, 15/09/2026): "siento que a veces debo recargar el CRM
@@ -8164,10 +8182,10 @@
   window.addEventListener("focus", refrescarAlVolver);
 
   function detenerPolling(){
-    [pollList, pollConv, pollBadgeComp, pollBadgeRet, pollBadgePet,
-     pollRetirosVista, pollCargasVista, pollPeticionesVista].forEach(p=>{ if(p) clearInterval(p); });
-    pollList = pollConv = pollBadgeComp = pollBadgeRet = pollBadgePet =
-      pollRetirosVista = pollCargasVista = pollPeticionesVista = null;
+    [pollList, pollConv, pollBadgeComp, pollBadgeRet, pollBadgePet, pollBadgePA,
+     pollRetirosVista, pollCargasVista, pollPeticionesVista, pollPorAprobarVista].forEach(p=>{ if(p) clearInterval(p); });
+    pollList = pollConv = pollBadgeComp = pollBadgeRet = pollBadgePet = pollBadgePA =
+      pollRetirosVista = pollCargasVista = pollPeticionesVista = pollPorAprobarVista = null;
   }
 
   // ---------- tema ----------
@@ -8382,10 +8400,11 @@
   // modulos nuevos ocultan esas 3 columnas y muestran su propio contenedor.
   // Se va sumando un nombre a VISTAS + su contenedor a VISTA_CONTENEDOR por
   // cada modulo que se conecte, sin tocar el resto de la funcion.
-  const VISTAS = ["chats", "comprobantes", "peticiones", "retiros", "retencion", "cargas", "transacciones", "usuarios", "finanzas", "notificaciones", "publicidad", "landings", "chatbot", "agentes", "suscripcion", "app", "recaudar", "fidelizacion", "config"];
+  const VISTAS = ["chats", "comprobantes", "peticiones", "por_aprobar", "retiros", "retencion", "cargas", "transacciones", "usuarios", "finanzas", "notificaciones", "publicidad", "landings", "chatbot", "agentes", "suscripcion", "app", "recaudar", "fidelizacion", "config"];
   const VISTA_CONTENEDOR = {
     comprobantes: "#viewComprobantes",
     peticiones: "#viewPeticiones",
+    por_aprobar: "#viewPorAprobar",
     retencion: "#viewRetencion",
     /* `retiros` sigue siendo una ruta valida y apunta a la MISMA pantalla, con
        el filtro de Retiros ya puesto. Es para no romper lo que ya circula: el
@@ -8461,7 +8480,14 @@
     if(pollCargasVista){ clearInterval(pollCargasVista); pollCargasVista = null; }
     if(pollPeticionesVista){ clearInterval(pollPeticionesVista); pollPeticionesVista = null; }
     if(pollRecaudarVista){ clearInterval(pollRecaudarVista); pollRecaudarVista = null; }
+    if(pollPorAprobarVista){ clearInterval(pollPorAprobarVista); pollPorAprobarVista = null; }
 
+    if(nombre==="por_aprobar"){
+      cargarPorAprobar();
+      // Cola operativa: el jugador espera su acreditación, y el matcher puede
+      // sumar una nueva en cualquier momento. Se refresca sola.
+      pollPorAprobarVista = setInterval(cargarPorAprobar, 25000);
+    }
     if(nombre==="comprobantes") cargarComprobantes();
     /* Las dos rutas caen en la misma pantalla. Se cargan SIEMPRE las dos
        listas --aunque el filtro muestre una-- porque el numero de cada seccion
@@ -11858,6 +11884,77 @@ async function credTabla(cual){
       ptNPet = (d.ok && d.cantidad > 0) ? +d.cantidad : 0;
       ptBadgeUnificado();
     }catch(e){ /* silencioso: es solo un contador */ }
+  }
+
+  /* ---------- POR APROBAR (modo asistido) ----------
+     El ítem del rail se MUESTRA/ESCONDE según el badge: un cliente "completo"
+     nunca genera por_aprobar, así que el contador queda en 0 y el ítem no
+     aparece. No hace falta que el CRM sepa el modo del tenant: la presencia de
+     trabajo es la señal. */
+  const API_PORAP = API_BASE + "/crm_por_aprobar.php";
+
+  async function actualizarBadgePorAprobar(){
+    try{
+      const d = await jget({accion:"badge"}, API_PORAP);
+      const n = (d.ok && d.cantidad > 0) ? +d.cantidad : 0;
+      const rail = $("#railPorAprobar"), b = $("#badgePorAprobar");
+      if(rail) rail.style.display = n > 0 ? "" : "none";
+      if(b){
+        if(n > 0){ b.textContent = n > 99 ? "99+" : String(n); b.classList.add("on"); }
+        else { b.textContent = ""; b.classList.remove("on"); }
+      }
+    }catch(e){ /* silencioso */ }
+  }
+
+  function cargarPorAprobar(){
+    const cont = $("#paList");
+    if(!cont) return;
+    jget({accion:"listar"}, API_PORAP).then(d=>{
+      if(!d.ok){ cont.innerHTML = `<div class="nouser">${esc(d.error||"Error")}</div>`; return; }
+      const items = d.items || [];
+      if(!items.length){ cont.innerHTML = `<div class="nouser">No hay transferencias esperando aprobación.</div>`; return; }
+      cont.innerHTML = items.map(it=>{
+        const plata = Number(it.pago_monto ?? it.monto_pedido ?? 0);
+        const titular = it.pago_titular ? esc(it.pago_titular) : "(el banco no informó el titular)";
+        const seguridad = it.match_confianza === "alta" ? "" :
+          ` <span style="color:var(--warn,#e0a53a);font-size:12px">· match ${esc(it.match_confianza||"?")}, revisá</span>`;
+        return `<div class="pa-item" data-id="${esc(it.id)}" style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">
+            <b>${esc(it.usuario)}</b>
+            <span style="font-weight:700">$${plata.toLocaleString("es-AR",{minimumFractionDigits:2})}</span>
+          </div>
+          <div style="font-size:12.5px;color:var(--muted);margin-top:4px">
+            De <b>${titular}</b>${it.pago_cuit ? " · CUIT "+esc(it.pago_cuit) : ""}${seguridad}
+          </div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px">${esc(it.referencia||"")} · ${Number(it.coins||0).toLocaleString("es-AR")} fichas</div>
+          <div style="margin-top:10px">
+            <button class="btn-mini pa-aprobar" data-id="${esc(it.id)}" type="button">Aprobar y cargar fichas</button>
+            <span class="pa-msg" style="font-size:12px;margin-left:8px"></span>
+          </div>
+        </div>`;
+      }).join("");
+      cont.querySelectorAll(".pa-aprobar").forEach(b=>{
+        b.onclick = ()=> aprobarRecarga(b.dataset.id, b);
+      });
+    }).catch(()=>{ cont.innerHTML = `<div class="nouser">Error al cargar.</div>`; });
+  }
+
+  function aprobarRecarga(id, btn){
+    const msg = btn.parentElement.querySelector(".pa-msg");
+    btn.disabled = true; if(msg){ msg.textContent = "acreditando…"; msg.style.color = "var(--muted)"; }
+    jpost({accion:"aprobar", id:Number(id)}, API_PORAP).then(d=>{
+      if(d.ok){
+        if(msg){ msg.textContent = d.mensaje || "Listo"; msg.style.color = "var(--ok,#31c48d)"; }
+        // Refrescar la cola y el badge: la fila aprobada desaparece.
+        setTimeout(()=>{ cargarPorAprobar(); actualizarBadgePorAprobar(); }, 700);
+      }else{
+        btn.disabled = false;
+        if(msg){ msg.textContent = d.error || "No se pudo"; msg.style.color = "var(--danger,#e05a5a)"; }
+      }
+    }).catch(()=>{
+      btn.disabled = false;
+      if(msg){ msg.textContent = "Error de conexión"; msg.style.color = "var(--danger,#e05a5a)"; }
+    });
   }
 
   async function cargarPeticiones(){
