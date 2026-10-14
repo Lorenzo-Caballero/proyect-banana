@@ -299,6 +299,15 @@
     </select>
     <div class="hint"><span>El cliente CRM configura sus datos desde su CRM. El comprador del producto Landing usa un portal aparte para conectar su panel Ganamos y su WhatsApp, sin recibir acceso al CRM.</span></div>
 
+    <!-- Modo del CRM: con chatbot IA o solo bandeja. Solo aplica al producto
+         CRM; la landing no tiene chat, así que se esconde con fProducto. -->
+    <div id="fModoIaBox" style="margin-top:18px;padding:12px;border:1px solid var(--line);border-radius:11px;background:var(--card2)">
+      <label style="display:flex;align-items:flex-start;gap:9px;margin:0;cursor:pointer">
+        <input id="fSinIa" type="checkbox" style="margin-top:3px;accent-color:var(--ok,#31c48d)">
+        <span><b>CRM sin chatbot IA (solo bandeja)</b><br><small class="sub">El jugador escribe y lo atiende SIEMPRE una persona: nada de recargas, cargas de fichas ni comprobantes automáticos. Para venderlo como atención humana. Se puede cambiar después.</small></span>
+      </label>
+    </div>
+
     <label>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20Z"/></svg>
       URL del cliente
@@ -561,6 +570,15 @@
       <label style="display:flex;align-items:flex-start;gap:9px;margin:0;cursor:pointer">
         <input id="edAltasPropias" type="checkbox" style="margin-top:3px">
         <span><b>Crear jugadores en el panel propio del cliente</b><br><small class="sub">Las altas van a su CRM y el bot usa sus credenciales de agente. Requiere credenciales guardadas y válidas.</small></span>
+      </label>
+    </div>
+
+    <!-- Modo del CRM: con chatbot IA o solo bandeja. Se puede cambiar cuando
+         sea; el chatbot lo respeta al instante (candado desde el control). -->
+    <div id="edModoIaBox" class="hide" style="margin-top:18px;padding:12px;border:1px solid var(--line);border-radius:11px;background:var(--card2)">
+      <label style="display:flex;align-items:flex-start;gap:9px;margin:0;cursor:pointer">
+        <input id="edSinIa" type="checkbox" style="margin-top:3px;accent-color:var(--ok,#31c48d)">
+        <span><b>CRM sin chatbot IA (solo bandeja)</b><br><small class="sub">Lo atiende siempre una persona. Tildarlo apaga el bot aunque el cliente lo prenda desde su CRM.</small></span>
       </label>
     </div>
 
@@ -887,8 +905,12 @@
         var susClase = susEstado === "activa" ? "activo" : (susEstado === "sin_saldo" ? "baja" : "pausado");
         var susTxt = susEstado === "sin_saldo" ? "sin saldo" : susEstado;
         var saldoTxt = "$" + Number(c.saldo_usd||0).toFixed(2) + " USD";
+        // "Sin IA" solo se marca en productos CRM con la columna presente y en 0.
+        var etiqueta = esSoloLanding
+          ? '<br><span style="font-size:11px;color:var(--faint)">Solo landing</span>'
+          : (Number(c.crm_con_ia) === 0 ? '<br><span style="font-size:11px;color:var(--faint)">CRM sin IA</span>' : '');
         tr.innerHTML =
-          '<td><button class="client-detail" data-id="'+esc(c.id)+'">'+esc(c.nombre)+'</button>'+(esSoloLanding?'<br><span style="font-size:11px;color:var(--faint)">Solo landing</span>':'')+'</td>'+
+          '<td><button class="client-detail" data-id="'+esc(c.id)+'">'+esc(c.nombre)+'</button>'+etiqueta+'</td>'+
           '<td>'+linkAcceso+'</td>'+
           '<td>'+esc(c.cobro_alias||"—")+'</td>'+
           '<td>'+esc(c.coins_por_peso)+'</td>'+
@@ -927,6 +949,7 @@
   var ICO_EDIT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>';
   var edId = 0;
   var edPathTenant = false;
+  var edTieneModoIa = false;
 
   function botonEditar(c){
     var b = document.createElement("button");
@@ -958,6 +981,12 @@
       $("edRutaSlug").value = d.ruta_slug || d.slug || "";
       $("edAltasBox").classList.toggle("hide", !edPathTenant);
       $("edAltasPropias").checked = Number(d.altas_propias) === 1;
+      // Modo IA: solo para producto CRM, y solo si el control tiene la columna
+      // (si viene undefined, la migración 16 no corrió -> no mostrar un control
+      // que no haría nada). tildado = sin IA.
+      edTieneModoIa = (d.producto !== "landing") && (d.crm_con_ia !== undefined && d.crm_con_ia !== null);
+      $("edModoIaBox").classList.toggle("hide", !edTieneModoIa);
+      $("edSinIa").checked = Number(d.crm_con_ia) === 0;
       $("edMsg").textContent = "";
     });
   }
@@ -975,7 +1004,8 @@
       nombre: nom,
       notas: $("edNotas").value.trim(),
       ruta_slug: edPathTenant ? $("edRutaSlug").value.trim() : undefined,
-      altas_propias: edPathTenant ? ($("edAltasPropias").checked ? 1 : 0) : undefined
+      altas_propias: edPathTenant ? ($("edAltasPropias").checked ? 1 : 0) : undefined,
+      crm_con_ia: edTieneModoIa ? ($("edSinIa").checked ? 0 : 1) : undefined
     }).then(function(res){
       $("edGuardar").disabled = false;
       if (res.j && res.j.ok){ cerrarEditar(); cargar(); return; }
@@ -1394,6 +1424,7 @@
   function limpiar(){
     ["fNombre","fSlug","fCrmUser","fCrmPass","fPortalUser","fPortalPass","fNotas"].forEach(function(i){$(i).value="";});
     $("fProducto").value="crm"; $("fLandingAccessBox").classList.add("hide"); $("fCrmAccessBox").classList.remove("hide");
+    $("fSinIa").checked = false; $("fModoIaBox").classList.remove("hide");
     slugEditadoAMano = false;
   }
 
@@ -1406,6 +1437,8 @@
     api("crear", {
       nombre:$("fNombre").value, slug: slug,
       producto:$("fProducto").value,
+      // 1 = con IA (lo de siempre); el checkbox invierte: tildado = sin IA.
+      crm_con_ia: $("fSinIa").checked ? 0 : 1,
       crm_usuario:$("fCrmUser").value.trim(), crm_password:$("fCrmPass").value,
       landing_portal_usuario:$("fPortalUser").value.trim(),
       landing_portal_password:$("fPortalPass").value,
@@ -1466,6 +1499,8 @@
   $("fProducto").addEventListener("change", function(){
     $("fLandingAccessBox").classList.toggle("hide", this.value !== "landing");
     $("fCrmAccessBox").classList.toggle("hide", this.value === "landing");
+    // La landing no tiene chat: el modo IA no aplica.
+    $("fModoIaBox").classList.toggle("hide", this.value === "landing");
   });
   $("fSlug").addEventListener("input", function(){ slugEditadoAMano = true; });
   $("btnCrear").onclick = crear;

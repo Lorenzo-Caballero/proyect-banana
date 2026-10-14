@@ -81,6 +81,16 @@ function col_ia(PDO $pdo): string {
     return $col;
 }
 
+/** ¿Existe esa columna en `clientes`? Para degradar si una migración del
+ *  control no corrió, sin reventar el INSERT/UPDATE. Cacheado por columna. */
+function tiene_col_clientes(PDO $pdo, string $col): bool {
+    static $cache = [];
+    if (array_key_exists($col, $cache)) { return $cache[$col]; }
+    try { $pdo->query('SELECT `' . $col . '` FROM clientes LIMIT 0'); $cache[$col] = true; }
+    catch (Throwable $e) { $cache[$col] = false; }
+    return $cache[$col];
+}
+
 function b64u(string $s): string { return rtrim(strtr(base64_encode($s), '+/', '-_'), '='); }
 function b64u_dec(string $s): string { return (string) base64_decode(strtr($s, '-_', '+/')); }
 
@@ -241,14 +251,16 @@ switch ($accion) {
     case 'listar':
         $rows = $pdo->query(
             'SELECT id,nombre,slug,ruta_slug,dominio,path_tenant,db_nombre,producto,aprovisionado,aprov_detalle,cobro_alias,coins_por_peso,estado,creado,
-                    saldo_usd,costo_diario_usd,suscripcion_estado,trial_hasta
+                    saldo_usd,costo_diario_usd,suscripcion_estado,trial_hasta'
+                    . (tiene_col_clientes($pdo, 'crm_con_ia') ? ',crm_con_ia' : '') . '
              FROM clientes ORDER BY creado DESC'
         )->fetchAll();
         salida(['ok' => true, 'clientes' => $rows]);
 
     case 'detalle_cliente': {
         $id = (int) ($in['id'] ?? 0);
-        $st = $pdo->prepare('SELECT id,nombre,slug,ruta_slug,dominio,path_tenant,db_nombre,producto,estado,creado,aprovisionado,aprov_detalle,notas FROM clientes WHERE id=?');
+        $st = $pdo->prepare('SELECT id,nombre,slug,ruta_slug,dominio,path_tenant,db_nombre,producto,estado,creado,aprovisionado,aprov_detalle,notas'
+            . (tiene_col_clientes($pdo, 'crm_con_ia') ? ',crm_con_ia' : '') . ' FROM clientes WHERE id=?');
         $st->execute([$id]);
         $c = $st->fetch();
         if (!$c) salida(['ok' => false, 'error' => 'no existe'], 404);
@@ -399,6 +411,12 @@ switch ($accion) {
 
         $colsCrm = $hayCrmCols ? 'crm_usuario,crm_password_hash,' : '';
         $phCrm   = $hayCrmCols ? '?,?,' : '';
+        // CRM "solo bandeja" (sin chatbot IA). Default 1 = con IA, lo de
+        // siempre. El producto landing no tiene chat, así que no aplica.
+        $crmConIa = ($producto === 'landing') ? 1 : (array_key_exists('crm_con_ia', $in) ? (!empty($in['crm_con_ia']) ? 1 : 0) : 1);
+        $hayIaCol = tiene_col_clientes($pdo, 'crm_con_ia');
+        $colsIa   = $hayIaCol ? 'crm_con_ia,' : '';
+        $phIa     = $hayIaCol ? '?,' : '';
         $hayPortalCols = false;
         try { $pdo->query('SELECT producto,landing_portal_usuario,landing_portal_password_hash FROM clientes LIMIT 0'); $hayPortalCols = true; }
         catch (Throwable $e) {}
@@ -408,9 +426,9 @@ switch ($accion) {
             $pdo->beginTransaction();
             $st = $pdo->prepare(
                 'INSERT INTO clientes
-                 (nombre,slug,ruta_slug,dominio,path_tenant,db_nombre,agente_usuario,agente_password,altas_propias,' . $colsPortal . $colsCrm . 'cobro_alias,cobro_cbu,
+                 (nombre,slug,ruta_slug,dominio,path_tenant,db_nombre,agente_usuario,agente_password,altas_propias,' . $colsPortal . $colsCrm . $colsIa . 'cobro_alias,cobro_cbu,
                   cobro_titular,coins_por_peso,' . col_ia($pdo) . ',bot_api_key,notas,suscripcion_estado,trial_hasta)
-                 VALUES (?,?,?,?,?,?,?,?,1,' . $phPortal . $phCrm . '?,?,?,?,?,?,?,?,?)'
+                 VALUES (?,?,?,?,?,?,?,?,1,' . $phPortal . $phCrm . $phIa . '?,?,?,?,?,?,?,?,?)'
             );
             // Todo cliente nuevo arranca con 14 días de cortesía: el cron de
             // consumo (panel/consumo_diario.php) no le descuenta saldo ni lo
@@ -428,6 +446,7 @@ switch ($accion) {
                 $params[] = $crmUser !== '' ? $crmUser : null;
                 $params[] = $crmHash;
             }
+            if ($hayIaCol) { $params[] = $crmConIa; }
             $st->execute(array_merge($params, [
                 $in['cobro_alias'] ?? null, $in['cobro_cbu'] ?? null, $in['cobro_titular'] ?? null,
                 (float) ($in['coins_por_peso'] ?? 1),
@@ -979,6 +998,12 @@ switch ($accion) {
         }
         if (array_key_exists('altas_propias', $in)) {
             $campos['altas_propias'] = !empty($in['altas_propias']) ? 1 : 0;
+        }
+        // CRM con/sin chatbot IA. Solo se toca si vino en el request Y la
+        // columna existe (migración 16): sin la guarda, un control viejo
+        // reventaría el UPDATE entero con "no se pudo guardar".
+        if (array_key_exists('crm_con_ia', $in) && tiene_col_clientes($pdo, 'crm_con_ia')) {
+            $campos['crm_con_ia'] = !empty($in['crm_con_ia']) ? 1 : 0;
         }
 
         // Las claves solo se pisan si mandaron una nueva: el formulario las

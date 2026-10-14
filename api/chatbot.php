@@ -468,7 +468,12 @@ $cfgBot   = chatbot_config($pdo);
 // (config_crm.chat_activo). Son pantallas distintas para dos personas
 // distintas -- el que edita el prompt y el que administra el sitio -- asi que
 // ninguno pisa al otro: cualquiera de los dos apaga la IA.
-$botActivo = $cfgBot['activo'] && cfg_crm_activo($pdo, 'chat_activo');
+// Tres interruptores, y los tres tienen que estar prendidos. Los dos primeros
+// son del cliente (el editor del chatbot y Configuración del CRM). El tercero
+// es del DUEÑO: si vendió este CRM "solo bandeja" (clientes.crm_con_ia=0), el
+// chatbot no responde aunque el cliente prenda los suyos -- la clave de IA es
+// la global compartida y no se regala. Ver rl_crm_con_ia().
+$botActivo = $cfgBot['activo'] && cfg_crm_activo($pdo, 'chat_activo') && rl_crm_con_ia();
 // El prompt son los dos contextos: el DINAMICO (nombre/tono/limites/info del
 // operador, lo unico editable desde el CRM) y el FIJO (la dinamica del juego y
 // la mecanica). Ver api/chatbot_contexto.php.

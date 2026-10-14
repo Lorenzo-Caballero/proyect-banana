@@ -1227,6 +1227,10 @@ if ($huellaHoy !== '') {
     }
 }
 
+// Clientes "solo bandeja": dejar el chat apagado en su base (2da capa; el
+// candado real lo aplica el chatbot leyendo el control). Best-effort.
+sincronizar_modo_ia($pdo, $cfg);
+
 // ---------------------------------------------------------------------------
 // ALTAS COLGADAS EN LA COLA DE UN CLIENTE.
 //
@@ -1578,6 +1582,57 @@ $activos = $pdo->query(
  * Best-effort de punta a punta: si esto falla, el bot igual se levanto o no se
  * levanto -- guardar el motivo no puede ser lo que rompa el aprovisionamiento.
  */
+/**
+ * Deja apagado el chatbot en la base de los clientes "solo bandeja".
+ *
+ * El candado real es rl_crm_con_ia() en el chatbot (lee el control y no
+ * responde aunque el switch local esté prendido). Esto es la segunda capa:
+ * deja config_crm.chat_activo=0 en la base del PROPIO cliente, por dos motivos
+ * concretos --el CRM del cliente muestra el chat apagado (consistente con lo
+ * que compró), y si el control se cae el chatbot sigue apagado por el switch
+ * local en vez de encenderse por el default-allow de rl_crm_con_ia().
+ *
+ * SOLO toca los crm_con_ia=0, y SOLO lo pone en 0: nunca prende el chat de
+ * nadie. Así no pelea con un cliente con IA que apaga su chat un rato. Es
+ * idempotente y barato (son pocos, y es un UPDATE de una fila).
+ */
+function sincronizar_modo_ia($pdo, $cfg) {
+    // Si el control no tiene la columna (migración 16 sin correr), no hay modo
+    // que sincronizar: se sale sin tocar nada.
+    try { $pdo->query('SELECT crm_con_ia FROM clientes LIMIT 0'); }
+    catch (Throwable $e) { return; }
+
+    $sinIa = $pdo->query(
+        "SELECT slug, db_nombre FROM clientes
+          WHERE crm_con_ia = 0 AND aprovisionado = 1 AND estado = 'activo'
+            AND db_nombre IS NOT NULL"
+    )->fetchAll();
+
+    foreach ($sinIa as $c) {
+        $db = (string) $c['db_nombre'];
+        if (!preg_match('/^[a-z0-9_]+$/i', $db)) { continue; }
+        try {
+            $pc = new PDO(
+                'mysql:host=' . $cfg['DB_HOST'] . ';dbname=' . $db . ';charset=utf8mb4',
+                $cfg['DB_USER'], $cfg['DB_PASS'],
+                [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+            );
+            // Los dos switches del cliente: Configuración del CRM (chat_activo)
+            // y el editor del chatbot (config_chatbot.activo). Se apagan los
+            // dos para que ninguna de las dos pantallas muestre el chat vivo.
+            $pc->prepare(
+                "INSERT INTO config_crm (clave, valor) VALUES ('chat_activo','0')
+                 ON DUPLICATE KEY UPDATE valor = '0'"
+            )->execute();
+            try { $pc->exec("UPDATE config_chatbot SET activo = 0 WHERE activo <> 0"); }
+            catch (Throwable $e) { /* sin esa tabla: alcanza con chat_activo */ }
+        } catch (Throwable $e) {
+            // Base caída o sin config_crm: lo reintenta la próxima pasada. El
+            // candado del chatbot ya lo mantiene apagado mientras tanto.
+        }
+    }
+}
+
 function guardar_estado_bot($cfg, $c, $msg) {
     $db = trim((string) ($c['db_nombre'] ?? ''));
     if ($db === '') { return; }

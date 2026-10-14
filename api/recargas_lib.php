@@ -187,6 +187,57 @@ function rl_cliente_actual(): ?array
 }
 
 /**
+ * ¿ESTE CLIENTE TIENE CHATBOT IA, O ES UN CRM "SOLO BANDEJA"?
+ *
+ * El dueño lo decide al crear el cliente (goldpaw_control.clientes.crm_con_ia,
+ * migración 16 del control). Con 0, el chatbot no responde nunca: el mensaje
+ * del jugador queda en el CRM para que lo atienda una persona.
+ *
+ * ES UN CANDADO, no un default, y por eso se lee del control y no de la base
+ * del cliente: la clave de IA es la global compartida, así que si esto fuera
+ * solo el switch local del cliente (config_crm.chat_activo), el cliente lo
+ * prende desde su CRM y gasta nuestro presupuesto de API sin pagarlo. Acá no
+ * puede: el chatbot pregunta esto además de su switch local.
+ *
+ * DEGRADA A "PERMITIDO" (default-allow, deny-explícito): devuelve false SOLO
+ * cuando el control responde y dice 0. Si el control no contesta, o la
+ * migración 16 no corrió, devuelve true -- y el modo real lo sigue marcando el
+ * switch local del cliente (que el aprovisionamiento deja en 0 para los "sin
+ * IA", en la base del propio cliente, así sobrevive una caída del control).
+ * Al revés sería peor: un control caído apagaría el chatbot de TODOS,
+ * incluido el nuestro, que es el producto principal.
+ *
+ * Query propia y tolerante (no se suma a rl_cliente_actual): una columna que
+ * falte ahí degradaría la fila entera a null y se quedarían sin coins_por_peso
+ * ni cuenta de cobro todos los tenants hasta correr la migración.
+ */
+function rl_crm_con_ia(): bool
+{
+    static $v = null, $intentado = false;
+    if ($intentado) { return $v; }
+    $intentado = true;
+    $v = true;                                  // default-allow
+    $ctl = rl_control();
+    $db  = (string)($GLOBALS['TENANT_DB'] ?? cfg('DB_NAME'));
+    if (!$ctl || $db === '') { return $v; }
+    try {
+        $st = $ctl->prepare(
+            'SELECT crm_con_ia FROM clientes WHERE db_nombre = ? AND estado = \'activo\' LIMIT 1'
+        );
+        $st->execute([$db]);
+        $r = $st->fetchColumn();
+        // false = sin fila (no es un cliente del control, p.ej. el nuestro por
+        // dominio directo) -> permitido. Solo un 0 explícito apaga.
+        if ($r !== false) { $v = (int)$r === 1; }
+    } catch (Throwable $e) {
+        // Sin la columna (migración 16 sin correr) -> permitido, y manda el
+        // switch local. error_log y no romper: esto gatea un chat, no la plata.
+        error_log('rl_crm_con_ia: ' . $e->getMessage());
+    }
+    return $v;
+}
+
+/**
  * CUANTOS COINS VALE UN PESO PARA ESTE CLIENTE.
  *
  * El panel del dueño pedia este numero desde siempre (campo «Coins por peso»)
