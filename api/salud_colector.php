@@ -196,6 +196,7 @@ try {
 /* ---- 2. ¿Alguna lectura o tarea quedó tan vieja que ya se nota? ---------- */
 $avisados = [];
 $estado   = [];
+$lecturasVencidas = [];
 
 /* DESDE CUANDO ESTAMOS MIRANDO, y por qué hace falta.
    «Nunca corrió» no dispara aviso, a propósito: el día del deploy todas las
@@ -276,22 +277,50 @@ foreach ($aRevisar as $k => $lim) {
     /* La clave identifica el PROBLEMA, no el momento: mientras el WAF siga
        tapando, `tg_avisar_una_vez` no lo repite (salvo el re-aviso de
        `tg_repetir_min`, que existe para el que se pasa por alto). */
-    $ok = $lim['lectura']
-        ? tg_evento($pdo, 'salud', '🕸️ El WAF nos está tapando la lectura del panel', [
-            'Qué no estamos pudiendo leer' => $lim['que'],
-            'Hace'                         => $edad . ' minutos',
-            'Qué significa'                => $lim['duele'],
-            'Qué hacer'                    => 'Suele aflojar solo. Si sigue, mirá '
-                                            . '/var/log/goldpaw-aprobar.log: cada challenge '
-                                            . 'queda anotado con su reintento.',
-        ], 'colector_' . $k . '_viejo')
-        : tg_evento($pdo, 'salud', '⏰ Algo que tenía que correr solo dejó de correr', [
+    if ($lim['lectura']) {
+        /* Agrupar las lecturas evita tres o cuatro avisos por una sola caída.
+           No ponemos la edad exacta en el texto: tg_avisar_una_vez compara la
+           huella del mensaje, y "hace 21 minutos / 22 minutos" parecía un
+           incidente distinto en cada pasada. Además del loteo, eso hacía que
+           el piso de 45 minutos desplazara la repetición normal de 180. */
+        $ultimoEstado = '';
+        try { $ultimoEstado = trim((string)cfg_crm($pdo, 'colector_' . $k . '_estado')); }
+        catch (Throwable $e) { /* el umbral vencido basta para notificar */ }
+        $detalle = $lim['que'] . ' (sin lectura exitosa por más de '
+                 . $lim['min'] . ' min';
+        if ($ultimoEstado !== '') { $detalle .= '; último resultado: ' . $ultimoEstado; }
+        $lecturasVencidas[] = [
+            'texto' => $detalle . ')',
+            'impacto' => $lim['duele'],
+            'waf' => stripos($ultimoEstado, 'waf') !== false,
+        ];
+        continue;
+    }
+
+    $ok = tg_evento($pdo, 'salud', '⏰ Algo que tenía que correr solo dejó de correr', [
             'Qué dejó de correr' => $lim['que'],
             'Última vez'         => 'hace ' . ($edad >= 120 ? round($edad / 60) . ' horas' : $edad . ' minutos'),
             'Qué significa'      => $lim['duele'],
             'Qué hacer'          => $lim['arreglo'],
         ], 'tarea_' . $k . '_parada');
     if ($ok) { $avisados[] = $k; }
+}
+
+/* Una sola alerta para espejo, libro, stock y billeteras. El texto solo varía
+   si cambia el conjunto de lecturas vencidas o su último tipo de error; una
+   falla estable queda deduplicada con la ventana normal (3 h), y el piso de
+   cambio solo aplica ante una escalada real. */
+if ($lecturasVencidas) {
+    $conWaf = (bool)array_filter($lecturasVencidas, static fn($v) => $v['waf']);
+    $ok = tg_evento($pdo, 'salud', $conWaf
+        ? '🕸️ El WAF está bloqueando lecturas del panel'
+        : '⚠️ Hay lecturas del panel atrasadas', [
+            'Qué no se actualiza' => implode("\n", array_column($lecturasVencidas, 'texto')),
+            'Impacto' => implode(' ', array_unique(array_column($lecturasVencidas, 'impacto'))),
+            'Qué hacer' => 'Revisá /var/log/goldpaw-aprobar.log. Si figura un challenge, '
+                         . 'el colector lo reintenta y vuelve a informar cuando se recupere.',
+        ], 'colector_lecturas_vencidas');
+    if ($ok) { $avisados[] = 'lecturas_panel'; }
 }
 
 sc_salir(['ok' => true, 'estado' => $estado, 'avisados' => $avisados]);

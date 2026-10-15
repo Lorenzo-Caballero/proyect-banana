@@ -83,6 +83,8 @@ function op_fecha(?string $crudo): ?string
 $recibidas = count($filas);
 $guardadas = 0;
 $ignoradas = 0;
+$peticionesRecuperadas = 0;
+$recuperacionPeticionesDisponible = null;
 
 try {
     $st = $pdo->prepare(
@@ -146,6 +148,60 @@ foreach ($filas as $f) {
             op_fecha($f['created_at'] ?? null),
         ]);
         $guardadas++;
+
+        /* La bandeja de Ganamos solo devuelve solicitudes ABIERTAS. Si el
+           operador la aprueba entre dos sondeos (o el WAF tapa justo esa
+           pasada), puede desaparecer antes de que peticiones_cola la guarde.
+           El historial conserva el mismo request/payment id. Un depósito con
+           comentario vacío es el que nació del botón del jugador; los
+           depósitos directos del agente llevan "direct deposit". Recuperamos
+           así la petición aprobada sin confundirla con una carga automática.
+           Se limita a 30 días para no convertir un backfill financiero viejo
+           en una lista interminable de peticiones en el CRM. */
+        $comentario = trim((string)($f['comment'] ?? ''));
+        $usuarioOp = trim((string)($f['username'] ?? ''));
+        $montoOp = (float)($f['amount'] ?? 0);
+        $cuandoOp = op_fecha((string)($f['created_at'] ?? ''));
+        if ($tipo === 0 && $comentario === '' && $usuarioOp !== ''
+            && $montoOp > 0 && $cuandoOp !== null
+            && $recuperacionPeticionesDisponible !== false) {
+            try {
+                if ($recuperacionPeticionesDisponible === null) {
+                    $recuperarPeticion = $pdo->prepare(
+                        "INSERT INTO peticiones_carga
+                                (request_id, username, monto, creada_api, primera_vez,
+                                 estado, confianza, motivo, actualizada_en)
+                         SELECT ?, ?, ?, ?, ?, 'aprobada', 'alta', ?, NOW()
+                           FROM DUAL
+                          WHERE ? >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                         ON DUPLICATE KEY UPDATE
+                                motivo = IF(estado IN ('esperando','revision','error','cerrada'),
+                                            VALUES(motivo), motivo),
+                                confianza = IF(estado IN ('esperando','revision','error','cerrada'),
+                                               'alta', confianza),
+                                actualizada_en = IF(estado IN ('esperando','revision','error','cerrada'),
+                                                    NOW(), actualizada_en),
+                                estado = IF(estado IN ('esperando','revision','error','cerrada'),
+                                            'aprobada', estado)"
+                    );
+                    $recuperacionPeticionesDisponible = true;
+                }
+                $recuperarPeticion->execute([
+                    $id,
+                    mb_substr($usuarioOp, 0, 60),
+                    $montoOp,
+                    mb_substr((string)($f['created_at'] ?? ''), 0, 40),
+                    $cuandoOp,
+                    'Aprobada en Ganamos; recuperada del historial del panel.',
+                    $cuandoOp,
+                ]);
+                if ($recuperarPeticion->rowCount() > 0) { $peticionesRecuperadas++; }
+            } catch (Throwable $e) {
+                $recuperacionPeticionesDisponible = false;
+                error_log('operaciones_panel: no pude recuperar peticiones aprobadas: '
+                          . $e->getMessage());
+            }
+        }
     } catch (Throwable $e) {
         error_log('operaciones_panel: fila ' . $id . ': ' . $e->getMessage());
         $ignoradas++;
@@ -166,5 +222,6 @@ echo json_encode([
     'recibidas'  => $recibidas,
     'guardadas'  => $guardadas,
     'ignoradas'  => $ignoradas,
+    'peticiones_recuperadas' => $peticionesRecuperadas,
     'libro_desde' => $desde,
 ]);

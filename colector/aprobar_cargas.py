@@ -88,7 +88,7 @@ otro worker que toque el panel, va con este mismo lock.
     API_URL, API_KEY          API_KEY = BOT_API_KEY del server
     MODE                      DRY_RUN (default) | SAFE | LIVE
     TEST_USERS_WHITELIST      usuarios que SAFE si aprueba, separados por coma
-    DIAS_VENTANA              dias hacia atras que se miran (default 2)
+    DIAS_VENTANA              dias hacia atras que se miran (default 30)
 """
 
 import argparse
@@ -139,6 +139,8 @@ WHITELIST = [u.strip() for u in os.environ.get("TEST_USERS_WHITELIST", "").split
 # type == 0 es deposito. El listado mezcla depositos y retiros, y aprobar un
 # retiro por error SACA plata. Se filtra aca y otra vez del lado del server.
 TIPO_DEPOSITO = 0
+SOLICITUDES_POR_PAGINA = 50
+SOLICITUDES_MAX_PAGINAS = int(os.environ.get("SOLICITUDES_MAX_PAGINAS", "200"))
 
 # Cuanto tiene que llevar una transferencia sin poder asignarse para que valga
 # la pena avisar. Tiene que ser mayor que el intervalo de este worker: si fuera
@@ -244,7 +246,14 @@ def _json(r):
         # reintentar: esta funcion solo se usa para lecturas.
         if status in (403, 429, 503):
             raise DesafioWAF(f"el panel respondio HTTP {status} (bloqueo temporal)")
-        raise RespuestaPanelInvalida(f"el panel respondio HTTP {status}")
+        # El código solo no alcanza para distinguir una validación real del
+        # panel de un 400 intermitente de su capa frontal. Guardamos una muestra
+        # corta (nunca una respuesta completa con filas de jugadores) para que
+        # el diagnóstico del siguiente incidente tenga la causa concreta.
+        detalle = " ".join(txt.split())[:180]
+        raise RespuestaPanelInvalida(
+            f"el panel respondio HTTP {status}" + (f" | {detalle}" if detalle else "")
+        )
     try:
         return r.json()
     except Exception:
@@ -358,53 +367,86 @@ def traer_solicitudes(ctx, dias: int) -> tuple[list, list] | None:
     enteraba hasta que abria el panel a ojo.
     """
     hoy = datetime.now().date()
-    params = {
-        "date_from": (hoy - timedelta(days=dias)).isoformat(),
-        # +1 dia de margen: el server agrupa por fecha con un desfasaje de zona
-        # horaria respecto del reloj local, asi que "hoy" a secas puede dejar
-        # afuera solicitudes recien creadas.
-        "date_to": (hoy + timedelta(days=1)).isoformat(),
-        "count": 50,
-        "page": 0,
-    }
-    # ESTA ES LA LECTURA DE LA PLATA: la que dice que cargas estan esperando
-    # aprobacion. Un challenge aca le cuesta al jugador un minuto de espera con
-    # la transferencia ya hecha, asi que se reintenta igual que el resto -- pero
-    # con el chequeo de r.ok intacto, que no se puede perder: un 401 tiene cuerpo
-    # JSON y pasaria por leer_json como si fuera una respuesta buena.
-    data = None
-    for intento in range(1, WAF_INTENTOS + 1):
-        try:
-            r = ctx.request.get(SOLICITUDES, params=params, timeout=30_000)
-        except Exception as e:
-            log.error("no pude leer las solicitudes: %s", e)
+    solicitudes_por_id = {}
+    paginas_completas = False
+    # Antes se consultaba solo page=0. Con más de 50 solicitudes abiertas, las
+    # siguientes quedaban invisibles. Si la API no permite leer todas las
+    # páginas, no se manda una lista parcial al CRM: su reconciliación de
+    # ausentes podría interpretar el corte como aprobaciones o rechazos.
+    for pagina in range(max(1, SOLICITUDES_MAX_PAGINAS)):
+        params = {
+            "date_from": (hoy - timedelta(days=dias)).isoformat(),
+            # +1 día por el desfase de fechas que agrupa el panel.
+            "date_to": (hoy + timedelta(days=1)).isoformat(),
+            "count": SOLICITUDES_POR_PAGINA,
+            "page": pagina,
+        }
+        data = None
+        for intento in range(1, WAF_INTENTOS + 1):
+            try:
+                r = ctx.request.get(SOLICITUDES, params=params, timeout=30_000)
+            except Exception as e:
+                log.error("no pude leer solicitudes (página %d): %s", pagina, e)
+                return None
+            if not r.ok:
+                if r.status in (403, 429, 503) and intento < WAF_INTENTOS:
+                    if intento >= 2:
+                        _despejar_waf(ctx)
+                    else:
+                        time.sleep(WAF_ESPERA_S)
+                    log.warning("solicitudes página %d: HTTP %s, reintento %d/%d",
+                                pagina, r.status, intento + 1, WAF_INTENTOS)
+                    continue
+                log.error("el panel respondió %s al listar solicitudes (página %d)",
+                          r.status, pagina)
+                return None
+            try:
+                data = _json(r)
+                break
+            except DesafioWAF:
+                if intento >= WAF_INTENTOS:
+                    raise
+                if intento >= 2:
+                    _despejar_waf(ctx)
+                else:
+                    time.sleep(WAF_ESPERA_S)
+                log.info("solicitudes página %d: challenge WAF, reintento %d/%d",
+                         pagina, intento + 1, WAF_INTENTOS)
+        if data is None:
             return None
-        if not r.ok:
-            log.error("el panel respondio %s al listar solicitudes", r.status)
-            return None
-        try:
-            data = _json(r)
-            break
-        except DesafioWAF:
-            if intento >= WAF_INTENTOS:
-                raise
-            if intento >= 2:
-                _despejar_waf(ctx)
-            else:
-                time.sleep(WAF_ESPERA_S)
-            log.info("solicitudes: challenge del WAF, reintento (%d de %d)",
-                     intento + 1, WAF_INTENTOS)
 
-    # Dos formas de respuesta segun por donde se mire: la API envuelve en
-    # `result`, pero en DevTools se ve el objeto de adentro. Se aceptan las dos.
-    cuerpo = data.get("result") if isinstance(data.get("result"), dict) else data
-    items = cuerpo.get("items") if isinstance(cuerpo, dict) else None
-    if not isinstance(items, list):
-        log.error("respuesta inesperada del panel: %s", str(data)[:200])
+        # Dos formas de respuesta: envuelta en `result` o directa.
+        cuerpo = data.get("result") if isinstance(data.get("result"), dict) else data
+        items = cuerpo.get("items") if isinstance(cuerpo, dict) else None
+        if not isinstance(items, list):
+            log.error("respuesta inesperada del panel (página %d): %s",
+                      pagina, str(data)[:200])
+            return None
+        if not items:
+            paginas_completas = True
+            break
+
+        nuevos = 0
+        for it in items:
+            if isinstance(it, dict) and it.get("id") is not None:
+                rid = str(it.get("id"))
+                if rid not in solicitudes_por_id:
+                    solicitudes_por_id[rid] = it
+                    nuevos += 1
+        if len(items) < SOLICITUDES_POR_PAGINA:
+            paginas_completas = True
+            break
+        if nuevos == 0:
+            log.error("la paginación del panel repitió la página %d; no envío una lista incompleta", pagina)
+            return None
+
+    if not paginas_completas:
+        log.error("solicitudes: se alcanzó el límite de %d páginas; no envío una lista incompleta",
+                  max(1, SOLICITUDES_MAX_PAGINAS))
         return None
 
     solicitudes, retiros = [], []
-    for it in items:
+    for it in solicitudes_por_id.values():
         if not isinstance(it, dict):
             continue
         registro = {
@@ -1466,7 +1508,10 @@ def _usuarios_paginas(ctx) -> list:
             completo = False
             break
         url = (f"{PANEL_API}/agent_admin/user/?count={USUARIOS_POR_PAGINA}&page={pagina}"
-               f"&user_id={agent_id}&is_banned=false&is_direct_structure=false")
+               # La cuenta madre también puede ver a los agentes clientes.
+               # Espejar toda la estructura mezclaba sus jugadores en el CRM
+               # propio. Acá solo pertenecen los jugadores directos del agente.
+               f"&user_id={agent_id}&is_banned=false&is_direct_structure=true")
         try:
             items = _usuarios_items_estrictos(
                 leer_json(ctx, url, f"espejo de saldos (pagina {pagina})", timeout=45_000),
@@ -1726,8 +1771,8 @@ def main() -> int:
     ap.add_argument("--usuarios", action="store_true",
                     help="espejar AHORA el saldo de todos los jugadores y salir "
                          "(para verificar que el espejo anda)")
-    ap.add_argument("--dias", type=int, default=int(os.environ.get("DIAS_VENTANA", "2")),
-                    help="dias hacia atras que se miran (default 2)")
+    ap.add_argument("--dias", type=int, default=int(os.environ.get("DIAS_VENTANA", "30")),
+                    help="dias hacia atras que se miran (default 30)")
     args = ap.parse_args()
 
     if MODE not in ("DRY_RUN", "SAFE", "LIVE"):

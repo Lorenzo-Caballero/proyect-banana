@@ -307,10 +307,40 @@ if (!function_exists('tg_avisar_una_vez')) {
                 }
             }
         } catch (Throwable $e) {
-            // Sin la migracion 50 la tabla no existe. Se avisa igual: el
-            // objetivo es no perder el aviso, y la repeticion se arregla sola
-            // cuando la migracion corra.
-            return tg_avisar($texto, $pdo);
+            /* Una base antigua puede no tener la migración 50. Antes, en ese
+               caso, mandábamos el aviso sin deduplicar: un vigilante que corre
+               cada minuto podía inundar Telegram indefinidamente. `config_crm`
+               existe desde la migración 38, así que se usa como respaldo con
+               la misma ventana. Si tampoco está disponible, fallamos cerrados
+               y dejamos el detalle en el log: nunca repetimos a ciegas. */
+            error_log('tg_avisar_una_vez: tg_avisos no disponible; uso dedupe de respaldo: '
+                      . $e->getMessage());
+            $fallbackKey = 'tg_once_' . substr(hash('sha256', $clave), 0, 32);
+            try {
+                $st = $pdo->prepare(
+                    "SELECT valor, UNIX_TIMESTAMP(NOW()) AS ahora
+                       FROM config_crm WHERE clave = ? LIMIT 1"
+                );
+                $st->execute([$fallbackKey]);
+                $respaldo = $st->fetch(PDO::FETCH_ASSOC) ?: [];
+                $ahora = (int)($respaldo['ahora'] ?? time());
+                $partes = explode('|', (string)($respaldo['valor'] ?? ''), 2);
+                if (count($partes) === 2 && ctype_digit($partes[1])) {
+                    $mismoTexto = hash_equals($partes[0], $huella);
+                    $hace = max(0, (int)floor(($ahora - (int)$partes[1]) / 60));
+                    if ($hace < ($mismoTexto ? $minutos : $pisoCambio)) { return false; }
+                }
+                if (!tg_avisar($texto, $pdo)) { return false; }
+                $pdo->prepare(
+                    "INSERT INTO config_crm (clave, valor) VALUES (?, ?)
+                     ON DUPLICATE KEY UPDATE valor = VALUES(valor)"
+                )->execute([$fallbackKey, $huella . '|' . $ahora]);
+                return true;
+            } catch (Throwable $fallbackError) {
+                error_log('tg_avisar_una_vez: tampoco pude deduplicar con config_crm: '
+                          . $fallbackError->getMessage());
+                return false;
+            }
         }
 
         if (!tg_avisar($texto, $pdo)) { return false; }
