@@ -163,6 +163,16 @@ class RespuestaPanelInvalida(RuntimeError):
     """El panel respondio, pero el payload no tiene la forma esperada."""
 
 
+class LimitePanel(RuntimeError):
+    """Ganamos aplico rate limit; no es un challenge y no se debe insistir."""
+
+
+# Fusible compartido por las lecturas de una pasada. Sin esto, stock, libro y
+# espejo repetian el mismo 400 uno tras otro cada minuto.
+PANEL_LIMITE_HASTA = 0.0
+PANEL_LIMITE_ESPERA_S = 90
+
+
 def url_cola() -> str:
     """De API_URL (.../gp-api/altas_cola.php) sacamos .../gp-api/peticiones_cola.php.
 
@@ -246,6 +256,13 @@ def _json(r):
         # reintentar: esta funcion solo se usa para lecturas.
         if status in (403, 429, 503):
             raise DesafioWAF(f"el panel respondio HTTP {status} (bloqueo temporal)")
+        if status == 400:
+            try:
+                error = (r.json() or {}).get("error_message", "")
+            except Exception:
+                error = ""
+            if "too many requests" in str(error).lower():
+                raise LimitePanel("Ganamos limitó las consultas: Too many requests")
         # El código solo no alcanza para distinguir una validación real del
         # panel de un 400 intermitente de su capa frontal. Guardamos una muestra
         # corta (nunca una respuesta completa con filas de jugadores) para que
@@ -335,10 +352,16 @@ def leer_json(ctx, url: str, que: str, **kw):
     de arrancar la pasada, no en la pagina 50), y una pasada normal dura 6-9
     segundos sobre un minuto de presupuesto. Dos reintentos entran de sobra.
     """
+    global PANEL_LIMITE_HASTA
+    if time.monotonic() < PANEL_LIMITE_HASTA:
+        raise LimitePanel(f"{que}: pausa por rate limit del panel")
     ultimo = None
     for intento in range(1, WAF_INTENTOS + 1):
         try:
             return _json(ctx.request.get(url, **kw))
+        except LimitePanel:
+            PANEL_LIMITE_HASTA = time.monotonic() + PANEL_LIMITE_ESPERA_S
+            raise
         except DesafioWAF as e:
             ultimo = e
             PASADA["challenges"] = PASADA.get("challenges", 0) + 1
@@ -366,6 +389,10 @@ def traer_solicitudes(ctx, dias: int) -> tuple[list, list] | None:
     puede pedir un retiro desde el boton de la plataforma y sin esto nadie se
     enteraba hasta que abria el panel a ojo.
     """
+    global PANEL_LIMITE_HASTA
+    if time.monotonic() < PANEL_LIMITE_HASTA:
+        log.warning("solicitudes: espera por rate limit del panel; reintento en la próxima pasada")
+        return None
     hoy = datetime.now().date()
     solicitudes_por_id = {}
     paginas_completas = False
@@ -397,12 +424,27 @@ def traer_solicitudes(ctx, dias: int) -> tuple[list, list] | None:
                     log.warning("solicitudes página %d: HTTP %s, reintento %d/%d",
                                 pagina, r.status, intento + 1, WAF_INTENTOS)
                     continue
+                if r.status == 400:
+                    try:
+                        _json(r)
+                    except LimitePanel:
+                        PANEL_LIMITE_HASTA = time.monotonic() + PANEL_LIMITE_ESPERA_S
+                        log.warning("solicitudes: Ganamos limitó las consultas; pauso lecturas %d s",
+                                    PANEL_LIMITE_ESPERA_S)
+                        return None
+                    except Exception:
+                        pass
                 log.error("el panel respondió %s al listar solicitudes (página %d)",
                           r.status, pagina)
                 return None
             try:
                 data = _json(r)
                 break
+            except LimitePanel:
+                PANEL_LIMITE_HASTA = time.monotonic() + PANEL_LIMITE_ESPERA_S
+                log.warning("solicitudes: Ganamos limitó las consultas; pauso lecturas %d s",
+                            PANEL_LIMITE_ESPERA_S)
+                return None
             except DesafioWAF:
                 if intento >= WAF_INTENTOS:
                     raise
@@ -1825,10 +1867,14 @@ def main() -> int:
                 nr = una_pasada_retiros(ctx, args.ver)
                 if nr:
                     log.info("%d retiro(s) ejecutado(s)", nr)
-                revisar_stock(ctx, args.ver)
+                # El historial permite recuperar solicitudes que desaparecen
+                # de la bandeja abierta cuando el agente las aprueba a mano.
+                # Consultarlo antes de stock/espejo le da prioridad dentro del
+                # presupuesto de llamadas del panel.
                 sincronizar_libro(ctx, args.ver)
                 # Justo DESPUES de traer el libro, que es cuando esta fresco.
                 conciliar(ctx, args.ver)
+                revisar_stock(ctx, args.ver)
                 # EL SALDO DE LOS QUE ESTAN HABLANDO AHORA, que es el que el
                 # bot va a usar para contestarles. Una llamada por cabeza, en
                 # cada pasada: baja el peor caso de 5 minutos a 1.
