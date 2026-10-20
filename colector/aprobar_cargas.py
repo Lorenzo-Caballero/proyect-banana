@@ -1260,8 +1260,17 @@ def revisar_stock(ctx, solo_ver: bool) -> None:
 # exactamente lo que paso el 16/09 con tres de cuatro retiros.
 # Cuesta 4-6 requests y un par de segundos, sobre un minuto de presupuesto.
 LIBRO_CADA_MIN = int(os.environ.get("LIBRO_CADA_MIN", "5"))
-LIBRO_DIAS     = 30          # ventana de la sincronizacion rutinaria
+LIBRO_DIAS     = int(os.environ.get("LIBRO_DIAS", "30"))
+# En la pasada frecuente alcanza con solapar dos días: es suficiente para
+# capturar depósitos/retiros recientes y sus cambios de estado. Releer 30 días
+# cada cinco minutos gastaba hasta 15 páginas por tipo aunque nada histórico
+# hubiera cambiado. Una reconciliación completa diaria recupera operaciones
+# tardías y corrige cualquier hueco del tramo corto.
+LIBRO_DIAS_RECIENTE = max(1, int(os.environ.get("LIBRO_DIAS_RECIENTE", "2")))
+LIBRO_RECONCILIAR_CADA_H = max(1, int(os.environ.get("LIBRO_RECONCILIAR_CADA_H", "24")))
 _LIBRO_MARCA   = "/tmp/gp_libro_visto"
+_LIBRO_COMPLETO_MARCA = "/tmp/gp_libro_completo_visto"
+_LIBRO_COMPLETO_INTENTO = "/tmp/gp_libro_completo_intento"
 HISTORIAL      = f"{PANEL_API}/agent_admin/payment/requests/history/"
 
 
@@ -1287,6 +1296,38 @@ def _libro_toca() -> bool:
         return True
     except Exception:
         return True          # ante la duda, sincronizar: es una lectura
+
+
+def _libro_completo_toca() -> bool:
+    """Pide una reconciliación larga, con enfriamiento ante fallos.
+
+    La pasada de cada cinco minutos lee una ventana reciente. El espejo
+    completo se ejecuta al menos cada LIBRO_RECONCILIAR_CADA_H horas. Se
+    recuerda también el intento para que un bloqueo del WAF no dispare el
+    backfill de 30 días en cada vuelta del cron.
+    """
+    intervalo = LIBRO_RECONCILIAR_CADA_H * 3600
+    try:
+        if os.path.isfile(_LIBRO_COMPLETO_MARCA):
+            if time.time() - os.path.getmtime(_LIBRO_COMPLETO_MARCA) < intervalo:
+                return False
+        if os.path.isfile(_LIBRO_COMPLETO_INTENTO):
+            if time.time() - os.path.getmtime(_LIBRO_COMPLETO_INTENTO) < intervalo:
+                return False
+        open(_LIBRO_COMPLETO_INTENTO, "w").close()
+        return True
+    except Exception:
+        return False  # si no se puede leer/escribir el marcador, evitar el backfill
+
+
+def _libro_completo_ok() -> None:
+    """Sella la última reconciliación completa exitosa."""
+    try:
+        open(_LIBRO_COMPLETO_MARCA, "w").close()
+        if os.path.exists(_LIBRO_COMPLETO_INTENTO):
+            os.remove(_LIBRO_COMPLETO_INTENTO)
+    except Exception as e:
+        log.warning("libro: no pude sellar la reconciliación completa: %s", str(e)[:100])
 
 
 def _libro_paginas(ctx, tipo: int, dias: int, max_paginas: int = 2000) -> list:
@@ -1381,6 +1422,11 @@ def sincronizar_libro(ctx, solo_ver: bool, dias: int = LIBRO_DIAS,
     que rechazamos a mano (request_id 234314468) -- no esta, y sus ids vecinos
     si. Asi que estar en el libro prueba que la operacion se hizo.
 
+    La lectura rutinaria consulta los últimos dos días cada cinco minutos y
+    reconcilia 30 días una vez al día. El solapamiento captura operaciones
+    nuevas y tardías sin pedir quince páginas históricas en cada vuelta; la
+    pasada completa conserva la reparación de movimientos atrasados.
+
     Se mandan las dos clases. Los depositos no se usan todavia para sumar, pero
     son el control cruzado de los que el bot marco 'hecha' sin que la
     plataforma los registre -- que es el bug del documento para Fauno.
@@ -1414,6 +1460,12 @@ def sincronizar_libro(ctx, solo_ver: bool, dias: int = LIBRO_DIAS,
         log.warning("libro: no hay API_KEY en el entorno")
         return
 
+    reconciliacion_completa = forzar or dias != LIBRO_DIAS
+    if not forzar and dias == LIBRO_DIAS:
+        reconciliacion_completa = _libro_completo_toca()
+        if not reconciliacion_completa:
+            dias = LIBRO_DIAS_RECIENTE
+
     try:
         ops = _libro_paginas(ctx, 1, dias) + _libro_paginas(ctx, 0, dias)
     except LimitePanel as e:
@@ -1434,8 +1486,10 @@ def sincronizar_libro(ctx, solo_ver: bool, dias: int = LIBRO_DIAS,
         # con movimiento no tiene un mes vacio: o el panel contesto raro, o la
         # sesion se cayo y devolvio una pagina de login. Antes esto se
         # registraba como info y se iba sin dejar rastro en el estado.
-        PASADA["libro"] = "vacio"
-        log.warning("libro: el panel no devolvio NINGUNA operacion en %d dias", dias)
+        PASADA["libro"] = "ok"
+        log.info("libro: sin operaciones en la ventana de %d dias", dias)
+        if reconciliacion_completa:
+            _libro_completo_ok()
         return
 
     # Se manda la ventana ENTERA, no solo lo nuevo: del otro lado `payment_id`
@@ -1454,6 +1508,8 @@ def sincronizar_libro(ctx, solo_ver: bool, dias: int = LIBRO_DIAS,
         log.info("libro: %s operaciones (%s guardadas, %s ignoradas), desde %s",
                  d.get("recibidas"), d.get("guardadas"), d.get("ignoradas"),
                  d.get("libro_desde"))
+        if reconciliacion_completa:
+            _libro_completo_ok()
     except Exception as e:
         PASADA["libro"] = "error_reporte"
         log.warning("libro: no pude reportar las operaciones: %s", e)
@@ -1484,7 +1540,7 @@ def sincronizar_libro(ctx, solo_ver: bool, dias: int = LIBRO_DIAS,
 # corre cada minuto. Leer el listado de usuarios es una lectura mas, como las
 # que ya hace para el libro y para el stock: no agrega ningun login, asi que el
 # problema de las dos sesiones desaparece.
-USUARIOS_CADA_MIN = int(os.environ.get("USUARIOS_CADA_MIN", "5"))
+USUARIOS_CADA_MIN = int(os.environ.get("USUARIOS_CADA_MIN", "15"))
 # CUANTOS JUGADORES POR REQUEST. Es la palanca mas grande que tenemos contra el
 # WAF, y estuvo en 50 por herencia: es lo que usaba sync_usuarios.py.
 #
@@ -1499,12 +1555,10 @@ USUARIOS_CADA_MIN = int(os.environ.get("USUARIOS_CADA_MIN", "5"))
 #     count=200   0,52 s/pagina  x 16 paginas  =  15 s
 #     count=500   1,07 s/pagina  x  7 paginas  =  10 s
 #
-# O sea que 200 baja la exposicion 4 veces Y ademas el barrido tarda un tercio.
-# Se elige 200 y no 500 --que midio todavia mejor-- porque el comportamiento por
-# request se mantiene cerca de lo ya probado, y porque con 16 paginas un barrido
-# cortado a la mitad sigue guardando pedazos utiles. Subirlo es cambiar una
-# variable de entorno, una vez que se vea que 200 se porta bien.
-USUARIOS_POR_PAGINA = int(os.environ.get("USUARIOS_POR_PAGINA", "200"))
+# El WAF ya está cortando el lote de 200 en la página 13. En tres muestras
+# previas, 500 bajó el barrido a 7 requests y 10 s; usamos ese tamaño para
+# quedar por debajo del umbral que ahora vemos en producción.
+USUARIOS_POR_PAGINA = int(os.environ.get("USUARIOS_POR_PAGINA", "500"))
 USUARIOS_POR_POST = 300      # tamano del lote hacia nuestro server
 USUARIOS_MAX_PAGINAS = 200   # 10.000 jugadores: freno duro, no un limite real
 _USUARIOS_MARCA = "/tmp/gp_usuarios_visto"
@@ -1588,9 +1642,9 @@ def _usuarios_toca() -> bool:
 
     Mismo mecanismo que _libro_toca() y _stock_toca(): el worker arranca de cero
     en cada pasada del cron, asi que el "hace cuanto" vive en la fecha de un
-    archivo y no en memoria. Cada 5 minutos y no cada minuto porque son varias
-    paginas; lo que se gana es "el saldo tiene como mucho 5 minutos", que es
-    exactamente lo que prometia el sync viejo con --loop 300.
+    archivo y no en memoria. El padron completo se actualiza cada 15 minutos;
+    los jugadores con actividad nueva se consultan en cada pasada del minuto,
+    asi que su saldo habitual sigue demorando hasta un minuto.
     """
     try:
         if os.path.isfile(_USUARIOS_MARCA):
@@ -1759,8 +1813,10 @@ def refrescar_saldos_activos(ctx, solo_ver: bool) -> None:
     los activos son un punado.
 
     Va en cada pasada del cron (un minuto), con ventana de 3 minutos y un tope
-    de 15 usuarios ordenados por actividad más reciente. Esto mantiene fresco
-    el saldo de quienes usan el chat sin recorrer decenas de cuentas inactivas.
+    de 15 usuarios. El endpoint filtra la actividad posterior a la última
+    lectura exitosa, así que no vuelve a consultar al mismo jugador en cada
+    pasada si no hubo novedades. Mantiene frescos los saldos sin repetir
+    consultas innecesarias.
 
     Best-effort de punta a punta, igual que el espejo completo: esto no decide
     nada. Si falla, el espejo de los 5 minutos sigue siendo la red.
@@ -2067,9 +2123,9 @@ def main() -> int:
                 #
                 # No hay dependencia entre los dos, asi que el orden es libre.
                 # Y si hay que elegir a quien le toca el buen momento, le toca
-                # al que esta hablando: su saldo es el que el bot va a usar
-                # para contestarle AHORA. Los otros 3.000 pueden esperar cinco
-                # minutos mas.
+                # a quien tuvo actividad NUEVA desde la ultima lectura: su
+                # saldo es el que el bot va a usar para contestarle AHORA. El
+                # endpoint evita releerlo si no hubo novedad posterior.
                 refrescar_saldos_activos(ctx, args.ver)
                 # Y el espejo de todos. Va ULTIMO: es lo unico de la pasada que
                 # no decide nada -- si tarda o falla, las cargas y los retiros

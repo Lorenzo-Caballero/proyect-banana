@@ -497,6 +497,7 @@ const CFG_CRM_DEFAULTS = [
     'colector_stock_estado'  => '',
     'colector_challenges'    => '',   // challenges del WAF en el ultimo barrido
     'colector_visto_en'      => '',   // ultima vez que el colector reporto algo
+    'colector_lecturas_alerta_activa' => '0', // episodio abierto: lecturas panel atrasadas
 
     /* LATIDOS DE LAS TAREAS QUE CORREN SOLAS. Cada una sella el suyo al
        terminar; salud_colector.php avisa si alguno se queda quieto.

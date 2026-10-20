@@ -312,10 +312,9 @@ foreach ($aRevisar as $k => $lim) {
     if ($ok) { $avisados[] = $k; }
 }
 
-/* Una sola alerta para espejo, libro, stock y billeteras. El texto solo varía
-   si cambia el conjunto de lecturas vencidas o su último tipo de error; una
-   falla estable queda deduplicada con la ventana normal (3 h), y el piso de
-   cambio solo aplica ante una escalada real. */
+/* Una sola alerta para lecturas atrasadas. Se recuerda como un episodio:
+   aunque cambie rate_limit/waf o se atrase otra lectura, no se reenvia más de
+   una vez por día. La recuperación cierra el episodio y manda un solo aviso. */
 if ($lecturasVencidas) {
     $conWaf = (bool)array_filter($lecturasVencidas, static fn($v) => $v['waf']);
     $ok = tg_evento($pdo, 'salud', $conWaf
@@ -324,9 +323,32 @@ if ($lecturasVencidas) {
             'Qué no se actualiza' => implode("\n", array_column($lecturasVencidas, 'texto')),
             'Impacto' => implode(' ', array_unique(array_column($lecturasVencidas, 'impacto'))),
             'Qué hacer' => 'Revisá /var/log/goldpaw-aprobar.log. Si figura un challenge, '
-                         . 'el colector lo reintenta y vuelve a informar cuando se recupere.',
-        ], 'colector_lecturas_vencidas');
+                         . 'el colector pausa y reintenta; recibirás otro aviso cuando se recupere.',
+        ], 'colector_lecturas_vencidas', 1440, 1440);
     if ($ok) { $avisados[] = 'lecturas_panel'; }
+    try {
+        cfg_crm_guardar($pdo, ['colector_lecturas_alerta_activa' => '1'], 'colector');
+    } catch (Throwable $e) {
+        error_log('salud_colector/estado_alerta: ' . $e->getMessage());
+    }
+} else {
+    $incidenteAbierto = false;
+    try {
+        $incidenteAbierto = cfg_crm_activo($pdo, 'colector_lecturas_alerta_activa');
+    } catch (Throwable $e) {
+        error_log('salud_colector/leer_estado_alerta: ' . $e->getMessage());
+    }
+    if ($incidenteAbierto) {
+        $ok = tg_evento($pdo, 'salud', '✅ Se recuperaron las lecturas del panel', [
+            'Estado' => 'El colector volvió a leer los datos del panel. Los saldos, las solicitudes y el libro se actualizarán con las próximas pasadas.',
+        ], 'colector_lecturas_recuperadas');
+        if ($ok) { $avisados[] = 'lecturas_panel_recuperadas'; }
+        try {
+            cfg_crm_guardar($pdo, ['colector_lecturas_alerta_activa' => '0'], 'colector');
+        } catch (Throwable $e) {
+            error_log('salud_colector/cerrar_estado_alerta: ' . $e->getMessage());
+        }
+    }
 }
 
 sc_salir(['ok' => true, 'estado' => $estado, 'avisados' => $avisados]);

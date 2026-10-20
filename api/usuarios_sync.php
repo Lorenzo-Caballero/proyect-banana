@@ -43,8 +43,13 @@ if ($key === '' || strlen($key) < 16 || !hash_equals($key, $enviada)) {
    los activos cuesta una llamada por cabeza.
 
    "Activo" es quien podría estar por preguntar su saldo: escribió en el chat,
-   o se le movió plata. Lo normal es un puñado; el tope está para que una noche
-   rara no convierta esto en el espejo completo por la puerta de atrás.
+   o se le movió plata. Solo se vuelve a consultar al panel si hubo actividad
+   POSTERIOR a la última lectura exitosa del saldo. Sin ese corte, los mismos
+   jugadores se pedían cada minuto durante toda la ventana de actividad: hasta
+   900 consultas por hora aunque nadie volviera a escribir.
+
+   `saldo_visto_en` existe desde la migración 68. Si falta en una base vieja,
+   se conserva el comportamiento anterior hasta que se aplique esa migración.
    --------------------------------------------------------------------------- */
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['accion'] ?? '') === 'activos') {
     $min  = max(1, min(120, (int)($_GET['minutos'] ?? 15)));
@@ -65,6 +70,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['accion'] ?? '') === 'activos
 
        Es la diferencia entre una consulta que escala con el padrón y una que
        escala con la actividad del último cuarto de hora. */
+    $haySaldoVisto = true;
+    try { $pdo->query("SELECT saldo_visto_en FROM usuarios LIMIT 0"); }
+    catch (Throwable $e) { $haySaldoVisto = false; }
+
+    $despuesDeLectura = $haySaldoVisto
+        ? "AND (u.saldo_visto_en IS NULL OR u.saldo_visto_en < x.actividad_en)"
+        : '';
+    $orden = $haySaldoVisto
+        ? "(MAX(u.saldo_visto_en) IS NULL) DESC,
+           MAX(u.saldo_visto_en) ASC, MAX(x.actividad_en) DESC"
+        : "ultima_actividad DESC";
+
     try {
         $st = $pdo->prepare(
             "SELECT u.username, MAX(x.actividad_en) AS ultima_actividad
@@ -81,9 +98,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['accion'] ?? '') === 'activos
                       GROUP BY v.usuario
                     ) x
                JOIN usuarios u ON u.username COLLATE utf8mb4_unicode_ci = x.usuario
-              WHERE u.username <> ''
+              WHERE u.username <> '' $despuesDeLectura
               GROUP BY u.username
-              ORDER BY ultima_actividad DESC
+              ORDER BY $orden
               LIMIT $tope"
         );
         $st->execute([$min, $min]);

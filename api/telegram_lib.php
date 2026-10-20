@@ -162,9 +162,12 @@ if (!function_exists('tg_evento')) {
      * @param string $tipo   derivacion | revision | retiro | salud
      * @param array  $lineas pares [etiqueta => valor]; el valor se escapa
      * @param string $clave  si viene, se usa tg_avisar_una_vez con esa clave
+     * @param int    $minutos intervalo especial para este aviso persistente
+     * @param int    $pisoCambio intervalo mínimo también ante cambios de texto
      */
     function tg_evento(?PDO $pdo, string $tipo, string $titulo,
-                       array $lineas = [], string $clave = ''): bool
+                       array $lineas = [], string $clave = '',
+                       int $minutos = 0, int $pisoCambio = 0): bool
     {
         /* MODO PRUEBA: no se le escribe a nadie. Mismo criterio que
            meta_evento() -- una prueba puede tocar nuestra base, nunca a un
@@ -214,7 +217,7 @@ if (!function_exists('tg_evento')) {
                 $txt .= "\n" . $esc($k) . ': ' . $esc($v);
             }
             return $clave !== ''
-                ? tg_avisar_una_vez($clave, $txt, $pdo)
+                ? tg_avisar_una_vez($clave, $txt, $pdo, $minutos, $pisoCambio)
                 : tg_avisar($txt, $pdo);
         } catch (Throwable $e) {
             error_log('tg_evento: ' . $e->getMessage());
@@ -254,10 +257,11 @@ if (!function_exists('tg_avisar_una_vez')) {
      * @param string $clave  identifica el PROBLEMA, no el momento
      *                       ('salud', 'sin_actividad', 'pago_revision:AB12')
      * @param int    $minutos  0 = usar el default configurado
+     * @param int    $pisoCambioForzado 0 = usar el piso general de cambios
      * @return bool  true solo si se mando de verdad
      */
     function tg_avisar_una_vez(string $clave, string $texto, ?PDO $pdo = null,
-                               int $minutos = 0): bool
+                               int $minutos = 0, int $pisoCambioForzado = 0): bool
     {
         $clave = trim($clave);
         if ($clave === '' || !($pdo instanceof PDO)) {
@@ -275,8 +279,8 @@ if (!function_exists('tg_avisar_una_vez')) {
         /* El piso para el caso "cambio el contenido". Nunca mayor que la espera
            normal: si alguien configura 999 seria mas estricto con la novedad
            que con la repeticion, que es justo al reves de lo que se quiere. */
-        $pisoCambio = 0;
-        if (function_exists('cfg_crm')) {
+        $pisoCambio = max(0, $pisoCambioForzado);
+        if ($pisoCambio <= 0 && function_exists('cfg_crm')) {
             $pisoCambio = (int)(cfg_crm($pdo, 'tg_repetir_cambio_min') ?? 0);
         }
         if ($pisoCambio <= 0) { $pisoCambio = 45; }

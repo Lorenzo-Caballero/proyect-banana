@@ -166,16 +166,17 @@ Los que hay hoy:
 > toque el panel va con ese mismo lock.
 
 > **El espejo de saldos (`usuarios.balance`) lo hace `aprobar_cargas.py`, cada
-> 5 minutos**, y no el contenedor `ganamos-bot-sync` — ese sigue existiendo pero
-> está detrás de `profiles: ["sync"]` y **no hay que levantarlo**: sería un
-> segundo login con la misma cuenta de agente, que es justo lo que el `flock`
-> viene a evitar.
+> 15 minutos**, con lotes de hasta 500 jugadores. Los usuarios que escribieron
+> o tuvieron movimientos después de su última lectura se refrescan en cada
+> pasada del minuto. No levantes `ganamos-bot-sync`: sería un segundo login con
+> la misma cuenta de agente y competiría por la sesión.
 >
-> Son ~40 páginas del listado del panel, así que esa pasada tarda entre medio
-> minuto y un minuto. Va **última** en la vuelta a propósito: las cargas y los
-> retiros de esa pasada ya se resolvieron, y lo único que puede demorar es el
-> arranque de la pasada siguiente (el `flock` la hace esperar). Si molesta,
-> `USUARIOS_CADA_MIN` en el `.env` del colector la espacia.
+> El historial financiero consulta los últimos 2 días cada 5 minutos y hace
+> una reconciliación de 30 días una vez al día. Así detecta enseguida las
+> operaciones nuevas, recupera operaciones tardías y evita volver a descargar
+> hasta 15 páginas históricas en cada pasada. En ambos circuitos, las lecturas
+> respetan el fusible persistente del WAF/rate limit; las cargas y retiros
+> pendientes siguen teniendo prioridad.
 >
 > Para verificar a mano que el espejo anda — **con el mismo `flock`**, o son dos
 > logins simultáneos sobre la cuenta del panel:
