@@ -9647,9 +9647,11 @@ async function credTabla(cual){
     $("#gnUser").value = d.usuario || "";
     $("#gnPass").value = "";
     $("#gnPass").placeholder = d.cargada ? "Ya cargada — dejala vacía para no cambiarla" : "la contraseña de tu panel";
-    $("#gnEstado").innerHTML = d.cargada
+    $("#gnEstado").innerHTML = d.cuenta_compartida
+      ? '⚠️ <b>Cuenta compartida.</b> Otro CRM usa este mismo agente. Los jugadores pueden mezclarse; cada cliente necesita credenciales propias de Ganamos.'
+      : (d.cargada
       ? '✅ <b>Integrado.</b> El sistema entra a tu panel como <b>' + esc(d.usuario) + '</b>.'
-      : '⚠️ <b>Sin integrar.</b> Cargá tu usuario y contraseña del panel de agentes de ganamos.';
+      : '⚠️ <b>Sin integrar.</b> Cargá tu usuario y contraseña del panel de agentes de ganamos.');
   }
 
   $("#gnGuardar").addEventListener("click", async ()=>{
@@ -11915,7 +11917,8 @@ async function credTabla(cual){
       if(!items.length){ cont.innerHTML = `<div class="nouser">No hay transferencias esperando aprobación.</div>`; return; }
       cont.innerHTML = items.map(it=>{
         const plata = Number(it.pago_monto ?? it.monto_pedido ?? 0);
-        const titular = it.pago_titular ? esc(it.pago_titular) : "(el banco no informó el titular)";
+        const titular = it.pago_titular ? esc(it.pago_titular)
+          : (it.pago_entidad === "HG Cash" ? "Pago confirmado por HG Cash" : "(el banco no informó el titular)");
         const seguridad = it.match_confianza === "alta" ? "" :
           ` <span style="color:var(--warn,#e0a53a);font-size:12px">· match ${esc(it.match_confianza||"?")}, revisá</span>`;
         return `<div class="pa-item" data-id="${esc(it.id)}" style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px">

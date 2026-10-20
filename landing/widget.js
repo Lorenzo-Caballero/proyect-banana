@@ -297,6 +297,16 @@
     }
 
     var cand = gpSlugCandidato();
+    /* /home sin hash de tenant ni referrer de una landing tenant es la ruta
+       del dueño. No reutilizar un slug viejo de localStorage: eso desviaría
+       el chat a la base del último cliente visitado. */
+    if (MISMO_ORIGEN && location.pathname === "/home" && cand === "home") {
+      TENANT_SLUG = "";
+      try { localStorage.removeItem("gp_tenant_slug"); } catch (e) {}
+      gpAislarIdentidad("", true);
+      gpArmarApi();
+      return;
+    }
     if (!cand || cand === TENANT_SLUG) {
       gpAislarIdentidad(TENANT_SLUG, true);
       gpArmarApi();

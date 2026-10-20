@@ -55,6 +55,11 @@ fn = next(n for n in arbol.body
 class DesafioWAF(RuntimeError):
     pass
 
+class LimitePanel(RuntimeError):
+    def __init__(self, mensaje, retry_after_s=0):
+        super().__init__(mensaje)
+        self.retry_after_s = retry_after_s
+
 
 class Panel:
     """Un panel que contesta lo que se le diga, y cuenta cuantas veces le
@@ -89,11 +94,15 @@ def correr(respuestas, intentos=3):
     ns = {
         '_json': lambda x: x,
         'DesafioWAF': DesafioWAF,
-        'WAF_INTENTOS': intentos,
+        'LimitePanel': LimitePanel,
+        'WAF_LECTURA_INTENTOS': intentos,
         'WAF_ESPERAS_S': [0, 0, 0],   # sin dormir: el test mide intentos, no relojes
         # El contador de challenges de la pasada, que leer_json incrementa para
         # que salud_colector.php sepa cuanto nos esta peleando el WAF.
         'PASADA': {'challenges': 0},
+        '_panel_lectura_permitida': lambda que: True,
+        '_panel_lectura_ok': lambda: None,
+        '_pausar_panel': lambda motivo, retry_after_s=0: 120,
         'time': type('t', (), {'sleep': staticmethod(
             lambda s: dormido.__setitem__('s', dormido['s'] + s))}),
         '_despejar_waf': lambda ctx: (setattr(ctx, 'despejes', ctx.despejes + 1), True)[1],
@@ -302,7 +311,7 @@ for nombre, donde in [('_usuarios_paginas', 'el espejo de saldos'),
 f = next(n for n in arbol.body
          if isinstance(n, ast.FunctionDef) and n.name == 'traer_solicitudes')
 chequear('las cargas pendientes tambien',
-         any(isinstance(n, ast.Name) and n.id == 'WAF_INTENTOS' for n in ast.walk(f)),
+         any(isinstance(n, ast.Name) and n.id == 'WAF_LECTURA_INTENTOS' for n in ast.walk(f)),
          'es la lectura de la plata: un challenge le cuesta un minuto al jugador')
 
 # ---------------------------------------------------------------------------
@@ -389,6 +398,47 @@ os.utime(marca, (_t.time() - 3600, _t.time() - 3600))
 chequear('una marca de hace una hora se ignora', ns2['_pagina_inicial']() == 0,
          'si no, un corte raro deja media tabla sin espejar para siempre')
 os.remove(marca)
+
+# ---------------------------------------------------------------------------
+print('\n=== 10. Retry-After se respeta aunque supere el backoff local ===')
+# PANEL_LIMITE_MAX_S limita nuestro backoff. No debe recortar la espera que el
+# propio servidor pide: volver antes de Retry-After vuelve a provocar el WAF.
+from email.utils import parsedate_to_datetime
+import json as _json_std, random as _random_std, tempfile as _tempfile_std, time as _time_std
+_ra = next(n for n in arbol.body
+           if isinstance(n, ast.FunctionDef) and n.name == '_retry_after')
+_pause = next(n for n in arbol.body
+              if isinstance(n, ast.FunctionDef) and n.name == '_pausar_panel')
+_state = next(n for n in arbol.body
+              if isinstance(n, ast.FunctionDef) and n.name == '_estado_panel_leer')
+class RespuestaRetryAfter:
+    headers = {'Retry-After': '3600'}
+ns_ra = {
+    'getattr': getattr, 'next': next, 'str': str, 'float': float, 'max': max,
+    'min': min, 'int': int, 'time': _time_std,
+    'parsedate_to_datetime': parsedate_to_datetime,
+    'PANEL_RETRY_AFTER_MAX_S': 86400,
+}
+exec(compile(ast.Module(body=[_ra], type_ignores=[]), '<t>', 'exec'), ns_ra)
+espera_ra = ns_ra['_retry_after'](RespuestaRetryAfter())
+chequear('un Retry-After de 3600 s no se recorta al límite local de 900',
+         espera_ra == 3600, 'espera calculada=%s' % espera_ra)
+
+_path_ra = os.path.join(_tempfile_std.gettempdir(), 'gp_test_retry_after.json')
+if os.path.exists(_path_ra): os.remove(_path_ra)
+ns_pause = {
+    'os': os, 'json': _json_std, 'time': _time_std, 'random': _random_std,
+    'PANEL_LIMITE_BASE_S': 120, 'PANEL_LIMITE_MAX_S': 900,
+    'PANEL_RETRY_AFTER_MAX_S': 86400, 'PANEL_WAF_BASE_S': 60,
+    'PANEL_ESTADO_ARCHIVO': _path_ra, 'PANEL_LIMITE_HASTA': 0.0,
+    'log': type('L', (), {'warning': staticmethod(lambda *a, **k: None)})(),
+}
+exec(compile(ast.Module(body=[_state, _pause], type_ignores=[]), '<t>', 'exec'), ns_pause)
+ns_pause['_estado_panel_leer'] = lambda: {}  # racha inicial determinista
+delay_ra = ns_pause['_pausar_panel']('rate_limit', espera_ra)
+chequear('el fusible persiste al menos la espera indicada por Ganamos',
+         delay_ra >= 3600, 'pausa calculada=%s' % delay_ra)
+if os.path.exists(_path_ra): os.remove(_path_ra)
 
 print('\n---------------------------------------')
 print('%d OK, %d fallas' % (ok, fallas))

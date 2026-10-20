@@ -73,6 +73,21 @@ if (!$cliente) { salir(['ok' => false, 'error' => 'cliente no resuelto'], 500); 
 
 $cargada = trim((string)($cliente['agente_usuario'] ?? '')) !== ''
         && trim((string)($cliente['agente_password'] ?? '')) !== '';
+$cuentaCompartida = false;
+if (trim((string)($cliente['agente_usuario'] ?? '')) !== '') {
+    try {
+        $dupActual = $ctl->prepare(
+            "SELECT 1 FROM clientes
+              WHERE estado='activo' AND id<>?
+                AND LOWER(TRIM(COALESCE(agente_usuario,'')))=LOWER(TRIM(?))
+              LIMIT 1"
+        );
+        $dupActual->execute([(int)$cliente['id'], (string)$cliente['agente_usuario']]);
+        $cuentaCompartida = $dupActual->fetchColumn() !== false;
+    } catch (Throwable $e) {
+        error_log('crm_integracion: no pude comprobar credenciales compartidas: ' . $e->getMessage());
+    }
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['accion'] ?? '') === 'estado') {
     /* Cuántos jugadores ya espejó el sync en la base de ESTE cliente ($pdo,
@@ -88,6 +103,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['accion'] ?? '') === 'estado'
         'ok'       => true,
         'usuario'  => (string)($cliente['agente_usuario'] ?? ''),
         'cargada'  => $cargada,
+        'cuenta_compartida' => $cuentaCompartida,
         'usuarios' => $usuarios,
     ]);
 }
@@ -109,6 +125,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             salir(['ok' => false, 'error' => 'Falta la contraseña del panel de ganamos'], 422);
         }
         try {
+            // Una cuenta de agente no puede alimentar dos bases de clientes:
+            // Ganamos entrega el padrón de esa cuenta/estructura y duplicarlo
+            // hace que ambos CRM vean los mismos jugadores. La cuenta madre no
+            // vive en esta tabla; esta guarda cubre todas las fichas de cliente.
+            $dup = $ctl->prepare(
+                "SELECT id FROM clientes
+                  WHERE estado='activo' AND id<>?
+                    AND LOWER(TRIM(COALESCE(agente_usuario,'')))=LOWER(TRIM(?))
+                  LIMIT 1"
+            );
+            $dup->execute([(int)$cliente['id'], $usr]);
+            if ($dup->fetchColumn() !== false) {
+                salir(['ok' => false, 'error' => 'Esta cuenta de agente ya está conectada a otro cliente. Cada CRM necesita sus propias credenciales de Ganamos para mantener separados los jugadores.'], 409);
+            }
             if ($pass !== '') {
                 $ctl->prepare('UPDATE clientes SET agente_usuario = ?, agente_password = ? WHERE id = ?')
                     ->execute([$usr, $pass, (int)$cliente['id']]);

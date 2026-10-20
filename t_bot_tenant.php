@@ -48,6 +48,9 @@ $pet  = file_get_contents(__DIR__ . '/panel/provisionar.php');
 $reg  = file_get_contents(__DIR__ . '/landing/registro.html');
 $mig  = file_get_contents(__DIR__ . '/panel/sql/13_altas_propias.sql');
 $scopePatch = file_get_contents(__DIR__ . '/scripts/parche-scope-tenant.py');
+$scopeRoot = file_get_contents(__DIR__ . '/colector/aprobar_cargas.py');
+$integracion = file_get_contents(__DIR__ . '/api/crm_integracion.php');
+$crmFront = file_get_contents(__DIR__ . '/landing/crm.html');
 $loginWafPatch = file_get_contents(__DIR__ . '/scripts/parche-login-waf.py');
 $botDeploy = file_get_contents(__DIR__ . '/scripts/deploy-bot.sh');
 
@@ -144,6 +147,16 @@ $scopeDirecto = '&is_direct_structure=true';
 chequear('el overlay limita sync y recaudación a jugadores directos',
          substr_count($scopePatch, '"&is_direct_structure=false"') === 2
          && substr_count($scopePatch, '"&is_direct_structure=true"') === 2);
+chequear('el espejo del CRM madre también limita el padrón a jugadores directos',
+         str_contains($scopeRoot, '&is_direct_structure=true')
+         && !str_contains($scopeRoot, '&is_direct_structure=false'));
+chequear('la integración rechaza reutilizar la cuenta de otro tenant',
+         str_contains($integracion, "LOWER(TRIM(COALESCE(agente_usuario")
+         && str_contains($integracion, 'Cada CRM necesita sus propias credenciales'));
+chequear('el CRM advierte si su cuenta de agente también está conectada a otro tenant',
+         str_contains($integracion, "'cuenta_compartida' => \$cuentaCompartida")
+         && str_contains($crmFront, 'd.cuenta_compartida')
+         && str_contains($crmFront, 'Los jugadores pueden mezclarse'));
 chequear('el despliegue aplica el overlay antes de construir la imagen',
          str_contains($botDeploy, 'parche-scope-tenant.py')
          && strpos($botDeploy, 'parche-scope-tenant.py')

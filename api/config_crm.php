@@ -487,6 +487,10 @@ const CFG_CRM_DEFAULTS = [
        el colector esta vivo y peleando y no muerto. */
     'colector_espejo_en'     => '',
     'colector_espejo_estado' => '',
+    'colector_peticiones_en'     => '',
+    'colector_peticiones_estado' => '',
+    'colector_activos_en'     => '',
+    'colector_activos_estado' => '',
     'colector_libro_en'      => '',
     'colector_libro_estado'  => '',
     'colector_stock_en'      => '',

@@ -67,25 +67,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['accion'] ?? '') === 'activos
        escala con la actividad del último cuarto de hora. */
     try {
         $st = $pdo->prepare(
-            "SELECT DISTINCT u.username
+            "SELECT u.username, MAX(x.actividad_en) AS ultima_actividad
                FROM (
-                     SELECT c.clave AS usuario
+                     SELECT c.clave AS usuario, MAX(m.creado_en) AS actividad_en
                        FROM mensajes m
                        JOIN conversaciones c ON c.id = m.conversacion_id
                       WHERE m.creado_en > DATE_SUB(NOW(), INTERVAL ? MINUTE)
-                     UNION
-                     SELECT v.usuario
+                      GROUP BY c.clave
+                     UNION ALL
+                     SELECT v.usuario, MAX(v.creado_en) AS actividad_en
                        FROM movimientos v
                       WHERE v.creado_en > DATE_SUB(NOW(), INTERVAL ? MINUTE)
+                      GROUP BY v.usuario
                     ) x
                JOIN usuarios u ON u.username COLLATE utf8mb4_unicode_ci = x.usuario
               WHERE u.username <> ''
+              GROUP BY u.username
+              ORDER BY ultima_actividad DESC
               LIMIT $tope"
         );
         $st->execute([$min, $min]);
         $lista = $st->fetchAll(PDO::FETCH_COLUMN) ?: [];
     } catch (Throwable $e) {
         error_log('usuarios_sync/activos: ' . $e->getMessage());
+        http_response_code(500);
+        echo json_encode(['ok' => false, 'error' => 'No se pudo consultar la actividad']);
+        exit;
     }
     echo json_encode(['ok' => true, 'usuarios' => array_values($lista),
                       'minutos' => $min], JSON_UNESCAPED_UNICODE);

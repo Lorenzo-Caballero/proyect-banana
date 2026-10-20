@@ -252,26 +252,42 @@ function rl_crm_con_ia(): bool
  * que nadie sabe que tiene que dar. Así que solo un 0 EXPLÍCITO del control
  * activa el modo manual; cualquier duda acredita como siempre.
  */
-function rl_recarga_auto(): bool
+function rl_recarga_auto(?PDO $pdo = null): bool
 {
     static $v = null, $intentado = false;
     if ($intentado) { return $v; }
     $intentado = true;
     $v = true;                                  // default-allow (acredita solo)
+    $pdo = $pdo instanceof PDO ? $pdo : (($GLOBALS['pdo'] ?? null) instanceof PDO ? $GLOBALS['pdo'] : null);
     $ctl = rl_control();
     $db  = (string)($GLOBALS['TENANT_DB'] ?? cfg('DB_NAME'));
-    if (!$ctl || $db === '') { return $v; }
-    try {
-        $st = $ctl->prepare(
-            'SELECT recarga_auto FROM clientes WHERE db_nombre = ? AND estado = \'activo\' LIMIT 1'
-        );
-        $st->execute([$db]);
-        $r = $st->fetchColumn();
-        if ($r !== false) { $v = (int)$r === 1; }
-    } catch (Throwable $e) {
-        // Sin la columna (migración 17 sin correr) -> acredita solo, lo de
-        // siempre. Nunca se traba la plata por una columna que falta.
-        error_log('rl_recarga_auto: ' . $e->getMessage());
+    if ($ctl && $db !== '') {
+        try {
+            $st = $ctl->prepare(
+                'SELECT recarga_auto FROM clientes WHERE db_nombre = ? AND estado = \'activo\' LIMIT 1'
+            );
+            $st->execute([$db]);
+            $r = $st->fetchColumn();
+            if ($r !== false) { $v = (int)$r === 1; return $v; }
+        } catch (Throwable $e) {
+            // Si control/migración no responden, usamos la última copia local
+            // escrita por provisionar.php; no cambiamos el modo del cliente.
+            error_log('rl_recarga_auto: control no disponible: ' . $e->getMessage());
+        }
+    }
+    // Copia de respaldo por tenant. Un corte de la base de control no debe
+    // convertir silenciosamente en automático un CRM que eligió aprobación.
+    // Se consulta la fila física (no cfg_crm()) para distinguirla del default.
+    if ($pdo instanceof PDO) {
+        try {
+            $local = $pdo->query("SELECT valor FROM config_crm WHERE clave='recarga_auto' LIMIT 1")->fetchColumn();
+            if ($local === '0' || $local === '1' || $local === 0 || $local === 1) {
+                $v = (int)$local === 1;
+            }
+        } catch (Throwable $e) {
+            // Base vieja o migración 38 pendiente: conserva default-allow.
+            error_log('rl_recarga_auto: no pude leer copia local: ' . $e->getMessage());
+        }
     }
     return $v;
 }
@@ -1558,6 +1574,7 @@ function rl_recargas_por_aprobar(PDO $pdo, int $limite = 100): array
             "SELECT r.id, r.usuario, r.referencia, r.coins, r.monto_pedido,
                     r.mensaje, r.match_confianza, r.creada_en,
                     p.monto AS pago_monto, p.remitente AS pago_titular,
+                    p.entidad AS pago_entidad,
                     p.cuit AS pago_cuit, p.capturado_en AS pago_en
                FROM recargas r
                LEFT JOIN pagos p ON p.id_unico = r.pago_id

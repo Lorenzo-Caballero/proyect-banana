@@ -1230,6 +1230,7 @@ if ($huellaHoy !== '') {
 // Clientes "solo bandeja": dejar el chat apagado en su base (2da capa; el
 // candado real lo aplica el chatbot leyendo el control). Best-effort.
 sincronizar_modo_ia($pdo, $cfg);
+sincronizar_modo_recargas($pdo, $cfg);
 
 // ---------------------------------------------------------------------------
 // ALTAS COLGADAS EN LA COLA DE UN CLIENTE.
@@ -1629,6 +1630,43 @@ function sincronizar_modo_ia($pdo, $cfg) {
         } catch (Throwable $e) {
             // Base caída o sin config_crm: lo reintenta la próxima pasada. El
             // candado del chatbot ya lo mantiene apagado mientras tanto.
+        }
+    }
+}
+
+/**
+ * Copia el modo de acreditación del control a la base física de cada tenant.
+ * El webhook del colector y HG Cash consultan primero el control y usan esta
+ * fila como respaldo si el control no responde. Se sincronizan ambos valores
+ * (0 y 1), para que cambiar un cliente de asistido a completo también quite
+ * una copia local vieja. Best-effort: la próxima pasada lo reintenta.
+ */
+function sincronizar_modo_recargas($pdo, $cfg) {
+    try { $pdo->query('SELECT recarga_auto FROM clientes LIMIT 0'); }
+    catch (Throwable $e) { return; } // migración 17 aún no aplicada
+
+    try {
+        $clientes = $pdo->query(
+            "SELECT db_nombre,recarga_auto FROM clientes
+              WHERE aprovisionado=1 AND estado='activo' AND db_nombre IS NOT NULL"
+        )->fetchAll();
+    } catch (Throwable $e) { return; }
+
+    foreach ($clientes as $c) {
+        $db = (string)($c['db_nombre'] ?? '');
+        if (!preg_match('/^[a-z0-9_]+$/i', $db)) { continue; }
+        try {
+            $pc = new PDO(
+                'mysql:host=' . $cfg['DB_HOST'] . ';dbname=' . $db . ';charset=utf8mb4',
+                $cfg['DB_USER'], $cfg['DB_PASS'],
+                [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
+            );
+            $pc->prepare(
+                "INSERT INTO config_crm (clave,valor) VALUES ('recarga_auto',?)
+                 ON DUPLICATE KEY UPDATE valor=VALUES(valor)"
+            )->execute([(string)((int)$c['recarga_auto'] === 0 ? 0 : 1)]);
+        } catch (Throwable $e) {
+            error_log('sincronizar_modo_recargas ' . $db . ': ' . $e->getMessage());
         }
     }
 }

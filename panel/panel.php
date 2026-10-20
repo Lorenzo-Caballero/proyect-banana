@@ -256,7 +256,9 @@ switch ($accion) {
                     . (tiene_col_clientes($pdo, 'recarga_auto') ? ',recarga_auto' : '') . '
              FROM clientes ORDER BY creado DESC'
         )->fetchAll();
-        salida(['ok' => true, 'clientes' => $rows]);
+        $modosDisponibles = tiene_col_clientes($pdo, 'crm_con_ia')
+                         && tiene_col_clientes($pdo, 'recarga_auto');
+        salida(['ok' => true, 'clientes' => $rows, 'modos_crm_disponibles' => $modosDisponibles]);
 
     case 'detalle_cliente': {
         $id = (int) ($in['id'] ?? 0);
@@ -422,6 +424,10 @@ switch ($accion) {
         $recargaAuto = ($producto === 'landing') ? 1 : (array_key_exists('recarga_auto', $in) ? (!empty($in['recarga_auto']) ? 1 : 0) : 1);
         $hayIaCol  = tiene_col_clientes($pdo, 'crm_con_ia');
         $hayRAuto  = tiene_col_clientes($pdo, 'recarga_auto');
+        if ($producto !== 'landing' && ($crmConIa !== 1 || $recargaAuto !== 1)
+            && (!$hayIaCol || !$hayRAuto)) {
+            salida(['ok' => false, 'error' => 'No se guardó el modo elegido: faltan las migraciones 16 y 17 del panel. Aplicalas y volvé a intentar.'], 409);
+        }
         $colsIa    = ($hayIaCol ? 'crm_con_ia,' : '') . ($hayRAuto ? 'recarga_auto,' : '');
         $phIa      = ($hayIaCol ? '?,' : '') . ($hayRAuto ? '?,' : '');
         $hayPortalCols = false;
@@ -1006,6 +1012,12 @@ switch ($accion) {
         }
         if (array_key_exists('altas_propias', $in)) {
             $campos['altas_propias'] = !empty($in['altas_propias']) ? 1 : 0;
+        }
+        $modoNoDefault = (array_key_exists('crm_con_ia', $in) && empty($in['crm_con_ia']))
+                      || (array_key_exists('recarga_auto', $in) && empty($in['recarga_auto']));
+        if ($modoNoDefault && (!tiene_col_clientes($pdo, 'crm_con_ia')
+                            || !tiene_col_clientes($pdo, 'recarga_auto'))) {
+            salida(['ok' => false, 'error' => 'No se guardó el modo elegido: faltan las migraciones 16 y 17 del panel. Aplicalas y volvé a intentar.'], 409);
         }
         // CRM con/sin chatbot IA. Solo se toca si vino en el request Y la
         // columna existe (migración 16): sin la guarda, un control viejo

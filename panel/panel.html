@@ -310,6 +310,7 @@
       </select>
       <div class="hint" id="fModoHint" style="margin-top:8px"><span></span></div>
     </div>
+    <div id="fModoIaNoDisponible" class="hint hide" style="margin-top:18px"><span>Los modos asistido y solo bandeja no están habilitados todavía. Aplicá las migraciones 16 y 17 del panel; mientras tanto, los CRM nuevos quedan en modo completo.</span></div>
 
     <label>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20Z"/></svg>
@@ -587,6 +588,7 @@
       </select>
       <div class="hint" id="edModoHint" style="margin-top:8px"><span></span></div>
     </div>
+    <div id="edModoIaNoDisponible" class="hint hide" style="margin-top:18px"><span>Este panel aún no tiene aplicadas las migraciones 16 y 17. No se puede cambiar el modo hasta que estén instaladas.</span></div>
 
     <!-- Credenciales del agente y cuenta de cobro: las gestiona el cliente
          desde su CRM (ver el comentario en el modal de alta). -->
@@ -806,6 +808,7 @@
     ? "panel.php"
     : VPS_PANEL;
   var TK  = localStorage.getItem("gp_panel_tk") || "";
+  var modoCrmDisponible = false;
 
   var $ = function(id){ return document.getElementById(id); };
 
@@ -895,6 +898,8 @@
     cargarSalud();
     api("listar").then(function(res){
       if (res.status === 401){ salir(); return; }
+      modoCrmDisponible = !!(res.j && res.j.modos_crm_disponibles);
+      actualizarDisponibilidadModos();
       var cs = (res.j && res.j.clientes) || [];
       var tb = $("tbody"); tb.innerHTML = "";
       $("vacio").classList.toggle("hide", cs.length > 0);
@@ -989,11 +994,11 @@
       $("edRutaSlug").value = d.ruta_slug || d.slug || "";
       $("edAltasBox").classList.toggle("hide", !edPathTenant);
       $("edAltasPropias").checked = Number(d.altas_propias) === 1;
-      // Modo IA: solo para producto CRM, y solo si el control tiene la columna
-      // (si viene undefined, la migración 16 no corrió -> no mostrar un control
-      // que no haría nada). tildado = sin IA.
+      // Los modos solo se pueden editar si el control conserva ambos flags.
       edTieneModoIa = (d.producto !== "landing") && (d.crm_con_ia !== undefined && d.crm_con_ia !== null);
+      edTieneModoIa = edTieneModoIa && modoCrmDisponible && d.recarga_auto !== undefined && d.recarga_auto !== null;
       $("edModoIaBox").classList.toggle("hide", !edTieneModoIa);
+      $("edModoIaNoDisponible").classList.toggle("hide", d.producto === "landing" || modoCrmDisponible || edTieneModoIa);
       $("edModo").value = flagsAModo(d);
       pintarHint("edModo","edModoHint");
       $("edMsg").textContent = "";
@@ -1454,10 +1459,16 @@
     var h = $(hintId); if(h) h.querySelector("span").textContent = MODO_HINT[$(selId).value] || "";
   }
 
+  function actualizarDisponibilidadModos(){
+    var esLanding = $("fProducto").value === "landing";
+    $("fModoIaBox").classList.toggle("hide", esLanding || !modoCrmDisponible);
+    $("fModoIaNoDisponible").classList.toggle("hide", esLanding || modoCrmDisponible);
+  }
+
   function limpiar(){
     ["fNombre","fSlug","fCrmUser","fCrmPass","fPortalUser","fPortalPass","fNotas"].forEach(function(i){$(i).value="";});
     $("fProducto").value="crm"; $("fLandingAccessBox").classList.add("hide"); $("fCrmAccessBox").classList.remove("hide");
-    $("fModo").value = "completo"; pintarHint("fModo","fModoHint"); $("fModoIaBox").classList.remove("hide");
+    $("fModo").value = "completo"; pintarHint("fModo","fModoHint"); actualizarDisponibilidadModos();
     slugEditadoAMano = false;
   }
 
@@ -1533,7 +1544,7 @@
     $("fLandingAccessBox").classList.toggle("hide", this.value !== "landing");
     $("fCrmAccessBox").classList.toggle("hide", this.value === "landing");
     // La landing no tiene chat: el modo no aplica.
-    $("fModoIaBox").classList.toggle("hide", this.value === "landing");
+    actualizarDisponibilidadModos();
   });
   $("fModo").addEventListener("change", function(){ pintarHint("fModo","fModoHint"); });
   $("fSlug").addEventListener("input", function(){ slugEditadoAMano = true; });

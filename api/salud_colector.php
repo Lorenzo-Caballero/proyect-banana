@@ -27,7 +27,9 @@
  * decide si eso amerita un Telegram.
  *
  *   POST (X-API-Key)   { "espejo": "ok"|"parcial"|"waf", "challenges": N,
- *                        "libro": "ok"|"waf", "stock": "ok"|"waf" }
+ *                        "libro": "ok"|"waf", "stock": "ok"|"waf",
+ *                        "peticiones": "ok"|"waf"|"rate_limit",
+ *                        "activos": "ok"|"parcial"|"waf"|"rate_limit" }
  *
  * Cada clave que llega se guarda con su fecha en `config_crm`, y las que están
  * atrasadas disparan un aviso. Todos los campos son opcionales: una pasada que
@@ -64,6 +66,10 @@ if (function_exists('exigir_api_key')) { exigir_api_key(); }
    - El stock cada 5. A los 45 importa poco: solo alimenta un aviso de stock
      bajo, que es informativo. */
 const SC_LIMITES = [
+    'peticiones' => ['min' => 3, 'que' => 'la bandeja de depósitos y retiros de Ganamos',
+                     'duele' => 'Las solicitudes nuevas pueden tardar en aparecer y las cargas automáticas quedan en espera.'],
+    'activos' => ['min' => 3, 'que' => 'los saldos de jugadores con actividad reciente',
+                  'duele' => 'El chat puede responder con saldos viejos a quienes están usando el sistema ahora.'],
     'espejo' => ['min' => 20, 'que' => 'el saldo de los jugadores',
                  'duele' => 'El bot les contesta con saldos viejos y un jugador recién creado no aparece en el CRM.'],
     'libro'  => ['min' => 30, 'que' => 'el libro de operaciones del panel',

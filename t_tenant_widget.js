@@ -93,6 +93,10 @@ chequear("entrar a / limpia el slug guardado",
          /location\.pathname === "\/"/.test(src) &&
          /localStorage\.removeItem\("gp_tenant_slug"\)/.test(src),
          "sin esto, lo escrito en NUESTRA plataforma va al CRM del último cliente visitado");
+chequear("/home sin contexto descarta el slug anterior y vuelve a la base propia",
+         /location\.pathname === "\/home" && cand === "home"/.test(src) &&
+         /TENANT_SLUG = "";[\s\S]{0,100}localStorage\.removeItem\("gp_tenant_slug"\)/.test(src),
+         "el navegador podía conservar Leandro y desviar el chat aunque /home fuera raíz");
 chequear("y eso pasa ANTES de buscar candidato",
          src.indexOf('location.pathname === "/"') < src.indexOf("var cand = gpSlugCandidato()"));
 

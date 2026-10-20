@@ -67,7 +67,9 @@ $colector = [];
    su propia clave, que existe desde la migración 47 justamente para eso. Y NO
    se mira `bancos_ganamos.visto_en`, que es ON UPDATE CURRENT_TIMESTAMP y mide
    cuándo CAMBIÓ la billetera -- no cuándo la leímos. */
-$CLAVES = ['espejo' => 'colector_espejo_en', 'libro' => 'colector_libro_en',
+$CLAVES = ['peticiones' => 'colector_peticiones_en',
+           'activos' => 'colector_activos_en',
+           'espejo' => 'colector_espejo_en', 'libro' => 'colector_libro_en',
            'stock'  => 'colector_stock_en',  'bancos' => 'bancos_sync_en',
            /* Y las tareas que corren solas. El 18/09/2026 aparecieron TRES
               apuntando a la nada y ninguna daba error visible: un proceso que

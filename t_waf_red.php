@@ -84,8 +84,8 @@ echo "\n=== 3. Se avisa por consecuencia, no por falla ===\n";
 chequear('el umbral es de minutos sin leer, no de pasadas falladas',
          str_contains($srcSalud, "'min' =>") && str_contains($srcSalud, 'SC_LIMITES'));
 chequear('el aviso va con clave de dedupe',
-         str_contains($srcSalud, "'colector_' . \$k . '_viejo'"),
-         'sin clave, tg_evento repite el mismo aviso cada minuto');
+         str_contains($srcSalud, "'colector_lecturas_vencidas'"),
+         'las lecturas vencidas se agrupan con una clave estable');
 chequear('y el mensaje dice QUE SIGNIFICA, no solo que fallo',
          str_contains($srcSalud, "'Qué significa'"),
          'un aviso que no dice que hacer se aprende a ignorar');
@@ -116,11 +116,24 @@ echo "\n=== 5. Las claves estan en la lista blanca de config_crm ===\n";
    no este. Sin esto el reporte no falla: simplemente no guarda nada, y el
    indicador se queda en null para siempre pareciendo que el colector no
    reporta. */
-foreach (['colector_espejo_en', 'colector_espejo_estado', 'colector_libro_en',
-          'colector_stock_en', 'colector_challenges', 'colector_visto_en'] as $k) {
+foreach (['colector_espejo_en', 'colector_espejo_estado', 'colector_peticiones_en',
+          'colector_peticiones_estado', 'colector_activos_en', 'colector_activos_estado',
+          'colector_libro_en', 'colector_stock_en', 'colector_challenges',
+          'colector_visto_en'] as $k) {
     chequear("'$k' esta en CFG_CRM_DEFAULTS", str_contains($srcCfg, "'" . $k . "'"),
              'cfg_crm_guardar descarta en silencio lo que no este en la lista');
 }
+
+chequear('peticiones y saldos activos tienen umbrales propios',
+         str_contains($srcSalud, "'peticiones' => ['min' => 3")
+         && str_contains($srcSalud, "'activos' => ['min' => 3"));
+chequear('salud_bot expone por separado saldos activos y espejo completo',
+         str_contains($srcBot, "'activos' => 'colector_activos_en'")
+         && str_contains($srcBot, "'espejo' => 'colector_espejo_en'"));
+chequear('el fusible del panel persiste su estado y respeta Retry-After',
+         str_contains($srcCol, 'PANEL_ESTADO_ARCHIVO')
+         && str_contains($srcCol, 'parsedate_to_datetime')
+         && str_contains($srcCol, '_pausar_panel("rate_limit", e.retry_after_s)'));
 
 // ===========================================================================
 echo "\n=== 5b. La billetera del panel, que no la reporta nadie ===\n";

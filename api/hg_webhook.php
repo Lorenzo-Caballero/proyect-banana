@@ -190,6 +190,59 @@ function hgw_acreditar_checkout(PDO $pdo, string $checkoutId, string $dbNombre):
         if (is_file(__DIR__ . $lib)) { require_once __DIR__ . $lib; }
     }
 
+    // El webhook de HG es una puerta de acreditación distinta del matcher de
+    // mail. En modo asistido debe reservar la carga confirmada en la misma
+    // cola del CRM; si siguiera por el camino automático, el modo se podría
+    // saltar pagando con HG Cash. El estado real ya fue verificado contra HG
+    // antes de entrar acá.
+    if (function_exists('rl_recarga_auto') && !rl_recarga_auto($pdo)) {
+        if (!function_exists('rl_reservar_para_aprobar')) {
+            error_log('hg_webhook: modo asistido sin recargas_lib para ' . $dbNombre);
+            hgw_salir(['ok' => false, 'error' => 'modo asistido no disponible'], 500);
+        }
+        try {
+            $pdo->beginTransaction();
+            $lock = $pdo->prepare('SELECT * FROM recargas WHERE id=? AND hg_checkout_id=? FOR UPDATE');
+            $lock->execute([(int)$recarga['id'], $checkoutId]);
+            $actual = $lock->fetch(PDO::FETCH_ASSOC);
+            if (!$actual || (string)$actual['estado'] !== 'pendiente') {
+                $pdo->commit();
+                hgw_salir(['ok' => true, 'ya_procesado' => true]);
+            }
+            $idPago = 'HG:' . substr(hash('sha256', $checkoutId), 0, 61);
+            $ins = $pdo->prepare(
+                "INSERT INTO pagos (id_unico,monto,entidad,estado,capturado_en)
+                 VALUES (?,?, 'HG Cash','pendiente',NOW())
+                 ON DUPLICATE KEY UPDATE id_unico=VALUES(id_unico)"
+            );
+            $ins->execute([$idPago, (float)($actual['monto_pedido'] ?? 0)]);
+            $pago = $pdo->prepare('SELECT id_unico,recarga_id,entidad FROM pagos WHERE id_unico=? FOR UPDATE');
+            $pago->execute([$idPago]);
+            $pagoActual = $pago->fetch(PDO::FETCH_ASSOC);
+            if (!$pagoActual || (string)$pagoActual['entidad'] !== 'HG Cash'
+                || ($pagoActual['recarga_id'] !== null && (int)$pagoActual['recarga_id'] !== (int)$actual['id'])) {
+                throw new RuntimeException('id de pago HG reservado para otra recarga');
+            }
+            rl_reservar_para_aprobar($pdo, $actual, $idPago,
+                'Pago confirmado por HG Cash; requiere aprobación del agente.', 'alta');
+            $pdo->commit();
+        } catch (Throwable $e) {
+            if ($pdo->inTransaction()) { try { $pdo->rollBack(); } catch (Throwable $e2) {} }
+            error_log('hg_webhook modo asistido (' . $checkoutId . '): ' . $e->getMessage());
+            hgw_salir(['ok' => false, 'error' => 'no se pudo reservar para aprobación'], 500);
+        }
+        if (function_exists('tg_evento')) {
+            try {
+                tg_evento($pdo, 'por_aprobar', '🕒 Pago HG Cash para aprobar', [
+                    'Jugador' => (string)$actual['usuario'],
+                    'Fichas' => number_format((int)$actual['coins'], 0, ',', '.'),
+                    'Qué' => 'HG Cash confirmó el pago. Aprobalo desde el CRM (Por aprobar).',
+                ], 'por_aprobar:' . $idPago);
+            } catch (Throwable $e) { error_log('hg_webhook aviso modo asistido: ' . $e->getMessage()); }
+        }
+        hgw_salir(['ok' => true, 'por_aprobar' => true]);
+    }
+
     /* TODO el tramo que mueve plata va en UNA transaccion. Antes eran
        statements sueltos en autocommit y eso tenia dos problemas reales:
        (a) el claim podia quedar commiteado y el coins+= fallar despues --

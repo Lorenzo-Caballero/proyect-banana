@@ -95,6 +95,9 @@ import argparse
 import json
 import logging
 import os
+import random
+import tempfile
+from email.utils import parsedate_to_datetime
 from urllib.parse import quote, urlencode
 import sys
 import time
@@ -166,11 +169,106 @@ class RespuestaPanelInvalida(RuntimeError):
 class LimitePanel(RuntimeError):
     """Ganamos aplico rate limit; no es un challenge y no se debe insistir."""
 
+    def __init__(self, mensaje: str, retry_after_s: float = 0):
+        super().__init__(mensaje)
+        self.retry_after_s = max(0.0, float(retry_after_s or 0))
 
-# Fusible compartido por las lecturas de una pasada. Sin esto, stock, libro y
-# espejo repetian el mismo 400 uno tras otro cada minuto.
+
+# Fusible persistente por colector. El estado queda en el volumen /datos para
+# sobrevivir reinicios. Ante un rate limit o challenges consecutivos dejamos de
+# consultar, respetamos Retry-After y no rotamos host/sesión para eludirlo.
+PANEL_LIMITE_BASE_S = max(30, int(os.environ.get("PANEL_LIMITE_BASE_S", "120")))
+PANEL_LIMITE_MAX_S = max(PANEL_LIMITE_BASE_S, int(os.environ.get("PANEL_LIMITE_MAX_S", "900")))
+# Retry-After is a server instruction, not our exponential-backoff ceiling.
+# Honor it (up to one day for a malformed/extreme response) even when it is
+# longer than PANEL_LIMITE_MAX_S; otherwise the collector retries too early.
+PANEL_RETRY_AFTER_MAX_S = max(PANEL_LIMITE_MAX_S, min(86400, int(os.environ.get("PANEL_RETRY_AFTER_MAX_S", "86400"))))
+PANEL_WAF_BASE_S = max(30, int(os.environ.get("PANEL_WAF_BASE_S", "60")))
 PANEL_LIMITE_HASTA = 0.0
-PANEL_LIMITE_ESPERA_S = 90
+PANEL_ESTADO_ARCHIVO = os.environ.get(
+    "PANEL_ESTADO_ARCHIVO",
+    "/datos/panel_rate_limit.json" if os.path.isdir("/datos")
+    else os.path.join(tempfile.gettempdir(), "gp_panel_rate_limit.json"),
+)
+
+
+def _estado_panel_leer() -> dict:
+    try:
+        with open(PANEL_ESTADO_ARCHIVO, "r", encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def _espera_panel_restante() -> int:
+    estado = _estado_panel_leer()
+    hasta_memoria = time.time() + max(0.0, PANEL_LIMITE_HASTA - time.monotonic())
+    return max(0, int(max(float(estado.get("hasta_epoch") or 0), hasta_memoria) - time.time() + 0.999))
+
+
+def _pausar_panel(motivo: str, retry_after_s: float = 0) -> int:
+    """Abre el fusible con backoff creciente y guarda su vencimiento en /datos."""
+    global PANEL_LIMITE_HASTA
+    ahora = time.time()
+    estado = _estado_panel_leer()
+    misma_racha = ahora - float(estado.get("ultimo_error_epoch") or 0) < 1800
+    racha = min(8, int(estado.get("racha") or 0) + 1) if misma_racha else 1
+    base = PANEL_LIMITE_BASE_S if motivo == "rate_limit" else PANEL_WAF_BASE_S
+    demora = min(PANEL_LIMITE_MAX_S, base * (2 ** (racha - 1)))
+    demora = max(demora, min(PANEL_RETRY_AFTER_MAX_S, int(retry_after_s or 0)))
+    demora += random.randint(0, min(15, demora // 10))
+    estado.update({"hasta_epoch": ahora + demora, "ultimo_error_epoch": ahora,
+                   "racha": racha, "motivo": motivo})
+    try:
+        os.makedirs(os.path.dirname(PANEL_ESTADO_ARCHIVO) or ".", exist_ok=True)
+        temporal = PANEL_ESTADO_ARCHIVO + ".tmp"
+        with open(temporal, "w", encoding="utf-8") as f:
+            json.dump(estado, f)
+        os.replace(temporal, PANEL_ESTADO_ARCHIVO)
+    except Exception as e:
+        log.warning("panel: no pude persistir la pausa: %s", str(e)[:120])
+    PANEL_LIMITE_HASTA = time.monotonic() + demora
+    return demora
+
+
+def _panel_lectura_permitida(que: str) -> bool:
+    restante = _espera_panel_restante()
+    if restante <= 0:
+        return True
+    if not PASADA.get("pausa_panel_reportada"):
+        log.warning("panel: omito lecturas auxiliares por %d s tras el último bloqueo (%s)",
+                    restante, que)
+        PASADA["pausa_panel_reportada"] = True
+    return False
+
+
+def _motivo_pausa_panel() -> str:
+    return "rate_limit" if _estado_panel_leer().get("motivo") == "rate_limit" else "waf"
+
+
+def _panel_lectura_ok() -> None:
+    """Una lectura válida cierra la racha de fallos sin acortar la pausa vigente."""
+    if _espera_panel_restante() > 0:
+        return
+    try:
+        if os.path.exists(PANEL_ESTADO_ARCHIVO):
+            os.remove(PANEL_ESTADO_ARCHIVO)
+    except Exception:
+        pass
+
+
+def _retry_after(r) -> float:
+    try:
+        headers = getattr(r, "headers", {}) or {}
+        valor = next((str(v).strip() for k, v in headers.items()
+                      if str(k).lower() == "retry-after"), "")
+        if valor.isdigit():
+            return max(0.0, min(float(valor), PANEL_RETRY_AFTER_MAX_S))
+        fecha = parsedate_to_datetime(valor)
+        return max(0.0, min(fecha.timestamp() - time.time(), PANEL_RETRY_AFTER_MAX_S))
+    except Exception:
+        return 0.0
 
 
 def url_cola() -> str:
@@ -242,27 +340,30 @@ def es_challenge(cuerpo: str, headers=None) -> bool:
 def _json(r):
     """Valida la respuesta del panel y detecta el challenge del WAF antes de
     intentar parsearla (si no, el error es un JSONDecodeError sin sentido)."""
+    status = getattr(r, "status", 200)
+    if status == 429:
+        raise LimitePanel("Ganamos respondió HTTP 429 (rate limit)", _retry_after(r))
     try:
         txt = r.text()
     except Exception as e:
         raise DesafioWAF(f"no pude leer la respuesta: {e}")
     if es_challenge(txt, getattr(r, "headers", None)):
         raise DesafioWAF("el panel devolvio HTML (challenge del WAF)")
-    # Un error JSON no es una lista vacia ni un saldo valido. Los bloqueos
-    # temporales (403/429/503) entran al mismo reintento WAF; 401 es sesion vencida.
-    status = getattr(r, "status", 200)
+    # Un error JSON no es una lista vacia ni un saldo valido. Un 429 es un
+    # limite explícito; 403/503 pueden ser un challenge temporal.
     if not getattr(r, "ok", 200 <= status < 300):
         # Las respuestas de limitacion/bloqueo temporal tambien son seguras de
         # reintentar: esta funcion solo se usa para lecturas.
-        if status in (403, 429, 503):
+        if status in (403, 503):
             raise DesafioWAF(f"el panel respondio HTTP {status} (bloqueo temporal)")
         if status == 400:
             try:
-                error = (r.json() or {}).get("error_message", "")
+                cuerpo = r.json() or {}
+                error = cuerpo.get("error_message") or cuerpo.get("message") or ""
             except Exception:
                 error = ""
             if "too many requests" in str(error).lower():
-                raise LimitePanel("Ganamos limitó las consultas: Too many requests")
+                raise LimitePanel("Ganamos limitó las consultas: Too many requests", _retry_after(r))
         # El código solo no alcanza para distinguir una validación real del
         # panel de un 400 intermitente de su capa frontal. Guardamos una muestra
         # corta (nunca una respuesta completa con filas de jugadores) para que
@@ -272,12 +373,18 @@ def _json(r):
             f"el panel respondio HTTP {status}" + (f" | {detalle}" if detalle else "")
         )
     try:
-        return r.json()
+        payload = r.json()
     except Exception:
         raise DesafioWAF(f"respuesta no-JSON del panel: {txt[:200]}")
+    if isinstance(payload, dict):
+        error = str(payload.get("error_message") or payload.get("message") or "")
+        if "too many requests" in error.lower():
+            raise LimitePanel("Ganamos limitó las consultas: Too many requests", _retry_after(r))
+    return payload
 
 
-WAF_INTENTOS = int(os.environ.get("WAF_INTENTOS", "5"))   # el original + 4
+WAF_INTENTOS = int(os.environ.get("WAF_INTENTOS", "5"))   # escrituras: primera + 4
+WAF_LECTURA_INTENTOS = max(1, int(os.environ.get("WAF_LECTURA_INTENTOS", "3")))
 # El WAF desafia en rafagas. A los reintentos se les da tiempo de aflojar; si
 # persiste, Chromium navega al panel para renovar la cookie de clearance antes
 # de las ultimas consultas. El espejo conserva pagina y retoma al cron siguiente
@@ -352,20 +459,22 @@ def leer_json(ctx, url: str, que: str, **kw):
     de arrancar la pasada, no en la pagina 50), y una pasada normal dura 6-9
     segundos sobre un minuto de presupuesto. Dos reintentos entran de sobra.
     """
-    global PANEL_LIMITE_HASTA
-    if time.monotonic() < PANEL_LIMITE_HASTA:
-        raise LimitePanel(f"{que}: pausa por rate limit del panel")
+    if not _panel_lectura_permitida(que):
+        raise LimitePanel(f"{que}: lectura pausada por el fusible del panel")
     ultimo = None
-    for intento in range(1, WAF_INTENTOS + 1):
+    for intento in range(1, WAF_LECTURA_INTENTOS + 1):
         try:
-            return _json(ctx.request.get(url, **kw))
-        except LimitePanel:
-            PANEL_LIMITE_HASTA = time.monotonic() + PANEL_LIMITE_ESPERA_S
+            data = _json(ctx.request.get(url, **kw))
+            _panel_lectura_ok()
+            return data
+        except LimitePanel as e:
+            demora = _pausar_panel("rate_limit", e.retry_after_s)
+            log.warning("%s: pauso lecturas del panel por %d s (%s)", que, demora, e)
             raise
         except DesafioWAF as e:
             ultimo = e
             PASADA["challenges"] = PASADA.get("challenges", 0) + 1
-            if intento >= WAF_INTENTOS:
+            if intento >= WAF_LECTURA_INTENTOS:
                 break
             # Separar reintentos deja terminar la rafaga; despues se fuerza una
             # renovacion de clearance en Chromium (ctx.request no ejecuta JS).
@@ -373,7 +482,10 @@ def leer_json(ctx, url: str, que: str, **kw):
             if intento == 2:
                 _despejar_waf(ctx)
             log.info("%s: challenge del WAF, reintento (%d de %d)",
-                     que, intento + 1, WAF_INTENTOS)
+                     que, intento + 1, WAF_LECTURA_INTENTOS)
+    demora = _pausar_panel("waf")
+    log.warning("%s: abro el fusible del panel por %d s tras challenges repetidos",
+                que, demora)
     raise ultimo if ultimo else DesafioWAF(que)
 
 
@@ -389,9 +501,8 @@ def traer_solicitudes(ctx, dias: int) -> tuple[list, list] | None:
     puede pedir un retiro desde el boton de la plataforma y sin esto nadie se
     enteraba hasta que abria el panel a ojo.
     """
-    global PANEL_LIMITE_HASTA
-    if time.monotonic() < PANEL_LIMITE_HASTA:
-        log.warning("solicitudes: espera por rate limit del panel; reintento en la próxima pasada")
+    if not _panel_lectura_permitida("solicitudes pendientes"):
+        PASADA["peticiones"] = _motivo_pausa_panel()
         return None
     hoy = datetime.now().date()
     solicitudes_por_id = {}
@@ -409,52 +520,65 @@ def traer_solicitudes(ctx, dias: int) -> tuple[list, list] | None:
             "page": pagina,
         }
         data = None
-        for intento in range(1, WAF_INTENTOS + 1):
+        for intento in range(1, WAF_LECTURA_INTENTOS + 1):
             try:
                 r = ctx.request.get(SOLICITUDES, params=params, timeout=30_000)
             except Exception as e:
                 log.error("no pude leer solicitudes (página %d): %s", pagina, e)
+                PASADA["peticiones"] = "error"
                 return None
             if not r.ok:
-                if r.status in (403, 429, 503) and intento < WAF_INTENTOS:
+                if r.status in (429, 400):
+                    try:
+                        _json(r)
+                    except LimitePanel as e:
+                        demora = _pausar_panel("rate_limit", e.retry_after_s)
+                        PASADA["peticiones"] = "rate_limit"
+                        log.warning("solicitudes: respeto el rate limit por %d s", demora)
+                        return None
+                    except Exception:
+                        pass
+                if r.status in (403, 503) and intento < WAF_LECTURA_INTENTOS:
                     if intento >= 2:
                         _despejar_waf(ctx)
                     else:
                         time.sleep(WAF_ESPERA_S)
                     log.warning("solicitudes página %d: HTTP %s, reintento %d/%d",
-                                pagina, r.status, intento + 1, WAF_INTENTOS)
+                                pagina, r.status, intento + 1, WAF_LECTURA_INTENTOS)
                     continue
-                if r.status == 400:
-                    try:
-                        _json(r)
-                    except LimitePanel:
-                        PANEL_LIMITE_HASTA = time.monotonic() + PANEL_LIMITE_ESPERA_S
-                        log.warning("solicitudes: Ganamos limitó las consultas; pauso lecturas %d s",
-                                    PANEL_LIMITE_ESPERA_S)
-                        return None
-                    except Exception:
-                        pass
                 log.error("el panel respondió %s al listar solicitudes (página %d)",
                           r.status, pagina)
+                PASADA["peticiones"] = "waf" if r.status in (403, 503) else "error"
+                if r.status in (403, 503):
+                    demora = _pausar_panel("waf")
+                    log.warning("solicitudes: HTTP %s repetido; pauso el panel %d s",
+                                r.status, demora)
                 return None
             try:
                 data = _json(r)
+                _panel_lectura_ok()
                 break
-            except LimitePanel:
-                PANEL_LIMITE_HASTA = time.monotonic() + PANEL_LIMITE_ESPERA_S
+            except LimitePanel as e:
+                demora = _pausar_panel("rate_limit", e.retry_after_s)
+                PASADA["peticiones"] = "rate_limit"
                 log.warning("solicitudes: Ganamos limitó las consultas; pauso lecturas %d s",
-                            PANEL_LIMITE_ESPERA_S)
+                            demora)
                 return None
             except DesafioWAF:
-                if intento >= WAF_INTENTOS:
+                if intento >= WAF_LECTURA_INTENTOS:
+                    demora = _pausar_panel("waf")
+                    PASADA["peticiones"] = "waf"
+                    log.warning("solicitudes: challenges persistentes; pauso el panel %d s",
+                                demora)
                     raise
                 if intento >= 2:
                     _despejar_waf(ctx)
                 else:
                     time.sleep(WAF_ESPERA_S)
                 log.info("solicitudes página %d: challenge WAF, reintento %d/%d",
-                         pagina, intento + 1, WAF_INTENTOS)
+                         pagina, intento + 1, WAF_LECTURA_INTENTOS)
         if data is None:
+            PASADA["peticiones"] = "error"
             return None
 
         # Dos formas de respuesta: envuelta en `result` o directa.
@@ -463,6 +587,7 @@ def traer_solicitudes(ctx, dias: int) -> tuple[list, list] | None:
         if not isinstance(items, list):
             log.error("respuesta inesperada del panel (página %d): %s",
                       pagina, str(data)[:200])
+            PASADA["peticiones"] = "error"
             return None
         if not items:
             paginas_completas = True
@@ -480,11 +605,13 @@ def traer_solicitudes(ctx, dias: int) -> tuple[list, list] | None:
             break
         if nuevos == 0:
             log.error("la paginación del panel repitió la página %d; no envío una lista incompleta", pagina)
+            PASADA["peticiones"] = "error"
             return None
 
     if not paginas_completas:
         log.error("solicitudes: se alcanzó el límite de %d páginas; no envío una lista incompleta",
                   max(1, SOLICITUDES_MAX_PAGINAS))
+        PASADA["peticiones"] = "error"
         return None
 
     solicitudes, retiros = [], []
@@ -507,6 +634,7 @@ def traer_solicitudes(ctx, dias: int) -> tuple[list, list] | None:
             retiros.append(registro)
             continue
         solicitudes.append(registro)
+    PASADA["peticiones"] = "ok"
     return solicitudes, retiros
 
 
@@ -1072,7 +1200,7 @@ def revisar_stock(ctx, solo_ver: bool) -> None:
     Si algo falla, se loguea y ya. Mirar el stock no es parte de aprobar cargas
     y no puede tumbar una pasada que hizo bien lo suyo.
     """
-    if solo_ver or not _stock_toca():
+    if solo_ver or not _panel_lectura_permitida("stock") or not _stock_toca():
         return
     # Mismo criterio que el libro (24/09/2026): ninguna salida por fallo se va
     # sin decir por que. Un estado que conserva el valor de la ultima vez que
@@ -1091,11 +1219,16 @@ def revisar_stock(ctx, solo_ver: bool) -> None:
             PASADA["stock"] = "sin_saldo"
             log.warning("stock: la respuesta no trae result.source_user.balance")
             return
-    except Exception as e:
-        # DesafioWAF hereda de RuntimeError y cae aca: el stock es lo unico que
-        # no distingue un challenge de otra falla, y no hace falta -- para el
-        # aviso alcanza con que la fecha de la ultima lectura buena no avance.
+    except LimitePanel as e:
+        PASADA["stock"] = "rate_limit"
+        log.warning("stock: respeto el limite del panel: %s", e)
+        return
+    except DesafioWAF as e:
         PASADA["stock"] = "waf"
+        log.warning("stock: el panel devolvio un challenge: %s", e)
+        return
+    except Exception as e:
+        PASADA["stock"] = "error_lectura"
         log.warning("stock: no pude leer el saldo del agente: %s", e)
         return
 
@@ -1255,7 +1388,7 @@ def sincronizar_libro(ctx, solo_ver: bool, dias: int = LIBRO_DIAS,
     Si algo falla se loguea y ya: esto no es parte de aprobar cargas y no puede
     tumbar una pasada que hizo bien lo suyo.
     """
-    if solo_ver or (not forzar and not _libro_toca()):
+    if solo_ver or not _panel_lectura_permitida("libro") or (not forzar and not _libro_toca()):
         return
     # ------------------------------------------------------------------
     # CADA SALIDA POR FALLO DEJA DICHO POR QUE, y esto no es prolijidad.
@@ -1283,6 +1416,10 @@ def sincronizar_libro(ctx, solo_ver: bool, dias: int = LIBRO_DIAS,
 
     try:
         ops = _libro_paginas(ctx, 1, dias) + _libro_paginas(ctx, 0, dias)
+    except LimitePanel as e:
+        PASADA["libro"] = "rate_limit"
+        log.warning("libro: %s. Lo retomo al vencer la pausa del panel.", e)
+        return
     except DesafioWAF as e:
         PASADA["libro"] = "waf"
         log.warning("libro: %s. Lo sincronizo en la proxima vuelta.", e)
@@ -1597,15 +1734,16 @@ def _usuarios_paginas(ctx) -> list:
     return todos
 
 
-ACTIVOS_MINUTOS = int(os.environ.get("ACTIVOS_MINUTOS", "15"))
-ACTIVOS_TOPE    = int(os.environ.get("ACTIVOS_TOPE", "60"))
-# No lanzar 60 GETs seguidos al panel en cada minuto: el WAF interpreta esa
-# rafaga como automatizacion abusiva y corta justo las lecturas de saldo.
+ACTIVOS_MINUTOS = int(os.environ.get("ACTIVOS_MINUTOS", "3"))
+ACTIVOS_TOPE    = int(os.environ.get("ACTIVOS_TOPE", "15"))
+# Se consulta por actividad reciente y con tope. Antes se podían hacer 60 GET
+# por pasada y se repetían jugadores durante 15 minutos aunque ya no estuvieran
+# activos. El endpoint ordena por la señal más reciente.
 ACTIVOS_PAUSA_S = float(os.environ.get("ACTIVOS_PAUSA_S", "0.2"))
 
 
 def refrescar_saldos_activos(ctx, solo_ver: bool) -> None:
-    """El saldo de los jugadores que estan haciendo algo, en CADA pasada.
+    """El saldo de los jugadores con actividad muy reciente.
 
     POR QUE EXISTE (Nahuel, 18/09/2026): *"muchas veces las personas dicen
     quiero retirar 5000 y el bot le dice no tenes 5000, tenes 1000, y eso es
@@ -1620,29 +1758,40 @@ def refrescar_saldos_activos(ctx, solo_ver: bool) -> None:
     que refrescar a los que estan activos cuesta una llamada por cabeza -- y
     los activos son un punado.
 
-    Va en cada pasada del cron (un minuto), asi que el peor caso para alguien
-    que esta hablando pasa de 5 minutos a 1.
+    Va en cada pasada del cron (un minuto), con ventana de 3 minutos y un tope
+    de 15 usuarios ordenados por actividad más reciente. Esto mantiene fresco
+    el saldo de quienes usan el chat sin recorrer decenas de cuentas inactivas.
 
     Best-effort de punta a punta, igual que el espejo completo: esto no decide
     nada. Si falla, el espejo de los 5 minutos sigue siendo la red.
     """
+    if not _panel_lectura_permitida("saldos por actividad reciente"):
+        PASADA["activos"] = _motivo_pausa_panel()
+        return
     key = os.environ.get("API_KEY", "")
-    if not key or solo_ver:
+    if solo_ver:
+        return
+    if not key:
+        PASADA["activos"] = "sin_key"
         return
     try:
         r = ctx.request.get(
             f"{_url_usuarios()}?accion=activos&minutos={ACTIVOS_MINUTOS}&limite={ACTIVOS_TOPE}",
             headers={"X-API-Key": key}, timeout=30_000)
         if not r.ok:
-            raise RespuestaPanelInvalida(f"usuarios activos respondio HTTP {r.status}")
+            raise RespuestaPanelInvalida(f"lista de actividad respondio HTTP {r.status}")
         payload = r.json() or {}
+        if not payload.get("ok"):
+            raise RespuestaPanelInvalida("la consulta de actividad fue rechazada")
         nombres = payload.get("usuarios") if isinstance(payload, dict) else None
         if not isinstance(nombres, list):
             raise RespuestaPanelInvalida("usuarios activos respondio un payload inesperado")
     except Exception as e:
+        PASADA["activos"] = "error_actividad"
         log.warning("saldos activos: no pude pedir la lista: %s", e)
         return
     if not nombres:
+        PASADA["activos"] = "ok"
         return
 
     frescos = []
@@ -1650,6 +1799,7 @@ def refrescar_saldos_activos(ctx, solo_ver: bool) -> None:
     # arregla el reintento; si se cayeron tres al hilo el WAF esta cerrado y
     # seguir pidiendo 60 veces solo gasta el minuto de la pasada.
     seguidos = 0
+    fallidos = 0
     for indice, nombre in enumerate(nombres):
         if indice and ACTIVOS_PAUSA_S > 0:
             time.sleep(ACTIVOS_PAUSA_S)
@@ -1669,8 +1819,18 @@ def refrescar_saldos_activos(ctx, solo_ver: bool) -> None:
                 if un.lower() == str(nombre).lower():
                     frescos.append(_usuario_normalizado(u))
                     break
+        except LimitePanel as e:
+            PASADA["activos"] = _motivo_pausa_panel()
+            log.warning("saldos activos: paro el lote y respeto el rate limit: %s", e)
+            break
         except DesafioWAF:
             seguidos += 1
+            PASADA["activos"] = "waf"
+            # leer_json abre el fusible cuando agota los reintentos. Las
+            # lecturas siguientes ya no saldran al panel, asi que no sigamos
+            # recorriendo la lista como si fueran nuevos fallos individuales.
+            if _espera_panel_restante() > 0:
+                break
             if seguidos >= 3:
                 log.info("saldos activos: el WAF no afloja, dejo el resto "
                          "para la proxima (%d refrescado(s))", len(frescos))
@@ -1680,21 +1840,30 @@ def refrescar_saldos_activos(ctx, solo_ver: bool) -> None:
             # puede ser el que esta pidiendo un retiro ahora mismo. Se lo saltea
             # a el y la lista sigue.
             log.info("saldos activos: %s quedo sin refrescar (WAF)", nombre)
+            fallidos += 1
             continue
         except Exception as e:
+            fallidos += 1
             log.info("saldos activos: %s -> %s", nombre, str(e)[:80])
         seguidos = 0
 
     if not frescos:
+        PASADA.setdefault("activos", "error_lectura")
         return
     try:
         r = ctx.request.post(_url_usuarios(), headers={"X-API-Key": key},
                              data={"usuarios": frescos}, timeout=45_000)
         d = r.json() or {}
-        if d.get("ok"):
-            log.info("saldos activos: %d de %d jugador(es) refrescado(s)",
-                     int(d.get("guardados") or 0), len(nombres))
+        if not r.ok or not d.get("ok"):
+            PASADA["activos"] = "error_reporte"
+            log.warning("saldos activos: el CRM no guardo el lote: %s",
+                        str(d.get("error") or r.status)[:120])
+            return
+        log.info("saldos activos: %d de %d jugador(es) refrescado(s)",
+                 int(d.get("guardados") or 0), len(nombres))
+        PASADA["activos"] = "parcial" if fallidos else "ok"
     except Exception as e:
+        PASADA["activos"] = "error_reporte"
         log.warning("saldos activos: no pude guardar: %s", e)
 
 
@@ -1705,7 +1874,12 @@ def sincronizar_usuarios(ctx, solo_ver: bool, forzar: bool = False) -> None:
     Aprobar cargas es lo que no puede fallar; esto es una comodidad que se
     arregla sola en la vuelta siguiente.
     """
-    if solo_ver or (not forzar and not _usuarios_toca()):
+    if solo_ver:
+        return
+    if not _panel_lectura_permitida("espejo completo"):
+        PASADA["espejo"] = _motivo_pausa_panel()
+        return
+    if not forzar and not _usuarios_toca():
         return
     key = os.environ.get("API_KEY", "")
     if not key:
@@ -1715,6 +1889,10 @@ def sincronizar_usuarios(ctx, solo_ver: bool, forzar: bool = False) -> None:
 
     try:
         usuarios = _usuarios_paginas(ctx)
+    except LimitePanel as e:
+        PASADA["espejo"] = "rate_limit"
+        log.warning("espejo de saldos: %s. Lo retomo al vencer la pausa del panel.", e)
+        return
     except DesafioWAF as e:
         PASADA["espejo"] = "waf"
         log.warning("espejo de saldos: %s. Lo reintento en la proxima vuelta.", e)
