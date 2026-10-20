@@ -614,7 +614,9 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
             $st = $pdo->prepare(
                 "SELECT d.usuario, o.origen,
                         MIN(e.entregada_en) AS cuando,
-                        MAX(e.leida_en IS NOT NULL) AS toco
+                        MIN(CASE WHEN e.leida_en >= e.entregada_en
+                                      AND e.leida_en < DATE_ADD(e.entregada_en, INTERVAL 7 DAY)
+                                 THEN e.leida_en END) AS leida_en
                    FROM notificaciones o
                    JOIN notificaciones_entregas e ON e.notificacion_id = o.id
                    JOIN dispositivos d ON d.device_id = e.device_id
@@ -649,17 +651,22 @@ if (!function_exists('crmnotif_alcance_inactivos')) {
                 $o  = (string)$a['origen'] ?: 'otro';
                 $ts = strtotime((string)$a['cuando']);
                 $cl = in_array($o, CRMNOTIF_ORIGEN_TRANSACCIONAL, true) ? 'transaccional' : 'promo';
-                $tk = !empty($a['toco']) ? '1' : '0';
-
-                $cargo = false;
+                $cargoEn = null;
                 foreach ($porUsuario[$u] ?? [] as $tc) {
-                    if ($tc > $ts && $tc < $ts + 7 * 86400) { $cargo = true; break; }
+                    if ($tc > $ts && $tc < $ts + 7 * 86400
+                        && ($cargoEn === null || $tc < $cargoEn)) { $cargoEn = $tc; }
                 }
+                // Una lectura posterior a la carga no puede atribuirse a ella.
+                // Si no hubo carga, basta con que la lectura sea posterior a la
+                // entrega y quede dentro de la ventana de siete días.
+                $lectura = !empty($a['leida_en']) ? strtotime((string)$a['leida_en']) : null;
+                $toco = $lectura !== null && $lectura > $ts && ($cargoEn === null || $lectura < $cargoEn);
+                $tk = $toco ? '1' : '0';
                 if (!isset($orig[$o])) { $orig[$o] = ['clase' => $cl, 'a' => [], 'c' => []]; }
                 $orig[$o]['a'][$u]   = true;
                 $grupo[$cl]['a'][$u] = true;
                 $toque[$tk]['a'][$u] = true;
-                if ($cargo) {
+                if ($cargoEn !== null) {
                     $orig[$o]['c'][$u]   = true;
                     $grupo[$cl]['c'][$u] = true;
                     $toque[$tk]['c'][$u] = true;

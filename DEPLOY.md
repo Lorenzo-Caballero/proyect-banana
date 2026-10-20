@@ -145,15 +145,17 @@ Los que hay hoy:
 | cada minuto | `aprobar_cargas.py` — aprueba las cargas pedidas desde «Depósitos» (camino A), y de paso espeja el libro, el stock y el **saldo de los jugadores** |
 | cada 10 min | `difusiones_chat_procesar.php` — manda los mensajes de chat programados |
 | cada hora | `sync_bancos.py` — espeja los datos bancarios del panel |
-| cada hora | `fidelizacion.php` — empuja a los inactivos que cruzaron un escalón (bono + push + chat). Instalarlo: `bash scripts/instalar-cron-fidelizacion.sh` |
+| cada hora | `fidelizacion-multicliente.php` — recorre cada CRM activo por su dominio/ruta, valida que su base pertenezca a un único cliente y llama a la campaña solo en ese entorno. El interruptor de fidelización es independiente en cada CRM. Instalarlo: `bash scripts/instalar-cron-fidelizacion.sh` |
 | 14:00 | `ruleta_recordatorio.php` |
 | 00:10 | `consumo_diario.php` — descuenta el día de suscripción a cada cliente |
 
 > **Si el CRM muestra «el motor nunca corrió — falta el cron» en la vista
 > Fidelización, es que esta línea no está en el crontab.** Pasó porque el cron
 > quedó solo como comentario en `api/fidelizacion.php` y nunca se instaló.
-> `scripts/instalar-cron-fidelizacion.sh` lo pone (idempotente, lee la key de
-> `config.local.php`) y corre una pasada para que el latido aparezca al toque.
+> `scripts/instalar-cron-fidelizacion.sh` lo instala (idempotente) sin disparar
+> campañas. El dispatcher usa `/var/www/api/config.local.php` para leer la key
+> compartida y llama cada CRM por su ruta; solo los que tengan `fid_activa=1`
+> envían mensajes. La primera pasada ocurre en la próxima hora programada.
 
 > **Los dos workers del panel comparten `flock /tmp/gp_panel.lock`, y tiene que
 > seguir así.** `ejecutar_cargas.py` y `aprobar_cargas.py` corren cada minuto en

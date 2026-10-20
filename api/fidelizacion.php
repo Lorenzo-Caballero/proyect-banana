@@ -9,14 +9,10 @@
  *   POST /gp-api/fidelizacion.php   (header X-Api-Key: BOT_API_KEY)
  *   -> { ok, avisados, por_tramo }
  *
- * Cron cada hora (correr de más no duplica, el candado por racha está en
- * fidelizacion_lib). NO alcanza con dejarlo escrito acá: hay que INSTALARLO en
- * el crontab del VPS, o el CRM muestra "el motor nunca corrió — falta el cron"
- * (pasó: quedó solo como comentario). El instalador idempotente es
- *   scripts/instalar-cron-fidelizacion.sh
- * y pone exactamente:
- *   0 * * * *  curl -s -X POST https://ganamoscrm.online/gp-api/fidelizacion.php \
- *                -H "X-Api-Key: LA_MISMA_BOT_API_KEY" >> /var/log/gp-fidelizacion.log 2>&1
+ * Un cron central despacha por hora a cada CRM activo desde
+ * scripts/fidelizacion-multicliente.php. Para cada tenant usa su dominio/ruta,
+ * por lo que api/db.php resuelve su base aislada. El instalador idempotente es
+ * scripts/instalar-cron-fidelizacion.sh; instalar NO ejecuta campañas.
  *
  * Con la campaña apagada (fid_activa='0') responde ok con avisados:0 — el
  * cron puede quedar puesto siempre; el interruptor vive en el CRM.

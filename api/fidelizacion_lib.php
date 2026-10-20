@@ -90,6 +90,13 @@ if (!function_exists('fid_tramos')) {
                 $s = preg_replace('/[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F]/u', '', trim((string)$s)) ?? '';
                 return function_exists('mb_substr') ? mb_substr($s, 0, $max) : substr($s, 0, $max);
             };
+            $listaVariantes = static function ($v): array {
+                $items = is_array($v) ? $v : preg_split('/\\r\\n|\\r|\\n/', (string)$v);
+                return array_values(array_filter(array_map('trim', $items ?: []), static fn($s) => $s !== ''));
+            };
+            $pushVariantes = $listaVariantes($t['mensaje_push_variantes'] ?? []);
+            $chatVariantes = $listaVariantes($t['mensaje_chat_variantes'] ?? []);
+            if (count($pushVariantes) > 3 || count($chatVariantes) > 3) { return null; }
             $out[] = [
                 'dias' => $dias,
                 'pct' => $tipo === 'pct' ? $valor : 0, // compatibilidad con reportes anteriores
@@ -99,10 +106,25 @@ if (!function_exists('fid_tramos')) {
                 'titulo_push' => $limpiar($t['titulo_push'] ?? '', 120),
                 'mensaje_push' => $limpiar($t['mensaje_push'] ?? '', 320),
                 'mensaje_chat' => $limpiar($t['mensaje_chat'] ?? '', 900),
+                'mensaje_push_variantes' => array_map(static fn($s) => $limpiar($s, 320), $pushVariantes),
+                'mensaje_chat_variantes' => array_map(static fn($s) => $limpiar($s, 900), $chatVariantes),
             ];
         }
         usort($out, fn($a, $b) => $a['dias'] <=> $b['dias']);
         return $out;
+    }
+
+    /** Selección repetible: un reintento no cambia el texto elegido. */
+    function fid_variante(string $principal, array $variantes, string $usuario,
+                          int $dias, string $actividadRef, string $canal): string
+    {
+        $opciones = array_values(array_filter(array_merge([$principal], $variantes),
+            static fn($s) => trim((string)$s) !== ''));
+        if (!$opciones) { return ''; }
+        $usuarioKey = function_exists('mb_strtolower') ? mb_strtolower($usuario, 'UTF-8') : strtolower($usuario);
+        $hash = hash('sha256', $usuarioKey . "|$dias|$actividadRef|$canal");
+        $indice = hexdec(substr($hash, 0, 8)) % count($opciones);
+        return (string)$opciones[$indice];
     }
 
     /**
@@ -425,8 +447,14 @@ if (!function_exists('fid_tramos')) {
                 . ($conGiro ? 'También tenés un giro regalado de la ruleta 🎰.' : ''),
         ];
         $titulo = strtr($tramo['titulo_push'] !== '' ? $tramo['titulo_push'] : $porDefecto['titulo_push'], $tokens);
-        $cuerpo = strtr($tramo['mensaje_push'] !== '' ? $tramo['mensaje_push'] : $porDefecto['mensaje_push'], $tokens);
-        $msg = strtr($tramo['mensaje_chat'] !== '' ? $tramo['mensaje_chat'] : $porDefecto['mensaje_chat'], $tokens);
+        $pushBase = $tramo['mensaje_push'] !== '' ? $tramo['mensaje_push'] : $porDefecto['mensaje_push'];
+        $chatBase = $tramo['mensaje_chat'] !== '' ? $tramo['mensaje_chat'] : $porDefecto['mensaje_chat'];
+        $pushElegido = fid_variante($pushBase, $tramo['mensaje_push_variantes'] ?? [],
+            $usuario, (int)$tramo['dias'], $actividadRef, 'push');
+        $chatElegido = fid_variante($chatBase, $tramo['mensaje_chat_variantes'] ?? [],
+            $usuario, (int)$tramo['dias'], $actividadRef, 'chat');
+        $cuerpo = strtr($pushElegido, $tokens);
+        $msg = strtr($chatElegido, $tokens);
         if ($tramo['bono_tipo'] !== 'ninguno' && !preg_match('/pendiente.*pr[oó]xima carga|pr[oó]xima carga.*pendiente/i', $cuerpo)) {
             $cuerpo .= ' El bono queda pendiente y se acredita con tu próxima carga.';
         }

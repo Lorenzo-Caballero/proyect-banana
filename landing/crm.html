@@ -4142,7 +4142,7 @@
           <div class="v">—</div>
           <div class="sub">—</div>
         </div>
-        <div class="nv-cob-card" id="nvCardToque" title="De los que ABRIERON un aviso, cuántos cargaron dentro de los 7 días, contra los que lo recibieron y no lo abrieron. Mismo universo y misma ventana: lo único distinto es si lo tocaron. No es causa — el que toca ya estaba enganchado — pero es la señal más fuerte que hay sin un grupo de control.">
+        <div class="nv-cob-card" id="nvCardToque" title="Compara a quienes abrieron el aviso antes de su primera carga con quienes lo recibieron y no lo abrieron. La apertura debe ocurrir después de la entrega y antes de cargar; la carga debe llegar dentro de 7 días. No prueba causalidad, pero evita contar como influencia una lectura posterior al pago.">
           <div class="k">Abrieron el aviso y cargaron</div>
           <div class="v">—</div>
           <div class="sub">—</div>
@@ -5202,7 +5202,7 @@
             </label>
           </div>
 
-          <div class="cfg-hint" id="fidConfigHint" style="margin:10px 0 7px">Cada escalón puede tener bono en porcentaje, fichas o ningún bono; también podés regalar la ruleta. Personalizá título y textos por separado. Variables: <code>{usuario}</code>, <code>{dias}</code>, <code>{premio}</code>, <code>{carga}</code>.</div>
+          <div class="cfg-hint" id="fidConfigHint" style="margin:10px 0 7px">Cada escalón puede tener bono en porcentaje, fichas o ningún bono; también podés regalar la ruleta. Podés agregar hasta 3 variantes por mensaje (una por línea); el sistema elige una de forma estable para cada jugador y racha. Variables: <code>{usuario}</code>, <code>{dias}</code>, <code>{premio}</code>, <code>{carga}</code>.</div>
           <div class="fid-editor" id="fidTramos"></div>
           <p class="cfg-hint" id="fidValid" style="display:none;color:var(--red);margin-top:6px"></p>
           <div class="rc-acciones">
@@ -5220,19 +5220,19 @@
 
       <!-- Lo que le llega al jugador, tal cual: saca la duda antes de prender. -->
       <div class="cb-card">
-        <div class="cb-card-head"><b>Lo que recibe el jugador</b> <span class="cfg-hint" id="fidPrevCual"></span></div>
+        <div class="cb-card-head"><b>Vista previa</b> <span class="cfg-hint" id="fidPrevCual"></span><label class="cfg-hint" style="margin-left:auto">Ejemplo <select id="fidPrevVersion" class="cb-input" style="width:auto;display:inline-block;padding:5px 9px"><option value="0">1</option></select></label></div>
         <div class="cb-card-body">
           <div class="fid-prev">
             <div class="fid-prev-col">
               <div class="cfg-hint" style="margin-bottom:6px">📱 Push en el celular</div>
               <div class="fid-push">
-                <div class="fid-push-app">🅖 GANAMOS · ahora</div>
+              <div class="fid-push-app">🅖 App del casino · ahora</div>
                 <b id="fidPrevPushT"></b>
                 <div id="fidPrevPushC"></div>
               </div>
             </div>
             <div class="fid-prev-col">
-              <div class="cfg-hint" style="margin-bottom:6px">💬 Mensaje de Camila en el chat</div>
+              <div class="cfg-hint" style="margin-bottom:6px">💬 Mensaje del asistente en el chat</div>
               <div class="fid-burbuja" id="fidPrevChat"></div>
             </div>
           </div>
@@ -6987,7 +6987,9 @@
     const tipo=t.bono_tipo || (pct>0?"pct":"ninguno");
     const x={dias:+t.dias||1,bono_tipo:tipo,bono_valor:+(t.bono_valor ?? (tipo==="pct"?pct:0))||0,
       pct:tipo==="pct"?(+(t.bono_valor ?? pct)||0):0,ruleta:t.ruleta?1:0,
-      titulo_push:t.titulo_push||"",mensaje_push:t.mensaje_push||"",mensaje_chat:t.mensaje_chat||""};
+      titulo_push:t.titulo_push||"",mensaje_push:t.mensaje_push||"",mensaje_chat:t.mensaje_chat||"",
+      mensaje_push_variantes:Array.isArray(t.mensaje_push_variantes)?t.mensaje_push_variantes.join("\n"):String(t.mensaje_push_variantes||""),
+      mensaje_chat_variantes:Array.isArray(t.mensaje_chat_variantes)?t.mensaje_chat_variantes.join("\n"):String(t.mensaje_chat_variantes||"")};
     return x;
   }
   function fidExpandir(texto,t){
@@ -7004,10 +7006,14 @@
     }
     return s;
   }
-  function fidTextos(t){
+  function fidTextos(t, version=0){
     const def=fidPlantillasDefault(t);
-    return {pushT:fidExpandir(t.titulo_push||def.titulo_push,t),pushC:fidCondicion(fidExpandir(t.mensaje_push||def.mensaje_push,t),t,false),
-      chat:fidCondicion(fidExpandir(t.mensaje_chat||def.mensaje_chat,t),t,true)};
+    const elegir=(base,extra,porDefecto)=>{
+      const opciones=[base||porDefecto,...String(extra||"").split(/\r?\n/).map(s=>s.trim()).filter(Boolean)].slice(0,4);
+      return opciones[version%opciones.length];
+    };
+    return {pushT:fidExpandir(t.titulo_push||def.titulo_push,t),pushC:fidCondicion(fidExpandir(elegir(t.mensaje_push,t.mensaje_push_variantes,def.mensaje_push),t),t,false),
+      chat:fidCondicion(fidExpandir(elegir(t.mensaje_chat,t.mensaje_chat_variantes,def.mensaje_chat),t),t,true)};
   }
 
   function fidPrever(){
@@ -7015,7 +7021,13 @@
     if(!orden.length){ $("#fidPrevCual").textContent=""; return; }
     if(fidSel >= orden.length) fidSel = orden.length-1;
     const t = orden[fidSel];
-    const x = fidTextos(t);
+    const sel = $("#fidPrevVersion");
+    const total = Math.max(1, 1 + String(t.mensaje_push_variantes||"").split(/\r?\n/).filter(s=>s.trim()).length,
+      1 + String(t.mensaje_chat_variantes||"").split(/\r?\n/).filter(s=>s.trim()).length);
+    const anterior = Math.min(parseInt(sel.value,10)||0,total-1);
+    sel.innerHTML = Array.from({length:total},(_,i)=>`<option value="${i}">${i+1}</option>`).join("");
+    sel.value = String(anterior);
+    const x = fidTextos(t, anterior);
     const premio=t.bono_tipo==="ninguno"?"sin bono":(t.bono_tipo==="pct"?t.bono_valor+"%":nf.format(t.bono_valor)+" fichas");
     $("#fidPrevCual").textContent = "· escalón de " + t.dias + " días (" + premio + (t.ruleta?" + ruleta":"") + ")"
       + " — tocá otra parada de la línea para cambiar";
@@ -7053,6 +7065,11 @@
       if(!["ninguno","pct","fichas"].includes(t.bono_tipo)){ mal=true; prob = "Elegí un tipo de premio válido."; }
       if(t.bono_tipo==="pct" && !(t.bono_valor>=1 && t.bono_valor<=200)){ mal=true; prob = "El porcentaje debe ir de 1 a 200."; }
       if(t.bono_tipo==="fichas" && !(t.bono_valor>=1 && t.bono_valor<=100000000)){ mal=true; prob = "Las fichas deben estar entre 1 y 100.000.000."; }
+      for(const [campo,max] of [["mensaje_push_variantes",320],["mensaje_chat_variantes",900]]){
+        const lineas=String(t[campo]||"").split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+        if(lineas.length>3){ mal=true; prob="Cada canal admite hasta 3 versiones adicionales (una por línea)."; }
+        if(lineas.some(s=>s.length>max)){ mal=true; prob=`Cada versión puede tener hasta ${max} caracteres.`; }
+      }
       if(vistos[t.dias] !== undefined){ mal=true; prob = "Hay dos escalones con " + t.dias + " días."; }
       vistos[t.dias] = i;
       const fila = document.querySelector(`.fid-fila[data-fila="${i}"]`);
@@ -7081,7 +7098,9 @@
         <div class="fid-mensajes">
           <label class="fid-campo"><span>Título de la notificación</span><input class="cb-input" maxlength="120" data-i="${i}" data-k="titulo_push" value="${esc(t.titulo_push)}" placeholder="${esc(def.titulo_push)}"></label>
           <label class="fid-campo"><span>Texto de la notificación</span><textarea class="cb-input" maxlength="320" data-i="${i}" data-k="mensaje_push" placeholder="${esc(def.mensaje_push)}">${esc(t.mensaje_push)}</textarea></label>
+          <label class="fid-campo"><span>Otras versiones de la notificación (opcional, una por línea; hasta 3)</span><textarea class="cb-input" maxlength="1000" data-i="${i}" data-k="mensaje_push_variantes" placeholder="Agregá hasta 3 alternativas para que no siempre llegue igual">${esc(t.mensaje_push_variantes)}</textarea></label>
           <label class="fid-campo"><span>Mensaje del chat</span><textarea class="cb-input" maxlength="900" data-i="${i}" data-k="mensaje_chat" placeholder="${esc(def.mensaje_chat)}">${esc(t.mensaje_chat)}</textarea></label>
+          <label class="fid-campo"><span>Otras versiones del chat (opcional, una por línea; hasta 3)</span><textarea class="cb-input" maxlength="2800" data-i="${i}" data-k="mensaje_chat_variantes" placeholder="Agregá hasta 3 alternativas para que no siempre llegue igual">${esc(t.mensaje_chat_variantes)}</textarea></label>
           <span class="cfg-hint fid-token-hint">Variables disponibles: {usuario}, {dias}, {premio}, {carga}. La condición de acreditación con la próxima carga se agrega automáticamente cuando corresponda.</span>
         </div>
       </div>`;
@@ -7425,6 +7444,7 @@
   /* El número se recalcula al cambiar la opción: es el dato que hace que la
      decisión no sea a ciegas, y sirve justo en el momento de elegir. */
   $("#fidPublico")?.addEventListener("change", fidPublicoHint);
+  $("#fidPrevVersion")?.addEventListener("change", fidPrever);
 
   $("#fidAgregar")?.addEventListener("click", ()=>{
     const ultimo = fidTramos[fidTramos.length-1];
