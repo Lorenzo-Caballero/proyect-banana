@@ -166,7 +166,9 @@ Los que hay hoy:
 > toque el panel va con ese mismo lock.
 
 > **El espejo de saldos (`usuarios.balance`) lo hace `aprobar_cargas.py`, cada
-> 15 minutos**, con lotes de hasta 500 jugadores. Los usuarios que escribieron
+> 15 minutos**, con lotes de hasta 500 jugadores y un máximo de seis páginas
+> por vuelta. Si el padrón no termina, guarda el cursor y lo continúa en la
+> vuelta siguiente, sin esperar otros 15 minutos. Los usuarios que escribieron
 > o tuvieron movimientos después de su última lectura se refrescan en cada
 > pasada del minuto. No levantes `ganamos-bot-sync`: sería un segundo login con
 > la misma cuenta de agente y competiría por la sesión.

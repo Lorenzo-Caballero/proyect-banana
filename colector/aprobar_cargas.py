@@ -1558,6 +1558,11 @@ USUARIOS_CADA_MIN = int(os.environ.get("USUARIOS_CADA_MIN", "15"))
 # previas, 500 bajó el barrido a 7 requests y 10 s; usamos ese tamaño para
 # quedar por debajo del umbral que ahora vemos en producción.
 USUARIOS_POR_PAGINA = int(os.environ.get("USUARIOS_POR_PAGINA", "500"))
+# La API de Ganamos puede aceptar un `count` grande y aun así devolver páginas
+# chicas. Más importante: un barrido largo emite muchas lecturas consecutivas
+# y es el patrón que dispara el rate limit. Repartimos el barrido entre vueltas
+# del worker, guardando la próxima página en `_USUARIOS_PAGINA`.
+USUARIOS_PAGINAS_POR_PASADA = max(1, int(os.environ.get("USUARIOS_PAGINAS_POR_PASADA", "6")))
 USUARIOS_POR_POST = 300      # tamano del lote hacia nuestro server
 USUARIOS_MAX_PAGINAS = 200   # 10.000 jugadores: freno duro, no un limite real
 _USUARIOS_MARCA = "/tmp/gp_usuarios_visto"
@@ -1632,6 +1637,11 @@ def _usuarios_toca() -> bool:
     asi que su saldo habitual sigue demorando hasta un minuto.
     """
     try:
+        # Si el barrido anterior se repartió o cortó, continuarlo en la vuelta
+        # siguiente en vez de esperar otros 15 minutos. El cursor se reinicia
+        # automáticamente si quedó abandonado por más de 30 minutos.
+        if _pagina_inicial() > 0:
+            return True
         if os.path.isfile(_USUARIOS_MARCA):
             if (time.time() - os.path.getmtime(_USUARIOS_MARCA)) < USUARIOS_CADA_MIN * 60:
                 return False
@@ -1717,6 +1727,7 @@ def _usuarios_paginas(ctx) -> list:
     if pagina:
         log.info("espejo de saldos: retomo en la pagina %d", pagina)
     todos, completo = [], True
+    paginas_leidas = 0
     while pagina < USUARIOS_MAX_PAGINAS:
         if time.monotonic() - arranque > USUARIOS_MAX_SEG:
             log.warning("espejo de saldos: me pase de %d s en la pagina %d. Guardo "
@@ -1762,9 +1773,17 @@ def _usuarios_paginas(ctx) -> list:
         if not items:
             break
         todos += [_usuario_normalizado(u) for u in items]
+        paginas_leidas += 1
         if len(items) < USUARIOS_POR_PAGINA:
             break
         pagina += 1
+        if paginas_leidas >= USUARIOS_PAGINAS_POR_PASADA:
+            log.info("espejo de saldos: reparto el barrido tras %d páginas; "
+                     "continúo desde la página %d en la próxima vuelta",
+                     paginas_leidas, pagina)
+            _guardar_pagina(pagina)
+            completo = False
+            break
         time.sleep(0.4)      # gentil con el WAF, igual que el sync viejo
     # Se llego al final de la lista: el proximo barrido arranca de cero, asi las
     # primeras paginas tampoco se quedan sin leer cuando hubo que retomar.

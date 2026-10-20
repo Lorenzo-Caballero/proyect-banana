@@ -221,7 +221,8 @@ las columnas propias. Tres saldos distintos que no hay que confundir:
 > `sync_usuarios.py`: hacían un segundo login con las mismas credenciales y
 > repetían el padrón completo cada cinco minutos. Los saldos activos se
 > consultan después de cada nueva actividad; el padrón completo, cada 15 minutos
-> en lotes de hasta 500 jugadores. El libro trae dos días cada cinco minutos y
+> en lotes de hasta 500 jugadores y como máximo seis páginas por vuelta; si no
+> termina, retoma el cursor en la siguiente vuelta. El libro trae dos días cada cinco minutos y
 > reconcilia 30 días una vez al día.
 >
 > No levantes otro `sync_usuarios.py` para el mismo agente: el contenedor
