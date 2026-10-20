@@ -215,31 +215,19 @@ las columnas propias. Tres saldos distintos que no hay que confundir:
 > última vez hace una semana aunque se haya leído recién. La ficha del CRM
 > muestra esa edad al lado del número y la pone en ámbar pasados 10 minutos.
 >
-> **Lo escribía `sync_usuarios.py`, y el 15/09/2026 había DOS contenedores
-> haciéndolo a la vez**: `ganamos-bot-sync` (el del compose, `profiles:
-> ["sync"]`, que alguien levantó a mano y llevaba 8 días arriba) y
-> `bot-ganamoscrm`, otro con el mismo `sync_usuarios.py --loop 300`.
+> **El espejo lo mantiene `colector/aprobar_cargas.py` desde el sondeador de
+> peticiones de cada tenant** (y desde el creador en nuestro CRM). El
+> provisionador retira los contenedores legacy `bot-<slug>` que ejecutaban
+> `sync_usuarios.py`: hacían un segundo login con las mismas credenciales y
+> repetían el padrón completo cada cinco minutos. Los saldos activos se
+> consultan después de cada nueva actividad; el padrón completo, cada 15 minutos
+> en lotes de hasta 500 jugadores. El libro trae dos días cada cinco minutos y
+> reconcilia 30 días una vez al día.
 >
-> **Ojo con el razonamiento fácil acá, porque me equivoqué:** que el compose lo
-> deje detrás de un profile NO prueba que no esté corriendo. `docker compose up`
-> no lo arranca, pero nada impide levantarlo suelto — y estaba. La única forma
-> de saberlo es mirar `docker ps`, no el compose.
->
-> El problema real no era que el espejo no corriera: era que **cada uno de esos
-> contenedores usa su propio `estado_sesion.json`, o sea un login más con la
-> misma cuenta de agente**, y se patean la sesión entre ellos. Por eso el saldo
-> "se actualizaba de a ratos". Sumado al creador, al recaudador y a los de otro
-> tenant, llegó a haber **cinco logins simultáneos** con `PANEL_USER`
-> compartido.
->
-> Y `scripts/deploy-bot.sh` sólo avisa si `ganamos-bot-sync` **existe** y está
-> caído: un contenedor con OTRO nombre haciendo lo mismo no lo ve.
->
-> Desde el 15/09/2026 lo hace **`colector/aprobar_cargas.py`**
-> (`sincronizar_usuarios()`), que ya está logueado con la sesión del creador y
-> ya corre cada minuto: es una lectura más, como el libro y el stock, y no
-> agrega ningún login. Cadencia en `USUARIOS_CADA_MIN` (5). A mano:
-> `python aprobar_cargas.py --usuarios`.
+> No levantes otro `sync_usuarios.py` para el mismo agente: el contenedor
+> `peticiones-<slug>` ya mantiene ese espejo desde su sesión. Las rutas y las
+> bases siguen siendo distintas por tenant; un clon con las mismas credenciales
+> externas puede leer los mismos jugadores, pero no comparte la base local.
 
 Resto: `recargas` + `pagos` (transferencias), `conversaciones` + `mensajes`
 (chat/CRM), `movimientos` (historial de fichas/bonos/saldo), `acciones_saldo`
@@ -264,8 +252,8 @@ contraseña y `contrasena` era un hash, se guardaba la clave en claro en
 `panel_password` y se borraba al confirmarse el alta.
 
 **Ahora:** los jugadores se crean **en ganamos** (panel de agentes) y bajan por
-espejo con `sync_usuarios.py`, que se loguea con Playwright y pagina
-`agents.ganamosonline.com/api` → `usuarios_sync.php` → tabla `usuarios`.
+espejo con `colector/aprobar_cargas.py`, desde la sesión del sondeador de
+peticiones del tenant → `usuarios_sync.php` → tabla `usuarios`.
 
 > **Los que crea NUESTRO bot no esperan al espejo (18/09/2026).** `altas_cola.php`
 > los inserta en `usuarios` al confirmar el alta, con el `id_ganamos` que el bot
@@ -433,7 +421,7 @@ Cuatro caminos distintos, con permisos distintos:
      gracia). Sin eso, una solicitud nueva se lleva plata vieja de otra
      operación. El ancla es `peticiones_carga.primera_vez`.
    - Acá **no se tocan los `coins`**: la plata la acredita la plataforma sobre
-     el saldo real, que espeja `sync_usuarios.py`. Solo queda el `movimientos`.
+     el saldo real, que espeja `colector/aprobar_cargas.py`. Solo queda el `movimientos`.
    - **No rechaza por su cuenta.** Si pasan 15 min sin plata, lo deja marcado
      para que lo mire una persona. Rechazar es siempre una decisión humana: se
      pide desde el CRM («Rechazar», migración 63) y el worker la ejecuta.

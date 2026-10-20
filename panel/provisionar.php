@@ -550,77 +550,38 @@ function bot_creds_cambiaron($name, $user, $pass) {
 }
 
 /**
- * Asegura el contenedor de bot de un cliente. 1 por cliente, con SUS
- * credenciales de agente, espejando usuarios contra SU base (por su dominio).
- * Idempotente: si el contenedor ya existe con las MISMAS credenciales, no
- * hace nada; si las credenciales cambiaron (el cliente las corrigió desde su
- * CRM), lo recrea con las nuevas. Best-effort.
+ * Retira el sincronizador antiguo de saldos del tenant.
+ *
+ * El sondeador peticiones-<slug> ya espeja usuarios desde la sesión que usa
+ * para leer el panel, y el colector optimizado evita releer cuentas sin
+ * actividad. Mantener además bot-<slug> (sync_usuarios.py) abría otra sesión
+ * con las mismas credenciales y repetía el listado completo cada cinco
+ * minutos; con clones como ganamos/leandro, eso duplicaba aún más las lecturas
+ * y hacía que las sesiones se invalidaran entre sí.
+ *
+ * Solo elimina el contenedor si Docker confirma que ejecuta sync_usuarios.py.
+ * El volumen /opt/bots/<slug> queda intacto.
  */
 function asegurar_bot($c, $cfg) {
-    $slug = preg_replace('/[^a-z0-9_-]/i', '', (string) $c['slug']);
-    if (tiene_bot_propio($slug)) { return 'sin bot (lo atiende su contenedor propio)'; }
-    $user = (string) ($c['agente_usuario'] ?? '');
-    $pass = (string) ($c['agente_password'] ?? '');
-    if ($slug === '' || $user === '' || $pass === '') {
-        return 'sin bot (faltan credenciales de agente)';
-    }
-
-    // Cliente por-path: la API vive bajo /<slug>/gp-api/, no en la raíz del
-    // dominio (que es compartida entre varios clientes de este tipo).
-    $ruta = preg_replace('/[^a-z0-9-]/i', '', (string)($c['ruta_slug'] ?? $slug));
-    $base = 'https://' . $c['dominio'] . (!empty($c['path_tenant']) ? '/' . $ruta : '');
-
+    $slug = preg_replace('/[^a-z0-9_-]/i', '', (string)($c['slug'] ?? ''));
+    if ($slug === '') { return 'sin sincronizador: slug inválido'; }
     $name = 'bot-' . $slug;
-    /* MISMO CHEQUEO QUE EL DE ALTAS, y hace falta igual: este espeja jugadores
-       con las credenciales del cliente. Mal apuntado, le vuelca NUESTRO padrón
-       en su base -- los jugadores de uno en el CRM del otro. */
-    $mal = destino_inseguro($c, $base);
-    if ($mal !== '') {
-        frenar_bot_mal_apuntado($name, $slug, $mal);
-        return 'bot FRENADO: ' . $mal;
+    $id = trim((string)shell_exec(
+        'docker ps -aq --filter ' . escapeshellarg('name=^' . $name . '$') . ' 2>/dev/null'
+    ));
+    if ($id === '') { return 'espejo integrado en el sondeador de peticiones'; }
+
+    $cmd = trim((string)shell_exec(
+        'docker inspect --format ' . escapeshellarg('{{.Path}} {{range .Args}}{{.}} {{end}}')
+        . ' ' . escapeshellarg($name) . ' 2>/dev/null'
+    ));
+    if (strpos($cmd, 'sync_usuarios.py') === false) {
+        return 'contenedor bot existente no es sync_usuarios.py; requiere revisión';
     }
 
-    $existe = trim((string) shell_exec('docker ps -aq --filter ' . escapeshellarg('name=^' . $name . '$') . ' 2>/dev/null'));
-    if ($existe !== '') {
-        if (!bot_creds_cambiaron($name, $user, $pass) && !bot_imagen_actualizada($name)) {
-            return 'bot ya existía';
-        }
-        shell_exec('docker rm -f ' . escapeshellarg($name) . ' 2>/dev/null');
-        echo date('c') . " bot $slug: credenciales nuevas -> recreando el contenedor\n";
-    }
-
-    // ¿está la imagen?
-    $img = trim((string) shell_exec("docker images -q ganamos-bot:latest 2>/dev/null"));
-    if ($img === '') {
-        return 'bot NO: falta la imagen ganamos-bot:latest (construíla en ~/Bot-python)';
-    }
-
-    // La API valida con la BOT_API_KEY global (el tenant lo decide el dominio).
-    $apiKey = '';
-    if (is_file('/var/www/api/config.local.php')) {
-        $a = require '/var/www/api/config.local.php';
-        $apiKey = is_array($a) ? ($a['BOT_API_KEY'] ?? '') : '';
-    }
-
-    @mkdir('/opt/bots/' . $slug, 0750, true);
-
-    $cmd = 'docker run -d '
-         . '--name ' . escapeshellarg($name) . ' '
-         . '--restart unless-stopped --shm-size 1g --init '
-         . '-e ' . escapeshellarg('PANEL_USER=' . $user) . ' '
-         . '-e ' . escapeshellarg('PANEL_PASS=' . $pass) . ' '
-         . '-e ' . escapeshellarg('LOGIN_URL=' . PANEL_LOGIN_URL) . ' '
-         . '-e ' . escapeshellarg('PANEL_URL=' . PANEL_CREATE_URL) . ' '
-         . '-e ' . escapeshellarg('API_URL=' . $base . '/gp-api/usuarios_sync.php') . ' '
-         . '-e ' . escapeshellarg('API_KEY=' . $apiKey) . ' '
-         . '-v ' . escapeshellarg('/opt/bots/' . $slug . ':/datos') . ' '
-         . 'ganamos-bot:latest python /app/sync_usuarios.py --headless --loop 300 2>&1';
-
-    $out = trim((string) shell_exec($cmd));
-    if (preg_match('/^[0-9a-f]{12,}$/i', $out)) {
-        return 'bot levantado';
-    }
-    return 'bot NO arrancó: ' . substr($out, 0, 120);
+    shell_exec('docker update --restart=no ' . escapeshellarg($name) . ' 2>/dev/null');
+    shell_exec('docker rm -f ' . escapeshellarg($name) . ' 2>/dev/null');
+    return 'sincronizador redundante retirado; los saldos los espeja peticiones';
 }
 
 /** Detecta una imagen nueva sin quitar workers cuando Docker no logra inspeccionarlos. */
@@ -819,22 +780,21 @@ function asegurar_bot_recaudador($c, $cfg) {
 }
 
 /**
- * Asegura el contenedor de ALTAS de un cliente (bot_crear_jugador.py). Es el
- * hermano de asegurar_bot() de arriba (mismo patrón: 1 por cliente, SUS
- * credenciales, idempotente) pero para OTRO trabajo: sondea `altas_cola.php`
+ * Asegura el contenedor de ALTAS de un cliente (bot_crear_jugador.py). Es un
+ * worker independiente del espejo de saldos integrado al sondeador de
+ * peticiones: sondea `altas_cola.php`
  * (tabla `altas`, la cola que llena registro.html/crear_cuenta.php) y da de
  * alta jugadores nuevos en el panel de agentes de ESE cliente, en vez de solo
  * espejar los que ya existen.
  *
- * Mismo binario/imagen que asegurar_bot() (ganamos-bot:latest ya trae
+ * Usa la imagen ganamos-bot:latest, que incluye
  * bot_crear_jugador.py, bot_cargar_fichas.py y sync_usuarios.py copiados,
  * ver bot/Dockerfile) -- de hecho el CMD default de la imagen YA es
  * bot_crear_jugador.py --headless; acá se lo pasa explícito igual, por
  * claridad y para no depender de que el default de la imagen no cambie.
  *
- * Contenedor separado de sync_usuarios (nombre `altas-<slug>`, no
- * `bot-<slug>`): son dos procesos con ciclos de vida y logs distintos, y así
- * un fallo en uno no tira abajo al otro.
+ * Contenedor separado del sondeador de peticiones (nombre `altas-<slug>`):
+ * un fallo en uno no tira abajo al otro. El sync legacy ya no se provisiona.
  */
 function asegurar_bot_altas($c, $cfg) {
     $slug = preg_replace('/[^a-z0-9_-]/i', '', (string) $c['slug']);
@@ -916,7 +876,7 @@ function asegurar_bot_altas($c, $cfg) {
         $apiKey = is_array($a) ? ($a['BOT_API_KEY'] ?? '') : '';
     }
 
-    // Volumen propio (distinto del de sync_usuarios): cada proceso guarda su
+    // Volumen propio: cada proceso guarda su
     // propia sesión de Playwright (estado_sesion.json) en su carpeta, no se
     // pisan entre sí aunque compartan las mismas credenciales de agente.
     @mkdir('/opt/bots-altas/' . $slug, 0750, true);
@@ -1545,27 +1505,19 @@ Si alguna esta EN USO hay que darla de alta; si son restos, "
 }
 
 // ---------------------------------------------------------------------------
-// Pasada 2: asegurar el bot de cada cliente activo con credenciales de agente.
-// Corre siempre (idempotente): si agregás las credenciales después, el bot
-// arranca en la próxima corrida sin re-provisionar nada.
+// Pasada 2: retirar sincronizadores redundantes y asegurar los workers de cada
+// CRM. Los validadores manejan credenciales faltantes y bajan cualquier
+// contenedor viejo autenticado con una contraseña que el cliente quitó.
 // ---------------------------------------------------------------------------
-/* CON CREDENCIALES GLOBALES DE ALTAS, ENTRAN TODOS LOS CLIENTES. Sin ellas,
-   solo los que cargaron las suyas -- que era el filtro de siempre, y el que
-   hacía que un cliente sin credenciales ni siquiera apareciera por acá: no
-   fallaba al levantarle el bot, no se intentaba, y no se loguea nada.
-
-   `asegurar_bot()` (el de sync) sigue necesitando las del cliente y devuelve
-   "sin bot (faltan credenciales)" para los que no las tengan: dejarlos entrar
-   no le cambia nada a él. */
-$conGlobales = trim((string) ($cfg['ALTAS_PANEL_USER'] ?? '')) !== ''
-            && trim((string) ($cfg['ALTAS_PANEL_PASS'] ?? '')) !== '';
+/* Se recorren todos los clientes activos, incluso sin credenciales. Así los
+   helpers pueden retirar workers antiguos que conservarían una clave obsoleta;
+   los que sí necesitan iniciar sesión validan sus credenciales por separado. */
 
 $activos = $pdo->query(
     "SELECT slug, ruta_slug, dominio, path_tenant, db_nombre, agente_usuario, agente_password, altas_propias,
             COALESCE(producto,'crm') AS producto
        FROM clientes
       WHERE estado = 'activo'"
-    . ($conGlobales ? '' : " AND agente_usuario IS NOT NULL AND agente_usuario <> ''")
 )->fetchAll();
 
 /* EL RESULTADO DE LEVANTAR EL BOT, DONDE SE PUEDA CONSULTAR.
@@ -1692,14 +1644,14 @@ function guardar_estado_bot($cfg, $c, $msg) {
 }
 
 foreach ($activos as $c) {
+    $msg = asegurar_bot($c, $cfg);
+    if (strpos($msg, 'retirado') !== false || strpos($msg, 'requiere revisión') !== false) {
+        echo date('c') . " sync redundante {$c['slug']}: $msg\n";
+    }
     // El producto Landing es deliberadamente sin CRM: no sincroniza jugadores,
     // no sondea peticiones ni ejecuta recaudación. Solo necesita el bot de altas
     // que crea usuarios en el agente Ganamos del comprador.
     if (($c['producto'] ?? 'crm') !== 'landing') {
-        $msg = asegurar_bot($c, $cfg);
-        if (strpos($msg, 'levantado') !== false || strpos($msg, 'NO') !== false) {
-            echo date('c') . " bot {$c['slug']}: $msg\n";
-        }
         $msgPeticiones = asegurar_bot_peticiones($c, $cfg);
         if (strpos($msgPeticiones, 'levantado') !== false || strpos($msgPeticiones, 'NO') !== false
             || strpos($msgPeticiones, 'FRENADO') !== false) {
@@ -1832,8 +1784,8 @@ foreach ($todos as $c) {
         // 5. EL LOGIN DEL PANEL FALLA (credenciales mal / sesion caida sin
         //    recuperar). Sintoma: hay jugadores CREADOS en el panel
         //    (altas.estado='ok') que hace rato no aparecen en el espejo
-        //    `usuarios`. Si el sync_usuarios no puede loguearse, deja de traer
-        //    gente y en el CRM esos jugadores no tienen saldo, fichas ni nada
+        //    `usuarios`. Si el colector del tenant no puede loguearse, deja de
+        //    traer gente y en el CRM esos jugadores no tienen saldo, fichas ni nada
         //    -- que fue justo lo que paso (11/9) con la password del panel mal.
         //    Solo se miran altas RECIENTES (< 1 dia): un desfase historico no
         //    es la falla de ahora. usuarios y altas comparten collation (ver

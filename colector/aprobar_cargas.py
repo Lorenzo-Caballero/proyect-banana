@@ -1285,8 +1285,7 @@ def _libro_toca() -> bool:
 
     Mismo mecanismo que _stock_toca(): este worker arranca de cero cada minuto
     (lo lanza el cron), asi que el "hace cuanto" va en la fecha de un archivo y
-    no en memoria. Cada 15 min y no en cada pasada porque son varias paginas y
-    lo que mide -- plata que ya se movio -- no cambia de un minuto al otro.
+    no en memoria. Lee los dos días recientes cada 5 min; los 30 días completos se concilian una vez al día.
     """
     try:
         if os.path.isfile(_LIBRO_MARCA):
@@ -1544,10 +1543,10 @@ USUARIOS_CADA_MIN = int(os.environ.get("USUARIOS_CADA_MIN", "15"))
 # CUANTOS JUGADORES POR REQUEST. Es la palanca mas grande que tenemos contra el
 # WAF, y estuvo en 50 por herencia: es lo que usaba sync_usuarios.py.
 #
-# CADA PAGINA ES UNA OPORTUNIDAD DE QUE NOS DESAFIEN. Con 3.073 jugadores, 50
-# por pagina son 62 requests cada 5 minutos -- unas 750 por hora, que es de
-# lejos lo que mas expone al sistema. Las cargas y los retiros, incluso
-# escalando mucho, son un puñado al lado de eso.
+# CADA PAGINA ES UNA OPORTUNIDAD DE QUE NOS DESAFIEN. Con 3.073 jugadores,
+# pasar de 50 a 500 por página bajó el padrón de 62 a 7 requests. El padrón
+# completo corre cada 15 minutos; la lectura rápida por actividad evita volver
+# a consultar al mismo jugador si no escribió ni tuvo movimientos nuevos.
 #
 # MEDIDO EN PRODUCCION el 18/09/2026 (3 muestras por tamaño):
 #
@@ -1565,11 +1564,10 @@ _USUARIOS_MARCA = "/tmp/gp_usuarios_visto"
 
 # CUANTO PUEDE DURAR UN BARRIDO ANTES DE CORTARLO Y SEGUIR EN LA PROXIMA.
 #
-# El cron corre cada minuto con `flock -w 45`, o sea que una pasada de mas de
-# ~105 segundos le hace perder el turno a la siguiente -- y en esa siguiente
-# van las cargas y los retiros, que es la plata. El barrido limpio tarda ~53 s;
-# con el WAF desafiando cada 5 paginas se midio 68 s. Todavia entra, pero no
-# hay margen para un dia peor.
+# El cron corre cada minuto con `flock -w 45`, así que limitamos el espejo a 35
+# segundos para no hacer esperar las cargas y los retiros. Con lotes de 500 el
+# recorrido completo medido fue de unos 10 segundos; si el WAF lo corta, se
+# guarda la página y se retoma en la próxima vuelta.
 #
 # CORTAR Y GUARDAR LO LEIDO ES HONESTO, y no lo era antes de la migracion 68:
 # `saldo_visto_en` es POR FILA, asi que los jugadores que no se alcanzaron a
@@ -1587,22 +1585,9 @@ _USUARIOS_MARCA = "/tmp/gp_usuarios_visto"
 # corre cada minuto y toma EL MISMO `flock /tmp/gp_panel.lock` que este worker,
 # con `-w 45`: espera 45 segundos y si no lo consigue, PIERDE EL TURNO.
 #
-# Con 70 segundos solo para el espejo, mas las peticiones, el libro, el stock y
-# los retiros, esta pasada pasaba largo de esos 45 y las cargas se quedaban
-# afuera una vuelta tras otra. Nahuel el 01/10/2026: "estan tardando las
-# cargas" -- con la cola en cero cada vez que se miraba, porque el worker, las
-# pocas veces que entraba, la vaciaba.
-#
-# El comentario del lock decia "serializarlos no cuesta nada: cada uno tarda
-# segundos", y era cierto cuando se escribio. Dejo de serlo cuando el espejo
-# paso a barrer 3.000 jugadores con reintentos por el WAF. La suposicion
-# envejecio sin que nada fallara.
-#
-# 35 SEGUNDOS deja la pasada entera comodamente abajo de la ventana de 45, y no
-# pierde nada: el barrido RETOMA en la pagina donde corto y `saldo_visto_en` es
-# por fila, asi que cortar antes solo significa que el padron completo tarda mas
-# vueltas. Un saldo espejado con unos minutos mas de atraso es barato; una carga
-# que el jugador pago y no recibe, no.
+# Los 35 segundos cubren el espejo, además de las solicitudes, el libro, el
+# stock y los retiros; si el recorrido tarda más se corta sin marcar como
+# leídas las filas que todavía no se consultaron.
 USUARIOS_MAX_SEG = int(os.environ.get("USUARIOS_MAX_SEG", "35"))
 _USUARIOS_PAGINA = "/tmp/gp_usuarios_pagina"
 

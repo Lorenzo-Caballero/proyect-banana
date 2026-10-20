@@ -58,13 +58,15 @@ $botDeploy = file_get_contents(__DIR__ . '/scripts/deploy-bot.sh');
 echo "=== 1. Un destino ajeno FRENA el bot (no solo avisa) ===\n";
 chequear('existe la guarda destino_inseguro()',
          str_contains($prov, 'function destino_inseguro('));
-/* LOS DOS bots del cliente. El de altas crea jugadores en la cuenta
-   equivocada; el de sync le vuelca el padrón de otro en su base. */
+/* El bot de altas crea jugadores en la cuenta equivocada si no valida
+   destino. El sync viejo se retira: el colector ya mantiene ese espejo. */
 chequear('el bot de ALTAS la consulta antes de levantarse',
          (bool)preg_match('/\$name = \'altas-\' \. \$slug;\s*(\/\*.*?\*\/\s*)?\$mal = destino_inseguro/s', $prov),
          'sin esto, el bot de un cliente crea los jugadores de otro en su propia cuenta');
-chequear('el bot de SYNC también',
-         (bool)preg_match('/\$name = \'bot-\' \. \$slug;\s*(\/\*.*?\*\/\s*)?\$mal = destino_inseguro/s', $prov));
+chequear('el sincronizador viejo se elimina y no se vuelve a crear',
+         str_contains($prov, 'function asegurar_bot($c, $cfg)')
+         && str_contains($prov, 'sync_usuarios.py')
+         && str_contains($prov, 'docker rm -f'));
 /* Frenar tiene que BAJAR el que ya está corriendo: si solo se evitara
    levantarlo, el que arrancó mal ayer sigue trabajando para siempre. */
 chequear('frenar BAJA el contenedor que ya existía',
@@ -194,7 +196,7 @@ chequear('el recaudador verifica aislamiento del destino y credenciales',
          && str_contains($recFn, 'faltan credenciales de agente'));
 chequear('workers tenant se recrean al cambiar la imagen desplegada',
          str_contains($pet, 'function bot_imagen_actualizada($name)')
-         && substr_count($pet, 'bot_imagen_actualizada($name)') >= 5,
+         && substr_count($pet, 'bot_imagen_actualizada($name)') >= 4,
          'un contenedor anterior no debe seguir con código Python obsoleto tras el deploy');
 
 /* LA VERSION ANTERIOR DE ESTO TENIA UN FALSO POSITIVO QUE HABRIA HECHO MUCHO
