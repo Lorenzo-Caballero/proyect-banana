@@ -234,6 +234,11 @@ if ($metodo === 'POST') {
         // identificadores de Meta que agarro en el camino. Todo opcional: un
         // jugador que entro directo (sin publicista) sigue creando su cuenta
         // igual, solo que sin datos de campaña para el modulo de Publicidad.
+        $atribLanding = publicidad_landing_desde_request(
+            $pdo, $body, (string)($_SERVER['HTTP_REFERER'] ?? '')
+        );
+        $landingSlug = (string)$atribLanding['slug'];
+        $landingInfo = $atribLanding['landing'];
         $pubSlug    = trim((string)($body['pub']    ?? ''));
         $publicista = $pubSlug !== '' ? publicidad_por_slug($pdo, $pubSlug) : null;
         $fbclid     = trim((string)($body['fbclid'] ?? ''));
@@ -255,9 +260,11 @@ if ($metodo === 'POST') {
         $origen = 'landing';
         if ($promo === 'bono50') {
             $origen = 'bono50';
-        } elseif (preg_match('/^lp:([a-z0-9-]{1,24})$/', $promo, $mLp)
-                  && landings_por_slug($pdo, $mLp[1]) !== null) {
-            $origen = 'lp:' . $mLp[1];
+        } elseif ($landingSlug !== '' && !empty($landingInfo['activa'])
+                  && ($promo === '' || $promo === 'lp:' . $landingSlug)) {
+            // La promoción sigue siendo tenant-local y se entrega solo si la
+            // landing está activa. La atribución del embudo viaja por separado.
+            $origen = 'lp:' . $landingSlug;
         } elseif (preg_match('/^lp:([a-z0-9-]{1,24})$/', $promo, $mLp)) {
             /* VINO DE UNA LANDING QUE YA NO ESTA ACTIVA, y eso le acaba de
                costar el bono de bienvenida.
@@ -294,6 +301,7 @@ if ($metodo === 'POST') {
             'entrega_clave' => $sid !== '' ? $clave : '',
             'entrega_sid'   => $sid,
             'publicista_id' => $publicista['id'] ?? null,
+            'landing_slug'  => $landingSlug !== '' ? $landingSlug : null,
             'fbclid'        => $fbclid !== '' ? $fbclid : null,
             'fbp'           => $fbp    !== '' ? $fbp    : null,
             'fbc'           => $fbc    !== '' ? $fbc    : null,

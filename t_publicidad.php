@@ -194,6 +194,30 @@ chequear('y su depositado',                    (float)$m['depositado'] === 1500.
 chequear('sin gasto: una landing no tiene cuenta de anuncios',
          (float)$m['gasto'] === 0.0, json_encode($m));
 
+/* La atribución de una landing ahora tiene su propia columna. `origen` puede
+   quedar como 'landing' (por ejemplo, una URL antigua con ?1=slug) y aun así
+   debe contar en el embudo sin cambiar la decisión del bono. También se
+   comprueba que un pedido pendiente no se venda como registro concretado. */
+$pdo->prepare(
+    "INSERT INTO altas (usuario, estado, origen, landing_slug, pedido_en)
+     VALUES (?, 'ok', 'landing', 'promo', ?)"
+)->execute(['tpublp3', DIA . ' 09:15:00']);
+$pdo->prepare(
+    "INSERT INTO altas (usuario, estado, origen, landing_slug, pedido_en)
+     VALUES (?, 'pendiente', 'landing', 'promo', ?)"
+)->execute(['tpublppen', DIA . ' 09:20:00']);
+peticion($pdo, 'tpublp3', 700, '10:30:00');
+recarga($pdo, 'tpublp3', 800, '11:30:00');
+$mLandingCol = publicidad_metricas($pdo, ['tipo' => 'landing', 'slug' => 'promo'], DIA, DIA);
+chequear('la atribución independiente cuenta registros aunque origen sea landing',
+         (int)$mLandingCol['registros'] === 3, json_encode($mLandingCol));
+chequear('un pendiente no se cuenta como registro creado',
+         (int)$mLandingCol['registros'] === 3, json_encode($mLandingCol));
+chequear('primera y repetida de landing usan ambas fuentes de cargas',
+         (int)$mLandingCol['primeras_cargas'] === 2
+         && (int)$mLandingCol['cargas_totales'] === 3
+         && (int)$mLandingCol['jugadores_volvieron'] === 1, json_encode($mLandingCol));
+
 /* AISLAMIENTO en las dos direcciones: la landing no se roba lo del publicista,
    ni el publicista lo de la landing. Si el WHERE del segmento estuviera mal,
    uno veria los registros del otro. */

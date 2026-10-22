@@ -764,6 +764,8 @@ function alta_encolar(PDO $pdo, array $d): array
     // De que publicista vino (landing con ?pub=<slug>) y los identificadores
     // de Meta que agarro en el camino. Solo la landing publica los manda.
     $pubId    = isset($d['publicista_id']) ? (int)$d['publicista_id'] : 0;
+    $landingSlug = strtolower(trim((string)($d['landing_slug'] ?? '')));
+    if (!preg_match('/^[a-z0-9-]{1,24}$/', $landingSlug)) { $landingSlug = ''; }
     $fbclid   = mb_substr(trim((string)($d['fbclid'] ?? '')), 0, 255);
     $fbp      = mb_substr(trim((string)($d['fbp']    ?? '')), 0, 80);
     $fbc      = mb_substr(trim((string)($d['fbc']    ?? '')), 0, 255);   // fbc largo: no truncar (migracion 59)
@@ -805,14 +807,15 @@ function alta_encolar(PDO $pdo, array $d): array
             // los eventos de Meta, no la atribucion.
             $ins = $pdo->prepare(
                 "INSERT INTO altas (usuario, password, email, nombre, apellido, origen, ip,
-                                    entrega_clave, entrega_sid, publicista_id, fbclid, fbp, fbc,
+                                    entrega_clave, entrega_sid, publicista_id, landing_slug, fbclid, fbp, fbc,
                                     ua, url_landing)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             );
             $ins->execute(array_merge($base, [
                 $entCla !== '' ? $entCla : null,
                 $entSid !== '' ? $entSid : null,
                 $pubId  > 0    ? $pubId  : null,
+                $landingSlug !== '' ? $landingSlug : null,
                 $fbclid !== '' ? $fbclid : null,
                 $fbp    !== '' ? $fbp    : null,
                 $fbc    !== '' ? $fbc    : null,
@@ -822,8 +825,9 @@ function alta_encolar(PDO $pdo, array $d): array
         } catch (PDOException $e0) {
             if ($e0->getCode() === '23000') { throw $e0; }
         try {
-            // Nivel 1: todas las columnas, incluidas las de publicidad
-            // (migracion 44).
+            // Nivel 1: publicidad legacy (migración 44), sin depender de la
+            // nueva columna landing_slug. El origen lp:<slug> conserva el
+            // embudo mientras la migración 81 termina de propagarse.
             $ins = $pdo->prepare(
                 "INSERT INTO altas (usuario, password, email, nombre, apellido, origen, ip,
                                     entrega_clave, entrega_sid, publicista_id, fbclid, fbp, fbc)
@@ -858,7 +862,7 @@ function alta_encolar(PDO $pdo, array $d): array
             // igual; lo unico que se pierde son los datos de la migracion que
             // falte (entrega automatica de clave, o el tracking de campaña).
             error_log('altas: INSERT nivel 1 fallo (' . $e2->getMessage()
-                    . '). Reintento sin publicista_id/fbclid/fbp/fbc: '
+                    . '). Reintento sin columnas de publicidad: '
                     . 'revisa que este corrida la migracion 44.');
             try {
                 // Nivel 2: sin las columnas de publicidad, con entrega_clave/sid.
@@ -942,6 +946,11 @@ function alta_encolar(PDO $pdo, array $d): array
             $nombre   !== '' ? $nombre   : null,
             $apellido !== '' ? $apellido : null,
             $origen,
+            $pubId > 0 ? $pubId : null,
+            $landingSlug !== '' ? $landingSlug : null,
+            $fbclid !== '' ? $fbclid : null,
+            $fbp !== '' ? $fbp : null,
+            $fbc !== '' ? $fbc : null,
             $entCla !== '' ? $entCla : null,
             $entSid !== '' ? $entSid : null,
             $fila['id'],
@@ -952,6 +961,7 @@ function alta_encolar(PDO $pdo, array $d): array
                     SET password = ?, email = ?,
                         nombre = ?, apellido = ?,
                         origen = ?,
+                        publicista_id = ?, landing_slug = ?, fbclid = ?, fbp = ?, fbc = ?,
                         estado = 'pendiente', intentos = 0,
                         mensaje = NULL, tomado_en = NULL,
                         proximo_intento_en = NULL,
@@ -959,21 +969,91 @@ function alta_encolar(PDO $pdo, array $d): array
                   WHERE id = ?"
             )->execute($vals);
         } catch (PDOException $e) {
-            // proximo_intento_en es de la migracion 37. Sin ella este UPDATE
-            // explota y el alta NO entra a la cola -- por una columna que solo
-            // sirve para espaciar los reintentos. Se reintenta sin ella.
-            error_log('altas: el UPDATE de reintento fallo (' . $e->getMessage()
-                    . '). Voy sin proximo_intento_en: revisa la migracion 37.');
-            $pdo->prepare(
-                "UPDATE altas
-                    SET password = ?, email = ?,
-                        nombre = ?, apellido = ?,
-                        origen = ?,
-                        estado = 'pendiente', intentos = 0,
-                        mensaje = NULL, tomado_en = NULL,
-                        entrega_clave = ?, entrega_sid = ?
-                  WHERE id = ?"
-            )->execute($vals);
+            // Las columnas de atribución son de migraciones nuevas. Si faltan,
+            // se conserva el camino de reintento anterior, pero se deja aviso:
+            // la cuenta se crea y no hereda una campaña vieja en silencio.
+            error_log('altas: el UPDATE de reintento con atribucion fallo (' . $e->getMessage()
+                    . '). Reintentando con el esquema anterior; revisar migraciones 37/44/81.');
+            $valsSinLanding = [
+                $password, $email !== '' ? $email : null,
+                $nombre !== '' ? $nombre : null,
+                $apellido !== '' ? $apellido : null,
+                $origen,
+                $pubId > 0 ? $pubId : null,
+                $fbclid !== '' ? $fbclid : null,
+                $fbp !== '' ? $fbp : null,
+                $fbc !== '' ? $fbc : null,
+                $entCla !== '' ? $entCla : null,
+                $entSid !== '' ? $entSid : null,
+                $fila['id'],
+            ];
+            $actualizado = false;
+            try {
+                // Si solo falta la migración 81, actualiza igualmente la
+                // atribución histórica de publicista y limpia datos viejos.
+                $pdo->prepare(
+                    "UPDATE altas
+                        SET password = ?, email = ?, nombre = ?, apellido = ?, origen = ?,
+                            publicista_id = ?, fbclid = ?, fbp = ?, fbc = ?,
+                            estado = 'pendiente', intentos = 0, mensaje = NULL,
+                            tomado_en = NULL, proximo_intento_en = NULL,
+                            entrega_clave = ?, entrega_sid = ?
+                      WHERE id = ?"
+                )->execute($valsSinLanding);
+                $actualizado = true;
+            } catch (PDOException $e81) {
+                error_log('altas: no pude actualizar atribucion sin landing_slug (' . $e81->getMessage()
+                        . '); revisar migraciones 37/44/81.');
+            }
+            $valsViejos = [
+                $password, $email !== '' ? $email : null,
+                $nombre !== '' ? $nombre : null,
+                $apellido !== '' ? $apellido : null,
+                $origen,
+                $entCla !== '' ? $entCla : null,
+                $entSid !== '' ? $entSid : null,
+                $fila['id'],
+            ];
+            if (!$actualizado) {
+                try {
+                    // Aún sin la 37, no dejar pegados publicista/cookies del
+                    // intento fallido anterior si la migración 44 sí existe.
+                    $pdo->prepare(
+                        "UPDATE altas
+                            SET password = ?, email = ?, nombre = ?, apellido = ?, origen = ?,
+                                publicista_id = ?, fbclid = ?, fbp = ?, fbc = ?,
+                                estado = 'pendiente', intentos = 0, mensaje = NULL,
+                                tomado_en = NULL, entrega_clave = ?, entrega_sid = ?
+                          WHERE id = ?"
+                    )->execute($valsSinLanding);
+                    $actualizado = true;
+                } catch (PDOException $e44) {
+                    error_log('altas: UPDATE sin landing_slug ni proximo_intento_en (' . $e44->getMessage()
+                            . '); revisando esquema legacy.');
+                }
+            }
+            if (!$actualizado) {
+                try {
+                    $pdo->prepare(
+                        "UPDATE altas
+                            SET password = ?, email = ?, nombre = ?, apellido = ?, origen = ?,
+                                estado = 'pendiente', intentos = 0, mensaje = NULL,
+                                tomado_en = NULL, proximo_intento_en = NULL,
+                                entrega_clave = ?, entrega_sid = ?
+                          WHERE id = ?"
+                    )->execute($valsViejos);
+                } catch (PDOException $e37) {
+                    error_log('altas: UPDATE viejo sin proximo_intento_en (' . $e37->getMessage()
+                            . '); revisar migracion 37.');
+                    $pdo->prepare(
+                        "UPDATE altas
+                            SET password = ?, email = ?, nombre = ?, apellido = ?, origen = ?,
+                                estado = 'pendiente', intentos = 0, mensaje = NULL,
+                                tomado_en = NULL, entrega_clave = ?, entrega_sid = ?
+                          WHERE id = ?"
+                    )->execute($valsViejos);
+                }
+            }
         }
 
         return ['http' => 200, 'cuerpo' => [

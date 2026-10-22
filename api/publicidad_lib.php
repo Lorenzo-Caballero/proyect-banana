@@ -45,6 +45,57 @@ function publicidad_por_slug(PDO $pdo, string $slug): ?array
     }
 }
 
+/**
+ * Resuelve la landing que originó un alta, separada de la promoción que se
+ * acredita. Prioriza el slug explícito que manda lp.html y conserva el dato
+ * viejo `promo=lp:<slug>`. Si ambos faltan, acepta el Referer solo cuando es
+ * del mismo host y la ruta es la lp.html de ESTE tenant. `?1=<slug>` se admite
+ * como compatibilidad con enlaces donde la ele minúscula se copió como uno.
+ * El slug siempre se valida contra la tabla landings de la base ya resuelta
+ * por db.php: nunca selecciona la base ni puede atribuir a otro tenant.
+ *
+ * Devuelve ['slug' => string, 'landing' => ?array]. La landing puede estar
+ * pausada: la atribución de marketing persiste; la lógica de bonos decide por
+ * separado si estaba activa cuando se pidió el alta.
+ */
+function publicidad_landing_desde_request(PDO $pdo, array $body, string $referer = ''): array
+{
+    $candidatos = [];
+    $explicito = trim((string)($body['landing_slug'] ?? ''));
+    if ($explicito !== '') { $candidatos[] = $explicito; }
+
+    $promo = trim((string)($body['promo'] ?? ''));
+    if (preg_match('/^lp:([a-z0-9-]{1,24})$/i', $promo, $m)) {
+        $candidatos[] = strtolower($m[1]);
+    }
+
+    if ($referer !== '' && strlen($referer) <= 2048) {
+        $url = parse_url($referer);
+        $refHost = strtolower((string)($url['host'] ?? ''));
+        $host = strtolower(preg_replace('/:\\d+$/', '', (string)($GLOBALS['TENANT_HOST'] ?? ($_SERVER['HTTP_HOST'] ?? ''))));
+        $ruta = trim((string)($GLOBALS['TENANT_ROUTE_SLUG'] ?? ''));
+        $pathEsperado = $ruta !== '' ? '/' . rawurlencode($ruta) . '/lp.html' : '/lp.html';
+        $path = (string)($url['path'] ?? '');
+        if (in_array((string)($url['scheme'] ?? ''), ['http', 'https'], true)
+            && $refHost !== '' && $refHost === $host
+            && rtrim($path, '/') === $pathEsperado
+            && isset($url['query'])) {
+            parse_str((string)$url['query'], $params);
+            $desdeUrl = trim((string)($params['l'] ?? $params['1'] ?? ''));
+            if ($desdeUrl !== '') { $candidatos[] = strtolower($desdeUrl); }
+        }
+    }
+
+    if (!function_exists('landings_por_slug')) { return ['slug' => '', 'landing' => null]; }
+    foreach ($candidatos as $slug) {
+        $slug = strtolower(trim($slug));
+        if (!preg_match('/^[a-z0-9-]{1,24}$/', $slug)) { continue; }
+        $landing = landings_por_slug($pdo, $slug, false);
+        if ($landing) { return ['slug' => $slug, 'landing' => $landing]; }
+    }
+    return ['slug' => '', 'landing' => null];
+}
+
 /** Un publicista por id. Igual de tolerante que publicidad_por_slug(). */
 function publicidad_por_id(PDO $pdo, int $id): ?array
 {
@@ -807,12 +858,17 @@ function publicidad_seg_norm(int|array $seg): array
 {
     if (is_int($seg)) { return ['tipo' => 'publicista', 'id' => $seg]; }
     if (($seg['tipo'] ?? '') === 'landing') {
+        $origen = (string)($seg['origen'] ?? '');
+        $slug = trim((string)($seg['slug'] ?? ''));
+        if ($slug === '' && preg_match('/^lp:([a-z0-9-]{1,24})$/i', $origen, $m)) {
+            $slug = strtolower($m[1]);
+        }
         /* El `slug` se conserva: es la clave con la que se guarda el gasto de
            esa landing (migracion 65). Antes se descartaba aca -- solo hacia
            falta el `origen` para filtrar altas -- y el gasto quedaba sin
            forma de encontrarse. */
-        return ['tipo' => 'landing', 'origen' => (string)($seg['origen'] ?? ''),
-                'slug' => (string)($seg['slug'] ?? '')];
+        if ($origen === '' && $slug !== '') { $origen = 'lp:' . $slug; }
+        return ['tipo' => 'landing', 'origen' => $origen, 'slug' => $slug];
     }
     return ['tipo' => 'publicista', 'id' => (int)($seg['id'] ?? 0)];
 }
@@ -822,11 +878,36 @@ function publicidad_seg_norm(int|array $seg): array
  * tabla `altas` en esa consulta ('' para las que la nombran sin alias, 'a'
  * para las que hacen JOIN altas a).
  */
-function publicidad_seg_where(array $seg, string $alias = ''): array
+function publicidad_altas_tiene_landing_slug(PDO $pdo): bool
+{
+    static $cache = [];
+    $id = spl_object_id($pdo);
+    if (array_key_exists($id, $cache)) { return $cache[$id]; }
+    try {
+        $pdo->query("SELECT landing_slug FROM altas LIMIT 0");
+        return $cache[$id] = true;
+    } catch (Throwable $e) {
+        return $cache[$id] = false;
+    }
+}
+
+function publicidad_seg_where(array $seg, string $alias = '', bool $tieneLandingSlug = true): array
 {
     $p = $alias !== '' ? $alias . '.' : '';
     if (($seg['tipo'] ?? '') === 'landing') {
-        return ["{$p}origen = ?", (string)$seg['origen']];
+        $slug = trim((string)($seg['slug'] ?? ''));
+        if ($slug === '' && preg_match('/^lp:([a-z0-9-]{1,24})$/i', (string)($seg['origen'] ?? ''), $m)) {
+            $slug = strtolower($m[1]);
+        }
+        if (!$tieneLandingSlug) {
+            // Compatibilidad durante el minuto en que provisionar.php aplica
+            // la migración a una base vieja. Las altas nuevas conservan lp:slug.
+            $origen = (string)($seg['origen'] ?? '') ?: ('lp:' . $slug);
+            return ["{$p}origen = ?", $origen];
+        }
+        // landing_slug es la fuente de atribución. El origen viejo queda como
+        // respaldo para filas históricas anteriores a la migración 81.
+        return ["COALESCE({$p}landing_slug, CASE WHEN {$p}origen LIKE 'lp:%' THEN SUBSTRING({$p}origen, 4) END) = ?", $slug];
     }
     return ["{$p}publicista_id = ?", (int)($seg['id'] ?? 0)];
 }
@@ -834,8 +915,9 @@ function publicidad_seg_where(array $seg, string $alias = ''): array
 function publicidad_metricas(PDO $pdo, int|array $seg, string $desde, string $hasta): array
 {
     $seg = publicidad_seg_norm($seg);
-    [$wReg, $vReg] = publicidad_seg_where($seg, '');   // registros: `altas` sin alias
-    [$wA,   $vA]   = publicidad_seg_where($seg, 'a');  // cargas/retencion: JOIN altas a
+    $tieneLandingSlug = $seg['tipo'] !== 'landing' || publicidad_altas_tiene_landing_slug($pdo);
+    [$wReg, $vReg] = publicidad_seg_where($seg, '', $tieneLandingSlug);   // registros: `altas` sin alias
+    [$wA,   $vA]   = publicidad_seg_where($seg, 'a', $tieneLandingSlug);  // cargas/retencion: JOIN altas a
     $hastaFin = $hasta . ' 23:59:59';
     $desdeIni = $desde . ' 00:00:00';
 
@@ -843,7 +925,8 @@ function publicidad_metricas(PDO $pdo, int|array $seg, string $desde, string $ha
     try {
         $st = $pdo->prepare(
             "SELECT COUNT(*) FROM altas
-              WHERE $wReg AND pedido_en BETWEEN ? AND ?"
+              WHERE $wReg AND estado = 'ok'
+                AND pedido_en BETWEEN ? AND ?"
         );
         $st->execute([$vReg, $desdeIni, $hastaFin]);
         $registros = (int)$st->fetchColumn();
@@ -974,8 +1057,9 @@ function publicidad_metricas(PDO $pdo, int|array $seg, string $desde, string $ha
 function publicidad_por_dia(PDO $pdo, int|array $seg, string $desde, string $hasta): array
 {
     $seg = publicidad_seg_norm($seg);
-    [$wReg, $vReg] = publicidad_seg_where($seg, '');
-    [$wA,   $vA]   = publicidad_seg_where($seg, 'a');
+    $tieneLandingSlug = $seg['tipo'] !== 'landing' || publicidad_altas_tiene_landing_slug($pdo);
+    [$wReg, $vReg] = publicidad_seg_where($seg, '', $tieneLandingSlug);
+    [$wA,   $vA]   = publicidad_seg_where($seg, 'a', $tieneLandingSlug);
     $hastaFin = $hasta . ' 23:59:59';
     $desdeIni = $desde . ' 00:00:00';
 
@@ -989,7 +1073,8 @@ function publicidad_por_dia(PDO $pdo, int|array $seg, string $desde, string $has
         $st = $pdo->prepare(
             "SELECT DATE(pedido_en) AS f, COUNT(*) AS n
                FROM altas
-              WHERE $wReg AND pedido_en BETWEEN ? AND ?
+              WHERE $wReg AND estado = 'ok'
+                AND pedido_en BETWEEN ? AND ?
               GROUP BY DATE(pedido_en)"
         );
         $st->execute([$vReg, $desdeIni, $hastaFin]);

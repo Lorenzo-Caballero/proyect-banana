@@ -361,7 +361,9 @@
      bono que no llegaba nunca. Se baja a minusculas y se pela la puntuacion
      de las puntas; si aun asi no es un slug valido, la pagina se declara
      caida en vez de prometer un bono que no va a cumplir. */
-  let SLUG = (params.get('l') || '').trim().toLowerCase()
+  // Algunos usuarios copian la ele minúscula de `?l=` como el número `?1=`.
+  // Aceptamos ambos nombres, pero el CRM sigue generando el link canónico `l`.
+  let SLUG = (params.get('l') || params.get('1') || '').trim().toLowerCase()
     .replace(/^[^a-z0-9]+|[^a-z0-9-]+$/g, '');   // atras NO se pela el guion: es parte valida de un slug
   if (!/^[a-z0-9-]{1,24}$/.test(SLUG)) SLUG = '';
   const PREVIEW = params.get('preview') === '1';
@@ -846,6 +848,7 @@
         body: JSON.stringify({
           usuario: u, sid: sid,
           promo: PROMO,
+          landing_slug: SLUG,
           pub: PUB, fbclid: FBCLID,
           fbp: cookies.fbp || '', fbc: cookies.fbc || '',
           // El id de instalación del widget, si este navegador ya usó el
