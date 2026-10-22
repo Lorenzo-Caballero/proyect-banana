@@ -210,7 +210,9 @@ echo "==> verificando"
 malos=0
 # Los archivos que mas veces nos hicieron creer que un arreglo no funcionaba
 # cuando en realidad no habia llegado al server.
-for f in api/chatbot.php api/altas_lib.php api/crear_cuenta.php \
+for f in api/chatbot.php api/chatbot_contexto.php api/vision_lib.php \
+         api/recargas_lib.php api/crm_comprobantes.php \
+         api/altas_lib.php api/crear_cuenta.php \
          api/alta_estado.php landing/widget.js landing/registro.html \
          api/publicidad_lib.php api/crm_publicidad.php api/lp_visita.php \
          api/sql/81_atribucion_landing_publicidad.sql \

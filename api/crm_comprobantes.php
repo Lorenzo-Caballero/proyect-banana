@@ -57,6 +57,39 @@ function comp_nombre_de_usuario(string $usuario): string
     return mb_strlen($u) >= 3 ? $u : '';
 }
 
+/**
+ * Cuentas bloqueadas que ya habían pagado desde la misma identidad bancaria.
+ * Es una alerta para la revisión humana: un CBU familiar compartido no basta
+ * para bloquear o rechazar una transferencia automáticamente.
+ */
+function comp_bloqueados_por_huella(PDO $pdo, array $pago): array
+{
+    $cuit = trim((string)($pago['cuit'] ?? ''));
+    $cbu  = trim((string)($pago['cbu_origen'] ?? ''));
+    if ($cuit === '' && $cbu === '') { return []; }
+    try {
+        $st = $pdo->prepare(
+            "SELECT DISTINCT u.username, u.bloqueado_motivo
+               FROM huellas_pagador h
+               JOIN usuarios u
+                 ON u.username COLLATE utf8mb4_unicode_ci = h.usuario
+                AND u.bloqueado = 1
+              WHERE (? <> '' AND h.cuit = ?) OR (? <> '' AND h.cbu = ?)
+              ORDER BY u.username
+              LIMIT 10"
+        );
+        $st->execute([$cuit, $cuit, $cbu, $cbu]);
+        return array_map(static function (array $r): array {
+            return ['usuario' => (string)$r['username'],
+                    'motivo' => (string)($r['bloqueado_motivo'] ?? '')];
+        }, $st->fetchAll(PDO::FETCH_ASSOC));
+    } catch (Throwable $e) {
+        // Sin la tabla/señal, la bandeja de comprobantes sigue disponible.
+        error_log('crm_comprobantes/bloqueados_por_huella: ' . $e->getMessage());
+        return [];
+    }
+}
+
 // ============================== GET =========================================
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     $accion = (string)($_GET['accion'] ?? 'listar');
@@ -263,7 +296,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
             salir(['ok' => true, 'pago' => $pago, 'candidatas' => $candidatas,
                    'sugerencia' => $sug,
-                   'sugeridos' => array_values($conHuella)]);
+                   'sugeridos' => array_values($conHuella),
+                   'cuentas_bloqueadas' => comp_bloqueados_por_huella($pdo, $pago)]);
         }
 
         salir(['ok' => false, 'error' => 'Acción desconocida'], 400);

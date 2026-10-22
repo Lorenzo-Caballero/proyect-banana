@@ -83,8 +83,7 @@ if (is_file($authLib)) { require_once $authLib; }
 // Notificaciones: avisarle al que ya cerro la app que le contestamos (opcional).
 $notifLib = __DIR__ . '/notificaciones_lib.php';
 if (is_file($notifLib)) { require_once $notifLib; }
-// Vision: leer la foto del comprobante con IA (opcional). Sin el archivo o
-// sin ANTHROPIC_API_KEY, el bot pide los datos por texto y todo sigue igual.
+// Vision: leer fotos/PDFs del comprobante con el mismo GPT del chat.
 $visionLib = __DIR__ . '/vision_lib.php';
 if (is_file($visionLib)) { require_once $visionLib; }
 // Telegram: avisarle al agente cuando el bot deriva una conversacion (opcional).
@@ -126,7 +125,7 @@ require __DIR__ . '/chatbot_contexto.php';
    qwen-vl-max NO -- responde en prosa e ignora las herramientas. Por eso el
    default es qwen-plus y NO qwen-vl-max, aunque este ultimo "vea" imagenes:
    la vision del chat (leer comprobantes) la hace Claude Haiku aparte
-   (verificar_comprobante -> vision_lib.php), no el modelo de la charla.
+   (verificar_comprobante -> vision_lib.php), el mismo modelo de la charla.
 
    La cuota gratis de DashScope es POR MODELO: si la de un modelo se agota
    (403 "free quota has been exhausted"), el respaldo salta a otro modelo Qwen
@@ -309,14 +308,16 @@ $TOOLS = [
     ]],
     ['type' => 'function', 'function' => [
         'name' => 'verificar_comprobante',
-        'description' => 'El jugador SUBIO la foto del comprobante de su transferencia al chat '
-            . '(boton del clip). Lee esa imagen con IA, saca monto/titular/nro de operacion y '
+        'description' => 'El jugador SUBIO una foto o PDF del comprobante de su transferencia al chat '
+            . '(boton del clip). Lee el archivo con IA, saca monto/titular/nro de operacion y '
             . 'los matchea con su recarga: si el pago real ya llego, la acredita al instante. '
             . 'Llamala apenas diga que subio/mando/adjunto el comprobante ("listo", "ahi va", '
             . '"te lo mande"). No le pidas los datos por texto si ya subio la foto. '
-            . 'Si la respuesta trae "alertas" (comprobante ya usado, ya declarado, viejo, o de '
-            . 'otro monto), DECISELO al jugador con esas palabras, con firmeza y sin disculpas: '
-            . 'esos avisos salen de la base, no los cuestiones.',
+            . 'Si la respuesta trae alertas de reuso o diferencias, explicalas como una señal '
+            . 'que requiere revision, sin acusar ni bloquear al jugador. Solo el pago confirmado '
+            . 'por el registro bancario o por HG Cash demuestra que el dinero entro. Si la lectura '
+            . 'falla, confirma que recibiste el archivo, no le pidas otra transferencia y deriva '
+            . 'la conversacion a un agente.',
         'parameters' => [
             'type' => 'object',
             'properties' => [
@@ -640,7 +641,7 @@ if ($corteBloqueado || $corteIp) {
         }
     }
     $aviso = chatbot_bloqueado_aviso_toca($pdo, $sessionId, $usuarioCliente)
-           ? 'En este momento no puedo ayudarte por acá. Tu caso lo tiene que revisar un agente.'
+           ? 'Esta cuenta está restringida: no puedo gestionar cargas, retiros ni bonos desde acá. Si creés que es un error, un agente puede revisar el caso.'
            : '';
     if (function_exists('crm_registrar_turno')) {
         crm_registrar_turno($pdo, $sessionId, $ultimoUser, $aviso,
@@ -789,6 +790,7 @@ $altaInfo = null;
    modelo se puede truncar o cambiar un digito, y ahi la plata del jugador se
    va a la cuenta de otro. Un dato bancario no lo puede tipear una IA. */
 $pagoInfo = null;
+$comprobanteAviso = null;
 /* Si crear_recarga se intento y FALLO, el motivo real (fuera de rango, hay que
    registrarse, etc.). Es la red de seguridad contra el peor sintoma del chat:
    el modelo dice "te paso los datos" (la linea que el prompt le pide para que
@@ -796,7 +798,7 @@ $pagoInfo = null;
    nada que agregar y el jugador se queda esperando datos que no llegan. Con
    esto, cuando no hay pago pero SI hubo un fallo, el motivo se agrega solo. */
 $recargaFallo = '';
-$ejecutarTool = function (string $nombre, array $args) use ($pdo, &$usuarioDetectado, $usuarioCliente, $sesionVerificada, &$cargaInfo, &$altaInfo, &$pagoInfo, &$recargaFallo, $sessionId): array {
+$ejecutarTool = function (string $nombre, array $args) use ($pdo, &$usuarioDetectado, $usuarioCliente, $sesionVerificada, &$cargaInfo, &$altaInfo, &$pagoInfo, &$recargaFallo, &$comprobanteAviso, $sessionId): array {
     // Para crear_cuenta, el 'usuario' del argumento es un nombre DESEADO, no
     // una identidad: recien vale si el alta entra. Adoptarlo antes hacia que
     // un anonimo pidiendo un nombre ya OCUPADO se quedara con la conversacion
@@ -808,6 +810,86 @@ $ejecutarTool = function (string $nombre, array $args) use ($pdo, &$usuarioDetec
     // modelo haya sacado de la charla: si el jugador escribe "soy fulano", eso
     // llega en $args y para las fichas no se mira.
     $res = ejecutar_tool($pdo, $nombre, $args, $usuarioCliente, $sesionVerificada, $sessionId);
+    if ($nombre === 'verificar_comprobante' && ($res['codigo'] ?? '') !== 'sin_adjunto') {
+        $datosComprobante = $res['comprobante_leido'] ?? $res['extraido'] ?? [];
+        if (is_array($datosComprobante)) {
+            $cuit = preg_replace('/\D+/', '', (string)($datosComprobante['cuit'] ?? ''));
+            $cbu = preg_replace('/\D+/', '', (string)($datosComprobante['cbu_origen'] ?? ''));
+            // La comparación es contra identidades aprendidas desde pagos
+            // bancarios confirmados y bloqueos manuales del tenant actual.
+            // Una lectura OCR nunca bloquea: solo agrega una alerta y escala.
+            if (($cuit !== '' && strlen($cuit) === 11) || ($cbu !== '' && strlen($cbu) === 22)) {
+                try {
+                    $q = $pdo->prepare(
+                        "SELECT 1
+                           FROM huellas_pagador h
+                           JOIN usuarios u
+                             ON u.username COLLATE utf8mb4_unicode_ci = h.usuario
+                            AND u.bloqueado = 1
+                          WHERE (? <> '' AND h.cuit = ?) OR (? <> '' AND h.cbu = ?)
+                          LIMIT 1"
+                    );
+                    $q->execute([$cuit, $cuit, $cbu, $cbu]);
+                    if ($q->fetchColumn()) {
+                        $res['coincide_identidad_restringida'] = true;
+                        $res['alertas'] = $res['alertas'] ?? [];
+                        $res['alertas'][] = 'COINCIDENCIA DE CUENTA: los datos de origen que se leen en el comprobante coinciden con una cuenta de pago corroborada asociada a una cuenta restringida. Es una señal para revisión humana, no una prueba de quién envió el archivo ni un bloqueo automático.';
+                    }
+                } catch (Throwable $e) {
+                    error_log('chatbot comprobante / identidad restringida: ' . $e->getMessage());
+                }
+            }
+            // Los identificadores bancarios solo se usan para la comparación
+            // exacta del servidor. No se exponen al modelo conversacional ni
+            // se repiten en mensajes al jugador o al equipo.
+            foreach (['cuit', 'cbu_origen'] as $datoPrivado) {
+                unset($res['comprobante_leido'][$datoPrivado], $res['extraido'][$datoPrivado]);
+            }
+        }
+
+        if (($res['codigo'] ?? '') === 'no_parece_comprobante') {
+            $comprobanteAviso = 'No pude identificar un comprobante de transferencia en ese archivo. Si hiciste una transferencia, subí una captura clara o el PDF original. No repitas el pago por este mensaje.';
+        } else {
+            $alertasComprobante = is_array($res['alertas'] ?? null) ? $res['alertas'] : [];
+            $estadoComprobante = (string)($res['estado'] ?? '');
+            $pagoConfirmado = !empty($res['ok']) && $estadoComprobante === 'acreditada';
+            $necesitaRevision = !$pagoConfirmado || !empty($alertasComprobante)
+                || empty($res['ok']) || (($datosComprobante['confianza'] ?? '') === 'baja');
+            if ($necesitaRevision) {
+                $riesgo = !empty($res['coincide_identidad_restringida'])
+                    || (bool)array_filter($alertasComprobante, static function ($a) {
+                        return preg_match('/YA USADO|YA DECLARADO|MISMA IMAGEN|MISMA OPERACION|MISMA TRANSFERENCIA|COMPROBANTE VIEJO|MONTO DISTINTO|PARECE MODIFICADO|EDITADO/i', (string)$a);
+                    });
+                $motivo = $riesgo
+                    ? 'Comprobante con señal de reuso o coincidencia bancaria que requiere revisión humana.'
+                    : (!empty($res['ok'])
+                        ? 'Comprobante recibido y legible; el pago no quedó confirmado automáticamente. Revisar manualmente el banco, la billetera o HG Cash, según el método.'
+                        : 'Comprobante recibido; falló la lectura automática. Revisar el archivo y verificar el pago en el banco, la billetera o HG Cash.');
+                $derivacion = ejecutar_tool($pdo, 'pasar_a_agente', ['motivo' => $motivo],
+                    $usuarioCliente, $sesionVerificada, $sessionId);
+                $res['revision_manual'] = true;
+                $res['agente'] = $derivacion;
+                $comprobanteAviso = $riesgo
+                    ? 'Este comprobante o sus datos ya aparecieron en una revisión anterior. Puede tratarse de un reenvío, pero no podemos usar un comprobante reutilizado para confirmar otra carga. El equipo lo va a revisar; si se repite el uso de comprobantes reutilizados o alterados, la cuenta podría restringirse.'
+                    : 'Recibí el comprobante. Todavía no puedo confirmar que el dinero haya entrado, así que pedí al equipo que revise el banco, la billetera o HG Cash, según corresponda. No repitas la transferencia mientras lo verificamos.';
+
+                // Las notificaciones de derivación se silencian para cuentas ya
+                // restringidas. Una coincidencia exacta con una identidad bancaria
+                // verificada sí requiere que el equipo vea esta revisión; enviar un
+                // aviso deduplicado sin exponer CUIT/CBU ni la cuenta coincidente.
+                if (!empty($res['coincide_identidad_restringida'])
+                    && function_exists('tg_evento') && function_exists('vin_avisos_mudos')
+                    && vin_avisos_mudos($pdo, $usuarioCliente)) {
+                    $claveAlerta = 'comprobante_identidad:' . hash('sha256', $sessionId . '|' . $usuarioCliente);
+                    tg_evento($pdo, 'revision', '⚠️ Revisar comprobante con señal de identidad', [
+                        'Jugador' => $usuarioCliente !== '' ? $usuarioCliente : 'visitante sin cuenta',
+                        'Motivo' => 'Los datos de origen leídos coinciden con una identidad bancaria verificada asociada a una cuenta restringida. Coincidencia pendiente de confirmación humana.',
+                        'Qué hacer' => 'Revisar el comprobante y el movimiento real en el banco, billetera o HG Cash. No bloquear automáticamente.',
+                    ], $claveAlerta, 60);
+                }
+            }
+        }
+    }
     if ($nombre === 'identificar_usuario' && !empty($res['existe']) && !empty($res['usuario'])) {
         $usuarioDetectado = (string)$res['usuario'];
     }
@@ -1037,6 +1119,11 @@ if ($pagoInfo) {
     if (!$yaLoDijo) {
         $texto = rtrim($texto) . "\n[[MSG]]\n" . $recargaFallo;
     }
+}
+if ($comprobanteAviso !== null && $comprobanteAviso !== '') {
+    // Texto fijo de seguridad: el modelo no puede suavizar una alerta de reuso,
+    // acusar fraude como hecho ni omitir que ya se pidió revisión humana.
+    $texto = rtrim($texto) . "\n[[MSG]]\n" . $comprobanteAviso;
 }
 
 $partes = chatbot_partir($texto);
@@ -2760,16 +2847,11 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
                 'No hay ningun comprobante subido en este chat. Que lo suba con el '
                 . 'boton del clip (abajo a la izquierda del chat).'];
         }
-        if (($adj['tipo'] ?? '') === 'pdf') {
-            return ['ok' => false, 'codigo' => 'pdf', 'error' =>
-                'El comprobante llego en PDF y no lo puedo leer. Pedile una FOTO o '
-                . 'captura de pantalla del comprobante.'];
-        }
         if (!function_exists('vision_extraer_comprobante') || !vision_disponible()) {
             return ['ok' => false, 'codigo' => 'sin_vision', 'error' =>
-                'No pude leer la imagen. Pedile por texto el nombre del titular de la '
-                . 'cuenta desde la que transfirio -- con eso alcanza -- y usa '
-                . 'informar_transferencia. NO le pidas el numero de operacion.'];
+                'Recibi el comprobante, pero el lector automatico no esta disponible. '
+                . 'No le pidas que vuelva a transferir ni que reenvie el archivo; deja el caso '
+                . 'para revision de un agente.'];
         }
         $v = vision_extraer_comprobante($adj['ruta']);
         if (empty($v['ok'])) {
@@ -2835,7 +2917,14 @@ function ejecutar_tool(PDO $pdo, string $nombre, array $args, string $usuarioSes
             'nro_transaccion' => $d['nro_transaccion'],
             'fecha'           => $d['fecha'],
             'entidad'         => $d['entidad'],
+            'cuit'            => $d['cuit'] ?? '',
+            'cbu_origen'      => $d['cbu_origen'] ?? '',
+            'confianza'       => $d['confianza'] ?? 'media',
         ];
+        if (($d['confianza'] ?? '') === 'baja') {
+            $r['alertas'] = $r['alertas'] ?? [];
+            $r['alertas'][] = 'LECTURA DE BAJA CONFIANZA: los datos visuales no alcanzan para aceptar ni rechazar el comprobante; requiere revisión humana.';
+        }
         return $r;
     }
     return ['ok' => false, 'error' => 'herramienta desconocida'];

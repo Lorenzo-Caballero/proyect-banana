@@ -2635,6 +2635,8 @@ function rl_declarar_pago(PDO $pdo, string $usuario, string $titular = '',
                             isset($mF[4]) ? (int)$mF[4] : 0, isset($mF[5]) ? (int)$mF[5] : 0);
     }
     $usuario = trim($usuario);
+    $titular = trim($titular);
+    $nroTrx = trim($nroTrx);
     if ($usuario === '') {
         return ['ok' => false, 'error' => 'Falta el usuario.'];
     }
@@ -2656,6 +2658,15 @@ function rl_declarar_pago(PDO $pdo, string $usuario, string $titular = '',
         }
         return ['ok' => true, 'estado' => 'sin_pendiente'];
     }
+    // La misma recarga tambien puede recibir el mismo comprobante varias
+    // veces. Las consultas de abajo excluyen el id actual para encontrar
+    // reuso entre recargas; comparar el valor anterior cubre el reenvio dentro
+    // de esta misma carga antes de que COALESCE lo conserve.
+    $mismaImagenEnMismaRecarga = $huella !== ''
+        && hash_equals((string)($rec['comprobante_huella'] ?? ''), $huella);
+    $mismaTrxEnMismaRecarga = $nroTrx !== ''
+        && trim((string)($rec['trx_declarada'] ?? '')) !== ''
+        && hash_equals(trim((string)$rec['trx_declarada']), $nroTrx);
 
     /* Siempre dejar rastro de "ya transferi", aunque el jugador no haya
        escrito titular o numero de operacion. Si IMAP esta apagado, esta marca
@@ -2678,7 +2689,10 @@ function rl_declarar_pago(PDO $pdo, string $usuario, string $titular = '',
     // pisa lo que ya habia (el jugador pudo declararlo al crear la recarga).
     $titular = trim($titular);
     $nroTrx  = trim($nroTrx);
-    if ($titular !== '' || $nroTrx !== '') {
+    // Una foto puede no mostrar titular ni numero de operacion. Aun asi, si
+    // pudimos leer fecha/monto o calcular SHA-256, hay que guardar esas señales:
+    // de lo contrario el segundo envio del mismo comprobante no se detecta.
+    if ($titular !== '' || $nroTrx !== '' || $fechaSql !== null || $huella !== '') {
         try {
             $pdo->prepare(
                 "UPDATE recargas
@@ -2703,8 +2717,8 @@ function rl_declarar_pago(PDO $pdo, string $usuario, string $titular = '',
                migracion. Sin ese test, el bug viajaba a produccion y vivia ahi
                hasta que alguien corriera la 72.
 
-               Ahora se prueba con trx primero y recien despues solo el titular,
-               que es lo que DESEMPATA y lo unico que no se puede perder. */
+               Persistir cada señal por separado: una base a medio migrar no
+               debe hacer que se pierdan también las columnas que sí existen. */
             try {
                 $pdo->prepare(
                     "UPDATE recargas
@@ -2722,6 +2736,18 @@ function rl_declarar_pago(PDO $pdo, string $usuario, string $titular = '',
                 } catch (Throwable $e3) {
                     error_log('rl_declarar_pago: no pude guardar el titular: ' . $e3->getMessage());
                 }
+            }
+            if ($fechaSql !== null) {
+                try {
+                    $pdo->prepare('UPDATE recargas SET fecha_declarada=COALESCE(?, fecha_declarada) WHERE id=?')
+                        ->execute([$fechaSql, $rec['id']]);
+                } catch (Throwable $eFecha) { /* migracion 72 pendiente */ }
+            }
+            if ($huella !== '') {
+                try {
+                    $pdo->prepare('UPDATE recargas SET comprobante_huella=COALESCE(NULLIF(?, \'\'), comprobante_huella) WHERE id=?')
+                        ->execute([$huella, $rec['id']]);
+                } catch (Throwable $eHuella) { /* migracion 72 pendiente */ }
             }
         }
 
@@ -2751,6 +2777,12 @@ function rl_declarar_pago(PDO $pdo, string $usuario, string $titular = '',
        frenar la declaracion. Se piden >= 6 digitos, como en vinculos_lib: los
        numeros cortos los tipea cualquiera. */
     $alertas = [];
+    if ($mismaImagenEnMismaRecarga) {
+        $alertas[] = 'MISMA IMAGEN REENVIADA: este mismo archivo ya se habia presentado para esta recarga. No la bloquees solo por esto; confirma si la transferencia aparece en el registro bancario.';
+    }
+    if ($mismaTrxEnMismaRecarga) {
+        $alertas[] = 'MISMA OPERACION REENVIADA: este numero de operacion ya se habia declarado para esta recarga. Verifica el pago recibido; el comprobante por si solo no confirma el ingreso.';
+    }
     if ($nroTrx !== '' && mb_strlen($nroTrx) >= 6) {
         try {
             // La señal FUERTE: la plata de esa operacion ya se acredito.
@@ -2762,9 +2794,9 @@ function rl_declarar_pago(PDO $pdo, string $usuario, string $titular = '',
             $pg->execute([$nroTrx, $nroTrx]);
             if ($pg->fetchColumn()) {
                 $alertas[] = 'COMPROBANTE YA USADO: la transferencia con ese numero de '
-                           . 'operacion ya fue acreditada a una recarga anterior. Decile que '
-                           . 'ese comprobante ya se uso y que esta recarga necesita una '
-                           . 'transferencia nueva.';
+                           . 'operacion ya fue acreditada a una recarga anterior. Es una señal '
+                           . 'de reuso: no confirmes otra carga con ese archivo y deriva el caso '
+                           . 'para revision; no le pidas que transfiera de nuevo hasta verificar.';
             }
         } catch (Throwable $e) { error_log('rl_declarar_pago (trx usada): ' . $e->getMessage()); }
         try {
@@ -2781,8 +2813,9 @@ function rl_declarar_pago(PDO $pdo, string $usuario, string $titular = '',
                 $alertas[] = 'COMPROBANTE YA DECLARADO: ese mismo numero de operacion ya se '
                            . 'declaro en otra recarga'
                            . ((string)$otraDecl === $usuario ? ' suya' : ' de OTRA cuenta')
-                           . '. Decile que ese comprobante ya fue presentado y que cada '
-                           . 'recarga necesita una transferencia propia.';
+                           . '. Es una señal de reuso que debe revisar un agente. No confirmes '
+                           . 'otra carga con ese archivo ni le pidas que vuelva a transferir '
+                           . 'hasta comprobar el movimiento real.';
             }
         } catch (Throwable $e) { /* sin migracion 45 no hay trx_declarada */ }
     }

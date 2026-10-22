@@ -3,36 +3,31 @@
  * vision_lib.php — Lectura de comprobantes de transferencia con IA de visión.
  *
  * No es un endpoint: lo usa chatbot.php (herramienta verificar_comprobante).
- * El jugador sube la FOTO del comprobante al chat (subir.php ya la guarda en
- * api/uploads/); esta lib se la manda a Claude (Anthropic) y saca los datos:
+ * El jugador sube la FOTO/PDF del comprobante al chat (subir.php ya la guarda
+ * en api/uploads/); esta lib extrae con IA los datos:
  * monto, titular que transfirió, número de operación, banco/billetera.
  *
  * SEGURIDAD — regla de oro: la imagen solo DECLARA, nunca CONFIRMA. Un
- * comprobante se puede editar con cualquier app; el que confirma la plata es
- * el mail del banco (colector -> pagos.php). Por eso lo extraído acá termina
- * en rl_declarar_pago(), que acredita ÚNICAMENTE si existe un pago real
- * (tabla pagos) que coincida. Si el pago todavía no llegó, la declaración
- * queda guardada y el matcher la usa cuando llegue el mail.
+ * comprobante se puede editar con cualquier app; el dinero solo se confirma
+ * con un movimiento bancario leído por el colector o un webhook verificado de
+ * HG Cash. Por eso lo extraído acá termina en rl_declarar_pago(), que nunca
+ * acredita por la imagen: solo puede casar con un pago real ya registrado.
  *
- * CONFIG: 'ANTHROPIC_API_KEY' en api/config.local.php (de console.anthropic.com).
- * Sin la key, vision_disponible() da false y el chatbot pide los datos por
- * texto (informar_transferencia) — todo lo demás sigue funcionando.
+ * Usa la misma key y el mismo modelo GPT efectivo que el chat, tanto para
+ * fotos como para PDFs. No depende de Anthropic.
  */
 
 declare(strict_types=1);
 
-// Modelo con visión, rápido y barato: un comprobante es una imagen simple.
-const VISION_MODELO = 'claude-haiku-4-5-20251001';
-// Límite de la API de Anthropic por imagen (5 MB); subir.php ya corta en 8 MB.
-const VISION_MAX_BYTES = 5 * 1024 * 1024;
+// subir.php limita los adjuntos a 8 MB.
+const VISION_MAX_BYTES = 8 * 1024 * 1024; // mismo tope que subir.php
 
-/** ¿Está configurada la key de Anthropic? La del cliente cuenta: es el mismo
- *  lugar que usa el chat (ver api/ia_key.php). */
+/** ¿Está activo el mismo modelo GPT que usa el chat? */
 function vision_disponible(): bool
 {
     if (!function_exists('cfg')) { return false; }
     require_once __DIR__ . '/ia_key.php';
-    return strlen(ia_key_anthropic()) > 20;
+    return ia_chat_openai_activo(ia_chat_model_actual(), ia_key_openai());
 }
 
 /**
@@ -81,6 +76,10 @@ function vision_monto_a_float($v): ?float
  *       'nro_transaccion' => string, // solo dígitos (mismo formato que pagos.id_unico)
  *       'fecha'           => string,
  *       'entidad'         => string, // banco o billetera
+ *       'cuit'            => string, // identificador de origen, para comparación interna
+ *       'cbu_origen'      => string, // identificador de origen, para comparación interna
+ *       'confianza'       => alta|media|baja,
+ *       'alertas'         => array,
  *   ]]
  *   o ['ok'=>false, 'codigo'=>..., 'error'=>...] con mensaje apto para el bot.
  */
@@ -88,9 +87,9 @@ function vision_extraer_comprobante(string $ruta): array
 {
     if (!vision_disponible()) {
         return ['ok' => false, 'codigo' => 'sin_api', 'error' =>
-            'La lectura automatica de comprobantes no esta configurada. '
-            . 'Pedile por texto el nombre del TITULAR de la cuenta desde la que '
-            . 'transfirio -- con eso alcanza. NO le pidas el numero de operacion.'];
+            'Recibi el comprobante, pero el lector automatico no esta disponible '
+            . 'ahora. No le pidas que vuelva a transferir ni que reenvie el comprobante; '
+            . 'deja el caso para revision de un agente.'];
     }
     if (!is_file($ruta)) {
         return ['ok' => false, 'codigo' => 'sin_archivo', 'error' =>
@@ -105,16 +104,8 @@ function vision_extraer_comprobante(string $ruta): array
             finfo_close($fi);
         }
     }
-    /* EL PDF SE LEE IGUAL QUE UNA IMAGEN. Antes se rechazaba, y era el peor
-       lugar para hacerlo: el homebanking argentino comparte el comprobante EN
-       PDF (es el boton "compartir comprobante"), asi que el formato que mas
-       llega era el unico que no se leia. El widget y subir.php siempre lo
-       aceptaron, o sea que el jugador lo subia bien y recien despues le
-       deciamos que no servia. Visto el 13/9/2026: un jugador subio el PDF tres
-       veces, le contestamos "necesito una foto" las tres, dijo "no me deja
-       mandar la foto" y terminamos sin poder verificar una transferencia que
-       ya habia hecho.
-       La API de Anthropic los toma como bloque 'document'. */
+    // Los bancos suelen compartir el comprobante como PDF. El widget y
+    // subir.php ya lo aceptan; la API de OpenAI recibe el PDF como parte file.
     $esPdf = ($mime === 'application/pdf');
     $permitidos = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
     if (!$esPdf && !in_array($mime, $permitidos, true)) {
@@ -122,7 +113,8 @@ function vision_extraer_comprobante(string $ruta): array
             'Ese archivo no lo puedo leer. Pedile una foto, una captura de '
             . 'pantalla o el PDF del comprobante.'];
     }
-    if (filesize($ruta) > VISION_MAX_BYTES) {
+    $tamano = (int)filesize($ruta);
+    if ($tamano > VISION_MAX_BYTES) {
         return ['ok' => false, 'codigo' => 'muy_grande', 'error' =>
             'El archivo es muy pesado para leerlo. Pedile una captura de pantalla '
             . 'del comprobante (pesa menos que la foto).'];
@@ -131,71 +123,74 @@ function vision_extraer_comprobante(string $ruta): array
     $b64 = base64_encode((string)file_get_contents($ruta));
 
     $instrucciones = <<<TXT
-Extraé los datos de este comprobante de transferencia bancaria argentino.
-Respondé SOLO este JSON (sin markdown, sin texto extra):
-{"es_comprobante": true/false,
- "monto": número en pesos con punto decimal (ej 1500.50) o null,
- "remitente": "nombre del titular de la cuenta que ENVIÓ la plata" o "",
- "destinatario": "nombre del titular que RECIBIÓ" o "",
- "nro_transaccion": "número de operación/transacción/comprobante tal cual figura" o "",
- "fecha": "fecha y hora de la operación NORMALIZADA como AAAA-MM-DD HH:MM (24hs; sin hora legible, AAAA-MM-DD; ojo que en Argentina la fecha corta es día/mes/año)" o "",
- "entidad": "banco o billetera del emisor" o ""}
-Reglas: es_comprobante=false si la imagen NO es un comprobante de transferencia
-(un meme, un chat, una foto cualquiera). No inventes datos: si un campo no se
-lee, va vacío o null. El monto es el importe transferido, no el saldo.
+Lee este comprobante de pago/transferencia (bancos, Mercado Pago, Cuenta DNI,
+Uala, otras billeteras y recibos de HG Cash). Devuelve SOLO JSON valido, sin
+markdown, con esta forma:
+{"es_comprobante":true/false,"monto":numero_en_pesos_o_null,
+"remitente":"titular que envio el dinero o vacio",
+"cuit":"CUIT/CUIL del remitente, solo digitos, o vacio",
+"cbu_origen":"CBU/CVU de origen, solo digitos si figura, o vacio",
+"destinatario":"titular que recibio o vacio",
+"nro_transaccion":"ID/numero de operacion tal como figura o vacio",
+"fecha":"AAAA-MM-DD HH:MM (24 horas), o AAAA-MM-DD si no se ve hora, o vacio",
+"entidad":"banco/billetera/proveedor o vacio","confianza":"alta|media|baja",
+"alertas":[]}
+No inventes ni completes datos. El monto es lo transferido, no el saldo. Si la
+fecha es corta interpreta dia/mes/ano. Marca confianza baja y explica en
+alertas si esta cortado, borroso, parece modificado o no es comprobante. La
+imagen/PDF solo declara: NO demuestra que el dinero entro. No declares fraude.
 TXT;
 
+    // El mismo proveedor, modelo y clave que usa el chat. Chat Completions
+    // acepta imagen_url para fotos y file parts para PDFs en modelos con vision.
+    require_once __DIR__ . '/ia_key.php';
+    $modelo = ia_chat_model_actual();
+    $key = ia_key_openai();
+    $nombre = basename($ruta);
+    $adjunto = $esPdf
+        ? ['type' => 'file', 'file' => [
+            'filename' => preg_match('/\.pdf$/i', $nombre) ? $nombre : 'comprobante.pdf',
+            'file_data' => 'data:application/pdf;base64,' . $b64,
+        ]]
+        : ['type' => 'image_url', 'image_url' => [
+            'url' => 'data:' . $mime . ';base64,' . $b64,
+            'detail' => 'high',
+        ]];
     $payload = json_encode([
-        'model'      => VISION_MODELO,
-        'max_tokens' => 400,
-        'system'     => 'Sos un extractor de datos de comprobantes bancarios. '
-                      . 'Respondés únicamente JSON válido, nada más.',
-        'messages'   => [[
-            'role'    => 'user',
-            'content' => [
-                [
-                    'type'   => $esPdf ? 'document' : 'image',
-                    'source' => ['type' => 'base64', 'media_type' => $mime, 'data' => $b64],
-                ],
-                ['type' => 'text', 'text' => $instrucciones],
-            ],
+        'model' => $modelo,
+        'messages' => [[
+            'role' => 'user',
+            'content' => [$adjunto, ['type' => 'text', 'text' => $instrucciones]],
         ]],
-    ]);
-
-    /* OJO CON EL WORKSPACE: si la key de Anthropic es a nivel ORGANIZACION (no
-       scopeada a un workspace), la API exige el header anthropic-workspace-id y
-       si no responde 400. Sin esto la vision fallaba SIEMPRE y el bot contestaba
-       "no puedo leer la imagen" a cada comprobante -- justo cuando mas se
-       necesita, porque el que recarga por segunda vez no avisa nada: manda la
-       foto y listo, y sin leerla el matcher no tiene con que desempatar.
-       Mismo header que usa el chat (ver CLAUDE_COMPAT_BASE en chatbot.php). */
-    $ch = curl_init('https://api.anthropic.com/v1/messages');
+        'max_completion_tokens' => 700,
+        'reasoning_effort' => 'none',
+    ], JSON_UNESCAPED_UNICODE);
+    $ch = curl_init('https://api.openai.com/v1/chat/completions');
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST           => true,
-        CURLOPT_POSTFIELDS     => $payload,
-        CURLOPT_HTTPHEADER     => vision_headers(),
-        CURLOPT_TIMEOUT        => 45,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => $payload,
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Authorization: Bearer ' . $key],
+        CURLOPT_TIMEOUT => 45,
     ]);
-    $raw  = curl_exec($ch);
+    $raw = curl_exec($ch);
     $http = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $err  = curl_error($ch);
+    $err = curl_error($ch);
     curl_close($ch);
-
     if ($raw === false || $http !== 200) {
-        error_log('vision_extraer_comprobante: HTTP ' . $http . ' ' . $err . ' ' . substr((string)$raw, 0, 300));
+        error_log('vision_extraer_comprobante: OpenAI modelo=' . $modelo . ' HTTP=' . $http . ' ' . $err . ' ' . substr((string)$raw, 0, 300));
         return ['ok' => false, 'codigo' => 'api', 'error' =>
-            'No pude leer el comprobante en este momento. Pedile por texto el '
-            . 'nombre del TITULAR de la cuenta desde la que transfirio -- con '
-            . 'eso alcanza para casarlo. NO le pidas el numero de operacion.'];
+            'Recibi el comprobante, pero el modelo del chat no pudo leerlo ahora. No vuelvas a transferir ni reenvies el archivo; un agente revisara el caso.'];
     }
-
-    $data  = json_decode((string)$raw, true);
-    $texto = '';
-    foreach (($data['content'] ?? []) as $b) {
-        if (($b['type'] ?? '') === 'text') {
-            $texto .= (string)($b['text'] ?? '');
-        }
+    $data = json_decode((string)$raw, true);
+    $contenido = $data['choices'][0]['message']['content'] ?? '';
+    if (is_array($contenido)) {
+        $texto = '';
+        foreach ($contenido as $bloque) { $texto .= is_array($bloque) ? (string)($bloque['text'] ?? '') : (string)$bloque; }
+    } else { $texto = (string)$contenido; }
+    if (trim($texto) === '') {
+        return ['ok' => false, 'codigo' => 'api', 'error' =>
+            'Recibi el comprobante, pero el modelo del chat no devolvio una lectura. No vuelvas a transferir ni reenvies el archivo; un agente revisara el caso.'];
     }
     // Por si el modelo igual envolvió el JSON en ```...```
     $texto = trim($texto);
@@ -210,11 +205,11 @@ TXT;
     if (!is_array($d)) {
         error_log('vision_extraer_comprobante: respuesta no-JSON: ' . substr($texto, 0, 300));
         return ['ok' => false, 'codigo' => 'parseo', 'error' =>
-            'No pude interpretar el comprobante. Pedile por texto el nombre del '
-            . 'TITULAR de la cuenta desde la que transfirio -- con eso alcanza '
-            . 'para casarlo. NO le pidas el numero de operacion.'];
+            'Recibi el comprobante, pero no pude separar sus datos con seguridad. No vuelvas a transferir ni lo reenvies; un agente revisara el archivo que ya mandaste.'];
     }
 
+    $cuit = preg_replace('/\D+/', '', (string)($d['cuit'] ?? ''));
+    $cbuOrigen = preg_replace('/\D+/', '', (string)($d['cbu_origen'] ?? ''));
     return ['ok' => true, 'datos' => [
         'es_comprobante'  => !empty($d['es_comprobante']),
         'monto'           => vision_monto_a_float($d['monto'] ?? null),
@@ -224,26 +219,12 @@ TXT;
         'nro_transaccion' => substr(preg_replace('/\D+/', '', (string)($d['nro_transaccion'] ?? '')), 0, 64),
         'fecha'           => mb_substr(trim((string)($d['fecha'] ?? '')), 0, 60),
         'entidad'         => mb_substr(trim((string)($d['entidad'] ?? '')), 0, 60),
+        // Solo devolver identificadores de largo exacto. Truncar un OCR
+        // dudoso podría convertirlo en el CUIT/CBU real de otra persona.
+        'cuit'            => strlen($cuit) === 11 ? $cuit : '',
+        'cbu_origen'      => strlen($cbuOrigen) === 22 ? $cbuOrigen : '',
+        'confianza'       => in_array(($d['confianza'] ?? ''), ['alta', 'media', 'baja'], true)
+                           ? (string)$d['confianza'] : 'media',
+        'alertas'         => is_array($d['alertas'] ?? null) ? array_slice($d['alertas'], 0, 5) : [],
     ]];
-}
-
-if (!function_exists('vision_headers')) {
-    /** Headers para la API de Anthropic. El workspace va SOLO si esta
-     *  configurado: con una key ya scopeada a un workspace no hace falta, y
-     *  mandarlo vacio seria peor. */
-    function vision_headers(): array
-    {
-        // La clave del cliente si cargo una, si no la global del server: la
-        // MISMA resolucion que el chat sobre Claude (api/ia_key.php). Asi la
-        // vision de cada cliente gasta su propia cuota, igual que su chat.
-        require_once __DIR__ . '/ia_key.php';
-        $h = [
-            'Content-Type: application/json',
-            'x-api-key: ' . ia_key_anthropic(),
-            'anthropic-version: 2023-06-01',
-        ];
-        $ws = trim((string)cfg('ANTHROPIC_WORKSPACE_ID', ''));
-        if ($ws !== '') { $h[] = 'anthropic-workspace-id: ' . $ws; }
-        return $h;
-    }
 }

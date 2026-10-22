@@ -1204,6 +1204,16 @@
   .huella code{background:rgba(148,163,184,.14);padding:1px 5px;border-radius:5px;
                font-size:11px;color:var(--txt)}
   .huella .hl-ojo{color:var(--red);font-weight:700}
+  .comp-bloq-alert{margin:0 0 12px;padding:11px 13px;border-radius:10px;
+    background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.48);
+    color:var(--txt);font-size:12.5px;line-height:1.5}
+  .comp-bloq-alert b{color:var(--red)}
+  .comp-bloq-alert ul{margin:6px 0 0;padding-left:20px}
+  .comp-bloq-btn{margin-top:7px;padding:6px 9px;border:1px solid rgba(239,68,68,.55);
+    border-radius:8px;background:rgba(239,68,68,.12);color:var(--txt);font:inherit;
+    font-size:11.5px;font-weight:700;cursor:pointer}
+  .comp-bloq-btn:hover{background:rgba(239,68,68,.22)}
+  .comp-bloq-btn:disabled{opacity:.6;cursor:default}
   /* z-index 90: por encima del modal (.back, 80) — un aviso tipo "cargado" o
      un error de la carga tiene que verse aunque el modal siga abierto. */
   .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--panel);border:1px solid var(--violet);color:var(--txt);padding:12px 20px;border-radius:12px;z-index:90;opacity:0;transition:.25s;pointer-events:none;box-shadow:var(--shadow)}
@@ -1689,7 +1699,7 @@
   .comp-cands{display:flex;flex-direction:column;gap:8px;margin-top:12px;
     max-height:min(46vh,340px);overflow-y:auto;padding-right:4px}
   .cand{display:flex;align-items:center;gap:12px;padding:12px 14px;background:var(--panel2);
-    border:1px solid var(--line);border-radius:13px}
+    border:1px solid var(--line);border-radius:13px;flex-wrap:wrap}
   .cand .cd-mid{flex:1;min-width:0}
   .cand .cd-user{font-weight:700}
   .cand .cd-sub{color:var(--muted);font-size:12px;margin-top:2px}
@@ -3431,6 +3441,7 @@
            la búsqueda. -->
       <div id="compDetail" style="display:none">
         <div class="comp-info" id="compInfo"></div>
+        <div class="comp-bloq-alert" id="compBloqAlert" style="display:none"></div>
         <div class="comp-sug" id="compSug"></div>
         <div class="comp-otro" id="compOtro" style="display:none">
           <h4 class="comp-como">Buscá al jugador</h4>
@@ -12171,6 +12182,18 @@ async function credTabla(cual){
       ["Mail de origen", d.pago.mail_de||"—"], ["Capturado", hace(d.pago.capturado_en)],
     ].map(([k,v])=>`<div class="ci"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join("");
 
+    const cuentasBloqueadas = d.cuentas_bloqueadas || [];
+    const alertaBloq = $("#compBloqAlert");
+    if(alertaBloq){
+      alertaBloq.style.display = cuentasBloqueadas.length ? "" : "none";
+      alertaBloq.innerHTML = cuentasBloqueadas.length
+        ? '<b>🚫 Señal de revisión: la cuenta de origen coincide con una cuenta bloqueada.</b>' +
+          '<ul>' + cuentasBloqueadas.map(x => '<li><b>@' + esc(x.usuario) + '</b>' +
+            (x.motivo ? ' · ' + esc(x.motivo) : '') + '</li>').join('') + '</ul>' +
+          '<div style="margin-top:6px;color:var(--muted)">Es una coincidencia bancaria corroborable, pero no confirma por sí sola quién hizo esta transferencia. No se bloquea ni se acredita automáticamente.</div>'
+        : "";
+    }
+
     $("#compCands").innerHTML = !d.candidatas.length
       ? `<div class="nouser">No hay recargas pendientes${q?" para esa búsqueda":""}.</div>`
       : d.candidatas.map((c,i)=>{
@@ -12203,10 +12226,14 @@ async function credTabla(cual){
             </div>
             <div class="cd-monto">${money(c.monto_pedido)}</div>
             <button class="btn-asignar" data-id="${c.id}" type="button">Asignar</button>
+            ${cuentasBloqueadas.length ? '<button class="comp-bloq-btn" data-bloq-user="' + esc(c.usuario) + '" type="button">Bloquear esta cuenta</button>' : ''}
           </div>`;
         }).join("");
     $("#compCands").querySelectorAll(".btn-asignar").forEach(btn=>{
       btn.addEventListener("click", ()=> asignarComprobante(+btn.getAttribute("data-id"), btn));
+    });
+    $("#compCands").querySelectorAll(".comp-bloq-btn").forEach(btn=>{
+      btn.addEventListener("click", ()=> bloquearCuentaPorHuella(btn.dataset.bloqUser, cuentasBloqueadas, btn));
     });
 
     pintarAcreditarDirecto(d);
@@ -12258,6 +12285,8 @@ async function credTabla(cual){
       <div class="cs-acciones">
         <button class="cs-si" id="csSi" type="button">Sí, cargarle ${monto}</button>
         <button class="cs-no" id="csNo" type="button">No es él</button>
+        ${(d.cuentas_bloqueadas || []).length && !(d.cuentas_bloqueadas || []).some(x=>x.usuario===s.usuario)
+          ? '<button class="comp-bloq-btn" id="csBloquear" type="button">Bloquear esta cuenta</button>' : ''}
         <!-- EL TERCER CASO, que faltaba y es el más común cuando el operador no
              puede esperar: la plata ES de él, pero ya se la cargó por afuera.
              Sin este botón las únicas salidas eran cargarle de nuevo o
@@ -12269,6 +12298,7 @@ async function credTabla(cual){
 
     $("#csSi").addEventListener("click", ()=> aprobarSugerencia(s, d));
     $("#csMano").addEventListener("click", ()=> marcarYaCargado(s.usuario, s.recarga_id, $("#csMano")));
+    $("#csBloquear")?.addEventListener("click", ()=> bloquearCuentaPorHuella(s.usuario, d.cuentas_bloqueadas, $("#csBloquear")));
     $("#csNo").addEventListener("click", ()=>{
       /* No se descarta nada: se abre la búsqueda. La sugerencia se va para que
          no quede compitiendo con lo que el operador está por elegir. */
@@ -12305,6 +12335,31 @@ async function credTabla(cual){
     } else {
       if(btn){ btn.disabled = false; btn.textContent = texto; }
       toast(r.error || "No se pudo marcar");
+    }
+  }
+
+  async function bloquearCuentaPorHuella(usuario, cuentasBloqueadas, btn){
+    const nombres = (cuentasBloqueadas || []).map(x => "@" + x.usuario);
+    if(!usuario || !nombres.length) return;
+    if(!confirm("Los datos de origen del comprobante coinciden con una cuenta bancaria vinculada a " + nombres.join(", ") +
+      ", que está bloqueada. La coincidencia debe revisarse; no confirma por sí sola quién hizo esta transferencia.\n\n¿Bloquear manualmente solo @" + usuario +
+      " en este CRM? No se bloquearán otras cuentas por compartir dispositivo o IP.\n\n" +
+      "La transferencia no se rechazará ni se acreditará por esta acción.")) return;
+    if(btn){ btn.disabled = true; btn.textContent = "Bloqueando…"; }
+    try{
+      const r = await jpost({accion:"bloquear", usuario, bloquear:true,
+        motivo:"Revisión manual: el comprobante mostró una identidad bancaria coincidente con una cuenta restringida: " + nombres.join(", "),
+        con_vinculadas:false}, API_BASE);
+      if(!r.ok){
+        if(btn){ btn.disabled = false; btn.textContent = "Bloquear esta cuenta"; }
+        toast(r.error || "No se pudo bloquear"); return;
+      }
+      const n = (r.usuarios || [usuario]).length;
+      if(btn){ btn.textContent = "Cuenta bloqueada"; }
+      toast(n > 1 ? n + " cuentas bloqueadas en el CRM" : "@" + usuario + " bloqueado en el CRM");
+    }catch(e){
+      if(btn){ btn.disabled = false; btn.textContent = "Bloquear esta cuenta"; }
+      toast("No se pudo completar el bloqueo");
     }
   }
 
