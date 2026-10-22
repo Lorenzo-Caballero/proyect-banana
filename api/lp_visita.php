@@ -53,6 +53,16 @@ if ($vid === '') {
     $vid = bin2hex(random_bytes(8));
 }
 
+// La deduplicación sigue el día local del visitante. `creada_en` permanece
+// en UTC para que el CRM pueda filtrar con precisión por su calendario local.
+$offsetRaw = $body['utc_offset_min'] ?? 0;
+$offsetLocalUtc = filter_var($offsetRaw, FILTER_VALIDATE_INT);
+if ($offsetLocalUtc === false) { $offsetLocalUtc = 0; }
+$offsetLocalUtc = max(-720, min(840, (int)$offsetLocalUtc));
+$utcNow = new DateTimeImmutable('now', new DateTimeZone('UTC'));
+$diaLocal = $utcNow->modify(sprintf('%+d minutes', $offsetLocalUtc))->format('Y-m-d');
+$creadaUtc = $utcNow->format('Y-m-d H:i:s');
+
 // La landing tiene que existir. Sin la tabla `landings` (migración 52 sin
 // correr) no hay landings que visitar: se responde ok sin contar.
 try {
@@ -67,15 +77,14 @@ try {
     exit;
 }
 
-// CURDATE()/reloj del SERVER, igual que altas.pedido_en: el embudo cuenta
-// registros y visitas con el mismo reloj, así la conversión visita->registro
-// cuadra. No se mezcla con time() de PHP (eso ya causó bugs en el proyecto).
+// El día de dedup usa el offset del visitante; creada_en conserva el reloj UTC
+// de MariaDB y se utiliza para los rangos del reporte.
 try {
     $ins = $pdo->prepare(
-        "INSERT IGNORE INTO landing_visitas (slug, visita_id, dia)
-         VALUES (?, ?, CURDATE())"
+        "INSERT IGNORE INTO landing_visitas (slug, visita_id, dia, creada_en)
+         VALUES (?, ?, ?, ?)"
     );
-    $ins->execute([$slug, $vid]);
+    $ins->execute([$slug, $vid, $diaLocal, $creadaUtc]);
     echo json_encode(['ok' => true, 'contada' => $ins->rowCount() > 0]);
 } catch (Throwable $e) {
     // Sin la migración 54 la tabla no existe: la landing sigue andando, solo

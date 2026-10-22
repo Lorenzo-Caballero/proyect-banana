@@ -553,7 +553,10 @@
           fetch(BASE_API + '/lp_visita.php', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ slug: SLUG, vid: vid }),
+            body: JSON.stringify({
+              slug: SLUG, vid: vid,
+              utc_offset_min: -new Date().getTimezoneOffset()
+            }),
             keepalive: true
           }).catch(function(){});
         } catch(e){}

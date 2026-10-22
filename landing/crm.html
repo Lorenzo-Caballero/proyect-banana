@@ -14715,7 +14715,11 @@ async function credTabla(cual){
   /** GET con JSON. 401 = sesión de operador vencida (login general).
    *  403 = falta reverificar Publicidad (gate propio). */
   async function pbGetJson(params){
-    const r = await pbFetch(API_PB + "?" + new URLSearchParams(params));
+    const query = Object.assign({}, params || {});
+    if(query.desde && query.hasta){
+      query.utc_offset_min = String(-new Date().getTimezoneOffset());
+    }
+    const r = await pbFetch(API_PB + "?" + new URLSearchParams(query));
     if(r.status === 401){ mostrarLogin("Tu sesión expiró. Ingresá de nuevo."); throw new Error("sesion_requerida"); }
     if(r.status === 403){ pbMostrarGate(); throw new Error("publicidad_no_verificado"); }
     return r.json();

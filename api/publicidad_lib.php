@@ -819,9 +819,9 @@ function publicidad_sql_cargas(): string
  * meta_insights_pageviews() para las landings: Meta da las visitas de una
  * cuenta de anuncios, no de una URL, asi que una landing las cuenta aca.
  *
- * `dia` se compara con las fechas del rango directo: se guarda con CURDATE()
- * del server, el mismo reloj con el que se guardan las altas (pedido_en), asi
- * que visitas y registros del embudo cuadran entre si.
+ * `creada_en` se compara con el rango local convertido a UTC, igual que las
+ * altas y las cargas. `dia` queda para deduplicar cada navegador por su fecha
+ * local y no se usa para filtrar porque las filas históricas usaban UTC.
  *
  * Devuelve null si falta la migración 54 -- el front muestra "-", igual que un
  * publicista sin Insights, en vez de un 0 que pareceria "nadie entro".
@@ -829,11 +829,12 @@ function publicidad_sql_cargas(): string
 function publicidad_visitas_landing(PDO $pdo, string $slug, string $desde, string $hasta): ?int
 {
     try {
+        [$desdeUtc, $hastaUtc] = publicidad_rango_utc($desde, $hasta);
         $st = $pdo->prepare(
             "SELECT COUNT(*) FROM landing_visitas
-              WHERE slug = ? AND dia BETWEEN ? AND ?"
+              WHERE slug = ? AND creada_en BETWEEN ? AND ?"
         );
-        $st->execute([$slug, $desde, $hasta]);
+        $st->execute([$slug, $desdeUtc, $hastaUtc]);
         return (int)$st->fetchColumn();
     } catch (Throwable $e) {
         return null;
@@ -891,6 +892,17 @@ function publicidad_altas_tiene_landing_slug(PDO $pdo): bool
     }
 }
 
+/** Convierte el rango de calendario local a timestamps UTC almacenados. */
+function publicidad_rango_utc(string $desde, string $hasta): array
+{
+    $offsetLocalUtc = max(-720, min(840, (int)($GLOBALS['PUBLICIDAD_UTC_OFFSET_MIN'] ?? 0)));
+    $delta = sprintf('%+d minutes', -$offsetLocalUtc);
+    $utc = new DateTimeZone('UTC');
+    $inicio = (new DateTimeImmutable($desde . ' 00:00:00', $utc))->modify($delta);
+    $fin = (new DateTimeImmutable($hasta . ' 23:59:59', $utc))->modify($delta);
+    return [$inicio->format('Y-m-d H:i:s'), $fin->format('Y-m-d H:i:s')];
+}
+
 function publicidad_seg_where(array $seg, string $alias = '', bool $tieneLandingSlug = true): array
 {
     $p = $alias !== '' ? $alias . '.' : '';
@@ -918,8 +930,7 @@ function publicidad_metricas(PDO $pdo, int|array $seg, string $desde, string $ha
     $tieneLandingSlug = $seg['tipo'] !== 'landing' || publicidad_altas_tiene_landing_slug($pdo);
     [$wReg, $vReg] = publicidad_seg_where($seg, '', $tieneLandingSlug);   // registros: `altas` sin alias
     [$wA,   $vA]   = publicidad_seg_where($seg, 'a', $tieneLandingSlug);  // cargas/retencion: JOIN altas a
-    $hastaFin = $hasta . ' 23:59:59';
-    $desdeIni = $desde . ' 00:00:00';
+    [$desdeIni, $hastaFin] = publicidad_rango_utc($desde, $hasta);
 
     $registros = 0;
     try {
@@ -1060,8 +1071,10 @@ function publicidad_por_dia(PDO $pdo, int|array $seg, string $desde, string $has
     $tieneLandingSlug = $seg['tipo'] !== 'landing' || publicidad_altas_tiene_landing_slug($pdo);
     [$wReg, $vReg] = publicidad_seg_where($seg, '', $tieneLandingSlug);
     [$wA,   $vA]   = publicidad_seg_where($seg, 'a', $tieneLandingSlug);
-    $hastaFin = $hasta . ' 23:59:59';
-    $desdeIni = $desde . ' 00:00:00';
+    [$desdeIni, $hastaFin] = publicidad_rango_utc($desde, $hasta);
+    $offsetLocalUtc = max(-720, min(840, (int)($GLOBALS['PUBLICIDAD_UTC_OFFSET_MIN'] ?? 0)));
+    $fechaPedidoLocal = "DATE(DATE_ADD(pedido_en, INTERVAL {$offsetLocalUtc} MINUTE))";
+    $fechaCargaLocal = "DATE(DATE_ADD(c.cuando, INTERVAL {$offsetLocalUtc} MINUTE))";
 
     $porDia = [];
     for ($d = strtotime($desde); $d <= strtotime($hasta); $d += 86400) {
@@ -1071,11 +1084,11 @@ function publicidad_por_dia(PDO $pdo, int|array $seg, string $desde, string $has
 
     try {
         $st = $pdo->prepare(
-            "SELECT DATE(pedido_en) AS f, COUNT(*) AS n
+            "SELECT $fechaPedidoLocal AS f, COUNT(*) AS n
                FROM altas
               WHERE $wReg AND estado = 'ok'
                 AND pedido_en BETWEEN ? AND ?
-              GROUP BY DATE(pedido_en)"
+              GROUP BY $fechaPedidoLocal"
         );
         $st->execute([$vReg, $desdeIni, $hastaFin]);
         foreach ($st->fetchAll() as $fila) {
@@ -1092,7 +1105,7 @@ function publicidad_por_dia(PDO $pdo, int|array $seg, string $desde, string $has
         // cerrarian entre si y no habria forma de saber cual esta mal.
         $union = publicidad_sql_cargas();
         $st = $pdo->prepare(
-            "SELECT DATE(c.cuando) AS f,
+            "SELECT $fechaCargaLocal AS f,
                     COUNT(DISTINCT IF(c.cuando = pr.primera, c.usuario, NULL)) AS primeras,
                     COALESCE(SUM(c.monto), 0) AS depositado
                FROM ($union) c
@@ -1103,7 +1116,7 @@ function publicidad_por_dia(PDO $pdo, int|array $seg, string $desde, string $has
                  ON pr.usuario = c.usuario
               WHERE $wA
                 AND c.cuando BETWEEN ? AND ?
-              GROUP BY DATE(c.cuando)"
+              GROUP BY $fechaCargaLocal"
         );
         $st->execute([$vA, $desdeIni, $hastaFin]);
         foreach ($st->fetchAll() as $fila) {

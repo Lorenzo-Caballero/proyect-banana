@@ -86,6 +86,12 @@ function pub_rango_fechas(): array
     if ($desde > $hasta) {
         salir(['ok' => false, 'error' => 'La fecha "desde" no puede ser posterior a "hasta"'], 400);
     }
+    // Los DATETIME del panel se guardan en UTC; el calendario del CRM usa la
+    // fecha local del operador. El cliente manda local - UTC (signo opuesto a
+    // JS getTimezoneOffset). Sin dato se conserva el comportamiento UTC.
+    $offset = (string)($_GET['utc_offset_min'] ?? '0');
+    if (!preg_match('/^-?\d{1,4}$/', $offset)) { $offset = '0'; }
+    $GLOBALS['PUBLICIDAD_UTC_OFFSET_MIN'] = max(-720, min(840, (int)$offset));
     return [$desde, $hasta];
 }
 

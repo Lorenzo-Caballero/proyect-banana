@@ -254,8 +254,8 @@ limpiar($pdo);
 
 $verVisita = static function (string $slug, string $vid, string $dia) use ($pdo): void {
     $pdo->prepare(
-        "INSERT IGNORE INTO landing_visitas (slug, visita_id, dia) VALUES (?, ?, ?)"
-    )->execute([$slug, $vid, $dia]);
+        "INSERT IGNORE INTO landing_visitas (slug, visita_id, dia, creada_en) VALUES (?, ?, ?, ?)"
+    )->execute([$slug, $vid, $dia, $dia . ' 12:00:00']);
 };
 
 /* Tres navegadores distintos entran el mismo dia -> 3 visitas. */

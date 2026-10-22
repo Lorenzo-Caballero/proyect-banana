@@ -212,8 +212,9 @@ malos=0
 # cuando en realidad no habia llegado al server.
 for f in api/chatbot.php api/altas_lib.php api/crear_cuenta.php \
          api/alta_estado.php landing/widget.js landing/registro.html \
-         api/publicidad_lib.php api/sql/81_atribucion_landing_publicidad.sql \
-         landing/lp.html landing/configurar.html panel/landing_portal.php; do
+         api/publicidad_lib.php api/crm_publicidad.php api/lp_visita.php \
+         api/sql/81_atribucion_landing_publicidad.sql \
+         landing/crm.html landing/lp.html landing/configurar.html panel/landing_portal.php; do
   dst="$WEB/$(echo "$f" | sed 's|^api/|api/|; s|^landing/|replica/|; s|^panel/|panel/|')"
   if [ ! -f "$dst" ]; then
     echo "   !! falta $dst" >&2; malos=$((malos+1)); continue
