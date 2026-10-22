@@ -3673,7 +3673,7 @@
         <button class="au-tab" data-tipo="ajuste" type="button" title="Movimientos de fichas: de una recarga, de una carga a mano, del botón Depósitos…">Fichas</button>
         <!-- La pestaña nueva: lo que hizo una persona. Sin esto, la fuente que
              se acaba de sumar a la auditoría solo se veía mezclada en «Todas». -->
-        <button class="au-tab" data-tipo="accion" type="button" title="Bloqueos, cancelaciones, aprobaciones: quién decidió qué">Acciones</button>
+        <button class="au-tab" data-tipo="accion" type="button" title="Cambios hechos desde el CRM: cancelaciones, aprobaciones, landings y chats">Actividad CRM</button>
       </div>
       <select id="auActor" title="Quién lo hizo: una persona desde el CRM, el chatbot, o el sistema solo (una transferencia que llegó al banco, un premio de la ruleta).">
         <option value="todos">Quién lo hizo: todos</option>
@@ -3701,12 +3701,12 @@
                  encabezados y preguntó qué significaba la mitad; el tooltip es
                  el lugar donde eso se contesta sin agrandar la tabla. -->
             <th title="Cuándo pasó. En los retiros pedidos desde el juego, cuándo lo pidió el jugador (o cuándo se resolvió, si ya está cerrado).">Fecha</th>
-            <th title="Depósito y Retiro mueven plata de verdad. Fichas y Bono son los contadores de la casa. Acción es lo que decidió una persona: bloquear, cancelar, aprobar.">Tipo</th>
+            <th title="Clasifica el registro: depósito, retiro, fichas, bono o actividad hecha desde el CRM.">Tipo de registro</th>
             <th title="El jugador. Vacío en las acciones que no son sobre un jugador, como bloquear una IP.">Usuario</th>
             <th style="text-align:right" title="En verde lo que entró, en rojo lo que salió. Las acciones no tienen monto.">Monto</th>
-            <th title="En qué quedó (pendiente, pagado, cancelado) o de dónde salió (la ruleta, una transferencia, un operador). Pasá el mouse por cada etiqueta para ver la explicación.">Estado u origen</th>
+            <th title="Muestra el estado de un depósito o retiro, o describe qué se hizo desde el CRM.">Qué pasó</th>
             <th title="Quién lo hizo: el nombre del operador, el Bot, o el Sistema cuando no lo pidió nadie.">Operador</th>
-            <th class="au-col-detalle" title="Lo que quedó escrito, incluido el motivo que puso a mano el operador.">Detalle</th>
+            <th class="au-col-detalle" title="Nota o información complementaria. Si una persona escribió un motivo, aparece acá.">Nota / detalle</th>
             <th class="au-col-referencia" title="El número con el que quedó guardado. Pasá el mouse para ver en qué registro vive.">Referencia</th>
           </tr>
         </thead>
@@ -13100,7 +13100,7 @@ async function credTabla(cual){
      "Acción" es el tipo nuevo: lo que hizo una persona (bloquear, cancelar,
      aprobar), que hasta hoy no se veia en ningun lado. */
   const AU_TIPO_TXT   = { deposito:"Depósito", retiro:"Retiro", bono:"Bono",
-                          ajuste:"Fichas", accion:"Acción" };
+                          ajuste:"Fichas", accion:"Actividad" };
   const AU_ESTADO_COLOR = {
     acreditada:"verde", pagado:"verde", hecha:"verde", aplicado:"verde",
     pendiente:"", procesando:"azul", abierto:"",
@@ -13301,6 +13301,35 @@ async function credTabla(cual){
     return `<span class="au-badge-estado ${color}" title="${esc(ayuda)}">${esc(txt)}</span>`;
   }
 
+  /* Hace legible lo que anotó el operador. Algunas acciones viejas guardan
+     la nota dentro de un JSON junto a IDs internos; esos IDs ya tienen su
+     propia columna y no deben tapar el motivo que escribió la persona. */
+  function auDetalleLegible(f){
+    const raw = String(f.detalle || "").trim();
+    if(!raw) return "—";
+    if(f.tipo === "accion"){
+      const separador = raw.indexOf(" — ");
+      if(separador < 0) return raw;
+      const extra = raw.slice(separador + 3).trim();
+      if(extra.startsWith("{")){
+        try{
+          const datos = JSON.parse(extra);
+          const nota = datos.nota || datos.motivo || datos.razon || datos.comentario;
+          if(nota) return "Motivo: " + String(nota);
+          const etiquetas = {usuario:"Jugador", monto:"Monto", estado:"Estado", destino:"Destino"};
+          const visibles = Object.entries(datos)
+            .filter(([k,v]) => !/(^id$|_id$|request_id)/i.test(k) && v !== null && v !== "")
+            .map(([k,v]) => `${etiquetas[k] || k.replace(/_/g," ")}: ${String(v)}`);
+          return visibles.length ? visibles.join(" · ") : "Sin nota adicional";
+        }catch(_){ /* si no es JSON válido, queda como texto */ }
+      }
+      return extra || "—";
+    }
+    const motivo = raw.match(/\|\s*(?:cancelada|cerrada|pagado a mano|rechazo pedido por)\s+por\s+[^:]+:\s*(.+)$/i);
+    if(motivo && motivo[1]) return "Motivo: " + motivo[1].trim();
+    return raw;
+  }
+
   function auFilaHtml(f, idx){
     /* EL SIGNO SALE DEL MONTO CUANDO EL MONTO LO SABE.
        Antes era `tipo === "deposito" || tipo === "bono"`, o sea que todo lo
@@ -13333,7 +13362,8 @@ async function credTabla(cual){
        Estaba en el title (tooltip), que en una auditoria no sirve: hay que
        saber que existe y pasar el mouse fila por fila. 150 entra comodo en la
        columna ensanchada, y lo que sobre se ve al expandir la fila. */
-    const detalleCorto = f.detalle && f.detalle.length > 150 ? f.detalle.slice(0,150) + "…" : (f.detalle || "—");
+    const detalle = auDetalleLegible(f);
+    const detalleCorto = detalle.length > 150 ? detalle.slice(0,150) + "…" : detalle;
     return `<tr id="${rowId}" data-usuario="${esc(f.usuario)}" class="au-fila-clickeable">
       <td>
         <span class="au-fecha-desktop">${auFechaFmt(f.fecha)}</span>
@@ -13344,8 +13374,8 @@ async function credTabla(cual){
       <td class="au-monto ${signo}">${esMovimiento ? montoTxt : '<span class="au-nada">—</span>'}</td>
       <td>${auEstadoBadge(f.subtipo, f.tipo)}</td>
       <td>${auOperadorHtml(f)}</td>
-      <td class="au-col-detalle au-detalle" title="${esc(f.detalle||"")}">${esc(detalleCorto)}
-        <div class="au-detalle-mobile">${esc(f.detalle||"—")} · <span class="au-referencia">#${f.referencia}</span></div>
+      <td class="au-col-detalle au-detalle" title="${esc(detalle)}">${esc(detalleCorto)}
+        <div class="au-detalle-mobile">${esc(detalle)} · <span class="au-referencia">Referencia #${f.referencia}</span></div>
       </td>
       <!-- El campo fuente viajaba en la respuesta desde siempre y no se
            mostraba en ningún lado. Es lo que convierte a un #169 pelado en un
