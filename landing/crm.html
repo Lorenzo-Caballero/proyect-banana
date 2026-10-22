@@ -2260,6 +2260,22 @@
 
   .pb-funnel{display:flex;align-items:stretch;gap:6px;padding:14px;margin:0 20px 14px;
     background:var(--panel2);border:1px solid var(--line);border-radius:14px;overflow-x:auto}
+  .pb-intro{margin:0 20px 14px;padding:13px 16px;border:1px solid var(--line);
+    border-radius:13px;background:var(--panel2);display:flex;align-items:center;
+    justify-content:space-between;gap:14px;color:var(--muted);font-size:13px;line-height:1.5}
+  .pb-intro b{color:var(--txt)}
+  .pb-intro-copy{min-width:0}
+  .pb-ayuda-detalle{margin:0 20px 14px;padding:0 13px;border:1px solid var(--line);
+    border-radius:11px;background:var(--panel);color:var(--muted);font-size:12px;line-height:1.55}
+  .pb-ayuda-detalle summary{padding:10px 0;cursor:pointer;color:var(--violet2);font-weight:700}
+  .pb-ayuda-detalle[open]{padding-bottom:11px}
+  .pb-ayuda-detalle p{margin:0}
+  .pb-gasto-cta{font-size:12px;white-space:nowrap;flex:none}
+  .pb-gasto-ayuda-top{margin:0 20px 10px;color:var(--muted);font-size:12px;line-height:1.45}
+  @media(max-width:640px){
+    .pb-intro{align-items:stretch;flex-direction:column}
+    .pb-gasto-cta{width:100%}
+  }
   /* Cada etapa es una tarjeta: sin caja propia, cuatro numeros en fila se
      leen como una tabla, no como pasos de un recorrido. */
   .pb-funnel-paso{flex:1;min-width:104px;text-align:center;
@@ -2294,6 +2310,13 @@
   .pb-card-destacada{border-color:var(--violet);position:relative;overflow:hidden}
   .pb-card-destacada::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;
     background:linear-gradient(90deg,var(--violet2),var(--violet))}
+  /* El verde marca el resultado de retorno, como en Retención. */
+  .pb-card-destacada{border-color:var(--green);background:linear-gradient(180deg,rgba(58,196,125,.10),var(--panel))}
+  .pb-card-destacada::before{background:linear-gradient(90deg,var(--green),var(--green2))}
+  .pb-card-destacada .v{color:var(--green2)}
+  .pb-funnel-final{background:rgba(58,196,125,.10);border-color:var(--green)}
+  .pb-funnel-final .pb-funnel-num{color:var(--green2)}
+  .pb-funnel-final .pb-funnel-label{color:var(--txt)}
 
   .pb-tabla-wrap{overflow-x:auto;margin:0 20px 20px;border:1px solid var(--line);border-radius:13px}
   .pb-tabla{width:100%;border-collapse:collapse;font-size:13px;min-width:520px}
@@ -4485,8 +4508,9 @@
         </div>
       </div>
 
-      <div class="fn-explicacion" style="margin:0 20px 14px">
-        <b>¿Qué es un publicista?</b> Por defecto, TODO tu tráfico ya se mide
+      <details class="pb-ayuda-detalle">
+        <summary>¿Cómo se organizan las campañas y los publicistas?</summary>
+        <p><b>¿Qué es un publicista?</b> Por defecto, TODO tu tráfico ya se mide
         con el pixel general que cargaste en <b>Configuración → Meta Ads</b>
         — no hace falta tocar nada acá para empezar a hacer publicidad.
         <br><br>
@@ -4501,8 +4525,8 @@
         solapa más acá abajo (a la derecha): tocala para ver cuántos
         registros y cargas trajo esa página, y <b>cargale el gasto de pauta</b>
         para comparar el CPA y el ROAS entre una landing y otra — que es lo
-        que decide cuál escalar y cuál cortar.
-      </div>
+        que decide cuál escalar y cuál cortar.</p>
+      </details>
 
       <!-- Tabs de publicistas: cada uno es una landing propia, opcionalmente
            con su propio pixel. Los resultados de abajo son SIEMPRE de UN
@@ -4573,6 +4597,10 @@
         </div>
       </div>
 
+      <div class="pb-intro">
+        <div class="pb-intro-copy"><b>Leé el recorrido de izquierda a derecha.</b> Primero ves cuántos se registraron, cuántos hicieron su primera carga y cuántos volvieron a cargar. Los porcentajes muestran qué parte pasó al paso siguiente.</div>
+      </div>
+
       <!-- Banner: sin gasto cargado, CPA/ROAS no se pueden calcular -->
       <div class="fn-alerta amarillo" id="pbAvisoGasto" style="display:none;margin:0 20px 14px">
         <span><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h16.9a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4.5M12 17.2h.01"/></svg>Cargá el gasto del período para ver CPA y ROAS.</span>
@@ -4608,11 +4636,12 @@
         </div>
       </div>
 
-      <div class="fn-explicacion" style="margin:0 20px 14px">
-        <b>Cargas x jugador</b> es la retención: 1.0 significa que cargaron una sola vez y no volvieron;
+      <details class="pb-ayuda-detalle">
+        <summary>¿Qué significa “Cargas x jugador”?</summary>
+        <p><b>Cargas x jugador</b> es la retención: 1.0 significa que cargaron una sola vez y no volvieron;
         2.5 que en promedio cargaron dos veces y media. Es lo que distingue tráfico que se queda de
-        tráfico que prueba una vez y se va — y decide si el CPA que estás pagando cierra o no.
-      </div>
+        tráfico que prueba una vez y se va — y decide si el CPA que estás pagando cierra o no.</p>
+      </details>
 
       <div class="pb-seccion-titulo">Rentabilidad</div>
       <div class="fn-cards" id="pbCardsRentabilidad" style="margin:0 20px 6px">
@@ -4653,8 +4682,9 @@
         </div>
       </div>
 
-      <div class="fn-explicacion" style="margin:0 20px 14px">
-        <b>Acá se gana por cargas, no por registros.</b> Un registro que nunca carga es costo, no
+      <details class="pb-ayuda-detalle">
+        <summary>Cómo leer la rentabilidad y cuándo evaluar una campaña</summary>
+        <p><b>Acá se gana por cargas, no por registros.</b> Un registro que nunca carga es costo, no
         resultado, así que la cuenta que importa es contra los jugadores que SÍ pusieron plata.
         <br><br>
         <b>Mirá las dos en este orden:</b>
@@ -4675,24 +4705,26 @@
         pagar la pauta de hoy. Hasta ahí, la diferencia la ponés vos.
         <br><br>
         Ojo: <b>Depositado real</b> cuenta solo las cargas que el casino confirmó — no lo que el jugador
-        dijo que transfirió.
-      </div>
+        dijo que transfirió.</p>
+      </details>
 
       <div class="pb-seccion-titulo">Día por día <span id="pbDiaPeriodo" class="pb-dia-periodo"></span></div>
-      <p class="pb-hist-hint">
-        <b>Tocá el gasto de cualquier día y escribí el monto.</b> Enter guarda, Esc cancela.
-        La <b>×</b> lo borra.
-      </p>
+      <div class="pb-intro">
+        <div class="pb-intro-copy"><b>Cargá cuánto invertiste cada día.</b> Elegí una fecha y el monto total de pauta de esta campaña. Con ese dato se calculan el costo por registro, el costo por primera carga y el retorno.</div>
+        <button class="btn-mini-accion pb-gasto-cta" id="pbBtnGastoDia" type="button">+ Cargar gasto de un día</button>
+      </div>
+      <p class="pb-gasto-ayuda-top">También podés tocar el botón punteado de la columna <b>Gasto</b> para cargar o corregir ese día. Usá el período de arriba para consultar otras fechas.</p>
       <!-- Las dos columnas se leen como si midieran lo mismo y no: una va por
            la fecha del registro y la otra por la de la carga. Nahuel lo
            preguntó el 15/09 mirando "3 registros, 2 primeras cargas" un día en
            que, para él, la landing no había traído cargas -- y tenía razón: una
            de esas dos era de alguien registrado el día anterior. -->
-      <p class="pb-hist-hint">
-        <b>Registros</b> cuenta por el día en que se creó la cuenta; <b>1ª cargas</b>, por el día
+      <details class="pb-ayuda-detalle">
+        <summary>¿Por qué los registros y las primeras cargas pueden aparecer en días distintos?</summary>
+        <p><b>Registros</b> cuenta por el día en que se creó la cuenta; <b>1ª cargas</b>, por el día
         en que esa persona cargó por primera vez. No tienen por qué ser el mismo día — y que no lo
-        sean es normal: mucha gente se registra un día y carga al siguiente.
-      </p>
+        sean es normal: mucha gente se registra un día y carga al siguiente.</p>
+      </details>
       <p class="pb-hist-aviso" id="pbDiaAviso" style="display:none"></p>
       <div class="pb-tabla-wrap">
         <table class="pb-tabla">
@@ -4828,11 +4860,12 @@
            solapas, cargarle el gasto al equivocado es facil y no se nota hasta
            que los numeros no cierran. -->
       <p id="pgSub" class="cb-help" style="margin:-6px 0 10px"></p>
+      <p class="cb-help" style="margin:0 0 12px">Anotá el total que invertiste en publicidad ese día. Se suma a los resultados de esta campaña para calcular costos y retorno.</p>
 
-      <label for="pgFecha">Fecha</label>
+      <label for="pgFecha">Día de la inversión</label>
       <input id="pgFecha" type="date">
 
-      <label for="pgMonto">Monto gastado ese día</label>
+      <label for="pgMonto">Total invertido ese día</label>
       <input id="pgMonto" type="number" min="0" step="0.01" placeholder="0">
 
       <div id="pgMsg" class="msg"></div>
@@ -15654,6 +15687,7 @@ async function credTabla(cual){
   });
   $("#pbBtnCargarGasto").addEventListener("click", ()=>pbAbrirModalGasto());
   $("#pbBtnCargarGastoAviso").addEventListener("click", ()=>pbAbrirModalGasto());
+  $("#pbBtnGastoDia").addEventListener("click", ()=>pbAbrirModalGasto());
 
   // ---------- exportar (todo el reporte del publicista activo, para IA) ----------
   async function pbExportarJson(){
