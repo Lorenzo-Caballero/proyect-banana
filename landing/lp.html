@@ -90,7 +90,15 @@
      sigue frenando el desborde en pantallas chicas. */
   .cifra{font-size:calc(clamp(96px,30vw,180px) * var(--esc-cifra,1));font-weight:900;line-height:.92;
     background:linear-gradient(180deg,var(--destacado2) 8%,var(--destacado) 52%,var(--destacado-osc) 100%);
-    -webkit-background-clip:text;background-clip:text;color:transparent;
+    /* El color sólido es el respaldo. Safari móvil necesita también
+       -webkit-text-fill-color para recortar el degradado dentro del texto;
+       `color: transparent` solo podía dejar la cifra invisible. */
+    color:var(--destacado)}
+  @supports ((-webkit-background-clip:text) or (background-clip:text)){
+    .cifra{-webkit-background-clip:text;background-clip:text;color:transparent;
+      -webkit-text-fill-color:transparent}
+  }
+  .cifra{
     filter:drop-shadow(0 6px 26px rgba(0,0,0,.35));letter-spacing:-.02em}
   .cifra span{font-size:.52em;vertical-align:super;margin-left:-.04em}
 
