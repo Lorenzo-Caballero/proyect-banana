@@ -2254,12 +2254,14 @@
   /* Rotulo de seccion con linea: sin ella, tres titulos sueltos entre
      bloques de tarjetas no separan nada -- flotan. */
   .pb-seccion-titulo{display:flex;align-items:center;gap:12px;
-    font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;
-    color:var(--muted);padding:4px 20px;margin-top:10px;margin-bottom:2px}
+    font-size:14px;font-weight:700;text-transform:none;letter-spacing:0;
+    color:var(--txt);padding:6px 20px;margin-top:12px;margin-bottom:4px}
   .pb-seccion-titulo::after{content:"";flex:1;height:1px;background:var(--line)}
 
   .pb-funnel{display:flex;align-items:stretch;gap:6px;padding:14px;margin:0 20px 14px;
     background:var(--panel2);border:1px solid var(--line);border-radius:14px;overflow-x:auto}
+  .pb-metricas{margin:0 20px 18px;gap:10px}
+  #pbCardsCosto{grid-template-columns:repeat(2,minmax(0,1fr));max-width:720px}
   .pb-intro{margin:0 20px 14px;padding:13px 16px;border:1px solid var(--line);
     border-radius:13px;background:var(--panel2);display:flex;align-items:center;
     justify-content:space-between;gap:14px;color:var(--muted);font-size:13px;line-height:1.5}
@@ -2273,8 +2275,7 @@
   .pb-gasto-cta{font-size:12px;white-space:nowrap;flex:none}
   .pb-gasto-ayuda-top{margin:0 20px 10px;color:var(--muted);font-size:12px;line-height:1.45}
   @media(max-width:640px){
-    .pb-intro{align-items:stretch;flex-direction:column}
-    .pb-gasto-cta{width:100%}
+    .pb-intro{align-items:center;flex-direction:row;flex-wrap:wrap}
   }
   /* Cada etapa es una tarjeta: sin caja propia, cuatro numeros en fila se
      leen como una tabla, no como pasos de un recorrido. */
@@ -2282,11 +2283,8 @@
     display:flex;flex-direction:column;justify-content:center;gap:5px;
     padding:13px 10px;border-radius:12px;
     background:var(--panel);border:1px solid var(--line)}
-  /* El ultimo paso es el que decide si la pauta sirve: va destacado. */
-  .pb-funnel-final{background:var(--violetSoft);border-color:var(--violet)}
   .pb-funnel-num{font-size:26px;font-weight:800;line-height:1;
     font-variant-numeric:tabular-nums}
-  .pb-funnel-final .pb-funnel-num{color:var(--violet2)}
   .pb-funnel-label{color:var(--muted);font-size:11px;text-transform:uppercase;
     letter-spacing:.03em;line-height:1.3}
   .pb-funnel-flecha{display:flex;flex-direction:column;align-items:center;
@@ -2303,20 +2301,8 @@
        quedaba escrito de costado y habia que ladear la cabeza. */
     .pb-funnel-flecha{flex-direction:row;margin:2px 0;gap:8px}
     .pb-funnel-flecha svg{transform:rotate(90deg)}
+    #pbCardsCosto{grid-template-columns:1fr}
   }
-
-  /* "Cargas x jugador" es la retencion, el numero que decide si escalar o
-     cortar: se marca con la barra violeta arriba, no solo con el borde. */
-  .pb-card-destacada{border-color:var(--violet);position:relative;overflow:hidden}
-  .pb-card-destacada::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;
-    background:linear-gradient(90deg,var(--violet2),var(--violet))}
-  /* El verde marca el resultado de retorno, como en Retención. */
-  .pb-card-destacada{border-color:var(--green);background:linear-gradient(180deg,rgba(58,196,125,.10),var(--panel))}
-  .pb-card-destacada::before{background:linear-gradient(90deg,var(--green),var(--green2))}
-  .pb-card-destacada .v{color:var(--green2)}
-  .pb-funnel-final{background:rgba(58,196,125,.10);border-color:var(--green)}
-  .pb-funnel-final .pb-funnel-num{color:var(--green2)}
-  .pb-funnel-final .pb-funnel-label{color:var(--txt)}
 
   .pb-tabla-wrap{overflow-x:auto;margin:0 20px 20px;border:1px solid var(--line);border-radius:13px}
   .pb-tabla{width:100%;border-collapse:collapse;font-size:13px;min-width:520px}
@@ -4560,6 +4546,7 @@
         </div>
       </div>
 
+      <div class="pb-seccion-titulo">Jugadores y conversiones</div>
       <!-- Resumen visual del embudo: cada paso es JUGADORES (no depósitos),
            para que la caída de un paso al siguiente se lea de un vistazo. -->
       <div class="pb-funnel" id="pbFunnel">
@@ -4591,14 +4578,10 @@
           <span id="pfConvCargaVolvio">—</span>
           <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
         </div>
-        <div class="pb-funnel-paso pb-funnel-final">
+        <div class="pb-funnel-paso">
           <div class="pb-funnel-num" id="pfVolvieron">—</div>
           <div class="pb-funnel-label">Volvió a cargar</div>
         </div>
-      </div>
-
-      <div class="pb-intro">
-        <div class="pb-intro-copy"><b>Leé el recorrido de izquierda a derecha.</b> Primero ves cuántos se registraron, cuántos hicieron su primera carga y cuántos volvieron a cargar. Los porcentajes muestran qué parte pasó al paso siguiente.</div>
       </div>
 
       <!-- Banner: sin gasto cargado, CPA/ROAS no se pueden calcular -->
@@ -4607,113 +4590,64 @@
         <button class="btn-mini-accion" id="pbBtnCargarGastoAviso" type="button">Cargar ahora</button>
       </div>
 
-      <div class="pb-seccion-titulo">Embudo — solo jugadores creados desde la landing</div>
-      <div class="fn-cards" id="pbCardsEmbudo" style="margin:0 20px 6px">
-        <div class="fn-card">
-          <div class="k">Gasto</div>
-          <div class="v" id="pbGasto">—</div>
-          <div class="sub">cargado a mano</div>
-        </div>
-        <div class="fn-card">
-          <div class="k">Cargas totales</div>
-          <div class="v" id="pbCargasTotales">—</div>
-          <div class="sub">depósitos confirmados, no solo el primero</div>
-        </div>
-        <div class="fn-card pb-card-destacada">
-          <div class="k">Cargas x jugador</div>
-          <div class="v" id="pbCargasPorJugador">—</div>
-          <div class="sub">retención</div>
-        </div>
-        <div class="fn-card">
-          <div class="k">Depositado real</div>
-          <div class="v" id="pbDepositado">—</div>
-          <div class="sub">suma de TODAS las cargas</div>
-        </div>
-        <div class="fn-card">
-          <div class="k">Ticket promedio</div>
-          <div class="v" id="pbTicketPromedio">—</div>
-          <div class="sub">por carga</div>
-        </div>
+      <div class="pb-seccion-titulo">Inversión y retorno</div>
+      <div class="fn-cards pb-metricas" id="pbCardsResultado">
+        <div class="fn-card"><div class="k">Gasto publicitario</div><div class="v" id="pbGasto">—</div><div class="sub">inversión cargada para el período</div></div>
+        <div class="fn-card"><div class="k">Depositado real</div><div class="v" id="pbDepositado">—</div><div class="sub">total de cargas confirmadas</div></div>
+        <div class="fn-card"><div class="k">Balance frente a la pauta</div><div class="v" id="pbGanancia">—</div><div class="sub">depositado confirmado − gasto</div></div>
+        <div class="fn-card"><div class="k">ROAS total</div><div class="v" id="pbRoas">—</div><div class="sub">cuánto se depositó por cada peso invertido</div></div>
+        <div class="fn-card"><div class="k">ROAS de primera carga</div><div class="v" id="pbRoasPrimera">—</div><div class="sub">solo primeras cargas frente al gasto</div></div>
       </div>
 
-      <details class="pb-ayuda-detalle">
-        <summary>¿Qué significa “Cargas x jugador”?</summary>
-        <p><b>Cargas x jugador</b> es la retención: 1.0 significa que cargaron una sola vez y no volvieron;
-        2.5 que en promedio cargaron dos veces y media. Es lo que distingue tráfico que se queda de
-        tráfico que prueba una vez y se va — y decide si el CPA que estás pagando cierra o no.</p>
-      </details>
-
-      <div class="pb-seccion-titulo">Rentabilidad</div>
-      <div class="fn-cards" id="pbCardsRentabilidad" style="margin:0 20px 6px">
+      <div class="pb-seccion-titulo">Costo para conseguir jugadores</div>
+      <div class="fn-cards pb-metricas pb-metricas-costo" id="pbCardsCosto">
         <div class="fn-card">
-          <div class="k">Costo x registro <span class="fn-info" data-tip="CPR: cuánto gastaste en publicidad dividido la cantidad de cuentas nuevas creadas desde esta landing. Cuánto te cuesta conseguir UN registro, sin importar si después carga o no."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+          <div class="k">Costo por registro <span class="fn-info" data-tip="Gasto publicitario dividido por las cuentas nuevas creadas desde esta landing."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
           <div class="v" id="pbCpr">—</div>
-          <div class="sub">CPR</div>
+          <div class="sub">por cada cuenta creada</div>
         </div>
         <div class="fn-card">
-          <div class="k">Costo x carga <span class="fn-info" data-tip="CPA (costo por adquisición): cuánto gastaste dividido la cantidad de jugadores que hicieron su PRIMER depósito. A diferencia del CPR, sólo cuenta a los que efectivamente pagaron -- es el número real para saber si la pauta se paga sola."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+          <div class="k">Costo por primera carga <span class="fn-info" data-tip="Gasto publicitario dividido por los jugadores que hicieron su primera carga. Es el costo de adquirir un jugador que ya depositó."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
           <div class="v" id="pbCpa">—</div>
-          <div class="sub">CPA</div>
+          <div class="sub">CPA · por jugador que depositó</div>
         </div>
+      </div>
+
+      <div class="pb-seccion-titulo">Cuánto depositan los jugadores</div>
+      <div class="fn-cards pb-metricas" id="pbCardsValor">
         <div class="fn-card">
-          <div class="k">Deja en su 1ª carga <span class="fn-info" data-tip="De cada jugador que cargó, cuánto puso la PRIMERA vez. Es lo que recuperás en el acto. Si este número ya cubre el CPA, la campaña se paga sola desde el día uno y podés escalar sin poner plata de tu bolsillo."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+          <div class="k">Promedio de primera carga <span class="fn-info" data-tip="Monto promedio de la primera carga de cada jugador que depositó."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
           <div class="v" id="pbDejaPrimera">—</div>
-          <div class="sub">1ª carga / jugadores que cargaron</div>
+          <div class="sub">monto inicial por jugador</div>
         </div>
         <div class="fn-card">
-          <div class="k">Deja en total <span class="fn-info" data-tip="Todo lo que depositó cada jugador que cargó, incluidas las veces que volvió. Mismo divisor que el CPA, así que restarlos da plata de verdad. Este número CRECE con el tiempo: los jugadores que trajiste esta semana van a seguir cargando el mes que viene."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+          <div class="k">Carga promedio <span class="fn-info" data-tip="Monto promedio de todas las cargas confirmadas del período."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+          <div class="v" id="pbTicketPromedio">—</div>
+          <div class="sub">por depósito confirmado</div>
+        </div>
+        <div class="fn-card">
+          <div class="k">Depositado por jugador <span class="fn-info" data-tip="Total depositado dividido por la cantidad de jugadores que hicieron al menos una carga."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
           <div class="v" id="pbDejaJugador">—</div>
-          <div class="sub">depositado / jugadores que cargaron</div>
+          <div class="sub">acumulado por jugador con carga</div>
         </div>
         <div class="fn-card">
-          <div class="k">ROAS 1ª carga <span class="fn-info" data-tip="Cuánto volvió por cada peso de pauta contando SOLO las primeras cargas. Arriba de 1 = recuperás en el acto. Abajo de 1 no significa que la campaña sea mala: significa que recuperás cuando el jugador vuelve, y ahí lo que importa es cuánto aguante tenés."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
-          <div class="v" id="pbRoasPrimera">—</div>
-          <div class="sub">1ª carga / gasto</div>
-        </div>
-        <div class="fn-card">
-          <div class="k">ROAS</div>
-          <div class="v" id="pbRoas">—</div>
-          <div class="sub">depositado / gasto</div>
-        </div>
-        <div class="fn-card">
-          <div class="k">Ganancia</div>
-          <div class="v" id="pbGanancia">—</div>
-          <div class="sub">depositado − gasto</div>
+          <div class="k">Cargas por jugador <span class="fn-info" data-tip="Cantidad promedio de cargas de quienes depositaron: 1 equivale a una sola; más de 1 indica que algunos volvieron a cargar."><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.4M12 7.7h.01"/></svg><span class="fn-popover"></span></span></div>
+          <div class="v" id="pbCargasPorJugador">—</div>
+          <div class="sub"><span id="pbCargasTotales">—</span> cargas confirmadas</div>
         </div>
       </div>
 
       <details class="pb-ayuda-detalle">
-        <summary>Cómo leer la rentabilidad y cuándo evaluar una campaña</summary>
-        <p><b>Acá se gana por cargas, no por registros.</b> Un registro que nunca carga es costo, no
-        resultado, así que la cuenta que importa es contra los jugadores que SÍ pusieron plata.
-        <br><br>
-        <b>Mirá las dos en este orden:</b>
-        <br>
-        1) <b>Deja en su 1ª carga</b> contra el <b>CPA</b>. Si ya lo cubre, la campaña se paga sola
-        desde el día uno: podés escalar sin poner plata de tu bolsillo.
-        <br>
-        2) Si no lo cubre, mirá <b>Deja en total</b> contra el <b>CPA</b>. Que recuperes recién cuando
-        el jugador vuelve es <b>normal y sano</b> — no es una campaña mala, es una campaña que tarda.
-        Lo que hay que medir ahí es <i>cuánto</i> tarda, porque ese es el capital que tenés que bancar
-        mientras tanto.
-        <br><br>
-        <b>Deja en total crece con el tiempo</b>: los jugadores que trajiste esta semana van a seguir
-        cargando el mes que viene, y ese número se va a ver mejor cada vez que lo mires. Por eso una
-        campaña de pocos días SIEMPRE parece peor de lo que es. No la cortes por el número del primer día.
-        <br><br>
-        El modelo se vuelve escalable cuando lo que dejan los jugadores que ya trajiste alcanza para
-        pagar la pauta de hoy. Hasta ahí, la diferencia la ponés vos.
-        <br><br>
-        Ojo: <b>Depositado real</b> cuenta solo las cargas que el casino confirmó — no lo que el jugador
-        dijo que transfirió.</p>
+        <summary>Cómo interpretar estos resultados</summary>
+        <p>Compará el <b>costo por primera carga</b> con el <b>promedio de primera carga</b> para ver cuánto se recupera inicialmente. El <b>depositado por jugador</b> incluye las cargas posteriores. El balance mostrado resta solo la pauta al depositado confirmado; no descuenta otros costos.</p>
       </details>
 
       <div class="pb-seccion-titulo">Día por día <span id="pbDiaPeriodo" class="pb-dia-periodo"></span></div>
       <div class="pb-intro">
-        <div class="pb-intro-copy"><b>Cargá cuánto invertiste cada día.</b> Elegí una fecha y el monto total de pauta de esta campaña. Con ese dato se calculan el costo por registro, el costo por primera carga y el retorno.</div>
-        <button class="btn-mini-accion pb-gasto-cta" id="pbBtnGastoDia" type="button">+ Cargar gasto de un día</button>
+        <div class="pb-intro-copy"><b>Gasto de pauta</b><span class="pb-gasto-inline-help"> · Ingresá la inversión total del día para esta campaña.</span></div>
+        <button class="btn-mini-accion pb-gasto-cta" id="pbBtnGastoDia" type="button">+ Cargar gasto</button>
       </div>
-      <p class="pb-gasto-ayuda-top">También podés tocar el botón punteado de la columna <b>Gasto</b> para cargar o corregir ese día. Usá el período de arriba para consultar otras fechas.</p>
+      <p class="pb-gasto-ayuda-top">También podés cargar o corregir el gasto desde la columna <b>Gasto</b> de cada fecha.</p>
       <!-- Las dos columnas se leen como si midieran lo mismo y no: una va por
            la fecha del registro y la otra por la de la carga. Nahuel lo
            preguntó el 15/09 mirando "3 registros, 2 primeras cargas" un día en
