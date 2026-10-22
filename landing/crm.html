@@ -2731,18 +2731,73 @@
     border-radius:8px;padding:8px 13px;font-size:12.5px;cursor:pointer}
   .cs-mano:hover{color:var(--txt);border-color:var(--muted)}
   /* Peticiones de jugadores: las dos secciones bajo el mismo filtro. */
-  /* Retención: dos tablas que se leen de un vistazo. */
+  /* Retención: primero una respuesta sencilla; el historial queda debajo. */
   #viewRetencion{overflow-y:auto;overflow-x:hidden}
+  .reten-contenido{padding:14px 18px 22px;min-width:0}
+  .reten-intro{margin:0 0 14px;color:var(--muted);font-size:13px;line-height:1.5;max-width:850px}
+  .reten-hero{display:grid;grid-template-columns:minmax(210px,.72fr) minmax(260px,1fr);gap:18px;
+    align-items:center;padding:18px 20px;margin-bottom:12px;border:1px solid var(--line2);
+    border-radius:16px;background:linear-gradient(115deg,var(--greenSoft),var(--panel) 62%)}
+  .reten-hero-k{font-size:11px;color:var(--muted);font-weight:750;text-transform:uppercase;letter-spacing:.06em}
+  .reten-hero-num{display:flex;align-items:baseline;gap:8px;margin:4px 0 2px}
+  .reten-hero-num strong{font-size:clamp(30px,4vw,44px);line-height:1;font-weight:850;letter-spacing:-.04em;color:var(--green2)}
+  .reten-hero-num span{font-size:13px;font-weight:700}
+  .reten-hero-num.poca strong{font-size:32px;color:var(--txt);letter-spacing:-.02em}
+  .reten-hero-mes{font-size:12px;color:var(--muted)}
+  .reten-hero-detalle{font-size:13px;line-height:1.5}
+  .reten-hero-detalle b{color:var(--txt)}
+  .reten-hero-track{height:8px;margin-top:10px;border-radius:99px;background:var(--panel3);overflow:hidden}
+  .reten-hero-track i{display:block;height:100%;width:0;border-radius:inherit;background:var(--green);transition:width .3s ease}
+  .reten-hero-track i.media{background:var(--orange)}
+  .reten-hero-track i.baja{background:var(--red)}
+  .reten-hero-aviso{display:block;margin-top:6px;color:var(--orange2);font-size:11.5px}
+  .reten-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:20px}
+  .reten-kpi{padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel2);min-width:0}
+  .reten-kpi span{display:block;color:var(--muted);font-size:11px;font-weight:750;text-transform:uppercase;letter-spacing:.04em}
+  .reten-kpi strong{display:block;margin-top:3px;font-size:22px;line-height:1.2;font-weight:800;font-variant-numeric:tabular-nums}
+  .reten-kpi small{display:block;margin-top:3px;color:var(--muted);font-size:11.5px;line-height:1.4}
+  .reten-seccion{padding-top:16px;margin-top:14px;border-top:1px solid var(--line)}
+  .reten-seccion h3{margin:0;font-size:15px;letter-spacing:-.01em}
+  .reten-seccion>p{margin:4px 0 12px;color:var(--muted);font-size:12px;line-height:1.45}
+  .reten-chart{display:grid;gap:10px;max-width:850px}
+  .reten-fila{display:grid;grid-template-columns:72px minmax(80px,1fr) minmax(170px,.85fr);gap:12px;align-items:center}
+  .reten-fila-mes{font-size:12px;font-weight:750;white-space:nowrap}
+  .reten-track{height:10px;border-radius:99px;background:var(--panel3);overflow:hidden}
+  .reten-track i{display:block;height:100%;border-radius:inherit;background:var(--green);min-width:0}
+  .reten-track i.media{background:var(--orange)}
+  .reten-track i.baja{background:var(--red)}
+  .reten-track i.muestra{background:var(--muted2)}
+  .reten-fila-dato{font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .reten-fila-dato b{color:var(--txt)}
+  .reten-muestra{display:inline-block;margin-left:5px;color:var(--orange2);font-size:10.5px}
+  .reten-vacio{color:var(--muted);padding:12px 0;font-size:12.5px}
+  .reten-detalle{margin-top:20px;border:1px solid var(--line);border-radius:12px;background:var(--panel2)}
+  .reten-detalle summary{cursor:pointer;padding:12px 14px;font-size:13px;font-weight:750;list-style:none}
+  .reten-detalle summary::-webkit-details-marker{display:none}
+  .reten-detalle summary::after{content:"＋";float:right;color:var(--muted)}
+  .reten-detalle[open] summary::after{content:"−"}
+  .reten-detalle-cuerpo{padding:0 14px 14px}
+  .reten-detalle-cuerpo p{margin:0 0 10px;color:var(--muted);font-size:12px;line-height:1.5}
   .reten-scroll{overflow-x:auto;max-width:100%}
-  .reten-tabla{border-collapse:collapse;font-size:12.5px;min-width:520px}
-  .reten-tabla th,.reten-tabla td{padding:5px 9px;text-align:left;white-space:nowrap}
-  .reten-tabla th{color:var(--muted);font-weight:600;font-size:11.5px;
-    border-bottom:1px solid var(--linea,#e4e4e7)}
+  .reten-tabla{border-collapse:collapse;font-size:12px;min-width:540px}
+  .reten-tabla th,.reten-tabla td{padding:7px 9px;text-align:left;white-space:nowrap}
+  .reten-tabla th{color:var(--muted);font-weight:650;font-size:11px;border-bottom:1px solid var(--line2)}
   .reten-tabla td.num,.reten-tabla th.num{text-align:right}
   .reten-tabla tr:hover td{background:var(--panel3)}
   .reten-nota{color:var(--muted);font-size:10.5px;font-weight:400}
-  .reten-na{color:var(--muted);opacity:.55;font-style:normal}
-  .reten-vacio{color:var(--muted);padding:14px 4px}
+  .reten-na{color:var(--muted);opacity:.65;font-style:normal}
+  .reten-cobertura{margin:12px 0 0;color:var(--muted);font-size:11px;line-height:1.45}
+  @media(max-width:760px){
+    .reten-contenido{padding:12px 13px 20px}
+    .reten-hero{grid-template-columns:1fr;gap:10px;padding:15px}
+    .reten-kpis{grid-template-columns:1fr;gap:7px;margin-bottom:16px}
+    .reten-kpi{display:grid;grid-template-columns:1fr auto;column-gap:12px;align-items:center;padding:10px 12px}
+    .reten-kpi span{grid-column:1;grid-row:1}
+    .reten-kpi strong{grid-column:2;grid-row:1/3;margin:0}
+    .reten-kpi small{grid-column:1;grid-row:2}
+    .reten-fila{grid-template-columns:56px minmax(48px,.7fr) minmax(128px,1fr);gap:8px}
+    .reten-fila-dato{font-size:10.5px}
+  }
   .pt-sec{min-width:0}
   .pt-sec + .pt-sec{margin-top:18px;padding-top:16px;border-top:1px solid var(--linea,#e4e4e7)}
   .pt-sec-tit{margin:0 0 8px;font-size:13px;display:flex;align-items:center;gap:7px}
@@ -3033,7 +3088,7 @@
       <button class="rail-item" data-nav="transacciones" data-tip="Auditoría" data-corto="Auditoría"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></button>
       <button class="rail-item" data-nav="finanzas" data-tip="Finanzas" data-corto="Finanzas"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></button>
       <button class="rail-item" data-nav="comprobantes" data-tip="Comprobantes" data-corto="Compr."><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg><span class="rail-badge" id="badgeComprobantes"></span></button>
-      <button class="rail-item" data-nav="retencion" data-tip="Retención: ¿los jugadores se quedan?" data-corto="Retención"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M21 7h-5"/><path d="M21 7v5"/></svg></button>
+      <button class="rail-item" data-nav="retencion" data-tip="Retención" data-corto="Retención"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M21 7h-5"/><path d="M21 7v5"/></svg></button>
       <button class="rail-item" data-nav="peticiones" data-tip="Peticiones de jugadores: depósitos y retiros" data-corto="Peticiones"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/></svg><span class="rail-badge" id="badgePeticiones"></span></button>
       <!-- Solo en modo asistido: oculto salvo que haya recargas esperando tu
            visto bueno. Un cliente "completo" nunca genera por_aprobar, así que
@@ -3442,61 +3497,49 @@
        las guardas que protegen la plata (nunca rechazar una carga con
        transferencia reclamada, nunca aprobar un retiro que ya figura en el
        libro). Esto es una pantalla nueva alrededor de lo que ya funcionaba. -->
-  <!-- ===== RETENCIÓN: ¿los jugadores que traemos se quedan? =====
-       EL PEDIDO (Nahuel, 19/09/2026): *"nuestro negocio se basa en la
-       acumulación de clientes... esos clientes que vamos ganando es muy
-       importante mantenerlos. Intertemporalmente también vamos perdiendo
-       clientes, así que tenemos que hacer que esa pérdida sea de una tasa lo
-       más baja posible"*.
-
-       DOS TABLAS Y NO UNA, porque son dos preguntas con acciones distintas:
-       mes a mes es la salud de AHORA (y `perdidos` es el número a bajar);
-       las cohortes son la CALIDAD de lo que trae la publicidad, y avisan
-       antes -- en esta base la cohorte de noviembre retenía el 68% al mes
-       siguiente y la de enero el 30%, con el volumen de entrada todavía
-       alto. -->
+  <!-- ===== RETENCIÓN: ¿los jugadores vuelven a cargar? ===== -->
   <div class="card-col view-panel" id="viewRetencion" style="display:none">
     <div class="comp-head">
       <b>Retención</b>
       <span class="cap" id="retenCap"></span>
     </div>
-    <p class="vista-ayuda">
-      Si la publicidad trae jugadores y se van al mes, el negocio corre para
-      quedarse quieto. Acá se ve cuántos se quedan y cuántos se pierden.
-      <b>Un jugador cuenta como activo en un mes si cargó al menos una vez.</b>
-    </p>
+    <div class="reten-contenido">
+      <p class="reten-intro">Mirá si quienes cargaron vuelven a hacerlo. Se cuenta una persona una sola vez por mes, aunque haya cargado varias veces.</p>
 
-    <div class="nv-cob-grid" id="retenCards">
-      <div class="nv-cob-card destacada" id="retenCardPerdidos"
-           title="De los que estaban activos el mes pasado, cuántos no volvieron a cargar. Es el número que la fidelización tiene que bajar.">
-        <div class="k">Se perdieron el mes pasado</div><div class="v">—</div><div class="sub">—</div>
+      <section class="reten-hero" aria-live="polite">
+        <div>
+          <div class="reten-hero-k">Del último mes completo</div>
+          <div class="reten-hero-num" id="retenHeroNum"><strong id="retenHeroValor">—</strong><span id="retenHeroUnidad">retención</span></div>
+          <div class="reten-hero-mes" id="retenHeroMes">Esperando datos…</div>
+        </div>
+        <div>
+          <div class="reten-hero-detalle" id="retenHeroDetalle">Cargando el resumen…</div>
+          <small class="reten-hero-aviso" id="retenHeroAviso" style="display:none"></small>
+          <div class="reten-hero-track" id="retenHeroTrack"><i id="retenHeroBar"></i></div>
+        </div>
+      </section>
+
+      <div class="reten-kpis" aria-label="Resumen del mes actual">
+        <div class="reten-kpi"><span>Activos este mes</span><strong id="retenActivos">—</strong><small id="retenActivosSub">Personas que ya cargaron este mes.</small></div>
+        <div class="reten-kpi"><span>Primera carga</span><strong id="retenNuevos">—</strong><small>Jugadores que cargaron por primera vez.</small></div>
+        <div class="reten-kpi"><span>Volvieron</span><strong id="retenRecuperados">—</strong><small>Ya habían cargado antes, pero no el mes pasado.</small></div>
       </div>
-      <div class="nv-cob-card" id="retenCardActivos"
-           title="Jugadores distintos que cargaron al menos una vez este mes. El mes en curso todavía no terminó: va a subir.">
-        <div class="k">Activos este mes</div><div class="v">—</div><div class="sub">—</div>
-      </div>
-      <div class="nv-cob-card" id="retenCardNuevos"
-           title="Jugadores que hicieron su PRIMERA carga este mes. Es lo que trae la publicidad.">
-        <div class="k">Nuevos este mes</div><div class="v">—</div><div class="sub">—</div>
-      </div>
-      <div class="nv-cob-card" id="retenCardVuelven"
-           title="Estaban inactivos y volvieron a cargar. Es exactamente lo que la campaña de fidelización intenta provocar.">
-        <div class="k">Volvieron</div><div class="v">—</div><div class="sub">—</div>
-      </div>
+
+      <section class="reten-seccion">
+        <h3>¿Cuántos siguen cargando al mes siguiente?</h3>
+        <p>Compara cada mes completo con el anterior. La barra muestra qué proporción volvió; al lado ves la cantidad de personas que hay detrás del porcentaje.</p>
+        <div class="reten-chart" id="retenGrafico" aria-live="polite"><div class="reten-vacio">Cargando…</div></div>
+      </section>
+
+      <details class="reten-detalle">
+        <summary>Ver si los jugadores nuevos vuelven con el tiempo</summary>
+        <div class="reten-detalle-cuerpo">
+          <p>Cada fila agrupa a quienes hicieron su primera carga en ese mes. Las columnas muestran qué porcentaje volvió a cargar en los meses siguientes. Los meses recientes todavía están incompletos.</p>
+          <div class="reten-scroll"><table class="reten-tabla" id="retenCohortes"></table></div>
+        </div>
+      </details>
+      <p class="reten-cobertura" id="retenPie"></p>
     </div>
-
-    <h4 class="pt-sec-tit" style="margin-top:18px">De los que llegaron cada mes, cuántos seguían después</h4>
-    <p class="cfg-hint" style="margin:0 0 8px">
-      Cada fila es la gente que hizo su primera carga ese mes. Se lee hacia la
-      derecha: <b>+1</b> es el mes siguiente, <b>+2</b> el otro. Si una fila cae
-      más rápido que la de arriba, la publicidad de ese mes trajo peor gente
-      — y eso se ve <b>antes</b> de que baje la cantidad de jugadores.
-    </p>
-    <div class="reten-scroll"><table class="reten-tabla" id="retenCohortes"></table></div>
-
-    <h4 class="pt-sec-tit" style="margin-top:22px">Mes a mes</h4>
-    <div class="reten-scroll"><table class="reten-tabla" id="retenMeses"></table></div>
-    <p class="cfg-hint" id="retenPie" style="margin-top:10px"></p>
   </div>
 
   <div class="card-col view-panel" id="viewPorAprobar" style="display:none">
@@ -11699,11 +11742,7 @@ async function credTabla(cual){
     else { b.textContent = ""; b.classList.remove("on"); }
   }
 
-  /* ---------- RETENCIÓN: ¿los jugadores que traemos se quedan? -------------
-     Dos tablas porque son dos preguntas distintas (ver el comentario del
-     markup). Todo lo calcula el server: acá solo se dibuja, y la única
-     decisión de esta capa es CUÁNDO callarse -- con muestras chicas un
-     porcentaje miente más de lo que informa. */
+  /* ---------- RETENCIÓN: ¿los jugadores vuelven a cargar? ------------------ */
   const API_RETEN = API_BASE + "/crm_retencion.php";
 
   const MES_NOM = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
@@ -11712,106 +11751,104 @@ async function credTabla(cual){
     if(p.length !== 2) return String(m || "");
     return MES_NOM[(+p[1]) - 1] + " " + p[0].slice(2);
   }
-  /* El color de una celda de cohorte. Verde = se quedaron, rojo = se fueron.
-     Es lo que hace que la tabla se lea de un vistazo: la diagonal que se apaga
-     es la historia del negocio. */
+  /* Verde = buena continuidad, ámbar = atención, rojo = muchos no volvieron. */
   function retenColor(pct){
-    if(pct >= 60) return "rgba(34,197,94,.30)";
-    if(pct >= 40) return "rgba(132,204,22,.28)";
-    if(pct >= 20) return "rgba(250,204,21,.28)";
-    if(pct > 0)   return "rgba(249,115,22,.26)";
+    if(pct >= 70) return "rgba(47,208,122,.24)";
+    if(pct >= 40) return "rgba(245,166,35,.22)";
+    if(pct > 0)   return "rgba(229,89,93,.20)";
     return "transparent";
   }
 
   async function cargarRetencion(){
-    const tc = $("#retenCohortes"), tm = $("#retenMeses");
-    if(!tc || !tm) return;
-    if(!tc.innerHTML) tc.innerHTML = `<tr><td class="reten-vacio">Cargando…</td></tr>`;
+    const tc = $("#retenCohortes"), graf = $("#retenGrafico");
+    if(!tc || !graf) return;
+    if(!graf.innerHTML) graf.innerHTML = `<div class="reten-vacio">Cargando…</div>`;
 
     let d;
     try { d = await jget({accion:"resumen", meses:14}, API_RETEN); }
-    catch(e){ tc.innerHTML = `<tr><td class="reten-vacio">Error al cargar.</td></tr>`; return; }
-    if(!d.ok){ tc.innerHTML = `<tr><td class="reten-vacio">${esc(d.error||"Error")}</td></tr>`; return; }
+    catch(e){ graf.innerHTML = `<div class="reten-vacio">No se pudieron cargar estos datos. Probá de nuevo más tarde.</div>`; return; }
+    if(!d.ok){ graf.innerHTML = `<div class="reten-vacio">${esc(d.error||"No se pudieron cargar los datos")}</div>`; return; }
 
     const meses = d.mes_a_mes || [];
     const enCurso = meses.find(m => m.en_curso) || {};
     const ult = d.titular || {};
+    const baseUlt = (ult.retenidos || 0) + (ult.perdidos || 0);
+    const pctUlt = baseUlt ? Math.round((ult.retenidos || 0) * 100 / baseUlt) : null;
+    const pocosUlt = !!ult.poca_muestra;
+    const heroNum = $("#retenHeroNum");
+    $("#retenHeroValor").textContent = pctUlt === null ? "—" : (pocosUlt
+      ? `${nf.format(ult.retenidos || 0)} de ${nf.format(baseUlt)}` : `${pctUlt}%`);
+    $("#retenHeroUnidad").textContent = pocosUlt ? "siguieron" : "retención";
+    heroNum.classList.toggle("poca", pocosUlt);
+    $("#retenHeroMes").textContent = ult.mes
+      ? `${retenMes(ult.mes)} · último mes completo` : "Todavía no hay un mes completo para comparar";
+    $("#retenHeroDetalle").innerHTML = ult.mes && baseUlt
+      ? `De los <b>${nf.format(baseUlt)}</b> jugadores que cargaron el mes anterior, <b>${nf.format(ult.retenidos || 0)}</b> también cargaron en ${esc(retenMes(ult.mes))}.`
+      : "Cuando haya actividad en dos meses seguidos, acá vas a ver cuántos jugadores regresaron a cargar.";
+    const avisoMuestra = $("#retenHeroAviso");
+    avisoMuestra.style.display = pocosUlt ? "" : "none";
+    avisoMuestra.textContent = pocosUlt ? "Pocos jugadores: mirá varios meses antes de sacar una conclusión." : "";
+    const heroBar = $("#retenHeroBar");
+    heroBar.style.width = pctUlt === null || pocosUlt ? "0%" : `${pctUlt}%`;
+    heroBar.className = pctUlt !== null && pctUlt < 40 ? "baja" : (pctUlt !== null && pctUlt < 70 ? "media" : "");
+    $("#retenHeroTrack").style.display = pctUlt === null || pocosUlt ? "none" : "";
 
-    /* ---- las cuatro tarjetas ---- */
-    const card = (sel, v, sub)=>{
-      const c = $(sel); if(!c) return;
-      c.querySelector(".v").textContent = v;
-      c.querySelector(".sub").textContent = sub;
-    };
-    /* El titular es el último mes CERRADO: el mes en curso siempre se ve peor
-       de lo que va a terminar siendo, porque le faltan días. */
-    if(ult.mes){
-      const pocos = ult.poca_muestra;
-      card("#retenCardPerdidos",
-           pocos || ult.pct_perdidos === null ? nf.format(ult.perdidos || 0) : ult.pct_perdidos + "%",
-           pocos ? `${nf.format(ult.perdidos||0)} jugadores en ${retenMes(ult.mes)} · muestra chica para un %`
-                 : `${nf.format(ult.perdidos||0)} de ${nf.format((ult.perdidos||0)+(ult.retenidos||0))} que estaban · ${retenMes(ult.mes)}`);
+    $("#retenActivos").textContent = nf.format(enCurso.activos || 0);
+    $("#retenActivosSub").textContent = enCurso.mes
+      ? `${retenMes(enCurso.mes)} · el mes todavía está en curso` : "No hubo actividad registrada este mes.";
+    $("#retenNuevos").textContent = nf.format(enCurso.nuevos || 0);
+    $("#retenRecuperados").textContent = nf.format(enCurso.recuperados || 0);
+
+    /* ---- Tendencia mensual: sin tabla ni columnas que obliguen a interpretar. ---- */
+    const tendencia = meses.filter(m => !m.en_curso && !m.primero).slice(-6);
+    if(!tendencia.length){
+      graf.innerHTML = `<div class="reten-vacio">Todavía no hay dos meses completos para comparar.</div>`;
     } else {
-      card("#retenCardPerdidos", "—", "Todavía no hay un mes cerrado para comparar");
+      graf.innerHTML = tendencia.map(m => {
+        const base = (m.retenidos || 0) + (m.perdidos || 0);
+        if(!base) return "";
+        const pct = Math.round((m.retenidos || 0) * 100 / base);
+        const clase = m.poca_muestra ? "muestra" : (pct < 40 ? "baja" : (pct < 70 ? "media" : ""));
+        return `<div class="reten-fila" title="${esc(retenMes(m.mes))}: ${nf.format(m.retenidos||0)} de ${nf.format(base)} jugadores del mes anterior volvieron a cargar.">
+          <b class="reten-fila-mes">${esc(retenMes(m.mes))}</b>
+          <div class="reten-track" role="img" aria-label="${pct}% volvió a cargar"><i class="${clase}" style="width:${pct}%"></i></div>
+          <div class="reten-fila-dato"><b>${nf.format(m.retenidos||0)} de ${nf.format(base)}</b> volvieron · ${pct}%${m.poca_muestra?'<span class="reten-muestra">pocos jugadores</span>':''}</div>
+        </div>`;
+      }).join("") || `<div class="reten-vacio">No hay actividad suficiente para mostrar la tendencia.</div>`;
     }
-    card("#retenCardActivos", nf.format(enCurso.activos || 0),
-         `${retenMes(enCurso.mes || "")} · el mes no terminó, va a subir`);
-    card("#retenCardNuevos", nf.format(enCurso.nuevos || 0), "primera carga este mes");
-    card("#retenCardVuelven", nf.format(enCurso.recuperados || 0),
-         "estaban inactivos y volvieron");
 
-    /* ---- la tabla de cohortes ---- */
+    /* ---- Detalle por mes de primera carga (lectura opcional). ---- */
     const coh = d.cohortes || [];
-    const maxP = Math.min(10, d.max_periodos || 0);
+    const maxP = Math.min(6, d.max_periodos || 0);
     if(!coh.length){
       tc.innerHTML = `<tr><td class="reten-vacio">Todavía no hay meses con jugadores nuevos.</td></tr>`;
     } else {
-      let h = `<tr><th>Llegaron en</th><th class="num">Nuevos</th>`;
-      for(let i = 0; i <= maxP; i++){ h += `<th class="num">+${i}</th>`; }
+      let h = `<tr><th>Primera carga</th><th class="num">Jugadores</th>`;
+      for(let i = 0; i <= maxP; i++){
+        h += `<th class="num">${i===0 ? "Inicio" : (i===1 ? "1 mes después" : `${i} meses después`)}</th>`;
+      }
       h += `</tr>`;
       for(const c of coh){
-        h += `<tr><td>${esc(retenMes(c.cohorte))}${c.en_curso?' <span class="reten-nota">en curso</span>':''}</td>`
+        h += `<tr><td>${esc(retenMes(c.cohorte))}${c.en_curso?' <span class="reten-nota">mes actual</span>':''}</td>`
            + `<td class="num"><b>${nf.format(c.nuevos)}</b></td>`;
         for(let i = 0; i <= maxP; i++){
           const p = c.serie[i];
           if(!p){ h += `<td class="num reten-na"></td>`; continue; }
-          /* El último punto de una cohorte en curso todavía va a subir: se
-             muestra en gris para que no se lea como una caída. */
-          const parcial = c.en_curso && i === c.serie.length - 1;
+          const parcial = c.en_curso && i > 0 && i === c.serie.length - 1;
           h += `<td class="num" style="background:${parcial?"transparent":retenColor(p.pct)}"`
              + (parcial?' title="Este mes todavía no terminó"':'')
-             + `>${parcial?'<i class="reten-na">':''}${p.pct}%${parcial?'</i>':''}</td>`;
+             + `>${parcial?'<i class="reten-na">':''}${p.pct}% <span class="reten-nota">(${nf.format(p.jugadores)})</span>${parcial?'</i>':''}</td>`;
         }
         h += `</tr>`;
       }
       tc.innerHTML = h;
     }
 
-    /* ---- la tabla mes a mes ---- */
-    let hm = `<tr><th>Mes</th><th class="num">Activos</th><th class="num">Nuevos</th>`
-           + `<th class="num">Siguieron</th><th class="num">Volvieron</th>`
-           + `<th class="num">Se perdieron</th><th class="num">% perdido</th></tr>`;
-    for(const m of [...meses].reverse()){
-      hm += `<tr><td>${esc(retenMes(m.mes))}${m.en_curso?' <span class="reten-nota">en curso</span>':''}</td>`
-          + `<td class="num"><b>${nf.format(m.activos)}</b></td>`
-          + `<td class="num">${nf.format(m.nuevos)}</td>`
-          + `<td class="num">${nf.format(m.retenidos)}</td>`
-          + `<td class="num">${nf.format(m.recuperados)}</td>`
-          + `<td class="num">${nf.format(m.perdidos)}</td>`
-          /* Sin base con qué comparar, o con cuatro jugadores, el porcentaje
-             no dice nada: se deja el guión y el crudo queda en la columna de
-             al lado. */
-          + `<td class="num">${(m.pct_perdidos === null || m.poca_muestra) ? '<i class="reten-na">—</i>' : m.pct_perdidos + "%"}</td>`
-          + `</tr>`;
-    }
-    tm.innerHTML = hm;
-
     const cob = d.cobertura || {};
     $("#retenCap").textContent = enCurso.mes ? retenMes(enCurso.mes) : "";
     $("#retenPie").innerHTML = cob.desde
-      ? `Se mide desde <b>${esc(retenMes(cob.desde))}</b>, que es hasta donde llegan los datos. `
-        + `Un mes anterior a eso figuraría en cero, y cero no es un dato: es una ausencia.`
-      : "";
+      ? `Datos disponibles desde ${esc(retenMes(cob.desde))}. Los meses anteriores no tienen información; no significan que se hayan perdido todos los jugadores.`
+      : `Todavía no hay historial suficiente para medir la retención.`;
   }
 
   // ---------- Cargas pedidas desde la plataforma (camino A) ----------
