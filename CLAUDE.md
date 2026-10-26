@@ -25,6 +25,16 @@ necesite un subdominio de la plataforma.
 > no apuntes nada nuevo ahí. Todo lo que se configure —el `.env` del bot, los
 > crons, las URLs de retorno— va contra `ganamoscrm.online`.
 
+> **ACTUALIZADO 25-26/10/2026 — ahora es `agents.ganamosonline.com` con FAILOVER
+> automático. A `agents.ganamos7.com` se le venció el cert TLS el 22/10 y tumbó
+> las altas; ganamos7 quedó DESCARTADO.** El dominio ya no es fijo: hay una
+> lista (`ganamosonline` → `ganamosbet.net` → `ganamos.io`) y el sistema elige
+> el primero con cert vigente y auto-renovable, y rota solo si el actual deja de
+> drenar la cola. El detalle completo, los comandos de diagnóstico y lo que
+> quedó pendiente (instalar el cron de `scripts/vigilar-dominio.sh`) están en
+> **`PARA-NAHUEL-dominios-failover.md`**. Lo de abajo quedó de la etapa ganamos7
+> y es historia — la fuente real hoy es ese doc + `scripts/arreglar-bot-altas.sh`.
+
 > **El panel de agentes en uso es `agents.ganamos7.com` (decisión del dueño,
 > 16/09/2026: "usá el dominio que no tiene Cloudflare, que no vuelva a pasar").**
 >
