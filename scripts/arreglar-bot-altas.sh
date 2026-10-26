@@ -135,10 +135,24 @@ API_URL_NUEVA="https://$DOMINIO/gp-api/altas_cola.php"
 # LECCION: "menos WAF" solo se puede medir con el bot creando en rafaga, no con
 # curl. Si algun dia se quiere volver a probar ganamos.io, es mirando ESTE log
 # (challenges por minuto), no un curl suelto.
+#
+# LOS 7 (26/10/2026). Todos son la MISMA cuenta de agente y crean usuarios
+# (probado con probar_alta.py). El bot crea en cualquiera gracias a la plantilla
+# SUPERSET (bot_crear_jugador.py: manda role:0 + ambos nombres de campo, asi
+# sirve en el build viejo Y en el nuevo). Orden = del mas probado al menos:
+#   - build VIEJO (el bot los maneja nativo, sin role): online, bet.net, io
+#   - build NUEVO (necesitan role:0, cubierto por la superset): .co, 1.com, .net, .bet
+# Lo UNICO que no esta medido en los nuevos es como aguantan la RAFAGA del bot
+# (igual que paso con ganamos.io): por eso van ultimos, y si alguno tira
+# challenges sin parar, el vigilante en caliente (vigilar-dominio.sh) rota solo.
 DOMINIOS_PRIORIDAD=(
-  "agents.ganamosonline.com"   # PROBADO bajo carga real; challenges manejados por despejar_waf
-  "agents.ganamosbet.net"      # failover: alta probada, cert valido
-  "agents.ganamos.io"          # failover: alta probada, pero bajo rafaga tira challenges (25/10)
+  "agents.ganamosonline.com"   # PROBADO bajo carga real; build viejo
+  "agents.ganamosbet.net"      # build viejo, alta probada
+  "agents.ganamos.io"          # build viejo, alta probada (bajo rafaga tira challenges, 25/10)
+  "agents.ganamos.co"          # build nuevo (role:0), alta probada
+  "agents.ganamos1.com"        # build nuevo (role:0), alta probada
+  "agents.ganamos.net"         # build nuevo (role:0), alta probada
+  "agents.ganamos.bet"         # build nuevo (role:0), alta probada
 )
 
 # cert_estado HOST -> imprime uno de:

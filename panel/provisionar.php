@@ -278,10 +278,18 @@ function cf_dns_upsert($dominio, $cfg) {
 // el challenge de ServicePipe en CADA POST y traba las altas. ganamosonline es
 // el unico probado funcionando bajo carga; los otros, solo failover de cert.
 // Ver scripts/arreglar-bot-altas.sh para el detalle.
+// LOS 7 (26/10/2026): misma cuenta, todos crean (probar_alta.py). El bot crea
+// en cualquiera por la plantilla SUPERSET (role:0 + ambos nombres de campo).
+// Orden del mas probado al menos; los build-nuevo (role) van ultimos y el
+// vigilante en caliente rota si alguno no drena. Ver arreglar-bot-altas.sh.
 const PANEL_DOMINIOS_PRIORIDAD = [
-    'agents.ganamosonline.com',  // PROBADO bajo carga real
-    'agents.ganamosbet.net',     // failover: alta probada, cert valido
-    'agents.ganamos.io',         // failover: bajo rafaga tira challenges (25/10)
+    'agents.ganamosonline.com',  // build viejo, PROBADO bajo carga
+    'agents.ganamosbet.net',     // build viejo, alta probada
+    'agents.ganamos.io',         // build viejo (bajo rafaga tira challenges, 25/10)
+    'agents.ganamos.co',         // build nuevo (role:0)
+    'agents.ganamos1.com',       // build nuevo (role:0)
+    'agents.ganamos.net',        // build nuevo (role:0)
+    'agents.ganamos.bet',        // build nuevo (role:0)
 ];
 
 /**

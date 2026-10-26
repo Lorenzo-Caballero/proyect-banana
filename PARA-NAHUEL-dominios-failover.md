@@ -23,20 +23,36 @@ Las altas volvieron. (commit `d395f37`)
 
 ---
 
-## 2. Encontramos 3 dominios que son LA MISMA cuenta y sirven para crear
+## 2. Tenemos 7 dominios que son LA MISMA cuenta y crean usuarios
 
-Probamos varios dominios con nuestras credenciales reales (login + crear un
-usuario de verdad, no solo mirar). Estos **tres** son el mismo panel, la misma
-cuenta de agente (mismo ID, mismos jugadores) y **crean usuarios**:
+Probamos cada uno con nuestras credenciales reales (login + crear un usuario de
+verdad, no solo mirar). **Los siete** son el mismo panel, la misma cuenta de
+agente (mismo ID, mismos jugadores) y **crean usuarios**:
 
-| Dominio | WAF | Sirve para altas |
+| Dominio | Build del panel | Probado bajo carga real |
 |---|---|---|
-| `agents.ganamosonline.com` | tiene Bot Fight Mode | ✅ (el que usamos) |
-| `agents.ganamosbet.net` | sin Bot Fight Mode | ✅ probado |
-| `agents.ganamos.io` | sin Bot Fight Mode | ⚠️ ver punto 4 |
+| `agents.ganamosonline.com` | viejo | ✅ **el principal** |
+| `agents.ganamosbet.net` | viejo | — (alta probada) |
+| `agents.ganamos.io` | viejo | ⚠️ bajo ráfaga tira challenges (ver 4) |
+| `agents.ganamos.co` | nuevo | — (alta probada) |
+| `agents.ganamos1.com` | nuevo | — (alta probada) |
+| `agents.ganamos.net` | nuevo | — (alta probada) |
+| `agents.ganamos.bet` | nuevo | — (alta probada) |
 
-Scripts que dejamos para volver a probar cualquier dominio (corren en el
-contenedor del bot, no tocan producción):
+**Hay dos "builds" (versiones) del panel**, y es importante:
+
+- **Build viejo** (online, bet.net, io): el alta manda `firstName`/`lastName`.
+- **Build nuevo** (co, 1.com, .net, .bet): el alta exige un campo extra
+  **`role`** (`0` = jugador, `6` = agente) y usa `first_name`/`last_name`. Sin
+  `role` contesta `422 "role - Field required"`.
+
+Para que el bot cree en los dos sin complicarse, el fast-path ahora manda un
+**payload "superset"** que incluye todo (los dos formatos de nombre + `role:0`);
+cada backend usa lo suyo e ignora el resto. Resultado: **el bot crea en
+cualquiera de los 7**.
+
+Scripts para volver a probar cualquier dominio (corren en el contenedor del bot,
+no tocan producción):
 
 - `probar_dominios.py` — ¿loguea y es nuestra misma cuenta? (solo lectura)
 - `probar_alta.py` — ¿crea un usuario de verdad? (crea un `testio…` para borrar)
@@ -60,7 +76,7 @@ fecha del cert sino **quién lo renueva** (Cloudflare = seguro; a mano = riesgo)
 
 ---
 
-## 4. El error con ganamos.io (y por qué quedó de último recurso)
+## 4. El error con ganamos.io (y por qué quedó de respaldo, no principal)
 
 `ganamos.io` tiene el cert más largo y no tiene Bot Fight Mode, así que lo
 pusimos de principal. **Fue un error.** Bajo la carga real del bot (crea de a 3
@@ -73,19 +89,27 @@ contexto del repo: **el WAF se mide con el bot creando en ráfaga, no con un
 curl.** `ganamosonline`, con todos sus challenges, es el único probado
 funcionando bajo carga real (los maneja `despejar_waf()`).
 
-Por eso `ganamosonline` volvió a ser el principal y `ganamos.io`/`ganamosbet`
-quedaron de **respaldo para cert vencido**, no de principal. (commits `1ee5af9`)
+Por eso `ganamosonline` volvió a ser el principal, y `ganamos.io` y los demás
+quedaron de **respaldo**, no de principal. (commit `1ee5af9`)
 
 ---
 
 ## 5. Lo que quedó blindado: FAILOVER automático en dos niveles
 
-Ya no dependemos de un solo dominio. El sistema tiene una **lista en orden de
-preferencia** y elige solo:
+Ya no dependemos de un solo dominio. El sistema tiene una **lista de 7 en orden
+de preferencia** (del más probado al menos) y elige solo:
 
-1. `agents.ganamosonline.com` — probado bajo carga
-2. `agents.ganamosbet.net` — respaldo
-3. `agents.ganamos.io` — respaldo
+1. `agents.ganamosonline.com` — build viejo, **probado bajo carga** (principal)
+2. `agents.ganamosbet.net` — build viejo
+3. `agents.ganamos.io` — build viejo
+4. `agents.ganamos.co` — build nuevo (`role:0`)
+5. `agents.ganamos1.com` — build nuevo
+6. `agents.ganamos.net` — build nuevo
+7. `agents.ganamos.bet` — build nuevo
+
+Los build-nuevo van últimos a propósito: crean en la prueba, pero **no medimos
+cómo aguantan la ráfaga** (la lección de ganamos.io). Si alguno falla bajo carga,
+el Nivel B lo saca solo.
 
 **Nivel A — al desplegar** (`scripts/arreglar-bot-altas.sh`): elige el primero
 con **cert vigente** y, entre esos, prefiere el **auto-renovable (Cloudflare)**.
@@ -95,7 +119,15 @@ Si a un dominio se le vence el cert, lo saltea solo. (commits `f2e1365`,
 **Nivel B — en caliente** (`scripts/vigilar-dominio.sh`, por cron cada 5 min):
 mira si la cola de altas **drena**. Si queda trabada más de 12 min (sea por cert,
 por WAF o lo que sea), **rota solo al siguiente dominio**. Tiene cooldown de 20
-min para no saltar en loop. (commit `02e38f0`)
+min para no saltar en loop. **Esto es lo que cubre "un WAF tapa operaciones":**
+si el dominio en uso empieza a tirar challenges, deja de drenar la cola y el
+sistema salta al siguiente sin que nadie lo toque. (commit `02e38f0`)
+
+**Y el bot crea en cualquiera** gracias a la **plantilla superset** (manda
+`role:0` + los dos formatos de nombre): así un failover a un build-nuevo no
+falla por el campo `role`. En el dominio actual está dormida (ya tiene su
+plantilla), así que no cambia nada hoy; se activa sola tras un failover.
+(commit del bot `9305336`)
 
 > **Pendiente tuyo:** instalar el cron del Nivel B en el VPS:
 > ```

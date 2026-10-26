@@ -87,28 +87,32 @@ chequear('nada vigente -> cae al preferido, no a ""',
          elegido('') === 'agents.ganamosonline.com',
          'mejor intentar el preferido que no arrancar');
 
-echo "\n=== 4. El ORDEN: el probado bajo carga primero ===\n";
-/* El orden de la lista ES la politica. ganamos.io daba 200 a curl pelado pero
-   bajo la rafaga del bot real tiraba challenges sin parar (25/10): va ULTIMO.
-   ganamosonline es el unico probado funcionando bajo carga: va PRIMERO. */
+echo "\n=== 4. El ORDEN: lo mas probado primero, lo build-nuevo ultimo ===\n";
+/* ganamosonline es el unico probado bajo CARGA real: va PRIMERO. Los build-nuevo
+   (role:0) crean en el test pero no se midio como aguantan la rafaga: van
+   DESPUES de los build-viejo, como fallback mas profundo. */
 preg_match('/const PANEL_DOMINIOS_PRIORIDAD = \[(.*?)\];/s', $PROV, $m);
 $lista = $m[1] ?? '';
-$pIo  = strpos($lista, 'ganamos.io');
-$pBet = strpos($lista, 'ganamosbet.net');
 $pOn  = strpos($lista, 'ganamosonline.com');
-chequear('ganamosonline antes que ganamos.io', $pOn !== false && $pIo !== false && $pOn < $pIo);
+$pBet = strpos($lista, 'ganamosbet.net');
+$pIo  = strpos($lista, 'ganamos.io');
+$pCo  = strpos($lista, 'ganamos.co');
 chequear('ganamosonline es el PRIMERO (probado bajo carga)',
-         $pOn < $pIo && $pOn < $pBet);
-chequear('ganamos.io es el ULTIMO (tira challenges bajo rafaga)',
-         $pIo > $pOn && $pIo > $pBet);
+         $pOn === 0 || ($pOn < $pBet && $pOn < $pIo && $pOn < $pCo));
+chequear('los build-viejo (online, bet, io) van antes que los build-nuevo (co...)',
+         max($pOn, $pBet, $pIo) < $pCo,
+         'un build-nuevo sin medir bajo carga no debe ir antes que uno probado');
 
 echo "\n=== 5. Solo dominios con escritura confirmada ===\n";
-/* ganamos.net / ganamos.bet pasaron lectura pero NO una alta real: no van en
-   el failover -- saltar a uno que no escribe seria cambiar el cert vencido por
-   un Unauthorized silencioso. */
-chequear('no incluye ganamos.net (no se probo escritura)',
-         strpos($lista, 'ganamos.net') === false);
-chequear('no incluye ganamos7 (cert vencido)',
+/* Los 7 estan write-confirmados (probar_alta.py, 26/10): los 4 build-nuevo
+   crean gracias a la plantilla superset (role:0). ganamos7 sigue AFUERA: cert
+   vencido y, sobre todo, nunca se le confirmo un alta por esta cuenta. La regla
+   no cambio -- "solo escritura confirmada va al failover"-- cambio que ahora
+   hay 7 confirmados en vez de 3. */
+chequear('incluye los 4 build-nuevo (ya con alta probada via superset)',
+         strpos($lista, 'ganamos.co') !== false && strpos($lista, 'ganamos1.com') !== false
+         && strpos($lista, 'ganamos.net') !== false && strpos($lista, 'ganamos.bet') !== false);
+chequear('NO incluye ganamos7 (cert vencido, alta nunca confirmada)',
          strpos($lista, 'ganamos7') === false);
 
 echo "\n=== 6. El shell usa el MISMO orden ===\n";
