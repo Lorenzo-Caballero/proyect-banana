@@ -122,10 +122,23 @@ API_URL_NUEVA="https://$DOMINIO/gp-api/altas_cola.php"
 # seria cambiar un cert vencido por un Unauthorized silencioso.
 #
 # Se puede forzar uno a mano con  PANEL_HOST_FORZADO=agents.xxx bash ...
+#
+# ORDEN CORREGIDO (25/10/2026, con logs de produccion). Primero se puso
+# ganamos.io "porque curl pelado daba 200 y no tenia Bot Fight Mode". ERROR, y
+# el clasico de este repo: un curl y UN alta por API no predicen la rafaga del
+# bot real (crea de a 3 en paralelo). Bajo esa carga, ganamos.io tira el
+# challenge de ServicePipe (/exhk) en CADA POST, sin parar, y las altas se
+# traban. ganamosonline, con todos sus challenges, es el UNICO probado
+# funcionando bajo la carga real -- por eso va PRIMERO. Los otros quedan solo
+# de failover para cert vencido (ver panel/sql / historia abajo).
+#
+# LECCION: "menos WAF" solo se puede medir con el bot creando en rafaga, no con
+# curl. Si algun dia se quiere volver a probar ganamos.io, es mirando ESTE log
+# (challenges por minuto), no un curl suelto.
 DOMINIOS_PRIORIDAD=(
-  "agents.ganamos.io"          # sin BFM, cert mas largo (16 Ene), alta probada
-  "agents.ganamosbet.net"      # sin BFM, alta probada
-  "agents.ganamosonline.com"   # con BFM; conocido-bueno, ultimo recurso
+  "agents.ganamosonline.com"   # PROBADO bajo carga real; challenges manejados por despejar_waf
+  "agents.ganamosbet.net"      # failover: alta probada, cert valido
+  "agents.ganamos.io"          # failover: alta probada, pero bajo rafaga tira challenges (25/10)
 )
 
 # cert_estado HOST -> imprime uno de:

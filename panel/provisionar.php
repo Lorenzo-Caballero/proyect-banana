@@ -272,10 +272,16 @@ function cf_dns_upsert($dominio, $cfg) {
  * Se mantienen los NOMBRES PANEL_LOGIN_URL / PANEL_CREATE_URL (los usan 13
  * lugares) pero ahora salen de define() con el dominio elegido, no de const.
  */
+// ORDEN CORREGIDO (25/10/2026, con logs de produccion): ganamosonline PRIMERO.
+// Se habia puesto ganamos.io de primero por "curl 200 / sin Bot Fight Mode",
+// pero bajo la rafaga del bot real (crea de a 3 en paralelo) ganamos.io tira
+// el challenge de ServicePipe en CADA POST y traba las altas. ganamosonline es
+// el unico probado funcionando bajo carga; los otros, solo failover de cert.
+// Ver scripts/arreglar-bot-altas.sh para el detalle.
 const PANEL_DOMINIOS_PRIORIDAD = [
-    'agents.ganamos.io',         // sin BFM, cert mas largo, alta probada
-    'agents.ganamosbet.net',     // sin BFM, alta probada
-    'agents.ganamosonline.com',  // con BFM; conocido-bueno, ultimo recurso
+    'agents.ganamosonline.com',  // PROBADO bajo carga real
+    'agents.ganamosbet.net',     // failover: alta probada, cert valido
+    'agents.ganamos.io',         // failover: bajo rafaga tira challenges (25/10)
 ];
 
 /**

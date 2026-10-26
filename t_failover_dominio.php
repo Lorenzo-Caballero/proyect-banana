@@ -58,47 +58,49 @@ function elegido(string $tokensCsv): string {
 }
 
 echo "=== 1. Elige el primero con cert auto-renovable (gts) ===\n";
-chequear('todos gts -> el preferido (ganamos.io)',
-         elegido('gts:agents.ganamos.io,gts:agents.ganamosbet.net,gts:agents.ganamosonline.com')
-           === 'agents.ganamos.io');
-chequear('solo ganamos.io gts -> ganamos.io',
-         elegido('gts:agents.ganamos.io') === 'agents.ganamos.io');
-
-echo "\n=== 2. Failover: si al preferido se le vence el cert, salta ===\n";
-chequear('ganamos.io vencido -> ganamosbet.net',
-         elegido('gts:agents.ganamosbet.net,gts:agents.ganamosonline.com') === 'agents.ganamosbet.net',
-         'esto es lo que nos habria salvado el 22/10');
-chequear('io y bet vencidos -> ganamosonline (ultimo recurso)',
+chequear('todos gts -> el preferido (ganamosonline, probado bajo carga)',
+         elegido('gts:agents.ganamosonline.com,gts:agents.ganamosbet.net,gts:agents.ganamos.io')
+           === 'agents.ganamosonline.com');
+chequear('solo ganamosonline gts -> ganamosonline',
          elegido('gts:agents.ganamosonline.com') === 'agents.ganamosonline.com');
 
+echo "\n=== 2. Failover: si al preferido se le vence el cert, salta ===\n";
+chequear('ganamosonline vencido -> ganamosbet.net',
+         elegido('gts:agents.ganamosbet.net,gts:agents.ganamos.io') === 'agents.ganamosbet.net',
+         'esto es lo que nos habria salvado el 22/10');
+chequear('online y bet vencidos -> ganamos.io (ultimo recurso)',
+         elegido('gts:agents.ganamos.io') === 'agents.ganamos.io');
+
 echo "\n=== 2b. Preferencia por EMISOR: auto-renovable gana al a-mano ===\n";
-/* ganamos.io vigente pero de OTRO emisor (a mano, como el LE de ganamos7);
-   ganamosbet gts. Aunque io este primero en la lista, se elige bet: un cert
-   auto-renovado no es la falla, uno a mano puede lapsar. */
-chequear('io=otro (a mano), bet=gts -> ganamosbet.net',
-         elegido('otro:agents.ganamos.io,gts:agents.ganamosbet.net') === 'agents.ganamosbet.net',
+/* ganamosonline vigente pero de OTRO emisor (a mano, como el LE de ganamos7);
+   ganamosbet gts. Aunque online este primero en la lista, se elige bet: un
+   cert auto-renovado no es la falla, uno a mano puede lapsar. */
+chequear('online=otro (a mano), bet=gts -> ganamosbet.net',
+         elegido('otro:agents.ganamosonline.com,gts:agents.ganamosbet.net') === 'agents.ganamosbet.net',
          'un cert a-mano arriba no debe ganarle a uno auto-renovable');
 chequear('si TODOS son a-mano, igual elige (vigente) el preferido',
-         elegido('otro:agents.ganamos.io,otro:agents.ganamosbet.net') === 'agents.ganamos.io',
+         elegido('otro:agents.ganamosonline.com,otro:agents.ganamosbet.net') === 'agents.ganamosonline.com',
          'sin gts disponible, un vigente a-mano es mejor que nada');
 
 echo "\n=== 3. Ninguno valida (sin red) -> no queda vacio ===\n";
 chequear('nada vigente -> cae al preferido, no a ""',
-         elegido('') === 'agents.ganamos.io',
+         elegido('') === 'agents.ganamosonline.com',
          'mejor intentar el preferido que no arrancar');
 
-echo "\n=== 4. El ORDEN: menos WAF primero ===\n";
-/* El orden de la lista ES la politica. ganamosonline tiene Bot Fight Mode, asi
-   que va ULTIMO; los sin-BFM primero. */
+echo "\n=== 4. El ORDEN: el probado bajo carga primero ===\n";
+/* El orden de la lista ES la politica. ganamos.io daba 200 a curl pelado pero
+   bajo la rafaga del bot real tiraba challenges sin parar (25/10): va ULTIMO.
+   ganamosonline es el unico probado funcionando bajo carga: va PRIMERO. */
 preg_match('/const PANEL_DOMINIOS_PRIORIDAD = \[(.*?)\];/s', $PROV, $m);
 $lista = $m[1] ?? '';
 $pIo  = strpos($lista, 'ganamos.io');
 $pBet = strpos($lista, 'ganamosbet.net');
 $pOn  = strpos($lista, 'ganamosonline.com');
-chequear('ganamos.io antes que ganamosonline', $pIo !== false && $pOn !== false && $pIo < $pOn);
-chequear('ganamosbet.net antes que ganamosonline', $pBet !== false && $pOn !== false && $pBet < $pOn);
-chequear('ganamosonline es el ULTIMO (tiene Bot Fight Mode)',
-         $pOn > $pIo && $pOn > $pBet);
+chequear('ganamosonline antes que ganamos.io', $pOn !== false && $pIo !== false && $pOn < $pIo);
+chequear('ganamosonline es el PRIMERO (probado bajo carga)',
+         $pOn < $pIo && $pOn < $pBet);
+chequear('ganamos.io es el ULTIMO (tira challenges bajo rafaga)',
+         $pIo > $pOn && $pIo > $pBet);
 
 echo "\n=== 5. Solo dominios con escritura confirmada ===\n";
 /* ganamos.net / ganamos.bet pasaron lectura pero NO una alta real: no van en
@@ -116,8 +118,8 @@ preg_match('/DOMINIOS_PRIORIDAD=\((.*?)
 $lsh = $ms[1] ?? '';
 $sIo = strpos($lsh, 'ganamos.io'); $sOn = strpos($lsh, 'ganamosonline.com');
 chequear('el shell tiene la lista de prioridad', $lsh !== '');
-chequear('y en el shell ganamos.io va antes que ganamosonline',
-         $sIo !== false && $sOn !== false && $sIo < $sOn);
+chequear('y en el shell ganamosonline va antes que ganamos.io (igual que el PHP)',
+         $sOn !== false && $sIo !== false && $sOn < $sIo);
 chequear('el shell elige por estado de cert (cert_estado/elegir_dominio)',
          str_contains($sh, 'cert_estado') && str_contains($sh, 'elegir_dominio'));
 chequear('el shell prefiere el emisor auto-renovable (Google Trust Services)',
