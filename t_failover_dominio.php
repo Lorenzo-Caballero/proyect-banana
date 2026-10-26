@@ -36,35 +36,51 @@ $PROV = file_get_contents(__DIR__ . '/panel/provisionar.php');
 
 if (($argv[1] ?? '') === '--caso') {
     preg_match('/const PANEL_DOMINIOS_PRIORIDAD = \[.*?\];/s', $PROV, $c);
-    preg_match('/function cert_vigente\(string \$host\): bool \{.*?\n\}/s', $PROV, $f1);
+    preg_match('/function cert_estado\(string \$host\): string \{.*?\n\}/s', $PROV, $f1);
     preg_match('/function panel_dominio_elegido\(\): string \{.*?\n\}/s', $PROV, $f2);
     eval($c[0]); eval($f1[0]); eval($f2[0]);
-    // $argv[2] = CSV de los hosts que el mock considera "vigentes"
-    $vigentes = array_filter(explode(',', $argv[2] ?? ''));
-    $GLOBALS['GP_CERT_CHECK'] = fn($h) => in_array($h, $vigentes, true);
+    // $argv[2] = CSV de tokens "estado:host" (gts:host / otro:host). Lo que no
+    // figure es 'no' (vencido/inalcanzable).
+    $mapa = [];
+    foreach (array_filter(explode(',', $argv[2] ?? '')) as $tok) {
+        [$est, $h] = array_pad(explode(':', $tok, 2), 2, '');
+        $mapa[$h] = $est;
+    }
+    $GLOBALS['GP_CERT_CHECK'] = fn($h) => $mapa[$h] ?? 'no';
     ob_start(); $r = panel_dominio_elegido(); ob_end_clean();  // el progreso va a stdout; lo descartamos
     echo $r;
     exit;
 }
-function elegido(string $vigentesCsv): string {
+function elegido(string $tokensCsv): string {
     $cmd = escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg(__FILE__)
-         . ' --caso ' . escapeshellarg($vigentesCsv);
+         . ' --caso ' . escapeshellarg($tokensCsv);
     return trim((string) shell_exec($cmd));
 }
 
-echo "=== 1. Elige el primero con cert vigente ===\n";
-chequear('todos vigentes -> el preferido (ganamos.io)',
-         elegido('agents.ganamos.io,agents.ganamosbet.net,agents.ganamosonline.com')
+echo "=== 1. Elige el primero con cert auto-renovable (gts) ===\n";
+chequear('todos gts -> el preferido (ganamos.io)',
+         elegido('gts:agents.ganamos.io,gts:agents.ganamosbet.net,gts:agents.ganamosonline.com')
            === 'agents.ganamos.io');
-chequear('solo ganamos.io vigente -> ganamos.io',
-         elegido('agents.ganamos.io') === 'agents.ganamos.io');
+chequear('solo ganamos.io gts -> ganamos.io',
+         elegido('gts:agents.ganamos.io') === 'agents.ganamos.io');
 
 echo "\n=== 2. Failover: si al preferido se le vence el cert, salta ===\n";
 chequear('ganamos.io vencido -> ganamosbet.net',
-         elegido('agents.ganamosbet.net,agents.ganamosonline.com') === 'agents.ganamosbet.net',
+         elegido('gts:agents.ganamosbet.net,gts:agents.ganamosonline.com') === 'agents.ganamosbet.net',
          'esto es lo que nos habria salvado el 22/10');
 chequear('io y bet vencidos -> ganamosonline (ultimo recurso)',
-         elegido('agents.ganamosonline.com') === 'agents.ganamosonline.com');
+         elegido('gts:agents.ganamosonline.com') === 'agents.ganamosonline.com');
+
+echo "\n=== 2b. Preferencia por EMISOR: auto-renovable gana al a-mano ===\n";
+/* ganamos.io vigente pero de OTRO emisor (a mano, como el LE de ganamos7);
+   ganamosbet gts. Aunque io este primero en la lista, se elige bet: un cert
+   auto-renovado no es la falla, uno a mano puede lapsar. */
+chequear('io=otro (a mano), bet=gts -> ganamosbet.net',
+         elegido('otro:agents.ganamos.io,gts:agents.ganamosbet.net') === 'agents.ganamosbet.net',
+         'un cert a-mano arriba no debe ganarle a uno auto-renovable');
+chequear('si TODOS son a-mano, igual elige (vigente) el preferido',
+         elegido('otro:agents.ganamos.io,otro:agents.ganamosbet.net') === 'agents.ganamos.io',
+         'sin gts disponible, un vigente a-mano es mejor que nada');
 
 echo "\n=== 3. Ninguno valida (sin red) -> no queda vacio ===\n";
 chequear('nada vigente -> cae al preferido, no a ""',
@@ -102,8 +118,10 @@ $sIo = strpos($lsh, 'ganamos.io'); $sOn = strpos($lsh, 'ganamosonline.com');
 chequear('el shell tiene la lista de prioridad', $lsh !== '');
 chequear('y en el shell ganamos.io va antes que ganamosonline',
          $sIo !== false && $sOn !== false && $sIo < $sOn);
-chequear('el shell elige por cert vigente (cert_vigente/elegir_dominio)',
-         str_contains($sh, 'cert_vigente') && str_contains($sh, 'elegir_dominio'));
+chequear('el shell elige por estado de cert (cert_estado/elegir_dominio)',
+         str_contains($sh, 'cert_estado') && str_contains($sh, 'elegir_dominio'));
+chequear('el shell prefiere el emisor auto-renovable (Google Trust Services)',
+         str_contains($sh, 'Google Trust Services'));
 
 printf("\n%s\n%d OK, %d fallas\n", str_repeat('-', 39), $ok, $fail);
 exit($fail > 0 ? 1 : 0);

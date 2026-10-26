@@ -278,10 +278,18 @@ const PANEL_DOMINIOS_PRIORIDAD = [
     'agents.ganamosonline.com',  // con BFM; conocido-bueno, ultimo recurso
 ];
 
-/** ¿El cert TLS de este host esta vigente? Sin exec: socket SSL + parse. */
-function cert_vigente(string $host): bool {
+/**
+ * Estado del cert TLS de un host. Devuelve:
+ *   'gts'   vigente Y emisor Google Trust Services (Cloudflare, SE RENUEVA SOLO)
+ *   'otro'  vigente pero de otro emisor (p.ej. Let's Encrypt de un solo dominio,
+ *           a mano -- el tipo que se le vencio a ganamos7)
+ *   'no'    vencido o inalcanzable
+ * El emisor importa tanto como la fecha: uno auto-renovado nunca es la falla;
+ * uno a mano puede lapsar aunque hoy figure vigente. Sin exec: socket SSL.
+ */
+function cert_estado(string $host): string {
     if (isset($GLOBALS['GP_CERT_CHECK']) && is_callable($GLOBALS['GP_CERT_CHECK'])) {
-        return (bool) $GLOBALS['GP_CERT_CHECK']($host);   // hook de test
+        return (string) $GLOBALS['GP_CERT_CHECK']($host);   // hook de test
     }
     $ctx = stream_context_create(['ssl' => [
         'capture_peer_cert' => true, 'verify_peer' => false,
@@ -289,23 +297,38 @@ function cert_vigente(string $host): bool {
     ]]);
     $cli = @stream_socket_client("ssl://{$host}:443", $errno, $err, 8,
                                  STREAM_CLIENT_CONNECT, $ctx);
-    if (!$cli) { return false; }   // no conecta -> lo tratamos como no vigente
+    if (!$cli) { return 'no'; }
     $p = stream_context_get_params($cli);
     fclose($cli);
     $cert = $p['options']['ssl']['peer_certificate'] ?? null;
-    if (!$cert) { return false; }
+    if (!$cert) { return 'no'; }
     $info = openssl_x509_parse($cert);
-    return is_array($info) && !empty($info['validTo_time_t'])
-        && $info['validTo_time_t'] > time();
+    if (!is_array($info) || empty($info['validTo_time_t']) || $info['validTo_time_t'] <= time()) {
+        return 'no';
+    }
+    $emisor = (string) ($info['issuer']['O'] ?? '');
+    return strpos($emisor, 'Google Trust Services') !== false ? 'gts' : 'otro';
 }
 
-/** Primer dominio de la lista con cert vigente; si ninguno, el preferido. */
+/**
+ * Elige dominio en DOS pasadas, respetando el orden de la lista dentro de cada
+ * una: 1) el primero con cert auto-renovable (gts); 2) si ninguno, el primero
+ * con cert vigente de cualquier emisor. Un auto-renovable le gana a uno a-mano
+ * aunque este mas abajo. Si nada valida, cae al preferido.
+ */
 function panel_dominio_elegido(): string {
     static $host = null;
     if ($host !== null) { return $host; }
+    $est = [];
+    foreach (PANEL_DOMINIOS_PRIORIDAD as $h) { $est[$h] = cert_estado($h); }
     foreach (PANEL_DOMINIOS_PRIORIDAD as $h) {
-        if (cert_vigente($h)) { return $host = $h; }
-        echo date('c') . " dominio panel: cert de $h no vigente, pruebo el siguiente\n";
+        if ($est[$h] === 'gts') { return $host = $h; }
+    }
+    foreach (PANEL_DOMINIOS_PRIORIDAD as $h) {
+        if ($est[$h] !== 'no') {
+            echo date('c') . " dominio panel: ninguno auto-renovable, uso $h (vigente, otro emisor)\n";
+            return $host = $h;
+        }
     }
     return $host = PANEL_DOMINIOS_PRIORIDAD[0];
 }

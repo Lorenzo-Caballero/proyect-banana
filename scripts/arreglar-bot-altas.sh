@@ -128,23 +128,42 @@ DOMINIOS_PRIORIDAD=(
   "agents.ganamosonline.com"   # con BFM; conocido-bueno, ultimo recurso
 )
 
-# cert_vigente HOST -> exit 0 si el cert TLS no esta vencido. Es EXACTAMENTE la
-# falla que nos tumbo (ganamos7). Overridable para test con GP_CERT_CHECK (un
-# comando que recibe el host y devuelve 0/1).
-cert_vigente() {
-  if [ -n "${GP_CERT_CHECK:-}" ]; then "$GP_CERT_CHECK" "$1"; return $?; fi
-  echo | timeout 12 openssl s_client -servername "$1" -connect "$1:443" 2>/dev/null \
-    | openssl x509 -checkend 0 -noout >/dev/null 2>&1
+# cert_estado HOST -> imprime uno de:
+#   gts   cert vigente Y emisor Google Trust Services (Cloudflare, SE RENUEVA SOLO)
+#   otro  cert vigente pero de OTRO emisor (p.ej. Let's Encrypt de un solo
+#         dominio, gestionado a mano -- el tipo que se le vencio a ganamos7)
+#   no    vencido o inalcanzable
+# El emisor importa tanto como la fecha: un cert auto-renovado nunca va a ser la
+# falla; uno a mano puede lapsar aunque hoy figure vigente. Overridable para
+# test con GP_CERT_CHECK (un comando que recibe el host e imprime gts/otro/no).
+cert_estado() {
+  if [ -n "${GP_CERT_CHECK:-}" ]; then "$GP_CERT_CHECK" "$1"; return; fi
+  local pem
+  pem="$(echo | timeout 12 openssl s_client -servername "$1" -connect "$1:443" 2>/dev/null | openssl x509 2>/dev/null)"
+  [ -z "$pem" ] && { echo "no"; return; }
+  echo "$pem" | openssl x509 -noout -checkend 0 >/dev/null 2>&1 || { echo "no"; return; }
+  if echo "$pem" | openssl x509 -noout -issuer 2>/dev/null | grep -q "Google Trust Services"; then
+    echo "gts"
+  else
+    echo "otro"
+  fi
 }
 
-# Primer dominio de la lista con cert vigente. Si ninguno responde (openssl
-# roto, sin red), cae al primero para no quedar vacio -- mejor intentar el
-# preferido que no arrancar.
+# Elige dominio en DOS pasadas, respetando el orden de la lista dentro de cada
+# una: 1) el primero con cert vigente Y auto-renovable (gts); 2) si ninguno es
+# gts, el primero con cert vigente de cualquier emisor. Asi un dominio
+# auto-renovable le gana a uno a-mano aunque este mas abajo. Si nada valida
+# (sin red), cae al preferido -- mejor intentar que no arrancar.
 elegir_dominio() {
   local d
+  declare -A EST
+  for d in "${DOMINIOS_PRIORIDAD[@]}"; do EST[$d]="$(cert_estado "$d")"; done
   for d in "${DOMINIOS_PRIORIDAD[@]}"; do
-    if cert_vigente "$d"; then echo "$d"; return 0; fi
-    echo "   (cert de $d no vigente o inalcanzable, pruebo el siguiente)" >&2
+    [ "${EST[$d]}" = "gts" ] && { echo "$d"; return 0; }
+  done
+  echo "   (ninguno con cert auto-renovable; busco cualquiera vigente)" >&2
+  for d in "${DOMINIOS_PRIORIDAD[@]}"; do
+    [ "${EST[$d]}" != "no" ] && { echo "$d"; return 0; }
   done
   echo "   (!! ninguno validó cert; uso el preferido igual: ${DOMINIOS_PRIORIDAD[0]})" >&2
   echo "${DOMINIOS_PRIORIDAD[0]}"
