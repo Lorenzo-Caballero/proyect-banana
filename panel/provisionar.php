@@ -254,23 +254,65 @@ function cf_dns_upsert($dominio, $cfg) {
     return [false, 'Cloudflare falló: ' . $msg];
 }
 
-/* El panel de agentes al que le pegan TODOS los bots de clientes. Una sola
-   constante para que el run y la comparacion de abajo no puedan divergir.
+/* El panel de agentes al que le pegan TODOS los bots de clientes.
+ *
+ * FAILOVER POR CERT (25/10/2026). En vez de un dominio fijo, hay una LISTA en
+ * orden de preferencia y se elige el primero con cert TLS vigente -- la misma
+ * logica que scripts/arreglar-bot-altas.sh para nuestro bot. Nacio de que a
+ * agents.ganamos7.com se le vencio el cert el 22/10 y tumbo las altas; con
+ * esto, el dia que a uno se le venza, el provisionador salta solo al
+ * siguiente.
+ *
+ * Orden: primero los que MENOS molesta el WAF (sin Bot Fight Mode) y con cert
+ * mas largo; ganamosonline ultimo (tiene Bot Fight Mode, pero despejar_waf lo
+ * maneja). SOLO dominios con ESCRITURA CONFIRMADA (login + alta real, probado
+ * el 25/10): no se mete uno sin probar, porque failover a un dominio que no
+ * escribe seria cambiar un cert vencido por un Unauthorized silencioso.
+ *
+ * Se mantienen los NOMBRES PANEL_LOGIN_URL / PANEL_CREATE_URL (los usan 13
+ * lugares) pero ahora salen de define() con el dominio elegido, no de const.
+ */
+const PANEL_DOMINIOS_PRIORIDAD = [
+    'agents.ganamos.io',         // sin BFM, cert mas largo, alta probada
+    'agents.ganamosbet.net',     // sin BFM, alta probada
+    'agents.ganamosonline.com',  // con BFM; conocido-bueno, ultimo recurso
+];
 
-   VOLVIO A ganamosonline el 25/10/2026: a ganamos7 se le VENCIO EL CERTIFICADO
-   TLS el 22/10 (dominio de la plataforma, no lo renovamos nosotros) y el bot
-   no podia ni abrir la pagina ni postear (ERR_CERT_DATE_INVALID / "certificate
-   has expired"). Las altas, caidas. Medido con openssl: ganamosonline y
-   ganamosbet con cert valido (Dic 7), ganamos7 vencido.
+/** ¿El cert TLS de este host esta vigente? Sin exec: socket SSL + parse. */
+function cert_vigente(string $host): bool {
+    if (isset($GLOBALS['GP_CERT_CHECK']) && is_callable($GLOBALS['GP_CERT_CHECK'])) {
+        return (bool) $GLOBALS['GP_CERT_CHECK']($host);   // hook de test
+    }
+    $ctx = stream_context_create(['ssl' => [
+        'capture_peer_cert' => true, 'verify_peer' => false,
+        'verify_peer_name' => false, 'SNI_enabled' => true, 'peer_name' => $host,
+    ]]);
+    $cli = @stream_socket_client("ssl://{$host}:443", $errno, $err, 8,
+                                 STREAM_CLIENT_CONNECT, $ctx);
+    if (!$cli) { return false; }   // no conecta -> lo tratamos como no vigente
+    $p = stream_context_get_params($cli);
+    fclose($cli);
+    $cert = $p['options']['ssl']['peer_certificate'] ?? null;
+    if (!$cert) { return false; }
+    $info = openssl_x509_parse($cert);
+    return is_array($info) && !empty($info['validTo_time_t'])
+        && $info['validTo_time_t'] > time();
+}
 
-   ganamosonline es el conocido-bueno: fue produccion meses, probado para altas
-   y depositos. Su unico problema eran los challenges del WAF, que YA maneja
-   despejar_waf() en el bot. El reset del endpoint horneado al cambiar de
-   dominio vive en scripts/arreglar-bot-altas.sh (bloque 2.b) y en este archivo
-   (resetear_endpoint_horneado); es lo que hace que esta vuelta surta efecto.
-   Ver ese script para la historia completa. */
-const PANEL_LOGIN_URL  = 'https://agents.ganamosonline.com/';
-const PANEL_CREATE_URL = 'https://agents.ganamosonline.com/user/create-player';
+/** Primer dominio de la lista con cert vigente; si ninguno, el preferido. */
+function panel_dominio_elegido(): string {
+    static $host = null;
+    if ($host !== null) { return $host; }
+    foreach (PANEL_DOMINIOS_PRIORIDAD as $h) {
+        if (cert_vigente($h)) { return $host = $h; }
+        echo date('c') . " dominio panel: cert de $h no vigente, pruebo el siguiente\n";
+    }
+    return $host = PANEL_DOMINIOS_PRIORIDAD[0];
+}
+
+define('PANEL_HOST_ELEGIDO', panel_dominio_elegido());
+define('PANEL_LOGIN_URL',  'https://' . PANEL_HOST_ELEGIDO . '/');
+define('PANEL_CREATE_URL', 'https://' . PANEL_HOST_ELEGIDO . '/user/create-player');
 
 /* SLUGS QUE YA TIENEN BOT PROPIO Y NO SE APROVISIONAN.
    `ganamoscrm` es NUESTRO propio negocio, y lo atienden desde antes del

@@ -106,12 +106,59 @@ API_URL_NUEVA="https://$DOMINIO/gp-api/altas_cola.php"
 #
 # ganamosonline es el conocido-bueno: fue producción meses, probado para altas
 # Y depósitos. Su único problema eran los challenges del WAF, que YA maneja
-# despejar_waf() en el bot (commit del 07-08/10). Así que esta vuelta no
-# reintroduce el bug de las altas: lo trae a un dominio con cert válido y con
-# el challenge ya resuelto. Si ganamos7 renueva el cert, se puede reevaluar
-# -- pero sería un alta de prueba real, no un cambio a ciegas.
-PANEL_URL_NUEVA="https://agents.ganamosonline.com/user/create-player"
-LOGIN_URL_NUEVA="https://agents.ganamosonline.com/"
+# despejar_waf() en el bot (commit del 07-08/10).
+#
+# FAILOVER POR CERT (25/10/2026). En vez de UN dominio fijo, hay una LISTA en
+# orden de preferencia y se elige el primero con cert TLS vigente. Asi, el dia
+# que a uno se le venza el cert (lo que nos tumbo con ganamos7), el deploy
+# salta solo al siguiente -- no hay que estar mirando. El orden: primero los
+# que MENOS molesta el WAF (sin Bot Fight Mode) y con cert mas largo;
+# ganamosonline ultimo, porque tiene Bot Fight Mode (aunque despejar_waf lo
+# maneja), como red de ultimo recurso.
+#
+# SOLO van dominios con ESCRITURA CONFIRMADA (login + alta real, probado el
+# 25/10 con probar_alta.py): ganamos.io, ganamosbet.net y ganamosonline. No se
+# mete uno que solo haya pasado lectura -- fallar a un dominio que no escribe
+# seria cambiar un cert vencido por un Unauthorized silencioso.
+#
+# Se puede forzar uno a mano con  PANEL_HOST_FORZADO=agents.xxx bash ...
+DOMINIOS_PRIORIDAD=(
+  "agents.ganamos.io"          # sin BFM, cert mas largo (16 Ene), alta probada
+  "agents.ganamosbet.net"      # sin BFM, alta probada
+  "agents.ganamosonline.com"   # con BFM; conocido-bueno, ultimo recurso
+)
+
+# cert_vigente HOST -> exit 0 si el cert TLS no esta vencido. Es EXACTAMENTE la
+# falla que nos tumbo (ganamos7). Overridable para test con GP_CERT_CHECK (un
+# comando que recibe el host y devuelve 0/1).
+cert_vigente() {
+  if [ -n "${GP_CERT_CHECK:-}" ]; then "$GP_CERT_CHECK" "$1"; return $?; fi
+  echo | timeout 12 openssl s_client -servername "$1" -connect "$1:443" 2>/dev/null \
+    | openssl x509 -checkend 0 -noout >/dev/null 2>&1
+}
+
+# Primer dominio de la lista con cert vigente. Si ninguno responde (openssl
+# roto, sin red), cae al primero para no quedar vacio -- mejor intentar el
+# preferido que no arrancar.
+elegir_dominio() {
+  local d
+  for d in "${DOMINIOS_PRIORIDAD[@]}"; do
+    if cert_vigente "$d"; then echo "$d"; return 0; fi
+    echo "   (cert de $d no vigente o inalcanzable, pruebo el siguiente)" >&2
+  done
+  echo "   (!! ninguno validó cert; uso el preferido igual: ${DOMINIOS_PRIORIDAD[0]})" >&2
+  echo "${DOMINIOS_PRIORIDAD[0]}"
+}
+
+if [ -n "${PANEL_HOST_FORZADO:-}" ]; then
+  PANEL_HOST="$PANEL_HOST_FORZADO"
+  echo "==> Dominio del panel FORZADO: $PANEL_HOST"
+else
+  PANEL_HOST="$(elegir_dominio)"
+  echo "==> Dominio del panel elegido (primero con cert vigente): $PANEL_HOST"
+fi
+PANEL_URL_NUEVA="https://$PANEL_HOST/user/create-player"
+LOGIN_URL_NUEVA="https://$PANEL_HOST/"
 
 echo "==> Bot en:  $BOT_DIR"
 [ -f "$ENV" ] || { echo "!! No existe $ENV — pasá BOT_DIR=/ruta/al/bot" >&2; exit 1; }
