@@ -257,21 +257,20 @@ function cf_dns_upsert($dominio, $cfg) {
 /* El panel de agentes al que le pegan TODOS los bots de clientes. Una sola
    constante para que el run y la comparacion de abajo no puedan divergir.
 
-   VOLVIO A ganamos7 el 08/10/2026, por decision del dueño, con el WAF de
-   ganamosonline (Cloudflare/ServicePipe) desafiando el 100% de las altas y
-   frenando la creacion de usuarios. ganamos7 es el UNICO dominio sin
-   Cloudflare adelante.
+   VOLVIO A ganamosonline el 25/10/2026: a ganamos7 se le VENCIO EL CERTIFICADO
+   TLS el 22/10 (dominio de la plataforma, no lo renovamos nosotros) y el bot
+   no podia ni abrir la pagina ni postear (ERR_CERT_DATE_INVALID / "certificate
+   has expired"). Las altas, caidas. Medido con openssl: ganamosonline y
+   ganamosbet con cert valido (Dic 7), ganamos7 vencido.
 
-   El 18/09 se habia vuelto a ganamosonline porque un deposito contra ganamos7
-   dio {"error_message":"Unauthorized"}. Esa prueba estaba contaminada: las
-   altas seguian en ganamosonline por la URL ABSOLUTA horneada en
-   /datos/alta_endpoint.json --nunca se movieron-- y solo el deposito cruzo.
-   El arreglo de fondo (resetear ese archivo al cambiar de dominio) vive en
-   scripts/arreglar-bot-altas.sh, bloque 2.b. RIESGO ABIERTO: el deposito por
-   ganamos7 no esta reconfirmado; verificar una carga de fichas despues de
-   desplegar. Ver ese script para la historia completa. */
-const PANEL_LOGIN_URL  = 'https://agents.ganamos7.com/';
-const PANEL_CREATE_URL = 'https://agents.ganamos7.com/user/create-player';
+   ganamosonline es el conocido-bueno: fue produccion meses, probado para altas
+   y depositos. Su unico problema eran los challenges del WAF, que YA maneja
+   despejar_waf() en el bot. El reset del endpoint horneado al cambiar de
+   dominio vive en scripts/arreglar-bot-altas.sh (bloque 2.b) y en este archivo
+   (resetear_endpoint_horneado); es lo que hace que esta vuelta surta efecto.
+   Ver ese script para la historia completa. */
+const PANEL_LOGIN_URL  = 'https://agents.ganamosonline.com/';
+const PANEL_CREATE_URL = 'https://agents.ganamosonline.com/user/create-player';
 
 /* SLUGS QUE YA TIENEN BOT PROPIO Y NO SE APROVISIONAN.
    `ganamoscrm` es NUESTRO propio negocio, y lo atienden desde antes del

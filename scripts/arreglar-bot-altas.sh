@@ -56,10 +56,16 @@
 #      Esa prueba estaba contaminada --las altas seguian en ganamosonline por
 #      la URL horneada, solo el deposito cruzo-- y la contradice la medicion
 #      del 16/09, donde el circuito de la plata entero dio 26/0 por ganamos7.
-#      No se puede cerrar sin un deposito real. Por eso: despues de desplegar,
-#      VERIFICAR UN DEPOSITO (cargar fichas a un jugador) antes de confiar.
-#      Si da Unauthorized, volver es una linea (PANEL_URL_NUEVA/LOGIN_URL_NUEVA
-#      a ganamosonline) y correr este script de nuevo.
+#      No se puede cerrar sin un deposito real.
+#
+#   6. 25/10/2026: VUELTA A agents.ganamosonline.com. El experimento de
+#      ganamos7 lo mato algo ajeno a todo lo anterior: se les VENCIO EL
+#      CERTIFICADO TLS el 22/10 (es dominio de la plataforma, no lo renovamos
+#      nosotros). El bot no podia ni abrir la pagina ni postear
+#      (ERR_CERT_DATE_INVALID / "certificate has expired"), altas caidas.
+#      ganamosonline tiene cert valido (Dic 7) y es el conocido-bueno; su
+#      unico problema, los challenges del WAF, ya lo maneja despejar_waf() en
+#      el bot. Ver el comentario de PANEL_URL_NUEVA abajo.
 #
 # ANTES DE VOLVER A TOCAR ESTO: que las altas salgan NO prueba que el dominio
 # ande por si solo -- pero desde el bloque 2.b el endpoint horneado se resetea
@@ -83,13 +89,29 @@ CFG="${CFG:-/var/www/api/config.local.php}"
 DOMINIO="${DOMINIO:-ganamoscrm.online}"
 
 API_URL_NUEVA="https://$DOMINIO/gp-api/altas_cola.php"
-# agents.ganamos7.com es el ÚNICO dominio sin Cloudflare adelante (nginx
-# pelado). Los demás --ganamosonline, ganamos.net, ganamosbet-- están todos
-# detrás de Cloudflare/ServicePipe, y de ahí salen los challenges que el
-# 7-8/10/2026 pasaron a desafiar el 100% de las altas y frenaron la creación
-# de usuarios. Medido: curl pelado da 200 en ganamos7 y 403 en ganamosonline.
-PANEL_URL_NUEVA="https://agents.ganamos7.com/user/create-player"
-LOGIN_URL_NUEVA="https://agents.ganamos7.com/"
+# VUELTA A ganamosonline el 25/10/2026: el CERTIFICADO TLS de agents.ganamos7
+# .com VENCIÓ el 22/10, y es un dominio de la plataforma -- no lo podemos
+# renovar. El bot no podía ni abrir la página ni postear: salud_bot mostraba
+# "Page.goto: net::ERR_CERT_DATE_INVALID" y "APIRequestContext.post:
+# certificate has expired" contra agents.ganamos7.com. Las altas, caídas.
+#
+# Medido ese día con openssl s_client:
+#   agents.ganamos7.com       -> VENCIDO (notAfter Oct 22)
+#   agents.ganamosonline.com  -> válido (Dic 7)
+#   agents.ganamosbet.net     -> válido (Dic 7)
+#
+# ganamos7 era el único sin Cloudflare (y por eso lo elegimos para escapar del
+# WAF), pero justamente por estar menos mantenido se les venció el cert. Los
+# dominios detrás de Cloudflare tienen cert válido (lo renueva Cloudflare).
+#
+# ganamosonline es el conocido-bueno: fue producción meses, probado para altas
+# Y depósitos. Su único problema eran los challenges del WAF, que YA maneja
+# despejar_waf() en el bot (commit del 07-08/10). Así que esta vuelta no
+# reintroduce el bug de las altas: lo trae a un dominio con cert válido y con
+# el challenge ya resuelto. Si ganamos7 renueva el cert, se puede reevaluar
+# -- pero sería un alta de prueba real, no un cambio a ciegas.
+PANEL_URL_NUEVA="https://agents.ganamosonline.com/user/create-player"
+LOGIN_URL_NUEVA="https://agents.ganamosonline.com/"
 
 echo "==> Bot en:  $BOT_DIR"
 [ -f "$ENV" ] || { echo "!! No existe $ENV — pasá BOT_DIR=/ruta/al/bot" >&2; exit 1; }
