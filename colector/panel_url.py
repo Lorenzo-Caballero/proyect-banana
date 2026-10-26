@@ -68,5 +68,11 @@ def resolver(bot=None) -> tuple[str, str]:
 
     base = _base_del_env()
     if not base:
-        base = "https://agents.ganamos7.com"
+        # Default historico. Fue agents.ganamos7.com hasta el 25/10/2026, cuando
+        # a ese dominio se le vencio el certificado TLS (es de la plataforma, no
+        # lo renovamos): un worker que cayera a ese fallback moria con
+        # ERR_CERT_DATE_INVALID. agents.ganamosonline.com es el panel probado y
+        # con cert valido. Igual, es solo la red de ultimo recurso: lo normal es
+        # que el .env ya traiga PANEL_URL/LOGIN_URL.
+        base = "https://agents.ganamosonline.com"
     return api or f"{base}/api", lst or f"{base}/users/all"

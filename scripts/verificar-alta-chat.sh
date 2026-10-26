@@ -97,11 +97,12 @@ else
 
   PU="$(grep -E '^PANEL_URL=' "$BOT_ENV" | head -1 | cut -d= -f2-)"
   case "$PU" in
-    # Desde el 16/09/2026 el panel es ganamos7 (mismo backend que
-    # ganamosonline -- probado con login a mano -- pero sin el Cloudflare
-    # que tiraba challenges). Ver scripts/arreglar-bot-altas.sh.
-    *agents.ganamos7.com*)      ok "PANEL_URL en agents.ganamos7.com (sin Cloudflare)" ;;
-    *agents.ganamosonline.com*) mal "PANEL_URL en agents.ganamosonline.com: es el dominio CON Cloudflare (challenges). Corre arreglar-bot-altas.sh" ;;
+    # Desde el 25/10/2026 el panel es ganamosonline: a ganamos7 se le vencio el
+    # cert TLS (dominio de la plataforma, no lo renovamos) y el bot moria con
+    # ERR_CERT_DATE_INVALID. ganamosonline tiene Cloudflare, pero sus challenges
+    # ya los maneja despejar_waf(). Ver scripts/arreglar-bot-altas.sh.
+    *agents.ganamosonline.com*) ok "PANEL_URL en agents.ganamosonline.com (cert valido; challenges manejados por despejar_waf)" ;;
+    *agents.ganamos7.com*)      mal "PANEL_URL en agents.ganamos7.com: a ese dominio se le vencio el cert TLS (ERR_CERT_DATE_INVALID). Corre arreglar-bot-altas.sh" ;;
     *)                          info "PANEL_URL: $PU" ;;
   esac
 fi

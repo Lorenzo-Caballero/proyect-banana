@@ -26,27 +26,28 @@ function chk($q,$c){global $ok,$fail; if($c){$ok++;echo "  OK    $q\n";}else{$fa
 $dir = sys_get_temp_dir() . '/gp_test_' . uniqid();
 mkdir($dir, 0777, true);
 
-// Caso 1: endpoint en ganamosonline, dominio nuevo ganamos7 -> debe resetear
-file_put_contents("$dir/alta_endpoint.json", '{"url":"https://agents.ganamosonline.com/api/agent_admin/user/"}');
+// Caso 1: el escenario REAL del 25/10 -> endpoint horneado en ganamos7 (cert
+// muerto), dominio nuevo ganamosonline -> debe resetear para re-aprender.
+file_put_contents("$dir/alta_endpoint.json", '{"url":"https://agents.ganamos7.com/api/agent_admin/user/"}');
 file_put_contents("$dir/estado_sesion.json", '{}');
-resetear_endpoint_horneado($dir, 'https://agents.ganamos7.com/user/create-player', 'test');
+resetear_endpoint_horneado($dir, 'https://agents.ganamosonline.com/user/create-player', 'test');
 chk('resetea el endpoint de otro dominio', !is_file("$dir/alta_endpoint.json"));
 chk('deja un backup del endpoint', count(glob("$dir/alta_endpoint.json.bak.*")) === 1);
 chk('resetea tambien la sesion vieja', !is_file("$dir/estado_sesion.json"));
 
-// Caso 2: endpoint YA en ganamos7 -> NO toca nada
-file_put_contents("$dir/alta_endpoint.json", '{"url":"https://agents.ganamos7.com/api/agent_admin/user/"}');
-resetear_endpoint_horneado($dir, 'https://agents.ganamos7.com/user/create-player', 'test');
+// Caso 2: endpoint YA en ganamosonline -> NO toca nada
+file_put_contents("$dir/alta_endpoint.json", '{"url":"https://agents.ganamosonline.com/api/agent_admin/user/"}');
+resetear_endpoint_horneado($dir, 'https://agents.ganamosonline.com/user/create-player', 'test');
 chk('NO toca un endpoint que ya esta en el dominio nuevo', is_file("$dir/alta_endpoint.json"));
 
 // Caso 3: sin archivo -> no explota
 $dir2 = sys_get_temp_dir() . '/gp_test2_' . uniqid(); mkdir($dir2,0777,true);
-resetear_endpoint_horneado($dir2, 'https://agents.ganamos7.com/user/create-player', 'test');
+resetear_endpoint_horneado($dir2, 'https://agents.ganamosonline.com/user/create-player', 'test');
 chk('sin endpoint horneado no hace nada (el bot lo aprende solo)', !is_file("$dir2/alta_endpoint.json"));
 
 // Caso 4: JSON corrupto -> no explota, no borra (host viejo vacio)
 file_put_contents("$dir/alta_endpoint.json", 'no soy json');
-resetear_endpoint_horneado($dir, 'https://agents.ganamos7.com/user/create-player', 'test');
+resetear_endpoint_horneado($dir, 'https://agents.ganamosonline.com/user/create-player', 'test');
 chk('un JSON ilegible no se borra a ciegas', is_file("$dir/alta_endpoint.json"));
 
 echo "\n$ok OK, $fail fallas\n";
