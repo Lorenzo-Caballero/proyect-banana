@@ -1201,6 +1201,12 @@
   .huella b{color:var(--txt);font-weight:700}
   .huella .hl-t{display:block;margin-bottom:4px;color:var(--txt);font-size:12px;font-weight:700}
   .huella .hl-i{display:block}
+  .huella .hl-cuenta{display:grid;gap:6px;margin-top:6px;padding-top:7px;border-top:1px solid var(--line)}
+  .huella .hl-dato{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+  .huella .hl-dato-txt{min-width:0;overflow-wrap:anywhere}
+  .huella .hl-copy{flex:none;border:1px solid var(--line2);border-radius:7px;background:var(--panel);
+    color:var(--txt);padding:3px 7px;font:inherit;font-size:10.5px;font-weight:600;cursor:pointer}
+  .huella .hl-copy:hover{border-color:var(--violet);background:var(--violetSoft)}
   .huella code{background:rgba(148,163,184,.14);padding:1px 5px;border-radius:5px;
                font-size:11px;color:var(--txt)}
   .huella .hl-ojo{color:var(--red);font-weight:700}
@@ -9996,6 +10002,25 @@ async function credTabla(cual){
   }
   function inic(nombre){ const n=(nombre||"").trim(); return n? n.slice(0,2).toUpperCase() : "?"; }
   function toast(t){ const el=$("#toast"); el.textContent=t; el.classList.add("on"); setTimeout(()=>el.classList.remove("on"),2300); }
+  document.addEventListener("click", async ev=>{
+    const btn = ev.target.closest("[data-copy-huella]");
+    if(!btn) return;
+    const valor = btn.getAttribute("data-copy-huella") || "";
+    if(!valor) return;
+    try{
+      if(navigator.clipboard && window.isSecureContext){
+        await navigator.clipboard.writeText(valor);
+      }else{
+        const aux=document.createElement("textarea");
+        aux.value=valor; aux.setAttribute("readonly","");
+        aux.style.position="fixed"; aux.style.opacity="0";
+        document.body.appendChild(aux); aux.select();
+        const ok=document.execCommand("copy"); aux.remove();
+        if(!ok) throw new Error("copy_failed");
+      }
+      toast("Dato copiado");
+    }catch(_){ toast("No se pudo copiar. Seleccioná el dato manualmente."); }
+  });
 
   /**
    * Cablea el cierre de un modal `.back`: click en el botón cancelar y click
@@ -11197,9 +11222,15 @@ async function credTabla(cual){
                  `<b>@${esc(v.usuario)}</b>${v.bloqueado ? " 🚫" : ""} — ${esc(v.detalle)}</li>`;
         }).join("");
         const hayPlata = vs.some(v => v.fuerza >= 3);
+        const cuentasPago = vs.filter(v => (v.senales || []).includes("pago"));
+        const comprobantesIguales = vs.filter(v => (v.senales || []).includes("comprobante"));
+        const tituloVinculo = cuentasPago.length
+          ? "La misma cuenta o billetera aparece en"
+          : (comprobantesIguales.length ? "El mismo comprobante aparece en" : "Posible vínculo con");
+        const cantidadVinculada = cuentasPago.length || comprobantesIguales.length || vs.length;
         elVinc.innerHTML =
-          `<b>⚠️ ${vs.length === 1 ? "Otra cuenta parece" : vs.length + " cuentas parecen"} ` +
-          `ser la misma persona</b>` +
+          `<b>⚠️ ${tituloVinculo} ` +
+          `${cantidadVinculada === 1 ? "otro usuario" : cantidadVinculada + " otros usuarios"}</b>` +
           `<ul>${filas}</ul>` +
           `<span style="color:var(--muted)">` +
           (hayPlata
@@ -11226,10 +11257,22 @@ async function credTabla(cual){
       elHu.style.display = (pagos.length || cels.length) ? "" : "none";
       if (pagos.length || cels.length){
         const filasPago = pagos.map(p => {
-          const ident = p.cuit ? `CUIT ${esc(p.cuit)}` : (p.cbu ? `CBU ${esc(p.cbu)}` : "");
-          return `<span class="hl-i">💳 <b>${esc(p.titular || "(sin titular)")}</b>` +
-                 (ident ? ` · <code>${ident}</code>` : "") +
-                 ` · ${p.usos} pago${p.usos === 1 ? "" : "s"}</span>`;
+          const datoCopiable = (etiqueta, valor) => valor
+            ? `<div class="hl-dato"><span class="hl-dato-txt"><b>${etiqueta}:</b> <code>${esc(valor)}</code></span>` +
+              `<button class="hl-copy" type="button" data-copy-huella="${esc(valor)}" ` +
+              `aria-label="Copiar ${etiqueta.toLowerCase()}" title="Copiar ${etiqueta.toLowerCase()}">Copiar</button></div>`
+            : "";
+          const titular = String(p.titular || "").trim();
+          const alias = String(p.alias || "").trim();
+          const cbu = String(p.cbu || p.cvu || "").trim();
+          return `<div class="hl-i">💳 <b>${esc(titular || "Cuenta de origen")}</b>` +
+                 ` · ${p.usos} pago${p.usos === 1 ? "" : "s"}</div>` +
+                 `<div class="hl-cuenta">` +
+                 (titular ? datoCopiable("Titular", titular) : "") +
+                 (p.cuit ? datoCopiable("CUIT", String(p.cuit).trim()) : "") +
+                 (alias ? datoCopiable("Alias", alias) : "") +
+                 (cbu ? datoCopiable("CBU/CVU", cbu) : "") +
+                 `</div>`;
         }).join("");
         const filasCel = cels.map(c => {
           /* "Por este aparato pasaron N cuentas" es el dato que importa: un
@@ -11252,7 +11295,7 @@ async function credTabla(cual){
                  `${otras}</span>`;
         }).join("");
         elHu.innerHTML =
-          `<span class="hl-t">Huella</span>` +
+          `<span class="hl-t">Cuentas desde las que suele transferir</span>` +
           (filasPago || `<span class="hl-i">💳 Todavía no pagó desde ninguna cuenta bancaria.</span>`) +
           (filasCel || `<span class="hl-i">📱 Sin celular registrado.</span>`);
       }
