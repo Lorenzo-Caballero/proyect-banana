@@ -224,6 +224,14 @@ if ($metodo === 'GET') {
             unset($plantillas['wa']);
             // ?archivadas=1 para la vista de archivo; por defecto no van.
             $conArch = !empty($_GET['archivadas']);
+            /* LAS PLANTILLAS SON ESTATICAS: no dependen de la tabla `landings`
+               ni de ninguna migracion. Por eso la carga de las landings
+               existentes va en su PROPIO try: si esa falla (tabla sin crear,
+               migracion 52 pendiente, lo que sea) el dropdown de plantillas
+               tiene que seguir poblado igual -- antes un fallo acá dejaba el
+               selector VACIO ("no hay ninguna para seleccionar") aunque las
+               plantillas ya estuvieran calculadas. */
+            try {
             foreach (landings_listar($pdo, $conArch) as $l) {
                 // Links antiguos siguen funcionando y se conservan, pero el
                 // CRM ya no los expone ni permite modificarlos.
@@ -241,6 +249,13 @@ if ($metodo === 'GET') {
                    rebota. */
                 $l += landings_historia($pdo, (string)$l['slug']);
                 $landings[] = $l;
+            }
+            } catch (Throwable $e) {
+                // Las landings no cargaron, pero las plantillas SI: se devuelve
+                // lo que hay. El dropdown queda poblado y el aviso de "¿corrió
+                // la migración 52?" lo da la lista vacía, no un selector vacío.
+                error_log('crm_landings listar (landings): ' . $e->getMessage());
+                $landings = [];
             }
             lp_salir([
                 'ok'         => true,

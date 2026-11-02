@@ -126,62 +126,26 @@ chequear('una landing vieja sigue funcionando',
              ['whatsapp']['numero'] === '');
 
 // ===========================================================================
-echo "\n=== 6. Lo que el operador guarda LLEGA a la página ===\n";
-/* EL RIESGO REAL DE ESTE MÓDULO. lp_config_sanear() es una LISTA BLANCA:
-   descarta en silencio toda sección que no reconozca. Si 'whatsapp' no está
-   adentro, el operador carga el número, el CRM dice «Guardada», y la landing
-   publicada no deriva a nadie. Nada tira error — solo se pierden jugadores.
-
-   Por eso acá se corre la función REAL de crm_landings.php, extraída del
-   archivo: una copia seguiría pasando después de que alguien toque la lista. */
+echo "\n=== 6. WhatsApp salió del CRM: ahora vive en el panel ===\n";
+/* HISTORIA. Esta sección probaba que lp_config_sanear() de crm_landings.php
+   conservara el 'whatsapp' al guardar una landing desde el CRM. El commit
+   "Remove WhatsApp landings from CRM" sacó esa integración: las landings con
+   derivación a WhatsApp se crean ahora desde el PANEL (panel.php, la landing
+   de cajero), no desde el CRM. Así que el CRM ya NO debe reconocer 'whatsapp'
+   -- y eso es lo correcto, no un bug. Se chequea esa realidad en vez del flujo
+   viejo. El flujo del panel se cubre en la sección 7. */
 $srcCrm = file_get_contents(__DIR__ . '/api/crm_landings.php');
-if (!preg_match('/function lp_config_sanear\(array \$cruda\): array\s*\{.*?\n\}/s', $srcCrm, $m)) {
-    chequear('se encontró lp_config_sanear en crm_landings.php', false);
-} else {
-    eval($m[0]);
-    $guardado = lp_config_sanear([
-        'whatsapp' => ['numero' => '+54 9 11 2345-6789', 'texto' => 'Hola, quiero cargar'],
-        'colores'  => ['fondo' => '#06281d'],
-    ]);
-    chequear('el número sobrevive al guardado',
-             ($guardado['whatsapp']['numero'] ?? '') === '+54 9 11 2345-6789',
-             'la lista blanca lo descartó: el CRM diría «Guardada» y no derivaría a nadie');
-    chequear('y el mensaje también',
-             ($guardado['whatsapp']['texto'] ?? '') === 'Hola, quiero cargar');
-
-    /* SE GUARDA COMO LO ESCRIBIÓ, no normalizado: si se guardara normalizado,
-       uno mal escrito desaparecería del editor y el operador no tendría qué
-       corregir. */
-    chequear('se guarda tal cual lo tipeó (con + y espacios)',
-             str_contains($guardado['whatsapp']['numero'], '+')
-             && str_contains($guardado['whatsapp']['numero'], ' '));
-
-    // Y el viaje completo: lo guardado tiene que producir el link.
-    $cfgFinal = landings_config_completa('wa', json_encode($guardado));
-    chequear('guardar -> leer -> link, de punta a punta',
-             landings_wa_link($cfgFinal, 'holaMartina847')
-               === 'https://wa.me/5491123456789?text='
-                   . rawurlencode('Hola, quiero cargar (usuario: holaMartina847)'),
-             landings_wa_link($cfgFinal, 'holaMartina847'));
-
-    /* Lo que NO puede entrar: este campo termina dentro de una URL pública. */
-    $sucio = lp_config_sanear(['whatsapp' => [
-        'numero' => '549112345<script>', 'texto' => str_repeat('x', 400),
-    ]]);
-    chequear('se filtra lo que no puede ser un teléfono',
-             !str_contains($sucio['whatsapp']['numero'], '<'),
-             $sucio['whatsapp']['numero']);
-    chequear('el mensaje se recorta (va en una URL)',
-             mb_strlen($sucio['whatsapp']['texto']) <= 120);
-
-    /* Y lo inverso, que es lo que pasa cuando se da de baja a un cajero:
-       vaciar el campo tiene que dejarlo vacío de verdad. Si el merge
-       conservara el anterior, ese número seguiría recibiendo jugadores. */
-    chequear('borrar el número lo deja vacío de verdad',
-             landings_config_completa('wa',
-                 json_encode(lp_config_sanear(['whatsapp' => ['numero' => '']])))
-               ['whatsapp']['numero'] === '');
-}
+preg_match('/function lp_config_sanear\(array \$cruda\): array\s*\{.*?\n\}/s', $srcCrm, $m);
+chequear('el CRM ya no maneja whatsapp (se movió al panel)',
+         isset($m[0]) && !str_contains($m[0], 'whatsapp'),
+         'si el CRM volviera a tocar whatsapp, se solaparía con el panel');
+// Las funciones puras siguen (las usa el panel): el link se arma igual.
+$cfg = landings_config_completa('wa', json_encode([
+    'whatsapp' => ['numero' => '+54 9 11 2345-6789', 'texto' => 'Hola'],
+]));
+chequear('landings_wa_link sigue armando el link (lo usa el panel)',
+         landings_wa_link($cfg, 'holaX1')
+           === 'https://wa.me/5491123456789?text=' . rawurlencode('Hola (usuario: holaX1)'));
 
 // ===========================================================================
 echo "\n=== 7. El panel del dueño: la landing de cada cliente ===\n";

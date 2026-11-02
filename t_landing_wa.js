@@ -116,47 +116,21 @@ chequear("'wa' entra en solo-registro",
          /const soloReg = landing\.plantilla === 'registro' \|\| landing\.plantilla === 'wa'/.test(src));
 
 // ===========================================================================
-console.log("\n=== 7. El editor del CRM ===");
+console.log("\n=== 7. El CRM ya no tiene el editor de WhatsApp (se movió al panel) ===");
+/* Esta sección probaba el editor de "landing de cajero" DENTRO del CRM
+   (botón, campo de WhatsApp, etc.). El commit "Remove WhatsApp landings from
+   CRM" lo sacó: esas landings se crean ahora desde el PANEL (panel.php). El
+   CRM ya NO debe tener nada de WhatsApp, y eso es lo correcto. Se chequea esa
+   realidad; el flujo del panel vive en la sección 8. */
 const crm = fs.readFileSync(__dirname + "/landing/crm.html", "utf8");
-
-chequear("hay un botón propio para la landing de cajero",
-         /id="lpNuevaWaBtn"/.test(crm) && /Landing de cajero/.test(crm));
-chequear("y abre el editor ya en la plantilla 'wa'",
-         /lpDraft\.plantilla = "wa";/.test(crm),
-         "si no, hay que buscarla en el desplegable y el botón no sirve de nada");
-
-/* EL CAMPO SOLO APARECE EN SU PLANTILLA. En las demás no se usa: mostrarlo
-   siempre hace que alguien lo llene en una landing común y después nadie
-   entienda por qué no derivó. */
-chequear("el campo del WhatsApp se muestra solo en la plantilla 'wa'",
-         /\$\("#lpCampoWhatsapp"\)\.style\.display = esWa \? "" : "none";/.test(crm));
-chequear("y 'wa' esconde la estética, como 'registro'",
-         /const solo = plant === "registro" \|\| plant === "wa";/.test(crm));
-
-/* CAMBIAR DE PLANTILLA NO PUEDE BORRAR EL NÚMERO. Mirar otro preset de
-   colores y perder el teléfono del cajero es borrar en silencio lo único que
-   hace distinta a esta landing. */
-const cambio = crm.match(/\$\("#lpPlantilla"\)\.addEventListener\("change"[\s\S]*?\n  \}\);/);
-chequear("cambiar de plantilla no pisa el WhatsApp",
-         !!cambio && !/config\.whatsapp\s*=/.test(cambio[0]),
-         "se perdería el número al mirar otro preset de colores");
-
-/* UN NÚMERO QUE NO SIRVE TIENE QUE DECIRLO. Se guarda igual (el resto es
-   válido), pero sin el aviso el CRM diría "Guardada" y el cajero se enteraría
-   al no recibir a nadie. */
-chequear("el aviso del server se muestra en vez del 'Guardada'",
-         /if \(d\.aviso\)\{/.test(crm));
 const srvCrm = fs.readFileSync(__dirname + "/api/crm_landings.php", "utf8");
-chequear("y el server lo manda cuando el número no produce link",
-         /landings_wa_numero\(\$numCrudo\) === ''/.test(srvCrm)
-         && /'aviso' => \$aviso/.test(srvCrm));
-
-/* El borrador nuevo tiene que traer la sección, y una landing vieja también:
-   sin eso lpPintarCampos() rompe al leer .numero de undefined. */
-chequear("el borrador nuevo trae la sección whatsapp",
-         /whatsapp: Object\.assign\(\{numero:"", texto:""\}, p\.whatsapp\)/.test(crm));
-chequear("una landing guardada antes de esto no rompe el editor",
-         /lpDraft\.config\.whatsapp = lpDraft\.config\.whatsapp \|\| \{numero:"", texto:""\}/.test(crm));
+chequear("el CRM no tiene el botón de landing de cajero",
+         !/id="lpNuevaWaBtn"/.test(crm));
+chequear("el CRM no tiene campo de WhatsApp en el editor de landings",
+         !/lpCampoWhatsapp|lpWaNumero/.test(crm));
+chequear("y el server del CRM no GUARDA config de whatsapp (lo menciona solo para derivar al panel)",
+         !/\$limpia\['whatsapp'\]|'whatsapp'\s*=>/.test(srvCrm),
+         "si volviera a guardar whatsapp, se solaparía con la landing de cajero del panel");
 
 // ===========================================================================
 console.log("\n=== 8. El número sale normalizado del server, no del navegador ===");

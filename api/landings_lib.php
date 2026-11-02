@@ -52,6 +52,22 @@ function landings_plantillas(): array
     $whatsapp = ['numero' => '', 'texto' => 'Hola, acabo de crear mi cuenta'];
 
     return [
+        /* BONO DE BIENVENIDA: la plantilla por defecto. Es, pixel por pixel, la
+           página auto-generada de bono.html -- lp.html pinta ese mismo diseño
+           (hero, número gigante del bono, logo, ventajas, botón) y esta
+           plantilla trae la MISMA paleta de bono.html (violeta #8b3ffe + dorado
+           #ffc844) y sus mismos textos. El logo sale por defecto
+           (/replica/logo.png en lp.html) aunque no se suba ninguna imagen, así
+           la landing se ve completa de entrada. Va PRIMERA para que sea la que
+           aparece seleccionada al crear una landing nueva. */
+        'bono' => [
+            'nombre'  => 'Bono de bienvenida',
+            'colores' => ['fondo' => '#200a38', 'acento' => '#8b3ffe', 'destacado' => '#ffc844', 'texto' => '#f4ecff'],
+            'textos'  => $textosBase,
+            'imagenes' => $imagenes,
+            'tamanos' => $tamanos,
+            'whatsapp' => $whatsapp,
+        ],
         'oro' => [
             'nombre'  => 'Oro y violeta',
             'colores' => ['fondo' => '#200a38', 'acento' => '#8b3ffe', 'destacado' => '#ffc844', 'texto' => '#f4ecff'],
@@ -172,7 +188,7 @@ function landings_wa_link(array $cfg, string $usuario = ''): string
 function landings_config_completa(string $plantilla, ?string $configJson): array
 {
     $plantillas = landings_plantillas();
-    $base = $plantillas[$plantilla] ?? $plantillas['oro'];
+    $base = $plantillas[$plantilla] ?? $plantillas['bono'];
     unset($base['nombre']);
 
     $propio = json_decode((string)$configJson, true);
@@ -330,7 +346,7 @@ function landings_guardar(PDO $pdo, ?int $id, string $nombre, string $plantilla,
         return null;
     }
     if (!isset(landings_plantillas()[$plantilla])) {
-        $plantilla = 'oro';
+        $plantilla = 'bono';
     }
     $bonoPct = max(0, min(200, $bonoPct));
     $json = json_encode($config, JSON_UNESCAPED_UNICODE);
