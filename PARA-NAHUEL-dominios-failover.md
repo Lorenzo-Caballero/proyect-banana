@@ -119,15 +119,36 @@ Si a un dominio se le vence el cert, lo saltea solo. (commits `f2e1365`,
 **Nivel B — en caliente** (`scripts/vigilar-dominio.sh`, por cron cada 5 min):
 mira si la cola de altas **drena**. Si queda trabada más de 12 min (sea por cert,
 por WAF o lo que sea), **rota solo al siguiente dominio**. Tiene cooldown de 20
-min para no saltar en loop. **Esto es lo que cubre "un WAF tapa operaciones":**
-si el dominio en uso empieza a tirar challenges, deja de drenar la cola y el
-sistema salta al siguiente sin que nadie lo toque. (commit `02e38f0`)
+min para no saltar en loop. Es la red lenta: cubre el caso en que el dominio
+queda tapado del todo, pero tarda hasta 12 min en reaccionar.
+
+**Nivel C — INSTANTÁNEO, dentro del bot** (nuevo): cuando el WAF tapa el fast-path
+de forma **persistente** —challenges que no se despejan con el navegador, lote
+tras lote— el bot **cambia de dominio en el mismo proceso** y retoma esas mismas
+altas en el siguiente de la lista, sin esperar los 12 min del Nivel B. La regla
+es la que pediste: *las altas son obligatorias, si el WAF tapa un dominio se usa
+otro.* Cómo funciona:
+
+- `crear_lote_por_fetch` cuenta cuántas altas quedaron con un challenge que **no
+  se despejó** tras los reintentos (`n_waf`). Un challenge así **no baja al
+  formulario** — el formulario cruza el MISMO WAF, sería tiempo perdido.
+- Si un lote entero queda tapado (**0 creados + hubo challenges**) **dos veces
+  seguidas** (`WAF_LOTES_PARA_ROTAR=2`, configurable), el bot `rotar_dominio_en_proceso`:
+  mueve TODAS las globales de dominio de una (login, panel, API, listado),
+  **re-loguea** en el dominio nuevo y **libera** el lote tapado para retomarlo
+  ahí la vuelta siguiente. Dos lotes evitan rotar por un challenge suelto (que
+  el navegador despeja solo).
+- La lista del failover la lee del `.env` (`PANEL_DOMINIOS`, que escribe
+  `arreglar-bot-altas.sh` con el mismo orden de arriba). Rota con wrap: tapado el
+  último, vuelve al primero. Si el `.env` no la tiene, el bot no rota (se queda
+  donde está, como antes).
+- Lo prueba `bot/t_waf_failover.py` (26 OK).
 
 **Y el bot crea en cualquiera** gracias a la **plantilla superset** (manda
 `role:0` + los dos formatos de nombre): así un failover a un build-nuevo no
-falla por el campo `role`. En el dominio actual está dormida (ya tiene su
-plantilla), así que no cambia nada hoy; se activa sola tras un failover.
-(commit del bot `9305336`)
+falla por el campo `role`. Tras rotar, el bot **resetea la plantilla a la
+superset** (el endpoint horneado apuntaba al dominio viejo), así crea en el
+dominio nuevo sin volver a aprender el formulario.
 
 > **Pendiente tuyo:** instalar el cron del Nivel B en el VPS:
 > ```
@@ -172,5 +193,6 @@ docker exec ganamos-bot-creador python /app/probar_alta.py agents.ganamosbet.net
 ---
 
 *Hecho con Claude Code. Detalle técnico completo en los comentarios de
-`scripts/arreglar-bot-altas.sh`, `scripts/vigilar-dominio.sh` y
-`panel/provisionar.php`.*
+`scripts/arreglar-bot-altas.sh`, `scripts/vigilar-dominio.sh`,
+`panel/provisionar.php` y el Nivel C en `bot/bot_crear_jugador.py`
+(`rotar_dominio_en_proceso`).*

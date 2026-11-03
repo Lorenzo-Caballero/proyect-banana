@@ -350,6 +350,10 @@ function panel_dominio_elegido(): string {
 define('PANEL_HOST_ELEGIDO', panel_dominio_elegido());
 define('PANEL_LOGIN_URL',  'https://' . PANEL_HOST_ELEGIDO . '/');
 define('PANEL_CREATE_URL', 'https://' . PANEL_HOST_ELEGIDO . '/user/create-player');
+/* La lista completa del failover, para que el bot del cliente pueda ROTAR de
+   dominio en caliente cuando el WAF lo tapa (rotar_dominio_en_proceso). Mismo
+   orden de prioridad; sin esto el bot se queda en el dominio elegido. */
+define('PANEL_DOMINIOS_CSV', implode(',', PANEL_DOMINIOS_PRIORIDAD));
 
 /* SLUGS QUE YA TIENEN BOT PROPIO Y NO SE APROVISIONAN.
    `ganamoscrm` es NUESTRO propio negocio, y lo atienden desde antes del
@@ -756,6 +760,7 @@ function asegurar_bot_peticiones($c, $cfg) {
          . ' -e ' . escapeshellarg('PANEL_PASS=' . $pass)
          . ' -e ' . escapeshellarg('LOGIN_URL=' . PANEL_LOGIN_URL)
          . ' -e ' . escapeshellarg('PANEL_URL=' . PANEL_CREATE_URL)
+         . ' -e ' . escapeshellarg('PANEL_DOMINIOS=' . PANEL_DOMINIOS_CSV)
          . ' -e ' . escapeshellarg('API_URL=' . $apiUrl)
          . ' -e ' . escapeshellarg('API_KEY=' . $apiKey)
          . ' -e MODE=LIVE -e PYTHONUNBUFFERED=1'
@@ -846,6 +851,7 @@ function asegurar_bot_recaudador($c, $cfg) {
          . ' -e ' . escapeshellarg('PANEL_PASS=' . $pass)
          . ' -e ' . escapeshellarg('LOGIN_URL=' . PANEL_LOGIN_URL)
          . ' -e ' . escapeshellarg('PANEL_URL=' . PANEL_CREATE_URL)
+         . ' -e ' . escapeshellarg('PANEL_DOMINIOS=' . PANEL_DOMINIOS_CSV)
          . ' -e ' . escapeshellarg('API_URL=' . $apiUrl)
          . ' -e ' . escapeshellarg('API_KEY=' . $apiKey)
          . ' -e PYTHONUNBUFFERED=1'
@@ -974,6 +980,7 @@ function asegurar_bot_altas($c, $cfg) {
          . '-e ' . escapeshellarg('PANEL_PASS=' . $pass) . ' '
          . '-e ' . escapeshellarg('LOGIN_URL=' . PANEL_LOGIN_URL) . ' '
          . '-e ' . escapeshellarg('PANEL_URL=' . PANEL_CREATE_URL) . ' '
+         . '-e ' . escapeshellarg('PANEL_DOMINIOS=' . PANEL_DOMINIOS_CSV) . ' '
          . '-e ' . escapeshellarg('API_URL=' . $base . '/gp-api/altas_cola.php') . ' '
          . '-e ' . escapeshellarg('API_KEY=' . $apiKey) . ' '
          . '-v ' . escapeshellarg('/opt/bots-altas/' . $slug . ':/datos') . ' '

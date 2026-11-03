@@ -258,8 +258,15 @@ fijar PANEL_URL "$PANEL_URL_NUEVA"
 fijar LOGIN_URL "$LOGIN_URL_NUEVA"
 [ -n "$KEY_USAR" ] && fijar API_KEY "$KEY_USAR"
 
+# La lista completa del failover, para el FAILOVER DE DOMINIO EN CALIENTE del
+# bot (rotar_dominio_en_proceso): cuando el WAF tapa el dominio actual, el bot
+# salta al SIGUIENTE de esta lista sin esperar al vigilante. Mismo orden de
+# prioridad que el de arriba. Si falta, el bot no rota (se queda en el actual).
+DOMINIOS_CSV="$(IFS=,; echo "${DOMINIOS_PRIORIDAD[*]}")"
+fijar PANEL_DOMINIOS "$DOMINIOS_CSV"
+
 echo "==> .env actualizado:"
-grep -E '^(API_URL|PANEL_URL|LOGIN_URL)=' "$ENV" | sed 's/^/    /'
+grep -E '^(API_URL|PANEL_URL|LOGIN_URL|PANEL_DOMINIOS)=' "$ENV" | sed 's/^/    /'
 
 # ---------------------------------------------------------------------------
 # 2.b  RESETEAR EL ENDPOINT HORNEADO SI EL DOMINIO CAMBIO.
