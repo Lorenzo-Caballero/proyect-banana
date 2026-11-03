@@ -122,27 +122,34 @@ por WAF o lo que sea), **rota solo al siguiente dominio**. Tiene cooldown de 20
 min para no saltar en loop. Es la red lenta: cubre el caso en que el dominio
 queda tapado del todo, pero tarda hasta 12 min en reaccionar.
 
-**Nivel C — INSTANTÁNEO, dentro del bot** (nuevo): cuando el WAF tapa el fast-path
-de forma **persistente** —challenges que no se despejan con el navegador, lote
-tras lote— el bot **cambia de dominio en el mismo proceso** y retoma esas mismas
-altas en el siguiente de la lista, sin esperar los 12 min del Nivel B. La regla
-es la que pediste: *las altas son obligatorias, si el WAF tapa un dominio se usa
-otro.* Cómo funciona:
+**Nivel C — EN TIEMPO REAL, dentro del bot** (lo más fuerte): cuando el WAF tapa
+el fast-path, el bot **cambia de dominio en la misma vuelta** y **reintenta esas
+mismas altas en el dominio nuevo, en el acto** — no espera el próximo sondeo ni
+los 12 min del Nivel B. La regla es la que pediste: *las altas son obligatorias,
+si el WAF tapa un dominio se usa otro, ya.* Cómo funciona:
 
-- `crear_lote_por_fetch` cuenta cuántas altas quedaron con un challenge que **no
-  se despejó** tras los reintentos (`n_waf`). Un challenge así **no baja al
-  formulario** — el formulario cruza el MISMO WAF, sería tiempo perdido.
-- Si un lote entero queda tapado (**0 creados + hubo challenges**) **dos veces
-  seguidas** (`WAF_LOTES_PARA_ROTAR=2`, configurable), el bot `rotar_dominio_en_proceso`:
-  mueve TODAS las globales de dominio de una (login, panel, API, listado),
-  **re-loguea** en el dominio nuevo y **libera** el lote tapado para retomarlo
-  ahí la vuelta siguiente. Dos lotes evitan rotar por un challenge suelto (que
-  el navegador despeja solo).
+- Una alta queda "tapada" sólo si el challenge **sobrevive** a los 5 reintentos
+  de `crear_lote_por_fetch` **y** a la clearance del navegador (`despejar_waf`).
+  O sea: ya se probó todo lo barato antes de dar al dominio por tapado.
+- **Cortacircuito:** confirmada una tapada, el dominio está muerto para esta
+  sesión, así que las altas que faltan del lote se marcan tapadas **sin gastarles
+  ~15s a cada una** y se corta el lote. Sin esto, un lote de 5 tapadas serían
+  5×15s de agonía en un dominio muerto antes de poder rotar.
+- El bot entonces `rotar_dominio_en_proceso` (mueve TODAS las globales de dominio
+  de una — login, panel, API, listado —, re-loguea) y **vuelve a correr el
+  fast-path con las tapadas en el dominio nuevo, en la misma vuelta.** Prueba
+  dominios así hasta que entren o se agote `WAF_MAX_DOMINIOS` (4 por default). Un
+  challenge **no baja nunca al formulario** (cruza el mismo WAF); lo que quede
+  tapado tras agotar dominios se libera y lo retoma la vuelta siguiente, ya desde
+  otra puerta.
+- Re-POSTear una tapada en otro dominio **no duplica**: un challenge prueba que
+  la request no llegó al backend.
 - La lista del failover la lee del `.env` (`PANEL_DOMINIOS`, que escribe
   `arreglar-bot-altas.sh` con el mismo orden de arriba). Rota con wrap: tapado el
   último, vuelve al primero. Si el `.env` no la tiene, el bot no rota (se queda
   donde está, como antes).
-- Lo prueba `bot/t_waf_failover.py` (26 OK).
+- Lo prueba `bot/t_waf_failover.py` (37 OK), incluido el cortacircuito de verdad
+  (un dominio tapado consume 5 fetches, no 20).
 
 **Y el bot crea en cualquiera** gracias a la **plantilla superset** (manda
 `role:0` + los dos formatos de nombre): así un failover a un build-nuevo no
